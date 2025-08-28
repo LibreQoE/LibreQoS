@@ -93,6 +93,9 @@ function updateConfig() {
         return { cpe, parent };
     }) : [];
 
+    const doNotSquashSites = document.getElementById("uispDoNotSquashSites").value.trim();
+    const doNotSquashSitesArray = doNotSquashSites ? doNotSquashSites.split(',').map(s => s.trim()) : null;
+
     // Update the config object
     window.config.uisp_integration = {
         ...(window.config.uisp_integration || {}),  // Preserve existing values
@@ -113,6 +116,8 @@ function updateConfig() {
         exclude_sites: excludeSitesArray,
         squash_sites: squashSitesArray && squashSitesArray.length > 0 ? squashSitesArray : null,
         exception_cpes: exceptionCpesArray,
+        enable_squashing: document.getElementById("uispEnableSquashing").checked,
+        do_not_squash_sites: doNotSquashSitesArray && doNotSquashSitesArray.length > 0 ? doNotSquashSitesArray : null,
     };
 }
 
@@ -149,6 +154,8 @@ loadConfig(() => {
         document.getElementById("uispExcludeSites").value = uisp.exclude_sites?.join(", ") || "";
         document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
         document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
+        document.getElementById("uispEnableSquashing").checked = uisp.enable_squashing ?? false;
+        document.getElementById("uispDoNotSquashSites").value = uisp.do_not_squash_sites?.join(", ") || "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

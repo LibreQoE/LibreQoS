@@ -105,6 +105,8 @@ pub async fn build_full_network_v2(
         }
     }
 
+    // Point-to-point squashing will happen after we know which APs have clients
+
     // Client mapping
     let client_mappings = uisp_data.map_clients_to_aps();
 
@@ -154,6 +156,11 @@ pub async fn build_full_network_v2(
     );
     for ap_ref in to_remove.iter() {
         graph.remove_node(*ap_ref);
+    }
+
+    // Now look for point-to-point squash candidates (after client mapping)
+    if config.uisp_integration.enable_squashing.unwrap_or(false) {
+        find_point_to_point_squash_candidates(&mut graph, &aps_with_clients, &config);
     }
 
     // Visualizer
@@ -634,4 +641,390 @@ fn min_capacity_along_route(
         .map(|edge| graph[*edge].capacity_mbps())
         .min()
         .unwrap_or(0)
+}
+
+#[derive(Debug)]
+struct SquashCandidate {
+    endpoint_a: NodeIndex,
+    endpoint_a_name: String,
+    relay_a: NodeIndex,
+    relay_a_name: String,
+    relay_b: NodeIndex,
+    relay_b_name: String,
+    endpoint_b: NodeIndex,
+    endpoint_b_name: String,
+}
+
+fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients: &HashSet<String>, config: &Arc<Config>) {
+    let mut candidates = Vec::new();
+    
+    // Find all nodes with exactly total degree 4 in bidirectional graph (2 unique neighbors)
+    // This accounts for bidirectional edges: A->B and B->A both exist
+    let relay_nodes: Vec<NodeIndex> = graph
+        .node_indices()
+        .filter(|&node| {
+            let incoming = graph.neighbors_directed(node, petgraph::Incoming).count();
+            let outgoing = graph.neighbors_directed(node, petgraph::Outgoing).count();
+            let total_degree = incoming + outgoing;
+            
+            // In bidirectional graph, relay nodes have degree 4 (2 in, 2 out)
+            // but only 2 unique neighbors
+            if total_degree == 4 {
+                let mut unique_neighbors = std::collections::HashSet::new();
+                for neighbor in graph.neighbors_directed(node, petgraph::Incoming) {
+                    unique_neighbors.insert(neighbor);
+                }
+                for neighbor in graph.neighbors_directed(node, petgraph::Outgoing) {
+                    unique_neighbors.insert(neighbor);
+                }
+                unique_neighbors.len() == 2
+            } else {
+                false
+            }
+        })
+        .collect();
+    
+    // For each potential relay node, check if it's part of a 2-relay chain
+    for &relay_node in &relay_nodes {
+        // Skip if this relay node is an AP with clients
+        if let GraphMapping::AccessPoint { id, .. } = &graph[relay_node] {
+            if aps_with_clients.contains(id) {
+                continue;
+            }
+        }
+        // Get the unique neighbors for this relay node
+        let mut unique_neighbors = std::collections::HashSet::new();
+        for neighbor in graph.neighbors_directed(relay_node, petgraph::Incoming) {
+            unique_neighbors.insert(neighbor);
+        }
+        for neighbor in graph.neighbors_directed(relay_node, petgraph::Outgoing) {
+            unique_neighbors.insert(neighbor);
+        }
+        
+        if unique_neighbors.len() != 2 {
+            continue;
+        }
+        
+        let neighbors: Vec<NodeIndex> = unique_neighbors.into_iter().collect();
+        let node_a = neighbors[0];
+        let node_b = neighbors[1];
+        
+        // Check if each neighbor is a relay or endpoint in bidirectional context
+        let is_node_a_relay = {
+            let mut a_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
+                a_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Outgoing) {
+                a_neighbors.insert(neighbor);
+            }
+            let a_incoming = graph.neighbors_directed(node_a, petgraph::Incoming).count();
+            let a_outgoing = graph.neighbors_directed(node_a, petgraph::Outgoing).count();
+            (a_incoming + a_outgoing) == 4 && a_neighbors.len() == 2
+        };
+        
+        let is_node_b_relay = {
+            let mut b_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
+                b_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Outgoing) {
+                b_neighbors.insert(neighbor);
+            }
+            let b_incoming = graph.neighbors_directed(node_b, petgraph::Incoming).count();
+            let b_outgoing = graph.neighbors_directed(node_b, petgraph::Outgoing).count();
+            (b_incoming + b_outgoing) == 4 && b_neighbors.len() == 2
+        };
+        
+        // We want exactly one of the neighbors to be a relay and one to be an endpoint
+        // Case 1: node_a is endpoint, node_b is relay
+        if !is_node_a_relay && is_node_b_relay {
+            // First check that node_a is a meaningful endpoint
+            let mut node_a_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
+                node_a_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Outgoing) {
+                node_a_neighbors.insert(neighbor);
+            }
+            let is_node_a_meaningful = node_a_neighbors.len() >= 3 && !matches!(graph[node_a], GraphMapping::AccessPoint { .. });
+            
+            if !is_node_a_meaningful {
+                continue;
+            }
+            
+            // Also verify that node_b is a pure relay (exactly 2 unique neighbors, no more)
+            let mut node_b_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
+                node_b_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Outgoing) {
+                node_b_neighbors.insert(neighbor);
+            }
+            if node_b_neighbors.len() != 2 {
+                continue;
+            }
+            
+            // Check if node_b (relay) is an AP with clients - if so, skip
+            if let GraphMapping::AccessPoint { id, .. } = &graph[node_b] {
+                if aps_with_clients.contains(id) {
+                    continue;
+                }
+            }
+            
+            // Find the other neighbor of node_b (the endpoint on the far side)
+            let mut b_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
+                b_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Outgoing) {
+                b_neighbors.insert(neighbor);
+            }
+            b_neighbors.remove(&relay_node); // Remove the current relay node
+            
+            if b_neighbors.len() == 1 {
+                let endpoint_b = *b_neighbors.iter().next().unwrap();
+                // Verify endpoint_b is not a relay
+                let mut endpoint_b_neighbors = std::collections::HashSet::new();
+                for neighbor in graph.neighbors_directed(endpoint_b, petgraph::Incoming) {
+                    endpoint_b_neighbors.insert(neighbor);
+                }
+                for neighbor in graph.neighbors_directed(endpoint_b, petgraph::Outgoing) {
+                    endpoint_b_neighbors.insert(neighbor);
+                }
+                let endpoint_b_degree = graph.neighbors_directed(endpoint_b, petgraph::Incoming).count() + 
+                                       graph.neighbors_directed(endpoint_b, petgraph::Outgoing).count();
+                
+                // Endpoint must not be a relay AND must have sufficient connections to be meaningful
+                // Also prefer Sites over AccessPoints as endpoints
+                let is_meaningful_endpoint = !(endpoint_b_degree == 4 && endpoint_b_neighbors.len() == 2) && 
+                                           endpoint_b_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
+                                           !matches!(graph[endpoint_b], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                if is_meaningful_endpoint {
+                    // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
+                    let do_not_squash = &config.uisp_integration.do_not_squash_sites.clone().unwrap_or_default();
+                    let node_names = [
+                        &graph[node_a].name(),
+                        &graph[relay_node].name(), 
+                        &graph[node_b].name(),
+                        &graph[endpoint_b].name()
+                    ];
+                    
+                    if node_names.iter().any(|name| do_not_squash.contains(*name)) {
+                        continue;
+                    }
+                    
+                    candidates.push(SquashCandidate {
+                        endpoint_a: node_a,
+                        endpoint_a_name: graph[node_a].name(),
+                        relay_a: relay_node,
+                        relay_a_name: graph[relay_node].name(),
+                        relay_b: node_b,
+                        relay_b_name: graph[node_b].name(),
+                        endpoint_b,
+                        endpoint_b_name: graph[endpoint_b].name(),
+                    });
+                }
+            }
+        }
+        
+        // Case 2: node_a is relay, node_b is endpoint  
+        if is_node_a_relay && !is_node_b_relay {
+            // First check that node_b is a meaningful endpoint
+            let mut node_b_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
+                node_b_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_b, petgraph::Outgoing) {
+                node_b_neighbors.insert(neighbor);
+            }
+            let is_node_b_meaningful = node_b_neighbors.len() >= 3 && !matches!(graph[node_b], GraphMapping::AccessPoint { .. });
+            
+            if !is_node_b_meaningful {
+                continue;
+            }
+            
+            // Also verify that node_a is a pure relay (exactly 2 unique neighbors, no more)
+            let mut node_a_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
+                node_a_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Outgoing) {
+                node_a_neighbors.insert(neighbor);
+            }
+            if node_a_neighbors.len() != 2 {
+                continue;
+            }
+            
+            // Check if node_a (relay) is an AP with clients - if so, skip
+            if let GraphMapping::AccessPoint { id, .. } = &graph[node_a] {
+                if aps_with_clients.contains(id) {
+                    continue;
+                }
+            }
+            
+            // Find the other neighbor of node_a (the endpoint on the far side)
+            let mut a_neighbors = std::collections::HashSet::new();
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
+                a_neighbors.insert(neighbor);
+            }
+            for neighbor in graph.neighbors_directed(node_a, petgraph::Outgoing) {
+                a_neighbors.insert(neighbor);
+            }
+            a_neighbors.remove(&relay_node); // Remove the current relay node
+            
+            if a_neighbors.len() == 1 {
+                let endpoint_a = *a_neighbors.iter().next().unwrap();
+                // Verify endpoint_a is not a relay
+                let mut endpoint_a_neighbors = std::collections::HashSet::new();
+                for neighbor in graph.neighbors_directed(endpoint_a, petgraph::Incoming) {
+                    endpoint_a_neighbors.insert(neighbor);
+                }
+                for neighbor in graph.neighbors_directed(endpoint_a, petgraph::Outgoing) {
+                    endpoint_a_neighbors.insert(neighbor);
+                }
+                let endpoint_a_degree = graph.neighbors_directed(endpoint_a, petgraph::Incoming).count() + 
+                                       graph.neighbors_directed(endpoint_a, petgraph::Outgoing).count();
+                
+                // Endpoint must not be a relay AND must have sufficient connections to be meaningful
+                // Also prefer Sites over AccessPoints as endpoints
+                let is_meaningful_endpoint = !(endpoint_a_degree == 4 && endpoint_a_neighbors.len() == 2) && 
+                                           endpoint_a_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
+                                           !matches!(graph[endpoint_a], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                if is_meaningful_endpoint {
+                    // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
+                    let do_not_squash = &config.uisp_integration.do_not_squash_sites.clone().unwrap_or_default();
+                    let node_names = [
+                        &graph[endpoint_a].name(),
+                        &graph[node_a].name(),
+                        &graph[relay_node].name(),
+                        &graph[node_b].name()
+                    ];
+                    
+                    if node_names.iter().any(|name| do_not_squash.contains(*name)) {
+                        continue;
+                    }
+                    
+                    candidates.push(SquashCandidate {
+                        endpoint_a,
+                        endpoint_a_name: graph[endpoint_a].name(),
+                        relay_a: node_a,
+                        relay_a_name: graph[node_a].name(),
+                        relay_b: relay_node,
+                        relay_b_name: graph[relay_node].name(),
+                        endpoint_b: node_b,
+                        endpoint_b_name: graph[node_b].name(),
+                    });
+                }
+            }
+        }
+    }
+    
+    // Remove duplicates (same chain detected from both relay nodes)
+    candidates.dedup_by(|a, b| {
+        (a.endpoint_a == b.endpoint_a && a.endpoint_b == b.endpoint_b) ||
+        (a.endpoint_a == b.endpoint_b && a.endpoint_b == b.endpoint_a)
+    });
+    
+    info!("Found {} point-to-point squash candidates:", candidates.len());
+    for candidate in &candidates {
+        info!("  {} -> {} -> {} -> {}", 
+                candidate.endpoint_a_name,
+                candidate.relay_a_name, 
+                candidate.relay_b_name,
+                candidate.endpoint_b_name);
+    }
+    
+    // Perform the actual squashing
+    perform_squashing(graph, &candidates);
+}
+
+fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
+    let mut nodes_to_remove = std::collections::HashSet::new();
+    
+    info!("Performing squashing on {} candidates...", candidates.len());
+    
+    for candidate in candidates {
+        info!("Squashing: {} -> {} -> {} -> {}", 
+                candidate.endpoint_a_name,
+                candidate.relay_a_name,
+                candidate.relay_b_name,
+                candidate.endpoint_b_name);
+        
+        // Calculate the minimum capacity along the original chain in both directions
+        let chain_nodes = [candidate.endpoint_a, candidate.relay_a, candidate.relay_b, candidate.endpoint_b];
+        let (forward_capacity, reverse_capacity) = calculate_chain_capacity(graph, &chain_nodes);
+        
+        // Check if endpoints still exist (previous squashing might have removed them)
+        if !graph.node_weight(candidate.endpoint_a).is_some() || !graph.node_weight(candidate.endpoint_b).is_some() {
+            info!("  Skipping - endpoints no longer exist");
+            continue;
+        }
+        
+        // Check if there's already a direct edge between endpoints
+        if graph.find_edge(candidate.endpoint_a, candidate.endpoint_b).is_some() {
+            info!("  Skipping - direct edge already exists");
+            continue;
+        }
+        
+        // Create direct bidirectional edges between endpoints with proper capacities
+        graph.add_edge(
+            candidate.endpoint_a,
+            candidate.endpoint_b,
+            LinkMapping::ethernet(forward_capacity)
+        );
+        graph.add_edge(
+            candidate.endpoint_b,
+            candidate.endpoint_a,
+            LinkMapping::ethernet(reverse_capacity)
+        );
+        
+        // Mark relay nodes for removal
+        nodes_to_remove.insert(candidate.relay_a);
+        nodes_to_remove.insert(candidate.relay_b);
+        
+        info!("  Created direct link with {}/{}Mbps capacity (forward/reverse)", forward_capacity, reverse_capacity);
+    }
+    
+    // Remove all relay nodes that are no longer needed
+    let removed_count = nodes_to_remove.len();
+    for node_to_remove in nodes_to_remove {
+        if graph.node_weight(node_to_remove).is_some() {
+            let node_name = graph[node_to_remove].name();
+            graph.remove_node(node_to_remove);
+            info!("Removed relay node: {}", node_name);
+        }
+    }
+    
+    info!("Squashing complete: removed {} relay nodes, created {} direct links", 
+             removed_count, candidates.len());
+}
+
+fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u64, u64) {
+    let mut min_forward_capacity = u64::MAX;
+    let mut min_reverse_capacity = u64::MAX;
+    
+    // Check capacity of each edge in both directions along the chain
+    for window in chain_nodes.windows(2) {
+        let from_node = window[0];
+        let to_node = window[1];
+        
+        // Forward direction
+        if let Some(edge_idx) = graph.find_edge(from_node, to_node) {
+            let edge_capacity = graph[edge_idx].capacity_mbps();
+            min_forward_capacity = min_forward_capacity.min(edge_capacity);
+        }
+        
+        // Reverse direction
+        if let Some(edge_idx) = graph.find_edge(to_node, from_node) {
+            let edge_capacity = graph[edge_idx].capacity_mbps();
+            min_reverse_capacity = min_reverse_capacity.min(edge_capacity);
+        }
+    }
+    
+    // Default to 100Mbps if we couldn't determine capacity
+    let forward_capacity = if min_forward_capacity == u64::MAX { 100 } else { min_forward_capacity };
+    let reverse_capacity = if min_reverse_capacity == u64::MAX { 100 } else { min_reverse_capacity };
+    
+    (forward_capacity, reverse_capacity)
 }
