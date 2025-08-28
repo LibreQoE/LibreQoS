@@ -68,7 +68,7 @@ export class TreeCapacityDash extends DashletBaseInsight {
 
                 let linkCol = document.createElement("td");
                 let link = document.createElement("a");
-                link.href = "/node.html?id=" + node.id;
+                link.href = "/tree.html?id=" + node.id;
                 link.innerText = node.name;
                 link.classList.add("tiny", "redactable");
                 linkCol.appendChild(link);
