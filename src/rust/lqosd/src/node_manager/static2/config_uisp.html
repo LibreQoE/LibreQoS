@@ -104,6 +104,18 @@
                 <div class="form-text">Comma-separated list of CPE exceptions in "cpe:parent" format</div>
             </div>
 
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispEnableSquashing">
+                <label class="form-check-label" for="uispEnableSquashing">Enable Squashing</label>
+                <div class="form-text">Enable site squashing functionality</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
+                <input type="text" class="form-control" id="uispDoNotSquashSites">
+                <div class="form-text">Comma-separated list of site IDs that should not be squashed</div>
+            </div>
+
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </form>
     </div>

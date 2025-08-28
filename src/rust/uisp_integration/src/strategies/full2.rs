@@ -162,7 +162,6 @@ pub async fn build_full_network_v2(
     if config.uisp_integration.enable_squashing.unwrap_or(false) {
         find_point_to_point_squash_candidates(&mut graph, &aps_with_clients, &config);
     }
-    panic!();
 
     // Visualizer
     save_dot_file(&graph)?;
