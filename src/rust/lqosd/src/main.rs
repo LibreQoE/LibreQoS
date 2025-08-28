@@ -235,7 +235,10 @@ fn main() -> Result<()> {
                 .unwrap()
                 .block_on(async {
                     tokio::spawn(async move {
-                        let _ = lqos_stormguard::start_stormguard(bakery_sender_for_async).await;
+                        match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                            Ok(_) => info!("StormGuard started successfully"),
+                            Err(e) => error!("StormGuard failed to start: {:#}", e),
+                        }
                     });
 
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
