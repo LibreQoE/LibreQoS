@@ -179,31 +179,6 @@ impl UispDevice {
             }
         }
 
-        // Also process ipAddressList if available (for blackbox devices with multiple IPs)
-        // These never include CIDR naturally, always treat as /32
-        if let Some(ip_list) = &device.ipAddressList {
-            for address in ip_list.iter() {
-                if address.contains(':') {
-                    // It's IPv6
-                    ipv6.insert(address.clone());
-                } else {
-                    // It's IPv4 - always add as /32
-                    let base_ip = if address.contains('/') {
-                        address.split('/').next().unwrap_or(address)
-                    } else {
-                        address.as_str()
-                    };
-                    ipv4.insert(format!("{}/32", base_ip));
-
-                    // Check for a Mikrotik Mapping
-                    if let Some(mapping) =
-                        ipv4_to_v6.iter().find(|m| m.ipv4 == base_ip)
-                    {
-                        ipv6.insert(mapping.ipv6.clone());
-                    }
-                }
-            }
-        }
 
         // Remove IP addresses that are disallowed
         ipv4.retain(|ip| {

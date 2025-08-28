@@ -7,7 +7,6 @@ use std::collections::HashSet;
 pub struct Device {
     pub identification: DeviceIdentification,
     pub ipAddress: Option<String>,
-    pub ipAddressList: Option<Vec<String>>,
     pub attributes: Option<DeviceAttributes>,
     pub mode: Option<String>,
     pub interfaces: Option<Vec<DeviceInterface>>,
@@ -84,11 +83,6 @@ impl Device {
         let mut result = HashSet::new();
         if let Some(ip) = &self.ipAddress {
             result.insert(Device::strip_ip(ip));
-        }
-        if let Some(ip_list) = &self.ipAddressList {
-            for ip in ip_list {
-                result.insert(Device::strip_ip(ip));
-            }
         }
         if let Some(interfaces) = &self.interfaces {
             for interface in interfaces {
