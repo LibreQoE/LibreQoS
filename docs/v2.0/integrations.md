@@ -12,7 +12,18 @@
 
 ## Splynx Integration
 
-First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
+> **Note for existing users:** If you're upgrading from a version before v1.5-RC-2 and experience unexpected topology changes, add `strategy = "full"` to maintain previous behavior. The new default `ap_only` provides better CPU distribution for large networks.
+
+First, set the relevant parameters for Splynx in `/etc/lqos.conf`:
+
+```
+[spylnx_integration]
+enable_spylnx = true
+strategy = "ap_only"  # Topology strategy (flat, ap_only, ap_site, full)
+api_key = "your_api_key"
+api_secret = "your_api_secret"
+url = "https://your-splynx-instance.com"
+```
 
 ### Splynx API Access
 
@@ -58,6 +69,34 @@ Then, run `sudo systemctl restart lqosd`.
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_spylnx = true``` in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
 
+### Splynx Topology Strategies
+
+LibreQoS supports multiple topology strategies to optimize CPU load distribution for large networks. Configure the strategy in `/etc/lqos.conf` under `[spylnx_integration]`:
+
+```
+[spylnx_integration]
+enable_spylnx = true
+strategy = "ap_only"  # Default strategy
+```
+
+Available strategies:
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `flat` | Only shapes subscribers, ignoring all parent node relationships | Maximum CPU distribution, minimal hierarchy |
+| `ap_only` | Single layer of AP + Clients (default) | Large networks needing wide CPU spread |
+| `ap_site` | Site → AP → Clients structure | Large networks with better organization |
+| `full` | Complete topology: Sites → Backhauls → APs → Clients | Detailed topology, smaller networks |
+
+**⚠️ Breaking Change Notice:** Prior to v1.5-RC-2, the default behavior was equivalent to `full`. If upgrading and you want to maintain the previous behavior, add `strategy = "full"` to your configuration.
+
+#### Choosing the Right Strategy
+
+- **`flat`**: Best for networks experiencing severe CPU congestion. Spreads load maximally but loses all hierarchy information.
+- **`ap_only`** (default): Recommended for most large networks. Provides good CPU distribution while maintaining AP associations.
+- **`ap_site`**: Good balance between organization and performance. Sites remain top-level parents.
+- **`full`**: Use for smaller networks or when complete topology visualization is required.
+
 ### Splynx Overrides
 
 You can also modify the the file `integrationSplynxBandwidths.csv` to override the default bandwidths for each Node (Site, AP).
@@ -67,6 +106,31 @@ A template is available in the `/opt/libreqos/src` folder. To utilize the templa
 sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
+
+### Performance Considerations
+
+For networks with thousands of subscribers experiencing CPU congestion:
+
+1. **Monitor CPU core usage** - Check if top-level nodes are causing CPU bottlenecks using `htop` or `lqtop`
+2. **Switch strategies** - Move from `full` to `ap_only` or `flat` for better distribution
+3. **Test incrementally** - Try `ap_site` first, then `ap_only` if needed
+4. **Verify shaping** - Ensure bandwidth limits are still applied correctly after strategy changes
+
+To change strategies:
+```bash
+sudo nano /etc/lqos.conf
+# Edit strategy = "desired_strategy" under [spylnx_integration]
+sudo systemctl restart lqos_scheduler
+```
+
+Monitor the change impact:
+```bash
+# Check CPU distribution
+lqtop
+
+# Verify customer shaping is working
+python3 /opt/libreqos/src/integrationSplynx.py
+```
 
 ## UISP Integration
 

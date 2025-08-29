@@ -12,7 +12,18 @@
 
 ## Integración con Splynx
 
-Primero, configure los parámetros relevantes de Splynx (splynx_api_key, splynx_api_secret, etc.) en `/etc/lqos.conf`.
+> **Nota para usuarios existentes:** Si está actualizando desde una versión anterior a v1.5-RC-2 y experimenta cambios inesperados en la topología, agregue `strategy = "full"` para mantener el comportamiento anterior. El nuevo valor predeterminado `ap_only` proporciona mejor distribución de CPU para redes grandes.
+
+Primero, configure los parámetros relevantes de Splynx en `/etc/lqos.conf`:
+
+```
+[spylnx_integration]
+enable_spylnx = true
+strategy = "ap_only"  # Estrategia de topología (flat, ap_only, ap_site, full)
+api_key = "su_api_key"
+api_secret = "su_api_secret"
+url = "https://su-instancia-splynx.com"
+```
 
 ### Acceso API de Splynx
 
@@ -57,6 +68,34 @@ Luego ejecute `sudo systemctl restart lqosd`.
 Tiene la opción de ejecutar integrationSplynx.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_spylnx = true``` en `/etc/lqos.conf`.
 Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
+### Estrategias de Topología de Splynx
+
+LibreQoS admite múltiples estrategias de topología para optimizar la distribución de carga de CPU en redes grandes. Configure la estrategia en `/etc/lqos.conf` bajo `[spylnx_integration]`:
+
+```
+[spylnx_integration]
+enable_spylnx = true
+strategy = "ap_only"  # Estrategia predeterminada
+```
+
+Estrategias disponibles:
+
+| Estrategia | Descripción | Caso de Uso |
+|-----------|-------------|-------------|
+| `flat` | Solo regula suscriptores, ignorando todas las relaciones de nodos padre | Distribución máxima de CPU, jerarquía mínima |
+| `ap_only` | Capa única de AP + Clientes (predeterminado) | Redes grandes que necesitan amplia distribución de CPU |
+| `ap_site` | Estructura Sitio → AP → Clientes | Redes grandes con mejor organización |
+| `full` | Topología completa: Sitios → Enlaces → APs → Clientes | Topología detallada, redes más pequeñas |
+
+**⚠️ Aviso de Cambio Importante:** Antes de v1.5-RC-2, el comportamiento predeterminado era equivalente a `full`. Si está actualizando y desea mantener el comportamiento anterior, agregue `strategy = "full"` a su configuración.
+
+#### Eligiendo la Estrategia Correcta
+
+- **`flat`**: Mejor para redes que experimentan severa congestión de CPU. Distribuye la carga al máximo pero pierde toda la información de jerarquía.
+- **`ap_only`** (predeterminado): Recomendado para la mayoría de redes grandes. Proporciona buena distribución de CPU manteniendo las asociaciones de AP.
+- **`ap_site`**: Buen equilibrio entre organización y rendimiento. Los sitios permanecen como padres de nivel superior.
+- **`full`**: Use para redes más pequeñas o cuando se requiera visualización completa de topología.
+
 ### Sobrescrituras de Splynx
 
 También puede modificar el archivo `integrationSplynxBandwidths.csv` para sobrescribir los anchos de banda predeterminados de cada Nodo (Sitio, AP).
@@ -66,6 +105,31 @@ Hay una plantilla disponible en la carpeta `/opt/libreqos/src`. Para usarla, cop
 sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
 ```
 Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+
+### Consideraciones de Rendimiento
+
+Para redes con miles de suscriptores que experimentan congestión de CPU:
+
+1. **Monitorear uso de núcleos de CPU** - Verifique si los nodos de nivel superior están causando cuellos de botella de CPU usando `htop` o `lqtop`
+2. **Cambiar estrategias** - Cambie de `full` a `ap_only` o `flat` para mejor distribución
+3. **Probar incrementalmente** - Pruebe `ap_site` primero, luego `ap_only` si es necesario
+4. **Verificar regulación** - Asegúrese de que los límites de ancho de banda se apliquen correctamente después de cambios de estrategia
+
+Para cambiar estrategias:
+```bash
+sudo nano /etc/lqos.conf
+# Edite strategy = "estrategia_deseada" bajo [spylnx_integration]
+sudo systemctl restart lqos_scheduler
+```
+
+Monitorear el impacto del cambio:
+```bash
+# Verificar distribución de CPU
+lqtop
+
+# Verificar que la regulación de clientes funciona
+python3 /opt/libreqos/src/integrationSplynx.py
+```
 
 ## Integración con UISP
 
