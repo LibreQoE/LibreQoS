@@ -126,4 +126,4 @@ Navegue a la interfaz Web de LibreQoS (http://a.b.c.d:9123) y seleccione Configu
 
 Nota sobre SLAs: Para clientes con contratos SLA, donde garantizan un ancho de banda mínimo, puede configurar el plan contratado como el ancho de banda mínimo. De esta manera, cuando un AP se acerque a su límite, los clientes con SLA siempre tendrán esa velocidad disponible. Asegúrese de que la suma de los anchos de banda mínimos de los circuitos conectados a un nodo padre no supere la capacidad total de ese nodo padre. Si esto ocurre, LibreQoS tiene un mecanismo de seguridad que [reduce los mínimos a 1/1](https://github.com/LibreQoE/LibreQoS/pull/643) para todos los circuitos afectados. 
 
-Una vez que su configuración esté completa, estará listo para ejecutar la aplicación e iniciar los servicios systemd.
+Una vez que su configuración esté completa, estará listo para ejecutar la aplicación e iniciar los [servicios systemd](./components-es.md#servicios-de-systemd)
