@@ -126,4 +126,4 @@ Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > 
 
 Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, you can set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always see that rate available. Make sure that the combined minimum rates for circuits connected to a parent node do not exceed the rate of the parent node. If that happens, LibreQoS has a fail-safe that will [reduce the minimums to 1/1](https://github.com/LibreQoE/LibreQoS/pull/643) for all affected circuits. 
 
-Once your configuration is complete. You're ready to run the application and start the [systemd services](./services-and-run.md)
+Once your configuration is complete. You're ready to run the application and start the [systemd services](./components.md#systemd-services)
