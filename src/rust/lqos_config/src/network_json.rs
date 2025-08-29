@@ -86,6 +86,7 @@ impl NetworkJson {
             immediate_parent: None,
             rtts: HashSet::new(),
             node_type: None,
+            is_virtual: false,
         }];
         if !Self::exists() {
             return Err(NetworkJsonError::FileNotFound);
@@ -279,6 +280,7 @@ fn recurse_node(
         immediate_parent: Some(immediate_parent),
         rtts: HashSet::new(),
         node_type: json.get("type").map(|v| v.as_str().unwrap().to_string()),
+        is_virtual: json.get("virtual").and_then(|v| v.as_bool()).unwrap_or(false),
     };
 
     if node.name != "children" {

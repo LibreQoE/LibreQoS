@@ -50,6 +50,9 @@ pub struct NetworkJsonNode {
 
     /// The node type
     pub node_type: Option<String>,
+
+    /// Whether this node is virtual (for statistics only, not physical HTB)
+    pub is_virtual: bool,
 }
 
 impl NetworkJsonNode {

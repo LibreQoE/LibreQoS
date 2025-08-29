@@ -212,18 +212,42 @@ def validateNetworkAndDevices():
 			if data != {}:
 				#Traverse
 				observedNodes = {} # Will not be used later
-				def traverseToVerifyValidity(data):
+				virtualNodes = [] # Track virtual nodes for summary
+				virtualNodePath = [] # Track current path for cycle detection
+				
+				def traverseToVerifyValidity(data, path=[]):
+					nonlocal networkValidatedOrNot
 					for elem in data:
 						if isinstance(elem, str):
 							if (isinstance(data[elem], dict)) and (elem != 'children'):
+								# Check for virtual cycle detection
+								if elem in path:
+									warnings.warn(f"Virtual cycle detected: node '{elem}' appears in its own ancestry path {' -> '.join(path + [elem])}", stacklevel=2)
+									networkValidatedOrNot = False
+									continue
+									
 								if elem not in observedNodes:
-									observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps'], 'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+									observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['downloadBandwidthMbps'], 'uploadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+									
+									# Check if this is a virtual node
+									is_virtual = data[elem].get('virtual', False)
+									if is_virtual:
+										virtualNodes.append(elem)
+										# Warn about bandwidth settings being ignored
+										if any(key in data[elem] for key in ['downloadBandwidthMbps', 'uploadBandwidthMbps', 'downloadMin', 'uploadMin']):
+											warnings.warn(f"Virtual node '{elem}' has bandwidth settings that will be ignored for traffic shaping", stacklevel=2)
+									
 									if 'children' in data[elem]:
-										traverseToVerifyValidity(data[elem]['children'])
+										traverseToVerifyValidity(data[elem]['children'], path + [elem])
 								else:
 									warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
 									networkValidatedOrNot = False
+				
 				traverseToVerifyValidity(data)
+				
+				# Log virtual nodes summary
+				if virtualNodes:
+					print(f"Virtual nodes detected: {', '.join(virtualNodes)} (bandwidth settings ignored for shaping)")
 				if len(observedNodes) < 1:
 					warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
 					networkValidatedOrNot = False
@@ -268,6 +292,12 @@ def validateNetworkAndDevices():
 		seenTheseIPsAlready = []
 		for row in commentsRemoved:
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
+			
+			# Validate that ParentNode is not a virtual node
+			if ParentNode in virtualNodes:
+				warnings.warn(f"Circuit '{circuitName}' at row {rowNum} has ParentNode '{ParentNode}' which is a virtual node. Circuits must reference physical nodes only.", stacklevel=2)
+				devicesValidatedOrNot = False
+			
 			# Must have circuitID, it's a unique identifier required for stateful changes to queue structure
 			if circuitID == '':
 				warnings.warn("No Circuit ID provided in ShapedDevices.csv at row " + str(rowNum), stacklevel=2)
@@ -567,6 +597,46 @@ def refreshShapers():
 		with open(networkJSONfile, 'r') as j:
 			network = json.loads(j.read())
 		
+		# Create virtual-free network structure for HTB/TC processing
+		def hoist_virtual_nodes(network_data):
+			"""Returns a deep-copied, virtual-free view of the network for HTB/TC processing.
+			Virtual nodes are flattened - their children are hoisted to the virtual node's level.
+			Original network remains unchanged for statistics aggregation."""
+			import copy
+			virtual_diagnostics = {}  # Track virtual nodes for optional diagnostics
+			
+			def collect_virtual_metadata(node_name, node_data):
+				"""Collect metadata about virtual nodes for diagnostics"""
+				children_names = list(node_data.get('children', {}).keys()) if 'children' in node_data else []
+				virtual_diagnostics[node_name] = {
+					'downloadBandwidthMbps': node_data.get('downloadBandwidthMbps', 0),
+					'uploadBandwidthMbps': node_data.get('uploadBandwidthMbps', 0),
+					'type': node_data.get('type', 'unknown'),
+					'physical_children': children_names,
+					'flattened_to_level': 'top-level'  # Could be enhanced to track actual level
+				}
+			
+			def hoist_recursive(data):
+				result = {}
+				for node_name, node_data in data.items():
+					if node_data.get('virtual', False):
+						# Virtual node: collect diagnostics and hoist its children to this level
+						print(f"Hoisting children of virtual node: {node_name}")
+						collect_virtual_metadata(node_name, node_data)
+						if 'children' in node_data and node_data['children']:
+							# Recursively process children and add them at this level
+							hoisted_children = hoist_recursive(node_data['children'])
+							result.update(hoisted_children)
+						# Skip the virtual node itself
+					else:
+						# Physical node: keep it and process its children normally
+						result[node_name] = copy.deepcopy(node_data)
+						if 'children' in node_data and node_data['children']:
+							result[node_name]['children'] = hoist_recursive(node_data['children'])
+				return result
+			
+			physical_result = hoist_recursive(network_data)
+			return physical_result, virtual_diagnostics
 		
 		# Pull rx/tx queues / CPU cores available
 		# Handling the case when the number of queues for interfaces are different
@@ -674,18 +744,28 @@ def refreshShapers():
 			for node in data:
 				if isinstance(node, str):
 					if (isinstance(data[node], dict)) and (node != 'children'):
-						# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
-						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
-						data[node]['downloadBandwidthMbpsMin'] = min(int(data[node]['downloadBandwidthMbpsMin']),int(data[node]['downloadBandwidthMbps']),int(parentMinDL))
-						data[node]['uploadBandwidthMbpsMin'] = min(int(data[node]['uploadBandwidthMbpsMin']),int(data[node]['uploadBandwidthMbps']),int(parentMinUL))
-						# Recursive call this function for children nodes attached to this node
-						if 'children' in data[node]:
-							# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
-							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
+						is_virtual = data[node].get('virtual', False)
+						if is_virtual:
+							# Virtual nodes: don't cap their bandwidth settings, pass parent caps unchanged to children
+							if 'children' in data[node]:
+								inheritBandwidthMaxes(data[node]['children'], parentMaxDL, parentMaxUL, parentMinDL, parentMinUL)
+						else:
+							# Physical nodes: cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
+							data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
+							data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
+							data[node]['downloadBandwidthMbpsMin'] = min(int(data[node]['downloadBandwidthMbpsMin']),int(data[node]['downloadBandwidthMbps']),int(parentMinDL))
+							data[node]['uploadBandwidthMbpsMin'] = min(int(data[node]['uploadBandwidthMbpsMin']),int(data[node]['uploadBandwidthMbps']),int(parentMinUL))
+							# Recursive call this function for children nodes attached to this node
+							if 'children' in data[node]:
+								# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
+								inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
 			#return data
 		# Here is the actual call to the recursive function
 		inheritBandwidthMaxes(network, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
+		
+		# Create flattened network for CPU distribution and HTB/TC processing
+		# This must happen AFTER bandwidth processing but BEFORE binpacking
+		physical_network, virtual_node_diagnostics = hoist_virtual_nodes(network)
 
 		# Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
 		def flattenB(data):
@@ -717,7 +797,35 @@ def refreshShapers():
 								else:
 									newDict[node]['children'] = flattened
 			return newDict
-		network = flattenA(network, 1)
+		physical_network = flattenA(physical_network, 1)
+		
+		# Validate top-level nodes vs CPU queues and minor capacity
+		top_level_physical_nodes = len(physical_network)
+		print(f"Physical top-level nodes after flattening: {top_level_physical_nodes}")
+		
+		if use_bin_packing_to_balance_cpu() and not is_network_flat():
+			if top_level_physical_nodes > queuesAvailable * 3:  # Warn if significantly more nodes than queues
+				print(f"WARNING: {top_level_physical_nodes} top-level nodes with only {queuesAvailable} CPU queues. Binpacking will distribute nodes across available queues.")
+		else:
+			if top_level_physical_nodes > queuesAvailable:
+				print(f"INFO: {top_level_physical_nodes} top-level nodes will be distributed across {queuesAvailable} CPU queues using stable assignment.")
+		
+		# Estimate HTB minor usage per CPU for safety check
+		estimated_circuits = len(subscriberCircuits)
+		estimated_nodes_per_cpu = max(1, top_level_physical_nodes // queuesAvailable)
+		estimated_circuits_per_cpu = max(1, estimated_circuits // queuesAvailable)
+		estimated_minors_per_cpu = estimated_nodes_per_cpu + estimated_circuits_per_cpu + 100  # Add padding
+		
+		minor_capacity_threshold = 60000  # Safe threshold below u16 limit (65535)
+		if estimated_minors_per_cpu > minor_capacity_threshold:
+			print(f"ERROR: Estimated {estimated_minors_per_cpu} HTB minors per CPU exceeds safe threshold of {minor_capacity_threshold}")
+			print("Mitigation options:")
+			print("  1. Enable binpacking to distribute load more evenly")
+			print("  2. Reduce the scope of virtual node flattening")
+			print("  3. Use fewer top-level virtual nodes")
+			exit(1)
+		else:
+			print(f"HTB minor capacity check: {estimated_minors_per_cpu} per CPU (threshold: {minor_capacity_threshold}) ✓")
 		
 		# Group circuits by parent node. Reduces runtime for section below this one.
 		circuits_by_parent_node = {}
@@ -757,20 +865,14 @@ def refreshShapers():
 			# - This creates gaps that allow adding new circuits without affecting other ClassIDs
 			# - Children are also sorted before recursive processing to ensure deterministic traversal
 			for node in sorted(data.keys()):
-				#if data[node]['type'] == "virtual":
-				#	print(node + " is a virtual node. Skipping.")
-				#	if depth == 0:
-				#		parentClassID = hex(major) + ':'
-				#		upParentClassID = hex(major+stickOffset) + ':'
-				#	data[node]['parentClassID'] = parentClassID
-				#	data[node]['up_parentClassID'] = upParentClassID
-				#	data[node]['classMajor'] = hex(major)
-				#	data[node]['up_classMajor'] = hex(major + stickOffset)
-				#	data[node]['classMinor'] = hex(minorByCPU[queue])
-				#	data[node]['cpuNum'] = hex(queue-1)
-				#	data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
-				#	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
-				#	continue
+				# Assign queue/major for top-level nodes using stable hash when binpacking disabled
+				if depth == 0 and not use_bin_packing_to_balance_cpu():
+					import hashlib
+					node_hash = int(hashlib.md5(node.encode()).hexdigest()[:8], 16)
+					stable_queue = (node_hash % queuesAvailable) + 1
+					queue = stable_queue
+					major = queue
+				
 				circuitsForThisNetworkNode = []
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
 				upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
@@ -888,14 +990,7 @@ def refreshShapers():
 						logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
 						raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
 					minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
-				# If top level node, increment to next queue / cpu core
-				if depth == 0:
-					if queue >= queuesAvailable:
-						queue = 1
-						major = queue
-					else:
-						queue += 1
-						major += 1
+				# Queue assignment for top-level nodes is now handled at the beginning of the loop
 			return minorByCPU
 		
 		# If we're in binpacking mode, we need to sort the network structure a bit
@@ -920,19 +1015,20 @@ def refreshShapers():
 					'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
 					'children': {}
 				}
-			for node in network:
+			for node in physical_network:
 				found = False
 				for bin in range(queuesAvailable):
 					if node in bins[bin]:
-						binnedNetwork["CpueQueue" + str(bin)]['children'][node] = network[node]
+						binnedNetwork["CpueQueue" + str(bin)]['children'][node] = physical_network[node]
 						found = True
 				if found == False:
 					newQueueId = queuesAvailable-1
-					binnedNetwork["CpueQueue" + str(newQueueId)]['children'][node] = network[node]
-			network = binnedNetwork
+					binnedNetwork["CpueQueue" + str(newQueueId)]['children'][node] = physical_network[node]
+			physical_network = binnedNetwork
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
+		# Use physical_network (virtual nodes flattened) for HTB/TC processing
+		minorByCPU = traverseNetwork(physical_network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
 
 		bakery = Bakery()
 		bakery.start_batch() # Initializes the bakery transaction
@@ -1113,13 +1209,17 @@ def refreshShapers():
 					sorted_children = dict(sorted(data[node]['children'].items()))
 					traverseNetwork(sorted_children)
 		# Here is the actual call to the recursive traverseNetwork() function.
-		traverseNetwork(network)
+		# Use physical_network (virtual nodes flattened) for TC command generation
+		traverseNetwork(physical_network)
 		
 		# Save queuingStructure
 		queuingStructure = {}
-		queuingStructure['Network'] = network
+		queuingStructure['Network'] = physical_network
 		queuingStructure['lastUsedClassIDCounterByCPU'] = minorByCPU
 		queuingStructure['generatedPNs'] = generatedPNs
+		# Optional VirtualNodes diagnostics section
+		if virtual_node_diagnostics:
+			queuingStructure['VirtualNodes'] = virtual_node_diagnostics
 		with open('queuingStructure.json', 'w') as infile:
 			json.dump(queuingStructure, infile, indent=4)
 		

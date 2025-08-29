@@ -196,21 +196,39 @@ pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
     let mut result = Vec::new();
     //println!("Root index is: {}", root_index);
 
-    // Find all network nodes one off the top
-    network
-        .get_nodes_when_ready()
-        .iter()
-        .enumerate()
-        .filter(|(_, n)| n.immediate_parent.is_some() && n.immediate_parent.unwrap() == root_index)
-        .for_each(|(idx, n)| {
-            //println!("Node: {} ", n.name);
-            let weight = recurse_weights(&device_list, &device_weights, &network, idx).unwrap();
-            //println!("Node: {} : {weight}", n.name);
-            result.push(NetworkNodeWeight {
-                name: n.name.clone(),
-                weight,
-            });
+    // Find all physical network nodes one off the top (virtual nodes are transparent)
+    fn collect_physical_top_level_nodes(network: &lqos_config::NetworkJson, parent_index: usize) -> Vec<usize> {
+        let mut physical_nodes = Vec::new();
+        
+        // Get all immediate children of the parent
+        for (idx, node) in network.get_nodes_when_ready().iter().enumerate() {
+            if node.immediate_parent.is_some() && node.immediate_parent.unwrap() == parent_index {
+                if node.is_virtual {
+                    // Virtual node: recursively collect its physical children
+                    let virtual_children = collect_physical_top_level_nodes(network, idx);
+                    physical_nodes.extend(virtual_children);
+                } else {
+                    // Physical node: include it directly
+                    physical_nodes.push(idx);
+                }
+            }
+        }
+        
+        physical_nodes
+    }
+    
+    let physical_top_level = collect_physical_top_level_nodes(&network, root_index);
+    
+    for idx in physical_top_level {
+        let node = &network.get_nodes_when_ready()[idx];
+        //println!("Physical node: {} ", node.name);
+        let weight = recurse_weights(&device_list, &device_weights, &network, idx).unwrap();
+        //println!("Node: {} : {weight}", node.name);
+        result.push(NetworkNodeWeight {
+            name: node.name.clone(),
+            weight,
         });
+    }
 
     result.sort_by(|a, b| b.weight.cmp(&a.weight));
     Ok(result)
