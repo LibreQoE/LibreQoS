@@ -70,6 +70,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
@@ -561,6 +562,15 @@ fn splynx_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
     let url = config.spylnx_integration.url.clone();
     Ok(url)
+}
+
+#[pyfunction]
+fn splynx_strategy() -> PyResult<String> {
+    let config = lqos_config::load_config();
+    match config {
+        Ok(config) => Ok(config.spylnx_integration.strategy.clone()),
+        Err(_) => Ok("ap_only".to_string()), // Default value when config can't be loaded
+    }
 }
 
 #[pyfunction]
