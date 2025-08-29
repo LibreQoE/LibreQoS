@@ -7,7 +7,7 @@ import warnings
 import os
 import csv
 from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, splynx_api_key, \
-	splynx_api_secret, splynx_api_url, overwrite_network_json_always
+	splynx_api_secret, splynx_api_url, splynx_strategy, overwrite_network_json_always
 
 from integrationCommon import isIpv4Permitted
 import base64
@@ -175,6 +175,117 @@ def getNetworkSites(headers):
 	"""
 	return spylnxRequest("admin/networking/network-sites", headers)
 
+def extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s):
+	"""
+	Extract IPv4 and IPv6 addresses from service item, handling duplicates.
+	"""
+	ipv4_list = []
+	ipv6_list = []
+	
+	# Add primary IPv4
+	if serviceItem['ipv4'] != '':
+		if serviceItem['ipv4'] not in allocated_ipv4s:
+			ipv4_list.append(serviceItem['ipv4'])
+			allocated_ipv4s[serviceItem['ipv4']] = True
+		else:
+			print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
+	
+	# Add IPv4 routes (additional IPs/subnets)
+	if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
+		for ipv4_route in serviceItem['ipv4_route'].split(', '):
+			if ipv4_route and ipv4_route.strip():
+				if ipv4_route not in allocated_ipv4s:
+					ipv4_list.append(ipv4_route)
+					allocated_ipv4s[ipv4_route] = True
+				else:
+					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
+	
+	# Add primary IPv6
+	if serviceItem['ipv6'] != '':
+		if serviceItem['ipv6'] not in allocated_ipv6s:
+			ipv6_list.append(serviceItem['ipv6'])
+			allocated_ipv6s[serviceItem['ipv6']] = True
+		else:
+			print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
+	
+	# Add IPv6 delegated prefixes
+	if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
+		for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
+			if ipv6_delegation and ipv6_delegation.strip():
+				if ipv6_delegation not in allocated_ipv6s:
+					ipv6_list.append(ipv6_delegation)
+					allocated_ipv6s[ipv6_delegation] = True
+				else:
+					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
+	
+	return ipv4_list, ipv6_list
+
+def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID, uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list):
+	"""
+	Create client and device nodes for a service.
+	"""
+	customer_id = serviceItem['customer_id']
+	customer_name = cust_id_to_name.get(customer_id, str(customer_id))
+	
+	# Get service bandwidth
+	service_download = downloadForTariffID[serviceItem['tariff_id']]
+	service_upload = uploadForTariffID[serviceItem['tariff_id']]
+	
+	# Use service ID as unique circuit ID to prevent merging services with different speed plans
+	circuit_id = serviceItem['id']
+	
+	# Create the customer circuit node for each service
+	customer = NetworkNode(
+		type=NodeType.client,
+		id=circuit_id,
+		parentId=parent_node_id,
+		displayName=customer_name,
+		address=customer_name,
+		customerName=customer_name,
+		download=service_download,
+		upload=service_upload
+	)
+	net.addRawNode(customer)
+	
+	# Always create a device for each service
+	device = NetworkNode(
+		id=device_counter[0],
+		displayName=customer_name,
+		type=NodeType.device,
+		parentId=circuit_id,
+		mac=serviceItem['mac'],
+		ipv4=ipv4_list,
+		ipv6=ipv6_list
+	)
+	net.addRawNode(device)
+	device_counter[0] += 1
+	
+	return circuit_id
+
+def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended):
+	"""
+	Create site and AP nodes from monitoring data.
+	"""
+	for device_num in hardware_name:
+		parent_id = None
+		if device_num in hardware_parent.keys():
+			if hardware_parent[device_num] != 0:
+				parent_id = hardware_parent[device_num]
+		download = 10000
+		upload = 10000
+		nodeName = hardware_name_extended[device_num]
+		if nodeName in siteBandwidth:
+			download = siteBandwidth[nodeName]["download"]
+			upload = siteBandwidth[nodeName]["upload"]
+		nodeType = hardware_type[device_num]
+		if nodeType == 'AP':
+			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.ap,
+				parentId=parent_id, download=download, upload=upload, address=None)
+		else:
+			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
+				parentId=parent_id, download=download, upload=upload, address=None)
+		net.addRawNode(node)
+
 def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter):
 	"""
 	Find the best parent node for a service using multiple methods.
@@ -212,10 +323,35 @@ def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter)
 
 def createShaper():
 	"""
-	Main function to fetch data from Splynx, build the network graph, and shape devices.
+	Main function to route to appropriate strategy based on configuration.
+	"""
+	try:
+		strategy = splynx_strategy().lower()
+		print(f"Using Splynx strategy: {strategy}")
+		
+		if strategy == "flat":
+			createShaperFlat()
+		elif strategy == "ap_only":
+			createShaperApOnly()
+		elif strategy == "ap_site":
+			createShaperApSite()
+		elif strategy == "full":
+			createShaperFull()
+		else:
+			print(f"Unknown strategy '{strategy}', defaulting to ap_only")
+			createShaperApOnly()
+	except Exception as e:
+		print(f"Error reading strategy config, defaulting to ap_only: {e}")
+		createShaperApOnly()
+
+def createShaperFull():
+	"""
+	Full strategy: Complete topology mapping (original behavior).
+	Most CPU intensive but provides complete network hierarchy.
 	"""
 	net = NetworkGraph()
 
+	print("Using FULL strategy - complete topology mapping")
 	print("Fetching data from Spylnx")
 	headers = buildHeaders()
 	print("Fetching tariffs from Spylnx")
@@ -250,11 +386,13 @@ def createShaper():
 	}
 	
 	print("Matching customer services to IPs")
-	# First priority - see if clients are associated with a Network Site via the access_device parameter
+	# Build hardware infrastructure data
 	hardware_name = {}
 	access_device_name = {}
 	hardware_parent = {}
 	hardware_type = {}
+	hardware_name_extended = {}
+	
 	for monitored_device in monitoring:
 		hardware_name[monitored_device['id']] = monitored_device['title']
 		if 'access_device' in monitored_device:
@@ -262,88 +400,39 @@ def createShaper():
 				access_device_name[monitored_device['id']] = monitored_device['title']
 				if 'parent_id' in monitored_device:
 					hardware_parent[monitored_device['id']] = monitored_device['parent_id']
-	# If site/node has parent, include that as "parentName_nodeName"
-	hardware_name_extended = {}
+		if 'parent_id' in monitored_device:
+			hardware_parent[monitored_device['id']] = monitored_device['parent_id']
+		if 'type' in monitored_device:
+			if monitored_device['type'] == 5:
+				hardware_type[monitored_device['id']] = 'AP'
+			else:
+				hardware_type[monitored_device['id']] = 'Site'
+	
+	# Build extended names with parent hierarchy
 	for monitored_device in monitoring:
-		hardware_name[monitored_device['id']] = monitored_device['title']
 		if 'parent_id' in monitored_device:
 			if monitored_device['id'] in hardware_parent:
 				if hardware_parent[monitored_device['id']] in hardware_name:
 					hardware_name_extended[monitored_device['id']] = hardware_name[hardware_parent[monitored_device['id']]] + "_" + monitored_device['title'] 
 		if monitored_device['id'] not in hardware_name_extended:
 			hardware_name_extended[monitored_device['id']] = monitored_device['title']
-		if 'type' in monitored_device:
-			if monitored_device['type'] == 5:
-				hardware_type[monitored_device['id']] = 'AP'
-			else:
-				hardware_type[monitored_device['id']] = 'Site'
-	for device_num in hardware_name:
-		parent_id = None	
-		if device_num in hardware_parent.keys():
-			if hardware_parent[device_num] != 0:
-				parent_id = hardware_parent[device_num]
-		download = 10000
-		upload = 10000
-		nodeName = hardware_name_extended[device_num]
-		if nodeName in siteBandwidth:
-			download = siteBandwidth[nodeName]["download"]
-			upload = siteBandwidth[nodeName]["upload"]
-		nodeType = hardware_type[device_num]
-		if nodeType == 'AP':
-			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.ap,
-				parentId=parent_id, download=download, upload=upload, address=None)
-		else:
-			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
-				parentId=parent_id, download=download, upload=upload, address=None)
-		net.addRawNode(node)
-	cust_id_to_name ={}
+	
+	# Create all infrastructure nodes
+	print("Creating infrastructure nodes")
+	createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended)
+	
+	cust_id_to_name = {}
 	for customer in customers:
 		cust_id_to_name[customer['id']] = customer['name']
 	service_ids_handled = []
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
-# Track unique services to prevent duplicates
-	device_counter = 200000
+	device_counter = [200000]
+	print("Processing services and creating client nodes")
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
-			ipv4_list = []
-			ipv6_list = []
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
 			
-			# Add primary IPv4
-			if serviceItem['ipv4'] != '':
-				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4_list.append(serviceItem['ipv4'])
-					allocated_ipv4s[serviceItem['ipv4']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
-			
-			# Add IPv4 routes (additional IPs/subnets)
-			if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
-				for ipv4_route in serviceItem['ipv4_route'].split(', '):
-					if ipv4_route and ipv4_route.strip():
-						if ipv4_route not in allocated_ipv4s:
-							ipv4_list.append(ipv4_route)
-							allocated_ipv4s[ipv4_route] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
-			
-			# Add primary IPv6
-			if serviceItem['ipv6'] != '':
-				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6_list.append(serviceItem['ipv6'])
-					allocated_ipv6s[serviceItem['ipv6']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
-			
-			# Add IPv6 delegated prefixes
-			if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
-				for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
-					if ipv6_delegation and ipv6_delegation.strip():
-						if ipv6_delegation not in allocated_ipv6s:
-							ipv6_list.append(ipv6_delegation)
-							allocated_ipv6s[ipv6_delegation] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
 			# Find best parent node using enhanced logic
 			parent_node_id, assignment_method = findBestParentNode(
 				serviceItem, hardware_name, ipForRouter, sectorForRouter
@@ -351,41 +440,10 @@ def createShaper():
 			parent_assignment_methods[assignment_method] += 1
 			
 			if ipv4_list or ipv6_list:
-				customer_id = serviceItem['customer_id']
-				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
-				
-				# Get service bandwidth
-				service_download = downloadForTariffID[serviceItem['tariff_id']]
-				service_upload = uploadForTariffID[serviceItem['tariff_id']]
-				
-				# Use service ID as unique circuit ID to prevent merging services with different speed plans
-				circuit_id = serviceItem['id']
-				
-				# Create the customer circuit node for each service
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=circuit_id,
-					parentId=parent_node_id,
-					displayName=customer_name,
-					address=customer_name,
-					customerName=customer_name,
-					download=service_download,
-					upload=service_upload
+				circuit_id = createClientAndDevice(
+					net, serviceItem, cust_id_to_name, downloadForTariffID, 
+					uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list
 				)
-				net.addRawNode(customer)
-				
-				# Always create a device for each service
-				device = NetworkNode(
-					id=device_counter,
-					displayName=customer_name,
-					type=NodeType.device,
-					parentId=circuit_id,
-					mac=serviceItem['mac'],
-					ipv4=ipv4_list,
-					ipv6=ipv6_list
-				)
-				net.addRawNode(device)
-				device_counter = device_counter + 1
 				
 				if serviceItem['id'] not in service_ids_handled:
 					service_ids_handled.append(serviceItem['id'])
@@ -565,6 +623,271 @@ def createShaper():
 	
 	if total_assigned > 0:
 		print(f"\nTotal with parent nodes: {total_assigned} ({total_assigned/sum(parent_assignment_methods.values()):.1%})")
+	
+	net.prepareTree()
+	net.plotNetworkGraph(False)
+	
+	if net.doesNetworkJsonExist():
+		if overwrite_network_json_always:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists. Leaving in-place.")
+	else:
+		net.createNetworkJson()
+	net.createShapedDevices()
+
+def createShaperFlat():
+	"""
+	Flat strategy: Only shapes subscribers, ignoring parent node relationships.
+	Provides maximum CPU performance by eliminating all hierarchy.
+	"""
+	net = NetworkGraph()
+	
+	print("Using FLAT strategy - shaping clients only, no hierarchy")
+	print("Fetching data from Spylnx")
+	headers = buildHeaders()
+	print("Fetching tariffs from Spylnx")
+	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
+	print("Fetching all customers from Spylnx")
+	customers = getCustomers(headers)
+	print("Fetching online customers from Spylnx")
+	customersOnline = getCustomersOnline(headers)
+	print("Fetching services from Spylnx")
+	allServices = getAllServices(headers)
+	print("Successfully fetched data from Spylnx")
+	
+	cust_id_to_name = {}
+	for customer in customers:
+		cust_id_to_name[customer['id']] = customer['name']
+	
+	service_ids_handled = []
+	allocated_ipv4s = {}
+	allocated_ipv6s = {}
+	device_counter = [200000]
+	
+	print("Creating flat client topology")
+	for serviceItem in allServices:
+		if serviceItem['status'] == 'active':
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
+			
+			if ipv4_list or ipv6_list:
+				# In flat strategy, all clients have no parent (parentId=None)
+				circuit_id = createClientAndDevice(
+					net, serviceItem, cust_id_to_name, downloadForTariffID, 
+					uploadForTariffID, device_counter, None, ipv4_list, ipv6_list
+				)
+				service_ids_handled.append(serviceItem['id'])
+	
+	print(f"Created {len(service_ids_handled)} flat client entries")
+	
+	net.prepareTree()
+	net.plotNetworkGraph(False)
+	
+	if net.doesNetworkJsonExist():
+		if overwrite_network_json_always:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists. Leaving in-place.")
+	else:
+		net.createNetworkJson()
+	net.createShapedDevices()
+
+def createShaperApOnly():
+	"""
+	AP-only strategy: Single layer of AP + Clients (similar to Preseem).
+	Optimal balance between hierarchy and performance - should be default.
+	"""
+	net = NetworkGraph()
+	
+	print("Using AP_ONLY strategy - single layer AP + Clients topology")
+	print("Fetching data from Spylnx")
+	headers = buildHeaders()
+	print("Fetching tariffs from Spylnx")
+	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
+	print("Fetching all customers from Spylnx")
+	customers = getCustomers(headers)
+	print("Fetching online customers from Spylnx")
+	customersOnline = getCustomersOnline(headers)
+	print("Fetching routers from Spylnx")
+	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
+	print("Fetching sectors from Spylnx")
+	sectorForRouter = getSectors(headers)
+	print("Fetching services from Spylnx")
+	allServices = getAllServices(headers)
+	print("Fetching hardware monitoring from Spylnx")
+	monitoring = getMonitoring(headers)
+	siteBandwidth = buildSiteBandwidths()
+	print("Successfully fetched data from Spylnx")
+	
+	cust_id_to_name = {}
+	for customer in customers:
+		cust_id_to_name[customer['id']] = customer['name']
+	
+	# Build hardware info but only use APs, not sites
+	hardware_name = {}
+	hardware_parent = {}
+	hardware_type = {}
+	ap_nodes = {}
+	
+	for monitored_device in monitoring:
+		hardware_name[monitored_device['id']] = monitored_device['title']
+		if 'parent_id' in monitored_device:
+			hardware_parent[monitored_device['id']] = monitored_device['parent_id']
+		if 'type' in monitored_device:
+			if monitored_device['type'] == 5:  # AP type
+				hardware_type[monitored_device['id']] = 'AP'
+				ap_nodes[monitored_device['id']] = monitored_device
+			else:
+				hardware_type[monitored_device['id']] = 'Site'
+	
+	# Create only AP nodes (no sites), all as root nodes
+	print(f"Creating {len(ap_nodes)} AP nodes")
+	for ap_id, ap_device in ap_nodes.items():
+		download = 10000
+		upload = 10000
+		nodeName = ap_device['title']
+		if nodeName in siteBandwidth:
+			download = siteBandwidth[nodeName]["download"]
+			upload = siteBandwidth[nodeName]["upload"]
+		
+		# In ap_only strategy, APs have no parent (parentId=None)
+		node = NetworkNode(
+			id=ap_id, 
+			displayName=nodeName, 
+			type=NodeType.ap,
+			parentId=None,  # APs are root nodes
+			download=download, 
+			upload=upload, 
+			address=None
+		)
+		net.addRawNode(node)
+	
+	service_ids_handled = []
+	allocated_ipv4s = {}
+	allocated_ipv6s = {}
+	device_counter = [200000]
+	
+	print("Assigning clients to APs")
+	for serviceItem in allServices:
+		if serviceItem['status'] == 'active':
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
+			
+			if ipv4_list or ipv6_list:
+				# Find AP parent (only APs, not sites)
+				parent_node_id, assignment_method = findBestParentNode(
+					serviceItem, hardware_name, ipForRouter, sectorForRouter
+				)
+				
+				# Only allow AP parents in ap_only strategy
+				if parent_node_id and parent_node_id in ap_nodes:
+					# Valid AP parent
+					pass
+				else:
+					# No valid AP parent found, assign to None (root level)
+					parent_node_id = None
+				
+				circuit_id = createClientAndDevice(
+					net, serviceItem, cust_id_to_name, downloadForTariffID, 
+					uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list
+				)
+				service_ids_handled.append(serviceItem['id'])
+	
+	print(f"Created {len(service_ids_handled)} client entries assigned to APs")
+	
+	net.prepareTree()
+	net.plotNetworkGraph(False)
+	
+	if net.doesNetworkJsonExist():
+		if overwrite_network_json_always:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists. Leaving in-place.")
+	else:
+		net.createNetworkJson()
+	net.createShapedDevices()
+
+def createShaperApSite():
+	"""
+	AP-Site strategy: Site → AP → Clients structure.
+	Moderate hierarchy providing site-level aggregation.
+	"""
+	net = NetworkGraph()
+	
+	print("Using AP_SITE strategy - Site → AP → Clients topology")
+	print("Fetching data from Spylnx")
+	headers = buildHeaders()
+	print("Fetching tariffs from Spylnx")
+	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
+	print("Fetching all customers from Spylnx")
+	customers = getCustomers(headers)
+	print("Fetching online customers from Spylnx")
+	customersOnline = getCustomersOnline(headers)
+	print("Fetching routers from Spylnx")
+	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
+	print("Fetching sectors from Spylnx")
+	sectorForRouter = getSectors(headers)
+	print("Fetching services from Spylnx")
+	allServices = getAllServices(headers)
+	print("Fetching hardware monitoring from Spylnx")
+	monitoring = getMonitoring(headers)
+	siteBandwidth = buildSiteBandwidths()
+	print("Successfully fetched data from Spylnx")
+	
+	cust_id_to_name = {}
+	for customer in customers:
+		cust_id_to_name[customer['id']] = customer['name']
+	
+	# Build hardware info with site → AP hierarchy
+	hardware_name = {}
+	hardware_parent = {}
+	hardware_type = {}
+	hardware_name_extended = {}
+	
+	for monitored_device in monitoring:
+		hardware_name[monitored_device['id']] = monitored_device['title']
+		if 'parent_id' in monitored_device:
+			hardware_parent[monitored_device['id']] = monitored_device['parent_id']
+		if 'type' in monitored_device:
+			if monitored_device['type'] == 5:
+				hardware_type[monitored_device['id']] = 'AP'
+			else:
+				hardware_type[monitored_device['id']] = 'Site'
+	
+	# Build extended names with parent hierarchy
+	for monitored_device in monitoring:
+		if 'parent_id' in monitored_device:
+			if monitored_device['id'] in hardware_parent:
+				if hardware_parent[monitored_device['id']] in hardware_name:
+					hardware_name_extended[monitored_device['id']] = hardware_name[hardware_parent[monitored_device['id']]] + "_" + monitored_device['title']
+		if monitored_device['id'] not in hardware_name_extended:
+			hardware_name_extended[monitored_device['id']] = monitored_device['title']
+	
+	# Create infrastructure nodes with proper site → AP hierarchy
+	print("Creating site and AP infrastructure")
+	createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended)
+	
+	service_ids_handled = []
+	allocated_ipv4s = {}
+	allocated_ipv6s = {}
+	device_counter = [200000]
+	
+	print("Assigning clients to infrastructure")
+	for serviceItem in allServices:
+		if serviceItem['status'] == 'active':
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
+			
+			if ipv4_list or ipv6_list:
+				parent_node_id, assignment_method = findBestParentNode(
+					serviceItem, hardware_name, ipForRouter, sectorForRouter
+				)
+				
+				circuit_id = createClientAndDevice(
+					net, serviceItem, cust_id_to_name, downloadForTariffID, 
+					uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list
+				)
+				service_ids_handled.append(serviceItem['id'])
+	
+	print(f"Created {len(service_ids_handled)} client entries with site → AP hierarchy")
 	
 	net.prepareTree()
 	net.plotNetworkGraph(False)

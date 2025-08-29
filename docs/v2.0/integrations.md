@@ -12,7 +12,33 @@
 
 ## Splynx Integration
 
+> **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. Starting with v1.5-RC-2, the default strategy is `ap_only` for improved CPU performance. If you require the previous behavior, explicitly set `strategy = "full"` in your Splynx configuration section.
+
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
+
+### Topology Strategies
+
+LibreQoS supports multiple topology strategies for Splynx integration to balance CPU performance with network hierarchy needs:
+
+| Strategy | Description | CPU Impact | Use Case |
+|----------|-------------|------------|----------|
+| `flat` | Only shapes subscribers, no hierarchy | Lowest | Maximum performance, simple subscriber-only shaping |
+| `ap_only` | Single layer: AP → Clients | Low | **Default**. Best balance of performance and structure |
+| `ap_site` | Two layers: Site → AP → Clients | Medium | Site-level aggregation with moderate complexity |
+| `full` | Complete topology mapping | Highest | Full network hierarchy representation |
+
+Configure the strategy in `/etc/lqos.conf` under the `[splynx]` section:
+
+```ini
+[splynx]
+# ... other splynx settings ...
+strategy = "ap_only"
+```
+
+**Performance Considerations:**
+- `flat` and `ap_only` strategies significantly reduce CPU load by limiting network depth
+- Choose `ap_only` for most deployments unless you need site-level traffic aggregation
+- Only use `full` if you require complete network topology representation and have adequate CPU resources
 
 ### Splynx API Access
 
