@@ -210,377 +210,206 @@ def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter)
 	
 	return parent_node_id, assignment_method
 
+def extractServiceIPs(serviceItem, allocated_ipv4s, allocated_ipv6s, customer_name):
+	"""Extract and validate IPv4/IPv6 addresses from a service item."""
+	ipv4_list = []
+	ipv6_list = []
+	
+	# Add primary IPv4
+	if serviceItem['ipv4'] != '':
+		if serviceItem['ipv4'] not in allocated_ipv4s:
+			ipv4_list.append(serviceItem['ipv4'])
+			allocated_ipv4s[serviceItem['ipv4']] = True
+		else:
+			print(f"Client {customer_name} had duplicate IP of {serviceItem['ipv4']}. IP omitted.")
+	
+	# Add IPv4 routes (additional IPs/subnets)
+	if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
+		for ipv4_route in serviceItem['ipv4_route'].split(', '):
+			if ipv4_route and ipv4_route.strip():
+				if ipv4_route not in allocated_ipv4s:
+					ipv4_list.append(ipv4_route)
+					allocated_ipv4s[ipv4_route] = True
+				else:
+					print(f"Client {customer_name} had duplicate IPv4 route of {ipv4_route}. IP omitted.")
+	
+	# Add primary IPv6
+	if serviceItem['ipv6'] != '':
+		if serviceItem['ipv6'] not in allocated_ipv6s:
+			ipv6_list.append(serviceItem['ipv6'])
+			allocated_ipv6s[serviceItem['ipv6']] = True
+		else:
+			print(f"Client {customer_name} had duplicate IP of {serviceItem['ipv6']}. IP omitted.")
+	
+	# Add IPv6 delegated prefixes
+	if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
+		for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
+			if ipv6_delegation and ipv6_delegation.strip():
+				if ipv6_delegation not in allocated_ipv6s:
+					ipv6_list.append(ipv6_delegation)
+					allocated_ipv6s[ipv6_delegation] = True
+				else:
+					print(f"Client {customer_name} had duplicate IPv6 delegation of {ipv6_delegation}. IP omitted.")
+	
+	return ipv4_list, ipv6_list
+
+def createClientAndDevice(net, serviceItem, customer_name, downloadForTariffID, uploadForTariffID, 
+						  ipv4_list, ipv6_list, parent_id, device_counter):
+	"""Create client circuit and device nodes."""
+	service_download = downloadForTariffID[serviceItem['tariff_id']]
+	service_upload = uploadForTariffID[serviceItem['tariff_id']]
+	circuit_id = serviceItem['id']
+	
+	# Create the customer circuit node
+	customer = NetworkNode(
+		type=NodeType.client,
+		id=circuit_id,
+		parentId=parent_id,
+		displayName=customer_name,
+		address=customer_name,
+		customerName=customer_name,
+		download=service_download,
+		upload=service_upload
+	)
+	net.addRawNode(customer)
+	
+	# Create device for this service
+	device = NetworkNode(
+		id=device_counter,
+		displayName=customer_name,
+		type=NodeType.device,
+		parentId=circuit_id,
+		mac=serviceItem['mac'],
+		ipv4=ipv4_list,
+		ipv6=ipv6_list
+	)
+	net.addRawNode(device)
+	return device_counter + 1
+
 def createShaperFlat(net, allServices, customers, downloadForTariffID, uploadForTariffID):
-	"""
-	Flat strategy: only shapes subscribers, ignoring parent node relationships.
-	Creates a completely flat structure with just individual client entries.
-	"""
+	"""Flat strategy: only shapes subscribers, ignoring parent node relationships."""
 	print("Using flat strategy - creating flat client structure")
 	
-	cust_id_to_name = {}
-	for customer in customers:
-		cust_id_to_name[customer['id']] = customer['name']
-	
+	cust_id_to_name = {customer['id']: customer['name'] for customer in customers}
 	device_counter = 200000
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
 	
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
-			ipv4_list = []
-			ipv6_list = []
-			
-			# Add primary IPv4
-			if serviceItem['ipv4'] != '':
-				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4_list.append(serviceItem['ipv4'])
-					allocated_ipv4s[serviceItem['ipv4']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
-			
-			# Add IPv4 routes (additional IPs/subnets)
-			if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
-				for ipv4_route in serviceItem['ipv4_route'].split(', '):
-					if ipv4_route and ipv4_route.strip():
-						if ipv4_route not in allocated_ipv4s:
-							ipv4_list.append(ipv4_route)
-							allocated_ipv4s[ipv4_route] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
-			
-			# Add primary IPv6
-			if serviceItem['ipv6'] != '':
-				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6_list.append(serviceItem['ipv6'])
-					allocated_ipv6s[serviceItem['ipv6']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
-			
-			# Add IPv6 delegated prefixes
-			if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
-				for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
-					if ipv6_delegation and ipv6_delegation.strip():
-						if ipv6_delegation not in allocated_ipv6s:
-							ipv6_list.append(ipv6_delegation)
-							allocated_ipv6s[ipv6_delegation] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
+			customer_name = cust_id_to_name.get(serviceItem['customer_id'], str(serviceItem['customer_id']))
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, allocated_ipv4s, allocated_ipv6s, customer_name)
 			
 			if ipv4_list or ipv6_list:
-				customer_id = serviceItem['customer_id']
-				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
-				
-				# Get service bandwidth
-				service_download = downloadForTariffID[serviceItem['tariff_id']]
-				service_upload = uploadForTariffID[serviceItem['tariff_id']]
-				
-				# Use service ID as unique circuit ID
-				circuit_id = serviceItem['id']
-				
-				# Create the customer circuit node with NO parent (flat structure)
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=circuit_id,
-					parentId=None,  # No parent for flat structure
-					displayName=customer_name,
-					address=customer_name,
-					customerName=customer_name,
-					download=service_download,
-					upload=service_upload
-				)
-				net.addRawNode(customer)
-				
-				# Create device for this service
-				device = NetworkNode(
-					id=device_counter,
-					displayName=customer_name,
-					type=NodeType.device,
-					parentId=circuit_id,
-					mac=serviceItem['mac'],
-					ipv4=ipv4_list,
-					ipv6=ipv6_list
-				)
-				net.addRawNode(device)
-				device_counter += 1
+				device_counter = createClientAndDevice(net, serviceItem, customer_name, downloadForTariffID, 
+													   uploadForTariffID, ipv4_list, ipv6_list, None, device_counter)
 
-def createShaperApOnly(net, allServices, customers, downloadForTariffID, uploadForTariffID, monitoring, siteBandwidth):
-	"""
-	AP Only strategy: gives you a single layer of AP + Clients (similar to default Preseem).
-	Good for huge networks that need a wide spread across CPUs.
-	"""
-	print("Using ap_only strategy - single layer AP + clients")
+def createInfrastructureNodes(net, monitoring, siteBandwidth, node_types=None):
+	"""Create infrastructure nodes (sites and/or APs) based on monitoring data."""
+	if node_types is None:
+		node_types = ['Site', 'AP']  # Create both by default
 	
-	cust_id_to_name = {}
-	for customer in customers:
-		cust_id_to_name[customer['id']] = customer['name']
-	
-	# Build hardware mappings - only include APs
-	hardware_name = {}
-	hardware_type = {}
-	ap_nodes = {}
-	
-	for monitored_device in monitoring:
-		hardware_name[monitored_device['id']] = monitored_device['title']
-		if 'type' in monitored_device:
-			if monitored_device['type'] == 5:  # AP type
-				hardware_type[monitored_device['id']] = 'AP'
-				# Create AP node
-				download = 10000
-				upload = 10000
-				nodeName = monitored_device['title']
-				if nodeName in siteBandwidth:
-					download = siteBandwidth[nodeName]["download"]
-					upload = siteBandwidth[nodeName]["upload"]
-				
-				node = NetworkNode(id=monitored_device['id'], displayName=nodeName, type=NodeType.ap,
-					parentId=None, download=download, upload=upload, address=None)  # No parent - flat AP structure
-				net.addRawNode(node)
-				ap_nodes[monitored_device['id']] = node
-	
-	device_counter = 200000
-	allocated_ipv4s = {}
-	allocated_ipv6s = {}
-	
-	for serviceItem in allServices:
-		if serviceItem['status'] == 'active':
-			ipv4_list = []
-			ipv6_list = []
-			
-			# Add primary IPv4
-			if serviceItem['ipv4'] != '':
-				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4_list.append(serviceItem['ipv4'])
-					allocated_ipv4s[serviceItem['ipv4']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
-			
-			# Add IPv4 routes (additional IPs/subnets)
-			if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
-				for ipv4_route in serviceItem['ipv4_route'].split(', '):
-					if ipv4_route and ipv4_route.strip():
-						if ipv4_route not in allocated_ipv4s:
-							ipv4_list.append(ipv4_route)
-							allocated_ipv4s[ipv4_route] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
-			
-			# Add primary IPv6
-			if serviceItem['ipv6'] != '':
-				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6_list.append(serviceItem['ipv6'])
-					allocated_ipv6s[serviceItem['ipv6']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
-			
-			# Add IPv6 delegated prefixes
-			if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
-				for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
-					if ipv6_delegation and ipv6_delegation.strip():
-						if ipv6_delegation not in allocated_ipv6s:
-							ipv6_list.append(ipv6_delegation)
-							allocated_ipv6s[ipv6_delegation] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
-			
-			if ipv4_list or ipv6_list:
-				customer_id = serviceItem['customer_id']
-				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
-				
-				# Get service bandwidth
-				service_download = downloadForTariffID[serviceItem['tariff_id']]
-				service_upload = uploadForTariffID[serviceItem['tariff_id']]
-				
-				# Find AP parent - try access_device first, then router_id
-				parent_ap_id = None
-				if 'access_device' in serviceItem and serviceItem['access_device'] != 0:
-					if serviceItem['access_device'] in ap_nodes:
-						parent_ap_id = serviceItem['access_device']
-				elif 'router_id' in serviceItem and serviceItem['router_id'] != 0:
-					if serviceItem['router_id'] in ap_nodes:
-						parent_ap_id = serviceItem['router_id']
-				
-				# Use service ID as unique circuit ID
-				circuit_id = serviceItem['id']
-				
-				# Create the customer circuit node
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=circuit_id,
-					parentId=parent_ap_id,  # Parent is AP or None
-					displayName=customer_name,
-					address=customer_name,
-					customerName=customer_name,
-					download=service_download,
-					upload=service_upload
-				)
-				net.addRawNode(customer)
-				
-				# Create device for this service
-				device = NetworkNode(
-					id=device_counter,
-					displayName=customer_name,
-					type=NodeType.device,
-					parentId=circuit_id,
-					mac=serviceItem['mac'],
-					ipv4=ipv4_list,
-					ipv6=ipv6_list
-				)
-				net.addRawNode(device)
-				device_counter += 1
-
-def createShaperApSite(net, allServices, customers, downloadForTariffID, uploadForTariffID, monitoring, siteBandwidth):
-	"""
-	AP Site strategy: gives you Site - AP - Clients, with no additional topology (similar to Preseem).
-	Also good for huge networks that need a spread. Site level is the top-most parent.
-	"""
-	print("Using ap_site strategy - Site > AP > clients")
-	
-	cust_id_to_name = {}
-	for customer in customers:
-		cust_id_to_name[customer['id']] = customer['name']
-	
-	# Build hardware mappings - include both Sites and APs
-	hardware_name = {}
+	created_nodes = {}
 	hardware_parent = {}
-	hardware_type = {}
-	site_nodes = {}
-	ap_nodes = {}
 	
+	# First pass: collect parent relationships
 	for monitored_device in monitoring:
-		hardware_name[monitored_device['id']] = monitored_device['title']
 		if 'parent_id' in monitored_device:
 			hardware_parent[monitored_device['id']] = monitored_device['parent_id']
-		if 'type' in monitored_device:
-			hardware_type[monitored_device['id']] = 'AP' if monitored_device['type'] == 5 else 'Site'
 	
-	# First, create all site nodes (nodes without parents or non-AP parents)
-	for device_id, device_name in hardware_name.items():
-		if hardware_type.get(device_id) == 'Site':
-			# Only create as site if it doesn't have an AP parent
-			parent_id = hardware_parent.get(device_id)
-			if not parent_id or hardware_type.get(parent_id) != 'AP':
-				download = 10000
-				upload = 10000
-				if device_name in siteBandwidth:
-					download = siteBandwidth[device_name]["download"]
-					upload = siteBandwidth[device_name]["upload"]
+	# Create nodes by type priority (Sites first, then APs)
+	for node_type in ['Site', 'AP']:
+		if node_type not in node_types:
+			continue
+			
+		for monitored_device in monitoring:
+			device_type = 'AP' if monitored_device.get('type') == 5 else 'Site'
+			if device_type != node_type:
+				continue
 				
-				node = NetworkNode(id=device_id, displayName=device_name, type=NodeType.site,
-					parentId=None, download=download, upload=upload, address=None)  # Sites are top-level
-				net.addRawNode(node)
-				site_nodes[device_id] = node
-	
-	# Then create AP nodes, with sites as parents where applicable
-	for device_id, device_name in hardware_name.items():
-		if hardware_type.get(device_id) == 'AP':
+			device_id = monitored_device['id']
+			device_name = monitored_device['title']
+			
+			# Determine parent
 			parent_id = hardware_parent.get(device_id)
+			if node_type == 'AP' and parent_id not in created_nodes:
+				parent_id = None  # AP without valid site parent becomes orphan
+			elif node_type == 'Site':
+				parent_id = None  # Sites are always top-level in simplified modes
 			
-			# Parent should be a site if available
-			site_parent_id = None
-			if parent_id and parent_id in site_nodes:
-				site_parent_id = parent_id
-			
-			download = 10000
-			upload = 10000
+			# Get bandwidth
+			download = upload = 10000
 			if device_name in siteBandwidth:
 				download = siteBandwidth[device_name]["download"]
 				upload = siteBandwidth[device_name]["upload"]
 			
-			node = NetworkNode(id=device_id, displayName=device_name, type=NodeType.ap,
-				parentId=site_parent_id, download=download, upload=upload, address=None)
+			# Create node
+			node = NetworkNode(
+				id=device_id,
+				displayName=device_name,
+				type=NodeType.ap if device_type == 'AP' else NodeType.site,
+				parentId=parent_id,
+				download=download,
+				upload=upload,
+				address=None
+			)
 			net.addRawNode(node)
-			ap_nodes[device_id] = node
+			created_nodes[device_id] = node
 	
+	return created_nodes
+
+def findParentNode(serviceItem, available_nodes):
+	"""Find the best parent node for a service from available infrastructure nodes."""
+	# Try access_device first, then router_id
+	for field in ['access_device', 'router_id']:
+		if field in serviceItem and serviceItem[field] != 0:
+			if serviceItem[field] in available_nodes:
+				return serviceItem[field]
+	return None
+
+def createShaperApOnly(net, allServices, customers, downloadForTariffID, uploadForTariffID, monitoring, siteBandwidth):
+	"""AP Only strategy: gives you a single layer of AP + Clients."""
+	print("Using ap_only strategy - single layer AP + clients")
+	
+	# Create only AP nodes
+	ap_nodes = createInfrastructureNodes(net, monitoring, siteBandwidth, ['AP'])
+	cust_id_to_name = {customer['id']: customer['name'] for customer in customers}
 	device_counter = 200000
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
 	
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
-			ipv4_list = []
-			ipv6_list = []
-			
-			# Add primary IPv4
-			if serviceItem['ipv4'] != '':
-				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4_list.append(serviceItem['ipv4'])
-					allocated_ipv4s[serviceItem['ipv4']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
-			
-			# Add IPv4 routes (additional IPs/subnets)
-			if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
-				for ipv4_route in serviceItem['ipv4_route'].split(', '):
-					if ipv4_route and ipv4_route.strip():
-						if ipv4_route not in allocated_ipv4s:
-							ipv4_list.append(ipv4_route)
-							allocated_ipv4s[ipv4_route] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
-			
-			# Add primary IPv6
-			if serviceItem['ipv6'] != '':
-				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6_list.append(serviceItem['ipv6'])
-					allocated_ipv6s[serviceItem['ipv6']] = True
-				else:
-					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
-			
-			# Add IPv6 delegated prefixes
-			if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
-				for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
-					if ipv6_delegation and ipv6_delegation.strip():
-						if ipv6_delegation not in allocated_ipv6s:
-							ipv6_list.append(ipv6_delegation)
-							allocated_ipv6s[ipv6_delegation] = True
-						else:
-							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
+			customer_name = cust_id_to_name.get(serviceItem['customer_id'], str(serviceItem['customer_id']))
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, allocated_ipv4s, allocated_ipv6s, customer_name)
 			
 			if ipv4_list or ipv6_list:
-				customer_id = serviceItem['customer_id']
-				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
-				
-				# Get service bandwidth
-				service_download = downloadForTariffID[serviceItem['tariff_id']]
-				service_upload = uploadForTariffID[serviceItem['tariff_id']]
-				
-				# Find AP parent - try access_device first, then router_id
-				parent_ap_id = None
-				if 'access_device' in serviceItem and serviceItem['access_device'] != 0:
-					if serviceItem['access_device'] in ap_nodes:
-						parent_ap_id = serviceItem['access_device']
-				elif 'router_id' in serviceItem and serviceItem['router_id'] != 0:
-					if serviceItem['router_id'] in ap_nodes:
-						parent_ap_id = serviceItem['router_id']
-				
-				# Use service ID as unique circuit ID
-				circuit_id = serviceItem['id']
-				
-				# Create the customer circuit node
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=circuit_id,
-					parentId=parent_ap_id,  # Parent is AP
-					displayName=customer_name,
-					address=customer_name,
-					customerName=customer_name,
-					download=service_download,
-					upload=service_upload
-				)
-				net.addRawNode(customer)
-				
-				# Create device for this service
-				device = NetworkNode(
-					id=device_counter,
-					displayName=customer_name,
-					type=NodeType.device,
-					parentId=circuit_id,
-					mac=serviceItem['mac'],
-					ipv4=ipv4_list,
-					ipv6=ipv6_list
-				)
-				net.addRawNode(device)
-				device_counter += 1
+				parent_ap_id = findParentNode(serviceItem, ap_nodes)
+				device_counter = createClientAndDevice(net, serviceItem, customer_name, downloadForTariffID, 
+													   uploadForTariffID, ipv4_list, ipv6_list, parent_ap_id, device_counter)
+
+def createShaperApSite(net, allServices, customers, downloadForTariffID, uploadForTariffID, monitoring, siteBandwidth):
+	"""AP Site strategy: gives you Site - AP - Clients structure."""
+	print("Using ap_site strategy - Site > AP > clients")
+	
+	# Create both Sites and APs with proper hierarchy
+	all_nodes = createInfrastructureNodes(net, monitoring, siteBandwidth, ['Site', 'AP'])
+	ap_nodes = {k: v for k, v in all_nodes.items() if v.type == NodeType.ap}
+	
+	cust_id_to_name = {customer['id']: customer['name'] for customer in customers}
+	device_counter = 200000
+	allocated_ipv4s = {}
+	allocated_ipv6s = {}
+	
+	for serviceItem in allServices:
+		if serviceItem['status'] == 'active':
+			customer_name = cust_id_to_name.get(serviceItem['customer_id'], str(serviceItem['customer_id']))
+			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, allocated_ipv4s, allocated_ipv6s, customer_name)
+			
+			if ipv4_list or ipv6_list:
+				parent_ap_id = findParentNode(serviceItem, ap_nodes)
+				device_counter = createClientAndDevice(net, serviceItem, customer_name, downloadForTariffID, 
+													   uploadForTariffID, ipv4_list, ipv6_list, parent_ap_id, device_counter)
 
 def createShaper():
 	"""
