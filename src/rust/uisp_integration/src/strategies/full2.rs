@@ -287,12 +287,27 @@ pub async fn build_full_network_v2(
         }
     }
 
+    // Process promote_to_root list
+    let promote_to_root_set: std::collections::HashSet<String> = 
+        config.integration_common.promote_to_root
+            .as_ref()
+            .map(|list| list.iter().cloned().collect())
+            .unwrap_or_default();
+
+    if !promote_to_root_set.is_empty() {
+        info!("Applying promote_to_root rules for {} nodes: {:?}", 
+              promote_to_root_set.len(), promote_to_root_set);
+    }
+
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
     let mut visited = HashSet::new();
     for (name, node_info) in parents
         .iter()
-        .filter(|(_name, parent)| parent.parent_name == root_site_name)
+        .filter(|(_name, parent)| {
+            // Include if it's a direct child of root OR if it's in promote_to_root list
+            parent.parent_name == root_site_name || promote_to_root_set.contains(_name.as_str())
+        })
     {
         network_json.insert(
             name.into(),
