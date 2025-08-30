@@ -1,7 +1,11 @@
+import {renderConfigMenu} from "./config/config_helper";
+
 let shaped_devices = null;
 let network_json = null;
 
 function start() {
+    // Render the configuration menu
+    renderConfigMenu('devices');
     // Load shaped devices data
     $.get("/local-api/allShapedDevices", (data) => {
         shaped_devices = data;

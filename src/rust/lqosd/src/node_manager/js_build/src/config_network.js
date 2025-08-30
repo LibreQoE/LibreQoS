@@ -1,4 +1,4 @@
-import {saveNetworkAndDevices} from "./config/config_helper";
+import {saveNetworkAndDevices, renderConfigMenu} from "./config/config_helper";
 
 let network_json = null;
 let shaped_devices = null;
@@ -235,6 +235,9 @@ function renameNode(nodeId) {
 }
 
 function start() {
+    // Render the configuration menu
+    renderConfigMenu('network');
+    
     // Add links
     window.promoteNode = promoteNode;
     window.renameNode = renameNode;
