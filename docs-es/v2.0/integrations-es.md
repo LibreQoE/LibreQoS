@@ -95,56 +95,74 @@ Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
 
 ## Integración con UISP
 
-Primero, configure los parámetros relevantes de UISP (token, url, automatic_import_uisp, etc.) en `/etc/lqos.conf`.
-```
-# Ejecutar integración con UISP automáticamente en el servicio lqos_scheduler
+Primero, configure los parámetros relevantes de UISP en `/etc/lqos.conf`.
+
+### Estrategias de Topología
+
+LibreQoS soporta múltiples estrategias de topología para la integración con UISP para equilibrar el rendimiento del CPU con las necesidades de jerarquía de red:
+
+| Estrategia | Descripción | Impacto en CPU | Caso de Uso |
+|------------|-------------|----------------|-------------|
+| `flat` | Solo regula suscriptores por velocidad del plan de servicio | Mínimo | Máximo rendimiento, regulación simple solo de suscriptores |
+| `ap_only` | Regula por plan de servicio y Punto de Acceso | Bajo | Buen equilibrio entre rendimiento y control a nivel de AP |
+| `ap_site` | Regula por plan de servicio, Punto de Acceso y Sitio | Medio | Agregación a nivel de sitio con complejidad moderada |
+| `full` | Regula toda la red incluyendo backhauls, Sitios, APs y clientes | Alto | **Recomendado para la mayoría de implementaciones**. Jerarquía completa de red con reconocimiento de backhaul |
+
+**Cómo Elegir la Estrategia Correcta:**
+- Use `full` para la mayoría de implementaciones para obtener reconocimiento completo de la topología de red incluyendo enlaces de backhaul
+- Use `ap_site` si necesita control a nivel de sitio pero no necesita regulación de backhaul
+- Use `ap_only` para mejor rendimiento cuando no se necesita agregación de sitios
+- Use `flat` solo cuando el máximo rendimiento es crítico y no necesita ninguna jerarquía
+
+### Estrategias de Manejo de Suspensiones
+
+Configure cómo LibreQoS maneja las cuentas de clientes suspendidos:
+
+| Estrategia | Descripción | Caso de Uso |
+|------------|-------------|-------------|
+| `none` | No manejar suspensiones | Cuando el manejo de suspensiones se gestiona en otro lugar |
+| `ignore` | No agregar clientes suspendidos al mapa de red | Reduce el número de colas y mejora el rendimiento para redes con muchas cuentas suspendidas |
+| `slow` | Limitar clientes suspendidos a 1mbps | Mantiene conectividad para cuentas suspendidas mientras limita el uso de ancho de banda |
+
+**Cómo Elegir una Estrategia de Suspensión:**
+- Use `none` si su router de borde u otro sistema maneja las suspensiones
+- Use `ignore` para reducir la carga del sistema al no crear colas para clientes suspendidos
+- Use `slow` para mantener conectividad mínima (útil para portales de pago o mensajes de servicio)
+
+### Ejemplo de Configuración
+
+```ini
+[uisp_integration]
+# Configuración Principal
 enable_uisp = true
+token = "su-token-api-aqui"
+url = "https://uisp.su_dominio.com"
+site = "Nombre_Sitio_Raiz"  # Sitio raíz para perspectiva de topología
 
-# Token de acceso API de UISP
-token = ""
+# Estrategia de Topología (ver tabla arriba)
+strategy = "full"  # Recomendado para la mayoría de implementaciones
 
-# URL de su UISP (incluir https://, pero omitir lo que sigue después de .com, .net, etc.)
-url = "https://uisp.your_domain.com"
-
-# El sitio aquí se refiere al "Root site" desde el cual UISP generará su topología de red.
-# El valor predeterminado es un "string" en blanco.
-site = "Site_name"
-
-# Tipo de Estrategia. "full" es recomendada. "flat" puede ser utilizada si solo desea regular clientes.
-strategy = "full"
-
-# Estrategia de suspensión:
-# * "none" - no manejar suspensiones
-# * "ignore" - no agregar clientes suspendidos al mapa de red
-# * "slow" - limitar clientes suspendidos a 1 Mbps
+# Manejo de Suspensiones (ver tabla arriba)
 suspended_strategy = "none"
 
-# Las capacidades de los AP reportadas por UISP para AirMax pueden ser un poco optimistas. Para los AP AirMax, limitamos al 65% de lo que UISP afirma que es la capacidad de un AP, de forma predeterminada. Esto es ajustable.
-airmax_capacity = 0.65
+# Ajustes de Capacidad
+# Las capacidades de AP reportadas por UISP pueden ser optimistas
+airmax_capacity = 0.65  # Usar 65% de la capacidad reportada de AirMax
+ltu_capacity = 0.95     # Usar 95% de la capacidad reportada de LTU
 
-# Las capacidades de los AP reportadas por UISP para LTU son más precisas, pero para mayor seguridad las ajustamos al 95% de dichas capacidades. Esto es ajustable.
-ltu_capacity = 0.95
+# Gestión de Sitios
+exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
+use_ptmp_as_parent = true  # Para sitios conectados a través de APs PtMP
 
-# Si desea excluir sitios en UISP para que no aparezcan en su network.json de LibreQoS, simplemente
-# inclúyalos aquí. Por ejemplo, exclude_sites = ["Site_1", "Site_2"]
-exclude_sites = []
+# Ajustes de Ancho de Banda
+bandwidth_overhead_factor = 1.15  # Dar a clientes 15% sobre velocidad del plan
+commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR)
 
-# Si usa DHCPv6 y desea importar los CIDR de IPv6 correspondientes a cada dirección IPv4
-# de los clientes, puede hacerlo con esta opción. Si está habilitada, asegúrese de completar
-# el archivo mikrotikDHCPRouterList.csv y ejecutar `python3 mikrotikFindIPv6.py` para probar su funcionalidad.
-ipv6_with_mikrotik = false
-
-# Si desea que los clientes reciban un poco más o menos de su plan de velocidad asignado, configúrelo aquí.
-# Por ejemplo, 1.15 equivale a un 15% por encima de su plan asignado.
-bandwidth_overhead_factor = 1.15
-
-# De forma predeterminada, el "mínimo" de los clientes se establece al 98% del máximo (CIR).
-commit_bandwidth_multiplier = 0.98
-exception_cpes = []
-
-# Si tiene algunos sitios conectados a través de APs PtMP, configure `true`
-use_ptmp_as_parent = true
-uisp_use_burst = true
+# Opciones Avanzadas
+ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
+always_overwrite_network_json = false  # Establecer true para reconstruir topología en cada ejecución
+uisp_use_burst = true  # Habilitar soporte de burst
+exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 ```
 
 Para probar la integración con UISP, ejecute:
