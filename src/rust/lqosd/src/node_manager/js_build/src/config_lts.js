@@ -35,8 +35,7 @@ function updateConfig() {
         collation_period_seconds: parseInt(document.getElementById("collationPeriod").value),
         license_key: document.getElementById("licenseKey").value.trim() || null,
         uisp_reporting_interval_seconds: parseInt(document.getElementById("uispInterval").value) || null,
-        lts_url: document.getElementById("ltsUrl").value.trim() || null,
-        use_insight: document.getElementById("useInsight").checked
+        lts_url: document.getElementById("ltsUrl").value.trim() || null
     };
 }
 
@@ -51,7 +50,6 @@ loadConfig(() => {
         
         // Boolean fields
         document.getElementById("gatherStats").checked = lts.gather_stats ?? true;
-        document.getElementById("useInsight").checked = lts.use_insight ?? false;
 
         // Numeric fields
         document.getElementById("collationPeriod").value = lts.collation_period_seconds ?? 60;

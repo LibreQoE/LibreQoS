@@ -17,7 +17,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
     buildContainer() {
         let base = super.buildContainer();
         base.style.height = "270px";
-        base.style.overflow = "auto";
+        base.style.overflow = "hidden";
         return base;
     }
 
