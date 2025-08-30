@@ -141,8 +141,8 @@ loadConfig(() => {
         document.getElementById("uispToken").value = uisp.token ?? "";
         document.getElementById("uispUrl").value = uisp.url ?? "";
         document.getElementById("uispSite").value = uisp.site ?? "";
-        document.getElementById("uispStrategy").value = uisp.strategy ?? "";
-        document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "";
+        document.getElementById("uispStrategy").value = uisp.strategy ?? "full";
+        document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "none";
 
         // Numeric fields
         document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 0.0;
