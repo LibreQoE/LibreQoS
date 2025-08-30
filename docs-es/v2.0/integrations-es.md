@@ -40,6 +40,32 @@ strategy = "ap_only"
 - Elija `ap_only` para la mayoría de implementaciones a menos que necesite agregación de tráfico a nivel de sitio
 - Use `full` solamente si requiere representación completa de la topología de red y tiene recursos CPU adecuados
 
+### Promover Nodos a Raíz (Optimización de Rendimiento)
+
+Cuando use la estrategia de topología `full`, puede encontrar cuellos de botella de rendimiento del CPU donde todo el tráfico fluye a través de un solo sitio raíz, limitando el throughput a lo que un solo núcleo de CPU puede manejar.
+
+La función **promote_to_root** soluciona esto promoviendo sitios específicos a nodos de nivel raíz, distribuyendo la regulación de tráfico entre múltiples núcleos de CPU.
+
+**Configuración:**
+1. Navegue a Integración → Común en la interfaz web
+2. En el campo "Promover Nodos a Raíz", ingrese un nombre de sitio por línea:
+```
+Sitio_Remoto_Alpha
+Sitio_Remoto_Beta
+Centro_Datos_Oeste
+```
+
+**Beneficios:**
+- Elimina el cuello de botella de CPU único para redes con sitios remotos
+- Distribuye la regulación de tráfico entre múltiples núcleos de CPU
+- Mejora el rendimiento general de la red para topologías grandes
+- Funciona tanto con integraciones de Splynx como de UISP
+
+**Cuándo Usar:**
+- Redes con múltiples sitios remotos de alta capacidad
+- Cuando use la estrategia de topología `full` y experimente limitaciones de CPU
+- Redes grandes donde el tráfico del sitio raíz excede la capacidad de un solo núcleo
+
 ### Acceso API de Splynx
 
 La integración con Splynx utiliza autenticación Básica. Para usar este tipo de autenticación, asegúrese de habilitar el [Acceso No Seguro](https://splynx.docs.apiary.io/#introduction/authentication) en la configuración de su clave API de Splynx. Además, la clave API de Splynx debe tener los permisos adecuados.
@@ -113,6 +139,8 @@ LibreQoS soporta múltiples estrategias de topología para la integración con U
 - Use `ap_site` si necesita control a nivel de sitio pero no necesita regulación de backhaul
 - Use `ap_only` para mejor rendimiento cuando no se necesita agregación de sitios
 - Use `flat` solo cuando el máximo rendimiento es crítico y no necesita ninguna jerarquía
+
+**Nota de Rendimiento:** Cuando use la estrategia `full` con redes grandes, considere usar la función **promote_to_root** (vea [Promover Nodos a Raíz](#promover-nodos-a-raíz-optimización-de-rendimiento) arriba) para distribuir la carga del CPU entre múltiples núcleos.
 
 ### Estrategias de Manejo de Suspensiones
 

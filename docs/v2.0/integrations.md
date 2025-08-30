@@ -40,6 +40,32 @@ strategy = "ap_only"
 - Choose `ap_only` for most deployments unless you need site-level traffic aggregation
 - Only use `full` if you require complete network topology representation and have adequate CPU resources
 
+### Promote to Root Nodes (Performance Optimization)
+
+When using `full` topology strategy, you may encounter CPU performance bottlenecks where all traffic flows through a single root site, limiting throughput to what one CPU core can handle.
+
+The **promote_to_root** feature solves this by promoting specific sites to root-level nodes, distributing traffic shaping across multiple CPU cores.
+
+**Configuration:**
+1. Navigate to Integration → Common in the WebUI
+2. In the "Promote to Root Nodes" field, enter one site name per line:
+```
+Remote_Site_Alpha
+Remote_Site_Beta
+Datacenter_West
+```
+
+**Benefits:**
+- Eliminates single-CPU bottleneck for networks with remote sites
+- Distributes traffic shaping across multiple CPU cores
+- Improves overall network performance for large topologies
+- Works with both Splynx and UISP integrations
+
+**When to Use:**
+- Networks with multiple high-capacity remote sites
+- When using `full` topology strategy and experiencing CPU limitations
+- Large networks where root site traffic exceeds single-core capacity
+
 ### Splynx API Access
 
 The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable [Unsecure access](https://splynx.docs.apiary.io/#introduction/authentication) in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.
@@ -114,6 +140,8 @@ LibreQoS supports multiple topology strategies for UISP integration to balance C
 - Use `ap_site` if you need site-level control but don't need backhaul shaping
 - Use `ap_only` for better performance when site aggregation isn't needed
 - Use `flat` only when maximum performance is critical and you don't need any hierarchy
+
+**Performance Note:** When using `full` strategy with large networks, consider using the **promote_to_root** feature (see [Promote to Root Nodes](#promote-to-root-nodes-performance-optimization) above) to distribute CPU load across multiple cores.
 
 ### Suspension Handling Strategies
 
