@@ -129,6 +129,8 @@ src/bin/dashboards
 src/bin/static2
 src/bin/static2/flags
 
+/src/graph.dot
+/src/graph.png
 /src/rust/uisp_integration/graph.dot
 /src/rust/uisp_integration/graph.png
 /src/bin/lqos_support_tool
