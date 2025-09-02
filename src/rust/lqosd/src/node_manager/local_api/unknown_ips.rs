@@ -142,10 +142,12 @@ pub async fn clear_unknown_ips() -> axum::Json<ClearUnknownIpsResponse> {
     let cleared = to_remove_set.len();
 
     // Hard clear: remove from in-memory tracker and expire from kernel map
+    // Minimize lock time: remove only targeted keys; avoid full scan and shrink.
     {
         let mut raw = THROUGHPUT_TRACKER.raw_data.lock();
-        raw.retain(|k, _| !to_remove_set.contains(k));
-        raw.shrink_to_fit();
+        for k in to_remove_set.iter() {
+            raw.remove(k);
+        }
     }
 
     if cleared > 0 {
