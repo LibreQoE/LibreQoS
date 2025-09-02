@@ -104,10 +104,11 @@ pub async fn clear_unknown_ips() -> axum::Json<ClearUnknownIpsResponse> {
     let sd_reader = SHAPED_DEVICES.load();
 
     // Now time for last_seen comparison (match the 5 minute window used in get_unknown_ips)
-    let now = match time_since_boot() {
-        Ok(ts) => Duration::from(ts).as_nanos() as u64,
-        Err(_) => 0,
+    // If the system clock isn't ready yet (very early after boot), do nothing to avoid mass deletion.
+    let Ok(ts) = time_since_boot() else {
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
     };
+    let now = Duration::from(ts).as_nanos() as u64;
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
 
     // Determine the set of keys to remove
