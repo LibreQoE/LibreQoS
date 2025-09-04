@@ -2,6 +2,16 @@
 
 ## Common Issues
 
+### User password not working
+
+Delete the lqusers file:
+```
+sudo rm /opt/libreqos/src/lqusers.toml
+sudo systemctl restart lqosd lqos_scheduler
+```
+Then visit: BOX_IP:9123/index.html
+This will allow you to set up the user again from scratch using the WebUI.
+
 ### No WebUI at x.x.x.x:9123
 
 The WebUI is controlled by the lqosd service. Usually, when the WebUI doesn't start, it is related to lqosd being in a failed state.
