@@ -40,6 +40,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/search", post(search::search))
         .route("/unknownIps", get(unknown_ips::unknown_ips))
         .route("/unknownIpsCsv", get(unknown_ips::unknown_ips_csv))
+        .route("/unknownIps/clear", post(unknown_ips::clear_unknown_ips))
         .route("/reloadLqos", get(reload_libreqos::reload_libreqos))
         .route("/adminCheck", get(config::admin_check))
         .route("/getConfig", get(config::get_config))
