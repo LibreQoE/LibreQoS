@@ -910,7 +910,7 @@ function loadInitial() {
                 up: circuit.upload_max_mbps,
             };
             initialDevices(circuits);
-            speedometer = new BitsPerSecondGauge("bitsGauge");
+            speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
             totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
             totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
             flowSankey = new FlowsSankey("flowSankey");
