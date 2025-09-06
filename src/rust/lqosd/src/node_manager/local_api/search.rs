@@ -23,13 +23,22 @@ fn ipv6_in_prefix(ip: &Ipv6Addr, net: &Ipv6Addr, cidr: u32) -> bool {
     (ip_u & mask) == (net_u & mask)
 }
 
-fn ipv6_overlap(a: ip_network::Ipv6Network, b: ip_network::Ipv6Network) -> bool {
-    let minp = a.prefix().min(b.prefix()) as u32;
-    if minp == 0 { return true; }
-    let addr_a = u128::from_be_bytes(a.network_address().octets());
-    let addr_b = u128::from_be_bytes(b.network_address().octets());
-    let mask: u128 = if minp == 128 { !0 } else { (!0u128) << (128 - minp) };
-    (addr_a & mask) == (addr_b & mask)
+fn ipv6_overlap(a: &IpNetwork, b: &IpNetwork) -> bool {
+    use ip_network::IpNetwork as Net;
+    match (a, b) {
+        (Net::V6(a6), Net::V6(b6)) => {
+            // Determine the stricter (shorter) common prefix length
+            let ap_len = a6.netmask() as u32; // crate returns prefix length as u8
+            let bp_len = b6.netmask() as u32;
+            let minp = ap_len.min(bp_len);
+            if minp == 0 { return true; }
+            let addr_a = u128::from_be_bytes(a6.network_address().octets());
+            let addr_b = u128::from_be_bytes(b6.network_address().octets());
+            let mask: u128 = if minp == 128 { !0 } else { (!0u128) << (128 - minp) };
+            (addr_a & mask) == (addr_b & mask)
+        }
+        _ => false,
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -106,21 +115,25 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
     if results.len() < MAX_RESULTS && looks_like_ip_prefix && term_lc.len() >= 3 {
         // If term parses as CIDR, match via trie overlap
         if raw_term.contains('/') {
-            if let Ok(mut net) = raw_term.parse::<IpNetwork>() {
+            if let Ok(net) = raw_term.parse::<IpNetwork>() {
                 // Normalize to IPv6 network to compare with trie
-                let net_v6 = match net {
+                let net_v6: IpNetwork = match net {
                     IpNetwork::V4(v4net) => {
                         let addr = v4net.network_address().to_ipv6_mapped();
-                        let pref = v4net.prefix() as u32 + 96;
-                        ip_network::Ipv6Network::new(addr, pref as u8).ok()
+                        // Use crate-provided prefix length (u8) and map to IPv6 space
+                        let pref: u8 = v4net.netmask();
+                        let mapped_pref = pref.saturating_add(96);
+                        ip_network::Ipv6Network::new(addr, mapped_pref)
+                            .map(IpNetwork::V6)
+                            .unwrap_or_else(|_| IpNetwork::V6(ip_network::Ipv6Network::new(addr, 128).unwrap()))
                     }
-                    IpNetwork::V6(v6net) => Some(v6net),
+                    IpNetwork::V6(v6net) => IpNetwork::V6(v6net),
                 };
-                if let Some(query_v6) = net_v6 {
+                {
                     let sd_reader = SHAPED_DEVICES.load();
                     for (n, &idx) in sd_reader.trie.iter() {
                         if results.len() >= MAX_RESULTS { break; }
-                        if ipv6_overlap(n, query_v6) {
+                        if ipv6_overlap(&n, &net_v6) {
                             if let Some(dev) = sd_reader.devices.get(idx) {
                                 let name = format!("{} ({})", dev.device_name, n);
                                 push_result(
