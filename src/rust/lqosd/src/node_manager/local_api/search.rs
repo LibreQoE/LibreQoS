@@ -24,11 +24,9 @@ fn ipv6_in_prefix(ip: &Ipv6Addr, net: &Ipv6Addr, cidr: u32) -> bool {
 }
 
 fn ipv6_overlap(a: &IpNetwork, b: &IpNetwork) -> bool {
-    use ip_network::IpNetwork as Net;
     match (a, b) {
-        (Net::V6(a6), Net::V6(b6)) => {
-            // Determine the stricter (shorter) common prefix length
-            let ap_len = a6.netmask() as u32; // crate returns prefix length as u8
+        (IpNetwork::V6(a6), IpNetwork::V6(b6)) => {
+            let ap_len = a6.netmask() as u32;
             let bp_len = b6.netmask() as u32;
             let minp = ap_len.min(bp_len);
             if minp == 0 { return true; }
@@ -38,6 +36,23 @@ fn ipv6_overlap(a: &IpNetwork, b: &IpNetwork) -> bool {
             (addr_a & mask) == (addr_b & mask)
         }
         _ => false,
+    }
+}
+
+fn pretty_net(n: &IpNetwork) -> String {
+    match n {
+        IpNetwork::V6(v6) => {
+            let o = v6.network_address().octets();
+            if o[0..10] == [0;10] && o[10] == 0xff && o[11] == 0xff {
+                // IPv4-mapped IPv6
+                let v4 = Ipv4Addr::new(o[12], o[13], o[14], o[15]);
+                let p = v6.netmask().saturating_sub(96);
+                if p >= 32 { format!("{}", v4) } else { format!("{}/{}", v4, p) }
+            } else {
+                v6.to_string()
+            }
+        }
+        IpNetwork::V4(v4) => v4.to_string(),
     }
 }
 
@@ -100,7 +115,7 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
         };
         if let Some((net, &idx)) = sd_reader.trie.longest_match(query_v6) {
             if let Some(dev) = sd_reader.devices.get(idx) {
-                let name = format!("{} ({})", dev.device_name, net);
+                let name = format!("{} ({})", dev.device_name, pretty_net(&net));
                 push_result(
                     &mut results,
                     &mut seen,
@@ -117,25 +132,22 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
         if raw_term.contains('/') {
             if let Ok(net) = raw_term.parse::<IpNetwork>() {
                 // Normalize to IPv6 network to compare with trie
-                let net_v6: IpNetwork = match net {
+                let net_v6: Option<IpNetwork> = match net {
                     IpNetwork::V4(v4net) => {
                         let addr = v4net.network_address().to_ipv6_mapped();
-                        // Use crate-provided prefix length (u8) and map to IPv6 space
                         let pref: u8 = v4net.netmask();
                         let mapped_pref = pref.saturating_add(96);
-                        ip_network::Ipv6Network::new(addr, mapped_pref)
-                            .map(IpNetwork::V6)
-                            .unwrap_or_else(|_| IpNetwork::V6(ip_network::Ipv6Network::new(addr, 128).unwrap()))
+                        ip_network::Ipv6Network::new(addr, mapped_pref).ok().map(IpNetwork::V6)
                     }
-                    IpNetwork::V6(v6net) => IpNetwork::V6(v6net),
+                    IpNetwork::V6(v6net) => Some(IpNetwork::V6(v6net)),
                 };
-                {
+                if let Some(query_v6) = net_v6.as_ref() {
                     let sd_reader = SHAPED_DEVICES.load();
                     for (n, &idx) in sd_reader.trie.iter() {
                         if results.len() >= MAX_RESULTS { break; }
-                        if ipv6_overlap(&n, &net_v6) {
+                        if ipv6_overlap(&n, query_v6) {
                             if let Some(dev) = sd_reader.devices.get(idx) {
-                                let name = format!("{} ({})", dev.device_name, n);
+                                let name = format!("{} ({})", dev.device_name, pretty_net(&n));
                                 push_result(
                                     &mut results,
                                     &mut seen,
@@ -152,7 +164,7 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
             let sd_reader = SHAPED_DEVICES.load();
             for (n, &idx) in sd_reader.trie.iter() {
                 if results.len() >= MAX_RESULTS { break; }
-                let s = n.to_string();
+                let s = pretty_net(&n);
                 if s.starts_with(raw_term) {
                     if let Some(dev) = sd_reader.devices.get(idx) {
                         let name = format!("{} ({})", dev.device_name, s);
