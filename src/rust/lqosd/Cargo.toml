@@ -27,7 +27,7 @@ signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { version = "0.3.20", workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 itertools = "0.13.0"
