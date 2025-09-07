@@ -11,6 +11,7 @@ sudo apt-get upgrade
 wget https://libreqos.io/wp-content/uploads/2025/09/lqos_api.zip
 sudo apt-get install unzip
 sudo mkdir /opt/lqos_api/
+sudo chown -R $USER /opt/lqos_api/
 cd /opt/lqos_api/
 unzip lqos_api.zip
 ```
