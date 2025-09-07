@@ -1,4 +1,4 @@
-import {renderConfigMenu} from "./config/config_helper";
+import { renderConfigMenu, saveNetworkAndDevices, validNodeList } from "./config/config_helper";
 
 let shaped_devices = null;
 let network_json = null;
@@ -25,7 +25,7 @@ function makeSheetNumberBox(rowId, boxId, value) {
 function separatedIpArray(rowId, boxId, value) {
     let html = "<td style='padding: 0px'>";
     let val = "";
-    for (i = 0; i<value.length; i++) {
+    for (let i = 0; i < value.length; i++) {
         val += value[i][0];
         val += "/";
         val += value[i][1];
@@ -166,6 +166,8 @@ function start() {
             }
         });
     });
+    // Render the configuration menu and expose needed globals
+    renderConfigMenu('devices');
     window.deleteSdRow = deleteSdRow;
 }
 
@@ -173,7 +175,7 @@ function validateSd() {
     let valid = true;
     let errors = [];
     $(".invalid").removeClass("invalid");
-    let validNodes = validNodeList();
+    let validNodes = validNodeList(network_json);
 
     for (let i=0; i<shaped_devices.length; i++) {
         // Check that circuit ID is good
@@ -459,6 +461,18 @@ function checkIpv6Duplicate(ip, index) {
         }
     }
     return -1;
+}
+
+// Local helper copied from configuration.js to avoid cross-bundle dependency
+function ipAddressesToTuple(ip) {
+    if (!ip || ip.length === 0) return [];
+    let ips = ip.replace(' ', '').split(',');
+    for (let i = 0; i < ips.length; i++) {
+        let this_ip = ips[i].trim();
+        let parts = this_ip.split('/');
+        ips[i] = [ parts[0], parseInt(parts[1]) ];
+    }
+    return ips;
 }
 
 $(document).ready(start);
