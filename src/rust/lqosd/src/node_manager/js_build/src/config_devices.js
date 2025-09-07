@@ -3,6 +3,25 @@ import {renderConfigMenu} from "./config/config_helper";
 let shaped_devices = null;
 let network_json = null;
 
+function start() {
+    // Render the configuration menu
+    renderConfigMenu('devices');
+    // Load shaped devices data
+    $.get("/local-api/allShapedDevices", (data) => {
+        shaped_devices = data;
+        
+        // Load network data
+        $.get("/local-api/networkJson", (njs) => {
+            network_json = njs;
+            shapedDevices();
+        });
+    });
+
+    // Setup button handlers
+    $("#btnNewDevice").on('click', newSdRow);
+    window.deleteSdRow = deleteSdRow;
+}
+
 function rowPrefix(rowId, boxId) {
     return "sdr_" + rowId + "_" + boxId;
 }
@@ -119,8 +138,6 @@ function shapedDevices() {
 }
 
 function start() {
-    // Render the configuration menu
-    renderConfigMenu('devices');
     // Load shaped devices data
     $.get("/local-api/networkJson", (njs) => {
         network_json = njs;
