@@ -1,8 +1,8 @@
-# LibreQoS Node API
+# API del Nodo de LibreQoS
 
-## Installation
+## Instalación
 
-### Download
+### Descarga
 
 ```
 cd ~
@@ -16,15 +16,15 @@ cd /opt/lqos_api/
 unzip lqos_api.zip
 ```
 
-### Test run
+### Ejecución de prueba
 ```
 cd /opt/lqos_api/
 ./lqos_api
 ```
 
-### Systemd Service
+### Servicio systemd
 
-If the test run succeeds, use `sudo nano /etc/systemd/system/lqos_api.service` and paste these contents:
+Si la ejecución de prueba funciona correctamente, use `sudo nano /etc/systemd/system/lqos_api.service` y pegue el siguiente contenido:
 
 ```
 [Unit]
@@ -39,55 +39,55 @@ Restart=always
 [Install]
 WantedBy=default.target
 ```
-Then run:
+Luego ejecute:
 ```
 sudo systemctl daemon-reload
 sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
 ```
 
-## Usage
+## Uso
 
-See `localhost:9122/api-docs` for the Swagger UI.
+Vea `localhost:9122/api-docs` para la interfaz de Swagger UI.
 
-## API Endpoints
+## Endpoints de la API
 
-### Health & System
-- `/health` - Service health check
-- `/reload_libreqos` - Reload LibreQoS configuration
-- `/validate_shaped_devices` - Validate shaped devices CSV
-- `/lqos_stats` - Get lqosd internal statistics
-- `/stormguard_stats` - Get Stormguard statistics
-- `/bakery_stats` - Get Bakery active circuits count
+### Salud y sistema
+- `/health` - Comprobación de salud del servicio
+- `/reload_libreqos` - Recargar la configuración de LibreQoS
+- `/validate_shaped_devices` - Validar el CSV de dispositivos modelados
+- `/lqos_stats` - Obtener estadísticas internas de lqosd
+- `/stormguard_stats` - Obtener estadísticas de Stormguard
+- `/bakery_stats` - Obtener el recuento de circuitos activos de Bakery
 
-### Traffic Metrics
-- `/current_throughput` - Current network throughput stats
-- `/top_n_downloaders/{start}/{end}` - Top downloaders by traffic
-- `/worst_rtt/{start}/{end}` - Hosts with worst round-trip time
-- `/worst_retransmits/{start}/{end}` - Hosts with worst TCP retransmits
-- `/best_rtt/{start}/{end}` - Hosts with best round-trip time
-- `/host_counter` - All host traffic counters
+### Métricas de tráfico
+- `/current_throughput` - Estadísticas actuales de rendimiento de la red
+- `/top_n_downloaders/{start}/{end}` - Descargadores principales por tráfico
+- `/worst_rtt/{start}/{end}` - Hosts con peor tiempo de ida y vuelta (RTT)
+- `/worst_retransmits/{start}/{end}` - Hosts con más retransmisiones TCP
+- `/best_rtt/{start}/{end}` - Hosts con mejor tiempo de ida y vuelta (RTT)
+- `/host_counter` - Todos los contadores de tráfico por host
 
-### Network Topology
-- `/network_map/{parent}` - Network map from parent node
-- `/full_network_map` - Complete network topology
-- `/top_map_queues/{n}` - Top N queues by traffic
-- `/node_names` - Get node names from IDs
-- `/funnel/{target}` - Analyze traffic funnel to circuit
+### Topología de red
+- `/network_map/{parent}` - Mapa de red desde el nodo padre
+- `/full_network_map` - Topología de red completa
+- `/top_map_queues/{n}` - Las N colas principales por tráfico
+- `/node_names` - Obtener nombres de nodos a partir de IDs
+- `/funnel/{target}` - Analizar el embudo de tráfico hacia el circuito
 
-### Circuit Management
-- `/all_circuits` - List all circuits
-- `/raw_queue_data/{circuit_id}` - Raw queue data for circuit
+### Gestión de circuitos
+- `/all_circuits` - Listar todos los circuitos
+- `/raw_queue_data/{circuit_id}` - Datos en bruto de colas para el circuito
 
-### Flow Analysis
-- `/dump_active_flows` - Dump all active flows (slow)
-- `/count_active_flows` - Count of active flows
-- `/top_flows/{flow_type}/{n}` - Top flows by metric type
-- `/flows_by_ip/{ip}` - Flows for specific IP
-- `/flow_duration` - Flow duration statistics
+### Análisis de flujos
+- `/dump_active_flows` - Volcar todos los flujos activos (lento)
+- `/count_active_flows` - Conteo de flujos activos
+- `/top_flows/{flow_type}/{n}` - Flujos principales por tipo de métrica
+- `/flows_by_ip/{ip}` - Flujos para una IP específica
+- `/flow_duration` - Estadísticas de duración de flujos
 
-### Geo & Protocol Stats
-- `/current_endpoints_by_country` - Traffic endpoints by country
-- `/current_endpoint_latlon` - Endpoint geographic coordinates
-- `/ether_protocol_summary` - Ethernet protocol statistics
-- `/ip_protocol_summary` - IP protocol statistics
+### Geo y protocolos
+- `/current_endpoints_by_country` - Endpoints de tráfico por país
+- `/current_endpoint_latlon` - Coordenadas geográficas de endpoints
+- `/ether_protocol_summary` - Resumen de protocolos Ethernet
+- `/ip_protocol_summary` - Resumen de protocolos IP
