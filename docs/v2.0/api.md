@@ -1,5 +1,9 @@
 # LibreQoS Node API
 
+## Requirements
+
+The LibreQoS Node API requires an active LibreQoS Insight subscription.
+
 ## Installation
 
 ### Download
