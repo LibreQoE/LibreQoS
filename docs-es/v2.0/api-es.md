@@ -1,5 +1,8 @@
 # API del Nodo de LibreQoS
 
+## Requisitos
+La API de nodo LibreQoS requiere una suscripción activa a LibreQoS Insight.
+
 ## Instalación
 
 ### Descarga
