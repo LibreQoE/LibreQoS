@@ -35,6 +35,22 @@ function doSearch(search) {
             contentType: 'application/json',
             success: (data) => {
                 let searchResults = document.getElementById("searchResults");
+                // Position panel near the search input for consistent placement
+                const inp = document.getElementById("txtSearch");
+                if (inp && searchResults) {
+                    const rect = inp.getBoundingClientRect();
+                    // Use fixed positioning relative to viewport
+                    searchResults.style.position = 'fixed';
+                    searchResults.style.top = (rect.bottom + 8) + 'px';
+                    searchResults.style.left = rect.left + 'px';
+                    const widthPx = Math.max(320, rect.width + 200);
+                    searchResults.style.minWidth = widthPx + 'px';
+                    searchResults.style.width = widthPx + 'px';
+                    // Ensure it's not shifted or hidden by existing CSS
+                    searchResults.style.transform = 'none';
+                    searchResults.style.zIndex = '2000';
+                    searchResults.style.padding = '6px';
+                }
                 searchResults.style.visibility = "visible";
                 let list = document.createElement("table");
                 list.classList.add("table", "table-striped");
@@ -68,23 +84,85 @@ function doSearch(search) {
     }
 }
 
+// Simple debounce helper
+function debounce(fn, delay) {
+    let timer = null;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    }
+}
+
 function setupSearch() {
+    const hideResults = () => {
+        const panel = document.getElementById("searchResults");
+        if (panel) panel.style.visibility = "hidden";
+    };
+    const showResults = () => {
+        const panel = document.getElementById("searchResults");
+        if (panel) panel.style.visibility = "visible";
+    };
+
     $("#btnSearch").on('click', () => {
         const search = $("#txtSearch").val();
         doSearch(search);
     });
-    $("#txtSearch").on('keyup', () => {
+    const debouncedSearch = debounce(() => {
         const search = $("#txtSearch").val();
         doSearch(search);
+    }, 300);
+    $("#txtSearch").on('keyup', debouncedSearch);
+
+    // Reposition results on resize/scroll to keep anchored under input on index
+    const repositionResults = () => {
+        const inp = document.getElementById('txtSearch');
+        const panel = document.getElementById('searchResults');
+        if (!inp || !panel || panel.style.visibility !== 'visible') return;
+        const rect = inp.getBoundingClientRect();
+        const widthPx = Math.max(320, rect.width + 200);
+        panel.style.position = 'fixed';
+        panel.style.top = (rect.bottom + 8) + 'px';
+        panel.style.left = rect.left + 'px';
+        panel.style.width = widthPx + 'px';
+        panel.style.minWidth = widthPx + 'px';
+        panel.style.transform = 'none';
+        panel.style.zIndex = '2000';
+        panel.style.padding = '6px';
+    };
+    window.addEventListener('resize', repositionResults);
+    window.addEventListener('scroll', repositionResults, true);
+
+    // Focus shows results if available
+    $("#txtSearch").on('focus', () => {
+        if ($("#txtSearch").val().length > 2) showResults();
     });
-    
+    // Blur hides results after short delay to allow clicking results
+    $("#txtSearch").on('blur', () => {
+        setTimeout(hideResults, 150);
+    });
+
     // Add this new key handler for '/' to focus search
     $(document).on('keydown', (e) => {
         if (e.key === '/' && !$(e.target).is('input, textarea, select')) {
             e.preventDefault();
             $('#txtSearch').focus();
+            showResults();
+        } else if (e.key === 'Escape') {
+            hideResults();
+            if ($(e.target).is('#txtSearch')) {
+                $('#txtSearch').blur();
+            }
         }
     });
+
+    // Click-away to close results
+    $(document).on('click', (e) => {
+        if ($(e.target).closest('#searchResults, #txtSearch, #btnSearch').length === 0) {
+            hideResults();
+        }
+    });
+    // Prevent clicks inside the results from bubbling
+    $("#searchResults").on('click', (e) => { e.stopPropagation(); });
 }
 
 function setupReload() {

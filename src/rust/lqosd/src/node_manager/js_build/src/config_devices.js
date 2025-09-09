@@ -119,6 +119,8 @@ function shapedDevices() {
 }
 
 function start() {
+    // Render the configuration menu
+    renderConfigMenu('devices');
     // Load shaped devices data
     $.get("/local-api/networkJson", (njs) => {
         network_json = njs;
