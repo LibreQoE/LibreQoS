@@ -151,7 +151,7 @@ Configure how LibreQoS handles suspended customer accounts:
 |----------|-------------|----------|
 | `none` | Do not handle suspensions | When suspension handling is managed elsewhere |
 | `ignore` | Do not add suspended customers to network map | Reduces queue count and improves performance for networks with many suspended accounts |
-| `slow` | Limit suspended customers to 1mbps | Maintains connectivity for suspended accounts while limiting bandwidth usage |
+| `slow` | Limit suspended customers to 0.1 Mbps | Maintains connectivity for suspended accounts while limiting bandwidth usage |
 
 **Choosing a Suspension Strategy:**
 - Use `none` if your edge router or another system handles suspensions

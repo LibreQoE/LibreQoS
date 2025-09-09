@@ -225,6 +225,30 @@ impl Layer {
                             .filter(|d| d.site_id == *client_id)
                             .collect::<Vec<_>>();
                         for device in devices.iter().filter(|d| d.has_address()) {
+                            // Compute rates
+                            let mut download_max = site.max_down_mbps as f32
+                                * config.uisp_integration.bandwidth_overhead_factor;
+                            let mut upload_max = site.max_up_mbps as f32
+                                * config.uisp_integration.bandwidth_overhead_factor;
+                            let mut download_min = download_max
+                                * config.uisp_integration.commit_bandwidth_multiplier;
+                            let mut upload_min = upload_max
+                                * config.uisp_integration.commit_bandwidth_multiplier;
+
+                            // Clamp for suspended "slow" users
+                            if site.suspended && config.uisp_integration.suspended_strategy.eq_ignore_ascii_case("slow") {
+                                download_max = 0.1;
+                                upload_max = 0.1;
+                                download_min = 0.1;
+                                upload_min = 0.1;
+                            } else {
+                                // Apply floors for regular cases
+                                download_max = f32::max(0.1, download_max);
+                                upload_max = f32::max(0.1, upload_max);
+                                download_min = f32::max(0.1, download_min);
+                                upload_min = f32::max(0.1, upload_min);
+                            }
+
                             let sd = ShapedDevice {
                                 circuit_id: site.id.clone(),
                                 circuit_name: site.name.clone(),
@@ -234,14 +258,10 @@ impl Layer {
                                 mac: device.mac.clone(),
                                 ipv4: device.ipv4_list(),
                                 ipv6: device.ipv6_list(),
-                                download_min: f32::max(0.1, site.max_down_mbps as f32
-                                    * config.uisp_integration.commit_bandwidth_multiplier),
-                                upload_min: f32::max(0.1, site.max_up_mbps as f32
-                                    * config.uisp_integration.commit_bandwidth_multiplier),
-                                download_max: f32::max(0.1, site.max_down_mbps as f32
-                                    * config.uisp_integration.bandwidth_overhead_factor),
-                                upload_max: f32::max(0.1, site.max_up_mbps as f32
-                                    * config.uisp_integration.bandwidth_overhead_factor),
+                                download_min,
+                                upload_min,
+                                download_max,
+                                upload_max,
                                 comment: "".to_string(),
                             };
                             shaped_devices.push(sd);

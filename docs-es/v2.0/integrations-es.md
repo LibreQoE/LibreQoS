@@ -150,7 +150,7 @@ Configure cómo LibreQoS maneja las cuentas de clientes suspendidos:
 |------------|-------------|-------------|
 | `none` | No manejar suspensiones | Cuando el manejo de suspensiones se gestiona en otro lugar |
 | `ignore` | No agregar clientes suspendidos al mapa de red | Reduce el número de colas y mejora el rendimiento para redes con muchas cuentas suspendidas |
-| `slow` | Limitar clientes suspendidos a 1mbps | Mantiene conectividad para cuentas suspendidas mientras limita el uso de ancho de banda |
+| `slow` | Limitar clientes suspendidos a 0.1 Mbps | Mantiene conectividad para cuentas suspendidas mientras limita el uso de ancho de banda |
 
 **Cómo Elegir una Estrategia de Suspensión:**
 - Use `none` si su router de borde u otro sistema maneja las suspensiones

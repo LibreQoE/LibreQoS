@@ -83,7 +83,7 @@ strategy = "full"
 # Suspension strategy:
 # * "none" - do not handle suspensions
 # * "ignore" - do not add suspended customers to the network map
-# * "slow" - limit suspended customers to 1mbps
+# * "slow" - limit suspended customers to 0.1 Mbps
 suspended_strategy = "none"
 
 # UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
