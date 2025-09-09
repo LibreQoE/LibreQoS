@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 #[derive(Default, Debug, Serialize, Deserialize, Allocative)]

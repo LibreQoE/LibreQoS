@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 //! The `lqos_bus` crate provides the data-transfer back-end for communication
 //! between the various parts of LibreQoS. `lqosd` listens on `localhost`
 //! for requests. Any tool may use the daemon services locally for interaction

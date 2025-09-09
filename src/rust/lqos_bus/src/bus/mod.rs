@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 mod client;
 mod queue_data;
 mod reply;
@@ -40,4 +43,3 @@ pub enum BusClientError {
     #[error("Stream is no longer connected")]
     StreamNotConnected,
 }
-

@@ -2,7 +2,8 @@
 name = "lqos_bus"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-2.0-only"
+license-file = "LICENSE"
+authors = ["LibreQoE LLC <support@libreqos.io>"]
 
 [features]
 default = ["equinix_tests"]

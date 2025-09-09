@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use crate::{
     BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession,
     bus::client::{MAGIC_NUMBER, MAGIC_RESPONSE},
