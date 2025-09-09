@@ -46,6 +46,7 @@ use signal_hook::{
 use stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
+use std::{thread, time::Duration};
 
 // Use MiMalloc only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -203,6 +204,8 @@ fn main() -> Result<()> {
                                 lts_client::collector::stats_availability::StatsUpdateMessage::Quit,
                             ));
                         std::mem::drop(kernels);
+                        // Give kernel/driver a moment to finalize detach
+                        thread::sleep(Duration::from_millis(50));
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);
