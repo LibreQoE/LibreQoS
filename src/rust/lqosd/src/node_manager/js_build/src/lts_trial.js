@@ -636,10 +636,13 @@ function attachEventHandlers() {
                     }),
                     contentType: 'application/json',
                 });
+                // Show success message now, then swap spinner to a check and enable dashboard after 5s
+                $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {
-                    $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
+                    $('#configSpinner').hide();
+                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);
                     $('#btnDashboard').fadeIn();
-                }, 1000);
+                }, 5000);
             } else {
                 hideLoading();
                 showError(response.message || 'Invalid license key.');
@@ -746,10 +749,13 @@ function attachEventHandlers() {
                     }),
                     contentType: 'application/json',
                 });
+                // Show success message now, then swap spinner to a check and enable dashboard after 5s
+                $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {
-                    $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
+                    $('#configSpinner').hide();
+                    $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);
                     $('#btnDashboard').fadeIn();
-                }, 1000);
+                }, 5000);
             } else {
                 console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
                 showError('Failed to create account. Please try again.');
@@ -761,4 +767,3 @@ function attachEventHandlers() {
         }
     });
 }
-

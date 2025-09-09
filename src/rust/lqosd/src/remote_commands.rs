@@ -47,6 +47,15 @@ fn run_command(command: RemoteCommand) {
             }
         }
         RemoteCommand::RestartLqosd => {
+            // Gracefully detach XDP/TC before exiting to avoid stale attachments
+            if let Ok(cfg) = lqos_config::load_config() {
+                if cfg.on_a_stick_mode() {
+                    let _ = lqos_sys::unload_xdp_from_interface(&cfg.internet_interface());
+                } else {
+                    let _ = lqos_sys::unload_xdp_from_interface(&cfg.internet_interface());
+                    let _ = lqos_sys::unload_xdp_from_interface(&cfg.isp_interface());
+                }
+            }
             std::process::exit(0);
         }
         RemoteCommand::RestartScheduler => {
