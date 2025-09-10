@@ -1,1 +1,51 @@
-<p>The API requires a valid Insight subscription.</p>
+<!-- API & Chatbot (Libby) overview -->
+
+<!-- Subscription notice -->
+<div class="alert alert-info d-flex align-items-start" role="alert">
+  <i class="fa-solid fa-circle-info me-2 mt-1"></i>
+  <div>
+    <strong>You need an Insight account.</strong>
+    Setup LibreQoS with your Insight license key to enable the Local API and Libby (the LibreQoS chatbot).
+  </div>
+  <div class="ms-auto small">
+    <i class="fa-solid fa-key me-1"></i>API access requires a valid license
+  </div>
+  </div>
+
+<!-- Benefits intro -->
+<h2 class="h4 mb-2">
+  <i class="fa-solid fa-robot me-2"></i>LibreQoS API and Libby
+  <span class="text-muted">— faster answers, better visibility</span>
+  </h2>
+<p class="text-secondary">
+  The Local API exposes real‑time telemetry and network insights from your node, while Libby combines those
+  live metrics with embedded documentation to deliver concise, actionable answers. Use them to accelerate troubleshooting,
+  automate checks, and keep operators focused on outcomes instead of digging for data.
+  </p>
+
+<!-- Capabilities list -->
+<h3 class="h5 mt-4">What you can do</h3>
+<ul class="mb-4">
+  <li><i class="fa-solid fa-gauge-high me-2 text-secondary"></i>Query live throughput, packet rates, and shaped vs. unshaped traffic.</li>
+  <li><i class="fa-solid fa-tower-broadcast me-2 text-secondary"></i>See circuits and nodes nearing capacity to prevent congestion.</li>
+  <li><i class="fa-solid fa-arrows-turn-to-dots me-2 text-secondary"></i>Analyze TCP retransmits and latency to pinpoint quality issues.</li>
+  <li><i class="fa-solid fa-sitemap me-2 text-secondary"></i>Summarize your network tree and trace upstream paths (funnel views).</li>
+  <li><i class="fa-solid fa-magnifying-glass me-2 text-secondary"></i>Look up flows by IP, top downloaders, and active endpoints.</li>
+  <li><i class="fa-regular fa-file-lines me-2 text-secondary"></i>Generate ticket suggestions with clear next steps and likely causes.</li>
+  <li><i class="fa-regular fa-circle-question me-2 text-secondary"></i>Ask Libby anything—she uses tools first, then explains results in plain English.</li>
+  <li><i class="fa-solid fa-book me-2 text-secondary"></i>Get relevant docs snippets (RAG) with citations to official LibreQoS guidance.</li>
+</ul>
+
+<!-- Getting started blurb -->
+<div class="card">
+  <div class="card-body">
+    <h4 class="h6 card-title mb-2"><i class="fa-solid fa-plug me-2"></i>Getting started</h4>
+    <p class="mb-2 text-secondary">
+      Provide your Insight license key in <code>/etc/lqos.conf</code>, then restart the Local API. Use the built‑in Swagger UI at
+      <code>/api-docs</code> for endpoints, and open Libby at <code>http://&lt;node-ip&gt;:9121/</code> when enabled.
+    </p>
+    <p class="mb-0 small text-muted">
+      Tip: The API publishes readiness heartbeats and exposes health signals so orchestrators know when it’s safe to query.
+    </p>
+  </div>
+</div>
