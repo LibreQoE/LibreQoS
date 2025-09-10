@@ -109,9 +109,9 @@
                         <a class="nav-link" id="lnkReloadLqos">
                             <i class="fa fa-fw fa-centerline fa-recycle"></i> Reload LibreQoS
                         </a>
-                        <hr />
                     </li>
                     %%SCHEDULER_STATUS%%
+                    <hr />
                     <!-- Dark mode switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
@@ -186,11 +186,46 @@
     </div>
 </div>
 
+<!-- Scheduler Modal -->
+<div class='modal fade' id='schedulerModal' tabindex='-1' aria-labelledby='schedulerModalLabel' aria-hidden='true'>
+    <div class='modal-dialog modal-xl modal-dialog-scrollable'>
+        <div class='modal-content'>
+            <div class='modal-header'>
+                <h1 class='modal-title fs-5' id='schedulerModalLabel'>Scheduler Status</h1>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+            </div>
+            <div class='modal-body'>
+                <pre id='schedulerDetailsBody' style='overflow: auto; height: 60vh; width: 100%; white-space: pre-wrap;'></pre>
+            </div>
+            <div class='modal-footer'>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+            </div>
+        </div>
+    </div>
+    </div>
+
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
     LibreQoS %%VERSION%%. &copy; Copyright 2022-2024, LibreQoE LLC. All Rights Reserved.
 </footer>
 
     <script src="template.js"></script>
+    <script>
+    // Remove scheduler tooltip (keep click-to-see only)
+    (function(){
+        const container = document.getElementById('schedulerStatus');
+        if (!container || !('MutationObserver' in window)) return;
+        const obs = new MutationObserver(() => {
+            const el = document.getElementById('schedulerStatusLink');
+            if (!el) return;
+            const tip = bootstrap.Tooltip.getInstance(el);
+            if (tip) tip.dispose();
+            el.removeAttribute('data-bs-toggle');
+            el.removeAttribute('data-bs-placement');
+            el.removeAttribute('title');
+        });
+        obs.observe(container, { childList: true, subtree: true });
+    })();
+    </script>
 
 </body>
 </html>

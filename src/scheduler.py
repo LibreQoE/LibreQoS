@@ -32,20 +32,20 @@ def capture_output_and_run(func):
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         captured_output = StringIO()
-        
+
         sys.stdout = captured_output
         sys.stderr = captured_output
-        
+
         func()  # Execute the function
-        
+
         # Restore original stdout/stderr
         sys.stdout = old_stdout
         sys.stderr = old_stderr
-        
+
         output = captured_output.getvalue()
         print(output)  # Print captured output
         scheduler_error(output)  # Send to error reporting
-        
+
     except Exception as e:
         error_msg = f"Failed to execute function: {str(e)}"
         print(error_msg)
@@ -70,7 +70,9 @@ def importFromCRM():
             result = subprocess.run([path], capture_output=True, text=True)
             output = result.stdout + result.stderr
             print(output)  # Maintain console output
-            scheduler_error(output)  # Send to error reporting
+            # Report UISP output to error channel regardless of return code,
+            # as UISP may signal errors in text while returning success.
+            scheduler_error(output)
             blackboard_finish()
         except Exception as e:
             error_msg = f"Failed to import from UISP: {str(e)}"
@@ -111,13 +113,26 @@ def importAndShapePartialReload():
 
 
 def not_dead_yet():
+    #print(f"Scheduler alive at {datetime.datetime.now()}")
     scheduler_alive()
 
 if __name__ == '__main__':
-    importAndShapeFullReload()
-    network_hash = calculate_hash()
+    try:
+        importAndShapeFullReload()
+        network_hash = calculate_hash()
 
-    ads.add_job(importAndShapePartialReload, 'interval', minutes=queue_refresh_interval_mins(), max_instances=1)
-    ads.add_job(not_dead_yet(), 'interval', minutes=1, max_instances=1)
+        print("Starting scheduler with jobs:")
+        print(f"- not_dead_yet every 1 minute")
+        refresh_interval = queue_refresh_interval_mins()
+        print(f"- importAndShapePartialReload every {refresh_interval} minutes")
+        
+        not_dead_yet()
+        ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
+        ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
 
-    ads.start()
+        print("Scheduler starting...")
+        ads.start()
+    except Exception as e:
+        print(f"Error starting scheduler: {e}")
+        import traceback
+        traceback.print_exc()

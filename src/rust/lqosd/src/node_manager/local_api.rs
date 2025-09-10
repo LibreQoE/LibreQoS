@@ -9,6 +9,7 @@ mod flow_map;
 pub mod lts;
 mod network_tree;
 mod packet_analysis;
+mod scheduler;
 mod reload_libreqos;
 mod search;
 mod shaped_device_api;
@@ -99,6 +100,8 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ltsWorst10Rxmit/:seconds", get(lts::worst10_rxmit_period))
         .route("/ltsTopFlows/:seconds", get(lts::top10_flows_period))
         .route("/ltsRecentMedian", get(lts::recent_medians))
+        .route("/scheduler/status", get(scheduler::scheduler_status))
+        .route("/scheduler/details", get(scheduler::scheduler_details))
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

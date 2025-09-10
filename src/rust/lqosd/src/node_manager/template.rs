@@ -10,7 +10,7 @@ use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
 use std::path::Path;
-use crate::tool_status::{is_api_available, is_chatbot_available, is_scheduler_available, scheduler_error_message};
+use crate::tool_status::{is_api_available, is_chatbot_available};
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -48,6 +48,15 @@ fn js_tf(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
 
+// Escape HTML special characters for use in attributes
+fn escape_html_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 // HTML template for API link when available
 const API_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
@@ -70,6 +79,15 @@ const CHAT_LINK_ACTIVE: &str = r#"
     <a class="nav-link" id="chatLink" href="%%CHAT_URL%%">
         <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
     </a>
+</li>"#;
+
+// HTML template for chat link when unavailable (rendered as plain text, no hover highlight)
+const CHAT_LINK_INACTIVE: &str = r#"
+<li class="nav-item">
+    <span class="nav-link no-hover" id="chatLink" title="Ask Libby is disabled. Enable it via the API service.">
+        <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
+    </span>
+    
 </li>"#;
 
 // HTML template for scheduler status when available (without error)
@@ -168,42 +186,24 @@ pub async fn apply_templates(
         };
         let byte_string = byte_string.replace("%%API_LINK%%", api_link);
 
-        // Handle CHAT_LINK placeholder
+        // Handle CHAT_LINK placeholder (visible even when unavailable)
         let chat_link = if is_chatbot_available() {
             CHAT_LINK_ACTIVE
         } else {
-            ""
+            CHAT_LINK_INACTIVE
         };
         let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
 
-        // Handle SCHEDULER_STATUS placeholder with error message support
-        let error_message = scheduler_error_message();
-        let scheduler_status = if is_scheduler_available() {
-            if let Some(err) = error_message {
-                // Scheduler available but with error message - show green check with tooltip
-                format!(r#"
-<li class="nav-item">
-    <span class="nav-link text-success" data-bs-toggle="tooltip" data-bs-placement="right" title="{}" style="text-decoration: underline dotted;">
-        <i class="fa fa-fw fa-centerline fa-check-circle"></i> Scheduler
-    </span>
-</li>"#, err)
-            } else {
-                SCHEDULER_STATUS_ACTIVE.to_string()
-            }
-        } else {
-            if let Some(err) = error_message {
-                // Scheduler unavailable with error message - show red X with tooltip
-                format!(r#"
-<li class="nav-item">
-    <span class="nav-link text-danger" data-bs-toggle="tooltip" data-bs-placement="right" title="{}" style="text-decoration: underline dotted;">
-        <i class="fa fa-fw fa-centerline fa-times-circle"></i> Scheduler
-    </span>
-</li>"#, err)
-            } else {
-                SCHEDULER_STATUS_INACTIVE.to_string()
-            }
-        };
-        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", &scheduler_status);
+        // Replace SCHEDULER_STATUS with a simple placeholder for client-side rendering
+        // The client JS will fetch status and populate this container.
+        let scheduler_placeholder = r##"
+<li class="nav-item" id="schedulerStatus">
+    <a class="nav-link" href="#" id="schedulerStatusLink">
+        <i class="fa fa-fw fa-centerline fa-circle-notch fa-spin"></i> Scheduler
+    </a>
+</li>
+"##;
+        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
 
         let byte_string = byte_string
             .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));

@@ -3,6 +3,49 @@ import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
 
+function escapeAttr(text) {
+    if (text === undefined || text === null) return "";
+    return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
+
+function loadSchedulerStatus() {
+    const container = document.getElementById('schedulerStatus');
+    if (!container) return;
+    $.get('/local-api/scheduler/status', (data) => {
+        const color = data.available ? 'text-success' : 'text-danger';
+        const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
+        container.innerHTML = `
+            <a class="nav-link ${color}" href="#" id="schedulerStatusLink">
+                <i class="fa fa-fw fa-centerline ${icon}"></i> Scheduler
+            </a>`;
+
+        // Click opens details modal only; no tooltip
+        $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
+            e.preventDefault();
+            openSchedulerModal();
+        });
+    });
+}
+
+function openSchedulerModal() {
+    const modalEl = document.getElementById('schedulerModal');
+    if (!modalEl) return;
+    const myModal = new bootstrap.Modal(modalEl, { focus: true });
+    myModal.show();
+    $("#schedulerDetailsBody").html("<i class='fa fa-spinner fa-spin'></i> Loading scheduler status...");
+    $.ajax({
+        url: '/local-api/scheduler/details',
+        method: 'GET',
+        success: (text) => { $("#schedulerDetailsBody").text(text); },
+        error: () => { $("#schedulerDetailsBody").text('Failed to load scheduler details'); }
+    });
+}
+
 function getDeviceCounts() {
     $.get("/local-api/deviceCount", (data) => {
         //console.log(data);
@@ -224,3 +267,4 @@ setupSearch();
 setupReload();
 setupDynamicUrls();
 initSchedulerTooltips();
+loadSchedulerStatus();
