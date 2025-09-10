@@ -10,6 +10,7 @@ use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
 use std::path::Path;
+use crate::tool_status::{is_api_available, is_chatbot_available, is_scheduler_available, scheduler_error_message};
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -46,6 +47,46 @@ const LTS1_LINK_OFFER_TRIAL: &str = r#"
 fn js_tf(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
+
+// HTML template for API link when available
+const API_LINK_ACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="apiLink" href="%%API_URL%%">
+        <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
+    </a>
+</li>"#;
+
+// HTML template for API link when unavailable
+const API_LINK_INACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="apiLink" href="api.html">
+        <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
+    </a>
+</li>"#;
+
+// HTML template for chat link when available
+const CHAT_LINK_ACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="chatLink" href="%%CHAT_URL%%">
+        <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
+    </a>
+</li>"#;
+
+// HTML template for scheduler status when available (without error)
+const SCHEDULER_STATUS_ACTIVE: &str = r#"
+<li class="nav-item">
+    <span class="nav-link text-success">
+        <i class="fa fa-fw fa-centerline fa-check-circle"></i> Scheduler
+    </span>
+</li>"#;
+
+// HTML template for scheduler status when unavailable (without error)
+const SCHEDULER_STATUS_INACTIVE: &str = r#"
+<li class="nav-item">
+    <span class="nav-link text-danger">
+        <i class="fa fa-fw fa-centerline fa-times-circle"></i> Scheduler
+    </span>
+</li>"#;
 
 static GIT_HASH: &str = env!("GIT_HASH");
 
@@ -119,6 +160,51 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
+        // Handle API_LINK placeholder
+        let api_link = if is_api_available() {
+            API_LINK_ACTIVE
+        } else {
+            API_LINK_INACTIVE
+        };
+        let byte_string = byte_string.replace("%%API_LINK%%", api_link);
+
+        // Handle CHAT_LINK placeholder
+        let chat_link = if is_chatbot_available() {
+            CHAT_LINK_ACTIVE
+        } else {
+            ""
+        };
+        let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
+
+        // Handle SCHEDULER_STATUS placeholder with error message support
+        let error_message = scheduler_error_message();
+        let scheduler_status = if is_scheduler_available() {
+            if let Some(err) = error_message {
+                // Scheduler available but with error message - show green check with tooltip
+                format!(r#"
+<li class="nav-item">
+    <span class="nav-link text-success" data-bs-toggle="tooltip" data-bs-placement="right" title="{}" style="text-decoration: underline dotted;">
+        <i class="fa fa-fw fa-centerline fa-check-circle"></i> Scheduler
+    </span>
+</li>"#, err)
+            } else {
+                SCHEDULER_STATUS_ACTIVE.to_string()
+            }
+        } else {
+            if let Some(err) = error_message {
+                // Scheduler unavailable with error message - show red X with tooltip
+                format!(r#"
+<li class="nav-item">
+    <span class="nav-link text-danger" data-bs-toggle="tooltip" data-bs-placement="right" title="{}" style="text-decoration: underline dotted;">
+        <i class="fa fa-fw fa-centerline fa-times-circle"></i> Scheduler
+    </span>
+</li>"#, err)
+            } else {
+                SCHEDULER_STATUS_INACTIVE.to_string()
+            }
+        };
+        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", &scheduler_status);
+
         let byte_string = byte_string
             .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {

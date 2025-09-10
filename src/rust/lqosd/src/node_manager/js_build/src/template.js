@@ -177,6 +177,44 @@ function setupReload() {
     }
 }
 
+function setupDynamicUrls() {
+    // Get the current host and protocol from the browser
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // Construct API URL (port 9122)
+    const apiUrl = `${currentProtocol}//${currentHost}:9122/api_docs`;
+    
+    // Construct Chat URL (port 9121)
+    const chatUrl = `${currentProtocol}//${currentHost}:9121/`;
+    
+    // Update API link only if it has the placeholder
+    const apiLink = document.getElementById('apiLink');
+    if (apiLink) {
+        const hrefAttr = apiLink.getAttribute('href');
+        if (hrefAttr === '%%API_URL%%') {
+            apiLink.href = apiUrl;
+        }
+    }
+    
+    // Update Chat link if it exists (only created when chatbot is available)
+    const chatLink = document.getElementById('chatLink');
+    if (chatLink) {
+        const hrefAttr = chatLink.getAttribute('href');
+        if (hrefAttr === '%%CHAT_URL%%') {
+            chatLink.href = chatUrl;
+        }
+    }
+}
+
+function initSchedulerTooltips() {
+    // Initialize Bootstrap tooltips for scheduler status elements
+    const schedulerElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    schedulerElements.forEach(element => {
+        new bootstrap.Tooltip(element);
+    });
+}
+
 initLogout();
 initDayNightMode();
 initRedact();
@@ -184,3 +222,5 @@ initColorBlind();
 getDeviceCounts();
 setupSearch();
 setupReload();
+setupDynamicUrls();
+initSchedulerTooltips();

@@ -18,6 +18,7 @@ mod tuning;
 mod validation;
 mod version_checks;
 mod scheduler_control;
+mod tool_status;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -525,6 +526,22 @@ fn handle_bus_requests(
             }
             BusRequest::GetBakeryStats => {
                 BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
+            }
+            BusRequest::ApiReady => {
+                tool_status::api_seen();
+                BusResponse::Ack
+            }
+            BusRequest::ChatbotReady => {
+                tool_status::chatbot_seen();
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerReady => {
+                tool_status::scheduler_seen();
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerError (error) => {
+                tool_status::scheduler_error(Some(error.clone()));
+                BusResponse::Ack
             }
         });
     }

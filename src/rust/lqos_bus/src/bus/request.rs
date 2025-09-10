@@ -295,6 +295,18 @@ pub enum BusRequest {
     
     /// Get current Bakery statistics
     GetBakeryStats,
+
+    /// Announce that the API is ready
+    ApiReady,
+
+    /// Announce that the chatbot is ready
+    ChatbotReady,
+
+    /// Announce that the scheduler is ready
+    SchedulerReady,
+
+    /// Announce a scheduler error
+    SchedulerError(String),
 }
 
 /// Defines the parts of the blackboard
