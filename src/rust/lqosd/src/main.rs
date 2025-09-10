@@ -543,6 +543,12 @@ fn handle_bus_requests(
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
+            BusRequest::CheckSchedulerStatus => {
+                let running = tool_status::is_scheduler_available();
+                let error = tool_status::scheduler_error_message();
+                BusResponse::SchedulerStatus { running, error }
+            }
+
         });
     }
 }

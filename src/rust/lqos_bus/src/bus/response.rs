@@ -189,4 +189,12 @@ pub enum BusResponse {
     
     /// Bakery statistics
     BakeryActiveCircuits(usize),
+
+    /// Scheduler status
+    SchedulerStatus{ 
+        /// Is the scheduler running
+        running: bool, 
+        /// Any error message from integrations
+        error: Option<String> 
+    }
 }

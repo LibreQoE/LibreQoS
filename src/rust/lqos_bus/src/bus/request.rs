@@ -307,6 +307,9 @@ pub enum BusRequest {
 
     /// Announce a scheduler error
     SchedulerError(String),
+
+    /// Check the scheduler status
+    CheckSchedulerStatus,
 }
 
 /// Defines the parts of the blackboard
