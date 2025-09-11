@@ -76,7 +76,7 @@ const API_LINK_INACTIVE: &str = r#"
 // HTML template for chat link when available
 const CHAT_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
-    <a class="nav-link" id="chatLink" href="%%CHAT_URL%%">
+    <a class="nav-link" id="chatLink" href="%%CHAT_URL%%" target="_blank" rel="noopener">
         <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
     </a>
 </li>"#;
