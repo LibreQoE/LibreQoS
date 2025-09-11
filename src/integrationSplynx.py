@@ -611,221 +611,19 @@ def createShaper():
 		run_splynx_pipeline('ap_only')
 
 def createShaperFull():
-	"""
-	Full strategy: Complete topology mapping (original behavior).
-	Most CPU intensive but provides complete network hierarchy.
-	"""
-	net = NetworkGraph()
-
-	print("Using FULL strategy - complete topology mapping")
-	print("Fetching data from Spylnx")
-	headers = buildHeaders()
-	print("Fetching tariffs from Spylnx")
-	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
-	print("Fetching all customers from Spylnx")
-	customers = getCustomers(headers)
-	print("Fetching online customers from Spylnx")
-	customersOnline = getCustomersOnline(headers)
-	print("Fetching routers from Spylnx")
-	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
-	print("Fetching sectors from Spylnx")
-	sectorForRouter = getSectors(headers)
-	print("Fetching services from Spylnx")
-	allServices = getAllServices(headers)
-	print("Fetching hardware monitoring from Spylnx")
-	monitoring = getMonitoring(headers)
-	#ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
-	siteBandwidth = buildSiteBandwidths()
-	print("Successfully fetched data from Spylnx")
-	
-	allParentNodes = []
-	custIDtoParentNode = {}
-	matched_via_primary_method = 0
-	matched_via_alternate_method = 0
-	matched_with_parent_node = 0
-	# Track parent node assignment methods
-	parent_assignment_methods = {
-		'access_device': 0,
-		'router_id': 0,
-		'sector_id': 0,
-		'none': 0
-	}
-	
-	print("Matching customer services to IPs")
-	# Build hardware infrastructure data
-	hardware_name = {}
-	access_device_name = {}
-	hardware_parent = {}
-	hardware_type = {}
-	hardware_name_extended = {}
-	
-	for monitored_device in monitoring:
-		hardware_name[monitored_device['id']] = monitored_device['title']
-		if 'access_device' in monitored_device:
-			if monitored_device['access_device'] == '1':
-				access_device_name[monitored_device['id']] = monitored_device['title']
-				if 'parent_id' in monitored_device:
-					hardware_parent[monitored_device['id']] = monitored_device['parent_id']
-		if 'parent_id' in monitored_device:
-			hardware_parent[monitored_device['id']] = monitored_device['parent_id']
-		if 'type' in monitored_device:
-			if monitored_device['type'] == 5:
-				hardware_type[monitored_device['id']] = 'AP'
-			else:
-				hardware_type[monitored_device['id']] = 'Site'
-	
-	# Build extended names with parent hierarchy
-	for monitored_device in monitoring:
-		if 'parent_id' in monitored_device:
-			if monitored_device['id'] in hardware_parent:
-				if hardware_parent[monitored_device['id']] in hardware_name:
-					hardware_name_extended[monitored_device['id']] = hardware_name[hardware_parent[monitored_device['id']]] + "_" + monitored_device['title'] 
-		if monitored_device['id'] not in hardware_name_extended:
-			hardware_name_extended[monitored_device['id']] = monitored_device['title']
-	
-	# Create all infrastructure nodes
-	print("Creating infrastructure nodes")
-	createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended)
-	
-	cust_id_to_name = {}
-	for customer in customers:
-		cust_id_to_name[customer['id']] = customer['name']
-	service_ids_handled = []
-	allocated_ipv4s = {}
-	allocated_ipv6s = {}
-	device_counter = [200000]
-	print("Processing services and creating client nodes")
-	for serviceItem in allServices:
-		if serviceItem['status'] == 'active':
-			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
-			
-			# Find best parent node using enhanced logic
-			parent_node_id, assignment_method = findBestParentNode(
-				serviceItem, hardware_name, ipForRouter, sectorForRouter
-			)
-			parent_assignment_methods[assignment_method] += 1
-			
-			if ipv4_list or ipv6_list:
-				circuit_id = createClientAndDevice(
-					net, serviceItem, cust_id_to_name, downloadForTariffID, 
-					uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list
-				)
-				
-				if serviceItem['id'] not in service_ids_handled:
-					service_ids_handled.append(serviceItem['id'])
-				matched_via_primary_method += 1
-				if parent_node_id != None:
-					matched_with_parent_node += 1
-
-	# Use customers-online to supplement and add dynamic-only devices
-	matched_via_supplementation = supplement_existing_devices_with_online_ips(
-		net, allServices, service_ids_handled, customersOnline, cust_id_to_name, allocated_ipv4s, allocated_ipv6s
-	)
-	matched_via_alternate_method = create_devices_from_online_for_unhandled_services(
-		net, allServices, service_ids_handled, customersOnline, cust_id_to_name,
-		downloadForTariffID, uploadForTariffID, device_counter, allocated_ipv4s, allocated_ipv6s
-	)
-	print("Matched " + "{:.0%}".format(len(service_ids_handled)/len(allServices)) + " of known services in Splynx.")
-	print("Primary method (static IPs) created: " + str(matched_via_primary_method))
-	if matched_via_supplementation > 0:
-		print("Supplemented existing devices with online IPs: " + str(matched_via_supplementation))
-	print("Created via online-only fallback: " + str(matched_via_alternate_method))
-	print("Matched " + "{:.0%}".format(matched_with_parent_node/len(service_ids_handled)) + " of services found with their corresponding parent node.")
-
-	# Report parent node assignment methods (unchanged)
-	print("\nParent Node Assignment Methods:")
-	total_assigned = sum(parent_assignment_methods.values()) - parent_assignment_methods['none']
-	for method, count in parent_assignment_methods.items():
-		if count > 0:
-			if method == 'none':
-				print(f"  No parent node: {count} ({count/sum(parent_assignment_methods.values()):.1%})")
-			else:
-				print(f"  {method}: {count} ({count/sum(parent_assignment_methods.values()):.1%})")
-	if total_assigned > 0:
-		print(f"\nTotal with parent nodes: {total_assigned} ({total_assigned/sum(parent_assignment_methods.values()):.1%})")
-	
-	net.prepareTree()
-	net.plotNetworkGraph(False)
-	
-	if net.doesNetworkJsonExist():
-		if overwrite_network_json_always:
-			net.createNetworkJson()
-		else:
-			print("network.json already exists. Leaving in-place.")
-	else:
-		net.createNetworkJson()
-	net.createShapedDevices()
+	# Deprecated wrapper: use unified pipeline
+	run_splynx_pipeline('full')
 
 def createShaperFlat():
-	"""
-	Flat strategy: Only shapes subscribers, ignoring parent node relationships.
-	Provides maximum CPU performance by eliminating all hierarchy.
-	"""
-	net = NetworkGraph()
-	
-	print("Using FLAT strategy - shaping clients only, no hierarchy")
-	print("Fetching data from Spylnx")
-	headers = buildHeaders()
-	print("Fetching tariffs from Spylnx")
-	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
-	print("Fetching all customers from Spylnx")
-	customers = getCustomers(headers)
-	print("Fetching online customers from Spylnx")
-	customersOnline = getCustomersOnline(headers)
-	print("Fetching services from Spylnx")
-	allServices = getAllServices(headers)
-	print("Successfully fetched data from Spylnx")
-	
-	cust_id_to_name = {}
-	for customer in customers:
-		cust_id_to_name[customer['id']] = customer['name']
-	
-	service_ids_handled = []
-	allocated_ipv4s = {}
-	allocated_ipv6s = {}
-	device_counter = [200000]
-	
-	print("Creating flat client topology")
-	for serviceItem in allServices:
-		if serviceItem['status'] == 'active':
-			ipv4_list, ipv6_list = extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s)
-			
-			if ipv4_list or ipv6_list:
-				# In flat strategy, all clients have no parent (parentId=None)
-				circuit_id = createClientAndDevice(
-					net, serviceItem, cust_id_to_name, downloadForTariffID, 
-					uploadForTariffID, device_counter, None, ipv4_list, ipv6_list
-				)
-				service_ids_handled.append(serviceItem['id'])
-	
-	# After initial static-IP creation, supplement and fallback from customers-online
-	matched_via_supplementation = supplement_existing_devices_with_online_ips(
-		net, allServices, service_ids_handled, customersOnline, cust_id_to_name, allocated_ipv4s, allocated_ipv6s
-	)
-	matched_via_alternate_method = create_devices_from_online_for_unhandled_services(
-		net, allServices, service_ids_handled, customersOnline, cust_id_to_name,
-		downloadForTariffID, uploadForTariffID, device_counter, allocated_ipv4s, allocated_ipv6s,
-		parent_selector=None
-	)
-	print(f"Created {len(service_ids_handled)} flat client entries (including online supplementation: {matched_via_supplementation}, fallback: {matched_via_alternate_method})")
-	
-	net.prepareTree()
-	net.plotNetworkGraph(False)
-	
-	if net.doesNetworkJsonExist():
-		if overwrite_network_json_always:
-			net.createNetworkJson()
-		else:
-			print("network.json already exists. Leaving in-place.")
-	else:
-		net.createNetworkJson()
-	net.createShapedDevices()
+	# Deprecated wrapper: use unified pipeline
+	run_splynx_pipeline('flat')
 
 def createShaperApOnly():
 	"""
 	AP-only strategy: Single layer of AP + Clients (similar to Preseem).
 	Optimal balance between hierarchy and performance - should be default.
 	"""
+	# Deprecated body retained below for reference; not used by entrypoint
 	net = NetworkGraph()
 	
 	print("Using AP_ONLY strategy - single layer AP + Clients topology")
@@ -952,6 +750,7 @@ def createShaperApSite():
 	AP-Site strategy: Site → AP → Clients structure.
 	Moderate hierarchy providing site-level aggregation.
 	"""
+	# Deprecated body retained below for reference; not used by entrypoint
 	net = NetworkGraph()
 	
 	print("Using AP_SITE strategy - Site → AP → Clients topology")
@@ -1059,6 +858,19 @@ def importFromSplynx():
 	Entry point for the script to initiate the Splynx data import and shaper creation process.
 	"""
 	createShaper()
+
+# Lightweight wrappers to avoid confusion; unified pipeline is canonical
+def createShaperApOnly():
+	return run_splynx_pipeline('ap_only')
+
+def createShaperApSite():
+	return run_splynx_pipeline('ap_site')
+
+def createShaperFull():
+	return run_splynx_pipeline('full')
+
+def createShaperFlat():
+	return run_splynx_pipeline('flat')
 
 if __name__ == '__main__':
 	importFromSplynx()
