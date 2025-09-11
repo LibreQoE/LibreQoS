@@ -226,7 +226,8 @@ function setupDynamicUrls() {
     const currentProtocol = window.location.protocol;
     
     // Construct API URL (port 9122)
-    const apiUrl = `${currentProtocol}//${currentHost}:9122/api_docs`;
+    // The Swagger UI lives at /api-docs/ (dash, trailing slash)
+    const apiUrl = `${currentProtocol}//${currentHost}:9122/api-docs/`;
     
     // Construct Chat URL (port 9121)
     const chatUrl = `${currentProtocol}//${currentHost}:9121/`;

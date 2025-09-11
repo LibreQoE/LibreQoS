@@ -64,6 +64,7 @@ const API_LINK_ACTIVE: &str = r#"
     <a class="nav-link" id="apiLink" href="api_docs.html">
         <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
     </a>
+    
 </li>"#;
 
 // HTML template for API link when unavailable
