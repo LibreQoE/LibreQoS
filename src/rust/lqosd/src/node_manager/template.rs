@@ -180,16 +180,16 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
-        // Handle API_LINK placeholder
-        let api_link = if is_api_available() {
+        // Handle API_LINK placeholder (require service + valid Insight)
+        let api_link = if is_api_available() && script_has_insight {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE
         };
         let byte_string = byte_string.replace("%%API_LINK%%", api_link);
 
-        // Handle CHAT_LINK placeholder (visible even when unavailable)
-        let chat_link = if is_chatbot_available() {
+        // Handle CHAT_LINK placeholder (require service + valid Insight)
+        let chat_link = if is_chatbot_available() && script_has_insight {
             CHAT_LINK_ACTIVE
         } else {
             CHAT_LINK_INACTIVE

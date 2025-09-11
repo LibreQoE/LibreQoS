@@ -13,6 +13,7 @@ pub use shaper_status::shaper_status_from_lts;
 use std::ops::Deref;
 use axum::http::StatusCode;
 use tracing::{info, warn};
+use std::process::Command;
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
@@ -79,6 +80,11 @@ pub async fn lts_trial_signup(details: Json<LicenseKey>) -> StatusCode {
             .await
             .unwrap();
         info!("LQOSD configuration updated with new license key.");
+        // Best-effort: ensure the bundled lqos_api also reloads to pick up the new license
+        // Ignore errors if systemctl isn't present or permission is denied.
+        let _ = Command::new("/bin/systemctl")
+            .args(["restart", "lqos_api"])
+            .output();
         std::process::exit(0);
         //StatusCode::OK
     }
