@@ -150,12 +150,34 @@ Configure cómo LibreQoS maneja las cuentas de clientes suspendidos:
 |------------|-------------|-------------|
 | `none` | No manejar suspensiones | Cuando el manejo de suspensiones se gestiona en otro lugar |
 | `ignore` | No agregar clientes suspendidos al mapa de red | Reduce el número de colas y mejora el rendimiento para redes con muchas cuentas suspendidas |
-| `slow` | Limitar clientes suspendidos a 1mbps | Mantiene conectividad para cuentas suspendidas mientras limita el uso de ancho de banda |
+| `slow` | Limitar clientes suspendidos a 0.1 Mbps | Mantiene conectividad mínima para cuentas suspendidas (por ejemplo, portales de pago) |
 
 **Cómo Elegir una Estrategia de Suspensión:**
 - Use `none` si su router de borde u otro sistema maneja las suspensiones
 - Use `ignore` para reducir la carga del sistema al no crear colas para clientes suspendidos
 - Use `slow` para mantener conectividad mínima (útil para portales de pago o mensajes de servicio)
+
+### Burst (QoS en UISP)
+
+- En UISP, las velocidades de Descarga y Subida (Download/Upload Speed) se configuran en Mbps (por ejemplo, 100 Mbps).
+- En UISP, los valores de Burst de Descarga y Subida (Download/Upload Burst) se configuran en kilobytes por segundo (kB/s).
+- Conversión y conformado:
+  - burst_mbps = kB/s × 8 / 1000
+  - Download Min = Download Speed (Mbps) × commit_bandwidth_multiplier
+  - Download Max = (Download Speed (Mbps) + burst_mbps) × bandwidth_overhead_factor
+  - Upload Min/Max se calculan igual desde Upload Speed (Mbps) y Upload Burst (kB/s)
+- Ejemplo:
+  - Valores en UISP: Download Speed = 100 Mbps, Download Burst = 12,500 kB/s
+  - El burst añade 12,500 × 8 / 1000 = 100 Mbps
+  - Download Min = 100 × commit_bandwidth_multiplier
+  - Download Max = (100 + 100) × bandwidth_overhead_factor
+- Referencia rápida (burst kB/s → Mbps añadidos):
+  - 6,250 kB/s → +50 Mbps
+  - 12,500 kB/s → +100 Mbps
+  - 25,000 kB/s → +200 Mbps
+- Notas:
+  - Deje el burst vacío/nulo en UISP para desactivarlo.
+  - Si suspended_strategy está en slow, Min y Max se fijan en 0.1 Mbps.
 
 ### Ejemplo de Configuración
 
@@ -189,7 +211,6 @@ commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR
 # Opciones Avanzadas
 ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
 always_overwrite_network_json = false  # Establecer true para reconstruir topología en cada ejecución
-uisp_use_burst = true  # Habilitar soporte de burst
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 ```
 
