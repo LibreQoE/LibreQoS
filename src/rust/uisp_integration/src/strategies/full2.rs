@@ -347,21 +347,31 @@ pub async fn build_full_network_v2(
                     continue;
                 }
 
-                // Calculate fractional rates preserving decimal precision
-                let download_f32 =
-                    (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let upload_f32 =
-                    (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let download_min_f32 =
-                    download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                let upload_min_f32 =
-                    upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-
-                // Apply minimum rate safeguards (0.1 Mbps minimum)
-                let download_min = f32::max(0.1, download_min_f32);
-                let upload_min = f32::max(0.1, upload_min_f32);
-                let download_max = f32::max(0.2, download_f32);
-                let upload_max = f32::max(0.2, upload_f32);
+                // Compute subscriber rates: prefer UISP QoS + burst; fallback to capacity-based
+                let (mut download_min, mut download_max, mut upload_min, mut upload_max) = if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
+                    (
+                        f32::max(0.1, dl_min),
+                        f32::max(0.1, dl_max),
+                        f32::max(0.1, ul_min),
+                        f32::max(0.1, ul_max),
+                    )
+                } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
+                    (0.1, 0.1, 0.1, 0.1)
+                } else {
+                    let download_f32 = (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                    let upload_f32 = (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                    let download_min_f32 = download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    let upload_min_f32 = upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    (
+                        f32::max(0.1, download_min_f32),
+                        f32::max(0.1, download_f32),
+                        f32::max(0.1, upload_min_f32),
+                        f32::max(0.1, upload_f32),
+                    )
+                };
+                // Ensure max >= min
+                if download_max < download_min { download_max = download_min; }
+                if upload_max < upload_min { upload_max = upload_min; }
 
                 let parent_node = {
                     if parents.get(&ap_device.name).is_some() {

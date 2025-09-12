@@ -15,6 +15,11 @@ pub struct UispSite {
     pub parent_indices: HashSet<usize>,
     pub max_down_mbps: u64,
     pub max_up_mbps: u64,
+    // Subscriber QoS (from UISP qos), Mbps
+    pub base_down_mbps: f32,
+    pub base_up_mbps: f32,
+    pub burst_down_mbps: f32,
+    pub burst_up_mbps: f32,
     pub suspended: bool,
     pub device_indices: Vec<usize>,
     pub route_weights: Vec<(usize, u32)>,
@@ -31,6 +36,10 @@ impl Default for UispSite {
             parent_indices: Default::default(),
             max_down_mbps: 0,
             max_up_mbps: 0,
+            base_down_mbps: 0.0,
+            base_up_mbps: 0.0,
+            burst_down_mbps: 0.0,
+            burst_up_mbps: 0.0,
             suspended: false,
             device_indices: Vec::new(),
             route_weights: Vec::new(),
@@ -61,17 +70,31 @@ impl UispSite {
             config.queues.generated_pn_download_mbps,
             config.queues.generated_pn_upload_mbps,
         );
+        // Extract UISP QoS base speeds (bps -> Mbps) and burst sizes (kB/s -> Mbps)
+        let mut base_down_mbps: f32 = 0.0;
+        let mut base_up_mbps: f32 = 0.0;
+        let mut burst_down_mbps: f32 = 0.0;
+        let mut burst_up_mbps: f32 = 0.0;
+        if let Some(qos) = &value.qos {
+            if let Some(d) = qos.downloadSpeed { base_down_mbps = (d as f32) / 1_000_000.0; }
+            if let Some(u) = qos.uploadSpeed { base_up_mbps = (u as f32) / 1_000_000.0; }
+            if let Some(db) = qos.downloadBurstSize { burst_down_mbps = (db as f32) * 8.0 / 1000.0 / 1024.0; }
+            if let Some(ub) = qos.uploadBurstSize { burst_up_mbps = (ub as f32) * 8.0 / 1000.0 / 1024.0; }
+        }
         let suspended = value.is_suspended();
 
         if suspended {
             match config.uisp_integration.suspended_strategy.as_str() {
                 "slow" => {
-                    warn!(
-                        "{} is suspended. Setting a slow speed.",
-                        value.name_or_blank()
-                    );
+                    warn!("{} is suspended. Using slow strategy.", value.name_or_blank());
+                    // Keep capacity minimal for infra calculations
                     max_down_mbps = 1;
                     max_up_mbps = 1;
+                    // Base and burst will be ignored by writers (set to 0, so fallback path uses suspended override)
+                    base_down_mbps = 0.0;
+                    base_up_mbps = 0.0;
+                    burst_down_mbps = 0.0;
+                    burst_up_mbps = 0.0;
                 }
                 _ => warn!(
                     "{} is suspended. No strategy is set, leaving at full speed.",
@@ -88,9 +111,32 @@ impl UispSite {
             uisp_parent_id,
             max_down_mbps,
             max_up_mbps,
+            base_down_mbps,
+            base_up_mbps,
+            burst_down_mbps,
+            burst_up_mbps,
             suspended,
             ..Default::default()
         }
+    }
+
+    /// Compute burst-aware min/max in Mbps using UISP qos + config multipliers.
+    /// Returns None if no qos base rates are present.
+    pub fn burst_rates(&self, config: &Config) -> Option<(f32, f32, f32, f32)> {
+        // Suspended slow: override to 0.1/0.1 irrespective of multipliers/floors
+        if self.suspended && config.uisp_integration.suspended_strategy == "slow" {
+            return Some((0.1, 0.1, 0.1, 0.1));
+        }
+        if self.base_down_mbps <= 0.0 && self.base_up_mbps <= 0.0 {
+            return None;
+        }
+        let dl_min = self.base_down_mbps * config.uisp_integration.commit_bandwidth_multiplier;
+        let ul_min = self.base_up_mbps * config.uisp_integration.commit_bandwidth_multiplier;
+        let dl_max = (self.base_down_mbps + self.burst_down_mbps)
+            * config.uisp_integration.bandwidth_overhead_factor;
+        let ul_max = (self.base_up_mbps + self.burst_up_mbps)
+            * config.uisp_integration.bandwidth_overhead_factor;
+        Some((dl_min, dl_max, ul_min, ul_max))
     }
 
     pub fn find_aps(
