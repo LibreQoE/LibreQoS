@@ -86,21 +86,33 @@ fn traverse(
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
                 if device.has_address() {
-                    // Calculate fractional rates preserving decimal precision
-                    let download_max_f32 = sites[idx].max_down_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let upload_max_f32 = sites[idx].max_up_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let download_min_f32 = download_max_f32
-                        * config.uisp_integration.commit_bandwidth_multiplier;
-                    let upload_min_f32 = upload_max_f32
-                        * config.uisp_integration.commit_bandwidth_multiplier;
-                    
-                    // Apply minimum rate safeguards (0.1 Mbps minimum)
-                    let download_max = f32::max(0.1, download_max_f32);
-                    let upload_max = f32::max(0.1, upload_max_f32);
-                    let download_min = f32::max(0.1, download_min_f32);
-                    let upload_min = f32::max(0.1, upload_min_f32);
+                    // Prefer UISP QoS + burst if available; else fallback to capacity-based
+                    let (mut download_min, mut download_max, mut upload_min, mut upload_max) = if let Some((dl_min, dl_max, ul_min, ul_max)) = sites[idx].burst_rates(config) {
+                        (
+                            f32::max(0.1, dl_min),
+                            f32::max(0.1, dl_max),
+                            f32::max(0.1, ul_min),
+                            f32::max(0.1, ul_max),
+                        )
+                    } else {
+                        let download_max_f32 = sites[idx].max_down_mbps as f32
+                            * config.uisp_integration.bandwidth_overhead_factor;
+                        let upload_max_f32 = sites[idx].max_up_mbps as f32
+                            * config.uisp_integration.bandwidth_overhead_factor;
+                        let download_min_f32 = download_max_f32
+                            * config.uisp_integration.commit_bandwidth_multiplier;
+                        let upload_min_f32 = upload_max_f32
+                            * config.uisp_integration.commit_bandwidth_multiplier;
+                        (
+                            f32::max(0.1, download_min_f32),
+                            f32::max(0.1, download_max_f32),
+                            f32::max(0.1, upload_min_f32),
+                            f32::max(0.1, upload_max_f32),
+                        )
+                    };
+                    // Ensure max >= min per LibreQoS requirements
+                    if download_max < download_min { download_max = download_min; }
+                    if upload_max < upload_min { upload_max = upload_min; }
                     
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
@@ -130,7 +142,7 @@ fn traverse(
                     format!("{}_Infrastructure", sites[idx].name.clone())
                 };
                 if device.has_address() {
-                    // Calculate fractional rates preserving decimal precision
+                    // Infrastructure: keep capacity-based behavior
                     let download_max_f32 = sites[idx].max_down_mbps as f32
                         * config.uisp_integration.bandwidth_overhead_factor;
                     let upload_max_f32 = sites[idx].max_up_mbps as f32
@@ -139,8 +151,6 @@ fn traverse(
                         * config.uisp_integration.commit_bandwidth_multiplier;
                     let upload_min_f32 = upload_max_f32
                         * config.uisp_integration.commit_bandwidth_multiplier;
-                    
-                    // Apply minimum rate safeguards (0.1 Mbps minimum, higher for infrastructure)
                     let download_max = f32::max(0.2, download_max_f32);
                     let upload_max = f32::max(0.2, upload_max_f32);
                     let download_min = f32::max(0.2, download_min_f32);

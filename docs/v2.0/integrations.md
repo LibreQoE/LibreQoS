@@ -1,9 +1,15 @@
 # CRM/NMS Integrations
 
   * [Splynx Integration](#splynx-integration)
+    + [Topology Strategies](#topology-strategies)
+    + [Promote to Root Nodes (Performance Optimization)](#promote-to-root-nodes-performance-optimization)
     + [Splynx API Access](#splynx-api-access)
     + [Splynx Overrides](#splynx-overrides)
   * [UISP Integration](#uisp-integration)
+    + [Topology Strategies](#topology-strategies-1)
+    + [Suspension Handling Strategies](#suspension-handling-strategies)
+    + [Burst](#burst)
+    + [Configuration Example](#configuration-example)
     + [UISP Overrides](#uisp-overrides)
       - [UISP Route Overrides](#uisp-route-overrides)
   * [WISPGate Integration](#wispgate-integration)
@@ -151,12 +157,34 @@ Configure how LibreQoS handles suspended customer accounts:
 |----------|-------------|----------|
 | `none` | Do not handle suspensions | When suspension handling is managed elsewhere |
 | `ignore` | Do not add suspended customers to network map | Reduces queue count and improves performance for networks with many suspended accounts |
-| `slow` | Limit suspended customers to 1mbps | Maintains connectivity for suspended accounts while limiting bandwidth usage |
+| `slow` | Limit suspended customers to 0.1 Mbps | Maintains minimal connectivity for suspended accounts (e.g., payment portals) |
 
 **Choosing a Suspension Strategy:**
 - Use `none` if your edge router or another system handles suspensions
 - Use `ignore` to reduce system load by not creating queues for suspended customers
 - Use `slow` to maintain minimal connectivity (useful for payment portals or service messages)
+
+### Burst
+
+- In UISP, Download Speed and Upload Speed are configured in Mbps (for example, 100 Mbps).
+- In UISP, Download Burst and Upload Burst are configured in kilobytes per second (kB/s).
+- Conversion and shaping:
+  - burst_mbps = kB/s × 8 / 1000
+  - Download Min = Download Speed (Mbps) × commit_bandwidth_multiplier
+  - Download Max = (Download Speed (Mbps) + burst_mbps) × bandwidth_overhead_factor
+  - Upload Min/Max are computed the same way from Upload Speed (Mbps) and Upload Burst (kB/s)
+- Example:
+  - UISP values: Download Speed = 100 Mbps, Download Burst = 12,500 kB/s
+  - Burst adds 12,500 × 8 / 1000 = 100 Mbps
+  - Download Min = 100 × commit_bandwidth_multiplier
+  - Download Max = (100 + 100) × bandwidth_overhead_factor
+- Quick reference (burst kB/s → added Mbps):
+  - 6,250 kB/s → +50 Mbps
+  - 12,500 kB/s → +100 Mbps
+  - 25,000 kB/s → +200 Mbps
+- Notes:
+  - Leave burst empty/null in UISP to disable burst.
+  - If suspended_strategy is set to slow, both Min and Max are set to 0.1 Mbps.
 
 ### Configuration Example
 
@@ -190,7 +218,6 @@ commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 # Advanced Options
 ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
 always_overwrite_network_json = false  # Set true to rebuild topology each run
-uisp_use_burst = true  # Enable burst support
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 ```
 
