@@ -1,9 +1,15 @@
 # CRM/NMS Integrations
 
   * [Splynx Integration](#splynx-integration)
+    + [Topology Strategies](#topology-strategies)
+    + [Promote to Root Nodes (Performance Optimization)](#promote-to-root-nodes-performance-optimization)
     + [Splynx API Access](#splynx-api-access)
     + [Splynx Overrides](#splynx-overrides)
   * [UISP Integration](#uisp-integration)
+    + [Topology Strategies](#topology-strategies-1)
+    + [Suspension Handling Strategies](#suspension-handling-strategies)
+    + [Burst](#burst)
+    + [Configuration Example](#configuration-example)
     + [UISP Overrides](#uisp-overrides)
       - [UISP Route Overrides](#uisp-route-overrides)
   * [WISPGate Integration](#wispgate-integration)
@@ -158,7 +164,7 @@ Configure how LibreQoS handles suspended customer accounts:
 - Use `ignore` to reduce system load by not creating queues for suspended customers
 - Use `slow` to maintain minimal connectivity (useful for payment portals or service messages)
 
-### Burst (UISP QoS)
+### Burst
 
 - In UISP, Download Speed and Upload Speed are configured in Mbps (for example, 100 Mbps).
 - In UISP, Download Burst and Upload Burst are configured in kilobytes per second (kB/s).

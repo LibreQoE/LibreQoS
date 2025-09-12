@@ -1,9 +1,15 @@
 # Integraciones CRM/NMS
 
   * [Integración con Splynx](#integración-con-splynx)
+    + [Estrategias de Topología](#estrategias-de-topología)
+    + [Promover Nodos a Raíz (Optimización de Rendimiento)](#promover-nodos-a-raíz-optimización-de-rendimiento)
     + [Acceso API de Splynx](#acceso-api-de-splynx)
     + [Sobrescrituras de Splynx](#sobrescrituras-de-splynx)
   * [Integración con UISP](#integración-con-uisp)
+    + [Estrategias de Topología](#estrategias-de-topología-1)
+    + [Estrategias de Manejo de Suspensiones](#estrategias-de-manejo-de-suspensiones)
+    + [Burst](#burst)
+    + [Ejemplo de Configuración](#ejemplo-de-configuración)
     + [Sobrescrituras de UISP](#sobrescrituras-de-uisp)
       - [Sobrescrituras de Rutas UISP](#sobrescrituras-de-rutas-uisp)
   * [Integración con WISPGate](#integración-con-wispgate)
@@ -157,7 +163,7 @@ Configure cómo LibreQoS maneja las cuentas de clientes suspendidos:
 - Use `ignore` para reducir la carga del sistema al no crear colas para clientes suspendidos
 - Use `slow` para mantener conectividad mínima (útil para portales de pago o mensajes de servicio)
 
-### Burst (QoS en UISP)
+### Burst
 
 - En UISP, las velocidades de Descarga y Subida (Download/Upload Speed) se configuran en Mbps (por ejemplo, 100 Mbps).
 - En UISP, los valores de Burst de Descarga y Subida (Download/Upload Burst) se configuran en kilobytes por segundo (kB/s).
