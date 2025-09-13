@@ -17,15 +17,11 @@ use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, Xdp
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
-use lts_client::collector::stats_availability::StatsUpdateMessage;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tokio::{
-    sync::mpsc::Sender,
-    time::{Duration, Instant},
-};
+use tokio::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
@@ -40,7 +36,6 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
 pub fn spawn_throughput_monitor(
-    long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>,
@@ -48,7 +43,7 @@ pub fn spawn_throughput_monitor(
     debug!("Starting the bandwidth monitor thread.");
     std::thread::Builder::new()
         .name("Throughput Monitor".to_string())
-        .spawn(|| throughput_task(long_term_stats_tx, netflow_sender, system_usage_actor, bakery_sender))?;
+        .spawn(|| throughput_task(netflow_sender, system_usage_actor, bakery_sender))?;
 
     Ok(())
 }
@@ -103,7 +98,6 @@ impl ThroughputTaskTimeMetrics {
 }
 
 fn throughput_task(
-    long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
@@ -130,7 +124,7 @@ fn throughput_task(
         false
     };
 
-    let mut last_submitted_to_lts: Option<Instant> = None;
+    let mut last_submit: Option<Instant> = None;
     let mut tfd = match TimerFd::new() {
         Ok(t) => t,
         Err(e) => {
@@ -202,26 +196,22 @@ fn throughput_task(
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
         }
 
-        if last_submitted_to_lts.is_none() {
+        // Submit to Insight only (LTS1 removed)
+        if last_submit.is_none() {
             stats_submission::submit_throughput_stats(
-                long_term_stats_tx.clone(),
                 1.0,
                 stats_counter,
                 system_usage_actor.clone(),
             );
         } else {
-            let elapsed = last_submitted_to_lts.unwrap().elapsed();
+            let elapsed = last_submit.unwrap().elapsed();
             let elapsed_f64 = elapsed.as_secs_f64();
-            // Temporary: place this in a thread to not block the timer
-            let my_lts_tx = long_term_stats_tx.clone();
-            let my_system_usage_actor = system_usage_actor.clone();
-            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
             if elapsed_f64 < 2.0 {
+                let my_system_usage_actor = system_usage_actor.clone();
                 std::thread::Builder::new()
                     .name("Throughput Stats Submit".to_string())
                     .spawn(move || {
                         stats_submission::submit_throughput_stats(
-                            my_lts_tx,
                             elapsed_f64,
                             stats_counter,
                             my_system_usage_actor,
@@ -232,8 +222,8 @@ fn throughput_task(
                     .unwrap();
             }
         }
-        last_submitted_to_lts = Some(Instant::now());
-        timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
+        last_submit = Some(Instant::now());
+        // timer_metrics.lts_submit retained for profiling if needed
 
         // Counter for occasional stats
         stats_counter = stats_counter.wrapping_add(1);

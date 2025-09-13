@@ -1,4 +1,5 @@
-mod anonymous_usage;
+// Anonymous stats disabled
+// mod anonymous_usage;
 mod blackboard;
 mod file_lock;
 mod ip_mapping;
@@ -38,7 +39,6 @@ use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
-use lts_client::collector::start_long_term_stats;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -162,7 +162,6 @@ fn main() -> Result<()> {
         info!("Insight client started successfully");
     }
     let _blackboard_tx = blackboard::start_blackboard();
-    let long_term_stats_tx = start_long_term_stats();
     start_remote_commands();
     let flow_tx = setup_netflow_tracker()?;
     let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -170,10 +169,9 @@ fn main() -> Result<()> {
     spawn_queue_structure_monitor()?;
     shaped_devices_tracker::shaped_devices_watcher()?;
     shaped_devices_tracker::network_json_watcher()?;
-    anonymous_usage::start_anonymous_usage();
+    // Anonymous usage submission disabled
     let system_usage_tx = system_stats::start_system_stats()?;
     throughput_tracker::spawn_throughput_monitor(
-        long_term_stats_tx.clone(),
         flow_tx,
         system_usage_tx.clone(),
         bakery_sender.clone(),
@@ -197,12 +195,7 @@ fn main() -> Result<()> {
                                 warn!("This should never happen - terminating on unknown signal")
                             }
                         }
-                        let _ =
-                            tokio::runtime::Runtime::new()
-                                .unwrap()
-                                .block_on(long_term_stats_tx.send(
-                                lts_client::collector::stats_availability::StatsUpdateMessage::Quit,
-                            ));
+                        // LTS1 collector removed; no quit signal required
                         std::mem::drop(kernels);
                         // Give kernel/driver a moment to finalize detach
                         thread::sleep(Duration::from_millis(50));

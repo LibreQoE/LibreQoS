@@ -1,4 +1,3 @@
-use crate::long_term_stats::get_network_tree;
 use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
@@ -13,14 +12,11 @@ use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
-use lts_client::collector::stats_availability::StatsUpdateMessage;
-use lts_client::collector::{HostSummary, ThroughputSummary};
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::sync::atomic::AtomicI64;
 use csv::ReaderBuilder;
-use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
 use tracing::debug;
 use tracing::log::warn;
@@ -63,7 +59,6 @@ impl LtsSubmitMetrics {
 }
 
 pub(crate) fn submit_throughput_stats(
-    long_term_stats_tx: Sender<StatsUpdateMessage>,
     scale: f64,
     counter: u8,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
@@ -73,27 +68,10 @@ pub(crate) fn submit_throughput_stats(
         return;
     }
     let config = config.unwrap();
-    if config.long_term_stats.gather_stats == false {
-        return;
-    }
-    if config.long_term_stats.license_key.is_none() {
-        return;
-    }
+    // LTS1 submission removed; Insight gating remains below
 
     let mut metrics = LtsSubmitMetrics::new();
-    // If ShapedDevices has changed, notify the stats thread
-    if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
-        true,
-        false,
-        std::sync::atomic::Ordering::Relaxed,
-        std::sync::atomic::Ordering::Relaxed,
-    ) {
-        if changed {
-            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
-            let _ = long_term_stats_tx
-                .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
-        }
-    }
+    // LTS1 shaped devices notification removed
     metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
 
     // Gather Global Stats
@@ -119,61 +97,18 @@ pub(crate) fn submit_throughput_stats(
 
     if let Ok(config) = load_config() {
         if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
+            debug!("Spike detected - not submitting Insight totals");
+            return;
         }
         if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
+            debug!("Spike detected - not submitting Insight totals");
+            return;
         }
     }
 
-    let hosts = THROUGHPUT_TRACKER
-        .raw_data
-        .lock()
-        .iter()
-        //.filter(|host| host.median_latency().is_some())
-        .map(|(k, host)| HostSummary {
-            ip: k.as_ip(),
-            circuit_id: host.circuit_id.clone(),
-            bits_per_second: (
-                scale_u64_by_f64(host.bytes_per_second.down * 8, scale),
-                scale_u64_by_f64(host.bytes_per_second.up * 8, scale),
-            ),
-            median_rtt: host.median_latency().unwrap_or(0.0),
-        })
-        .collect();
+    // LTS1 per-host summary removed
     metrics.hosts = metrics.start.elapsed().as_secs_f64();
 
-    let summary = Box::new((
-        ThroughputSummary {
-            bits_per_second: (
-                scale_u64_by_f64(bits_per_second.down, scale),
-                scale_u64_by_f64(bits_per_second.up, scale),
-            ),
-            shaped_bits_per_second: (
-                scale_u64_by_f64(shaped_bits_per_second.down, scale),
-                scale_u64_by_f64(shaped_bits_per_second.up, scale),
-            ),
-            packets_per_second,
-            hosts,
-        },
-        get_network_tree(),
-    ));
-    metrics.summary = metrics.start.elapsed().as_secs_f64();
-
-    // Send the stats
-    let result = long_term_stats_tx.blocking_send(StatsUpdateMessage::ThroughputReady(summary));
-    if let Err(e) = result {
-        warn!("Error sending message to stats collection system. {e:?}");
-    }
-    metrics.send = metrics.start.elapsed().as_secs_f64();
-
-    if metrics.start.elapsed().as_secs_f64() > 1.0 {
-        warn!("{:?}", metrics);
-    }
-
-    /////////////////////////////////////////////////////////////////
     // Insight Block
     let Ok(config) = load_config() else {
         return;

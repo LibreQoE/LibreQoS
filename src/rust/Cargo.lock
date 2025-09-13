@@ -2297,7 +2297,6 @@ dependencies = [
  "lqos_support_tool",
  "lqos_sys",
  "lqos_utils",
- "lts_client",
  "mimalloc",
  "miniz_oxide",
  "native-tls",
