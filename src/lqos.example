@@ -34,10 +34,10 @@ to_network = "eth1"
 [queues]
 default_sqm = "cake diffserv4"
 monitor_only = false
-uplink_bandwidth_mbps = 1000
-downlink_bandwidth_mbps = 1000
-generated_pn_download_mbps = 1000
-generated_pn_upload_mbps = 1000
+uplink_bandwidth_mbps = 100000
+downlink_bandwidth_mbps = 100000
+generated_pn_download_mbps = 100000
+generated_pn_upload_mbps = 100000
 dry_run = false
 sudo = false
 #override_available_queues = 12 # This can be omitted and be 0 for Python
@@ -46,9 +46,9 @@ lazy_queues = "No"
 lazy_expire_seconds = 0
 
 [long_term_stats]
-gather_stats = true
+gather_stats = false
 collation_period_seconds = 10
-license_key = "(data)"
+license_key = ""
 uisp_reporting_interval_seconds = 300
 
 [ip_ranges]
