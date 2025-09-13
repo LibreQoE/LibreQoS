@@ -12,6 +12,20 @@ sudo systemctl restart lqosd lqos_scheduler
 Entonces visita: BOX_IP:9123/index.html
 Esto le permitirá configurar el usuario nuevamente desde cero utilizando la interfaz web.
 
+### Problemas de DNS
+
+Edite /etc/netplan/libreqos.yaml, asegurándose de que contenga:
+```
+versión: 2
+procesador: networkd
+```
+Al final del archivo.
+Luego, ejecute:
+```
+sudo chmod 600 /etc/netplan/libreqos.yaml
+sudo netplan apply
+```
+
 ### No hay WebUI en x.x.x.x:9123
 
 La interfaz web (WebUI) está controlada por el servicio lqosd. Generalmente, cuando la WebUI no se inicia, se debe a que lqosd está en un estado fallido. Verifica si el servicio lqosd está corriendo con el siguiente comando:
