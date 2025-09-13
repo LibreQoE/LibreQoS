@@ -37,6 +37,7 @@ network:
             - ens19
             - ens20
     version: 2
+    renderer: networkd
 ```
 ```{note}
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
@@ -72,6 +73,7 @@ network:
             dhcp4: no
             dhcp6: no
     version: 2
+    renderer: networkd
 ```
 ```{note}
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
