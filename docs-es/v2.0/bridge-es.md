@@ -37,6 +37,7 @@ network:
             - ens19
             - ens20
     version: 2
+    renderer: networkd
 ```
 ```{note}
 Asegurese de reemplazar `ens19` y `ens20` en el ejemplo anterior con las interfaces reales que utilizará para regular el tráfico. El orden de las interfaces no importa en esta sección.
