@@ -28,9 +28,6 @@ pub use bus::{
 pub use bus::response::BakeryStatsSnapshot;
 pub use tc_handle::TcHandle;
 
-/// Anonymous Usage Statistics Data Types
-pub mod anonymous;
-
 /// Re-export bincode
 pub mod bincode {
     pub use bincode::*;

@@ -1,4 +1,3 @@
-mod anonymous_usage;
 mod blackboard;
 mod file_lock;
 mod ip_mapping;
@@ -170,7 +169,6 @@ fn main() -> Result<()> {
     spawn_queue_structure_monitor()?;
     shaped_devices_tracker::shaped_devices_watcher()?;
     shaped_devices_tracker::network_json_watcher()?;
-    anonymous_usage::start_anonymous_usage();
     let system_usage_tx = system_stats::start_system_stats()?;
     throughput_tracker::spawn_throughput_monitor(
         long_term_stats_tx.clone(),

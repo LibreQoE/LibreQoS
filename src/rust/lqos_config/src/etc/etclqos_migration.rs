@@ -32,9 +32,6 @@ pub struct EtcLqos {
     /// tweaks.
     pub tuning: Option<Tunables>,
 
-    /// If present, defined anonymous usage stat sending
-    pub usage_stats: Option<UsageStats>,
-
     /// Defines for how many seconds a libpcap compatible capture should
     /// run. Short times are good, there's a real performance penalty to
     /// capturing high-throughput streams. Defaults to 10 seconds.
@@ -123,16 +120,6 @@ pub struct BridgeVlan {
 
     /// The destination VLAN tag number if matched.
     pub redirect_to: u32,
-}
-
-/// Definitions for anonymous usage submission
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct UsageStats {
-    /// Are we allowed to send stats at all?
-    pub send_anonymous: bool,
-
-    /// Where do we send them?
-    pub anonymous_server: String,
 }
 
 /// Long Term Data Retention
