@@ -175,9 +175,6 @@ pub(crate) fn submit_throughput_stats(
 
     /////////////////////////////////////////////////////////////////
     // Insight Block
-    let Ok(config) = load_config() else {
-        return;
-    };
 
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
