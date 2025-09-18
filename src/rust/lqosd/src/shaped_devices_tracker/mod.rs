@@ -7,7 +7,7 @@ use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 use std::net::IpAddr;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -19,7 +19,6 @@ pub use netjson::*;
 
 pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
-pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(true);
 
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
@@ -29,7 +28,6 @@ fn load_shaped_devices() {
         SHAPED_DEVICES.store(Arc::new(new_file));
         let nj = NETWORK_JSON.read().unwrap();
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-        STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
         warn!(
             "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."

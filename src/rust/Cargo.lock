@@ -1010,27 +1010,6 @@ dependencies = [
 
 [[package]]
 name = "dryoc"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea6a498fc1f8374b7e60b6db0bce4cf620b65dea76ad6eada517bf60e481ad0"
-dependencies = [
- "bitflags 2.9.1",
- "chacha20",
- "curve25519-dalek",
- "generic-array",
- "lazy_static",
- "libc",
- "rand_core 0.6.4",
- "salsa20",
- "serde",
- "sha2",
- "subtle",
- "winapi",
- "zeroize",
-]
-
-[[package]]
-name = "dryoc"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e73e0fee365832cd9b9a53ea62f944cc0d7a4c71f2b9c96a28fc74749517afa"
@@ -1929,7 +1908,6 @@ dependencies = [
  "bincode",
  "lqos_config",
  "lqos_utils",
- "lts_client",
  "nix",
  "serde",
  "serde_cbor",
@@ -2126,7 +2104,7 @@ dependencies = [
  "crossbeam-queue",
  "csv",
  "default-net",
- "dryoc 0.6.2",
+ "dryoc",
  "flate2",
  "futures-util",
  "fxhash",
@@ -2142,7 +2120,6 @@ dependencies = [
  "lqos_support_tool",
  "lqos_sys",
  "lqos_utils",
- "lts_client",
  "mimalloc",
  "miniz_oxide",
  "native-tls",
@@ -2202,29 +2179,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
  "hashbrown 0.15.4",
-]
-
-[[package]]
-name = "lts_client"
-version = "0.1.0"
-dependencies = [
- "allocative",
- "allocative_derive",
- "bincode",
- "dashmap",
- "dryoc 0.5.4",
- "lqos_config",
- "lqos_utils",
- "miniz_oxide",
- "num-traits",
- "once_cell",
- "serde",
- "serde_cbor",
- "sysinfo",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "uisp",
 ]
 
 [[package]]
