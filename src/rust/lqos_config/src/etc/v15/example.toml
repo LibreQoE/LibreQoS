@@ -5,10 +5,6 @@ node_name = "Example Node"
 packet_capture_time = 10
 queue_check_period_ms = 1000
 
-[usage_stats]
-send_anonymous = true
-anonymous_server = "stats.libreqos.io:9125"
-
 [tuning]
 stop_irq_balance = true
 netdev_budget_usecs = 8000

@@ -14,10 +14,6 @@ const bindings = [
     { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true, min: 1, max: 300 },
     { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true, min: 100, max: 100000 },
 
-    // Anonymous Usage
-    { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
-    { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true, required: true },
-
     // Tuning
     { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
     { field: "bindNetdevBudgetUs", path: ".tuning.netdev_budget_usecs", data: "integer", editable: true },

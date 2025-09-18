@@ -17,9 +17,7 @@ pub struct EtcLqos {
     /// In ms.
     pub queue_check_period_ms: u64,
 
-    /// If present, provides a unique ID for the node. Used for
-    /// anonymous stats (to identify nodes without providing an actual
-    /// identity), and long-term stas.
+    /// If present, provides a unique ID for the node. Used for Insight.
     pub node_id: Option<String>,
 
     /// If present, provide a name for the node.
