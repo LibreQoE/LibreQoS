@@ -27,22 +27,6 @@ const INSIGHT_LINK_OFFER_TRIAL: &str = r#"
     </a>
 </li>"#;
 
-const LTS1_LINK_ACTIVE: &str = r#"
-<li class="nav-item">
-    <a class="nav-link" id="lnkStats" href="https://stats.libreqos.io/">
-        <i class=\"fa fa-line-chart nav-icon\"></i> Statistics
-    </a>
-</li>
-"#;
-
-const LTS1_LINK_OFFER_TRIAL: &str = r#"
-<li class="nav-item">
-    <a class="nav-link text-success" id="lnkStats" href="%%LTS_TRIAL_LINK%%">
-        <i class=\"fa fa-line-chart nav-icon\"></i> Statistics - Free Trial
-    </a>
-</li>
-"#;
-
 fn js_tf(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
