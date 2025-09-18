@@ -2172,15 +2172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lqstats"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "lqos_bus",
- "tokio",
-]
-
-[[package]]
 name = "lqtop"
 version = "0.1.0"
 dependencies = [
