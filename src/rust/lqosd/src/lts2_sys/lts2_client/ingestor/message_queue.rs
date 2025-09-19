@@ -135,6 +135,16 @@ impl MessageQueue {
             return Ok(());
         };
 
+        // Set hard timeouts
+        if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+            warn!("Failed to set read timeout on ingestion server connection: {}", e);
+            return Ok(());
+        }
+        if let Err(e) = stream.set_write_timeout(Some(Duration::from_secs(30))) {
+            warn!("Failed to set write timeout on ingestion server connection: {}", e);
+            return Ok(());
+        }
+
         let Ok(connector) = native_tls::TlsConnector::builder()
             .danger_accept_invalid_certs(true)
             .danger_accept_invalid_hostnames(true)
