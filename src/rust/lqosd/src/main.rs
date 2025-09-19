@@ -106,6 +106,16 @@ fn main() -> Result<()> {
     // Set up logging
     set_console_logging()?;
 
+    // Configure glibc resolver defaults so DNS lookups bound quickly.
+    // If the user hasn't set RES_OPTIONS, set a conservative timeout/attempts.
+    if std::env::var_os("RES_OPTIONS").is_none() {
+        // 2s per attempt, 1 attempt keeps worst-case DNS stalls short
+        // Safety: Environment variable is unsafe because it modifies global state.
+        unsafe {
+            std::env::set_var("RES_OPTIONS", "timeout:2 attempts:1");
+        }
+    }
+
     // Check that the file lock is available. Bail out if it isn't.
     let file_lock = FileLock::new().inspect_err(|e| {
         error!("Unable to acquire file lock: {:?}", e);
