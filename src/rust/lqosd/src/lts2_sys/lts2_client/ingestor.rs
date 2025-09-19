@@ -1,11 +1,8 @@
 pub(crate) mod commands;
 mod message_queue;
-mod permission;
 
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
-use crate::lts2_sys::lts2_client::ingestor::permission::is_allowed_to_submit;
-pub(crate) use permission::check_submit_permission;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -51,8 +48,6 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
             info!("Missed queue submission ticks: {}", missed_ticks - 1);
         }
 
-        let permitted = is_allowed_to_submit();
-
         let mut session_data: MessageQueue = {
             let mut message_queue_lock = message_queue.lock();
             let data = message_queue_lock.clone();
@@ -60,7 +55,7 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
             data
         };
 
-        if !session_data.is_empty() && permitted {
+        if !session_data.is_empty() {
             let start = std::time::Instant::now();
             if let Err(e) = session_data.send() {
                 info!("Failed to send queue: {e:?}");

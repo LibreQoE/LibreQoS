@@ -48,11 +48,6 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
     // Launch the ingestor thread
     let ingestor = ingestor::start_ingestor();
 
-    // Launch the submit permission checker
-    std::thread::spawn(move || {
-        ingestor::check_submit_permission();
-    });
-
     // Message Pump
     std::thread::spawn(move || {
         while let Ok(msg) = rx.recv() {
