@@ -86,7 +86,6 @@ fn do_migration_14_to_15(
     let mut new_config = Config::default();
 
     migrate_top_level(old_config, &mut new_config)?;
-    migrate_usage_stats(old_config, &mut new_config)?;
     migrate_tunables(old_config, &mut new_config)?;
     migrate_bridge(old_config, &python_config, &mut new_config)?;
     migrate_lts(old_config, &mut new_config)?;
@@ -116,19 +115,6 @@ fn migrate_top_level(old_config: &EtcLqos, new_config: &mut Config) -> Result<()
         new_config.node_name = node_name.clone();
     } else {
         new_config.node_name = "Set my name in /etc/lqos.conf".to_string();
-    }
-    Ok(())
-}
-
-fn migrate_usage_stats(
-    old_config: &EtcLqos,
-    new_config: &mut Config,
-) -> Result<(), MigrationError> {
-    if let Some(usage_stats) = &old_config.usage_stats {
-        new_config.usage_stats.send_anonymous = usage_stats.send_anonymous;
-        new_config.usage_stats.anonymous_server = usage_stats.anonymous_server.clone();
-    } else {
-        new_config.usage_stats = Default::default();
     }
     Ok(())
 }

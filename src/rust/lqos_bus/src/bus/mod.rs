@@ -11,7 +11,7 @@ mod unix_socket_server;
 pub use client::{bus_request, LibreqosBusClient};
 pub use queue_data::*;
 pub use reply::BusReply;
-pub use request::{BlackboardSystem, BusRequest, StatsRequest, TopFlowType};
+pub use request::{BlackboardSystem, BusRequest, TopFlowType};
 pub use response::BusResponse;
 pub use session::BusSession;
 use thiserror::Error;

@@ -86,7 +86,9 @@ fn remote_license_check(remote_host: String, lic: Uuid, license_status: Arc<Mute
     let tls = Arc::new(tls);
 
     let client = ureq::builder()
-        .timeout_connect(Duration::from_secs(20))
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(15))
+        .timeout_write(Duration::from_secs(15))
         .tls_connector(tls.clone())
         .build();
 

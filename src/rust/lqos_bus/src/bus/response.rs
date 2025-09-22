@@ -8,7 +8,6 @@ use crate::{
 };
 use allocative::Allocative;
 use lqos_utils::units::DownUpOrder;
-use lts_client::transport_data::{StatsHost, StatsTotals, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -134,15 +133,6 @@ pub enum BusResponse {
 
     /// Pcap format dump
     PcapDump(Option<String>),
-
-    /// Long-term stats top-level totals
-    LongTermTotals(StatsTotals),
-
-    /// Long-term stats host totals
-    LongTermHosts(Vec<StatsHost>),
-
-    /// Long-term stats tree
-    LongTermTree(Vec<StatsTreeNode>),
 
     /// All Active Flows (Not Recommended - Debug Use)
     AllActiveFlows(Vec<FlowbeeSummaryData>),

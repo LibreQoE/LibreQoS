@@ -3,7 +3,7 @@
 # Checks all Rust projects for accidental inclusion of something GPL-3
 # licensed.
 
-PROJECTS="lqos_anonymous_stats_server lqos_bus lqos_config lqos_heimdall lqos_node_manager lqos_python lqos_queue_tracker lqos_setup lqos_sys lqos_utils lqosd lqusers xdp_iphash_to_cpu_cmdline xdp_pping"
+PROJECTS="lqos_bus lqos_config lqos_heimdall lqos_node_manager lqos_python lqos_queue_tracker lqos_setup lqos_sys lqos_utils lqosd lqusers xdp_iphash_to_cpu_cmdline xdp_pping"
 TOOL="cargo license --help"
 
 # Check that the tool exists

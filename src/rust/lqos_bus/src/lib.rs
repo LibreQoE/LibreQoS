@@ -22,14 +22,11 @@ pub use ip_stats::{
 mod tc_handle;
 pub use bus::{
     BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,
-    CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit, StatsRequest, TopFlowType,
+    CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit, TopFlowType,
     UnixSocketServer, bus_request, LibreqosBusClient,
 };
 pub use bus::response::BakeryStatsSnapshot;
 pub use tc_handle::TcHandle;
-
-/// Anonymous Usage Statistics Data Types
-pub mod anonymous;
 
 /// Re-export bincode
 pub mod bincode {
