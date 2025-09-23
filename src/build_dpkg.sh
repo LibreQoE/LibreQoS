@@ -20,6 +20,7 @@ LQOS_FILES=(
   csvToNetworkJSON.py
   integrationCommon.py
   integrationPowercode.py
+  integrationNetzur.py
   integrationRestHttp.py
   integrationSonar.py
   integrationSplynx.py
