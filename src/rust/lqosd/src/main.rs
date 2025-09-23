@@ -16,6 +16,7 @@ mod tuning;
 mod validation;
 mod version_checks;
 mod scheduler_control;
+mod sandwich;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -148,6 +149,7 @@ fn main() -> Result<()> {
             Some(flowbee_handle_events),
         )?
     } else {
+        sandwich::make_me_a_sandwich(&config)?;
         LibreQoSKernels::new(
             &config.internet_interface(),
             &config.isp_interface(),
@@ -204,6 +206,9 @@ fn main() -> Result<()> {
                         std::mem::drop(kernels);
                         // Give kernel/driver a moment to finalize detach
                         thread::sleep(Duration::from_millis(50));
+                        if let Ok(config) = lqos_config::load_config() {
+                            let _ = sandwich::cleanup_my_sandwich(&config);
+                        }
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);

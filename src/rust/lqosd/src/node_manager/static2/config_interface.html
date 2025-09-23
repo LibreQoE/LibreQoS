@@ -41,6 +41,54 @@
                             <input type="text" class="form-control" id="toNetwork">
                             <div class="form-text">Interface name facing the LAN (e.g. eth1)</div>
                         </div>
+
+                        <hr />
+                        <div class="mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="sandwichEnable">
+                                <label class="form-check-label" for="sandwichEnable">
+                                    Enable Sandwich Bridge (veth pair)
+                                </label>
+                            </div>
+                            <div class="form-text">Creates veth pairs and bridges to support compatibility and optional absolute rate limiting.</div>
+                        </div>
+
+                        <div id="sandwichSection" style="display: none;">
+                            <div class="mb-3">
+                                <label for="sandwichRateLimiter" class="form-label">Rate Limiter</label>
+                                <select class="form-select" id="sandwichRateLimiter">
+                                    <option value="None">None</option>
+                                    <option value="Download">Download only</option>
+                                    <option value="Upload">Upload only</option>
+                                    <option value="Both">Both directions</option>
+                                </select>
+                                <div class="form-text">Attach an absolute rate limiter to the sandwich bridge.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="sandwichDownOverride" class="form-label">Override Download Limit (Mbps)</label>
+                                <input type="number" class="form-control" id="sandwichDownOverride" min="1" placeholder="Optional">
+                                <div class="form-text">Leave blank to use the configured downlink bandwidth.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="sandwichUpOverride" class="form-label">Override Upload Limit (Mbps)</label>
+                                <input type="number" class="form-control" id="sandwichUpOverride" min="1" placeholder="Optional">
+                                <div class="form-text">Leave blank to use the configured uplink bandwidth.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="sandwichQueueOverride" class="form-label">TX Queue Count Override</label>
+                                <input type="number" class="form-control" id="sandwichQueueOverride" min="1" placeholder="Optional">
+                                <div class="form-text">Leave blank to use the default (CPU cores). Sets the number of TX queues on the veth interfaces.</div>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="sandwichUseFqCodel">
+                                <label class="form-check-label" for="sandwichUseFqCodel">Use fq_codel under HTB</label>
+                                <div class="form-text">Enable fq_codel beneath the HTB class for improved queueing (rate limiting is still enforced by HTB).</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -83,6 +131,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const singleMode = document.getElementById('singleInterfaceMode');
     const bridgeConfig = document.getElementById('bridgeConfig');
     const singleConfig = document.getElementById('singleInterfaceConfig');
+    const sandwichEnable = document.getElementById('sandwichEnable');
+    const sandwichSection = document.getElementById('sandwichSection');
 
     function updateFormVisibility() {
         if (bridgeMode.checked) {
@@ -99,5 +149,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     bridgeMode.addEventListener('change', updateFormVisibility);
     singleMode.addEventListener('change', updateFormVisibility);
+
+    if (sandwichEnable && sandwichSection) {
+        sandwichEnable.addEventListener('change', () => {
+            sandwichSection.style.display = sandwichEnable.checked ? 'block' : 'none';
+        });
+    }
 });
 </script>

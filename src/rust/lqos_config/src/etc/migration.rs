@@ -153,6 +153,7 @@ fn migrate_bridge(
             use_xdp_bridge: old_config.bridge.as_ref().unwrap().use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
+            sandwich: None,
         });
     }
     Ok(())

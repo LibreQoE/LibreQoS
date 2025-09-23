@@ -174,28 +174,28 @@ pub fn preflight_checks() -> Result<()> {
 
     // Do the interfaces exist?
     if config.on_a_stick_mode() {
-        interface_name_to_index(&config.internet_interface()).map_err(|_| {
+        interface_name_to_index(&config.internet_interface_physical()).map_err(|_| {
             error!(
                 "Interface ({}) does not exist.",
                 config.internet_interface()
             );
-            anyhow::anyhow!("Interface {} does not exist", config.internet_interface())
+            anyhow::anyhow!("Interface {} does not exist", config.internet_interface_physical())
         })?;
         check_queues(&config.internet_interface())?;
     } else {
-        interface_name_to_index(&config.internet_interface()).map_err(|_| {
+        interface_name_to_index(&config.internet_interface_physical()).map_err(|_| {
             error!(
                 "Interface ({}) does not exist.",
-                config.internet_interface()
+                config.internet_interface_physical()
             );
-            anyhow::anyhow!("Interface {} does not exist", config.internet_interface())
+            anyhow::anyhow!("Interface {} does not exist", config.internet_interface_physical())
         })?;
-        interface_name_to_index(&config.isp_interface()).map_err(|_| {
-            error!("Interface ({}) does not exist.", config.isp_interface());
-            anyhow::anyhow!("Interface {} does not exist", config.isp_interface())
+        interface_name_to_index(&config.isp_interface_physical()).map_err(|_| {
+            error!("Interface ({}) does not exist.", config.isp_interface_physical());
+            anyhow::anyhow!("Interface {} does not exist", config.isp_interface_physical())
         })?;
-        check_queues(&config.internet_interface())?;
-        check_queues(&config.isp_interface())?;
+        check_queues(&config.internet_interface_physical())?;
+        check_queues(&config.isp_interface_physical())?;
     }
 
     // Obtain the "IP link" output

@@ -170,6 +170,7 @@ fn finalize(ui: &mut cursive::Cursive) {
                 use_xdp_bridge: false,
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
+                sandwich: None,
             });
         }
         config_builder::BridgeMode::XDP => {
@@ -178,6 +179,7 @@ fn finalize(ui: &mut cursive::Cursive) {
                 use_xdp_bridge: true,
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
+                sandwich: None,
             });
         }
         config_builder::BridgeMode::Single => {
