@@ -50,6 +50,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_flows.html",
         "config_integration.html",
         "config_spylnx.html",
+        "config_netzur.html",
         "config_uisp.html",
         "config_powercode.html",
         "config_sonar.html",
