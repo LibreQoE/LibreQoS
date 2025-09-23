@@ -1976,7 +1976,9 @@ dependencies = [
  "reqwest",
  "serde",
  "sysinfo",
+ "tempfile",
  "tokio",
+ "toml",
 ]
 
 [[package]]

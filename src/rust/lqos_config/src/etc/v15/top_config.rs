@@ -58,6 +58,9 @@ pub struct Config {
     /// Spylnx Integration
     pub spylnx_integration: super::spylnx_integration::SplynxIntegration,
 
+    /// Netzur Integration
+    pub netzur_integration: super::netzur_integration::NetzurIntegration,
+
     /// UISP Integration
     pub uisp_integration: super::uisp_integration::UispIntegration,
 
@@ -147,6 +150,7 @@ impl Default for Config {
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
             spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
+            netzur_integration: super::netzur_integration::NetzurIntegration::default(),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             sonar_integration: super::sonar_integration::SonarIntegration::default(),

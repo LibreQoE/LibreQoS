@@ -76,6 +76,12 @@ const bindings = [
     { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
     { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
 
+    // Netzur
+    { field: "bindNetzurEnable", path: ".netzur_integration.enable_netzur", data: "bool", editable: true },
+    { field: "bindNetzurApiKey", path: ".netzur_integration.api_key", data: "string", editable: true },
+    { field: "bindNetzurApiUrl", path: ".netzur_integration.api_url", data: "string", editable: true },
+    { field: "bindNetzurTimeout", path: ".netzur_integration.timeout_secs", data: "integer", editable: true },
+
     // UISP
     { field: "bindUispEnable", path: ".uisp_integration.enable_uisp", data: "bool", editable: true },
     { field: "bindUispToken", path: ".uisp_integration.token", data: "string", editable: true },

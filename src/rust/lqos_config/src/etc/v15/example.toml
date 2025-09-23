@@ -60,6 +60,12 @@ api_key = ""
 api_secret = ""
 url = ""
 
+[netzur_integration]
+enable_netzur = false
+api_key = ""
+api_url = ""
+timeout_secs = 60
+
 [uisp_integration]
 enable_uisp = false
 token = ""

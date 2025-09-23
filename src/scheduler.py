@@ -5,10 +5,13 @@ import subprocess
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
+    automatic_import_netzur, \
     calculate_hash
 
 if automatic_import_splynx():
     from integrationSplynx import importFromSplynx
+if automatic_import_netzur():
+    from integrationNetzur import importFromNetzur
 if automatic_import_powercode():
     from integrationPowercode import importFromPowercode
 if automatic_import_sonar():
@@ -48,6 +51,11 @@ def importFromCRM():
             importFromSplynx()
         except:
             print("Failed to import from Splynx")
+    elif automatic_import_netzur():
+        try:
+            importFromNetzur()
+        except:
+            print("Failed to import from Netzur")
     elif automatic_import_powercode():
         try:
             importFromPowercode()

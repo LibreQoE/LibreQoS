@@ -10,7 +10,7 @@ lqos_node_manager
 
 lqos_scheduler
 
-- lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
+- lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).
 - On start: Run a full setup of queues
 - Every 10 seconds: Graph bandwidth and latency stats
 - Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled

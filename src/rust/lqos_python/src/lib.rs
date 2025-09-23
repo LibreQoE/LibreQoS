@@ -71,8 +71,12 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -574,6 +578,24 @@ fn splynx_strategy() -> PyResult<String> {
 }
 
 #[pyfunction]
+fn netzur_api_key() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.api_key.clone())
+}
+
+#[pyfunction]
+fn netzur_api_url() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.api_url.clone())
+}
+
+#[pyfunction]
+fn netzur_api_timeout() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.timeout_secs)
+}
+
+#[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.enable_uisp)
@@ -583,6 +605,44 @@ fn automatic_import_uisp() -> PyResult<bool> {
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.spylnx_integration.enable_spylnx)
+}
+
+#[pyfunction]
+fn automatic_import_netzur() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.enable_netzur)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn write_test_config() -> NamedTempFile {
+        let mut cfg = lqos_config::Config::default();
+        cfg.netzur_integration.enable_netzur = true;
+        cfg.netzur_integration.api_key = "test-netzur-key".to_string();
+        cfg.netzur_integration.api_url = "https://netzur.test/api".to_string();
+        cfg.netzur_integration.timeout_secs = 45;
+
+        let toml = toml::to_string_pretty(&cfg).unwrap();
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), toml).unwrap();
+        file
+    }
+
+    #[test]
+    fn netzur_bindings_surface_config_values() {
+        let file = write_test_config();
+        std::env::set_var("LQOS_CONFIG", file.path());
+
+        assert_eq!(netzur_api_key().unwrap(), "test-netzur-key");
+        assert_eq!(netzur_api_url().unwrap(), "https://netzur.test/api");
+        assert_eq!(netzur_api_timeout().unwrap(), 45);
+        assert!(automatic_import_netzur().unwrap());
+
+        std::env::remove_var("LQOS_CONFIG");
+    }
 }
 
 #[pyfunction]

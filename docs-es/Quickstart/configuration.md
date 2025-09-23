@@ -49,7 +49,7 @@ configurando el siguiente contenido de archivo:
 {}
 ```
 
-Si planea usar las integraciones  UISP o Splynx incorporadas, todavía no es necesario crear un archivo network.json.
+Si planea usar las integraciones UISP, Splynx o Netzur incorporadas, todavía no es necesario crear un archivo network.json.
 
 Si planea usar las integraciones UISP incorporadas, este se creará automáticamente en su primera ejecución (asumiendo que  network.json no esté ya presente). Después puede modificar network.json para que refleje más ajustadamente su topología.
 

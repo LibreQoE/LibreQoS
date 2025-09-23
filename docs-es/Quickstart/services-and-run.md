@@ -10,7 +10,7 @@ lqos_node_manager
 
 lqos_scheduler
 
-- lqos_scheduler maneja estadísticas y realiza actualizaciones continuas de los modeladores de LibreQoS, incluida la extracción de cualquier integración de CRM habilitada (UISP, Splynx).
+- lqos_scheduler maneja estadísticas y realiza actualizaciones continuas de los modeladores de LibreQoS, incluida la extracción de cualquier integración de CRM habilitada (UISP, Splynx, Netzur).
 - Al iniciar: ejecuta una configuración completa de colas
 - Cada 10 segundos: Grafica estadísticas de ancho de banda y latencia
 - Cada 30 segundos: Actualiza colas, extrayendo nueva configuración de la integración de CRM si está habilitada
