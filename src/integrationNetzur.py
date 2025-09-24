@@ -13,9 +13,11 @@ from liblqos_python import (
     netzur_api_key,
     netzur_api_url,
     netzur_api_timeout,
+    netzur_use_mikrotik_ipv6,
     overwrite_network_json_always,
 )
 
+import json
 import logging
 from typing import Dict, List, Tuple
 
@@ -76,6 +78,8 @@ def _apply_rate(plan_rate: float) -> float:
 
 def createShaper() -> NetworkGraph:
     LOG.info("[Netzur] Starting sync")
+    if netzur_use_mikrotik_ipv6():
+        LOG.info("[Netzur] Mikrotik IPv6 enrichment enabled")
     zones, subscribers = fetch_netzur_data()
     exclusion = _build_exclusion_set()
     net = NetworkGraph()
@@ -145,6 +149,11 @@ def createShaper() -> NetworkGraph:
 
     LOG.info("[Netzur] Built graph with %d nodes", len(net.nodes))
     net.prepareTree()
+    if netzur_use_mikrotik_ipv6() and isinstance(net.ipv4ToIPv6, str):
+        try:
+            net.ipv4ToIPv6 = json.loads(net.ipv4ToIPv6)
+        except json.JSONDecodeError as err:
+            LOG.warning("[Netzur] Unable to parse Mikrotik IPv6 map: %s", err)
 
     if net.doesNetworkJsonExist() and not overwrite_network_json_always():
         LOG.info("[Netzur] network.json exists and overwrite disabled; preserving current file")

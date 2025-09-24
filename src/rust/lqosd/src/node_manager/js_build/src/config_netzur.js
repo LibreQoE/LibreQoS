@@ -39,7 +39,8 @@ function updateConfig() {
         enable_netzur: document.getElementById("enableNetzur").checked,
         api_key: document.getElementById("netzurApiKey").value.trim(),
         api_url: document.getElementById("netzurApiUrl").value.trim(),
-        timeout_secs: parseInt(document.getElementById("netzurTimeout").value, 10) || 60
+        timeout_secs: parseInt(document.getElementById("netzurTimeout").value, 10) || 60,
+        use_mikrotik_ipv6: document.getElementById("netzurUseMikrotik").checked
     };
 }
 
@@ -56,6 +57,7 @@ loadConfig(() => {
     document.getElementById("netzurApiKey").value = cfg.api_key ?? "";
     document.getElementById("netzurApiUrl").value = cfg.api_url ?? "";
     document.getElementById("netzurTimeout").value = cfg.timeout_secs ?? 60;
+    document.getElementById("netzurUseMikrotik").checked = cfg.use_mikrotik_ipv6 ?? false;
 
     document.getElementById("saveNetzur").addEventListener('click', () => {
         if (validateConfig()) {

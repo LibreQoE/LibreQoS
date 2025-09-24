@@ -74,6 +74,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_use_mikrotik_ipv6, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
@@ -454,7 +455,10 @@ fn circuit_name_use_address() -> PyResult<bool> {
 #[pyfunction]
 fn find_ipv6_using_mikrotik() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.uisp_integration.ipv6_with_mikrotik)
+    Ok(
+        config.uisp_integration.ipv6_with_mikrotik
+            || config.netzur_integration.use_mikrotik_ipv6,
+    )
 }
 
 #[pyfunction]
@@ -611,6 +615,12 @@ fn automatic_import_splynx() -> PyResult<bool> {
 fn automatic_import_netzur() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.netzur_integration.enable_netzur)
+}
+
+#[pyfunction]
+fn netzur_use_mikrotik_ipv6() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.use_mikrotik_ipv6)
 }
 
 #[pyfunction]

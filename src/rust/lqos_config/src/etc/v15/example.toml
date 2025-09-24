@@ -65,6 +65,7 @@ enable_netzur = false
 api_key = ""
 api_url = ""
 timeout_secs = 60
+use_mikrotik_ipv6 = false
 
 [uisp_integration]
 enable_uisp = false

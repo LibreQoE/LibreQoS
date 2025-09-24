@@ -141,6 +141,7 @@ automaticImportNetzur = False
 netzur_api_key = ''
 netzur_api_url = 'https://api.netzur.example.com'
 netzur_api_timeout = 60
+netzur_use_mikrotik_ipv6 = false
 
 # UISP integration
 automaticImportUISP = False

@@ -81,6 +81,7 @@ const bindings = [
     { field: "bindNetzurApiKey", path: ".netzur_integration.api_key", data: "string", editable: true },
     { field: "bindNetzurApiUrl", path: ".netzur_integration.api_url", data: "string", editable: true },
     { field: "bindNetzurTimeout", path: ".netzur_integration.timeout_secs", data: "integer", editable: true },
+    { field: "bindNetzurMikrotik", path: ".netzur_integration.use_mikrotik_ipv6", data: "bool", editable: true },
 
     // UISP
     { field: "bindUispEnable", path: ".uisp_integration.enable_uisp", data: "bool", editable: true },

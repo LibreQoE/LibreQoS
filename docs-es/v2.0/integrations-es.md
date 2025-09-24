@@ -136,12 +136,14 @@ enable_netzur = true
 api_key = "su-token-netzur"
 api_url = "https://netzur.ejemplo.com/api/libreqos"
 timeout_secs = 60
+use_mikrotik_ipv6 = false
 ```
 
 - `enable_netzur` habilita la importación automática desde `lqos_scheduler`.
 - `api_key` es el token Bearer generado dentro de Netzur.
 - `api_url` debe devolver un JSON con los arreglos `zones` (convertidos en sitios) y `customers` (convertidos en circuitos y dispositivos).
 - `timeout_secs` permite incrementar el tiempo de espera de la petición cuando el API responde lentamente (por defecto 60 segundos).
+- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `mikrotikDHCPRouterList.csv`.
 
 Para una importación manual:
 
