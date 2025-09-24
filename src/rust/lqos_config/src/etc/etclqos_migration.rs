@@ -17,9 +17,7 @@ pub struct EtcLqos {
     /// In ms.
     pub queue_check_period_ms: u64,
 
-    /// If present, provides a unique ID for the node. Used for
-    /// anonymous stats (to identify nodes without providing an actual
-    /// identity), and long-term stas.
+    /// If present, provides a unique ID for the node. Used for Insight.
     pub node_id: Option<String>,
 
     /// If present, provide a name for the node.
@@ -31,9 +29,6 @@ pub struct EtcLqos {
     /// If present, defines the values for various `sysctl` and `ethtool`
     /// tweaks.
     pub tuning: Option<Tunables>,
-
-    /// If present, defined anonymous usage stat sending
-    pub usage_stats: Option<UsageStats>,
 
     /// Defines for how many seconds a libpcap compatible capture should
     /// run. Short times are good, there's a real performance penalty to
@@ -123,16 +118,6 @@ pub struct BridgeVlan {
 
     /// The destination VLAN tag number if matched.
     pub redirect_to: u32,
-}
-
-/// Definitions for anonymous usage submission
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct UsageStats {
-    /// Are we allowed to send stats at all?
-    pub send_anonymous: bool,
-
-    /// Where do we send them?
-    pub anonymous_server: String,
 }
 
 /// Long Term Data Retention

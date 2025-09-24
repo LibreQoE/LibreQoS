@@ -1,6 +1,5 @@
 //! Top-level configuration file for LibreQoS.
 
-use super::anonymous_stats::UsageStats;
 use super::tuning::Tunables;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
@@ -31,9 +30,6 @@ pub struct Config {
 
     /// Queue refresh interval
     pub queue_check_period_ms: u64,
-
-    /// Anonymous usage statistics
-    pub usage_stats: UsageStats,
 
     /// Tuning instructions
     pub tuning: Tunables,
@@ -143,7 +139,6 @@ impl Default for Config {
             lqos_directory: "/opt/libreqos/src".to_string(),
             node_id: Self::calculate_node_id(),
             node_name: "LibreQoS".to_string(),
-            usage_stats: UsageStats::default(),
             tuning: Tunables::default(),
             bridge: Some(super::bridge::BridgeConfig::default()),
             single_interface: None,

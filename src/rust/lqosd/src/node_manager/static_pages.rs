@@ -43,7 +43,6 @@ pub(super) fn static_routes() -> Result<Router> {
         "lts_trial_success.html",
         "lts_trial_fail.html",
         "config_general.html",
-        "config_anon.html",
         "config_tuning.html",
         "config_queues.html",
         "config_lts.html",

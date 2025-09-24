@@ -109,21 +109,25 @@ pub async fn build_full_network(
 
     // Create a new "_Infrastructure" node for the parent, since we can't link to the top
     // level very easily
-    if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
-        sites.push(UispSite {
-            id: format!("{}_Infrastructure", sites[root_idx].name.clone()),
-            name: format!("{}_Infrastructure", sites[root_idx].name.clone()),
-            site_type: UispSiteType::Site,
-            uisp_parent_id: None,
-            parent_indices: Default::default(),
-            max_down_mbps: sites[root_idx].max_down_mbps,
-            max_up_mbps: sites[root_idx].max_down_mbps,
-            suspended: false,
-            device_indices: vec![],
-            route_weights: vec![],
-            selected_parent: Some(root_idx),
-        });
-    }
+        if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
+            sites.push(UispSite {
+                id: format!("{}_Infrastructure", sites[root_idx].name.clone()),
+                name: format!("{}_Infrastructure", sites[root_idx].name.clone()),
+                site_type: UispSiteType::Site,
+                uisp_parent_id: None,
+                parent_indices: Default::default(),
+                max_down_mbps: sites[root_idx].max_down_mbps,
+                max_up_mbps: sites[root_idx].max_down_mbps,
+                base_down_mbps: 0.0,
+                base_up_mbps: 0.0,
+                burst_down_mbps: 0.0,
+                burst_up_mbps: 0.0,
+                suspended: false,
+                device_indices: vec![],
+                route_weights: vec![],
+                selected_parent: Some(root_idx),
+            });
+        }
 
     // Search for devices that provide links elsewhere
     promote_access_points(

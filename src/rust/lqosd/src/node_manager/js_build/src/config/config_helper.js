@@ -137,7 +137,6 @@ export function validNodeList(network_json) {
 export function renderConfigMenu(currentPage) {
     const menuItems = [
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
-        { href: "config_anon.html", icon: "fa-user-secret", text: "Anonymous Usage Stats", id: "anon" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
         { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },

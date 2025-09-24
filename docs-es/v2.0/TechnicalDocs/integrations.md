@@ -83,7 +83,7 @@ strategy = "full"
 # Suspension strategy:
 # * "none" - do not handle suspensions
 # * "ignore" - do not add suspended customers to the network map
-# * "slow" - limit suspended customers to 1mbps
+# * "slow" - limit suspended customers to 0.1 Mbps
 suspended_strategy = "none"
 
 # UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
@@ -113,7 +113,6 @@ exception_cpes = []
 
 # If you have some sites branched off PtMP Access Points, set `true`
 use_ptmp_as_parent = true
-uisp_use_burst = true
 ```
 
 To test the UISP Integration, use
