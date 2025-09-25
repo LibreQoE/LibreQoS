@@ -1,0 +1,52 @@
+<!-- Embedded Chatbot (Libby) with SSO helper -->
+<div class="card mb-2">
+  <div class="card-body d-flex align-items-center justify-content-between py-2">
+    <div>
+      <i class="fa fa-comments me-2 text-secondary"></i>
+      <strong>Ask Libby</strong>
+      <span class="text-secondary">— embedded chatbot</span>
+    </div>
+    <a id="openNew" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
+      <i class="fa fa-up-right-from-square me-1"></i>Open in new tab
+    </a>
+  </div>
+  <div id="notice" class="alert alert-info d-none m-3" role="alert"></div>
+</div>
+
+<div class="ratio ratio-16x9" style="min-height: 70vh;">
+  <iframe id="chatFrame" src="about:blank" style="width:100%; height:100%; border:0;" title="LibreQoS Chatbot"></iframe>
+  </div>
+
+<script>
+(function(){
+  const proto = window.location.protocol;
+  const host = window.location.hostname;
+  const chatRoot = `${proto}//${host}:9121`;
+  const chatUrl = `${chatRoot}/`;
+  const f = document.getElementById('chatFrame');
+  const btn = document.getElementById('openNew');
+  const notice = document.getElementById('notice');
+  btn.href = chatUrl;
+
+  // Try to acquire User-Token via node manager helper; if present, SSO into chatbot
+  fetch('/local-api/chatbot_sso_token', { credentials: 'include' })
+    .then(async (r) => {
+      if(!r.ok) throw new Error('no token');
+      const j = await r.json();
+      if(j && j.token){
+        const sso = `${chatRoot}/sso?token=${encodeURIComponent(j.token)}&redirect=${encodeURIComponent('/')}`;
+        f.src = sso;
+      } else {
+        f.src = chatUrl;
+        notice.classList.remove('d-none');
+        notice.innerText = 'Single sign-on unavailable; please sign in to Libby.';
+      }
+    })
+    .catch(() => {
+      f.src = chatUrl;
+      notice.classList.remove('d-none');
+      notice.innerText = 'Single sign-on unavailable; please sign in to Libby.';
+    });
+})();
+</script>
+

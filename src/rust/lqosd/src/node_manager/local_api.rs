@@ -22,6 +22,8 @@ use crate::node_manager::auth::auth_layer;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
+use axum_extra::extract::CookieJar;
+use serde::Serialize;
 use tower_http::cors::CorsLayer;
 
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
@@ -102,7 +104,17 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ltsRecentMedian", get(lts::recent_medians))
         .route("/scheduler/status", get(scheduler::scheduler_status))
         .route("/scheduler/details", get(scheduler::scheduler_details))
+        .route("/chatbot_sso_token", get(chatbot_sso_token))
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
+}
+
+#[derive(Serialize)]
+struct ChatbotToken { token: Option<String> }
+
+async fn chatbot_sso_token(jar: CookieJar) -> axum::Json<ChatbotToken> {
+    // Node Manager stores auth as a cookie named "User-Token"
+    let tok = jar.get("User-Token").map(|c| c.value().to_string());
+    axum::Json(ChatbotToken { token: tok })
 }

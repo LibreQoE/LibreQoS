@@ -5,6 +5,7 @@ use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::get_username;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderValue, Request, Response, StatusCode};
+use axum::http::header;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
@@ -41,10 +42,10 @@ fn escape_html_attr(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-// HTML template for API link when available
+// HTML template for API link when available (embedded page)
 const API_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
-    <a class="nav-link" id="apiLink" href="%%API_URL%%" target="_blank" rel="noopener">
+    <a class="nav-link" id="apiLink" href="api_docs.html">
         <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
     </a>
     
@@ -58,10 +59,10 @@ const API_LINK_INACTIVE: &str = r#"
     </a>
 </li>"#;
 
-// HTML template for chat link when available
+// HTML template for chat link when available (embedded page)
 const CHAT_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
-    <a class="nav-link" id="chatLink" href="%%CHAT_URL%%" target="_blank" rel="noopener">
+    <a class="nav-link" id="chatLink" href="chatbot.html">
         <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
     </a>
 </li>"#;
@@ -163,16 +164,16 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
-        // Handle API_LINK placeholder
-        let api_link = if is_api_available() {
+        // Handle API_LINK placeholder (require service + valid Insight)
+        let api_link = if is_api_available() && script_has_insight {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE
         };
         let byte_string = byte_string.replace("%%API_LINK%%", api_link);
 
-        // Handle CHAT_LINK placeholder (visible even when unavailable)
-        let chat_link = if is_chatbot_available() {
+        // Handle CHAT_LINK placeholder (require service + valid Insight)
+        let chat_link = if is_chatbot_available() && script_has_insight {
             CHAT_LINK_ACTIVE
         } else {
             CHAT_LINK_INACTIVE
@@ -195,6 +196,8 @@ pub async fn apply_templates(
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }
+        // Prevent caching of the composed HTML to avoid stale menus/status
+        res_parts.headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {

@@ -14,6 +14,7 @@ DPKG_DIR=dist/$PKGVERSION-1_amd64
 APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
+API_DIR=$DPKG_DIR/opt/libreqos/api
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
@@ -69,7 +70,7 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards "$API_DIR"
 
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR
@@ -116,15 +117,15 @@ cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos
 /bin/systemctl daemon-reload
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
-/bin/systemctl enable lqosd lqos_scheduler
-/bin/systemctl start lqosd lqos_scheduler
+/bin/systemctl enable lqosd lqos_scheduler lqos_api
+/bin/systemctl start lqosd lqos_scheduler lqos_api
 EOF
 
 # Uninstall Script
 cat <<EOF > postrm
 #!/bin/bash
-/bin/systemctl stop lqosd lqos_scheduler
-/bin/systemctl disable lqosd lqos_scheduler
+/bin/systemctl stop lqosd lqos_scheduler lqos_api
+/bin/systemctl disable lqosd lqos_scheduler lqos_api
 EOF
 chmod a+x postinst postrm
 popd > /dev/null || exit
@@ -201,6 +202,35 @@ echo "Point a browser at http://\$MY_IP:9123/ to manage it."
 echo \"\"
 EOF
 popd || exit
+
+####################################################
+# Bundle the API
+
+# Prefer a locally built api.zip (from lqos_api repo root). Fallback to curl if missing.
+if [ -f ../../../api.zip ]; then
+  cp ../../../api.zip /tmp/lqos_api.zip
+else
+  echo "Local api.zip not found; attempting to download..."
+  curl -L -o /tmp/lqos_api.zip "http://download.libreqos.com/api_latest.zip"
+fi
+# Unzip it into the $API_DIR
+unzip -o /tmp/lqos_api.zip -d "$API_DIR"
+# Remove the /tmp/lqos_api.zip file
+rm -f /tmp/lqos_api.zip
+# Create the systemd script:
+cat <<EOF > "$DPKG_DIR"/etc/systemd/system/lqos_api.service
+[Unit]
+After=lqosd.service
+
+[Service]
+WorkingDirectory=/opt/libreqos/api
+ExecStart=/opt/libreqos/api/lqos_api
+Restart=always
+Environment=LQOS_DOCS_DIR=/opt/libreqos/api
+
+[Install]
+WantedBy=default.target
+EOF
 
 ####################################################
 # Assemble the package

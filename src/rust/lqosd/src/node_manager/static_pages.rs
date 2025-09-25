@@ -39,6 +39,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "flow_map.html",
         "all_tree_sankey.html",
         "asn_explorer.html",
+        "api_docs.html",
+        "chatbot.html",
         "lts_trial.html",
         "lts_trial_success.html",
         "lts_trial_fail.html",
