@@ -85,6 +85,9 @@ impl MessageQueue {
 
     pub(crate) fn ingest(&mut self, command: IngestorCommand) {
         match command {
+            IngestorCommand::IngestBatchComplete { .. } => {
+                tracing::error!("IngestBatchComplete Should Never Reach Here");
+            }
             IngestorCommand::CircuitThroughputBatch(batch) => {
                 self.circuit_throughput.extend(batch);
             }
@@ -117,6 +120,62 @@ impl MessageQueue {
             }
             _ => self.general_queue.push(command),
         }
+    }
+
+    pub(crate) fn build_chunks(&mut self) -> Result<Vec<Vec<u8>>> {
+        // Gather the license info for bundling
+        let (license_key, node_id, node_name) = {
+            let Ok(lock) = load_config() else {
+                warn!("Failed to load config");
+                return Ok(vec![]);
+            };
+            (
+                lock.long_term_stats
+                    .license_key
+                    .clone()
+                    .unwrap_or("".to_string()),
+                lock.node_id.clone(),
+                lock.node_name.clone(),
+            )
+        };
+        let Ok(license_uuid) = Uuid::parse_str(&license_key.replace("-", "")) else {
+            warn!("Failed to parse license key");
+            return Ok(vec![]);
+        };
+        
+        // Build the message
+        let mut message = IngestSession {
+            license_key: license_uuid,
+            node_id: node_id.clone(),
+            node_name,
+            ..Default::default()
+        };
+        general::add_general(&mut message, &mut self.general_queue);
+        circuit_throughput::add_circuit_throughput(&mut message, &mut self.circuit_throughput);
+        circuit_retransmits::add_circuit_retransmits(&mut message, &mut self.circuit_retransmits);
+        circuit_rtt::add_circuit_rtt(&mut message, &mut self.circuit_rtt);
+        circuit_cake_drops::add_circuit_cake_drops(&mut message, &mut self.circuit_cake_drops);
+        circuit_cake_marks::add_circuit_cake_marks(&mut message, &mut self.circuit_cake_marks);
+        site_cake_drops::add_site_cake_drops(&mut message, &mut self.site_cake_drops);
+        site_cake_marks::add_site_cake_marks(&mut message, &mut self.site_cake_marks);
+        site_retransmits::add_site_retransmits(&mut message, &mut self.site_retransmits);
+        site_rtt::add_site_rtt(&mut message, &mut self.site_rtt);
+        site_throughput::add_site_throughput(&mut message, &mut self.site_throughput);
+
+        // Build the submission blob
+        let Ok(raw_bytes) = serde_cbor::to_vec(&message) else {
+            warn!("Failed to serialize data message");
+            return Ok(vec![]);
+        };
+        let compressed_bytes = miniz_oxide::deflate::compress_to_vec(&raw_bytes, 10);
+
+        // Divide into chunks. Chunk size is 60k
+        const CHUNK_SIZE: usize = 60 * 1024;
+        let message_chunks = compressed_bytes.chunks(CHUNK_SIZE);
+        let n_chunks = message_chunks.len();
+        let chunks = message_chunks.map(|chunk| chunk.to_vec()).collect::<Vec<_>>();
+        info!("Submitting {} chunks of data", n_chunks);
+        Ok(chunks)
     }
 
     pub(crate) fn send(&mut self) -> Result<()> {

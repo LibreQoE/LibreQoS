@@ -90,4 +90,5 @@ pub(crate) enum IngestorCommand {
         timestamp: u64,
         flow_count: u64,
     },
+    IngestBatchComplete { submit: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>},
 }

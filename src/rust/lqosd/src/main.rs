@@ -164,7 +164,12 @@ fn main() -> Result<()> {
     };
 
     // Spawn tracking sub-systems
-    if let Err(e) = lts2_sys::start_lts2() {
+    let Ok(control_channel) = lts2_sys::control_channel::init_control_channel() else {
+        error!("Failed to initialize Insight control channel, exiting.");
+        std::process::exit(1);
+    };
+    let control_tx = control_channel.tx.clone();
+    if let Err(e) = lts2_sys::start_lts2(control_tx) {
         error!("Failed to start Insight: {:?}", e);
     } else {
         info!("Insight client started successfully");
@@ -237,6 +242,11 @@ fn main() -> Result<()> {
                 .unwrap()
                 .block_on(async {
                     tokio::spawn(async move {
+                        match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                            Ok(_) => info!("Insight control channel started successfully"),
+                            Err(e) => error!("Insight control channel failed to start: {:#}", e),
+                        }
+
                         match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
                             Ok(_) => info!("StormGuard started successfully"),
                             Err(e) => error!("StormGuard failed to start: {:#}", e),

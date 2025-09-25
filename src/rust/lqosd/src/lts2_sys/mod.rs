@@ -4,13 +4,15 @@ pub(crate) mod lts2_client;
 pub mod shared_types;
 
 use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};
+pub(crate) use lts2_client::{set_license_status, LicenseStatus, get_license_status};
 use anyhow::Result;
 use once_cell::sync::Lazy;
 pub use shared_types::RemoteCommand;
+pub mod control_channel;
 
-pub fn start_lts2() -> Result<()> {
+pub fn start_lts2(control_tx: tokio::sync::mpsc::Sender<control_channel::ControlChannelCommand>) -> Result<()> {
     // Launch the process
-    lts2_client::spawn_lts2()?;
+    lts2_client::spawn_lts2(control_tx)?;
 
     Ok(())
 }
