@@ -21,6 +21,7 @@ use std::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::{error, warn};
 pub(crate) use license_check::{set_license_status, LicenseStatus, get_license_status};
+pub(crate) use remote_commands::enqueue;
 
 pub fn spawn_lts2(
     control_tx: tokio::sync::mpsc::Sender<super::control_channel::ControlChannelCommand>

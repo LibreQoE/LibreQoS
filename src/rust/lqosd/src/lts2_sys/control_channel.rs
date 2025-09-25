@@ -7,7 +7,7 @@ use tungstenite::Message;
 use std::{net::ToSocketAddrs, time::Duration};
 use futures_util::{sink::SinkExt, StreamExt};
 
-use crate::lts2_sys::lts2_client::{set_license_status, LicenseStatus};
+use crate::lts2_sys::{lts2_client::{set_license_status, LicenseStatus}};
 
 mod messages;
 
@@ -173,6 +173,10 @@ async fn persistent_connection(mut rx: tokio::sync::mpsc::Receiver<ConnectionCom
                                             break 'message_pump;
                                         }
                                     }
+                                    messages::WsMessage::RemoteCommands { commands } => {
+                                        crate::lts2_sys::lts2_client::enqueue(commands);
+                                    }
+
                                     _ => {}
                                 }
                             }
