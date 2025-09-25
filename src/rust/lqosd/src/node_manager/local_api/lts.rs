@@ -1,10 +1,7 @@
 mod last_24_hours;
-mod rest_client;
 mod shaper_status;
 
-use crate::lts2_sys::shared_types::FreeTrialDetails;
-use axum::response::Redirect;
-use axum::{Form, Json};
+use axum::Json;
 pub use last_24_hours::*;
 use lqos_bus::{BusRequest, bus_request};
 use lqos_config::load_config;

@@ -83,7 +83,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/containerStatus", get(container_status::container_status))
         .route("/ltsSignUp", post(lts::lts_trial_signup))
         .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
-        .route("/lts24", get(lts::last_24_hours))
+        //.route("/lts24", get(lts::last_24_hours))
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
         .route("/ltsPackets/:seconds", get(lts::packets_period))
         .route(
@@ -91,8 +91,8 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             get(lts::percent_shaped_period),
         )
         .route("/ltsFlows/:seconds", get(lts::percent_flows_period))
-        .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
-        .route("/ltsCake/:seconds", get(lts::cake_period))
+        //.route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
+        //.route("/ltsCake/:seconds", get(lts::cake_period))
         .route("/ltsRttHisto/:seconds", get(lts::rtt_histo_period))
         .route(
             "/ltsTop10Downloaders/:seconds",
