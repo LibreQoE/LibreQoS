@@ -87,33 +87,40 @@ fn traverse(
                 let device = &devices[*device];
                 if device.has_address() {
                     // Prefer UISP QoS + burst if available; else fallback to capacity-based
-                    let (mut download_min, mut download_max, mut upload_min, mut upload_max) = if let Some((dl_min, dl_max, ul_min, ul_max)) = sites[idx].burst_rates(config) {
-                        (
-                            f32::max(0.1, dl_min),
-                            f32::max(0.1, dl_max),
-                            f32::max(0.1, ul_min),
-                            f32::max(0.1, ul_max),
-                        )
-                    } else {
-                        let download_max_f32 = sites[idx].max_down_mbps as f32
-                            * config.uisp_integration.bandwidth_overhead_factor;
-                        let upload_max_f32 = sites[idx].max_up_mbps as f32
-                            * config.uisp_integration.bandwidth_overhead_factor;
-                        let download_min_f32 = download_max_f32
-                            * config.uisp_integration.commit_bandwidth_multiplier;
-                        let upload_min_f32 = upload_max_f32
-                            * config.uisp_integration.commit_bandwidth_multiplier;
-                        (
-                            f32::max(0.1, download_min_f32),
-                            f32::max(0.1, download_max_f32),
-                            f32::max(0.1, upload_min_f32),
-                            f32::max(0.1, upload_max_f32),
-                        )
-                    };
+                    let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                        if let Some((dl_min, dl_max, ul_min, ul_max)) =
+                            sites[idx].burst_rates(config)
+                        {
+                            (
+                                f32::max(0.1, dl_min),
+                                f32::max(0.1, dl_max),
+                                f32::max(0.1, ul_min),
+                                f32::max(0.1, ul_max),
+                            )
+                        } else {
+                            let download_max_f32 = sites[idx].max_down_mbps as f32
+                                * config.uisp_integration.bandwidth_overhead_factor;
+                            let upload_max_f32 = sites[idx].max_up_mbps as f32
+                                * config.uisp_integration.bandwidth_overhead_factor;
+                            let download_min_f32 = download_max_f32
+                                * config.uisp_integration.commit_bandwidth_multiplier;
+                            let upload_min_f32 = upload_max_f32
+                                * config.uisp_integration.commit_bandwidth_multiplier;
+                            (
+                                f32::max(0.1, download_min_f32),
+                                f32::max(0.1, download_max_f32),
+                                f32::max(0.1, upload_min_f32),
+                                f32::max(0.1, upload_max_f32),
+                            )
+                        };
                     // Ensure max >= min per LibreQoS requirements
-                    if download_max < download_min { download_max = download_min; }
-                    if upload_max < upload_min { upload_max = upload_min; }
-                    
+                    if download_max < download_min {
+                        download_max = download_min;
+                    }
+                    if upload_max < upload_min {
+                        upload_max = upload_min;
+                    }
+
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
                         circuit_name: sites[idx].name.clone(),
@@ -147,15 +154,15 @@ fn traverse(
                         * config.uisp_integration.bandwidth_overhead_factor;
                     let upload_max_f32 = sites[idx].max_up_mbps as f32
                         * config.uisp_integration.bandwidth_overhead_factor;
-                    let download_min_f32 = download_max_f32
-                        * config.uisp_integration.commit_bandwidth_multiplier;
-                    let upload_min_f32 = upload_max_f32
-                        * config.uisp_integration.commit_bandwidth_multiplier;
+                    let download_min_f32 =
+                        download_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    let upload_min_f32 =
+                        upload_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
                     let download_max = f32::max(0.2, download_max_f32);
                     let upload_max = f32::max(0.2, upload_max_f32);
                     let download_min = f32::max(0.2, download_min_f32);
                     let upload_min = f32::max(0.2, upload_min_f32);
-                    
+
                     let sd = ShapedDevice {
                         circuit_id: format!("{}-inf", sites[idx].id),
                         circuit_name: format!("{} Infrastructure", sites[idx].name),
@@ -213,10 +220,10 @@ mod tests {
                 mac: "00:11:22:33:44:55".to_string(),
                 ipv4: "192.168.1.100".to_string(),
                 ipv6: "".to_string(),
-                download_min: 0.5,  // Sub-1 Mbps
+                download_min: 0.5, // Sub-1 Mbps
                 upload_min: 0.5,
-                download_max: 2.5,  // Fractional rate
-                upload_max: 1.0,    // Whole number
+                download_max: 2.5, // Fractional rate
+                upload_max: 1.0,   // Whole number
                 comment: "Fractional rate test".to_string(),
             },
             ShapedDevice {
@@ -228,9 +235,9 @@ mod tests {
                 mac: "00:11:22:33:44:66".to_string(),
                 ipv4: "192.168.1.101".to_string(),
                 ipv6: "2001:db8::1".to_string(),
-                download_min: 1.25,  // Precise decimal
+                download_min: 1.25, // Precise decimal
                 upload_min: 0.75,   // Another fractional
-                download_max: 10.5,  // Mixed decimal
+                download_max: 10.5, // Mixed decimal
                 upload_max: 5.25,   // Another precise decimal
                 comment: "Mixed rate test".to_string(),
             },
@@ -243,54 +250,75 @@ mod tests {
                 mac: "00:11:22:33:44:77".to_string(),
                 ipv4: "10.0.1.1".to_string(),
                 ipv6: "".to_string(),
-                download_min: 0.2,   // Infrastructure minimum
+                download_min: 0.2, // Infrastructure minimum
                 upload_min: 0.2,
                 download_max: 0.2,
                 upload_max: 0.2,
                 comment: "Infrastructure Entry".to_string(),
             },
         ];
-        
+
         // Serialize to CSV
         let mut csv_output = Vec::new();
         {
             let mut writer = csv::Writer::from_writer(&mut csv_output);
-            
+
             for device in &test_devices {
-                writer.serialize(device).expect("Failed to serialize device");
+                writer
+                    .serialize(device)
+                    .expect("Failed to serialize device");
             }
-            
+
             writer.flush().expect("Failed to flush CSV writer");
         }
-        
+
         let csv_string = String::from_utf8(csv_output).expect("Invalid UTF-8 in CSV output");
         println!("Generated CSV output:\n{}", csv_string);
-        
+
         // Validate the output (1 header + 3 data rows)
         let lines: Vec<&str> = csv_string.trim().split('\n').collect();
-        assert_eq!(lines.len(), 4, "Should have 4 CSV lines (1 header + 3 data rows)");
-        
+        assert_eq!(
+            lines.len(),
+            4,
+            "Should have 4 CSV lines (1 header + 3 data rows)"
+        );
+
         // Parse CSV back to verify fractional rates are preserved
         let mut reader = csv::Reader::from_reader(csv_string.as_bytes());
         let mut parsed_devices = Vec::new();
-        
+
         for result in reader.deserialize() {
             let device: ShapedDevice = result.expect("Failed to deserialize device");
             parsed_devices.push(device);
         }
-        
+
         // Verify fractional rates are preserved
         assert_eq!(parsed_devices.len(), 3, "Should parse 3 devices");
-        
+
         // Test specific fractional rates
-        assert_eq!(parsed_devices[0].download_max, 2.5, "First device should have 2.5 Mbps download_max");
-        assert_eq!(parsed_devices[0].download_min, 0.5, "First device should have 0.5 Mbps download_min");
-        
-        assert_eq!(parsed_devices[1].download_max, 10.5, "Second device should have 10.5 Mbps download_max");
-        assert_eq!(parsed_devices[1].upload_max, 5.25, "Second device should have 5.25 Mbps upload_max");
-        
-        assert_eq!(parsed_devices[2].download_min, 0.2, "Infrastructure should have 0.2 Mbps rates");
-        
+        assert_eq!(
+            parsed_devices[0].download_max, 2.5,
+            "First device should have 2.5 Mbps download_max"
+        );
+        assert_eq!(
+            parsed_devices[0].download_min, 0.5,
+            "First device should have 0.5 Mbps download_min"
+        );
+
+        assert_eq!(
+            parsed_devices[1].download_max, 10.5,
+            "Second device should have 10.5 Mbps download_max"
+        );
+        assert_eq!(
+            parsed_devices[1].upload_max, 5.25,
+            "Second device should have 5.25 Mbps upload_max"
+        );
+
+        assert_eq!(
+            parsed_devices[2].download_min, 0.2,
+            "Infrastructure should have 0.2 Mbps rates"
+        );
+
         println!("✅ CSV serialization test passed!");
         println!("   - Fractional rates preserved correctly");
         println!("   - Sub-1 Mbps rates work (0.5, 0.2)");
@@ -301,22 +329,25 @@ mod tests {
     #[test]
     fn test_rate_calculation_safeguards() {
         // Test the defensive programming we implemented
-        
+
         // Simulate very small calculated rates
         let very_small_rate = 0.05_f32;
         let safeguarded_rate = f32::max(0.1, very_small_rate);
         assert_eq!(safeguarded_rate, 0.1, "Should apply 0.1 Mbps minimum");
-        
+
         // Test infrastructure minimum
         let small_infra_rate = 0.15_f32;
         let infra_safeguarded = f32::max(0.2, small_infra_rate);
-        assert_eq!(infra_safeguarded, 0.2, "Should apply 0.2 Mbps minimum for infrastructure");
-        
+        assert_eq!(
+            infra_safeguarded, 0.2,
+            "Should apply 0.2 Mbps minimum for infrastructure"
+        );
+
         // Test normal rates are preserved
         let normal_rate = 2.5_f32;
         let preserved_rate = f32::max(0.1, normal_rate);
         assert_eq!(preserved_rate, 2.5, "Normal rates should be preserved");
-        
+
         println!("✅ Rate safeguard tests passed!");
     }
 }

@@ -39,17 +39,22 @@ pub async fn load_uisp_data(
     }
     let data_links = data_links.unwrap();
 
+    // Build a quick lookup of excluded site IDs to avoid repeated scans
+    let excluded_site_ids: std::collections::HashSet<&str> = sites
+        .iter()
+        .filter(|site| {
+            config
+                .uisp_integration
+                .exclude_sites
+                .contains(&site.name_or_blank())
+        })
+        .map(|site| site.id.as_str())
+        .collect();
+
     // Remove any devices that are in excluded sites
     devices.retain(|dev| {
         if let Some(site_id) = dev.get_site_id() {
-            if let Some(site) = sites.iter().find(|site| site.id == site_id) {
-                !config
-                    .uisp_integration
-                    .exclude_sites
-                    .contains(&site.name_or_blank())
-            } else {
-                true
-            }
+            !excluded_site_ids.contains(site_id.as_str())
         } else {
             true
         }
