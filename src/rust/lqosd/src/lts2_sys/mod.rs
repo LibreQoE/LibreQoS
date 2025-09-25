@@ -4,7 +4,6 @@ pub(crate) mod lts2_client;
 pub mod shared_types;
 
 use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};
-pub(crate) use lts2_client::{set_license_status, LicenseStatus, get_license_status};
 use anyhow::Result;
 use once_cell::sync::Lazy;
 pub use shared_types::RemoteCommand;

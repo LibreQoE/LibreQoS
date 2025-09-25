@@ -5,7 +5,6 @@ use uuid::Uuid;
 
 use crate::lts2_sys::RemoteCommand;
 
-pub const MAX_COMPRESSED_WS_MSG_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 pub const MAX_DECOMPRESSED_WS_MSG_BYTES: usize = 16 * 1024 * 1024; // 16 MiB
 
 #[derive(Serialize, Deserialize)]

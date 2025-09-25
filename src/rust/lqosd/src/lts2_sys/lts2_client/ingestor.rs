@@ -6,8 +6,6 @@ use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use parking_lot::Mutex;
-use std::time::Duration;
-use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{info, warn};
 
 pub fn start_ingestor() -> Sender<IngestorCommand> {
