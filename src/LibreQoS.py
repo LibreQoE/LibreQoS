@@ -337,7 +337,7 @@ def validateNetworkAndDevices():
 				devicesValidatedOrNot = False
 			try:
 				a = float(downloadMax)
-				if a < 0.2:
+				if a < 0.1:
 					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
@@ -345,7 +345,7 @@ def validateNetworkAndDevices():
 				devicesValidatedOrNot = False
 			try:
 				a = float(uploadMax)
-				if a < 0.2:
+				if a < 0.1:
 					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
