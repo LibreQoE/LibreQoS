@@ -719,27 +719,30 @@ async fn circuit_snapshot_streaming(
     let tp_cycle = crate::throughput_tracker::THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
-    let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
-    for (xdp_ip, te) in raw.iter() {
-        // Only consider entries known to belong to this circuit and are fresh enough
-        if te.circuit_hash != Some(circuit_hash) { continue; }
-        // retire_check is local; use same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
-        // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-        // Map IP to device via trie
-        let lookup = xdp_ip.as_ipv6();
-        if let Some((_, id)) = shaped.trie.longest_match(lookup) {
-            if aggregates.contains_key(id) {
-                if let Some(agg) = aggregates.get_mut(id) {
-                    // bytes_per_second -> later convert to bits
-                    agg.bps_bytes += te.bytes_per_second;
-                    agg.tcp_packets += te.tcp_packets;
-                    agg.tcp_retries += te.tcp_retransmits;
-                    if let Some(rtt) = te.median_latency() {
-                        agg.rtts.push(rtt);
+    {
+        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
+        for (xdp_ip, te) in raw.iter() {
+            // Only consider entries known to belong to this circuit and are fresh enough
+            if te.circuit_hash != Some(circuit_hash) { continue; }
+            // retire_check is local; use same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
+            // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
+            // Map IP to device via trie
+            let lookup = xdp_ip.as_ipv6();
+            if let Some((_, id)) = shaped.trie.longest_match(lookup) {
+                if aggregates.contains_key(id) {
+                    if let Some(agg) = aggregates.get_mut(id) {
+                        // bytes_per_second -> later convert to bits
+                        agg.bps_bytes += te.bytes_per_second;
+                        agg.tcp_packets += te.tcp_packets;
+                        agg.tcp_retries += te.tcp_retransmits;
+                        if let Some(rtt) = te.median_latency() {
+                            agg.rtts.push(rtt);
+                        }
                     }
                 }
             }
         }
+        // raw lock dropped here
     }
 
     // Build device snapshots
@@ -759,6 +762,9 @@ async fn circuit_snapshot_streaming(
                 .iter()
                 .map(|(ip, p)| (std::net::IpAddr::V6(*ip), *p as u8)),
         );
+        // Prepare values BEFORE await to avoid holding references across .await
+        let device_id = dev.device_id.clone();
+        let device_name = dev.device_name.clone();
         // Ping selection
         let ping_ip = choose_host_ip(&dev.ipv4, &dev.ipv6);
         let last_ping_ms = if let Some(ip) = ping_ip { one_ping(ip).await } else { None };
@@ -783,8 +789,8 @@ async fn circuit_snapshot_streaming(
         );
 
         devices_out.push(DeviceSnapshot {
-            device_id: dev.device_id.clone(),
-            device_name: dev.device_name.clone(),
+            device_id,
+            device_name,
             addresses,
             last_ping_ms,
             bits_per_second,
