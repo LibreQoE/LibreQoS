@@ -469,7 +469,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
         bail!("Failed to connect to shaper gateway server. {result:?}");
     }
     let Ok(Ok((socket, _response))) = result else {
-        warn!("Failed to connect to shaper gateway server");
+        warn!("Failed to connect to shaper gateway server {result:?}");
         bail!("Failed to connect to shaper gateway server. {result:?}");
     };
     debug!("Connected");

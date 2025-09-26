@@ -405,7 +405,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
     full_list.sort_by(|a, b| {
         let total_a = a.6.0 + a.6.1;
         let total_b = b.6.0 + b.6.1;
-        total_b.partial_cmp(&total_a).unwrap()
+        total_b.partial_cmp(&total_a).unwrap_or(std::cmp::Ordering::Equal)
     });
     let result = full_list
         .iter()
