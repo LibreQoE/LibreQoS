@@ -1,6 +1,5 @@
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::lts2_sys::RemoteCommand;
@@ -54,6 +53,10 @@ pub enum WsMessage {
         network_hash: i64,
         devices_hash: i64,
     },
+    ApiReply {
+        request_id: u64,
+        data: Vec<u8>,
+    },
 
     // Heartbeats (from Insight)
     Heartbeat {
@@ -88,24 +91,6 @@ pub enum WsMessage {
     StreamingCircuit {
         circuit_hash: i64,
     },
-    ChatConfiguration {
-        default_model: Option<String>,
-        allowed_models: Vec<String>,
-    },
-    ChatProxyRequest {
-        request_id: Uuid,
-        body: Value,
-    },
-    ChatProxyResponse {
-        request_id: Uuid,
-        success: bool,
-        body: Option<Value>,
-        error: Option<String>,
-    },
-    ChatProxyStream {
-        request_id: Uuid,
-        event: ChatStreamEvent,
-    },
     HistoryQuery {
         request_id: u64,
         query: RemoteInsightRequest,
@@ -116,14 +101,19 @@ pub enum WsMessage {
         seconds: i32,
         data: Option<Vec<u8>>,
     },
+    MakeApiRequest {
+        request_id: u64,
+        method: ApiRequestType,
+        url: String,
+        body: Option<String>,
+    }
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum ChatStreamEvent {
-    Begin,
-    Delta { data: Value },
-    End,
-    Error { message: String },
+pub enum ApiRequestType {
+    Get,
+    Post,
+    Delete,
 }
 
 impl WsMessage {

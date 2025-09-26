@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 use tungstenite::Message;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
