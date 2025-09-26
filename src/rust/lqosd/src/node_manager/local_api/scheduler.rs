@@ -1,7 +1,7 @@
-use axum::http::header::CONTENT_TYPE;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::Json;
+use axum::http::StatusCode;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::IntoResponse;
 use serde::Serialize;
 
 use crate::tool_status::{is_scheduler_available, scheduler_error_message};
@@ -15,14 +15,19 @@ fn strip_ansi(input: &str) -> String {
         if bytes[i] == 0x1B {
             // ESC sequence
             i += 1;
-            if i >= bytes.len() { break; }
+            if i >= bytes.len() {
+                break;
+            }
             match bytes[i] as char {
                 '[' => {
                     // CSI: ESC [ ... final byte 0x40..=0x7E
                     i += 1;
                     while i < bytes.len() {
                         let b = bytes[i];
-                        if (0x40..=0x7E).contains(&b) { i += 1; break; }
+                        if (0x40..=0x7E).contains(&b) {
+                            i += 1;
+                            break;
+                        }
                         i += 1;
                     }
                 }
@@ -30,8 +35,12 @@ fn strip_ansi(input: &str) -> String {
                     // OSC: ESC ] ... BEL (0x07) or ESC \
                     i += 1;
                     while i < bytes.len() {
-                        if bytes[i] == 0x07 { i += 1; break; }
-                        if bytes[i] == 0x1B { // ESC
+                        if bytes[i] == 0x07 {
+                            i += 1;
+                            break;
+                        }
+                        if bytes[i] == 0x1B {
+                            // ESC
                             if i + 1 < bytes.len() && bytes[i + 1] as char == '\\' {
                                 i += 2; // ESC \
                                 break;
@@ -64,12 +73,13 @@ pub async fn scheduler_status() -> (StatusCode, Json<SchedulerStatus>) {
     let available = is_scheduler_available();
     let error = scheduler_error_message().and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(strip_ansi(&t)) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(strip_ansi(&t))
+        }
     });
-    (
-        StatusCode::OK,
-        Json(SchedulerStatus { available, error }),
-    )
+    (StatusCode::OK, Json(SchedulerStatus { available, error }))
 }
 
 /// Potentially large details payload suitable for a modal
@@ -77,7 +87,11 @@ pub async fn scheduler_details() -> impl IntoResponse {
     let available = is_scheduler_available();
     let error = scheduler_error_message().and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(strip_ansi(&t)) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(strip_ansi(&t))
+        }
     });
 
     let mut body = String::new();

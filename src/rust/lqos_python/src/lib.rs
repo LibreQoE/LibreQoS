@@ -3,8 +3,8 @@
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
-use pyo3::prelude::*;
 use pyo3::exceptions::PyOSError;
+use pyo3::prelude::*;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -38,8 +38,14 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
-    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps, m)?)?;
-    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        upstream_bandwidth_capacity_download_mbps,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        upstream_bandwidth_capacity_upload_mbps,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(interface_a, m)?)?;
     m.add_function(wrap_pyfunction!(interface_b, m)?)?;
     m.add_function(wrap_pyfunction!(enable_actual_shell_commands, m)?)?;

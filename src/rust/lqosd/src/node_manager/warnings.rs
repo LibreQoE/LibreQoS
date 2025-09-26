@@ -1,7 +1,7 @@
 //! A place to store warnings from sanity checks, the need to reload LibreQoS and similar.
 
-use serde::Serialize;
 use parking_lot::Mutex;
+use serde::Serialize;
 
 #[allow(dead_code)]
 #[derive(Serialize, Copy, Clone)]

@@ -21,9 +21,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tokio::{
-    time::{Duration, Instant},
-};
+use tokio::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
@@ -164,7 +162,8 @@ fn throughput_task(
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
             timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
+            THROUGHPUT_TRACKER
+                .apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
             timer_metrics.apply_new_throughput_counters =
                 timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_flow_data(
@@ -663,16 +662,19 @@ pub fn all_unknown_ips() -> BusResponse {
         return BusResponse::NotReadyYet;
     }
     let boot_time = boot_time.unwrap();
-    
+
     // Safely convert TimeSpec to Duration - handle potential negative values
     let time_since_boot = match boot_time.tv_sec() {
         sec if sec < 0 => {
-            warn!("Negative boot time detected: {:?}. Using 0 duration.", boot_time);
+            warn!(
+                "Negative boot time detected: {:?}. Using 0 duration.",
+                boot_time
+            );
             Duration::from_secs(0)
         }
-        sec => Duration::from_secs(sec as u64) + Duration::from_nanos(boot_time.tv_nsec() as u64)
+        sec => Duration::from_secs(sec as u64) + Duration::from_nanos(boot_time.tv_nsec() as u64),
     };
-    
+
     let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
     let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 

@@ -1,5 +1,5 @@
-use std::net::IpAddr;
 use parking_lot::Mutex;
+use std::net::IpAddr;
 pub(crate) mod lts2_client;
 pub mod shared_types;
 
@@ -9,7 +9,9 @@ use once_cell::sync::Lazy;
 pub use shared_types::RemoteCommand;
 pub mod control_channel;
 
-pub fn start_lts2(control_tx: tokio::sync::mpsc::Sender<control_channel::ControlChannelCommand>) -> Result<()> {
+pub fn start_lts2(
+    control_tx: tokio::sync::mpsc::Sender<control_channel::ControlChannelCommand>,
+) -> Result<()> {
     // Launch the process
     lts2_client::spawn_lts2(control_tx)?;
 

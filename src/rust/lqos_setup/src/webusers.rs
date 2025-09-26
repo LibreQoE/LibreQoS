@@ -1,10 +1,10 @@
 //! Web Users editor for LibreQoS setup console
 use cursive::{
+    Cursive,
     view::{Nameable, Resizable},
     views::{Button, Dialog, EditView, LinearLayout, SelectView, TextView},
-    Cursive,
 };
-use lqos_config::{WebUsers, UserRole};
+use lqos_config::{UserRole, WebUsers};
 
 /// Shows and manages the list of web users.
 pub fn webusers_menu(s: &mut Cursive) {
@@ -42,13 +42,15 @@ pub fn webusers_menu(s: &mut Cursive) {
                             return;
                         }
                     };
-                    let (selected, username): (usize, String) = s.call_on_name("web_users", |view: &mut SelectView<String>| {
-                        view.selected_id()
-                            .and_then(|selected| {
+                    let (selected, username): (usize, String) = s
+                        .call_on_name("web_users", |view: &mut SelectView<String>| {
+                            view.selected_id().and_then(|selected| {
                                 view.get_item(selected)
                                     .map(|(name, _)| (selected, name.to_string()))
                             })
-                    }).unwrap_or(None).unwrap_or((0, String::new()));
+                        })
+                        .unwrap_or(None)
+                        .unwrap_or((0, String::new()));
 
                     if !username.is_empty() {
                         match webusers.remove_user(&username) {
@@ -70,11 +72,7 @@ pub fn webusers_menu(s: &mut Cursive) {
                 .child(
                     LinearLayout::horizontal()
                         .child(TextView::new("Username: ").fixed_width(12))
-                        .child(
-                            EditView::new()
-                                .with_name("new_username")
-                                .fixed_width(20),
-                        ),
+                        .child(EditView::new().with_name("new_username").fixed_width(20)),
                 )
                 .child(
                     LinearLayout::horizontal()

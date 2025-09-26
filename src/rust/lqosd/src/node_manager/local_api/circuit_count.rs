@@ -14,9 +14,9 @@ pub struct CircuitCount {
 
 pub async fn get_circuit_count() -> Json<CircuitCount> {
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
-    
+
     let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
-    
+
     // Collect unique circuit IDs from active traffic
     let active_circuits: HashSet<String> = THROUGHPUT_TRACKER
         .raw_data
@@ -29,7 +29,7 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
         // Extract circuit IDs where they exist
         .filter_map(|(_k, d)| d.circuit_id.clone())
         .collect();
-    
+
     // Get configured circuits from ShapedDevices
     let shaped_devices = SHAPED_DEVICES.load();
     let configured_circuits: HashSet<&str> = shaped_devices
@@ -37,14 +37,14 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
         .iter()
         .map(|device| device.circuit_id.as_str())
         .collect();
-    
+
     // Use active count if > 0, otherwise fall back to configured count
     let count = if active_circuits.len() > 0 {
         active_circuits.len()
     } else {
         configured_circuits.len()
     };
-    
+
     Json(CircuitCount {
         count,
         configured_count: configured_circuits.len(),

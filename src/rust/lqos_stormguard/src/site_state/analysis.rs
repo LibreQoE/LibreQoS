@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use allocative::Allocative;
+use std::fmt::Display;
 
 use crate::site_state::ring_buffer::RingBuffer;
 
@@ -54,20 +54,17 @@ impl Display for RetransmitState {
 }
 
 impl RetransmitState {
-    pub fn new(
-        moving_average: &RingBuffer,
-        recent: &RingBuffer,
-    ) -> Self {
+    pub fn new(moving_average: &RingBuffer, recent: &RingBuffer) -> Self {
         let tcp_retransmits_ma = moving_average.average().unwrap_or(0.01);
         let tcp_retransmits_avg = recent.average().unwrap_or(0.01);
         let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
-        
+
         // Determine State
         if tcp_retransmits_relative < 0.4 {
             RetransmitState::FallingFast
         } else if tcp_retransmits_relative < 0.8 {
             RetransmitState::Falling
-        }  else if tcp_retransmits_relative > 1.4 {
+        } else if tcp_retransmits_relative > 1.4 {
             RetransmitState::RisingFast
         } else if tcp_retransmits_relative > 1.1 {
             RetransmitState::Rising
@@ -79,26 +76,23 @@ impl RetransmitState {
 
 #[derive(PartialEq, Allocative)]
 pub enum RttState {
-    Rising{magnitude: f32},
+    Rising { magnitude: f32 },
     Flat,
-    Falling{magnitude: f32},
+    Falling { magnitude: f32 },
 }
 
 impl Display for RttState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RttState::Rising{magnitude} => write!(f, "Rising ({magnitude:.2})"),
+            RttState::Rising { magnitude } => write!(f, "Rising ({magnitude:.2})"),
             RttState::Flat => write!(f, "Flat"),
-            RttState::Falling{magnitude} => write!(f, "Falling ({magnitude:.2})"),
+            RttState::Falling { magnitude } => write!(f, "Falling ({magnitude:.2})"),
         }
     }
 }
 
 impl RttState {
-    pub fn new(
-        moving_average: &RingBuffer,
-        recent: &RingBuffer,
-    ) -> Self {
+    pub fn new(moving_average: &RingBuffer, recent: &RingBuffer) -> Self {
         if recent.count() < 2 || moving_average.count() < 2 {
             return RttState::Flat;
         }
@@ -109,9 +103,9 @@ impl RttState {
 
         // Determine State
         if rtt_relative > 1.2 {
-            RttState::Rising {magnitude: delta}
+            RttState::Rising { magnitude: delta }
         } else if rtt_relative < 0.8 {
-            RttState::Falling { magnitude: delta}
+            RttState::Falling { magnitude: delta }
         } else {
             RttState::Flat
         }

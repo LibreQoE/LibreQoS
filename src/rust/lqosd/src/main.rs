@@ -8,15 +8,15 @@ mod node_manager;
 mod preflight_checks;
 mod program_control;
 mod remote_commands;
+mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
 mod system_stats;
 mod throughput_tracker;
+mod tool_status;
 mod tuning;
 mod validation;
 mod version_checks;
-mod scheduler_control;
-mod tool_status;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -42,9 +42,9 @@ use signal_hook::{
     iterator::Signals,
 };
 use stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use std::{thread, time::Duration};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
-use std::{thread, time::Duration};
 
 // Use MiMalloc only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -59,8 +59,8 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use tracing::level_filters::LevelFilter;
 use lqos_stormguard::STORMGUARD_STATS;
+use tracing::level_filters::LevelFilter;
 
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -168,8 +168,9 @@ fn main() -> Result<()> {
         error!("Failed to initialize Insight control channel, exiting.");
         std::process::exit(1);
     };
-    let control_tx = control_channel.tx.clone();
-    if let Err(e) = lts2_sys::start_lts2(control_tx) {
+    let control_tx_for_lts = control_channel.tx.clone();
+    let control_tx_for_web = control_channel.tx.clone();
+    if let Err(e) = lts2_sys::start_lts2(control_tx_for_lts) {
         error!("Failed to start Insight: {:?}", e);
     } else {
         info!("Insight client started successfully");
@@ -233,6 +234,7 @@ fn main() -> Result<()> {
     memory_debug();
 
     let bakery_sender_for_async = bakery_sender.clone();
+    let control_tx_for_webserver = control_tx_for_web.clone();
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
@@ -242,7 +244,9 @@ fn main() -> Result<()> {
                 .unwrap()
                 .block_on(async {
                     tokio::spawn(async move {
-                        match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                        match lts2_sys::control_channel::start_control_channel(control_channel)
+                            .await
+                        {
                             Ok(_) => info!("Insight control channel started successfully"),
                             Err(e) => error!("Insight control channel failed to start: {:#}", e),
                         }
@@ -261,9 +265,14 @@ fn main() -> Result<()> {
                     // Webserver starting point
                     let webserver_disabled = config.disable_webserver.unwrap_or(false);
                     if !webserver_disabled {
-                        tokio::spawn(async {
-                            if let Err(e) =
-                                node_manager::spawn_webserver(bus_tx, system_usage_tx).await
+                        let control_tx_for_webserver = control_tx_for_webserver.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = node_manager::spawn_webserver(
+                                bus_tx,
+                                system_usage_tx,
+                                control_tx_for_webserver,
+                            )
+                            .await
                             {
                                 error!("Node Manager Failed: {e:?}");
                             }
@@ -311,10 +320,7 @@ fn memory_debug() {
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
 
-fn handle_bus_requests(
-    requests: &[BusRequest],
-    responses: &mut Vec<BusResponse>,
-) {
+fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
         BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -458,12 +464,15 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryMqSetup { queues_available, stick_offset } => {
+            BusRequest::BakeryMqSetup {
+                queues_available,
+                stick_offset,
+            } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::MqSetup {
                         queues_available: *queues_available,
-                        stick_offset: *stick_offset
+                        stick_offset: *stick_offset,
                     });
                     BusResponse::Ack
                 } else {
@@ -497,7 +506,19 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses} => {
+            BusRequest::BakeryAddCircuit {
+                circuit_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                class_major,
+                up_class_major,
+                ip_addresses,
+            } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -512,7 +533,7 @@ fn handle_bus_requests(
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
                         ip_addresses: ip_addresses.clone(),
-                   });
+                    });
                     BusResponse::Ack
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())
@@ -525,9 +546,9 @@ fn handle_bus_requests(
                 };
                 BusResponse::StormguardStats(cloned)
             }
-            BusRequest::GetBakeryStats => {
-                BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
-            }
+            BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
+                lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
+            ),
             BusRequest::ApiReady => {
                 tool_status::api_seen();
                 BusResponse::Ack
@@ -540,7 +561,7 @@ fn handle_bus_requests(
                 tool_status::scheduler_seen();
                 BusResponse::Ack
             }
-            BusRequest::SchedulerError (error) => {
+            BusRequest::SchedulerError(error) => {
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
@@ -549,7 +570,6 @@ fn handle_bus_requests(
                 let error = tool_status::scheduler_error_message();
                 BusResponse::SchedulerStatus { running, error }
             }
-
         });
     }
 }

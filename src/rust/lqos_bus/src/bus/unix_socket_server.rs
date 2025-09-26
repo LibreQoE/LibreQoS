@@ -19,7 +19,8 @@ use super::BUS_SOCKET_DIRECTORY;
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
 
-static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> = tokio::sync::OnceCell::const_new();
+static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> =
+    tokio::sync::OnceCell::const_new();
 const RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 512; // 512 MiB
 
 impl UnixSocketServer {

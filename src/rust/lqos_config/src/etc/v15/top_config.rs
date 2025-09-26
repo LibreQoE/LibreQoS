@@ -1,12 +1,12 @@
 //! Top-level configuration file for LibreQoS.
 
 use super::tuning::Tunables;
+use crate::etc::v15::stormguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
 use uuid::Uuid;
-use crate::etc::v15::stormguard;
 
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
@@ -78,7 +78,7 @@ pub struct Config {
 
     /// Listen options for the webserver
     pub webserver_listen: Option<String>,
-    
+
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
 

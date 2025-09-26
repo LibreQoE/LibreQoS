@@ -1,8 +1,8 @@
 use crate::config::StormguardConfig;
-use std::io::Write;
 use allocative::Allocative;
-use tracing::debug;
 use lqos_utils::unix_time::unix_now;
+use std::io::Write;
+use tracing::debug;
 
 #[derive(Allocative)]
 pub enum LogCommand {
@@ -35,20 +35,23 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
         debug!("No log path provided, exiting datalog thread.");
         return;
     };
-    
+
     // If the log file exists, delete it
     if std::path::Path::new(path).exists() {
         if let Err(e) = std::fs::remove_file(path) {
             eprintln!("Failed to delete existing log file: {}", e);
         }
     }
-    
+
     // Create the log file if it doesn't exist with the header
     if let Err(e) = std::fs::File::create(path) {
         eprintln!("Failed to create log file: {}", e);
     } else {
         // Write the header to the file
-        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload,DirectionChanged,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n") {
+        if let Err(e) = std::fs::write(
+            path,
+            "Time,Site,Download,Upload,DirectionChanged,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n",
+        ) {
             eprintln!("Failed to write header to log file: {}", e);
         }
     }
@@ -79,9 +82,13 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
                         // Append the line to the file
                         let Ok(date_time) = unix_now() else {
                             eprintln!("Failed to get current time");
-                            continue; 
+                            continue;
                         };
-                        if let Err(e) = writeln!(file, "{},{},{},{},{}", date_time, site, download, upload, state) {
+                        if let Err(e) = writeln!(
+                            file,
+                            "{},{},{},{},{}",
+                            date_time, site, download, upload, state
+                        ) {
                             eprintln!("Failed to write to log file: {}", e);
                         }
                     }

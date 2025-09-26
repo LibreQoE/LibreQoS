@@ -1,8 +1,8 @@
 use crate::tracking::TrackedQueue;
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 
 /// Holds all of the CAKE queue summaries being tracked by the system.
 pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());

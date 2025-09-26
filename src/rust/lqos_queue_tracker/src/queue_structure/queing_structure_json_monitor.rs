@@ -5,13 +5,14 @@ use crate::tracking::ALL_QUEUE_SUMMARY;
 use arc_swap::ArcSwap;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
 /// Global queue structure (from `queueingStructure.json`)
-pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> = Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
+pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
 /// Set to true when the queue structure changes. This is here rather than in StormGuard
 /// to avoid circular dependencies.
 pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);

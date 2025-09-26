@@ -126,8 +126,7 @@ impl UispData {
                                         self.find_device_by_id(&to_device.identification.id)
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent =
-                                                Some(("AP", apdev.identification.id.clone()));
+                                            parent = Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }
@@ -142,8 +141,7 @@ impl UispData {
                                         self.find_device_by_id(&from_device.identification.id)
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent =
-                                                Some(("AP", apdev.identification.id.clone()));
+                                            parent = Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }

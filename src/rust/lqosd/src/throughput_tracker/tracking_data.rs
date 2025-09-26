@@ -19,8 +19,8 @@ use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
-use std::collections::{HashMap, HashSet};
 use parking_lot::Mutex;
+use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
 
@@ -134,7 +134,7 @@ impl ThroughputTracker {
     }
 
     pub(crate) fn apply_new_throughput_counters(
-        &self, 
+        &self,
         net_json_calc: &mut NetworkJson,
         bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
     ) {
@@ -233,14 +233,17 @@ impl ThroughputTracker {
 
                             if config.queues.lazy_threshold_bytes.is_some() {
                                 let threshold = config.queues.lazy_threshold_bytes.unwrap();
-                                let total_bytes: u64 = counts.iter().map(|c| c.download_bytes + c.upload_bytes).sum();
+                                let total_bytes: u64 = counts
+                                    .iter()
+                                    .map(|c| c.download_bytes + c.upload_bytes)
+                                    .sum();
                                 if total_bytes < threshold {
                                     add = false;
                                 }
                             }
 
                             if add {
-                                changed_circuits.insert(circuit_hash);                    
+                                changed_circuits.insert(circuit_hash);
                             }
                         }
                     }
@@ -296,7 +299,9 @@ impl ThroughputTracker {
         });
 
         if !changed_circuits.is_empty() {
-            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity { circuit_ids: changed_circuits }) {
+            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
+                circuit_ids: changed_circuits,
+            }) {
                 warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
             }
         }
@@ -342,7 +347,9 @@ impl ThroughputTracker {
             let rtt_samples = flowbee_rtt_map();
             get_flowbee_event_count_and_reset();
             let since_boot = Duration::from(now);
-            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot
+                .saturating_sub(Duration::from_secs(timeout_seconds))
+                .as_nanos() as u64;
 
             let mut all_flows_lock = ALL_FLOWS.lock();
             let mut raw_data = self.raw_data.lock();
@@ -405,7 +412,8 @@ impl ThroughputTracker {
                         // Check if we've hit the flow limit
                         if all_flows_lock.flow_data.len() >= MAX_FLOWS {
                             // Log warning once per second to avoid spam
-                            static LAST_WARNING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            static LAST_WARNING: std::sync::atomic::AtomicU64 =
+                                std::sync::atomic::AtomicU64::new(0);
                             let now = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -621,7 +629,9 @@ impl ThroughputTracker {
         if let Ok(now) = time_since_boot() {
             let since_boot = Duration::from(now);
             let timeout_seconds = 5 * 60; // 5 minutes
-            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot
+                .saturating_sub(Duration::from_secs(timeout_seconds))
+                .as_nanos() as u64;
             let mut keys_to_expire = Vec::new();
             let mut raw_data = self.raw_data.lock();
             raw_data.retain(|k, v| {

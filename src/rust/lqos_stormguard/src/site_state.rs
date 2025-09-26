@@ -1,22 +1,24 @@
-mod stormguard_state;
-mod ring_buffer;
-mod recommendation;
-mod site;
 mod analysis;
+mod recommendation;
+mod ring_buffer;
+mod site;
+mod stormguard_state;
 
-use std::collections::HashMap;
-use crossbeam_channel::Sender;
-use tracing::{debug, info, warn};
-use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse};
-use lqos_queue_tracker::QUEUE_STRUCTURE;
 use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
-use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
-use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
+use crate::site_state::recommendation::{
+    Recommendation, RecommendationAction, RecommendationDirection,
+};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
 use crate::site_state::stormguard_state::StormguardState;
+use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
+use crossbeam_channel::Sender;
+use lqos_bakery::BakeryCommands;
+use lqos_bus::{BusRequest, BusResponse};
+use lqos_queue_tracker::QUEUE_STRUCTURE;
+use std::collections::HashMap;
+use tracing::{debug, info, warn};
 
 pub struct SiteStateTracker {
     sites: HashMap<String, SiteState>,
@@ -53,11 +55,8 @@ impl SiteStateTracker {
         Self { sites }
     }
 
-
     pub async fn read_new_tick_data(&mut self) {
-        let requests = vec![
-            BusRequest::GetFullNetworkMap,
-        ];
+        let requests = vec![BusRequest::GetFullNetworkMap];
         let Ok(responses) = lqos_bus::bus_request(requests).await else {
             info!("Failed to get lqosd stats");
             return;
@@ -86,11 +85,13 @@ impl SiteStateTracker {
 
                 // Retransmits (as a percentage of TCP packets)
                 if node_info.current_tcp_packets.0 > 0 {
-                    let retransmits_down = node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64;
+                    let retransmits_down = node_info.current_retransmits.0 as f64
+                        / node_info.current_tcp_packets.0 as f64;
                     target.retransmits_down.add(retransmits_down);
                 }
                 if node_info.current_tcp_packets.1 > 0 {
-                    let retransmits_up = node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64;
+                    let retransmits_up = node_info.current_retransmits.1 as f64
+                        / node_info.current_tcp_packets.1 as f64;
                     target.retransmits_up.add(retransmits_up);
                 }
 
@@ -107,12 +108,14 @@ impl SiteStateTracker {
     }
 
     pub fn check_state(&mut self) {
-        self.sites.iter_mut().for_each(|(_,s)| s.check_state());
+        self.sites.iter_mut().for_each(|(_, s)| s.check_state());
     }
 
     pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
         let mut recommendations = Vec::new();
-        self.sites.iter_mut().for_each(|(_,s)| s.recommendations(&mut recommendations));
+        self.sites
+            .iter_mut()
+            .for_each(|(_, s)| s.recommendations(&mut recommendations));
         recommendations
     }
 
@@ -184,7 +187,8 @@ impl SiteStateTracker {
             let new_rate = match recommendation.direction {
                 RecommendationDirection::Download => site.queue_download_mbps,
                 RecommendationDirection::Upload => site.queue_upload_mbps,
-            } as f64 * new_rate_multiplier;
+            } as f64
+                * new_rate_multiplier;
             let new_rate = new_rate.round();
 
             // Are we allowed to do it?
@@ -201,14 +205,19 @@ impl SiteStateTracker {
                 // No change
                 continue;
             }
-            
+
             let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => (READING_ACCUMULATOR_SIZE as f32 * 0.1).max(2.0),
+                RecommendationAction::IncreaseFast => {
+                    (READING_ACCUMULATOR_SIZE as f32 * 0.1).max(2.0)
+                }
                 RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(1.0),
                 RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
                 RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
             };
-            debug!("Cooldown for {:?} set to {:.1}s", recommendation.action, cooldown_secs);
+            debug!(
+                "Cooldown for {:?} set to {:.1}s",
+                recommendation.action, cooldown_secs
+            );
 
             // Apply to the site
             match recommendation.direction {
@@ -216,7 +225,8 @@ impl SiteStateTracker {
                     site.queue_download_mbps = new_rate;
                     site.ticks_since_last_probe_download = 0;
                     let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
+                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site)
+                    {
                         site.1 = new_rate;
                     }
                 }
@@ -224,7 +234,8 @@ impl SiteStateTracker {
                     site.queue_upload_mbps = new_rate;
                     site.ticks_since_last_probe_upload = 0;
                     let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
+                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site)
+                    {
                         site.2 = new_rate;
                     }
                 }
@@ -240,12 +251,27 @@ impl SiteStateTracker {
                     continue;
                 }
                 let class_id = dependent.class_id.to_string();
-                info!("Applying rate change to dependent {}: {} -> {}", dependent.name, dependent.original_max_download_mbps, new_rate);
-                Self::apply_htb_change(config, &interface_name, class_id, new_rate, bakery_sender.clone());
+                info!(
+                    "Applying rate change to dependent {}: {} -> {}",
+                    dependent.name, dependent.original_max_download_mbps, new_rate
+                );
+                Self::apply_htb_change(
+                    config,
+                    &interface_name,
+                    class_id,
+                    new_rate,
+                    bakery_sender.clone(),
+                );
             }
 
             // Actually make the change
-            Self::apply_htb_change(config, &interface_name, class_id, new_rate, bakery_sender.clone());
+            Self::apply_htb_change(
+                config,
+                &interface_name,
+                class_id,
+                new_rate,
+                bakery_sender.clone(),
+            );
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");

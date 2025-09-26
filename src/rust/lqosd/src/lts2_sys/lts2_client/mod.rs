@@ -15,16 +15,16 @@ mod remote_commands;
 use crate::lts2_sys::shared_types;
 use crate::lts2_sys::shared_types::{CircuitRetransmits, FreeTrialDetails};
 use client_commands::LtsClientCommand;
+pub(crate) use license_check::{LicenseStatus, get_license_status, set_license_status};
 use lqos_config::load_config;
+pub(crate) use remote_commands::enqueue;
 use std::net::IpAddr;
 use std::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::{error, warn};
-pub(crate) use license_check::{set_license_status, LicenseStatus, get_license_status};
-pub(crate) use remote_commands::enqueue;
 
 pub fn spawn_lts2(
-    control_tx: tokio::sync::mpsc::Sender<super::control_channel::ControlChannelCommand>
+    control_tx: tokio::sync::mpsc::Sender<super::control_channel::ControlChannelCommand>,
 ) -> anyhow::Result<()> {
     // Channel construction
     let (tx, rx) = mpsc::channel::<LtsClientCommand>();
@@ -55,7 +55,10 @@ pub fn spawn_lts2(
                 }
                 LtsClientCommand::IngestBatchComplete => {
                     // Submit to the unified channel system
-                    let _ = ingestor.send(ingestor::commands::IngestorCommand::IngestBatchComplete{ submit: control_tx.clone() });
+                    let _ =
+                        ingestor.send(ingestor::commands::IngestorCommand::IngestBatchComplete {
+                            submit: control_tx.clone(),
+                        });
                 }
             }
         }

@@ -9,8 +9,8 @@ mod flow_map;
 pub mod lts;
 mod network_tree;
 mod packet_analysis;
-mod scheduler;
 mod reload_libreqos;
+mod scheduler;
 mod search;
 mod shaped_device_api;
 mod support;
@@ -92,7 +92,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         )
         .route("/ltsFlows/:seconds", get(lts::percent_flows_period))
         //.route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
-        //.route("/ltsCake/:seconds", get(lts::cake_period))
+        .route("/ltsCake/:seconds", get(lts::cake_period))
         .route("/ltsRttHisto/:seconds", get(lts::rtt_histo_period))
         .route(
             "/ltsTop10Downloaders/:seconds",
@@ -111,7 +111,9 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
 }
 
 #[derive(Serialize)]
-struct ChatbotToken { token: Option<String> }
+struct ChatbotToken {
+    token: Option<String>,
+}
 
 async fn chatbot_sso_token(jar: CookieJar) -> axum::Json<ChatbotToken> {
     // Node Manager stores auth as a cookie named "User-Token"

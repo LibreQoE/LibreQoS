@@ -1,3 +1,4 @@
+use crate::lts2_sys::control_channel::ControlChannelCommand;
 use crate::node_manager::local_api::local_api;
 use crate::node_manager::shaper_queries_actor::shaper_queries_actor;
 use crate::node_manager::{
@@ -16,8 +17,8 @@ use lqos_config::load_config;
 use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
-use tower_http::services::ServeDir;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tracing::info;
 
 /// Launches the Axum webserver to take over node manager duties.
@@ -26,6 +27,7 @@ use tracing::info;
 pub async fn spawn_webserver(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
 ) -> Result<()> {
     // Check that static content is available and set up the path
     let config = load_config()?;
@@ -45,7 +47,7 @@ pub async fn spawn_webserver(
     let listener = TcpListener::bind(&listen_address).await?;
 
     // Setup shaper queries
-    let shaper_tx = shaper_queries_actor().await;
+    let shaper_tx = shaper_queries_actor(control_tx).await;
 
     // Construct the router from parts
     let router = Router::new()

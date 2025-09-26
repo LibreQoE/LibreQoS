@@ -1,4 +1,4 @@
-use cursive::{view::Resizable, views::Dialog, Cursive};
+use cursive::{Cursive, view::Resizable, views::Dialog};
 
 use crate::config_builder::CURRENT_CONFIG;
 
@@ -8,7 +8,9 @@ pub fn bandwidth_view(s: &mut Cursive) {
         (lock.mbps_to_internet, lock.mbps_to_network)
     };
     let layout = cursive::views::LinearLayout::vertical()
-        .child(cursive::views::TextView::new("Set the available bandwidth for each direction:"))
+        .child(cursive::views::TextView::new(
+            "Set the available bandwidth for each direction:",
+        ))
         .child(
             cursive::views::LinearLayout::horizontal()
                 .child(cursive::views::TextView::new("To Internet (Mbps):"))
@@ -23,7 +25,7 @@ pub fn bandwidth_view(s: &mut Cursive) {
                                 s.add_layer(Dialog::info("Invalid bandwidth value"));
                             }
                         })
-                        .fixed_width(15)
+                        .fixed_width(15),
                 ),
         )
         .child(
@@ -40,14 +42,16 @@ pub fn bandwidth_view(s: &mut Cursive) {
                                 s.add_layer(Dialog::info("Invalid bandwidth value"));
                             }
                         })
-                        .fixed_width(15)
+                        .fixed_width(15),
                 ),
         );
 
     s.add_layer(
         Dialog::around(layout)
             .title("Available Bandwidth")
-            .button("OK", |s| { s.pop_layer(); })
+            .button("OK", |s| {
+                s.pop_layer();
+            })
             .full_screen(),
     );
 }

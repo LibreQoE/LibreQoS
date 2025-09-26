@@ -73,25 +73,47 @@ pub async fn build_ap_only_network(
                 .collect::<Vec<_>>();
             for device in devices.iter().filter(|d| d.has_address()) {
                 // Compute subscriber rates: prefer UISP QoS + burst
-                let (mut download_min, mut download_max, mut upload_min, mut upload_max) = if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
-                    (
-                        f32::max(0.1, dl_min),
-                        f32::max(0.1, dl_max),
-                        f32::max(0.1, ul_min),
-                        f32::max(0.1, ul_max),
-                    )
-                } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
-                    (0.1, 0.1, 0.1, 0.1)
-                } else {
-                    (
-                        f32::max(0.1, site.max_down_mbps as f32 * config.uisp_integration.commit_bandwidth_multiplier),
-                        f32::max(0.1, site.max_down_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor),
-                        f32::max(0.1, site.max_up_mbps as f32 * config.uisp_integration.commit_bandwidth_multiplier),
-                        f32::max(0.1, site.max_up_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor),
-                    )
-                };
-                if download_max < download_min { download_max = download_min; }
-                if upload_max < upload_min { upload_max = upload_min; }
+                let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                    if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
+                        (
+                            f32::max(0.1, dl_min),
+                            f32::max(0.1, dl_max),
+                            f32::max(0.1, ul_min),
+                            f32::max(0.1, ul_max),
+                        )
+                    } else if site.suspended && config.uisp_integration.suspended_strategy == "slow"
+                    {
+                        (0.1, 0.1, 0.1, 0.1)
+                    } else {
+                        (
+                            f32::max(
+                                0.1,
+                                site.max_down_mbps as f32
+                                    * config.uisp_integration.commit_bandwidth_multiplier,
+                            ),
+                            f32::max(
+                                0.1,
+                                site.max_down_mbps as f32
+                                    * config.uisp_integration.bandwidth_overhead_factor,
+                            ),
+                            f32::max(
+                                0.1,
+                                site.max_up_mbps as f32
+                                    * config.uisp_integration.commit_bandwidth_multiplier,
+                            ),
+                            f32::max(
+                                0.1,
+                                site.max_up_mbps as f32
+                                    * config.uisp_integration.bandwidth_overhead_factor,
+                            ),
+                        )
+                    };
+                if download_max < download_min {
+                    download_max = download_min;
+                }
+                if upload_max < upload_min {
+                    upload_max = upload_min;
+                }
 
                 let sd = ShapedDevice {
                     circuit_id: site.id.clone(),

@@ -4,8 +4,8 @@ use anyhow::{Result, bail};
 use axum::Router;
 use lqos_config::load_config;
 use std::path::Path;
-use tower_http::services::{ServeDir, ServeFile};
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 pub(super) fn vendor_route() -> Result<Router> {
     let config = load_config()?;

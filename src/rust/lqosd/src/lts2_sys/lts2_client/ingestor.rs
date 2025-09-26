@@ -1,12 +1,14 @@
 pub(crate) mod commands;
 mod message_queue;
 
-use crate::lts2_sys::{control_channel::ControlChannelCommand, lts2_client::ingestor::commands::IngestorCommand};
 use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use crate::lts2_sys::{
+    control_channel::ControlChannelCommand, lts2_client::ingestor::commands::IngestorCommand,
+};
 use parking_lot::Mutex;
-use tracing::{info, warn};
+use std::sync::Arc;
+use std::sync::mpsc::Sender;
+use tracing::{debug, info, warn};
 
 pub fn start_ingestor() -> Sender<IngestorCommand> {
     println!("Starting ingestor");
@@ -25,7 +27,7 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
     let mut serial = 0;
     while let Ok(msg) = rx.recv() {
         if let IngestorCommand::IngestBatchComplete { submit } = msg {
-            info!("Ingestor received batch complete command");
+            debug!("Ingestor received batch complete command");
             let mut session_data: MessageQueue = {
                 let mut message_queue_lock = message_queue.lock();
                 let data = message_queue_lock.clone();
@@ -43,7 +45,6 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
                 }
                 serial += 1;
             }
-
         } else {
             let mut message_queue_lock = message_queue.lock();
             message_queue_lock.ingest(msg);

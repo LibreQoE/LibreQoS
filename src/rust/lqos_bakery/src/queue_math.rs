@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 pub(crate) fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
-    config.queues.default_sqm.split(" ").map(|s| s.to_string()).collect()
+    config
+        .queues
+        .default_sqm
+        .split(" ")
+        .map(|s| s.to_string())
+        .collect()
 }
 
 pub(crate) fn format_rate_for_tc(rate: u64) -> String {

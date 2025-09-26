@@ -65,7 +65,12 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
     let ifindex_i32: i32 = ifindex_u32.try_into()?;
 
     // Loop: aggressively attempt detaches across all modes a few times
-    let modes = [XDP_FLAGS_HW_MODE, XDP_FLAGS_DRV_MODE, XDP_FLAGS_SKB_MODE, 0u32];
+    let modes = [
+        XDP_FLAGS_HW_MODE,
+        XDP_FLAGS_DRV_MODE,
+        XDP_FLAGS_SKB_MODE,
+        0u32,
+    ];
     for _ in 0..10 {
         let mut any_success = false;
         for flags in modes {
@@ -81,14 +86,22 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
                 debug!("Detached XDP on {} (mode {})", interface_name, mode);
             }
         }
-        if !any_success { break; }
+        if !any_success {
+            break;
+        }
         thread::sleep(Duration::from_millis(10));
     }
 
     // As a last resort, ask ip(8) to turn off XDP in all modes
-    let _ = Command::new("/bin/ip").args(["link","set",interface_name,"xdp","off"]).output();
-    let _ = Command::new("/bin/ip").args(["link","set",interface_name,"xdpdrv","off"]).output();
-    let _ = Command::new("/bin/ip").args(["link","set",interface_name,"xdpgeneric","off"]).output();
+    let _ = Command::new("/bin/ip")
+        .args(["link", "set", interface_name, "xdp", "off"])
+        .output();
+    let _ = Command::new("/bin/ip")
+        .args(["link", "set", interface_name, "xdpdrv", "off"])
+        .output();
+    let _ = Command::new("/bin/ip")
+        .args(["link", "set", interface_name, "xdpgeneric", "off"])
+        .output();
 
     // Detach TC hooks as well
     unsafe {
@@ -317,9 +330,15 @@ pub fn attach_xdp_and_tc_to_interface(
     Ok(skeleton)
 }
 
-unsafe fn attach_xdp_best_available(interface_index: u32, prog_fd: i32, iface_name: &str) -> Result<()> {
+unsafe fn attach_xdp_best_available(
+    interface_index: u32,
+    prog_fd: i32,
+    iface_name: &str,
+) -> Result<()> {
     // Helper: attempt attach for a mode with limited retries on EBUSY/EEXIST
-    fn should_retry(errno: i32) -> bool { errno == -16 || errno == -17 }
+    fn should_retry(errno: i32) -> bool {
+        errno == -16 || errno == -17
+    }
 
     unsafe fn try_mode_with_retries(
         iface_index: u32,
@@ -344,7 +363,9 @@ unsafe fn attach_xdp_best_available(interface_index: u32, prog_fd: i32, iface_na
                     std::ptr::null(),
                 ),
             };
-            if err == 0 { return Ok(()); }
+            if err == 0 {
+                return Ok(());
+            }
             if should_retry(err) && attempts < max_retries {
                 // Proactively detach any lingering XDP and retry
                 let _ = unload_xdp_from_interface(iface_name);
@@ -357,30 +378,75 @@ unsafe fn attach_xdp_best_available(interface_index: u32, prog_fd: i32, iface_na
     }
 
     // Try hardware offload first
-    match unsafe { try_mode_with_retries(interface_index, prog_fd, Some(XDP_FLAGS_HW_MODE), iface_name, 2) } {
+    match unsafe {
+        try_mode_with_retries(
+            interface_index,
+            prog_fd,
+            Some(XDP_FLAGS_HW_MODE),
+            iface_name,
+            2,
+        )
+    } {
         Ok(()) => {
-            info!("Attached '{}' in hardware accelerated mode. (Fastest)", iface_name);
+            info!(
+                "Attached '{}' in hardware accelerated mode. (Fastest)",
+                iface_name
+            );
             return Ok(());
         }
-        Err(_e_hw) => { debug!("XDP attach in HW mode failed (errno: {}), falling back", _e_hw); }
+        Err(_e_hw) => {
+            debug!(
+                "XDP attach in HW mode failed (errno: {}), falling back",
+                _e_hw
+            );
+        }
     }
 
     // Try driver attach
-    match unsafe { try_mode_with_retries(interface_index, prog_fd, Some(XDP_FLAGS_DRV_MODE), iface_name, 5) } {
+    match unsafe {
+        try_mode_with_retries(
+            interface_index,
+            prog_fd,
+            Some(XDP_FLAGS_DRV_MODE),
+            iface_name,
+            5,
+        )
+    } {
         Ok(()) => {
             info!("Attached '{}' in driver mode. (Fast)", iface_name);
             return Ok(());
         }
-        Err(e_drv) => { debug!("XDP attach in DRV mode failed (errno: {}), falling back", e_drv); }
+        Err(e_drv) => {
+            debug!(
+                "XDP attach in DRV mode failed (errno: {}), falling back",
+                e_drv
+            );
+        }
     }
 
     // Try SKB mode
-    match unsafe { try_mode_with_retries(interface_index, prog_fd, Some(XDP_FLAGS_SKB_MODE), iface_name, 5) } {
+    match unsafe {
+        try_mode_with_retries(
+            interface_index,
+            prog_fd,
+            Some(XDP_FLAGS_SKB_MODE),
+            iface_name,
+            5,
+        )
+    } {
         Ok(()) => {
-            info!("Attached '{}' in SKB compatibility mode. (Not so fast)", iface_name);
+            info!(
+                "Attached '{}' in SKB compatibility mode. (Not so fast)",
+                iface_name
+            );
             return Ok(());
         }
-        Err(e_skb) => { debug!("XDP attach in SKB mode failed (errno: {}), falling back", e_skb); }
+        Err(e_skb) => {
+            debug!(
+                "XDP attach in SKB mode failed (errno: {}), falling back",
+                e_skb
+            );
+        }
     }
 
     // Try no flags
@@ -389,9 +455,7 @@ unsafe fn attach_xdp_best_available(interface_index: u32, prog_fd: i32, iface_na
         Err(error) => {
             error!(
                 "XDP attach failed on '{}' in all modes (errno: {}). Suggestion: check for existing XDP programs (ip link show, bpftool net), detach with 'ip link set dev {} xdp off', and clear pinned maps if needed.",
-                iface_name,
-                error,
-                iface_name
+                iface_name, error, iface_name
             );
             return Err(Error::msg("Unable to attach to interface"));
         }

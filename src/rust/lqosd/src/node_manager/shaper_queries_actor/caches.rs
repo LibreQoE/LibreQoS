@@ -1,5 +1,5 @@
 use crate::node_manager::local_api::lts::{
-    AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
+    AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
     ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,
 };
 use serde::de::DeserializeOwned;
@@ -23,6 +23,7 @@ pub enum CacheType {
     WorstRxmit,
     TopFlows,
     RecentMedians,
+    CakeTotals,
 }
 
 impl CacheType {
@@ -38,6 +39,7 @@ impl CacheType {
             "worst_rxmit" => Self::WorstRxmit,
             "top_flows" => Self::TopFlows,
             "recent_median" => Self::RecentMedians,
+            "cake_totals" => Self::CakeTotals,
             _ => panic!("Unknown cache type: {}", tag),
         }
     }
@@ -163,5 +165,11 @@ impl Cacheable for AsnFlowSizeWeb {
 impl Cacheable for RecentMedians {
     fn tag() -> CacheType {
         CacheType::RecentMedians
+    }
+}
+
+impl Cacheable for CakeData {
+    fn tag() -> CacheType {
+        CacheType::CakeTotals
     }
 }

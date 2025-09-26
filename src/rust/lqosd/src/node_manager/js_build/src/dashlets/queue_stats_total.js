@@ -1,12 +1,13 @@
 import {QueueStatsTotalGraph} from "../graphs/queue_stats_total_graph";
-import {periodNameToSeconds} from "../helpers/time_periods";
 import {LtsCakeGraph} from "../graphs/lts_cake_stats_graph";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {periodNameToSeconds} from "../helpers/time_periods";
 
 export class QueueStatsTotalDash extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
-        this.counter = 0;
+        this.historyGraph = null;
+        this.historyPeriod = null;
     }
 
     title() {
@@ -21,76 +22,95 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
         return [ "QueueStatsTotal" ];
     }
 
+    historyGraphDivId() {
+        return this.id + "_history_graph";
+    }
+
     buildContainer() {
         let base = super.buildContainer();
-        let graphs = this.graphDiv();
+        let liveGraph = this.graphDiv();
+        liveGraph.id = this.graphDivId();
+        liveGraph.classList.add("queue-live-graph");
 
-        // Add some time controls
-        base.classList.add("dashlet-with-controls");
-        let controls = document.createElement("div");
-        controls.classList.add("dashgraph-controls", "small");
+        let historyGraph = document.createElement("div");
+        historyGraph.id = this.historyGraphDivId();
+        historyGraph.classList.add("dashgraph");
+        historyGraph.style.display = "none";
 
-        if (window.hasInsight) {
-            let btnLive = this.makePeriodBtn("Live");
-            btnLive.classList.add("active");
-            controls.appendChild(btnLive);
-
-            let targets = ["1h", "6h", "12h", "24h", "7d"];
-            targets.forEach((t) => {
-                let graph = document.createElement("div");
-                graph.id = this.graphDivId() + "_" + t;
-                graph.classList.add("dashgraph");
-                graph.style.display = "none";
-                graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
-                this.graphDivs.push(graph);
-                controls.appendChild(this.makePeriodBtn(t));
-            });
-        }
-
-        base.appendChild(controls);
-        base.appendChild(graphs);
-        this.graphDivs.forEach((g) => {
-            base.appendChild(g);
-        });
+        base.appendChild(liveGraph);
+        base.appendChild(historyGraph);
         return base;
     }
 
     setup() {
         super.setup();
         this.graph = new QueueStatsTotalGraph(this.graphDivId());
-        this.ltsLoaded = false;
-        if (window.hasLts) {
-            this.graphDivs.forEach((g) => {
-                let period = periodNameToSeconds(g.id.replace(this.graphDivId() + "_", ""));
-                let graph = new LtsCakeGraph(g.id, period);
-                this.graphs.push(graph);
-            });
-        }
+        window.timeGraphs.push(this);
+        this.onTimeChange();
     }
 
     onMessage(msg) {
-        if (msg.event === "QueueStatsTotal") {
+        if (msg.event === "QueueStatsTotal" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.marks, msg.drops);
-
-            if (!this.ltsLoaded && window.hasLts) {
-                //console.log("Loading LTS data");
-                this.graphs.forEach((g) => {
-                    //console.log("Loading " + g.period);
-                    let url = "/local-api/ltsCake/" + g.period;
-                    //console.log(url);
-                    $.get(url, (data) => {
-                        //console.log(data);
-                        g.update(data);
-                    });
-                });
-                this.ltsLoaded = true;
-            }
-            this.counter++;
-            if (this.counter > 120) {
-                // Reload the LTS graphs every 2 minutes
-                this.counter = 0;
-                this.ltsLoaded = false;
-            }
         }
+    }
+
+    onTimeChange() {
+        super.onTimeChange();
+
+        const liveGraph = document.getElementById(this.graphDivId());
+        const historyGraph = document.getElementById(this.historyGraphDivId());
+        if (!liveGraph || !historyGraph) {
+            return;
+        }
+
+        const periodName = window.timePeriods.activePeriod;
+        const isLive = periodName === "Live";
+
+        liveGraph.style.display = isLive ? "" : "none";
+        historyGraph.style.display = isLive ? "none" : "";
+
+        if (isLive) {
+            return;
+        }
+
+        if (!window.hasLts) {
+            historyGraph.innerHTML = "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
+            return;
+        }
+
+        const seconds = periodNameToSeconds(periodName);
+        this.historyPeriod = periodName;
+
+        if (this.historyGraph === null) {
+            historyGraph.innerHTML = "";
+            this.historyGraph = new LtsCakeGraph(this.historyGraphDivId(), seconds);
+        } else {
+            this.historyGraph.period = seconds;
+            this.historyGraph.chart.showLoading();
+        }
+
+        $.get("/local-api/ltsCake/" + seconds, (data) => {
+            if (this.historyPeriod !== periodName) {
+                return;
+            }
+            if (this.historyGraph === null) {
+                this.historyGraph = new LtsCakeGraph(this.historyGraphDivId(), seconds);
+            }
+            this.historyGraph.update(data);
+            if (data.length === 0) {
+                this.historyGraph.chart.showLoading("No historical data available.");
+            } else {
+                this.historyGraph.chart.hideLoading();
+            }
+        }).fail(() => {
+            if (this.historyPeriod === periodName) {
+                if (this.historyGraph !== null && this.historyGraph.chart) {
+                    this.historyGraph.chart.showLoading("Failed to load cake stats.");
+                } else {
+                    historyGraph.innerHTML = "<p class='text-danger small'>Failed to load cake stats.</p>";
+                }
+            }
+        });
     }
 }

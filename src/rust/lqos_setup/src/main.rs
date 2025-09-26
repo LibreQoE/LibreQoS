@@ -1,19 +1,19 @@
-mod bridge_mode;
-mod interfaces;
-mod config_builder;
 mod bandwidth;
+mod bridge_mode;
+mod config_builder;
+mod interfaces;
 mod ip_range;
-mod webusers;
 mod preflight;
+mod webusers;
 
 use std::path::Path;
 
 use bandwidth::bandwidth_view;
 use config_builder::CURRENT_CONFIG;
 use cursive::{
-    view::{Margins, Nameable, Resizable}, views::{
-        Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView
-    }, Rect, Vec2, View
+    Rect, Vec2, View,
+    view::{Margins, Nameable, Resizable},
+    views::{Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView},
 };
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
@@ -64,7 +64,7 @@ fn main() {
         let config = lqos_config::load_config().unwrap_or_default();
         (config.node_id.clone(), config.node_name.clone())
     };
-    
+
     ui.add_layer(
         Dialog::new()
             .title(&format!("LQOS Setup - v{VERSION}"))
@@ -116,23 +116,23 @@ fn main() {
                         LinearLayout::horizontal()
                             .child(
                                 LinearLayout::vertical()
-                                .child(TextView::new("Node Id  :"))
-                                .child(TextView::new("Node Name:"))
+                                    .child(TextView::new("Node Id  :"))
+                                    .child(TextView::new("Node Name:")),
                             )
                             .child(
                                 LinearLayout::vertical()
                                     .child(TextView::new(node_id))
                                     .child(
                                         EditView::new()
-                                        .on_edit(|_s, content, _cursor| {
-                                            let mut config = CURRENT_CONFIG.lock();
-                                            config.node_name = content.to_string();
-                                        })
-                                        .content(node_name)
-                                        .with_name("node_name")
-                                    )
-                            )
-                    )
+                                            .on_edit(|_s, content, _cursor| {
+                                                let mut config = CURRENT_CONFIG.lock();
+                                                config.node_name = content.to_string();
+                                            })
+                                            .content(node_name)
+                                            .with_name("node_name"),
+                                    ),
+                            ),
+                    ),
             )
             .padding(Margins::lrtb(1, 1, 1, 1))
             .button("Bridge Mode", bridge_mode::bridge_mode)
@@ -146,7 +146,7 @@ fn main() {
 }
 
 fn finalize(ui: &mut cursive::Cursive) {
-    let mut event_log = Vec::new();    
+    let mut event_log = Vec::new();
 
     // Update/Create the config file.
     let mut config = if let Ok(config) = lqos_config::load_config() {
@@ -196,7 +196,9 @@ fn finalize(ui: &mut cursive::Cursive) {
         ui.add_layer(
             Dialog::around(TextView::new(msg))
                 .title("Error")
-                .button("OK", |s| { s.pop_layer(); }),
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
         );
         return;
     }
@@ -214,8 +216,7 @@ fn finalize(ui: &mut cursive::Cursive) {
 
     // Does ShapedDevices.csv exist?
     if !shaped_devices_exists() {
-        const EMPTY_SHAPED_DEVICES: &str = 
-r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+        const EMPTY_SHAPED_DEVICES: &str = r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
 \"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,"#;
 
         let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
@@ -225,18 +226,18 @@ r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Downl
         event_log.push("ShapedDevices.csv already exists - not updated.".to_string());
     }
 
-        // Display final report
-        use cursive::views::{Dialog, LinearLayout, TextView};
-    
-        let report = cursive::With::with(LinearLayout::vertical(), |layout| {
-                for line in &event_log {
-                    layout.add_child(TextView::new(line));
-                }
-            });
-    
-        ui.add_layer(
-            Dialog::around(report)
-                .title("Setup Complete")
-                .button("OK", |ui| ui.quit())
-        );
+    // Display final report
+    use cursive::views::{Dialog, LinearLayout, TextView};
+
+    let report = cursive::With::with(LinearLayout::vertical(), |layout| {
+        for line in &event_log {
+            layout.add_child(TextView::new(line));
+        }
+    });
+
+    ui.add_layer(
+        Dialog::around(report)
+            .title("Setup Complete")
+            .button("OK", |ui| ui.quit()),
+    );
 }

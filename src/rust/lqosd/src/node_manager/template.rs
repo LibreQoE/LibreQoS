@@ -3,15 +3,15 @@
 
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::get_username;
+use crate::tool_status::{is_api_available, is_chatbot_available};
 use axum::body::{Body, to_bytes};
-use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::http::header;
+use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
 use std::path::Path;
-use crate::tool_status::{is_api_available, is_chatbot_available};
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -191,13 +191,14 @@ pub async fn apply_templates(
 "##;
         let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
 
-        let byte_string = byte_string
-            .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
+        let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }
         // Prevent caching of the composed HTML to avoid stale menus/status
-        res_parts.headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        res_parts
+            .headers
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {

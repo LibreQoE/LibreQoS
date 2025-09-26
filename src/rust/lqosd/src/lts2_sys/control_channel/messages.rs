@@ -5,6 +5,21 @@ use uuid::Uuid;
 
 use crate::lts2_sys::RemoteCommand;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum RemoteInsightRequest {
+    ShaperThroughput { seconds: i32 },
+    ShaperPackets { seconds: i32 },
+    ShaperPercent { seconds: i32 },
+    ShaperFlows { seconds: i32 },
+    ShaperRttHistogram { seconds: i32 },
+    ShaperTopDownloaders { seconds: i32 },
+    ShaperWorstRtt { seconds: i32 },
+    ShaperWorstRxmit { seconds: i32 },
+    ShaperTopFlows { seconds: i32 },
+    ShaperRecentMedians,
+    CakeStatsTotals { seconds: i32 },
+}
+
 pub const MAX_DECOMPRESSED_WS_MSG_BYTES: usize = 16 * 1024 * 1024; // 16 MiB
 
 #[derive(Serialize, Deserialize)]
@@ -90,6 +105,16 @@ pub enum WsMessage {
     ChatProxyStream {
         request_id: Uuid,
         event: ChatStreamEvent,
+    },
+    HistoryQuery {
+        request_id: u64,
+        query: RemoteInsightRequest,
+    },
+    HistoryQueryResult {
+        request_id: u64,
+        tag: String,
+        seconds: i32,
+        data: Option<Vec<u8>>,
     },
 }
 

@@ -10,7 +10,6 @@ mod site_retransmits;
 mod site_rtt;
 mod site_throughput;
 
-use std::fs::File;
 use crate::lts2_sys::RemoteCommand;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::{get_remote_host, remote_commands};
@@ -18,16 +17,17 @@ use crate::lts2_sys::shared_types::{
     CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits, CircuitRtt, CircuitThroughput,
     IngestSession, SiteCakeDrops, SiteCakeMarks, SiteRetransmits, SiteRtt, SiteThroughput,
 };
+use crate::program_control;
 use anyhow::{Result, anyhow};
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
-use crate::program_control;
 
 static NETWORK_JSON_HASH: AtomicI64 = AtomicI64::new(0);
 static SHAPED_DEVICES_HASH: AtomicI64 = AtomicI64::new(0);
@@ -142,7 +142,7 @@ impl MessageQueue {
             warn!("Failed to parse license key");
             return Ok(vec![]);
         };
-        
+
         // Build the message
         let mut message = IngestSession {
             license_key: license_uuid,
@@ -173,8 +173,10 @@ impl MessageQueue {
         const CHUNK_SIZE: usize = 60 * 1024;
         let message_chunks = compressed_bytes.chunks(CHUNK_SIZE);
         let n_chunks = message_chunks.len();
-        let chunks = message_chunks.map(|chunk| chunk.to_vec()).collect::<Vec<_>>();
-        info!("Submitting {} chunks of data", n_chunks);
+        let chunks = message_chunks
+            .map(|chunk| chunk.to_vec())
+            .collect::<Vec<_>>();
+        debug!("Submitting {} chunks of data", n_chunks);
         Ok(chunks)
     }
 
@@ -196,11 +198,17 @@ impl MessageQueue {
 
         // Set hard timeouts
         if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
-            warn!("Failed to set read timeout on ingestion server connection: {}", e);
+            warn!(
+                "Failed to set read timeout on ingestion server connection: {}",
+                e
+            );
             return Ok(());
         }
         if let Err(e) = stream.set_write_timeout(Some(Duration::from_secs(30))) {
-            warn!("Failed to set write timeout on ingestion server connection: {}", e);
+            warn!(
+                "Failed to set write timeout on ingestion server connection: {}",
+                e
+            );
             return Ok(());
         }
 
@@ -397,16 +405,16 @@ impl MessageQueue {
         // Am I remote insight managed?
         if config.long_term_stats.insight_topology_role.is_some() {
             info!("Requesting topology");
-            let Ok((_, _, request_topology)) = (WsMessage::RequestTopology { network_hash: NETWORK_JSON_HASH.load(Ordering::Relaxed), devices_hash: SHAPED_DEVICES_HASH.load(Ordering::Relaxed) }).to_bytes()
-            else {
+            let Ok((_, _, request_topology)) = (WsMessage::RequestTopology {
+                network_hash: NETWORK_JSON_HASH.load(Ordering::Relaxed),
+                devices_hash: SHAPED_DEVICES_HASH.load(Ordering::Relaxed),
+            })
+            .to_bytes() else {
                 warn!("Failed to serialize request topology message");
                 return Ok(());
             };
             if let Err(e) = socket.send(tungstenite::Message::Binary(request_topology.into())) {
-                warn!(
-                    "Failed to send request topology message to server: {}",
-                    e
-                );
+                warn!("Failed to send request topology message to server: {}", e);
                 return Ok(());
             }
 
@@ -423,7 +431,13 @@ impl MessageQueue {
                     return Ok(());
                 };
                 match reply {
-                    WsMessage::HereIsTopology { new_network_hash, new_devices_hash, chunk, n_chunks, data } => {
+                    WsMessage::HereIsTopology {
+                        new_network_hash,
+                        new_devices_hash,
+                        chunk,
+                        n_chunks,
+                        data,
+                    } => {
                         if new_network_hash == 0 && new_devices_hash == 0 {
                             // There is no topology
                             info!("Topology: Nothing to do");
@@ -442,30 +456,44 @@ impl MessageQueue {
                 }
             }
 
-            if !topology_blob.is_empty() && config.long_term_stats.enable_insight_topology.unwrap_or_default() {
+            if !topology_blob.is_empty()
+                && config
+                    .long_term_stats
+                    .enable_insight_topology
+                    .unwrap_or_default()
+            {
                 // Save the topology blob
                 // Decompress it
-                if let Ok(decompressed_bytes) = miniz_oxide::inflate::decompress_to_vec(&topology_blob) {
+                if let Ok(decompressed_bytes) =
+                    miniz_oxide::inflate::decompress_to_vec(&topology_blob)
+                {
                     // De-CBOR it into the appropriate type
-                    if let Ok(data) = serde_cbor::from_slice::<crate::lts2_sys::shared_types::NetworkAndDevicesAll>(&decompressed_bytes) {
+                    if let Ok(data) = serde_cbor::from_slice::<
+                        crate::lts2_sys::shared_types::NetworkAndDevicesAll,
+                    >(&decompressed_bytes)
+                    {
                         if !data.shapers.is_empty() {
                             // We have a topology to save!
                             SHAPED_DEVICES_HASH.store(data.shaped_devices_hash, Ordering::Relaxed);
 
                             // Grab the first network JSON (there should only be one)
-                            let Some((_, network_topology)) = data.shapers.into_iter().next() else {
+                            let Some((_, network_topology)) = data.shapers.into_iter().next()
+                            else {
                                 warn!("No network topology found in data");
                                 return Ok(());
                             };
                             NETWORK_JSON_HASH.store(network_topology.hash, Ordering::Relaxed);
 
                             // Save the network JSON as network.insight.json
-                            let network_json = serde_json::to_string_pretty(&network_topology.network_json)?;
-                            let nj_path = Path::new(&config.lqos_directory).join("network.insight.json");
+                            let network_json =
+                                serde_json::to_string_pretty(&network_topology.network_json)?;
+                            let nj_path =
+                                Path::new(&config.lqos_directory).join("network.insight.json");
                             std::fs::write(nj_path, network_json)?;
 
                             // Save the ShapedDevices as ShapedDevices.insight.csv
-                            let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.insight.csv");
+                            let sd_path =
+                                Path::new(&config.lqos_directory).join("ShapedDevices.insight.csv");
                             let sd = File::create(sd_path)?;
                             let mut writer = csv::WriterBuilder::new()
                                 .quote_style(csv::QuoteStyle::NonNumeric)
@@ -487,7 +515,6 @@ impl MessageQueue {
                         }
                     }
                 }
-
             }
         }
 
@@ -531,14 +558,23 @@ enum WsMessage {
         data: Vec<u8>,
     },
     RequestRemoteCommands,
-    RequestTopology { network_hash: i64, devices_hash: i64 },
+    RequestTopology {
+        network_hash: i64,
+        devices_hash: i64,
+    },
 
     // Response messages
     CanSubmit,
     RemoteCommands {
         commands: Vec<RemoteCommand>,
     },
-    HereIsTopology { new_network_hash: i64, new_devices_hash: i64, chunk: usize, n_chunks: usize, data: Vec<u8> },
+    HereIsTopology {
+        new_network_hash: i64,
+        new_devices_hash: i64,
+        chunk: usize,
+        n_chunks: usize,
+        data: Vec<u8>,
+    },
 }
 
 impl WsMessage {

@@ -11,8 +11,8 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{boot_time_nanos_to_unix_now, unix_now};
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use parking_lot::Mutex;
+use serde::Serialize;
 use std::time::Duration;
 use tracing::debug;
 

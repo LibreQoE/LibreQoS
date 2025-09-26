@@ -2,15 +2,15 @@ mod last_24_hours;
 mod shaper_status;
 
 use axum::Json;
+use axum::http::StatusCode;
 pub use last_24_hours::*;
 use lqos_bus::{BusRequest, bus_request};
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
 pub use shaper_status::shaper_status_from_lts;
 use std::ops::Deref;
-use axum::http::StatusCode;
-use tracing::{info, warn};
 use std::process::Command;
+use tracing::{info, warn};
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {

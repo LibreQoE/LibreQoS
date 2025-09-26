@@ -20,7 +20,6 @@ pub struct StormguardConfig {
     pub minimum_upload_percentage: f32,
 }
 
-
 impl Default for StormguardConfig {
     fn default() -> Self {
         Self {

@@ -30,36 +30,36 @@ impl UispDevice {
         if !cidr.contains('/') {
             return false;
         }
-        
+
         let parts: Vec<&str> = cidr.split('/').collect();
         if parts.len() != 2 {
             return false;
         }
-        
+
         let ip_str = parts[0];
         let prefix_len: u32 = match parts[1].parse() {
             Ok(p) => p,
             Err(_) => return false,
         };
-        
+
         // Parse the IP address
         let ip: Ipv4Addr = match ip_str.parse() {
             Ok(addr) => addr,
             Err(_) => return false,
         };
-        
+
         // Convert IP to u32 for bit manipulation
         let ip_bits = u32::from(ip);
-        
+
         // Calculate the host mask (bits that should be zero for a network address)
         let host_bits = 32 - prefix_len;
         if host_bits == 0 {
             // /32 is always treated as a host address
             return false;
         }
-        
+
         let host_mask = (1u32 << host_bits) - 1;
-        
+
         // Check if all host bits are zero
         (ip_bits & host_mask) == 0
     }
@@ -94,7 +94,8 @@ impl UispDevice {
                 upload = ul as u64 / 1000000;
             }
             if device.get_model().unwrap_or_default().contains("5AC") {
-                download = ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+                download =
+                    ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
                 upload = ((upload as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
             }
             if device.get_model().unwrap_or_default().contains("LTU") {
@@ -122,7 +123,7 @@ impl UispDevice {
                     ip.as_str()
                 };
                 ipv4.insert(format!("{}/32", base_ip));
-                
+
                 // Check for a Mikrotik Mapping
                 if let Some(mapping) = ipv4_to_v6.iter().find(|m| m.ipv4 == base_ip) {
                     ipv6.insert(mapping.ipv6.clone());
@@ -145,7 +146,7 @@ impl UispDevice {
                                 if address.contains('/') {
                                     let splits: Vec<_> = address.split('/').collect();
                                     let base_ip = splits[0];
-                                    
+
                                     // If it's a network address (e.g., 5.5.6.0/24), keep the CIDR
                                     // If it's a host address (e.g., 5.5.6.1/24), make it /32
                                     let final_address = if Self::is_network_address(address) {
@@ -153,7 +154,7 @@ impl UispDevice {
                                     } else {
                                         format!("{}/32", base_ip)
                                     };
-                                    
+
                                     ipv4.insert(final_address);
 
                                     // Check for a Mikrotik Mapping
@@ -178,7 +179,6 @@ impl UispDevice {
                 }
             }
         }
-
 
         // Remove IP addresses that are disallowed
         ipv4.retain(|ip| {
@@ -272,7 +272,7 @@ mod tests {
         assert!(UispDevice::is_network_address("5.5.6.0/24"));
         assert!(UispDevice::is_network_address("192.168.0.0/23"));
         assert!(UispDevice::is_network_address("10.10.10.128/25")); // 128 = 10000000, network for /25
-        
+
         // Host addresses (should return false)
         assert!(!UispDevice::is_network_address("192.168.1.1/24"));
         assert!(!UispDevice::is_network_address("192.168.1.255/24"));
@@ -282,7 +282,7 @@ mod tests {
         assert!(!UispDevice::is_network_address("5.5.6.1/24"));
         assert!(!UispDevice::is_network_address("192.168.0.1/23"));
         assert!(!UispDevice::is_network_address("10.10.10.129/25")); // 129 = 10000001, host in /25
-        
+
         // Special cases
         assert!(!UispDevice::is_network_address("192.168.1.1/32")); // /32 is always a host
         assert!(!UispDevice::is_network_address("192.168.1.0/32")); // /32 is always a host

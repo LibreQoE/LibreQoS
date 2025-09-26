@@ -1,4 +1,3 @@
-//use crate::node_manager::local_api::lts::rest_client::lts_query;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::extract::Path;
 use axum::http::StatusCode;
@@ -44,17 +43,6 @@ pub struct FullPacketData {
     pub median_udp_up: i64,
     pub median_icmp_down: i64,
     pub median_icmp_up: i64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct RetransmitData {
-    time: i64, // Unix timestamp
-    max_down: f64,
-    max_up: f64,
-    min_down: f64,
-    min_up: f64,
-    median_down: f64,
-    median_up: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -149,21 +137,6 @@ pub struct RecentMedians {
     pub yesterday: (i64, i64),
     pub last_week: (i64, i64),
 }
-
-// pub async fn last_24_hours() -> Result<Json<Vec<ThroughputData>>, StatusCode> {
-//     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-//     let seconds = 24 * 60 * 60;
-//     let url = format!(
-//         "https://{}/shaper_api/totalThroughput/{seconds}",
-//         config
-//             .long_term_stats
-//             .clone()
-//             .lts_url
-//             .unwrap_or("insight.libreqos.com".to_string())
-//     );
-//     let throughput = lts_query(&url).await?;
-//     Ok(Json(throughput))
-// }
 
 pub async fn throughput_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
@@ -357,32 +330,21 @@ pub async fn recent_medians(
     Ok(Json(throughput))
 }
 
-// pub async fn retransmits_period(
-//     Path(seconds): Path<i32>,
-// ) -> Result<Json<Vec<RetransmitData>>, StatusCode> {
-//     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-//     let url = format!(
-//         "https://{}/shaper_api/totalRetransmits/{seconds}",
-//         config
-//             .long_term_stats
-//             .lts_url
-//             .clone()
-//             .unwrap_or("insight.libreqos.com".to_string())
-//     );
-//     let throughput = lts_query(&url).await?;
-//     Ok(Json(throughput))
-// }
-
-// pub async fn cake_period(Path(seconds): Path<i32>) -> Result<Json<Vec<CakeData>>, StatusCode> {
-//     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-//     let url = format!(
-//         "https://{}/shaper_api/totalCake/{seconds}",
-//         config
-//             .long_term_stats
-//             .lts_url
-//             .clone()
-//             .unwrap_or("insight.libreqos.com".to_string())
-//     );
-//     let throughput = lts_query(&url).await?;
-//     Ok(Json(throughput))
-// }
+pub async fn cake_period(
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
+    Path(seconds): Path<i32>,
+) -> Result<Json<Vec<CakeData>>, StatusCode> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query
+        .send(ShaperQueryCommand::CakeTotals { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending cake stats period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let response = rx.await.map_err(|e| {
+        warn!("Error getting cake stats: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(response))
+}

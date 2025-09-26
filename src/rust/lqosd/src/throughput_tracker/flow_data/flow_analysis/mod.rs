@@ -1,9 +1,9 @@
 use allocative_derive::Allocative;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::Serialize;
 use std::net::IpAddr;
-use parking_lot::Mutex;
 use tracing::error;
 
 mod asn;

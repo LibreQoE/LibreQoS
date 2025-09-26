@@ -79,6 +79,7 @@ pub fn is_scheduler_available() -> bool {
 
 /// Returns the current scheduler error message, if any.
 pub fn scheduler_error_message() -> Option<String> {
-    let guard: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Option<String>> = SCHEDULER_ERROR.lock();
+    let guard: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Option<String>> =
+        SCHEDULER_ERROR.lock();
     guard.clone()
 }
