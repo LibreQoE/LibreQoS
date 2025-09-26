@@ -55,6 +55,8 @@ pub enum WsMessage {
     },
     ApiReply {
         request_id: u64,
+        status: u16,
+        headers: Vec<(String, String)>,
         data: Vec<u8>,
     },
 
@@ -83,13 +85,13 @@ pub enum WsMessage {
         data: Vec<u8>,
     },
     StartStreaming {
-        circuit_hash: i64,
-    },
-    EndStreaming {
+        request_id: u64,
         circuit_hash: i64,
     },
     StreamingCircuit {
+        request_id: u64,
         circuit_hash: i64,
+        data: Vec<u8>,
     },
     HistoryQuery {
         request_id: u64,
