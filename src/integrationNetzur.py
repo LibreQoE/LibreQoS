@@ -7,14 +7,14 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 
 from liblqos_python import (
-    bandwidth_overhead_factor,
-    client_bandwidth_multiplier,
-    exclude_sites,
-    netzur_api_key,
-    netzur_api_url,
-    netzur_api_timeout,
-    netzur_use_mikrotik_ipv6,
-    overwrite_network_json_always,
+	bandwidth_overhead_factor,
+	client_bandwidth_multiplier,
+	exclude_sites,
+	integration_common_use_mikrotik_ipv6,
+	netzur_api_key,
+	netzur_api_url,
+	netzur_api_timeout,
+	overwrite_network_json_always,
 )
 
 import json
@@ -78,7 +78,7 @@ def _apply_rate(plan_rate: float) -> float:
 
 def createShaper() -> NetworkGraph:
     LOG.info("[Netzur] Starting sync")
-    if netzur_use_mikrotik_ipv6():
+    if integration_common_use_mikrotik_ipv6():
         LOG.info("[Netzur] Mikrotik IPv6 enrichment enabled")
     zones, subscribers = fetch_netzur_data()
     exclusion = _build_exclusion_set()
@@ -149,7 +149,7 @@ def createShaper() -> NetworkGraph:
 
     LOG.info("[Netzur] Built graph with %d nodes", len(net.nodes))
     net.prepareTree()
-    if netzur_use_mikrotik_ipv6() and isinstance(net.ipv4ToIPv6, str):
+    if integration_common_use_mikrotik_ipv6() and isinstance(net.ipv4ToIPv6, str):
         try:
             net.ipv4ToIPv6 = json.loads(net.ipv4ToIPv6)
         except json.JSONDecodeError as err:
@@ -161,6 +161,8 @@ def createShaper() -> NetworkGraph:
         net.createNetworkJson()
     net.createShapedDevices()
     LOG.info("[Netzur] ShapedDevices.csv updated")
+    for error in net.getErrors():
+        LOG.error("[Netzur] %s", error)
     return net
 
 

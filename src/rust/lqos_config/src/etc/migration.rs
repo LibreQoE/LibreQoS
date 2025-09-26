@@ -213,6 +213,7 @@ fn migrate_integration_common(
         python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
         python_config.queue_refresh_interval_mins as u32;
+    new_config.integration_common.use_mikrotik_ipv6 = python_config.find_ipv6using_mikrotik_api;
     Ok(())
 }
 

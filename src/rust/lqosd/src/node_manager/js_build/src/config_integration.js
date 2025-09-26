@@ -32,6 +32,7 @@ function updateConfig() {
     window.config.integration_common = {
         circuit_name_as_address: document.getElementById("circuitNameAsAddress").checked,
         always_overwrite_network_json: document.getElementById("alwaysOverwriteNetworkJson").checked,
+        use_mikrotik_ipv6: document.getElementById("useMikrotikIpv6").checked,
         queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value),
         promote_to_root: (() => {
             const raw = document.getElementById("promoteToRoot").value;
@@ -61,6 +62,8 @@ loadConfig(() => {
             integration.circuit_name_as_address ?? false;
         document.getElementById("alwaysOverwriteNetworkJson").checked = 
             integration.always_overwrite_network_json ?? false;
+        document.getElementById("useMikrotikIpv6").checked = 
+            integration.use_mikrotik_ipv6 ?? false;
 
         // Numeric field
         document.getElementById("queueRefreshInterval").value = 
