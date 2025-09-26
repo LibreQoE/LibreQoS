@@ -300,6 +300,15 @@ async fn persistent_connection(
                                             warn!("History query result for unknown request id {request_id}");
                                         }
                                     }
+                                    messages::WsMessage::MakeApiRequest { request_id, method, url_suffix, body } => {
+                                        let socket_sender_tx = socket_sender_tx.clone();
+                                        tokio::spawn(async move {
+                                            let Ok(()) = api_request(request_id, method, url_suffix, body, socket_sender_tx).await else {
+                                                error!("API request handling failed");
+                                                return;
+                                            };
+                                        });
+                                    }
                                     _ => {}
                                 }
                             }
@@ -502,6 +511,66 @@ async fn send_license(
         )),
     )
     .await??;
+
+    Ok(())
+}
+
+async fn api_request(
+    request_id: u64,
+    method: messages::ApiRequestType,
+    url_suffix: String,
+    body: Option<String>,
+    reply: tokio::sync::mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    // Make a request to http://127.0.0.1:9122/{url_suffix} using the specified method and body (if present),
+    // and return the result bytes to Insight as an ApiReply.
+    let client = reqwest::Client::builder()
+        .timeout(TCP_TIMEOUT)
+        .build()?;
+
+    let path = url_suffix.trim_start_matches('/');
+    let url = format!("http://127.0.0.1:9122/{}", path);
+
+    let mut req = match method {
+        messages::ApiRequestType::Get => client.get(&url),
+        messages::ApiRequestType::Post => client.post(&url),
+        messages::ApiRequestType::Delete => client.delete(&url),
+    };
+
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+
+    let bytes: Vec<u8> = match req.send().await {
+        Ok(resp) => match resp.bytes().await {
+            Ok(b) => b.to_vec(),
+            Err(e) => {
+                warn!("API daemon response read failed: {}", e);
+                Vec::new()
+            }
+        },
+        Err(e) => {
+            warn!("API daemon request failed: {}", e);
+            Vec::new()
+        }
+    };
+
+    let message = messages::WsMessage::ApiReply { request_id, data: bytes };
+    let Ok((_, _, ws_bytes)) = message.to_bytes() else {
+        error!("Failed to serialize ApiReply");
+        return Ok(());
+    };
+
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+        match e {
+            TrySendError::Full(_) => {
+                warn!("Send unavailable: ApiReply queue full; dropping reply");
+            }
+            TrySendError::Closed(_) => {
+                error!("Failed to send ApiReply: channel closed");
+            }
+        }
+    }
 
     Ok(())
 }

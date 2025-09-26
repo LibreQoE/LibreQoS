@@ -104,7 +104,7 @@ pub enum WsMessage {
     MakeApiRequest {
         request_id: u64,
         method: ApiRequestType,
-        url: String,
+        url_suffix: String,
         body: Option<String>,
     }
 }
