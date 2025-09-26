@@ -4,7 +4,6 @@ mod common;
 mod flat;
 mod full;
 mod full2;
-mod full3;
 
 use crate::blackboard;
 use crate::errors::UispIntegrationError;
@@ -47,12 +46,7 @@ pub async fn build_with_strategy(
             ap_site::build_ap_site_network(config, ip_ranges).await?;
             Ok(())
         }
-        "full" | "full3" => {
-            info!("Strategy selected: full3");
-            full3::build_full_network_v3(config, ip_ranges).await?;
-            Ok(())
-        }
-        "full2" => {
+        "full2" | "full" => {
             info!("Strategy selected: full2");
             full2::build_full_network_v2(config, ip_ranges).await?;
             Ok(())
