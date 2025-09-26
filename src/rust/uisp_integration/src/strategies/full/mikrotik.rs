@@ -63,6 +63,7 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
                 ipv6: ipv6.to_string().replace("\"", ""),
             });
         }
+        tracing::info!("Loaded {} Mikrotik IPv6 mappings", result.len());
         Ok(result)
     } else {
         tracing::error!("Mikrotik data is not an object");

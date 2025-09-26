@@ -1,6 +1,7 @@
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
+use crate::strategies::full::mikrotik;
 use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use serde::Serialize;
@@ -77,7 +78,13 @@ pub async fn build_flat_network(
 
     // Simple Shaped Devices File
     let mut shaped_devices = Vec::new();
-    let ipv4_to_v6 = Vec::new();
+    let ipv4_to_v6 = match mikrotik::mikrotik_data(config.as_ref()).await {
+        Ok(map) => map,
+        Err(err) => {
+            warn!("Unable to load Mikrotik IPv6 data: {err:?}");
+            Vec::new()
+        }
+    };
     for site in sites.iter() {
         if let Some(site_id) = &site.identification {
             if let Some(site_type) = &site_id.site_type {
