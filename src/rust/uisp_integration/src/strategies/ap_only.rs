@@ -3,6 +3,7 @@ use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use lqos_config::Config;
+use std::collections::HashSet;
 use std::fs::write;
 use std::path::Path;
 use std::sync::Arc;
@@ -63,6 +64,7 @@ pub async fn build_ap_only_network(
     // Write ShapedDevices.csv
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
+    let mut seen_pairs = HashSet::new();
     for (parent, client_ids) in mappings.iter() {
         for client_id in client_ids {
             let site = uisp_data.sites.iter().find(|s| *client_id == s.id).unwrap();
@@ -113,6 +115,11 @@ pub async fn build_ap_only_network(
                 }
                 if upload_max < upload_min {
                     upload_max = upload_min;
+                }
+
+                let key = (site.id.clone(), device.id.clone());
+                if !seen_pairs.insert(key) {
+                    continue;
                 }
 
                 let sd = ShapedDevice {

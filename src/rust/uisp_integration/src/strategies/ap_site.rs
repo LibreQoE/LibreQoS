@@ -80,6 +80,8 @@ pub(crate) fn write_shaped_devices(
     shaped_devices: &mut Vec<ShapedDevice>,
 ) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+    let mut seen_pairs = HashSet::new();
+    shaped_devices.retain(|sd| seen_pairs.insert((sd.circuit_id.clone(), sd.device_id.clone())));
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
         .from_path(file_path)
