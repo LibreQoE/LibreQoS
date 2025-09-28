@@ -368,6 +368,7 @@ pub async fn build_full_network_v2(
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
+    let mut seen_pairs = HashSet::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
@@ -433,6 +434,11 @@ pub async fn build_full_network_v2(
                         "Orphans".to_string()
                     }
                 };
+
+                let key = (site.id.clone(), device.id.clone());
+                if !seen_pairs.insert(key) {
+                    continue;
+                }
 
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
@@ -897,9 +903,9 @@ fn find_point_to_point_squash_candidates(
 
                 // Endpoint must not be a relay AND must have sufficient connections to be meaningful
                 // Also prefer Sites over AccessPoints as endpoints
-                let is_meaningful_endpoint = !(endpoint_b_degree == 4 && endpoint_b_neighbors.len() == 2) && 
-                                           endpoint_b_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
-                                           !matches!(graph[endpoint_b], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                let is_meaningful_endpoint = !(endpoint_b_degree == 4 && endpoint_b_neighbors.len() == 2)
+                        && endpoint_b_neighbors.len() >= 3 // Must connect to at least 3 other nodes
+                        && !matches!(graph[endpoint_b], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
                 if is_meaningful_endpoint {
                     // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
                     let do_not_squash = &config
@@ -997,9 +1003,9 @@ fn find_point_to_point_squash_candidates(
 
                 // Endpoint must not be a relay AND must have sufficient connections to be meaningful
                 // Also prefer Sites over AccessPoints as endpoints
-                let is_meaningful_endpoint = !(endpoint_a_degree == 4 && endpoint_a_neighbors.len() == 2) && 
-                                           endpoint_a_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
-                                           !matches!(graph[endpoint_a], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                let is_meaningful_endpoint = !(endpoint_a_degree == 4 && endpoint_a_neighbors.len() == 2)
+                        && endpoint_a_neighbors.len() >= 3 // Must connect to at least 3 other nodes
+                        && !matches!(graph[endpoint_a], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
                 if is_meaningful_endpoint {
                     // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
                     let do_not_squash = &config
