@@ -31,6 +31,13 @@ pub enum ControlChannelCommand {
         request: messages::RemoteInsightRequest,
         responder: oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
     },
+    StartChat {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+        stream: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+    ChatSend { request_id: u64, text: String },
+    ChatStop { request_id: u64 },
 }
 
 pub enum ConnectionCommand {
@@ -42,6 +49,13 @@ pub enum ConnectionCommand {
         request: messages::RemoteInsightRequest,
         responder: oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
     },
+    StartChat {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+        stream: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+    ChatSend { request_id: u64, text: String },
+    ChatStop { request_id: u64 },
 }
 
 pub struct ControlChannelBuilder {
@@ -89,6 +103,15 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     }
                 }
             }
+            ControlChannelCommand::StartChat { request_id, browser_ts_ms, stream } => {
+                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, stream });
+            }
+            ControlChannelCommand::ChatSend { request_id, text } => {
+                let _ = tx.try_send(ConnectionCommand::ChatSend { request_id, text });
+            }
+            ControlChannelCommand::ChatStop { request_id } => {
+                let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
+            }
         }
     }
     warn!("Control channel loop exiting");
@@ -126,6 +149,7 @@ async fn persistent_connection(
                 u64,
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
+            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> = HashMap::new();
             let mut next_history_request_id: u64 = 1;
 
             // Message pump
@@ -239,6 +263,28 @@ async fn persistent_connection(
                                     }
                                 }
                             }
+                            Some(ConnectionCommand::StartChat { request_id, browser_ts_ms, stream }) => {
+                                chatbot_streams.insert(request_id, stream);
+                                let message = messages::WsMessage::ChatbotStart { request_id, browser_ts_ms };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize ChatbotStart");
+                                    break 'message_pump;
+                                };
+                                let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                            }
+                            Some(ConnectionCommand::ChatSend { request_id, text }) => {
+                                let message = messages::WsMessage::ChatbotUserInput { request_id, text };
+                                if let Ok((_, _, bytes)) = message.to_bytes() {
+                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                                }
+                            }
+                            Some(ConnectionCommand::ChatStop { request_id }) => {
+                                chatbot_streams.remove(&request_id);
+                                let message = messages::WsMessage::ChatbotStop { request_id };
+                                if let Ok((_, _, bytes)) = message.to_bytes() {
+                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                                }
+                            }
                             None => {
                                 // Channel closed
                                 error!("Command channel closed");
@@ -292,6 +338,16 @@ async fn persistent_connection(
                                     }
                                     messages::WsMessage::RemoteCommands { commands } => {
                                         crate::lts2_sys::lts2_client::enqueue(commands);
+                                    }
+                                    messages::WsMessage::ChatbotChunk { request_id, data } => {
+                                        if let Some(tx) = chatbot_streams.get(&request_id) {
+                                            let _ = tx.try_send(data);
+                                        }
+                                    }
+                                    messages::WsMessage::ChatbotError { request_id, message } => {
+                                        if let Some(tx) = chatbot_streams.get(&request_id) {
+                                            let _ = tx.try_send(format!("[error] {}", message).into_bytes());
+                                        }
                                     }
                                     messages::WsMessage::HistoryQueryResult { request_id, tag, seconds, data } => {
                                         if let Some(responder) = pending_history.remove(&request_id) {

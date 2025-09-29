@@ -130,6 +130,29 @@ pub enum WsMessage {
         url_suffix: String,
         body: Option<String>,
     }
+    ,
+    // Chatbot (Ask Libby) streaming via Insight chatbot service
+    // From Shaper -> Insight
+    ChatbotStart {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+    },
+    ChatbotUserInput {
+        request_id: u64,
+        text: String,
+    },
+    ChatbotStop {
+        request_id: u64,
+    },
+    // From Insight -> Shaper (streaming chunks or errors)
+    ChatbotChunk {
+        request_id: u64,
+        data: Vec<u8>,
+    },
+    ChatbotError {
+        request_id: u64,
+        message: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]

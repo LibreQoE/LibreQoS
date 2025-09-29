@@ -47,7 +47,7 @@ pub async fn spawn_webserver(
     let listener = TcpListener::bind(&listen_address).await?;
 
     // Setup shaper queries
-    let shaper_tx = shaper_queries_actor(control_tx).await;
+    let shaper_tx = shaper_queries_actor(control_tx.clone()).await;
 
     // Construct the router from parts
     let router = Router::new()
@@ -57,7 +57,7 @@ pub async fn spawn_webserver(
         .route("/health", get(health_check))
         .nest(
             "/websocket/",
-            websocket_router(bus_tx.clone(), system_usage_tx.clone()),
+            websocket_router(bus_tx.clone(), system_usage_tx.clone(), control_tx.clone()),
         )
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)

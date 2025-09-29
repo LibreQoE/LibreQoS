@@ -2,6 +2,7 @@ mod cake_watcher;
 mod circuit;
 mod flows_by_circuit;
 mod ping_monitor;
+mod chatbot;
 
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
@@ -21,6 +22,7 @@ enum PrivateChannel {
     PingMonitor { ips: Vec<(String, String)> },
     FlowsByCircuit { circuit: String },
     CakeWatcher { circuit: String },
+    Chatbot { browser_ts_ms: Option<i64> },
 }
 
 pub(super) async fn private_channel_ws_handler(
@@ -31,11 +33,14 @@ pub(super) async fn private_channel_ws_handler(
             lqos_bus::BusRequest,
         )>,
     >,
+    Extension(control_tx): Extension<
+        tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>
+    >,
 ) -> impl IntoResponse {
     info!("WS Upgrade Called");
     let my_bus = bus_tx.clone();
     ws.on_upgrade(move |socket| async {
-        handle_socket(socket, my_bus).await;
+        handle_socket(socket, my_bus, control_tx).await;
     })
 }
 
@@ -45,10 +50,12 @@ async fn handle_socket(
         tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
         lqos_bus::BusRequest,
     )>,
+    control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
 ) {
     debug!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
+    let mut chatbot_request: Option<u64> = None;
     loop {
         tokio::select! {
             inbound = socket.recv() => {
@@ -70,9 +77,50 @@ async fn handle_socket(
                                     PrivateChannel::CakeWatcher { circuit } => {
                                         spawn(cake_watcher(circuit, tx.clone()));
                                     },
+                                    PrivateChannel::Chatbot { browser_ts_ms } => {
+                                        // Start a chatbot session bridged via control channel
+                                        if chatbot_request.is_none() {
+                                            let request_id = rand::random::<u64>();
+                                            chatbot_request = Some(request_id);
+                                            let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+                                            let ctl = control_tx.clone();
+                                            // Spawn forwarder: bytes -> text to client
+                                            let to_client = tx.clone();
+                                            tokio::spawn(async move {
+                                                while let Some(b) = stream_rx.recv().await {
+                                                    let s = String::from_utf8_lossy(&b).to_string();
+                                                    let _ = to_client.send(s).await;
+                                                }
+                                            });
+                                            // Send start to control channel
+                                            let _ = ctl.send(
+                                                crate::lts2_sys::control_channel::ControlChannelCommand::StartChat {
+                                                    request_id,
+                                                    browser_ts_ms,
+                                                    stream: stream_tx,
+                                                }
+                                            ).await;
+                                        }
+                                    },
                                 }
                             } else {
-                                debug!("Failed to parse private message: {:?}", text);
+                                // Try to parse chatbot user input when a session is active
+                                if let Some(request_id) = chatbot_request {
+                                    #[derive(Deserialize)]
+                                    struct ChatMsg { ChatbotUserInput: ChatMsgBody }
+                                    #[derive(Deserialize)]
+                                    struct ChatMsgBody { text: String }
+                                    if let Ok(m) = serde_json::from_str::<ChatMsg>(text) {
+                                        let _ = control_tx.send(
+                                            crate::lts2_sys::control_channel::ControlChannelCommand::ChatSend {
+                                                request_id,
+                                                text: m.ChatbotUserInput.text,
+                                            }
+                                        ).await;
+                                    }
+                                } else {
+                                    debug!("Failed to parse private message: {:?}", text);
+                                }
                             }
                         }
                     }
