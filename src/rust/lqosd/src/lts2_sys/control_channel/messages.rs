@@ -88,10 +88,23 @@ pub enum WsMessage {
         request_id: u64,
         circuit_hash: i64,
     },
+    StartShaperStreaming {
+        request_id: u64,
+    },
     StreamingCircuit {
         request_id: u64,
         circuit_hash: i64,
         data: Vec<u8>,
+    },
+    StreamingShaper {
+        request_id: u64,
+        bytes_down: u64,
+        bytes_up: u64,
+        shaped_bytes_down: u64,
+        shaped_bytes_up: u64,
+        // Packets per second (down, up)
+        packets_down: u64,
+        packets_up: u64,
     },
     HistoryQuery {
         request_id: u64,

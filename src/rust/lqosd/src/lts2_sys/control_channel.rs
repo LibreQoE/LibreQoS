@@ -319,6 +319,15 @@ async fn persistent_connection(
                                             };
                                         });
                                     }
+                                    messages::WsMessage::StartShaperStreaming { request_id } => {
+                                        let socket_sender_tx = socket_sender_tx.clone();
+                                        tokio::spawn(async move {
+                                            let Ok(()) = shaper_snapshot_streaming(request_id, socket_sender_tx).await else {
+                                                error!("Circuit snapshot streaming failed");
+                                                return;
+                                            };
+                                        });
+                                    }
                                     _ => {}
                                 }
                             }
@@ -613,6 +622,45 @@ async fn api_request(
         }
     }
 
+    Ok(())
+}
+
+async fn shaper_snapshot_streaming(
+    request_id: u64,
+    reply: tokio::sync::mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
+    use lqos_bus::BusResponse;
+
+    let resp = crate::throughput_tracker::current_throughput();
+    if let BusResponse::CurrentThroughput {
+        bits_per_second,
+        packets_per_second,
+        shaped_bits_per_second,
+        ..
+    } = resp
+    {
+        let message = messages::WsMessage::StreamingShaper {
+            request_id,
+            // Note: field names are historical; values are bits per second
+            bytes_down: bits_per_second.down,
+            bytes_up: bits_per_second.up,
+            shaped_bytes_down: shaped_bits_per_second.down,
+            shaped_bytes_up: shaped_bits_per_second.up,
+            packets_down: packets_per_second.down,
+            packets_up: packets_per_second.up,
+        };
+        let Ok((_, _, ws_bytes)) = message.to_bytes() else {
+            error!("Failed to serialize StreamingShaper message");
+            return Ok(());
+        };
+        if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+            match e {
+                TrySendError::Full(_) => warn!("Send unavailable: StreamingShaper queue full; dropping reply"),
+                TrySendError::Closed(_) => error!("Failed to send StreamingShaper: channel closed"),
+            }
+        }
+    }
     Ok(())
 }
 
