@@ -91,6 +91,10 @@ pub enum WsMessage {
     StartShaperStreaming {
         request_id: u64,
     },
+    // Request a one-shot shaper tree snapshot
+    StartShaperTreeStreaming {
+        request_id: u64,
+    },
     StreamingCircuit {
         request_id: u64,
         circuit_hash: i64,
@@ -102,9 +106,13 @@ pub enum WsMessage {
         bytes_up: u64,
         shaped_bytes_down: u64,
         shaped_bytes_up: u64,
-        // Packets per second (down, up)
         packets_down: u64,
         packets_up: u64,
+    },
+    // Reply containing a one-shot shaper tree snapshot (CBOR encoded payload)
+    StreamingShaperTree {
+        request_id: u64,
+        data: Vec<u8>,
     },
     HistoryQuery {
         request_id: u64,

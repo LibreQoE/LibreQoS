@@ -328,6 +328,15 @@ async fn persistent_connection(
                                             };
                                         });
                                     }
+                                    messages::WsMessage::StartShaperTreeStreaming { request_id } => {
+                                        let socket_sender_tx = socket_sender_tx.clone();
+                                        tokio::spawn(async move {
+                                            let Ok(()) = tree_snapshot_streaming(request_id, socket_sender_tx).await else {
+                                                error!("Tree snapshot streaming failed");
+                                                return;
+                                            };
+                                        });
+                                    }
                                     _ => {}
                                 }
                             }
@@ -915,6 +924,76 @@ async fn circuit_snapshot_streaming(
         match e {
             TrySendError::Full(_) => warn!("Send unavailable: StreamingCircuit queue full; dropping reply"),
             TrySendError::Closed(_) => error!("Failed to send StreamingCircuit: channel closed"),
+        }
+    }
+    Ok(())
+}
+
+async fn tree_snapshot_streaming(
+    request_id: u64,
+    reply: tokio::sync::mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    #[derive(Serialize, Deserialize)]
+    struct LiveNetworkTransport {
+        name: String,
+        max_throughput: (u32, u32),
+        current_throughput: (u64, u64),
+        current_packets: (u64, u64),
+        current_tcp_packets: (u64, u64),
+        current_udp_packets: (u64, u64),
+        current_icmp_packets: (u64, u64),
+        current_retransmits: (u64, u64),
+        current_marks: (u64, u64),
+        current_drops: (u64, u64),
+        rtts: Vec<f32>,
+        parents: Vec<usize>,
+        immediate_parent: Option<usize>,
+        #[serde(rename = "type")]
+        node_type: Option<String>,
+    }
+
+    // Use the same data source as local_api::network_tree
+    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+    let result: Vec<(usize, LiveNetworkTransport)> = net_json
+        .get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let t = n.clone_to_transit();
+            let mapped = LiveNetworkTransport {
+                name: t.name,
+                max_throughput: t.max_throughput,
+                current_throughput: t.current_throughput,
+                current_packets: t.current_packets,
+                current_tcp_packets: t.current_tcp_packets,
+                current_udp_packets: t.current_udp_packets,
+                current_icmp_packets: t.current_icmp_packets,
+                current_retransmits: t.current_retransmits,
+                current_marks: t.current_marks,
+                current_drops: t.current_drops,
+                rtts: t.rtts,
+                parents: t.parents,
+                immediate_parent: t.immediate_parent,
+                node_type: t.node_type,
+            };
+            (i, mapped)
+        })
+        .collect();
+
+    let Ok(bytes) = serde_cbor::to_vec(&result) else {
+        error!("Failed to serialize LiveNetworkTransport payload");
+        return Ok(());
+    };
+
+    let message = messages::WsMessage::StreamingShaperTree { request_id, data: bytes };
+    let Ok((_, _, ws_bytes)) = message.to_bytes() else {
+        error!("Failed to serialize StreamingShaperTree message");
+        return Ok(());
+    };
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+        match e {
+            TrySendError::Full(_) => warn!("Send unavailable: StreamingShaperTree queue full; dropping reply"),
+            TrySendError::Closed(_) => error!("Failed to send StreamingShaperTree: channel closed"),
         }
     }
     Ok(())
