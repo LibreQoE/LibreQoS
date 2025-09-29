@@ -7,7 +7,7 @@ use tokio::time::timeout;
 use tokio::sync::mpsc::error::TrySendError;
 use serde::{Serialize, Deserialize};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
@@ -307,8 +307,8 @@ async fn persistent_connection(
                                 };
                                 // TODO: Handle incoming messages here
                                 match msg {
-                                    messages::WsMessage::Welcome { valid: _, license_state, expiration_date } => {
-                                        debug!("Control channel connected and permitted");
+                                    messages::WsMessage::Welcome { valid, license_state, expiration_date } => {
+                                        info!("Control channel connected. License valid={valid}, state={license_state}, expires_unix={expiration_date}");
                                         set_license_status(LicenseStatus {
                                             license_type: license_state,
                                             trial_expires: expiration_date as i32,
@@ -497,7 +497,7 @@ async fn persistent_connection(
 
 async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let remote_host = crate::lts2_sys::lts2_client::get_remote_host();
-    let target = format!("wss://{}:443/shaper_gateway/ws", remote_host);
+    let target = format!("wss://{}:443/shaper_gateway/ws", &remote_host);
     debug!("Connecting to shaper gateway: {target}");
 
     // DNS resolution with timeout
@@ -521,7 +521,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     };
 
     // Native TLS
-    debug!("Connected to shaper gateway server: {remote_host}");
+    info!("Control channel TCP connected: {remote_host}");
     let Ok(connector) = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
@@ -536,7 +536,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     debug!("Connecting tungstenite client to shaper gateway server: {target}");
     let result = timeout(
         TCP_TIMEOUT,
-        tokio_tungstenite::client_async_tls_with_config(target, stream, None, Some(t_connector)),
+        tokio_tungstenite::client_async_tls_with_config(target.clone(), stream, None, Some(t_connector)),
     )
     .await;
     if result.is_err() {
@@ -546,7 +546,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
         warn!("Failed to connect to shaper gateway server {result:?}");
         bail!("Failed to connect to shaper gateway server. {result:?}");
     };
-    debug!("Connected");
+    info!("Control channel WSS established: {target}");
 
     Ok(socket)
 }

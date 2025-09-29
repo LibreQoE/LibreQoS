@@ -86,11 +86,13 @@ async fn handle_socket(
                                             let ctl = control_tx.clone();
                                             // Spawn forwarder: bytes -> text to client
                                             let to_client = tx.clone();
+                                            tracing::info!("[chatbot] starting session request_id={} browser_ts_ms={:?}", request_id, browser_ts_ms);
                                             tokio::spawn(async move {
                                                 while let Some(b) = stream_rx.recv().await {
                                                     let s = String::from_utf8_lossy(&b).to_string();
                                                     let _ = to_client.send(s).await;
                                                 }
+                                                tracing::info!("[chatbot] stream closed request_id={}", request_id);
                                             });
                                             // Send start to control channel
                                             let _ = ctl.send(
@@ -117,6 +119,7 @@ async fn handle_socket(
                                                 text: m.ChatbotUserInput.text,
                                             }
                                         ).await;
+                                        tracing::debug!("[chatbot] forwarded user input request_id={}", request_id);
                                     }
                                 } else {
                                     debug!("Failed to parse private message: {:?}", text);

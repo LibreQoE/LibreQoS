@@ -244,9 +244,21 @@ function setupDynamicUrls() {
     // Update Chat link if it exists (only created when chatbot is available)
     const chatLink = document.getElementById('chatLink');
     if (chatLink) {
-        const hrefAttr = chatLink.getAttribute('href');
-        if (hrefAttr === '%%CHAT_URL%%') {
-            chatLink.href = chatUrl;
+        // If server rendered a disabled span, swap it for an active link.
+        if (chatLink.tagName && chatLink.tagName.toLowerCase() !== 'a') {
+            const parentLi = chatLink.closest('li');
+            const a = document.createElement('a');
+            a.className = 'nav-link';
+            a.id = 'chatLink';
+            a.href = 'chatbot.html';
+            a.innerHTML = '<i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby';
+            if (parentLi) parentLi.replaceChild(a, chatLink); else chatLink.replaceWith(a);
+        } else {
+            const hrefAttr = chatLink.getAttribute('href');
+            if (hrefAttr === '%%CHAT_URL%%' || !hrefAttr) {
+                // Prefer embedded chatbot page
+                chatLink.href = 'chatbot.html';
+            }
         }
     }
 }

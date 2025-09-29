@@ -172,12 +172,10 @@ pub async fn apply_templates(
         };
         let byte_string = byte_string.replace("%%API_LINK%%", api_link);
 
-        // Handle CHAT_LINK placeholder (require service + valid Insight)
-        let chat_link = if is_chatbot_available() && script_has_insight {
-            CHAT_LINK_ACTIVE
-        } else {
-            CHAT_LINK_INACTIVE
-        };
+        // Handle CHAT_LINK placeholder
+        // Libby (chatbot) no longer depends on the local API service being up.
+        // Always show the link to the chatbot page; the page will surface availability.
+        let chat_link = CHAT_LINK_ACTIVE;
         let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
 
         // Replace SCHEDULER_STATUS with a simple placeholder for client-side rendering

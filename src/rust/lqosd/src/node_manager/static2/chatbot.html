@@ -19,7 +19,13 @@
 </style>
 
 <div class="container mt-3 chat-wrap">
-  <h4 class="mb-3"><i class="fa fa-comments me-2"></i>Ask Libby</h4>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="m-0"><i class="fa fa-comments me-2"></i>Ask Libby</h4>
+    <div class="form-check form-switch small">
+      <input class="form-check-input" type="checkbox" id="showThinkingSwitch">
+      <label class="form-check-label" for="showThinkingSwitch" title="Show model thinking (reasoning)">Show thinking</label>
+    </div>
+  </div>
   <div id="chatLog" class="chat-log card-elev mb-2"></div>
   <div class="composer input-group">
     <input id="chatInput" type="text" class="form-control" placeholder="Ask something..." />
