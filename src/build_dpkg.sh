@@ -14,7 +14,6 @@ DPKG_DIR=dist/$PKGVERSION-1_amd64
 APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
-API_DIR=$DPKG_DIR/opt/libreqos/api
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
@@ -45,6 +44,7 @@ LQOS_FILES=(
 LQOS_BIN_FILES=(
   lqos_scheduler.service.example
   lqosd.service.example
+  lqos_api.service.example
 )
 
 RUSTPROGS=(
@@ -70,7 +70,7 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards "$API_DIR"
+mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
 
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR
@@ -114,6 +114,7 @@ sudo chown -R $USER /opt/libreqos
 # - Setup the services
 cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
+cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
 /bin/systemctl daemon-reload
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
@@ -204,33 +205,12 @@ EOF
 popd || exit
 
 ####################################################
-# Bundle the API
-
-# Prefer a locally built api.zip (from lqos_api repo root). Fallback to curl if missing.
-if [ -f ../../../api.zip ]; then
-  cp ../../../api.zip /tmp/lqos_api.zip
-else
-  echo "Local api.zip not found; attempting to download..."
-  curl -L -o /tmp/lqos_api.zip "http://download.libreqos.com/api_latest.zip"
-fi
-# Unzip it into the $API_DIR
-unzip -o /tmp/lqos_api.zip -d "$API_DIR"
-# Remove the /tmp/lqos_api.zip file
+# Bundle the API into src/bin
+echo "Fetching lqos_api (api.zip) ..."
+curl -fsSL -o /tmp/lqos_api.zip "https://download.libreqos.com/api.zip"
+unzip -o /tmp/lqos_api.zip -d "$LQOS_DIR/bin"
+chmod +x "$LQOS_DIR/bin/lqos_api" || true
 rm -f /tmp/lqos_api.zip
-# Create the systemd script:
-cat <<EOF > "$DPKG_DIR"/etc/systemd/system/lqos_api.service
-[Unit]
-After=lqosd.service
-
-[Service]
-WorkingDirectory=/opt/libreqos/api
-ExecStart=/opt/libreqos/api/lqos_api
-Restart=always
-Environment=LQOS_DOCS_DIR=/opt/libreqos/api
-
-[Install]
-WantedBy=default.target
-EOF
 
 ####################################################
 # Assemble the package
