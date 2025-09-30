@@ -169,9 +169,11 @@ function handleStreamText(text) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (trimmed.startsWith('data:')) handleSsePayload(trimmed.slice(5).trim());
-    else if (trimmed.startsWith('[error]')) appendSys(trimmed);
-    else handleSsePayload(trimmed);
+    if (trimmed.startsWith('data:')) {
+      handleSsePayload(trimmed.slice(5).trim());
+    } else if (trimmed.startsWith('[error]')) {
+      appendSys(trimmed);
+    } // ignore other SSE fields (event:, id:, retry:)
   }
 }
 

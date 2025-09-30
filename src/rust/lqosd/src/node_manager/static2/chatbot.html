@@ -6,7 +6,8 @@
   .bubble { padding: 10px 12px; border-radius: 12px; max-width: 75%; }
   .me .bubble { background: var(--bs-primary); color: white; border-bottom-right-radius: 4px; }
   .bot .bubble { background: #2c2f36; color: #eaeaea; border-bottom-left-radius: 4px; }
-  .avatar { width: 28px; height: 28px; border-radius: 50%; background: #394150; color: #fff; font-weight: bold; font-size: 0.8rem; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; }
+  .bot .avatar { background: transparent; }
   .bot .meta { font-size: 0.8rem; opacity: 0.75; margin-bottom: 2px; }
   .reason { font-style: italic; font-size: 0.9rem; opacity: 0.8; white-space: pre-wrap; }
   .content { white-space: pre-wrap; }
@@ -19,13 +20,7 @@
 </style>
 
 <div class="container mt-3 chat-wrap">
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h4 class="m-0"><i class="fa fa-comments me-2"></i>Ask Libby</h4>
-    <div class="form-check form-switch small">
-      <input class="form-check-input" type="checkbox" id="showThinkingSwitch">
-      <label class="form-check-label" for="showThinkingSwitch" title="Show model thinking (reasoning)">Show thinking</label>
-    </div>
-  </div>
+  <h4 class="mb-3"><img src="libby.png" class="me-2" style="width:28px;height:28px;">Ask Libby</h4>
   <div id="chatLog" class="chat-log card-elev mb-2"></div>
   <div class="composer input-group">
     <input id="chatInput" type="text" class="form-control" placeholder="Ask something..." />
