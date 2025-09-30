@@ -141,18 +141,21 @@ pub async fn apply_templates(
             }
         }
 
-        // Title
+        // Title and node_id
         let mut title = "LibreQoS Node Manager".to_string();
+        let mut node_id_js = String::new();
         if let Ok(config) = load_config() {
             title = config.node_name.clone();
+            node_id_js = escape_html_attr(&config.node_id);
         }
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
-            js_tf(new_version)
+            js_tf(new_version),
+            node_id_js
         );
 
         let (mut res_parts, res_body) = res.into_parts();

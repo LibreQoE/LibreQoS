@@ -152,6 +152,8 @@ async fn persistent_connection(
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
             let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> = HashMap::new();
+            // Queue chatbot control messages until the connection is permitted (Welcome received)
+            let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
 
             // Message pump
@@ -272,19 +274,34 @@ async fn persistent_connection(
                                     error!("Failed to serialize ChatbotStart");
                                     break 'message_pump;
                                 };
-                                let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                                if permitted {
+                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                } else {
+                                    debug!("Queuing ChatbotStart until connection permitted (request_id={})", request_id);
+                                    pending_chatbot_messages.push(bytes);
+                                }
                             }
                             Some(ConnectionCommand::ChatSend { request_id, text }) => {
                                 let message = messages::WsMessage::ChatbotUserInput { request_id, text };
                                 if let Ok((_, _, bytes)) = message.to_bytes() {
-                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                                    if permitted {
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                    } else {
+                                        debug!("Queuing ChatbotUserInput until connection permitted (request_id={})", request_id);
+                                        pending_chatbot_messages.push(bytes);
+                                    }
                                 }
                             }
                             Some(ConnectionCommand::ChatStop { request_id }) => {
                                 chatbot_streams.remove(&request_id);
                                 let message = messages::WsMessage::ChatbotStop { request_id };
                                 if let Ok((_, _, bytes)) = message.to_bytes() {
-                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.into()));
+                                    if permitted {
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                    } else {
+                                        debug!("Queuing ChatbotStop until connection permitted (request_id={})", request_id);
+                                        pending_chatbot_messages.push(bytes);
+                                    }
                                 }
                             }
                             None => {
@@ -317,6 +334,21 @@ async fn persistent_connection(
                                         });
                                         permitted = true;
                                         sleep_seconds = 60;
+                                        // Flush any pending chatbot messages now that we're permitted
+                                        if !pending_chatbot_messages.is_empty() {
+                                            debug!("Flushing {} queued chatbot message(s)", pending_chatbot_messages.len());
+                                            for bytes in pending_chatbot_messages.drain(..) {
+                                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                                    match e {
+                                                        TrySendError::Full(_) => warn!("Send unavailable: chatbot queue full; dropping queued message"),
+                                                        TrySendError::Closed(_) => {
+                                                            error!("Failed to send queued chatbot message: channel closed");
+                                                            break 'message_pump;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                     messages::WsMessage::Heartbeat { timestamp } => {
                                         // Send a heartbeat reply

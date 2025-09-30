@@ -1,8 +1,8 @@
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use axum::Json;
 use axum::http::StatusCode;
+use axum::Json;
 use lqos_config::ShapedDevice;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct CircuitId {
@@ -26,4 +26,15 @@ pub async fn get_circuit_by_id(
     } else {
         return Ok(Json(devices));
     }
+}
+
+#[derive(Serialize)]
+pub struct CircuitHash {
+    pub hash: i64,
+}
+
+/// Compute the standard LibreQoS circuit hash (i64) from a circuit_id string.
+pub async fn hash_circuit(Json(id): Json<CircuitId>) -> Json<CircuitHash> {
+    let h = lqos_utils::hash_to_i64(&id.id);
+    Json(CircuitHash { hash: h })
 }

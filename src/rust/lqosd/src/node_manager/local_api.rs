@@ -60,6 +60,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/updateUser", post(config::update_user))
         .route("/deleteUser", post(config::delete_user))
         .route("/circuitById", post(circuit::get_circuit_by_id))
+        .route("/hashCircuit", post(circuit::hash_circuit))
         .route("/circuits/count", get(circuit_count::get_circuit_count))
         .route(
             "/requestAnalysis/:ip",
