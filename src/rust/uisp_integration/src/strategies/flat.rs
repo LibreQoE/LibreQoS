@@ -4,6 +4,7 @@ use crate::ip_ranges::IpRanges;
 use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -77,6 +78,7 @@ pub async fn build_flat_network(
 
     // Simple Shaped Devices File
     let mut shaped_devices = Vec::new();
+    let mut seen_pairs = HashSet::new();
     let ipv4_to_v6 = Vec::new();
     for site in sites.iter() {
         if let Some(site_id) = &site.identification {
@@ -183,6 +185,11 @@ pub async fn build_flat_network(
                         let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
                         if dev.site_id == site.id {
                             // We're an endpoint in the right sight. We're getting there
+                            let key = (site.id.clone(), device.get_id());
+                            if !seen_pairs.insert(key) {
+                                continue;
+                            }
+
                             let sd = ShapedDevice {
                                 circuit_id: site.id.clone(),
                                 circuit_name: site.name_or_blank(),
