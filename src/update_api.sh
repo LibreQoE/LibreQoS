@@ -28,6 +28,23 @@ unzip -p "$TMP_ZIP" lqos_api > "$BIN_DIR/lqos_api.new"
 chmod +x "$BIN_DIR/lqos_api.new"
 mv "$BIN_DIR/lqos_api.new" "$BIN_DIR/lqos_api"
 
+# Function copied from build_rust.sh
+service_exists() {
+    local n=$1
+    if [[ $(systemctl list-units --all -t service --full --no-legend "$n.service" | sed 's/^\s*//g' | cut -f1 -d' ') == $n.service ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+echo "Restart lqos_api service (if present)"
+if service_exists lqos_api; then
+    echo "lqos_api is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqos_api
+else
+    echo "lqos_api service not found; skipping restart."
+fi
+
 rm -f "$TMP_ZIP"
 echo "lqos_api updated at $BIN_DIR/lqos_api"
-
