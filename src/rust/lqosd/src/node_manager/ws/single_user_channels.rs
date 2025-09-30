@@ -15,6 +15,7 @@ use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
 use tracing::{debug, info};
+use axum::http::{HeaderMap, header};
 
 #[derive(Serialize, Deserialize)]
 enum PrivateChannel {
@@ -36,11 +37,16 @@ pub(super) async fn private_channel_ws_handler(
     Extension(control_tx): Extension<
         tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>
     >,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     info!("WS Upgrade Called");
     let my_bus = bus_tx.clone();
+    let browser_language = headers
+        .get(header::ACCEPT_LANGUAGE)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
     ws.on_upgrade(move |socket| async {
-        handle_socket(socket, my_bus, control_tx).await;
+        handle_socket(socket, my_bus, control_tx, browser_language).await;
     })
 }
 
@@ -51,6 +57,7 @@ async fn handle_socket(
         lqos_bus::BusRequest,
     )>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
+    browser_language: Option<String>,
 ) {
     debug!("Websocket connected");
 
@@ -99,6 +106,7 @@ async fn handle_socket(
                                                 crate::lts2_sys::control_channel::ControlChannelCommand::StartChat {
                                                     request_id,
                                                     browser_ts_ms,
+                                                    browser_language: browser_language.clone(),
                                                     stream: stream_tx,
                                                 }
                                             ).await;

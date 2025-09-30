@@ -34,6 +34,7 @@ pub enum ControlChannelCommand {
     StartChat {
         request_id: u64,
         browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
     ChatSend { request_id: u64, text: String },
@@ -52,6 +53,7 @@ pub enum ConnectionCommand {
     StartChat {
         request_id: u64,
         browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
     ChatSend { request_id: u64, text: String },
@@ -103,8 +105,8 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     }
                 }
             }
-            ControlChannelCommand::StartChat { request_id, browser_ts_ms, stream } => {
-                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, stream });
+            ControlChannelCommand::StartChat { request_id, browser_ts_ms, browser_language, stream } => {
+                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream });
             }
             ControlChannelCommand::ChatSend { request_id, text } => {
                 let _ = tx.try_send(ConnectionCommand::ChatSend { request_id, text });
@@ -263,9 +265,9 @@ async fn persistent_connection(
                                     }
                                 }
                             }
-                            Some(ConnectionCommand::StartChat { request_id, browser_ts_ms, stream }) => {
+                            Some(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream }) => {
                                 chatbot_streams.insert(request_id, stream);
-                                let message = messages::WsMessage::ChatbotStart { request_id, browser_ts_ms };
+                                let message = messages::WsMessage::ChatbotStart { request_id, browser_ts_ms, browser_language };
                                 let Ok((_, _, bytes)) = message.to_bytes() else {
                                     error!("Failed to serialize ChatbotStart");
                                     break 'message_pump;

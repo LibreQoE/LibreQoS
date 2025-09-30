@@ -136,6 +136,7 @@ pub enum WsMessage {
     ChatbotStart {
         request_id: u64,
         browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
     },
     ChatbotUserInput {
         request_id: u64,
