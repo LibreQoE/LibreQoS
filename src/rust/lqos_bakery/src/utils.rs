@@ -28,7 +28,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     };
 
     let Ok(output) = std::process::Command::new("/sbin/tc")
-        .args(&["-f", "-batch", path.to_str().unwrap_or_default()])
+        .args(["-f", "-batch", path.to_str().unwrap_or_default()])
         .output()
     else {
         let message = format!("Failed to execute tc batch command for {purpose}.");

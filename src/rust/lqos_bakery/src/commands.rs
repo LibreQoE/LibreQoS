@@ -9,6 +9,32 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+#[derive(Debug, Clone, Copy, Allocative)]
+struct AddSiteParams {
+    site_hash: i64,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+    class_minor: u16,
+    download_bandwidth_min: f32,
+    upload_bandwidth_min: f32,
+    download_bandwidth_max: f32,
+    upload_bandwidth_max: f32,
+}
+
+#[derive(Debug, Clone, Copy, Allocative)]
+struct AddCircuitParams {
+    circuit_hash: i64,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+    class_minor: u16,
+    download_bandwidth_min: f32,
+    upload_bandwidth_min: f32,
+    download_bandwidth_max: f32,
+    upload_bandwidth_max: f32,
+    class_major: u16,
+    up_class_major: u16,
+}
+
 /// Execution Mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
 pub enum ExecutionMode {
@@ -150,14 +176,16 @@ impl BakeryCommands {
                 upload_bandwidth_max,
             } => Self::add_site(
                 config,
-                *site_hash,
-                *parent_class_id,
-                *up_parent_class_id,
-                *class_minor,
-                *download_bandwidth_min,
-                *upload_bandwidth_min,
-                *download_bandwidth_max,
-                *upload_bandwidth_max,
+                AddSiteParams {
+                    site_hash: *site_hash,
+                    parent_class_id: *parent_class_id,
+                    up_parent_class_id: *up_parent_class_id,
+                    class_minor: *class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                },
             ),
             BakeryCommands::AddCircuit {
                 circuit_hash,
@@ -174,16 +202,18 @@ impl BakeryCommands {
             } => Self::add_circuit(
                 execution_mode,
                 config,
-                *circuit_hash,
-                *parent_class_id,
-                *up_parent_class_id,
-                *class_minor,
-                *download_bandwidth_min,
-                *upload_bandwidth_min,
-                *download_bandwidth_max,
-                *upload_bandwidth_max,
-                *class_major,
-                *up_class_major,
+                AddCircuitParams {
+                    circuit_hash: *circuit_hash,
+                    parent_class_id: *parent_class_id,
+                    up_parent_class_id: *up_parent_class_id,
+                    class_minor: *class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                    class_major: *class_major,
+                    up_class_major: *up_class_major,
+                },
             ),
             _ => None,
         }
@@ -461,14 +491,7 @@ impl BakeryCommands {
 
     fn add_site(
         config: &Arc<lqos_config::Config>,
-        _site_hash: i64,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
+        params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
 
@@ -488,19 +511,19 @@ impl BakeryCommands {
             "dev".to_string(),
             config.isp_interface(),
             "parent".to_string(),
-            parent_class_id.as_tc_string(),
+            params.parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{class_minor:x}"),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_min),
+            format_rate_for_tc_f32(params.download_bandwidth_min),
             "ceil".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_max),
+            format_rate_for_tc_f32(params.download_bandwidth_max),
             "prio".to_string(),
             "3".to_string(),
             "quantum".to_string(),
             quantum(
-                download_bandwidth_max as u64,
+                params.download_bandwidth_max as u64,
                 r2q(config.queues.downlink_bandwidth_mbps),
             ),
         ]);
@@ -510,19 +533,19 @@ impl BakeryCommands {
             "dev".to_string(),
             config.internet_interface(),
             "parent".to_string(),
-            up_parent_class_id.as_tc_string(),
+            params.up_parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{class_minor:x}"),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_min),
+            format_rate_for_tc_f32(params.upload_bandwidth_min),
             "ceil".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_max),
+            format_rate_for_tc_f32(params.upload_bandwidth_max),
             "prio".to_string(),
             "3".to_string(),
             "quantum".to_string(),
             quantum(
-                upload_bandwidth_max as u64,
+                params.upload_bandwidth_max as u64,
                 r2q(config.queues.uplink_bandwidth_mbps),
             ),
         ]);
@@ -533,16 +556,7 @@ impl BakeryCommands {
     fn add_circuit(
         execution_mode: ExecutionMode,
         config: &Arc<lqos_config::Config>,
-        _circuit_hash: i64,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-        class_major: u16,
-        up_class_major: u16,
+        params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
         let do_htb;
         let do_sqm;
@@ -610,19 +624,19 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
-                parent_class_id.as_tc_string(),
+                params.parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc_f32(download_bandwidth_min),
+                format_rate_for_tc_f32(params.download_bandwidth_min),
                 "ceil".to_string(),
-                format_rate_for_tc_f32(download_bandwidth_max),
+                format_rate_for_tc_f32(params.download_bandwidth_max),
                 "prio".to_string(),
                 "3".to_string(),
                 "quantum".to_string(),
                 quantum(
-                    download_bandwidth_max as u64,
+                    params.download_bandwidth_max as u64,
                     r2q(config.queues.downlink_bandwidth_mbps),
                 ),
             ]);
@@ -634,9 +648,9 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
-                format!("0x{:x}:0x{:x}", class_major, class_minor),
+                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(download_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(params.download_bandwidth_max, config));
             result.push(sqm_command);
         }
 
@@ -647,19 +661,19 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
-                up_parent_class_id.as_tc_string(),
+                params.up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc_f32(upload_bandwidth_min),
+                format_rate_for_tc_f32(params.upload_bandwidth_min),
                 "ceil".to_string(),
-                format_rate_for_tc_f32(upload_bandwidth_max),
+                format_rate_for_tc_f32(params.upload_bandwidth_max),
                 "prio".to_string(),
                 "3".to_string(),
                 "quantum".to_string(),
                 quantum(
-                    upload_bandwidth_max as u64,
+                    params.upload_bandwidth_max as u64,
                     r2q(config.queues.uplink_bandwidth_mbps),
                 ),
             ]);
@@ -672,9 +686,9 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
-                format!("0x{:x}:0x{:x}", up_class_major, class_minor),
+                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(upload_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(params.upload_bandwidth_max, config));
             result.push(sqm_command);
         }
 

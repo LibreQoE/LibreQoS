@@ -216,7 +216,7 @@ fn handle_commit_batch(
         return;
     }
 
-    let site_change_mode = diff_sites(&new_batch, &sites);
+    let site_change_mode = diff_sites(&new_batch, sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
         info!("Site structure has changed, performing full reload.");
@@ -225,7 +225,7 @@ fn handle_commit_batch(
         return;
     }
 
-    let circuit_change_mode = diff::diff_circuits(&new_batch, &circuits);
+    let circuit_change_mode = diff::diff_circuits(&new_batch, circuits);
 
     // If neither has changed, there's nothing to do.
     if matches!(site_change_mode, SiteDiffResult::NoChange)
@@ -356,8 +356,7 @@ fn handle_commit_batch(
 
             let commands: Vec<Vec<String>> = all_new_circuits
                 .iter()
-                .map(|c| c.to_commands(&config, ExecutionMode::Builder))
-                .flatten()
+                .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
                 .collect();
             if commands.is_empty() {
@@ -427,7 +426,7 @@ fn handle_tick(
     static mut TICK_COUNT: u64 = 0;
     unsafe {
         TICK_COUNT += 1;
-        if TICK_COUNT % 60 == 0 {
+        if TICK_COUNT.is_multiple_of(60) {
             // Every minute
             // Shrink if capacity is more than 2x the size
             if circuits.capacity() > circuits.len() * 2 && circuits.capacity() > 100 {
@@ -599,7 +598,6 @@ fn handle_change_site_speed_live(
             "ChangeSiteSpeedLive received for unknown site: {}",
             site_hash
         );
-        return;
     }
 }
 
@@ -615,7 +613,7 @@ fn full_reload(
     sites.clear();
     circuits.clear();
     live_circuits.clear();
-    process_batch(new_batch, &config, sites, circuits);
+    process_batch(new_batch, config, sites, circuits);
     *batch = None;
 }
 
