@@ -313,7 +313,7 @@ fn memory_debug() {
             // fb.visit_root(&*THROUGHPUT_TRACKER);
             // fb.visit_root(&*ALL_FLOWS);
             // fb.visit_root(&*RECENT_FLOWS);
-            fb.visit_root(&*NETWORK_JSON);
+            //fb.visit_root(&*NETWORK_JSON);
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
             let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
