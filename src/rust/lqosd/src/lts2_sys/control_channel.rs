@@ -121,6 +121,8 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
 }
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+// Prevent unbounded growth while waiting for Welcome
+const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
 async fn persistent_connection(
     mut rx: tokio::sync::mpsc::Receiver<ConnectionCommand>,
@@ -165,7 +167,7 @@ async fn persistent_connection(
                         match command {
                             Some(ConnectionCommand::SubmitChunks { serial, chunks }) => {
                                 if !permitted {
-                                    warn!("Not permitted to send chunks yet");
+                                    info!("Not permitted to send chunks yet");
                                     continue 'message_pump;
                                 }
                                 let n_chunks = chunks.len();
@@ -231,6 +233,13 @@ async fn persistent_connection(
                                     let _ = responder.send(Err(()));
                                     continue 'message_pump;
                                 }
+                                // Guard: avoid unbounded growth if Insight doesn't reply
+                                const MAX_PENDING_HISTORY: usize = 256;
+                                if pending_history.len() >= MAX_PENDING_HISTORY {
+                                    warn!("Too many pending history requests ({}); dropping newest", MAX_PENDING_HISTORY);
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
 
                                 let request_id = next_history_request_id;
                                 next_history_request_id = next_history_request_id.wrapping_add(1);
@@ -278,6 +287,10 @@ async fn persistent_connection(
                                     let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                 } else {
                                     debug!("Queuing ChatbotStart until connection permitted (request_id={})", request_id);
+                                    if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                        warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                        let _ = pending_chatbot_messages.drain(..1);
+                                    }
                                     pending_chatbot_messages.push(bytes);
                                 }
                             }
@@ -288,6 +301,10 @@ async fn persistent_connection(
                                         let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                     } else {
                                         debug!("Queuing ChatbotUserInput until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
                                         pending_chatbot_messages.push(bytes);
                                     }
                                 }
@@ -300,6 +317,10 @@ async fn persistent_connection(
                                         let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                     } else {
                                         debug!("Queuing ChatbotStop until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
                                         pending_chatbot_messages.push(bytes);
                                     }
                                 }
@@ -643,6 +664,7 @@ async fn api_request(
     // Make a request to http://127.0.0.1:9122/{url_suffix} using the specified method and body (if present),
     // and return the result (status, headers, body) to Insight as an ApiReply.
     let client = reqwest::Client::builder()
+        .connect_timeout(TCP_TIMEOUT)
         .timeout(TCP_TIMEOUT)
         .build()?;
 
@@ -808,10 +830,10 @@ async fn circuit_snapshot_streaming(
         v4: &[(std::net::Ipv4Addr, u32)],
         v6: &[(std::net::Ipv6Addr, u32)],
     ) -> Option<std::net::IpAddr> {
-        if let Some((ip, plen)) = v4.iter().find(|(_, p)| *p == 32) {
+        if let Some((ip, ..)) = v4.iter().find(|(_, p)| *p == 32) {
             return Some(std::net::IpAddr::V4(*ip));
         }
-        if let Some((ip, plen)) = v6.iter().find(|(_, p)| *p == 128) {
+        if let Some((ip, ..)) = v6.iter().find(|(_, p)| *p == 128) {
             return Some(std::net::IpAddr::V6(*ip));
         }
         None
@@ -840,7 +862,7 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load shaped devices snapshot and pick devices in the target circuit
+    // Load "shaped devices" snapshot and pick devices in the target circuit
     let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
     let mut device_indexes: Vec<usize> = Vec::new();
     for (idx, dev) in shaped.devices.iter().enumerate() {
@@ -863,17 +885,14 @@ async fn circuit_snapshot_streaming(
     }
 
     // Walk raw throughput data and fold into devices of this circuit
-    let tp_cycle = crate::throughput_tracker::THROUGHPUT_TRACKER
-        .cycle
-        .load(std::sync::atomic::Ordering::Relaxed);
     {
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
         for (xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
             if te.circuit_hash != Some(circuit_hash) { continue; }
-            // retire_check is local; use same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
+            // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            // Map IP to device via trie
+            // Map IP to a device via trie
             let lookup = xdp_ip.as_ipv6();
             if let Some((_, id)) = shaped.trie.longest_match(lookup) {
                 if aggregates.contains_key(id) {
@@ -920,7 +939,7 @@ async fn circuit_snapshot_streaming(
             None
         } else {
             let mut r = agg.rtts.clone();
-            r.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            r.sort_by(|a, b| a.total_cmp(b));
             Some(r[r.len() / 2])
         };
         // Compute retransmit percentage
@@ -952,7 +971,7 @@ async fn circuit_snapshot_streaming(
         let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        for (key, (local, analysis)) in all_flows.flow_data.iter() {
+        for (key, (local, ..)) in all_flows.flow_data.iter() {
             if local.last_seen < five_minutes_ago { continue; }
             // Identify if this flow belongs to our circuit via local or remote mapping
             use std::net::IpAddr;
@@ -1043,7 +1062,7 @@ async fn tree_snapshot_streaming(
     }
 
     // Use the same data source as local_api::network_tree
-    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
     let result: Vec<(usize, LiveNetworkTransport)> = net_json
         .get_nodes_when_ready()
         .iter()

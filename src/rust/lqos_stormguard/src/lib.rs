@@ -6,6 +6,9 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
+
 use lqos_bakery::BakeryCommands;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
@@ -17,11 +20,10 @@ mod datalog;
 mod queue_structure;
 mod site_state;
 
-use datalog::LogCommand;
-
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
+/// Globally accessible stormguard statistics
 pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 
 /// Launches the StormGuard component. Will exit if there's

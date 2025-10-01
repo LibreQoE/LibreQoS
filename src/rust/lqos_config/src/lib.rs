@@ -5,6 +5,7 @@
 //! * `ShapedDevices.csv` files.
 //! * `network.json` files.
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
 mod etc;

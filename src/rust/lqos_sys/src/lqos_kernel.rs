@@ -16,7 +16,7 @@ use std::{
     thread,
     time::Duration,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use self::bpf::{libbpf_num_possible_cpus, lqos_kern};
 
@@ -58,6 +58,10 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
     }
 }
 
+/// Removes the XDP bindings from an interface. 
+/// 
+/// # Arguments
+/// * `interface_name` - The name of the interface from which you wish to remove XDP
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
     debug!("Unloading XDP/TC on {}", interface_name);
     check_root()?;
@@ -200,7 +204,7 @@ pub fn attach_xdp_and_tc_to_interface(
         unsafe { bpf::tc_detach_egress(interface_index as i32, false, true, interface_c.as_ptr()) }; // Ignoring error, because it's ok to not have something to detach
 
     // Find the heimdall_events perf map by name
-    let heimdall_events_name = CString::new("heimdall_events").unwrap();
+    let heimdall_events_name = c"heimdall_events";
     let heimdall_events_map = unsafe {
         bpf::bpf_object__find_map_by_name((*skeleton).obj, heimdall_events_name.as_ptr())
     };
@@ -228,7 +232,7 @@ pub fn attach_xdp_and_tc_to_interface(
         .spawn(|| poll_perf_events(handle))?;
 
     // Find and attach the Flowbee handler
-    let flowbee_events_name = CString::new("flowbee_events").unwrap();
+    let flowbee_events_name = c"flowbee_events";
     let flowbee_events_map =
         unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, flowbee_events_name.as_ptr()) };
     let flowbee_events_fd = unsafe { bpf::bpf_map__fd(flowbee_events_map) };
@@ -330,6 +334,7 @@ pub fn attach_xdp_and_tc_to_interface(
     Ok(skeleton)
 }
 
+/// Safety: Direct calls to C functions
 unsafe fn attach_xdp_best_available(
     interface_index: u32,
     prog_fd: i32,
@@ -340,6 +345,7 @@ unsafe fn attach_xdp_best_available(
         errno == -16 || errno == -17
     }
 
+    /// Safety: Direct calls to C functions
     unsafe fn try_mode_with_retries(
         iface_index: u32,
         prog_fd: i32,
@@ -350,18 +356,18 @@ unsafe fn attach_xdp_best_available(
         let mut attempts = 0;
         loop {
             let err = match mode_flag {
-                Some(flag) => bpf_xdp_attach(
-                    iface_index.try_into().unwrap(),
+                Some(flag) => unsafe { bpf_xdp_attach(
+                    iface_index.try_into().expect("Invalid interface index"),
                     prog_fd,
                     XDP_FLAGS_UPDATE_IF_NOEXIST | flag,
                     std::ptr::null(),
-                ),
-                None => bpf_xdp_attach(
-                    iface_index.try_into().unwrap(),
+                ) },
+                None => unsafe { bpf_xdp_attach(
+                    iface_index.try_into().expect("Invalid interface index"),
                     prog_fd,
                     XDP_FLAGS_UPDATE_IF_NOEXIST,
                     std::ptr::null(),
-                ),
+                ) } ,
             };
             if err == 0 {
                 return Ok(());

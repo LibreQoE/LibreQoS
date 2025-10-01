@@ -48,12 +48,12 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
                     let target = format!("{ip}:{port}", ip = ip, port = port);
                     match version {
                         5 => {
-                            let endpoint = Netflow5::new(target).unwrap();
+                            let endpoint = Netflow5::new(target).expect("Cannot parse endpoint for netflow v5");
                             endpoints.push(endpoint);
                             info!("Netflow 5 endpoint added");
                         }
                         9 => {
-                            let endpoint = Netflow9::new(target).unwrap();
+                            let endpoint = Netflow9::new(target).expect("Cannot parse endpoint for netflow v9");
                             endpoints.push(endpoint);
                             info!("Netflow 9 endpoint added");
                         }

@@ -15,7 +15,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize},
     time::Duration,
 };
-use tracing::warn;
+use tracing::{info, warn};
 use zerocopy::IntoBytes;
 
 impl HeimdallEvent {
@@ -186,19 +186,22 @@ pub fn n_second_pcap(session_id: usize) -> Option<String> {
         out.write_all(PcapFileHeader::new().as_bytes())
             .expect("Unable to write to {filename}");
 
-        session
-            .data
-            .iter()
-            .map(|e| (e.packet_data, e.size, PcapPacketHeader::from_heimdall(&e)))
-            .for_each(|(data, size, p)| {
-                out.write_all(p.as_bytes())
-                    .expect("Unable to write to {filename}");
-                if size < PACKET_OCTET_SIZE as u32 {
-                    out.write_all(&data[0..size as usize]).unwrap();
-                } else {
-                    out.write_all(&data).unwrap();
+        for e in session.data.iter() {
+            let p = PcapPacketHeader::from_heimdall(&e);
+            if let Err(err) = out.write_all(p.as_bytes()) {
+                info!("Unable to write to {filename}: {:?}", err);
+                return None;
+            }
+            if e.size < PACKET_OCTET_SIZE as u32 {
+                if let Err(err) = out.write_all(&e.packet_data[0..e.size as usize]) {
+                    info!("Unable to write to {filename}: {:?}", err);
+                    return None;
                 }
-            });
+            } else if let Err(err) = out.write_all(&e.packet_data) {
+                info!("Unable to write to {filename}: {:?}", err);
+                return None;
+            }
+        }
 
         Some(filename)
     } else {

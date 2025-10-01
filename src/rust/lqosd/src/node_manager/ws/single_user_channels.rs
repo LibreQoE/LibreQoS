@@ -117,6 +117,7 @@ async fn handle_socket(
                                 // Try to parse chatbot user input when a session is active
                                 if let Some(request_id) = chatbot_request {
                                     #[derive(Deserialize)]
+                                    #[allow(non_snake_case)]
                                     struct ChatMsg { ChatbotUserInput: ChatMsgBody }
                                     #[derive(Deserialize)]
                                     struct ChatMsgBody { text: String }

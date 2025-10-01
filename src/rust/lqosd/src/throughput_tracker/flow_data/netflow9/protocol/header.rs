@@ -14,13 +14,15 @@ pub(crate) struct Netflow9Header {
 impl Netflow9Header {
     /// Create a new Netflow 9 header
     pub(crate) fn new(flow_sequence: u32, record_count_including_templates: u16) -> Self {
-        let uptime = time_since_boot().unwrap();
+        let uptime_ms: u32 = time_since_boot()
+            .map(|u| u.num_milliseconds() as u32)
+            .unwrap_or(0);
         let unix_secs = unix_now().unwrap_or(0);
 
         Self {
             version: (9u16).to_be(),
             count: record_count_including_templates.to_be(),
-            sys_uptime: (uptime.num_milliseconds() as u32).to_be(),
+            sys_uptime: uptime_ms.to_be(),
             unix_secs: (unix_secs as u32).to_be(),
             package_sequence: flow_sequence.to_be(),
             source_id: 0,

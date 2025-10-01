@@ -97,13 +97,14 @@ impl FileWatcher {
 
         // Build the watcher
         let (tx, rx) = crossbeam_channel::bounded(32);
-        let watcher = notify::RecommendedWatcher::new(tx, Config::default());
-        if watcher.is_err() {
-            error!("Unable to create watcher for ShapedDevices.csv");
-            error!("{:?}", watcher);
+        let maybe_watcher = notify::RecommendedWatcher::new(tx, Config::default());
+        let Ok(mut watcher) = maybe_watcher else {
+            if let Err(e) = maybe_watcher {
+                error!("Unable to create watcher for ShapedDevices.csv");
+                error!("{:?}", e);
+            }
             return Err(WatchedFileError::CreateWatcherError);
-        }
-        let mut watcher = watcher.unwrap();
+        };
 
         // Try to start watching for changes
         let retval = watcher.watch(&self.path, RecursiveMode::NonRecursive);
@@ -123,11 +124,11 @@ impl FileWatcher {
             // A change event has arrived
             // Are we taking a short break to avoid duplicates?
             let mut process = true;
-            if let Some(last_event) = last_event {
-                if last_event.elapsed().as_secs() < SLEEP_DEBOUNCE_DURATION {
-                    process = false;
-                    //info!("Ignoring duplicate event");
-                }
+            if let Some(last_event) = last_event
+                && last_event.elapsed().as_secs() < SLEEP_DEBOUNCE_DURATION
+            {
+                process = false;
+                //info!("Ignoring duplicate event");
             }
 
             if process {

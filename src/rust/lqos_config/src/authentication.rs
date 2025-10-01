@@ -91,11 +91,8 @@ impl WebUsers {
 
     fn save_to_disk(&self) -> Result<(), AuthenticationError> {
         let path = Self::path()?;
-        let new_contents = toml_edit::ser::to_string(&self);
-        if let Err(e) = new_contents {
-            return Err(AuthenticationError::SerializationError(e));
-        }
-        let new_contents = new_contents.unwrap();
+        let new_contents = toml_edit::ser::to_string(&self)
+            .map_err(AuthenticationError::SerializationError)?;
         if path.exists() && remove_file(&path).is_err() {
             error!("Unable to delete web users file");
             return Err(AuthenticationError::UnableToDelete);
@@ -261,24 +258,46 @@ impl WebUsers {
     }
 }
 
+/// Errors that can occur while managing web-UI authentication.
+///
+/// This enum groups failures encountered by helpers in this module while
+/// interacting with `lqusers.toml` and related configuration, including:
+/// - Resolving the LibreQoS config directory via `crate::load_config`.
+/// - Serializing/deserializing user data with `toml_edit`.
+/// - Reading, writing, or deleting the `lqusers.toml` file on disk.
+/// - Looking up users, validating credentials, and resolving tokens.
+///
+/// Each variant implements a concise display message via `thiserror::Error`
+/// and is suitable for logging or bubbling up to higher layers.
 #[derive(Error, Debug)]
 pub enum AuthenticationError {
+    /// Failed to load the main configuration (`/etc/lqos.conf`) to
+    /// resolve the LibreQoS directory path.
     #[error("Unable to load /etc/lqos.conf")]
     UnableToLoadEtcLqos,
+    /// Failed to serialize [`WebUsers`] to TOML before writing
+    /// `lqusers.toml` to disk.
     #[error("Unable to serialize to TOML")]
     SerializationError(toml_edit::ser::Error),
+    /// Failed to remove an existing `lqusers.toml` prior to rewriting it.
     #[error("Unable to remove existing web users file")]
     UnableToDelete,
+    /// Failed to create or write `lqusers.toml` (e.g., permissions or IO).
     #[error("Unable to open lqusers.toml for writing. Check permissions?")]
     UnableToWrite,
+    /// Failed to read `lqusers.toml` from disk.
     #[error("Unable to read lqusers.toml")]
     UnableToRead,
+    /// Failed to parse `lqusers.toml` contents as valid TOML.
     #[error("Unable to parse lqusers.toml")]
     UnableToParse,
+    /// Attempted to remove or reference a user that does not exist.
     #[error("User not found")]
     UserNotFound,
+    /// Username/password did not match (and anonymous read-only is disabled).
     #[error("Invalid Login")]
     InvalidLogin,
+    /// Provided token did not match any user (and anonymous read-only is disabled).
     #[error("Invalid User Token")]
     InvalidToken,
 }

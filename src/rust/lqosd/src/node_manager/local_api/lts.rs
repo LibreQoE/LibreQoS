@@ -70,12 +70,15 @@ pub async fn lts_trial_signup(details: Json<LicenseKey>) -> StatusCode {
         StatusCode::INTERNAL_SERVER_ERROR
     } else {
         info!("Free trial request succeeded, license key: {}", license_key);
-        let mut cfg = load_config().unwrap().deref().clone();
+        let mut cfg = load_config()
+            .expect("Unable to load LibreQoS config")
+            .deref()
+            .clone();
         cfg.long_term_stats.gather_stats = true;
         cfg.long_term_stats.license_key = Some(license_key);
         bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(cfg))])
             .await
-            .unwrap();
+            .expect("Unable to update lqosd config");
         info!("LQOSD configuration updated with new license key.");
         // Best-effort: ensure the bundled lqos_api also reloads to pick up the new license
         // Ignore errors if systemctl isn't present or permission is denied.

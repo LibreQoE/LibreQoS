@@ -94,13 +94,13 @@ impl Caches {
             data.len()
         );
         let deserialized = serde_cbor::from_slice(&data);
-        drop(cache);
-        if let Err(e) = deserialized {
-            warn!("Failed to deserialize cache {tag:?}: {:?}", e);
+        let Ok(deserialized) = deserialized else {
+            drop(cache);
+            warn!("Failed to deserialize cache {tag:?}");
             return None;
-        }
+        };
         info!("Cache deserialized for {} seconds: {:?}", seconds, tag);
-        Some(deserialized.unwrap())
+        Some(deserialized)
     }
 }
 

@@ -10,7 +10,6 @@ use crate::{
     stats::HIGH_WATERMARK,
     throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map},
 };
-use allocative_derive::Allocative;
 use fxhash::FxHashMap;
 use lqos_bakery::BakeryCommands;
 use lqos_bus::TcHandle;
@@ -232,7 +231,7 @@ impl ThroughputTracker {
                             let mut add = true;
 
                             if config.queues.lazy_threshold_bytes.is_some() {
-                                let threshold = config.queues.lazy_threshold_bytes.unwrap();
+                                let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
                                 let total_bytes: u64 = counts
                                     .iter()
                                     .map(|c| c.download_bytes + c.upload_bytes)

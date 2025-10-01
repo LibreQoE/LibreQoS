@@ -15,7 +15,10 @@ pub struct CircuitCount {
 pub async fn get_circuit_count() -> Json<CircuitCount> {
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
 
-    let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
+    let Ok(time_since_boot) = time_since_boot() else {
+        return Json(CircuitCount { count: 0, configured_count: 0 });
+    };
+    let now = Duration::from(time_since_boot).as_nanos() as u64;
 
     // Collect unique circuit IDs from active traffic
     let active_circuits: HashSet<String> = THROUGHPUT_TRACKER

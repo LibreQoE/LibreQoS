@@ -37,7 +37,7 @@ pub(crate) fn diff_circuits<'a>(
 
     // Find any circuits that have been removed from `new_circuits`, but were in `old_circuits`
     let mut removed_circuits = Vec::new();
-    for (circuit_hash, _) in old_circuits {
+    for circuit_hash in old_circuits.keys() {
         if !new_circuits.contains_key(circuit_hash) {
             removed_circuits.push(*circuit_hash);
         }
@@ -46,11 +46,10 @@ pub(crate) fn diff_circuits<'a>(
     // Find any circuits that have changed in `new_circuits` compared to `old_circuits`
     let mut updated_circuits = Vec::new();
     for (circuit_hash, old_cmd) in old_circuits {
-        if let Some(new_cmd) = new_circuits.get(circuit_hash) {
-            if has_circuit_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
+        if let Some(new_cmd) = new_circuits.get(circuit_hash)
+            && has_circuit_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
                 updated_circuits.push(*new_cmd);
             }
-        }
     }
 
     // If there are any changes, return them

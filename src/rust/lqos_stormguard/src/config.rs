@@ -35,25 +35,6 @@ impl StormguardConfig {
     pub fn is_empty(&self) -> bool {
         self.sites.is_empty()
     }
-
-    pub fn refresh_sites(&mut self) {
-        let Ok(config) = lqos_config::load_config() else {
-            debug!("Unable to reload configuration to refresh StormGuard sites.");
-            return;
-        };
-        let Some(sg_config) = &config.stormguard else {
-            debug!("StormGuard is not enabled in the configuration.");
-            return;
-        };
-
-        // Clear existing stats
-        {
-            let mut lock = STORMGUARD_STATS.lock();
-            lock.clear();
-        }
-        let new_sites = get_sites_from_queueing_structure(sg_config);
-        self.sites = new_sites;
-    }
 }
 
 pub fn configure() -> anyhow::Result<StormguardConfig> {

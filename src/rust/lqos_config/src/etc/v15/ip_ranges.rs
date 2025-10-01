@@ -30,42 +30,74 @@ impl Default for IpRanges {
 
 impl IpRanges {
     /// Maps the ignored IP ranges to an LPM table.
-    pub fn ignored_network_table(&self) -> IpNetworkTable<bool> {
+    pub fn ignored_network_table(&self) -> Result<IpNetworkTable<bool>, IpRangeError> {
         let mut ignored = IpNetworkTable::new();
         for excluded_ip in self.ignore_subnets.iter() {
             let split: Vec<_> = excluded_ip.split('/').collect();
             if split[0].contains(':') {
                 // It's IPv6
-                let ip_network: Ipv6Addr = split[0].parse().unwrap();
-                let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
+                let ip_network: Ipv6Addr = split[0].parse()
+                    .map_err(|e| IpRangeError::IpParseError { e: Box::new(e) })?;
+                let ip = IpNetwork::new(
+                    ip_network,
+                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?
+                ).map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
                 ignored.insert(ip, true);
             } else {
                 // It's IPv4
-                let ip_network: Ipv4Addr = split[0].parse().unwrap();
-                let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
+                let ip_network: Ipv4Addr = split[0]
+                    .parse()
+                    .map_err(|e| IpRangeError::IpParseError { e: Box::new(e) })?;
+                let ip = IpNetwork::new(
+                    ip_network,
+                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?,
+                )
+                .map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
                 ignored.insert(ip, true);
             }
         }
-        ignored
+        Ok(ignored)
     }
 
     /// Maps the allowed IP ranges to an LPM table.
-    pub fn allowed_network_table(&self) -> IpNetworkTable<bool> {
+    pub fn allowed_network_table(&self) -> Result<IpNetworkTable<bool>, IpRangeError> {
         let mut allowed = IpNetworkTable::new();
         for allowed_ip in self.allow_subnets.iter() {
             let split: Vec<_> = allowed_ip.split('/').collect();
             if split[0].contains(':') {
                 // It's IPv6
-                let ip_network: Ipv6Addr = split[0].parse().unwrap();
-                let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
+                let ip_network: Ipv6Addr = split[0]
+                    .parse()
+                    .map_err(|e| IpRangeError::IpParseError { e: Box::new(e) })?;
+                let ip = IpNetwork::new(
+                    ip_network,
+                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?,
+                )
+                .map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
                 allowed.insert(ip, true);
             } else {
                 // It's IPv4
-                let ip_network: Ipv4Addr = split[0].parse().unwrap();
-                let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
+                let ip_network: Ipv4Addr = split[0]
+                    .parse()
+                    .map_err(|e| IpRangeError::IpParseError { e: Box::new(e) })?;
+                let ip = IpNetwork::new(
+                    ip_network,
+                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?,
+                )
+                .map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
                 allowed.insert(ip, true);
             }
         }
-        allowed
+        Ok(allowed)
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum IpRangeError {
+    #[error("Unable to parse IP range: {e:?}")]
+    IpParseError { e: Box<dyn std::error::Error> },
+    #[error("Invalid network: {e:?}")]
+    InvalidNetwork { e: Box<dyn std::error::Error> },
+    #[error("Invalid netmask")]
+    InvalidNetmask
 }

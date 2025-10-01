@@ -278,7 +278,7 @@ fn recurse_node(
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
         rtts: HashSet::new(),
-        node_type: json.get("type").map(|v| v.as_str().unwrap().to_string()),
+        node_type: json.get("type").map(|v| v.as_str().unwrap_or_default().to_string()),
     };
 
     if node.name != "children" {
@@ -288,10 +288,11 @@ fn recurse_node(
     // Recurse children
     for (key, value) in json.iter() {
         let key_str = key.as_str();
-        if key_str != "uploadBandwidthMbps" && key_str != "downloadBandwidthMbps" {
-            if let Value::Object(value) = value {
-                recurse_node(nodes, key, value, &parents, my_id);
-            }
+        if key_str != "uploadBandwidthMbps"
+            && key_str != "downloadBandwidthMbps"
+            && let Value::Object(value) = value
+        {
+            recurse_node(nodes, key, value, &parents, my_id);
         }
     }
 }

@@ -128,6 +128,7 @@ src/bin/dashboards
 /src/geo2.bin
 src/bin/static2
 src/bin/static2/flags
+src/bin/lqos_api
 
 /src/graph.dot
 /src/graph.png

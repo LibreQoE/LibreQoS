@@ -9,12 +9,10 @@ pub struct QueueNetwork {
 
 impl QueueNetwork {
     pub fn path() -> Result<PathBuf, QueueStructureError> {
-        let cfg = lqos_config::load_config();
-        if cfg.is_err() {
+        let Ok(cfg) = lqos_config::load_config() else {
             error!("unable to read /etc/lqos.conf");
             return Err(QueueStructureError::LqosConf);
-        }
-        let cfg = cfg.unwrap();
+        };
         let base_path = Path::new(&cfg.lqos_directory);
         Ok(base_path.join("queuingStructure.json"))
     }
