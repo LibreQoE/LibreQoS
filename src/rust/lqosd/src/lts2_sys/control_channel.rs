@@ -167,7 +167,7 @@ async fn persistent_connection(
                         match command {
                             Some(ConnectionCommand::SubmitChunks { serial, chunks }) => {
                                 if !permitted {
-                                    warn!("Not permitted to send chunks yet");
+                                    info!("Not permitted to send chunks yet");
                                     continue 'message_pump;
                                 }
                                 let n_chunks = chunks.len();
