@@ -146,6 +146,52 @@ fn main() {
 }
 
 fn finalize(ui: &mut cursive::Cursive) {
+    // If we cannot load the config but a file exists, warn the user and
+    // take a backup before proceeding to create a new config.
+    let config_path = Path::new("/etc/lqos.conf");
+    let load_result = lqos_config::load_config();
+    if load_result.is_err() && config_path.exists() {
+        let backup_path = "/etc/lqos.conf.setupbackup";
+        let backup_result = std::fs::copy(config_path, backup_path);
+
+        let msg = match backup_result {
+            Ok(_) => format!(
+                "An existing configuration file was found at /etc/lqos.conf,\n\
+but it could not be read or parsed.\n\n\
+A backup has been saved to: {}\n\n\
+Press Continue to create a new configuration using defaults,\n\
+or Cancel to exit and investigate.",
+                backup_path
+            ),
+            Err(e) => format!(
+                "An existing configuration file was found at /etc/lqos.conf,\n\
+but it could not be read or parsed.\n\n\
+Attempted to back it up, but failed: {:?}\n\n\
+Press Continue to create a new configuration using defaults,\n\
+or Cancel to exit and investigate.",
+                e
+            ),
+        };
+
+        ui.add_layer(
+            Dialog::around(TextView::new(msg))
+                .title("Existing Config Unreadable")
+                .button("Continue", |s| {
+                    s.pop_layer();
+                    continue_finalize(s);
+                })
+                .button("Cancel", |s| {
+                    s.pop_layer();
+                }),
+        );
+        return;
+    }
+
+    // Otherwise, proceed to saving normally.
+    continue_finalize(ui);
+}
+
+fn continue_finalize(ui: &mut cursive::Cursive) {
     let mut event_log = Vec::new();
 
     // Update/Create the config file.
@@ -153,6 +199,22 @@ fn finalize(ui: &mut cursive::Cursive) {
         event_log.push("Loaded existing configuration".to_string());
         (*config).clone()
     } else {
+        // If the file exists but couldn't be read, ensure we also log that a
+        // backup was attempted (final safeguard; may already have been done
+        // before showing the warning dialog).
+        if Path::new("/etc/lqos.conf").exists() {
+            let backup_path = "/etc/lqos.conf.setupbackup";
+            match std::fs::copy("/etc/lqos.conf", backup_path) {
+                Ok(_) => event_log.push(format!(
+                    "Existing /etc/lqos.conf could not be loaded. Backup saved to {}.",
+                    backup_path
+                )),
+                Err(e) => event_log.push(format!(
+                    "Existing /etc/lqos.conf could not be loaded. Backup attempt failed: {:?}.",
+                    e
+                )),
+            }
+        }
         event_log.push("Creating new configuration".to_string());
         lqos_config::Config::default()
     };
