@@ -124,11 +124,11 @@ impl FileWatcher {
             // A change event has arrived
             // Are we taking a short break to avoid duplicates?
             let mut process = true;
-            if let Some(last_event) = last_event {
-                if last_event.elapsed().as_secs() < SLEEP_DEBOUNCE_DURATION {
-                    process = false;
-                    //info!("Ignoring duplicate event");
-                }
+            if let Some(last_event) = last_event
+                && last_event.elapsed().as_secs() < SLEEP_DEBOUNCE_DURATION
+            {
+                process = false;
+                //info!("Ignoring duplicate event");
             }
 
             if process {

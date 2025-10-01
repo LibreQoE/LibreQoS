@@ -288,10 +288,11 @@ fn recurse_node(
     // Recurse children
     for (key, value) in json.iter() {
         let key_str = key.as_str();
-        if key_str != "uploadBandwidthMbps" && key_str != "downloadBandwidthMbps" {
-            if let Value::Object(value) = value {
-                recurse_node(nodes, key, value, &parents, my_id);
-            }
+        if key_str != "uploadBandwidthMbps"
+            && key_str != "downloadBandwidthMbps"
+            && let Value::Object(value) = value
+        {
+            recurse_node(nodes, key, value, &parents, my_id);
         }
     }
 }
