@@ -233,9 +233,9 @@ fn handle_commit_batch(
 
     // Check if we should do a full reload based on the number of circuit changes
     if let diff::CircuitDiffResult::CircuitsChanged {
-        newly_added,
-        removed_circuits,
-        updated_circuits,
+        newly_added: _,
+        removed_circuits: _,
+        updated_circuits: _,
     } = &circuit_change_mode
     {
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);

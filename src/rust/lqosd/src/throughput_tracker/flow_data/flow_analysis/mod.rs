@@ -64,7 +64,7 @@ impl FlowAnalysisSystem {
 pub fn setup_flow_analysis() -> anyhow::Result<()> {
     // This is locking the table, which triggers lazy-loading of the
     // data. It's not actually doing nothing.
-    ANALYSIS.asn_table.lock();
+    let _ = ANALYSIS.asn_table.lock();
     Ok(())
 }
 

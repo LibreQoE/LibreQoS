@@ -17,8 +17,6 @@ mod datalog;
 mod queue_structure;
 mod site_state;
 
-use datalog::LogCommand;
-
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 

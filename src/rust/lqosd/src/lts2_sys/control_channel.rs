@@ -830,10 +830,10 @@ async fn circuit_snapshot_streaming(
         v4: &[(std::net::Ipv4Addr, u32)],
         v6: &[(std::net::Ipv6Addr, u32)],
     ) -> Option<std::net::IpAddr> {
-        if let Some((ip, plen)) = v4.iter().find(|(_, p)| *p == 32) {
+        if let Some((ip, ..)) = v4.iter().find(|(_, p)| *p == 32) {
             return Some(std::net::IpAddr::V4(*ip));
         }
-        if let Some((ip, plen)) = v6.iter().find(|(_, p)| *p == 128) {
+        if let Some((ip, ..)) = v6.iter().find(|(_, p)| *p == 128) {
             return Some(std::net::IpAddr::V6(*ip));
         }
         None
@@ -885,9 +885,6 @@ async fn circuit_snapshot_streaming(
     }
 
     // Walk raw throughput data and fold into devices of this circuit
-    let tp_cycle = crate::throughput_tracker::THROUGHPUT_TRACKER
-        .cycle
-        .load(std::sync::atomic::Ordering::Relaxed);
     {
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
         for (xdp_ip, te) in raw.iter() {
@@ -974,7 +971,7 @@ async fn circuit_snapshot_streaming(
         let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        for (key, (local, analysis)) in all_flows.flow_data.iter() {
+        for (key, (local, ..)) in all_flows.flow_data.iter() {
             if local.last_seen < five_minutes_ago { continue; }
             // Identify if this flow belongs to our circuit via local or remote mapping
             use std::net::IpAddr;

@@ -53,18 +53,6 @@ pub fn is_api_available() -> bool {
     now.saturating_sub(last) < 300
 }
 
-/// Checks if the ChatBot is available.
-///
-/// Returns `true` if the ChatBot has been seen within the last 5 minutes.
-pub fn is_chatbot_available() -> bool {
-    // If the ChatBot has called in within the last 5 minutes, consider it available
-    let Ok(now) = unix_now() else {
-        return false;
-    };
-    let last = CHATBOT_LAST_SEEN.load(Ordering::Relaxed);
-    now.saturating_sub(last) < 300
-}
-
 /// Checks if the Scheduler is available.
 ///
 /// Returns `true` if the Scheduler has been seen within the last 5 minutes.
