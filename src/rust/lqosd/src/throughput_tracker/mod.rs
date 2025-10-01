@@ -156,9 +156,7 @@ fn throughput_task(
 
         // Formerly a "spawn blocking" blob
         {
-            let Ok(mut net_json_calc) = NETWORK_JSON.write() else {
-                continue;
-            };
+            let mut net_json_calc = NETWORK_JSON.write();
             timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();

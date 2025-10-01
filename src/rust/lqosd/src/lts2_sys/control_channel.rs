@@ -1062,9 +1062,7 @@ async fn tree_snapshot_streaming(
     }
 
     // Use the same data source as local_api::network_tree
-    let Ok(net_json) = crate::shaped_devices_tracker::NETWORK_JSON.read() else {
-        anyhow::bail!("RwLock Poisoning");
-    };
+    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
     let result: Vec<(usize, LiveNetworkTransport)> = net_json
         .get_nodes_when_ready()
         .iter()

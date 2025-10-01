@@ -24,9 +24,7 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
         return;
     }
     let capacities: Vec<NodeCapacity> = {
-        let Ok(net_json) = NETWORK_JSON.read() else {
-            return;
-        };
+        let net_json = NETWORK_JSON.read();
         net_json
             .get_nodes_when_ready()
             .iter()

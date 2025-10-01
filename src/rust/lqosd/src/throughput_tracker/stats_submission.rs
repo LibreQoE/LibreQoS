@@ -428,10 +428,7 @@ pub(crate) fn submit_throughput_stats(
 
         // Network tree stats
         let tree = {
-            let Ok(reader) = NETWORK_JSON.read() else {
-                warn!("Unable to access NETWORK JSON - no stats submission this time");
-                return;
-            };
+            let reader = NETWORK_JSON.read();
             reader.get_nodes_when_ready().clone()
         };
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();

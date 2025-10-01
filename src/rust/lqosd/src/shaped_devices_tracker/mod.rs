@@ -26,9 +26,7 @@ fn load_shaped_devices() {
     if let Ok(new_file) = shaped_devices {
         debug!("ShapedDevices.csv loaded");
         SHAPED_DEVICES.store(Arc::new(new_file));
-        let Ok(nj) = NETWORK_JSON.read() else {
-            return;
-        };
+        let nj = NETWORK_JSON.read();
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
     } else {
         warn!(
@@ -73,9 +71,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 }
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
-    let Ok(net_json) = NETWORK_JSON.read() else {
-        return BusResponse::Fail(String::from("Cannot read NETWORK_JSON"));
-    };
+    let net_json = NETWORK_JSON.read();
     if let Some(parent) = net_json.get_cloned_entry_by_index(parent_idx) {
         let mut nodes = vec![(parent_idx, parent)];
         nodes.extend_from_slice(&net_json.get_cloned_children(parent_idx));
@@ -86,9 +82,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 }
 
 pub fn get_full_network_map() -> BusResponse {
-    let Ok(nj) = NETWORK_JSON.read() else {
-        return BusResponse::Fail(String::from("Unable to access NETWORK_JSON"));
-    };
+    let nj = NETWORK_JSON.read();
     let data = {
         nj
             .get_nodes_when_ready()
@@ -102,9 +96,7 @@ pub fn get_full_network_map() -> BusResponse {
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
-    let Ok(net_json) = NETWORK_JSON.read() else {
-        return BusResponse::Fail(String::from("Unable to access NETWORK_JSON"));
-    };
+    let net_json = NETWORK_JSON.read();
     if let Some(parent) = net_json.get_cloned_entry_by_index(0) {
         let mut nodes = vec![(0, parent)];
         nodes.extend_from_slice(&net_json.get_cloned_children(0));
@@ -173,9 +165,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
 
 pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     let mut result = Vec::new();
-    let Ok(reader) = NETWORK_JSON.read() else {
-        return BusResponse::Fail(String::from("Unable to access NETWORK_JSON"));
-    };
+    let reader = NETWORK_JSON.read();
     nodes.iter().for_each(|id| {
         if let Some(node) = reader.get_nodes_when_ready().get(*id) {
             result.push((*id, node.name.clone()));
@@ -185,9 +175,7 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
-    let Ok(reader) = NETWORK_JSON.read() else {
-        return BusResponse::Fail(String::from("Unable to access NETWORK_JSON"));
-    };
+    let reader = NETWORK_JSON.read();
     if let Some(index) = reader.get_index_for_name(circuit_id) {
         // Reverse the scanning order and skip the last entry (the parent)
         let mut result = Vec::new();
