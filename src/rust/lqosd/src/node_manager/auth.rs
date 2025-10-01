@@ -1,6 +1,6 @@
 //! Provides authentication for the Node Manager.
 //! This is designed to be broadly compatible with the original
-//! cookie-based system, but now uses an Axum layer to be largely
+//! cookie-based system but now uses an Axum layer to be largely
 //! invisible.
 
 use axum::Json;
@@ -66,9 +66,9 @@ pub async fn auth_layer(
     let mut lock = WEB_USERS.lock().await;
     if lock.is_none() {
         // No lock - let's see if there's a file to use?
-        if WebUsers::does_users_file_exist().unwrap() {
+        if WebUsers::does_users_file_exist().expect("Error checking if the users file exists") {
             // It exists - we load it
-            let users = WebUsers::load_or_create().unwrap();
+            let users = WebUsers::load_or_create().expect("Unable to load users file");
             *lock = Some(users);
         } else {
             // No users file - redirect to first run
@@ -84,7 +84,7 @@ pub async fn auth_layer(
                 Ok(next.run(req).await)
             }
             LoginResult::Denied => {
-                let users = WebUsers::load_or_create().unwrap();
+                let users = WebUsers::load_or_create().expect("Could not load users file");
                 if users.do_we_allow_anonymous() {
                     req.extensions_mut().insert(LoginResult::ReadOnly);
                     Ok(next.run(req).await)
@@ -134,11 +134,11 @@ pub async fn first_user(
     jar: CookieJar,
     Json(new_user): Json<FirstUser>,
 ) -> (CookieJar, StatusCode) {
-    let mut users = WebUsers::load_or_create().unwrap();
-    users.allow_anonymous(new_user.allow_anonymous).unwrap();
+    let mut users = WebUsers::load_or_create().expect("Could not load users file");
+    users.allow_anonymous(new_user.allow_anonymous).expect("Unable to set property");
     let token = users
         .add_or_update_user(&new_user.username, &new_user.password, UserRole::Admin)
-        .unwrap();
+        .expect("Unable to add or update user");
     let mut lock = WEB_USERS.lock().await;
     *lock = Some(users);
     (jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)

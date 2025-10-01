@@ -1,52 +1,30 @@
-<!-- Embedded Chatbot (Libby) with SSO helper -->
-<div class="card mb-2">
-  <div class="card-body d-flex align-items-center justify-content-between py-2">
-    <div>
-      <i class="fa fa-comments me-2 text-secondary"></i>
-      <strong>Ask Libby</strong>
-      <span class="text-secondary">— embedded chatbot</span>
-    </div>
-    <a id="openNew" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
-      <i class="fa fa-up-right-from-square me-1"></i>Open in new tab
-    </a>
+<style>
+  .chat-wrap { max-width: 900px; margin: 0 auto; }
+  .chat-log { min-height: 300px; max-height: 65vh; overflow-y: auto; padding: 16px; }
+  .msg { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-end; }
+  .msg.me { justify-content: flex-end; }
+  .bubble { padding: 10px 12px; border-radius: 12px; max-width: 75%; }
+  .me .bubble { background: var(--bs-primary); color: white; border-bottom-right-radius: 4px; }
+  .bot .bubble { background: #2c2f36; color: #eaeaea; border-bottom-left-radius: 4px; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; }
+  .bot .avatar { background: transparent; }
+  .bot .meta { font-size: 0.8rem; opacity: 0.75; margin-bottom: 2px; }
+  .reason { font-style: italic; font-size: 0.9rem; opacity: 0.8; white-space: pre-wrap; }
+  .content { white-space: pre-wrap; }
+  .content h1 { font-size: 1.35rem; font-weight: 700; margin: 0.4rem 0; }
+  .content h2 { font-size: 1.25rem; font-weight: 700; margin: 0.35rem 0; }
+  .content h3 { font-size: 1.15rem; font-weight: 700; margin: 0.3rem 0; }
+  .composer { position: sticky; bottom: 0; background: var(--bs-body-bg); padding: 8px; }
+  .muted { color: #9aa0a6; }
+  .card-elev { border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
+</style>
+
+<div class="container mt-3 chat-wrap">
+  <h4 class="mb-3"><img src="libby.png" class="me-2" style="width:28px;height:28px;">Ask Libby</h4>
+  <div id="chatLog" class="chat-log card-elev mb-2"></div>
+  <div class="composer input-group">
+    <input id="chatInput" type="text" class="form-control" placeholder="Ask something..." />
+    <button id="sendBtn" class="btn btn-primary"><i class="fa fa-paper-plane"></i></button>
   </div>
-  <div id="notice" class="alert alert-info d-none m-3" role="alert"></div>
 </div>
-
-<div class="ratio ratio-16x9" style="min-height: 70vh;">
-  <iframe id="chatFrame" src="about:blank" style="width:100%; height:100%; border:0;" title="LibreQoS Chatbot"></iframe>
-  </div>
-
-<script>
-(function(){
-  const proto = window.location.protocol;
-  const host = window.location.hostname;
-  const chatRoot = `${proto}//${host}:9121`;
-  const chatUrl = `${chatRoot}/`;
-  const f = document.getElementById('chatFrame');
-  const btn = document.getElementById('openNew');
-  const notice = document.getElementById('notice');
-  btn.href = chatUrl;
-
-  // Try to acquire User-Token via node manager helper; if present, SSO into chatbot
-  fetch('/local-api/chatbot_sso_token', { credentials: 'include' })
-    .then(async (r) => {
-      if(!r.ok) throw new Error('no token');
-      const j = await r.json();
-      if(j && j.token){
-        const sso = `${chatRoot}/sso?token=${encodeURIComponent(j.token)}&redirect=${encodeURIComponent('/')}`;
-        f.src = sso;
-      } else {
-        f.src = chatUrl;
-        notice.classList.remove('d-none');
-        notice.innerText = 'Single sign-on unavailable; please sign in to Libby.';
-      }
-    })
-    .catch(() => {
-      f.src = chatUrl;
-      notice.classList.remove('d-none');
-      notice.innerText = 'Single sign-on unavailable; please sign in to Libby.';
-    });
-})();
-</script>
-
+<script src="chatbot.js"></script>

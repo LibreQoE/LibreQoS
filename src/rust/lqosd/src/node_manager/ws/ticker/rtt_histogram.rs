@@ -18,11 +18,17 @@ pub async fn rtt_histo(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::RttHistogram;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("RttHistogram: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("RttHistogram: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::RttHistogram(data) = reply {
             let rtt_histo = json!(

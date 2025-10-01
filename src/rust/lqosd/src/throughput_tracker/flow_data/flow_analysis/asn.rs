@@ -59,13 +59,13 @@ impl GeoTable {
         )
     }
 
-    fn file_path() -> std::path::PathBuf {
-        Path::new(&lqos_config::load_config().unwrap().lqos_directory).join(Self::FILENAME)
+    fn file_path() -> anyhow::Result<std::path::PathBuf> {
+        Ok(Path::new(&lqos_config::load_config()?.lqos_directory).join(Self::FILENAME))
     }
 
     fn download() -> anyhow::Result<()> {
         tracing::info!("Downloading ASN-IP Table");
-        let file_path = Self::file_path();
+        let file_path = Self::file_path()?;
         let url = "https://insight.libreqos.com/geo2.bin";
         let response = reqwest::blocking::get(url)?;
         let content = response.bytes()?;
@@ -76,7 +76,7 @@ impl GeoTable {
     }
 
     fn is_file_uptodate() -> anyhow::Result<bool> {
-        let bytes = std::fs::read(&Self::file_path())?; // Vec<u8>
+        let bytes = std::fs::read(&Self::file_path()?)?; // Vec<u8>
         let hash = sha256::digest(&bytes);
 
         // Using blocking reqwest, retrieve the checksum as a string from https://insight.libreqos.com/geo/checksum
@@ -90,7 +90,7 @@ impl GeoTable {
     }
 
     pub fn load() -> anyhow::Result<Self> {
-        let path = Self::file_path();
+        let path = Self::file_path()?;
         if !path.exists() {
             info!("geo2.bin not found - trying to download it");
             Self::download()?;

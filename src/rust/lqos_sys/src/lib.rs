@@ -6,6 +6,8 @@
 //! The `build.rs` script compiles the C code found in `src/bpf`
 //! and statically embeds the result in this crate.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
 mod bifrost_maps;
 mod bpf_iterator;
 /// Provides direct access to LibBPF functionality, as exposed by the

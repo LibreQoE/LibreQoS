@@ -27,7 +27,7 @@ impl HeimdallWatching {
         let now = time_since_boot()?;
         let expire = Duration::from(now) + Duration::from_secs(EXPIRE_WATCHES_SECS);
 
-        let mut map = BpfMap::<XdpIpAddress, u32>::from_path(HEIMDALL_WATCH_PATH).unwrap();
+        let mut map = BpfMap::<XdpIpAddress, u32>::from_path(HEIMDALL_WATCH_PATH)?;
         let _ = map.insert(&mut ip, &mut 1);
 
         Ok(Self {
@@ -41,8 +41,11 @@ impl HeimdallWatching {
             "Heimdall stopped watching {}",
             self.ip_address.as_ip().to_string()
         );
-        let mut map = BpfMap::<XdpIpAddress, u32>::from_path(HEIMDALL_WATCH_PATH).unwrap();
-        map.delete(&mut self.ip_address).unwrap();
+        let Ok(mut map) = BpfMap::<XdpIpAddress, u32>::from_path(HEIMDALL_WATCH_PATH) else {
+            info!("Unable to access Heimdall map");
+            return;
+        };
+        let _ = map.delete(&mut self.ip_address);
     }
 }
 

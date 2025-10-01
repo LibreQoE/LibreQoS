@@ -8,7 +8,8 @@ use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn run_sanity_check() -> Json<SanityChecks> {
-    let mut status = run_sanity_checks(false).unwrap();
+    let mut status = run_sanity_checks(false)
+        .expect("Failed to run sanity checks");
     status.results.sort_by(|a, b| a.success.cmp(&b.success));
     Json(status)
 }
@@ -22,7 +23,7 @@ pub struct SupportMetadata {
 pub async fn gather_support_data(info: Json<SupportMetadata>) -> impl IntoResponse {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("SystemTime is before UNIX_EPOCH")
         .as_secs();
     let filename = format!("libreqos_{}.support", timestamp);
     let lts_key = if let Ok(cfg) = load_config() {
@@ -33,10 +34,13 @@ pub async fn gather_support_data(info: Json<SupportMetadata>) -> impl IntoRespon
     } else {
         "None".to_string()
     };
-    let dump =
-        lqos_support_tool::gather_all_support_info(&info.name, &info.comment, &lts_key).unwrap();
+    let dump = lqos_support_tool::gather_all_support_info(&info.name, &info.comment, &lts_key)
+        .expect("Failed to gather support information");
 
-    let body = Body::from(dump.serialize_and_compress().unwrap());
+    let body = Body::from(
+        dump.serialize_and_compress()
+            .expect("Failed to serialize/compress support bundle"),
+    );
     let headers = [
         (header::CONTENT_TYPE, "application/octet-stream"),
         (

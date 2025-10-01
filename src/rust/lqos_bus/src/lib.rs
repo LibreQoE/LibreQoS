@@ -12,6 +12,7 @@
 //! object, containing one or more `BusResponse` detail objects.
 //! The session then terminates.
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 mod bus;
 mod ip_stats;

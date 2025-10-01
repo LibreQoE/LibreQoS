@@ -3,33 +3,7 @@ use axum::Json;
 use ip_network::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-fn ipv4_in_prefix(ip: &Ipv4Addr, net: &Ipv4Addr, cidr: u32) -> bool {
-    let cidr = cidr.min(32);
-    if cidr == 0 {
-        return true;
-    }
-    let mask = (!0u32) << (32 - cidr);
-    let ip_u = u32::from(*ip);
-    let net_u = u32::from(*net);
-    (ip_u & mask) == (net_u & mask)
-}
-
-fn ipv6_in_prefix(ip: &Ipv6Addr, net: &Ipv6Addr, cidr: u32) -> bool {
-    let cidr = cidr.min(128);
-    if cidr == 0 {
-        return true;
-    }
-    let ip_u = u128::from_be_bytes(ip.octets());
-    let net_u = u128::from_be_bytes(net.octets());
-    let mask: u128 = if cidr == 128 {
-        !0
-    } else {
-        (!0u128) << (128 - cidr)
-    };
-    (ip_u & mask) == (net_u & mask)
-}
+use std::net::{IpAddr, Ipv4Addr};
 
 fn ipv6_overlap(a: &IpNetwork, b: &IpNetwork) -> bool {
     match (a, b) {
@@ -260,7 +234,7 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
 
     // Fourth pass: Site name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let net_reader = NETWORK_JSON.read().unwrap();
+        let net_reader = NETWORK_JSON.read();
         for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
             if results.len() >= MAX_RESULTS {
                 break;

@@ -57,8 +57,13 @@ mod test {
 
     #[test]
     fn parse_ipv4_single() {
-        let map = IpToMap::new("1.2.3.4", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip: IpAddr = "1.2.3.4".parse().unwrap();
+        let map = IpToMap::new(
+            "1.2.3.4",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        )
+        .expect("IpToMap::new should succeed for valid IPv4 address");
+        let rust_ip: IpAddr = "1.2.3.4".parse().expect("failed to parse IPv4 literal");
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 128);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -67,8 +72,13 @@ mod test {
 
     #[test]
     fn parse_ipv4_subnet() {
-        let map = IpToMap::new("1.2.3.0/24", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip: IpAddr = "1.2.3.0".parse().unwrap();
+        let map = IpToMap::new(
+            "1.2.3.0/24",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        )
+        .expect("IpToMap::new should succeed for valid IPv4 subnet");
+        let rust_ip: IpAddr = "1.2.3.0".parse().expect("failed to parse IPv4 literal");
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 24 + 96);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -77,32 +87,53 @@ mod test {
 
     #[test]
     fn parse_ipv4_invalid_ip() {
-        let map = IpToMap::new("1.2.3.256/24", TcHandle::from_string("1:2").unwrap(), 1);
+        let map = IpToMap::new(
+            "1.2.3.256/24",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        );
         assert!(map.is_err());
     }
 
     #[test]
     fn parse_ipv4_super_invalid_ip() {
-        let map = IpToMap::new("I like sheep", TcHandle::from_string("1:2").unwrap(), 1);
+        let map = IpToMap::new(
+            "I like sheep",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        );
         assert!(map.is_err());
     }
 
     #[test]
     fn parse_ipv4_invalid_cidr() {
-        let map = IpToMap::new("1.2.3.256/33", TcHandle::from_string("1:2").unwrap(), 1);
+        let map = IpToMap::new(
+            "1.2.3.256/33",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        );
         assert!(map.is_err());
     }
 
     #[test]
     fn parse_ipv4_negative_cidr() {
-        let map = IpToMap::new("1.2.3.256/-1", TcHandle::from_string("1:2").unwrap(), 1);
+        let map = IpToMap::new(
+            "1.2.3.256/-1",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        );
         assert!(map.is_err());
     }
 
     #[test]
     fn parse_ipv6_single() {
-        let map = IpToMap::new("dead::beef", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip: IpAddr = "dead::beef".parse().unwrap();
+        let map = IpToMap::new(
+            "dead::beef",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        )
+        .expect("IpToMap::new should succeed for valid IPv6 address");
+        let rust_ip: IpAddr = "dead::beef".parse().expect("failed to parse IPv6 literal");
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 128);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -111,8 +142,13 @@ mod test {
 
     #[test]
     fn parse_ipv6_subnet() {
-        let map = IpToMap::new("dead:beef::/64", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip: IpAddr = "dead:beef::".parse().unwrap();
+        let map = IpToMap::new(
+            "dead:beef::/64",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        )
+        .expect("IpToMap::new should succeed for valid IPv6 subnet");
+        let rust_ip: IpAddr = "dead:beef::".parse().expect("failed to parse IPv6 literal");
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 64);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -121,7 +157,11 @@ mod test {
 
     #[test]
     fn parse_ipv6_invalid_ip() {
-        let map = IpToMap::new("dead:beef", TcHandle::from_string("1:2").unwrap(), 1);
+        let map = IpToMap::new(
+            "dead:beef",
+            TcHandle::from_string("1:2").expect("failed to parse TcHandle '1:2'"),
+            1,
+        );
         assert!(map.is_err());
     }
 }

@@ -3,7 +3,7 @@
 
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::get_username;
-use crate::tool_status::{is_api_available, is_chatbot_available};
+use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
 use axum::http::{HeaderValue, Request, Response, StatusCode};
@@ -67,31 +67,6 @@ const CHAT_LINK_ACTIVE: &str = r#"
     </a>
 </li>"#;
 
-// HTML template for chat link when unavailable (rendered as plain text, no hover highlight)
-const CHAT_LINK_INACTIVE: &str = r#"
-<li class="nav-item">
-    <span class="nav-link no-hover" id="chatLink" title="Ask Libby is disabled. Enable it via the API service.">
-        <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
-    </span>
-    
-</li>"#;
-
-// HTML template for scheduler status when available (without error)
-const SCHEDULER_STATUS_ACTIVE: &str = r#"
-<li class="nav-item">
-    <span class="nav-link text-success">
-        <i class="fa fa-fw fa-centerline fa-check-circle"></i> Scheduler
-    </span>
-</li>"#;
-
-// HTML template for scheduler status when unavailable (without error)
-const SCHEDULER_STATUS_INACTIVE: &str = r#"
-<li class="nav-item">
-    <span class="nav-link text-danger">
-        <i class="fa fa-fw fa-centerline fa-times-circle"></i> Scheduler
-    </span>
-</li>"#;
-
 static GIT_HASH: &str = env!("GIT_HASH");
 
 pub async fn apply_templates(
@@ -103,7 +78,7 @@ pub async fn apply_templates(
         let path = &req.uri().path().to_string();
         path.ends_with(".html")
     };
-    let config = load_config().unwrap();
+    let config = load_config().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::from("Cannot load configuration")))?;
 
     // TODO: Cache this once we're not continually making changes
     let template_text = {
@@ -111,7 +86,7 @@ pub async fn apply_templates(
             .join("bin")
             .join("static2")
             .join("template.html");
-        std::fs::read_to_string(path).unwrap()
+        std::fs::read_to_string(path).expect("Cannot read template html file")
     };
 
     // Update the displayed username
@@ -141,22 +116,25 @@ pub async fn apply_templates(
             }
         }
 
-        // Title
+        // Title and node_id
         let mut title = "LibreQoS Node Manager".to_string();
+        let mut node_id_js = String::new();
         if let Ok(config) = load_config() {
             title = config.node_name.clone();
+            node_id_js = escape_html_attr(&config.node_id);
         }
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
-            js_tf(new_version)
+            js_tf(new_version),
+            node_id_js
         );
 
         let (mut res_parts, res_body) = res.into_parts();
-        let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
+        let bytes = to_bytes(res_body, 1_000_000).await.expect("Cannot read template bytes");
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)
@@ -172,12 +150,10 @@ pub async fn apply_templates(
         };
         let byte_string = byte_string.replace("%%API_LINK%%", api_link);
 
-        // Handle CHAT_LINK placeholder (require service + valid Insight)
-        let chat_link = if is_chatbot_available() && script_has_insight {
-            CHAT_LINK_ACTIVE
-        } else {
-            CHAT_LINK_INACTIVE
-        };
+        // Handle CHAT_LINK placeholder
+        // Libby (chatbot) no longer depends on the local API service being up.
+        // Always show the link to the chatbot page; the page will surface availability.
+        let chat_link = CHAT_LINK_ACTIVE;
         let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
 
         // Replace SCHEDULER_STATUS with a simple placeholder for client-side rendering

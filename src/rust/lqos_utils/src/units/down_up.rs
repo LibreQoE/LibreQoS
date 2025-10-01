@@ -43,7 +43,8 @@ where
         + num_traits::SaturatingSub
         + num_traits::SaturatingMul
         + num_traits::FromPrimitive
-        + num_traits::SaturatingAdd,
+        + num_traits::SaturatingAdd
+        + Default
 {
     /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
@@ -119,8 +120,8 @@ where
     /// that the previous value was bytes.
     pub fn to_bits_from_bytes(&self) -> DownUpOrder<T> {
         DownUpOrder {
-            down: self.down.saturating_mul(&T::from_u32(8).unwrap()),
-            up: self.up.saturating_mul(&T::from_u32(8).unwrap()),
+            down: self.down.saturating_mul(&T::from_u32(8).unwrap_or_default()),
+            up: self.up.saturating_mul(&T::from_u32(8).unwrap_or_default()),
         }
     }
 
@@ -146,11 +147,11 @@ where
     }
 }
 
-impl<T> Into<UpDownOrder<T>> for DownUpOrder<T> {
-    fn into(self) -> UpDownOrder<T> {
+impl<T> From<DownUpOrder<T>> for UpDownOrder<T> {
+    fn from(val: DownUpOrder<T>) -> Self {
         UpDownOrder {
-            up: self.down,
-            down: self.up,
+            up: val.down,
+            down: val.up,
         }
     }
 }
@@ -167,10 +168,11 @@ where
 
 /// Divides two DownUpOrder values, returning a tuple of the results.
 pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, f64) {
-    (
-        left.down as f64 / right.down as f64,
-        left.up as f64 / right.up as f64,
-    )
+    #[inline(always)]
+    fn safe_div(n: u64, d: u64) -> f64 {
+        if d == 0 { 0.0 } else { n as f64 / d as f64 }
+    }
+    (safe_div(left.down, right.down), safe_div(left.up, right.up))
 }
 
 #[cfg(test)]

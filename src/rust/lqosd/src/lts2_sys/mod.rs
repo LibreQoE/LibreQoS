@@ -1,3 +1,5 @@
+//! Provides an interface with Insight/LTS2
+
 use parking_lot::Mutex;
 use std::net::IpAddr;
 pub(crate) mod lts2_client;
@@ -245,7 +247,9 @@ pub fn remote_command_count() -> u64 {
 fn command_callback(buffer: Vec<u8>) {
     let mut lock = COMMANDS.lock();
     lock.clear();
-    let commands: Vec<shared_types::RemoteCommand> = serde_cbor::from_slice(&buffer).unwrap();
+    let Ok(commands) = serde_cbor::from_slice::<Vec<shared_types::RemoteCommand>>(&buffer) else {
+        return;
+    };
     lock.extend(commands);
 }
 

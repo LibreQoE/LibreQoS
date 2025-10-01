@@ -9,6 +9,32 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{info, warn};
 
+#[derive(Debug, Clone, Copy, Allocative)]
+struct AddSiteParams {
+    site_hash: i64,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+    class_minor: u16,
+    download_bandwidth_min: f32,
+    upload_bandwidth_min: f32,
+    download_bandwidth_max: f32,
+    upload_bandwidth_max: f32,
+}
+
+#[derive(Debug, Clone, Copy, Allocative)]
+struct AddCircuitParams {
+    circuit_hash: i64,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+    class_minor: u16,
+    download_bandwidth_min: f32,
+    upload_bandwidth_min: f32,
+    download_bandwidth_max: f32,
+    upload_bandwidth_max: f32,
+    class_major: u16,
+    up_class_major: u16,
+}
+
 /// Execution Mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
 pub enum ExecutionMode {
@@ -21,55 +47,114 @@ pub enum ExecutionMode {
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
+    /// Send this when circuits are seen by the throughput tracker
     OnCircuitActivity {
+        /// All active circuit IDs
         circuit_ids: HashSet<i64>,
     },
+    /// Periodic tick
     Tick,
+    /// Change an existing site's HTB rates live without a rebuild.
+    ///
+    /// Updates the min/ceil rates for both download (ISP-facing) and upload
+    /// (Internet-facing) classes associated with the specified site.
     ChangeSiteSpeedLive {
+        /// Unique identifier for the target site.
         site_hash: i64,
+        /// New minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// New minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// New maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// New maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
     },
+    /// Begin a batch of changes; subsequent commands are queued until commit.
     StartBatch,
+    /// Commit the current batch, diffing and applying queued changes.
     CommitBatch,
+    /// Set up MQ roots and per-queue parents on one or both interfaces.
     MqSetup {
+        /// Total number of MQ queues to create per interface.
         queues_available: usize,
+        /// Offset applied to queue indices on the Internet-facing side
+        /// when operating in on-a-stick configurations.
         stick_offset: usize,
     },
+    /// Add or update a top-level site class pair under the given parents.
     AddSite {
+        /// Unique identifier for the site.
         site_hash: i64,
+        /// Parent class handle on the ISP-facing interface (downlink side).
         parent_class_id: TcHandle,
+        /// Parent class handle on the Internet-facing interface (uplink side).
         up_parent_class_id: TcHandle,
+        /// Minor class ID shared by uplink/downlink site classes.
         class_minor: u16,
+        /// Minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// Minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// Maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// Maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
     },
+    /// Add or update a circuit beneath a site; may add SQM depending on mode.
     AddCircuit {
+        /// Unique identifier for the circuit.
         circuit_hash: i64,
+        /// Parent class handle on the ISP-facing interface (downlink side).
         parent_class_id: TcHandle,
+        /// Parent class handle on the Internet-facing interface (uplink side).
         up_parent_class_id: TcHandle,
+        /// Minor class ID used for both uplink and downlink circuit classes.
         class_minor: u16,
+        /// Minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// Minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// Maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// Maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
+        /// Major class ID (downlink) used when attaching SQM/HTB.
         class_major: u16,
+        /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
     },
+    /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
+        /// If true, log the tc command instead of executing it.
         dry_run: bool,
+        /// Network interface name (e.g., `eth0`) containing the class.
         interface_name: String,
+        /// Fully qualified class identifier (e.g., `1:2`).
         class_id: String,
+        /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
     },
 }
 
 impl BakeryCommands {
+    /// Translate this command into concrete `tc` argument vectors.
+    ///
+    /// Returns a list of `tc` argv arrays in execution order, or `None`
+    /// when the command does not directly emit `tc` operations (e.g.,
+    /// batch control) or when, given `execution_mode` and the current
+    /// configuration (lazy queue settings), no immediate changes are required.
+    ///
+    /// Arguments:
+    /// - `config`: Current loaded configuration used for interfaces, rates and SQM.
+    /// - `execution_mode`: Whether we're building the tree or applying live updates.
+    ///
+    /// Returns:
+    /// - `Some(Vec<Vec<String>>)` where each inner `Vec<String>` is a single
+    ///   `tc` invocation's argument list (without the binary), or `None` if
+    ///   nothing should be executed for this command.
     pub fn to_commands(
         &self,
         config: &Arc<lqos_config::Config>,
@@ -91,14 +176,16 @@ impl BakeryCommands {
                 upload_bandwidth_max,
             } => Self::add_site(
                 config,
-                *site_hash,
-                *parent_class_id,
-                *up_parent_class_id,
-                *class_minor,
-                *download_bandwidth_min,
-                *upload_bandwidth_min,
-                *download_bandwidth_max,
-                *upload_bandwidth_max,
+                AddSiteParams {
+                    site_hash: *site_hash,
+                    parent_class_id: *parent_class_id,
+                    up_parent_class_id: *up_parent_class_id,
+                    class_minor: *class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                },
             ),
             BakeryCommands::AddCircuit {
                 circuit_hash,
@@ -115,16 +202,18 @@ impl BakeryCommands {
             } => Self::add_circuit(
                 execution_mode,
                 config,
-                *circuit_hash,
-                *parent_class_id,
-                *up_parent_class_id,
-                *class_minor,
-                *download_bandwidth_min,
-                *upload_bandwidth_min,
-                *download_bandwidth_max,
-                *upload_bandwidth_max,
-                *class_major,
-                *up_class_major,
+                AddCircuitParams {
+                    circuit_hash: *circuit_hash,
+                    parent_class_id: *parent_class_id,
+                    up_parent_class_id: *up_parent_class_id,
+                    class_minor: *class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                    class_major: *class_major,
+                    up_class_major: *up_class_major,
+                },
             ),
             _ => None,
         }
@@ -402,14 +491,7 @@ impl BakeryCommands {
 
     fn add_site(
         config: &Arc<lqos_config::Config>,
-        _site_hash: i64,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
+        params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
 
@@ -429,19 +511,19 @@ impl BakeryCommands {
             "dev".to_string(),
             config.isp_interface(),
             "parent".to_string(),
-            parent_class_id.as_tc_string(),
+            params.parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{class_minor:x}"),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_min),
+            format_rate_for_tc_f32(params.download_bandwidth_min),
             "ceil".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_max),
+            format_rate_for_tc_f32(params.download_bandwidth_max),
             "prio".to_string(),
             "3".to_string(),
             "quantum".to_string(),
             quantum(
-                download_bandwidth_max as u64,
+                params.download_bandwidth_max as u64,
                 r2q(config.queues.downlink_bandwidth_mbps),
             ),
         ]);
@@ -451,19 +533,19 @@ impl BakeryCommands {
             "dev".to_string(),
             config.internet_interface(),
             "parent".to_string(),
-            up_parent_class_id.as_tc_string(),
+            params.up_parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{class_minor:x}"),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_min),
+            format_rate_for_tc_f32(params.upload_bandwidth_min),
             "ceil".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_max),
+            format_rate_for_tc_f32(params.upload_bandwidth_max),
             "prio".to_string(),
             "3".to_string(),
             "quantum".to_string(),
             quantum(
-                upload_bandwidth_max as u64,
+                params.upload_bandwidth_max as u64,
                 r2q(config.queues.uplink_bandwidth_mbps),
             ),
         ]);
@@ -474,16 +556,7 @@ impl BakeryCommands {
     fn add_circuit(
         execution_mode: ExecutionMode,
         config: &Arc<lqos_config::Config>,
-        _circuit_hash: i64,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-        class_major: u16,
-        up_class_major: u16,
+        params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
         let do_htb;
         let do_sqm;
@@ -551,19 +624,19 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
-                parent_class_id.as_tc_string(),
+                params.parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc_f32(download_bandwidth_min),
+                format_rate_for_tc_f32(params.download_bandwidth_min),
                 "ceil".to_string(),
-                format_rate_for_tc_f32(download_bandwidth_max),
+                format_rate_for_tc_f32(params.download_bandwidth_max),
                 "prio".to_string(),
                 "3".to_string(),
                 "quantum".to_string(),
                 quantum(
-                    download_bandwidth_max as u64,
+                    params.download_bandwidth_max as u64,
                     r2q(config.queues.downlink_bandwidth_mbps),
                 ),
             ]);
@@ -575,9 +648,9 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
-                format!("0x{:x}:0x{:x}", class_major, class_minor),
+                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(download_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(params.download_bandwidth_max, config));
             result.push(sqm_command);
         }
 
@@ -588,19 +661,19 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
-                up_parent_class_id.as_tc_string(),
+                params.up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc_f32(upload_bandwidth_min),
+                format_rate_for_tc_f32(params.upload_bandwidth_min),
                 "ceil".to_string(),
-                format_rate_for_tc_f32(upload_bandwidth_max),
+                format_rate_for_tc_f32(params.upload_bandwidth_max),
                 "prio".to_string(),
                 "3".to_string(),
                 "quantum".to_string(),
                 quantum(
-                    upload_bandwidth_max as u64,
+                    params.upload_bandwidth_max as u64,
                     r2q(config.queues.uplink_bandwidth_mbps),
                 ),
             ]);
@@ -613,15 +686,30 @@ impl BakeryCommands {
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
-                format!("0x{:x}:0x{:x}", up_class_major, class_minor),
+                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(upload_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(params.upload_bandwidth_max, config));
             result.push(sqm_command);
         }
 
         Some(result)
     }
 
+    /// Translate this circuit definition into `tc` deletions to prune it.
+    ///
+    /// Builds the sequence of `tc` argument lists to remove SQM qdiscs and/or
+    /// HTB classes corresponding to this circuit. This only applies when
+    /// `self` is `BakeryCommands::AddCircuit`; otherwise returns `None`.
+    ///
+    /// Behavior depends on `force` and the lazy-queue mode in `config`:
+    /// - When `force` is `true`, both SQM qdiscs and HTB classes are removed.
+    /// - When `force` is `false` and `LazyQueueMode::Htb`, only SQM is pruned.
+    /// - When `force` is `false` and `LazyQueueMode::Full`, both are pruned.
+    /// - If lazy queues are disabled, returns `None` (no pruning to do).
+    ///
+    /// Returns `Some(Vec<Vec<String>>)` of `tc` argv arrays in execution
+    /// order, or `None` if no actions are required or the command is not a
+    /// circuit.
     pub fn to_prune(
         &self,
         config: &Arc<lqos_config::Config>,

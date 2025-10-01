@@ -673,7 +673,10 @@ pub fn get_commands(callback: fn(Vec<u8>)) {
     let commands_to_send = remote_commands::get();
 
     // Serialize the commands to CBOR
-    let cbor = serde_cbor::to_vec(&commands_to_send).unwrap();
+    let Ok(cbor) = serde_cbor::to_vec(&commands_to_send) else {
+        warn!("Unable to deserialize remote commands.");
+        return;
+    };
 
     // Submit via the callback
     callback(cbor);

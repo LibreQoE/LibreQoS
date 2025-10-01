@@ -98,7 +98,10 @@ pub fn start_blackboard() {
                     if part == 0 {
                         board.blobs.insert(tag, blob);
                     } else {
-                        board.blobs.get_mut(&tag).unwrap().extend_from_slice(&blob);
+                        let Some(existing_blob) = board.blobs.get_mut(&tag) else {
+                            continue;
+                        };
+                        existing_blob.extend_from_slice(&blob);
                     }
                 }
                 Err(_) => break,

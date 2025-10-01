@@ -7,7 +7,7 @@ use tokio::time::timeout;
 use tokio::sync::mpsc::error::TrySendError;
 use serde::{Serialize, Deserialize};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
@@ -31,6 +31,14 @@ pub enum ControlChannelCommand {
         request: messages::RemoteInsightRequest,
         responder: oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
     },
+    StartChat {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
+        stream: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+    ChatSend { request_id: u64, text: String },
+    ChatStop { request_id: u64 },
 }
 
 pub enum ConnectionCommand {
@@ -42,6 +50,14 @@ pub enum ConnectionCommand {
         request: messages::RemoteInsightRequest,
         responder: oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
     },
+    StartChat {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
+        stream: tokio::sync::mpsc::Sender<Vec<u8>>,
+    },
+    ChatSend { request_id: u64, text: String },
+    ChatStop { request_id: u64 },
 }
 
 pub struct ControlChannelBuilder {
@@ -89,6 +105,15 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     }
                 }
             }
+            ControlChannelCommand::StartChat { request_id, browser_ts_ms, browser_language, stream } => {
+                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream });
+            }
+            ControlChannelCommand::ChatSend { request_id, text } => {
+                let _ = tx.try_send(ConnectionCommand::ChatSend { request_id, text });
+            }
+            ControlChannelCommand::ChatStop { request_id } => {
+                let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
+            }
         }
     }
     warn!("Control channel loop exiting");
@@ -96,6 +121,8 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
 }
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+// Prevent unbounded growth while waiting for Welcome
+const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
 async fn persistent_connection(
     mut rx: tokio::sync::mpsc::Receiver<ConnectionCommand>,
@@ -126,6 +153,9 @@ async fn persistent_connection(
                 u64,
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
+            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> = HashMap::new();
+            // Queue chatbot control messages until the connection is permitted (Welcome received)
+            let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
 
             // Message pump
@@ -137,7 +167,7 @@ async fn persistent_connection(
                         match command {
                             Some(ConnectionCommand::SubmitChunks { serial, chunks }) => {
                                 if !permitted {
-                                    warn!("Not permitted to send chunks yet");
+                                    info!("Not permitted to send chunks yet");
                                     continue 'message_pump;
                                 }
                                 let n_chunks = chunks.len();
@@ -203,6 +233,13 @@ async fn persistent_connection(
                                     let _ = responder.send(Err(()));
                                     continue 'message_pump;
                                 }
+                                // Guard: avoid unbounded growth if Insight doesn't reply
+                                const MAX_PENDING_HISTORY: usize = 256;
+                                if pending_history.len() >= MAX_PENDING_HISTORY {
+                                    warn!("Too many pending history requests ({}); dropping newest", MAX_PENDING_HISTORY);
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
 
                                 let request_id = next_history_request_id;
                                 next_history_request_id = next_history_request_id.wrapping_add(1);
@@ -239,6 +276,55 @@ async fn persistent_connection(
                                     }
                                 }
                             }
+                            Some(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream }) => {
+                                chatbot_streams.insert(request_id, stream);
+                                let message = messages::WsMessage::ChatbotStart { request_id, browser_ts_ms, browser_language };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize ChatbotStart");
+                                    break 'message_pump;
+                                };
+                                if permitted {
+                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                } else {
+                                    debug!("Queuing ChatbotStart until connection permitted (request_id={})", request_id);
+                                    if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                        warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                        let _ = pending_chatbot_messages.drain(..1);
+                                    }
+                                    pending_chatbot_messages.push(bytes);
+                                }
+                            }
+                            Some(ConnectionCommand::ChatSend { request_id, text }) => {
+                                let message = messages::WsMessage::ChatbotUserInput { request_id, text };
+                                if let Ok((_, _, bytes)) = message.to_bytes() {
+                                    if permitted {
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                    } else {
+                                        debug!("Queuing ChatbotUserInput until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
+                                        pending_chatbot_messages.push(bytes);
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::ChatStop { request_id }) => {
+                                chatbot_streams.remove(&request_id);
+                                let message = messages::WsMessage::ChatbotStop { request_id };
+                                if let Ok((_, _, bytes)) = message.to_bytes() {
+                                    if permitted {
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                    } else {
+                                        debug!("Queuing ChatbotStop until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
+                                        pending_chatbot_messages.push(bytes);
+                                    }
+                                }
+                            }
                             None => {
                                 // Channel closed
                                 error!("Command channel closed");
@@ -261,14 +347,29 @@ async fn persistent_connection(
                                 };
                                 // TODO: Handle incoming messages here
                                 match msg {
-                                    messages::WsMessage::Welcome { valid: _, license_state, expiration_date } => {
-                                        debug!("Control channel connected and permitted");
+                                    messages::WsMessage::Welcome { valid, license_state, expiration_date } => {
+                                        info!("Control channel connected. License valid={valid}, state={license_state}, expires_unix={expiration_date}");
                                         set_license_status(LicenseStatus {
                                             license_type: license_state,
                                             trial_expires: expiration_date as i32,
                                         });
                                         permitted = true;
                                         sleep_seconds = 60;
+                                        // Flush any pending chatbot messages now that we're permitted
+                                        if !pending_chatbot_messages.is_empty() {
+                                            debug!("Flushing {} queued chatbot message(s)", pending_chatbot_messages.len());
+                                            for bytes in pending_chatbot_messages.drain(..) {
+                                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                                    match e {
+                                                        TrySendError::Full(_) => warn!("Send unavailable: chatbot queue full; dropping queued message"),
+                                                        TrySendError::Closed(_) => {
+                                                            error!("Failed to send queued chatbot message: channel closed");
+                                                            break 'message_pump;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                     messages::WsMessage::Heartbeat { timestamp } => {
                                         // Send a heartbeat reply
@@ -293,6 +394,16 @@ async fn persistent_connection(
                                     messages::WsMessage::RemoteCommands { commands } => {
                                         crate::lts2_sys::lts2_client::enqueue(commands);
                                     }
+                                    messages::WsMessage::ChatbotChunk { request_id, data } => {
+                                        if let Some(tx) = chatbot_streams.get(&request_id) {
+                                            let _ = tx.try_send(data);
+                                        }
+                                    }
+                                    messages::WsMessage::ChatbotError { request_id, message } => {
+                                        if let Some(tx) = chatbot_streams.get(&request_id) {
+                                            let _ = tx.try_send(format!("[error] {}", message).into_bytes());
+                                        }
+                                    }
                                     messages::WsMessage::HistoryQueryResult { request_id, tag, seconds, data } => {
                                         if let Some(responder) = pending_history.remove(&request_id) {
                                             let payload = HistoryQueryResultPayload { tag, seconds, data };
@@ -315,6 +426,24 @@ async fn persistent_connection(
                                         tokio::spawn(async move {
                                             let Ok(()) = circuit_snapshot_streaming(request_id, circuit_hash, socket_sender_tx).await else {
                                                 error!("Circuit snapshot streaming failed");
+                                                return;
+                                            };
+                                        });
+                                    }
+                                    messages::WsMessage::StartShaperStreaming { request_id } => {
+                                        let socket_sender_tx = socket_sender_tx.clone();
+                                        tokio::spawn(async move {
+                                            let Ok(()) = shaper_snapshot_streaming(request_id, socket_sender_tx).await else {
+                                                error!("Circuit snapshot streaming failed");
+                                                return;
+                                            };
+                                        });
+                                    }
+                                    messages::WsMessage::StartShaperTreeStreaming { request_id } => {
+                                        let socket_sender_tx = socket_sender_tx.clone();
+                                        tokio::spawn(async move {
+                                            let Ok(()) = tree_snapshot_streaming(request_id, socket_sender_tx).await else {
+                                                error!("Tree snapshot streaming failed");
                                                 return;
                                             };
                                         });
@@ -423,7 +552,7 @@ async fn persistent_connection(
 
 async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let remote_host = crate::lts2_sys::lts2_client::get_remote_host();
-    let target = format!("wss://{}:443/shaper_gateway/ws", remote_host);
+    let target = format!("wss://{}:443/shaper_gateway/ws", &remote_host);
     debug!("Connecting to shaper gateway: {target}");
 
     // DNS resolution with timeout
@@ -447,7 +576,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     };
 
     // Native TLS
-    debug!("Connected to shaper gateway server: {remote_host}");
+    info!("Control channel TCP connected: {remote_host}");
     let Ok(connector) = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
@@ -462,7 +591,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     debug!("Connecting tungstenite client to shaper gateway server: {target}");
     let result = timeout(
         TCP_TIMEOUT,
-        tokio_tungstenite::client_async_tls_with_config(target, stream, None, Some(t_connector)),
+        tokio_tungstenite::client_async_tls_with_config(target.clone(), stream, None, Some(t_connector)),
     )
     .await;
     if result.is_err() {
@@ -472,7 +601,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
         warn!("Failed to connect to shaper gateway server {result:?}");
         bail!("Failed to connect to shaper gateway server. {result:?}");
     };
-    debug!("Connected");
+    info!("Control channel WSS established: {target}");
 
     Ok(socket)
 }
@@ -535,6 +664,7 @@ async fn api_request(
     // Make a request to http://127.0.0.1:9122/{url_suffix} using the specified method and body (if present),
     // and return the result (status, headers, body) to Insight as an ApiReply.
     let client = reqwest::Client::builder()
+        .connect_timeout(TCP_TIMEOUT)
         .timeout(TCP_TIMEOUT)
         .build()?;
 
@@ -616,6 +746,45 @@ async fn api_request(
     Ok(())
 }
 
+async fn shaper_snapshot_streaming(
+    request_id: u64,
+    reply: tokio::sync::mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
+    use lqos_bus::BusResponse;
+
+    let resp = crate::throughput_tracker::current_throughput();
+    if let BusResponse::CurrentThroughput {
+        bits_per_second,
+        packets_per_second,
+        shaped_bits_per_second,
+        ..
+    } = resp
+    {
+        let message = messages::WsMessage::StreamingShaper {
+            request_id,
+            // Note: field names are historical; values are bits per second
+            bytes_down: bits_per_second.down,
+            bytes_up: bits_per_second.up,
+            shaped_bytes_down: shaped_bits_per_second.down,
+            shaped_bytes_up: shaped_bits_per_second.up,
+            packets_down: packets_per_second.down,
+            packets_up: packets_per_second.up,
+        };
+        let Ok((_, _, ws_bytes)) = message.to_bytes() else {
+            error!("Failed to serialize StreamingShaper message");
+            return Ok(());
+        };
+        if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+            match e {
+                TrySendError::Full(_) => warn!("Send unavailable: StreamingShaper queue full; dropping reply"),
+                TrySendError::Closed(_) => error!("Failed to send StreamingShaper: channel closed"),
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn circuit_snapshot_streaming(
     request_id: u64,
     circuit_hash: i64,
@@ -661,10 +830,10 @@ async fn circuit_snapshot_streaming(
         v4: &[(std::net::Ipv4Addr, u32)],
         v6: &[(std::net::Ipv6Addr, u32)],
     ) -> Option<std::net::IpAddr> {
-        if let Some((ip, plen)) = v4.iter().find(|(_, p)| *p == 32) {
+        if let Some((ip, ..)) = v4.iter().find(|(_, p)| *p == 32) {
             return Some(std::net::IpAddr::V4(*ip));
         }
-        if let Some((ip, plen)) = v6.iter().find(|(_, p)| *p == 128) {
+        if let Some((ip, ..)) = v6.iter().find(|(_, p)| *p == 128) {
             return Some(std::net::IpAddr::V6(*ip));
         }
         None
@@ -693,7 +862,7 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load shaped devices snapshot and pick devices in the target circuit
+    // Load "shaped devices" snapshot and pick devices in the target circuit
     let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
     let mut device_indexes: Vec<usize> = Vec::new();
     for (idx, dev) in shaped.devices.iter().enumerate() {
@@ -716,17 +885,14 @@ async fn circuit_snapshot_streaming(
     }
 
     // Walk raw throughput data and fold into devices of this circuit
-    let tp_cycle = crate::throughput_tracker::THROUGHPUT_TRACKER
-        .cycle
-        .load(std::sync::atomic::Ordering::Relaxed);
     {
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
         for (xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
             if te.circuit_hash != Some(circuit_hash) { continue; }
-            // retire_check is local; use same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
+            // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            // Map IP to device via trie
+            // Map IP to a device via trie
             let lookup = xdp_ip.as_ipv6();
             if let Some((_, id)) = shaped.trie.longest_match(lookup) {
                 if aggregates.contains_key(id) {
@@ -773,7 +939,7 @@ async fn circuit_snapshot_streaming(
             None
         } else {
             let mut r = agg.rtts.clone();
-            r.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            r.sort_by(|a, b| a.total_cmp(b));
             Some(r[r.len() / 2])
         };
         // Compute retransmit percentage
@@ -805,7 +971,7 @@ async fn circuit_snapshot_streaming(
         let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        for (key, (local, analysis)) in all_flows.flow_data.iter() {
+        for (key, (local, ..)) in all_flows.flow_data.iter() {
             if local.last_seen < five_minutes_ago { continue; }
             // Identify if this flow belongs to our circuit via local or remote mapping
             use std::net::IpAddr;
@@ -867,6 +1033,76 @@ async fn circuit_snapshot_streaming(
         match e {
             TrySendError::Full(_) => warn!("Send unavailable: StreamingCircuit queue full; dropping reply"),
             TrySendError::Closed(_) => error!("Failed to send StreamingCircuit: channel closed"),
+        }
+    }
+    Ok(())
+}
+
+async fn tree_snapshot_streaming(
+    request_id: u64,
+    reply: tokio::sync::mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    #[derive(Serialize, Deserialize)]
+    struct LiveNetworkTransport {
+        name: String,
+        max_throughput: (u32, u32),
+        current_throughput: (u64, u64),
+        current_packets: (u64, u64),
+        current_tcp_packets: (u64, u64),
+        current_udp_packets: (u64, u64),
+        current_icmp_packets: (u64, u64),
+        current_retransmits: (u64, u64),
+        current_marks: (u64, u64),
+        current_drops: (u64, u64),
+        rtts: Vec<f32>,
+        parents: Vec<usize>,
+        immediate_parent: Option<usize>,
+        #[serde(rename = "type")]
+        node_type: Option<String>,
+    }
+
+    // Use the same data source as local_api::network_tree
+    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
+    let result: Vec<(usize, LiveNetworkTransport)> = net_json
+        .get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let t = n.clone_to_transit();
+            let mapped = LiveNetworkTransport {
+                name: t.name,
+                max_throughput: t.max_throughput,
+                current_throughput: t.current_throughput,
+                current_packets: t.current_packets,
+                current_tcp_packets: t.current_tcp_packets,
+                current_udp_packets: t.current_udp_packets,
+                current_icmp_packets: t.current_icmp_packets,
+                current_retransmits: t.current_retransmits,
+                current_marks: t.current_marks,
+                current_drops: t.current_drops,
+                rtts: t.rtts,
+                parents: t.parents,
+                immediate_parent: t.immediate_parent,
+                node_type: t.node_type,
+            };
+            (i, mapped)
+        })
+        .collect();
+
+    let Ok(bytes) = serde_cbor::to_vec(&result) else {
+        error!("Failed to serialize LiveNetworkTransport payload");
+        return Ok(());
+    };
+
+    let message = messages::WsMessage::StreamingShaperTree { request_id, data: bytes };
+    let Ok((_, _, ws_bytes)) = message.to_bytes() else {
+        error!("Failed to serialize StreamingShaperTree message");
+        return Ok(());
+    };
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+        match e {
+            TrySendError::Full(_) => warn!("Send unavailable: StreamingShaperTree queue full; dropping reply"),
+            TrySendError::Closed(_) => error!("Failed to send StreamingShaperTree: channel closed"),
         }
     }
     Ok(())

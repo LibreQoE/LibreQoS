@@ -51,7 +51,7 @@ impl ThroughputEntry {
         if shifted.len() < 2 {
             return None;
         }
-        shifted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        shifted.sort_by(|a, b| a.total_cmp(b));
         Some(shifted[shifted.len() / 2])
     }
 }

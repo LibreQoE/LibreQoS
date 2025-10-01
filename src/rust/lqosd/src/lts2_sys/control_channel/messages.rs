@@ -88,9 +88,30 @@ pub enum WsMessage {
         request_id: u64,
         circuit_hash: i64,
     },
+    StartShaperStreaming {
+        request_id: u64,
+    },
+    // Request a one-shot shaper tree snapshot
+    StartShaperTreeStreaming {
+        request_id: u64,
+    },
     StreamingCircuit {
         request_id: u64,
         circuit_hash: i64,
+        data: Vec<u8>,
+    },
+    StreamingShaper {
+        request_id: u64,
+        bytes_down: u64,
+        bytes_up: u64,
+        shaped_bytes_down: u64,
+        shaped_bytes_up: u64,
+        packets_down: u64,
+        packets_up: u64,
+    },
+    // Reply containing a one-shot shaper tree snapshot (CBOR encoded payload)
+    StreamingShaperTree {
+        request_id: u64,
         data: Vec<u8>,
     },
     HistoryQuery {
@@ -109,6 +130,30 @@ pub enum WsMessage {
         url_suffix: String,
         body: Option<String>,
     }
+    ,
+    // Chatbot (Ask Libby) streaming via Insight chatbot service
+    // From Shaper -> Insight
+    ChatbotStart {
+        request_id: u64,
+        browser_ts_ms: Option<i64>,
+        browser_language: Option<String>,
+    },
+    ChatbotUserInput {
+        request_id: u64,
+        text: String,
+    },
+    ChatbotStop {
+        request_id: u64,
+    },
+    // From Insight -> Shaper (streaming chunks or errors)
+    ChatbotChunk {
+        request_id: u64,
+        data: Vec<u8>,
+    },
+    ChatbotError {
+        request_id: u64,
+        message: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]

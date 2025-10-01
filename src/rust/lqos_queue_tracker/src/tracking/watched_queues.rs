@@ -39,7 +39,7 @@ pub fn expiration_in_the_future() -> u64 {
 /// * `circuit_id` - The circuit ID to watch
 pub fn add_watched_queue(circuit_id: &str) {
     //info!("Watching queue {circuit_id}");
-    let max = num_possible_cpus().unwrap() * 2;
+    let max = num_possible_cpus().unwrap_or(4) * 2;
     {
         if WATCHED_QUEUES.contains_key(circuit_id) {
             warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");
@@ -56,16 +56,22 @@ pub fn add_watched_queue(circuit_id: &str) {
     if let Some(queues) = &queues.maybe_queues {
         if let Some(circuit) = queues
             .iter()
-            .find(|c| c.circuit_id.is_some() && c.circuit_id.as_ref().unwrap() == circuit_id)
+            .find(|c| c.circuit_id.as_deref() == Some(circuit_id))
         {
+            // If the circuit somehow lacks an ID, log and return
+            if circuit.circuit_id.is_none() {
+                info!("Watched queue has no circuit_id; ignoring request for {circuit_id}");
+                return;
+            }
+
             let new_watch = WatchedQueue {
-                circuit_id: circuit.circuit_id.as_ref().unwrap().clone(),
+                circuit_id: circuit_id.to_string(),
                 expires_unix_time: expiration_in_the_future(),
                 download_class: circuit.class_id,
                 upload_class: circuit.up_class_id,
             };
 
-            WATCHED_QUEUES.insert(circuit.circuit_id.as_ref().unwrap().clone(), new_watch);
+            WATCHED_QUEUES.insert(circuit_id.to_string(), new_watch);
             //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.len());
         } else {
             warn!("No circuit ID of {circuit_id}");

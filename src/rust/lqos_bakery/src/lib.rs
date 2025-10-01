@@ -16,6 +16,9 @@
 //! In phase 4, the Bakery will implement "live move" --- allowing queues to be moved losslessly. This will
 //! complete the NLNet project goals.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
+
 mod commands;
 mod diff;
 mod queue_math;
@@ -37,8 +40,10 @@ use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
 
+/// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 
+/// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
 
@@ -112,7 +117,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 handle_circuit_activity(circuit_ids, &circuits, &mut live_circuits);
             }
             BakeryCommands::Tick => {
-                // Reset per-cycle counters at the start of tick
+                // Reset per-cycle counters at the start of the tick
                 handle_tick(&mut circuits, &mut live_circuits, &mut sites);
             }
             BakeryCommands::ChangeSiteSpeedLive {
@@ -211,7 +216,7 @@ fn handle_commit_batch(
         return;
     }
 
-    let site_change_mode = diff_sites(&new_batch, &sites);
+    let site_change_mode = diff_sites(&new_batch, sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
         info!("Site structure has changed, performing full reload.");
@@ -220,7 +225,7 @@ fn handle_commit_batch(
         return;
     }
 
-    let circuit_change_mode = diff::diff_circuits(&new_batch, &circuits);
+    let circuit_change_mode = diff::diff_circuits(&new_batch, circuits);
 
     // If neither has changed, there's nothing to do.
     if matches!(site_change_mode, SiteDiffResult::NoChange)
@@ -233,9 +238,9 @@ fn handle_commit_batch(
 
     // Check if we should do a full reload based on the number of circuit changes
     if let diff::CircuitDiffResult::CircuitsChanged {
-        newly_added,
-        removed_circuits,
-        updated_circuits,
+        newly_added: _,
+        removed_circuits: _,
+        updated_circuits: _,
     } = &circuit_change_mode
     {
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
@@ -321,7 +326,7 @@ fn handle_commit_batch(
                             }
                         }
                         Some(LazyQueueMode::Full) => {
-                            // Full lazy: only delete if activated
+                            // Full lazy: only delete the circuit if activated
                             if was_activated {
                                 circuit.to_prune(&config, true)
                             } else {
@@ -351,15 +356,14 @@ fn handle_commit_batch(
 
             let commands: Vec<Vec<String>> = all_new_circuits
                 .iter()
-                .map(|c| c.to_commands(&config, ExecutionMode::Builder))
-                .flatten()
+                .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
                 .collect();
             if commands.is_empty() {
                 debug!("No commands to execute for newly added circuits.");
             } else {
                 execute_in_memory(&commands, "adding new circuits");
-                // Update the circuits map with the newly added circuits
+                // Update the circuit map with the newly added circuits
                 for command in all_new_circuits {
                     if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
                         circuits.insert(*circuit_hash, Arc::clone(command));
@@ -422,7 +426,7 @@ fn handle_tick(
     static mut TICK_COUNT: u64 = 0;
     unsafe {
         TICK_COUNT += 1;
-        if TICK_COUNT % 60 == 0 {
+        if TICK_COUNT.is_multiple_of(60) {
             // Every minute
             // Shrink if capacity is more than 2x the size
             if circuits.capacity() > circuits.len() * 2 && circuits.capacity() > 100 {
@@ -594,7 +598,6 @@ fn handle_change_site_speed_live(
             "ChangeSiteSpeedLive received for unknown site: {}",
             site_hash
         );
-        return;
     }
 }
 
@@ -610,7 +613,7 @@ fn full_reload(
     sites.clear();
     circuits.clear();
     live_circuits.clear();
-    process_batch(new_batch, &config, sites, circuits);
+    process_batch(new_batch, config, sites, circuits);
     *batch = None;
 }
 
@@ -624,7 +627,7 @@ fn process_batch(
     let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
-        .map(|b| {
+        .filter_map(|b| {
             // Ensure that our state map is up to date with the latest commands
             match b.as_ref() {
                 BakeryCommands::AddSite { site_hash, .. } => {
@@ -638,7 +641,6 @@ fn process_batch(
             }
             b.to_commands(config, ExecutionMode::Builder)
         })
-        .flatten()
         .flatten()
         .collect::<Vec<Vec<String>>>();
 

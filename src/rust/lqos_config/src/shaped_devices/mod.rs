@@ -2,7 +2,6 @@ mod serializable;
 mod shaped_device;
 
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use encoding_rs;
 use lqos_utils::XdpIpAddress;
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
@@ -63,7 +62,7 @@ impl ConfigShapedDevices {
 
     fn handle_encodings(bytes: &[u8]) -> Vec<u8> {
         // First, handle BOM if present
-        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(&bytes) {
+        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(bytes) {
             let mut result = Vec::new();
             let (decoded, _, _) = encoding.decode(&bytes[bom_length..]);
             result.extend_from_slice(decoded.as_bytes());
@@ -321,16 +320,16 @@ mod test {
 
     #[test]
     fn test_simple_ipv4_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4").expect("IP Parse Error");
         assert_eq!(cidr, 32);
-        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().unwrap(), ip);
+        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().expect("IP parse error"), ip);
     }
 
     #[test]
     fn test_cidr_ipv4_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4/24").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4/24").expect("IP Parse Error");
         assert_eq!(cidr, 24);
-        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().unwrap(), ip);
+        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse"), ip);
     }
 
     #[test]
@@ -349,7 +348,7 @@ mod test {
     fn test_single_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 32);
     }
 
@@ -357,24 +356,24 @@ mod test {
     fn test_two_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4, 1.2.3.4/24");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 32);
-        assert_eq!(r[1].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[1].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[1].1, 24);
     }
 
     #[test]
     fn test_simple_ipv6_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5").expect("IP Parse Error");
         assert_eq!(cidr, 128);
-        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().unwrap(), ip);
+        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"), ip);
     }
 
     #[test]
     fn test_cidr_ipv6_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5/64").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5/64").expect("IP Parse Error");
         assert_eq!(cidr, 64);
-        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().unwrap(), ip);
+        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"), ip);
     }
 
     #[test]
@@ -393,7 +392,7 @@ mod test {
     fn test_single_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 128);
     }
 
@@ -401,9 +400,9 @@ mod test {
     fn test_two_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5, fd77::1:5/64");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 128);
-        assert_eq!(r[1].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[1].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[1].1, 64);
     }
 
@@ -424,15 +423,15 @@ mod test {
         let trie = ConfigShapedDevices::make_trie(&devices);
         assert_eq!(trie.len(), (0, 2));
         assert!(
-            trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").unwrap().0)
+            trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").expect("IP Parse Error").0)
                 .is_none()
         );
 
-        let addr: Ipv4Addr = "192.168.1.2".parse().unwrap();
+        let addr: Ipv4Addr = "192.168.1.2".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
 
-        let addr: Ipv4Addr = "1.2.3.4".parse().unwrap();
+        let addr: Ipv4Addr = "1.2.3.4".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
     }
@@ -444,7 +443,7 @@ mod test {
         let result = ConfigShapedDevices::handle_encodings(input);
         assert_eq!(result, input);
         assert_eq!(
-            String::from_utf8(result).unwrap(),
+            String::from_utf8(result).expect("Unicode error"),
             "Hello, World! 你好世界 Привет мир"
         );
     }
@@ -456,7 +455,7 @@ mod test {
         input.extend_from_slice("Hello UTF-8 with BOM".as_bytes());
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Hello UTF-8 with BOM");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Hello UTF-8 with BOM");
     }
 
     #[test]
@@ -472,7 +471,7 @@ mod test {
         ];
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Hello");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Hello");
     }
 
     #[test]
@@ -483,7 +482,7 @@ mod test {
         ]; // "Café - © 2024"
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         assert!(result_str.contains("Café"));
         assert!(result_str.contains("©"));
     }
@@ -494,7 +493,7 @@ mod test {
         let input = vec![0x47, 0x72, 0xF6, 0xDF, 0x65];
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Größe");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Größe");
     }
 
     #[test]
@@ -505,7 +504,7 @@ mod test {
 
         let result = ConfigShapedDevices::handle_encodings(&input);
         // Since encoding_rs might not perfectly decode this, let's check it's valid UTF-8
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         // The exact output depends on encoding_rs implementation
         assert!(!result_str.is_empty());
     }
@@ -518,7 +517,7 @@ mod test {
 
         let result = ConfigShapedDevices::handle_encodings(&input);
         // Since encoding_rs might not perfectly decode this, let's check it's valid UTF-8
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         // The exact output depends on encoding_rs implementation
         assert!(!result_str.is_empty());
     }
@@ -532,7 +531,7 @@ mod test {
         ];
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         assert!(result_str.contains("naïve"));
         assert!(result_str.contains("résumé"));
     }
