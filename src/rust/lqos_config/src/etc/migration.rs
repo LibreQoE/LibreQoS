@@ -281,12 +281,13 @@ fn migrate_influx(
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
     if python_config.influx_enabled {
-        let mut cfg = InfluxDbConfig::default();
-        cfg.enable_influxdb = python_config.influx_enabled;
-        cfg.url = python_config.influx_dburl.clone();
-        cfg.bucket = python_config.influx_dbbucket.clone();
-        cfg.org = python_config.influx_dborg.clone();
-        cfg.token = python_config.influx_dbtoken.clone();
+        let cfg = InfluxDbConfig {
+            enable_influxdb: python_config.influx_enabled,
+            url: python_config.influx_dburl.clone(),
+            bucket: python_config.influx_dbbucket.clone(),
+            org: python_config.influx_dborg.clone(),
+            token: python_config.influx_dbtoken.clone(),
+        };
         new_config.influxdb = Some(cfg);
     }
     Ok(())
