@@ -627,7 +627,7 @@ fn process_batch(
     let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
-        .map(|b| {
+        .filter_map(|b| {
             // Ensure that our state map is up to date with the latest commands
             match b.as_ref() {
                 BakeryCommands::AddSite { site_hash, .. } => {
@@ -641,7 +641,6 @@ fn process_batch(
             }
             b.to_commands(config, ExecutionMode::Builder)
         })
-        .flatten()
         .flatten()
         .collect::<Vec<Vec<String>>>();
 
