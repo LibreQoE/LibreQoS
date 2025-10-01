@@ -357,7 +357,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+    full_list.sort_by(|a, b| b.3.total_cmp(&a.3));
     let result = full_list
         .iter()
         //.skip(start as usize)
@@ -451,7 +451,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+    full_list.sort_by(|a, b| b.3.total_cmp(&a.3));
     full_list.reverse();
     let result = full_list
         .iter()
@@ -551,7 +551,7 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     }
 
     // Sort the buffer
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    samples.sort_by(|a, b| a.total_cmp(b));
 
     let result = MinMaxMedianRtt {
         min: samples[0] as f32,
@@ -698,7 +698,7 @@ pub fn all_unknown_ips() -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap());
+    full_list.sort_by(|a, b| b.5.cmp(&a.5));
     let result = full_list
         .iter()
         .map(

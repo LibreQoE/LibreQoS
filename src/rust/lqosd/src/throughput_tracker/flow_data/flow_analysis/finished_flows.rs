@@ -92,8 +92,8 @@ impl TimeBuffer {
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
             .collect::<Vec<(f64, f64, String, u64, f32)>>();
 
-        // Sort by lat/lon
-        my_buffer.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        // Sort by lat/lon (total ordering for floats)
+        my_buffer.sort_by(|a, b| a.0.total_cmp(&b.0));
 
         // Deduplicate
         my_buffer.dedup();
@@ -171,7 +171,7 @@ impl TimeBuffer {
             return 0;
         }
         let mut slice = slice.to_vec();
-        slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        slice.sort_by(|a, b| a.cmp(b));
         let mid = slice.len() / 2;
         if slice.len() % 2 == 0 {
             (slice[mid] + slice[mid - 1]) / 2
@@ -185,7 +185,7 @@ impl TimeBuffer {
             return 0.0;
         }
         let mut slice = slice.to_vec();
-        slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        slice.sort_by(|a, b| a.total_cmp(b));
         let mid = slice.len() / 2;
         if slice.len() % 2 == 0 {
             (slice[mid] + slice[mid - 1]) / 2.0

@@ -942,7 +942,7 @@ async fn circuit_snapshot_streaming(
             None
         } else {
             let mut r = agg.rtts.clone();
-            r.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            r.sort_by(|a, b| a.total_cmp(b));
             Some(r[r.len() / 2])
         };
         // Compute retransmit percentage
