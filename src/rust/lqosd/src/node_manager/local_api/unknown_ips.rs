@@ -24,10 +24,18 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
         warn!("Failed to load config");
         return vec![];
     };
-    let allowed_ips = config.ip_ranges.allowed_network_table();
-    let ignored_ips = config.ip_ranges.ignored_network_table();
+    let Ok(allowed_ips) = config.ip_ranges.allowed_network_table() else {
+        warn!("Unable to load allowed network table");
+        return vec![];
+    };
+    let Ok(ignored_ips) = config.ip_ranges.ignored_network_table() else {
+        warn!("Unable to load ignored network table");
+        return vec![];
+    };
 
-    let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
+    let now = time_since_boot()
+        .map(|ts| Duration::from(ts).as_nanos() as u64)
+        .unwrap_or(0);
     let sd_reader = SHAPED_DEVICES.load();
     THROUGHPUT_TRACKER
         .raw_data
@@ -98,8 +106,14 @@ pub async fn clear_unknown_ips() -> axum::Json<ClearUnknownIpsResponse> {
         warn!("Failed to load config");
         return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
     };
-    let allowed_ips = config.ip_ranges.allowed_network_table();
-    let ignored_ips = config.ip_ranges.ignored_network_table();
+    let Ok(allowed_ips) = config.ip_ranges.allowed_network_table() else {
+        warn!("Could not load allowed IP table");
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
+    let Ok(ignored_ips) = config.ip_ranges.ignored_network_table() else {
+        warn!("Could not load ignored IP table");
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
 
     let sd_reader = SHAPED_DEVICES.load();
 

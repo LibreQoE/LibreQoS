@@ -234,7 +234,9 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
 
     // Fourth pass: Site name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let net_reader = NETWORK_JSON.read().unwrap();
+        let Ok(net_reader) = NETWORK_JSON.read() else {
+            return Json(vec![]);
+        };
         for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
             if results.len() >= MAX_RESULTS {
                 break;

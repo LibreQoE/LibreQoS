@@ -278,7 +278,7 @@ fn recurse_node(
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
         rtts: HashSet::new(),
-        node_type: json.get("type").map(|v| v.as_str().unwrap().to_string()),
+        node_type: json.get("type").map(|v| v.as_str().unwrap_or_default().to_string()),
     };
 
     if node.name != "children" {

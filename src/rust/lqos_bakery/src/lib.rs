@@ -16,6 +16,9 @@
 //! In phase 4, the Bakery will implement "live move" --- allowing queues to be moved losslessly. This will
 //! complete the NLNet project goals.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
+
 mod commands;
 mod diff;
 mod queue_math;
@@ -37,8 +40,10 @@ use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
 
+/// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 
+/// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
 
@@ -112,7 +117,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 handle_circuit_activity(circuit_ids, &circuits, &mut live_circuits);
             }
             BakeryCommands::Tick => {
-                // Reset per-cycle counters at the start of tick
+                // Reset per-cycle counters at the start of the tick
                 handle_tick(&mut circuits, &mut live_circuits, &mut sites);
             }
             BakeryCommands::ChangeSiteSpeedLive {
@@ -321,7 +326,7 @@ fn handle_commit_batch(
                             }
                         }
                         Some(LazyQueueMode::Full) => {
-                            // Full lazy: only delete if activated
+                            // Full lazy: only delete the circuit if activated
                             if was_activated {
                                 circuit.to_prune(&config, true)
                             } else {
@@ -359,7 +364,7 @@ fn handle_commit_batch(
                 debug!("No commands to execute for newly added circuits.");
             } else {
                 execute_in_memory(&commands, "adding new circuits");
-                // Update the circuits map with the newly added circuits
+                // Update the circuit map with the newly added circuits
                 for command in all_new_circuits {
                     if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
                         circuits.insert(*circuit_hash, Arc::clone(command));

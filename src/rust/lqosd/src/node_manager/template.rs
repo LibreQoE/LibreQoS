@@ -78,7 +78,7 @@ pub async fn apply_templates(
         let path = &req.uri().path().to_string();
         path.ends_with(".html")
     };
-    let config = load_config().unwrap();
+    let config = load_config().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::from("Cannot load configuration")))?;
 
     // TODO: Cache this once we're not continually making changes
     let template_text = {
@@ -86,7 +86,7 @@ pub async fn apply_templates(
             .join("bin")
             .join("static2")
             .join("template.html");
-        std::fs::read_to_string(path).unwrap()
+        std::fs::read_to_string(path).expect("Cannot read template html file")
     };
 
     // Update the displayed username
@@ -134,7 +134,7 @@ pub async fn apply_templates(
         );
 
         let (mut res_parts, res_body) = res.into_parts();
-        let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
+        let bytes = to_bytes(res_body, 1_000_000).await.expect("Cannot read template bytes");
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)

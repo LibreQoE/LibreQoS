@@ -501,13 +501,12 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         ) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");
         }
-        RECENT_FLOWS.push(TimeEntry {
-            time: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            data: (key, data, analysis),
-        });
+        if let Ok(time) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            RECENT_FLOWS.push(TimeEntry {
+                time: time.as_secs(),
+                data: (key, data, analysis),
+            })
+        };
     } else {
         // We have a one-way flow!
         let Ok(config) = load_config() else {

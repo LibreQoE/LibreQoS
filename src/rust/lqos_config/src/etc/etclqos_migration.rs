@@ -262,14 +262,14 @@ mod test {
 
     #[test]
     fn round_trip_toml() {
-        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         let reserialized = doc.to_string();
         assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
     }
 
     #[test]
     fn add_node_id() {
-        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         doc["node_id"] = toml_edit::value("test");
         let reserialized = doc.to_string();
         assert!(reserialized.contains("node_id = \"test\""));

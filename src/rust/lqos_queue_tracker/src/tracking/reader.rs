@@ -47,15 +47,14 @@ pub fn read_named_queue_from_interface(
         ])
         .output();
 
-    if command_output.is_err() {
-        error!(
-            "Failed to call process tc -s -j qdisc show dev {interface} parent {}",
-            &tc_handle.to_string()
-        );
-        error!("{:?}", command_output);
-        return Err(QueueReaderError::CommandError);
-    }
-    let command_output = command_output.unwrap();
+    let Ok(command_output) = command_output else {
+            error!(
+                "Failed to call process tc -s -j qdisc show dev {interface} parent {}",
+                &tc_handle.to_string()
+            );
+            error!("{:?}", command_output);
+            return Err(QueueReaderError::CommandError);
+    };
 
     let json = String::from_utf8(command_output.stdout);
     if json.is_err() {
@@ -63,14 +62,14 @@ pub fn read_named_queue_from_interface(
         error!("{:?}", json);
         return Err(QueueReaderError::Utf8Error);
     }
-    let json = json.unwrap();
+    let json = json.map_err(|_| QueueReaderError::Deserialization)?;
     let result = deserialize_tc_tree(&json);
-    if result.is_err() {
+    let Ok(result) = result else {
         error!("Failed to deserialize TC tree result.");
         error!("{:?}", result);
         return Err(QueueReaderError::Deserialization);
-    }
-    Ok(result.unwrap())
+    };
+    Ok(result)
 }
 
 #[derive(Error, Debug)]

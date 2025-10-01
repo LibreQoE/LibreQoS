@@ -110,7 +110,7 @@ fn sorted_txq_xps_cpus(interface: &str) -> Result<Vec<String>> {
                 if let Some(filename) = path.path().file_name() {
                     let base_fn = format!(
                         "/sys/class/net/{interface}/queues/{}/xps_cpus",
-                        filename.to_str().unwrap()
+                        filename.to_str().unwrap_or_default()
                     );
                     if std::path::Path::new(&base_fn).exists() {
                         result.push(base_fn);

@@ -1,3 +1,8 @@
+//! `lqosd` is the core of LibreQoS. It runs as a daemon, loads the XDP,
+//! manages TC creation, and provides the web interface.
+
+#![deny(clippy::unwrap_used)]
+
 mod blackboard;
 mod file_lock;
 mod ip_mapping;
@@ -238,11 +243,13 @@ fn main() -> Result<()> {
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
+            let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async {
+                .build() else {
+                error!("Unable to start Tokio runtime. Not much is going to work");
+                return;
+            };
+            tokio_runtime.block_on(async {
                     tokio::spawn(async move {
                         match lts2_sys::control_channel::start_control_channel(control_channel)
                             .await
@@ -282,7 +289,9 @@ fn main() -> Result<()> {
                     }
 
                     // Main bus listen loop
-                    server.listen(handle_bus_requests, bus_rx).await.unwrap();
+                    if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
+                        error!("Bus stopped: {e:?}");
+                    }
                 });
         })?;
     let _ = handle.join();
@@ -301,9 +310,9 @@ fn memory_debug() {
             std::thread::sleep(std::time::Duration::from_secs(60));
             let mut fb = allocative::FlameGraphBuilder::default();
             fb.visit_global_roots();
-            fb.visit_root(&*THROUGHPUT_TRACKER);
-            fb.visit_root(&*ALL_FLOWS);
-            fb.visit_root(&*RECENT_FLOWS);
+            // fb.visit_root(&*THROUGHPUT_TRACKER);
+            // fb.visit_root(&*ALL_FLOWS);
+            // fb.visit_root(&*RECENT_FLOWS);
             fb.visit_root(&*NETWORK_JSON);
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
@@ -311,7 +320,7 @@ fn memory_debug() {
                 error!("Unable to write flamegraph.");
                 continue;
             };
-            file.write_all(flamegraph_src.write().as_bytes()).unwrap();
+            let _ = file.write_all(flamegraph_src.write().as_bytes());
             info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
         }
     });

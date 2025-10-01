@@ -12,6 +12,8 @@ use tracing::{debug, error, info};
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
+    #[error("Invalid Config File Version")]
+    InvalidVersion,
     #[error("Failed to read configuration file: {0}")]
     ReadError(#[from] std::io::Error),
     #[error("Failed to parse configuration file: {0}")]
@@ -22,6 +24,10 @@ pub enum MigrationError {
     LoadError(#[from] EtcLqosError),
     #[error("Unable to load python version: {0}")]
     PythonLoadError(#[from] PythonMigrationError),
+    #[error("Unable to serialize TOML")]
+    SerializeError,
+    #[error("Should never happen")]
+    ImpossibleError,
 }
 
 pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
@@ -35,24 +41,24 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     if let Some((_key, version)) = doc.get_key_value("version") {
         debug!(
             "Configuration file is at version {}",
-            version.as_str().unwrap()
+            version.as_str().ok_or(MigrationError::InvalidVersion)?
         );
-        if version.as_str().unwrap().trim() == "1.5" {
+        if version.as_str().ok_or(MigrationError::InvalidVersion)?.trim() == "1.5" {
             debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
             error!(
                 "Configuration file is at version {}, but this version of lqos only supports version 1.5",
-                version.as_str().unwrap()
+                version.as_str().ok_or(MigrationError::InvalidVersion)?
             );
             return Err(MigrationError::UnknownVersion(
-                version.as_str().unwrap().to_string(),
+                version.as_str().ok_or(MigrationError::InvalidVersion)?.to_string(),
             ));
         }
     } else {
         info!("No version found in configuration file, assuming 1.4x and migration is needed");
         let new_config = migrate_14_to_15()?;
-        // Backup the old configuration
+        // Back up the old configuration
         std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
             .map_err(|e| MigrationError::ReadError(e))?;
 
@@ -60,11 +66,11 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
         let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
         let to = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py.backup14");
 
-        std::fs::rename(from, to).map_err(|e| MigrationError::ReadError(e))?;
+        std::fs::rename(from, to).map_err(MigrationError::ReadError)?;
 
         // Save the configuration
-        let raw = toml::to_string_pretty(&new_config).unwrap();
-        std::fs::write("/etc/lqos.conf", raw).map_err(|e| MigrationError::ReadError(e))?;
+        let raw = toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
+        std::fs::write("/etc/lqos.conf", raw).map_err(MigrationError::ReadError)?;
     }
 
     Ok(())
@@ -98,7 +104,7 @@ fn do_migration_14_to_15(
     migrate_queues(python_config, &mut new_config)?;
     migrate_influx(python_config, &mut new_config)?;
 
-    new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
+    new_config.validate().map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
     Ok(new_config)
 }
 
@@ -150,7 +156,7 @@ fn migrate_bridge(
     } else {
         new_config.single_interface = None;
         new_config.bridge = Some(BridgeConfig {
-            use_xdp_bridge: old_config.bridge.as_ref().unwrap().use_xdp_bridge,
+            use_xdp_bridge: old_config.bridge.as_ref().ok_or(MigrationError::SerializeError)?.use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
         });

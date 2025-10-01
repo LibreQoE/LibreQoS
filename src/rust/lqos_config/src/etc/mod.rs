@@ -59,22 +59,24 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     })?;
 
     let file_result = std::fs::read_to_string(&config_location);
-    if file_result.is_err() {
-        error!("Unable to open {config_location}");
+    let Ok(raw) = file_result else {
+        if file_result.is_err() {
+            error!("Unable to open {config_location}");
+        }
         return Err(LibreQoSConfigError::FileNotFound);
-    }
-    let raw = file_result.unwrap();
+    };
 
     let config_result = Config::load_from_string(&raw);
-    if config_result.is_err() {
-        error!("Unable to parse /etc/lqos.conf");
-        error!("Error: {:?}", config_result);
+    let Ok(mut final_config) = config_result else {
+        if config_result.is_err() {
+            error!("Unable to parse /etc/lqos.conf");
+            error!("Error: {:?}", config_result);
+        }
         return Err(LibreQoSConfigError::ParseError(format!(
             "{:?}",
             config_result
         )));
-    }
-    let mut final_config = config_result.unwrap(); // We know it's good at this point
+    };
 
     // Check for environment variable overrides
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {

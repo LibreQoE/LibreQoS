@@ -4,6 +4,7 @@
 //! updated periodically by a separate thread, and accumulates statistics
 //! between polling periods.
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 mod bus;
 mod circuit_to_queue;

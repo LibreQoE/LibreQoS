@@ -282,10 +282,10 @@ pub(crate) fn submit_throughput_stats(
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
                     if h.bytes_per_second.down > *dl {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     } else if h.bytes_per_second.up > *ul {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     }
                 }
@@ -293,7 +293,7 @@ pub(crate) fn submit_throughput_stats(
                 if crazy {
                     return;
                 }
-                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     c.bytes += h.bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
@@ -301,7 +301,7 @@ pub(crate) fn submit_throughput_stats(
                     c.icmp_packets += h.icmp_packets;
                 } else {
                     circuit_throughput.insert(
-                        h.circuit_hash.unwrap(),
+                        h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
                             bytes: h.bytes_per_second,
                             packets: h.packets_per_second,
@@ -323,10 +323,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_hash.unwrap(), h.tcp_retransmits);
+                    circuit_retransmits.insert(h.circuit_hash.unwrap_or(0), h.tcp_retransmits);
                 }
             });
 
@@ -340,10 +340,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
-                    c.push(h.median_latency().unwrap());
+                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap_or(0)) {
+                    c.push(h.median_latency().unwrap_or(0.0));
                 } else {
-                    circuit_rtt.insert(h.circuit_hash.unwrap(), vec![h.median_latency().unwrap()]);
+                    circuit_rtt.insert(h.circuit_hash.unwrap_or(0), vec![h.median_latency().unwrap_or(0.0)]);
                 }
             });
 
@@ -428,7 +428,10 @@ pub(crate) fn submit_throughput_stats(
 
         // Network tree stats
         let tree = {
-            let reader = NETWORK_JSON.read().unwrap();
+            let Ok(reader) = NETWORK_JSON.read() else {
+                warn!("Unable to access NETWORK JSON - no stats submission this time");
+                return;
+            };
             reader.get_nodes_when_ready().clone()
         };
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();

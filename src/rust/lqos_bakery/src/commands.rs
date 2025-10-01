@@ -21,55 +21,114 @@ pub enum ExecutionMode {
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
+    /// Send this when circuits are seen by the throughput tracker
     OnCircuitActivity {
+        /// All active circuit IDs
         circuit_ids: HashSet<i64>,
     },
+    /// Periodic tick
     Tick,
+    /// Change an existing site's HTB rates live without a rebuild.
+    ///
+    /// Updates the min/ceil rates for both download (ISP-facing) and upload
+    /// (Internet-facing) classes associated with the specified site.
     ChangeSiteSpeedLive {
+        /// Unique identifier for the target site.
         site_hash: i64,
+        /// New minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// New minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// New maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// New maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
     },
+    /// Begin a batch of changes; subsequent commands are queued until commit.
     StartBatch,
+    /// Commit the current batch, diffing and applying queued changes.
     CommitBatch,
+    /// Set up MQ roots and per-queue parents on one or both interfaces.
     MqSetup {
+        /// Total number of MQ queues to create per interface.
         queues_available: usize,
+        /// Offset applied to queue indices on the Internet-facing side
+        /// when operating in on-a-stick configurations.
         stick_offset: usize,
     },
+    /// Add or update a top-level site class pair under the given parents.
     AddSite {
+        /// Unique identifier for the site.
         site_hash: i64,
+        /// Parent class handle on the ISP-facing interface (downlink side).
         parent_class_id: TcHandle,
+        /// Parent class handle on the Internet-facing interface (uplink side).
         up_parent_class_id: TcHandle,
+        /// Minor class ID shared by uplink/downlink site classes.
         class_minor: u16,
+        /// Minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// Minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// Maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// Maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
     },
+    /// Add or update a circuit beneath a site; may add SQM depending on mode.
     AddCircuit {
+        /// Unique identifier for the circuit.
         circuit_hash: i64,
+        /// Parent class handle on the ISP-facing interface (downlink side).
         parent_class_id: TcHandle,
+        /// Parent class handle on the Internet-facing interface (uplink side).
         up_parent_class_id: TcHandle,
+        /// Minor class ID used for both uplink and downlink circuit classes.
         class_minor: u16,
+        /// Minimum (guaranteed) download rate in Mbps.
         download_bandwidth_min: f32,
+        /// Minimum (guaranteed) upload rate in Mbps.
         upload_bandwidth_min: f32,
+        /// Maximum (ceiling) download rate in Mbps.
         download_bandwidth_max: f32,
+        /// Maximum (ceiling) upload rate in Mbps.
         upload_bandwidth_max: f32,
+        /// Major class ID (downlink) used when attaching SQM/HTB.
         class_major: u16,
+        /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
     },
+    /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
+        /// If true, log the tc command instead of executing it.
         dry_run: bool,
+        /// Network interface name (e.g., `eth0`) containing the class.
         interface_name: String,
+        /// Fully qualified class identifier (e.g., `1:2`).
         class_id: String,
+        /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
     },
 }
 
 impl BakeryCommands {
+    /// Translate this command into concrete `tc` argument vectors.
+    ///
+    /// Returns a list of `tc` argv arrays in execution order, or `None`
+    /// when the command does not directly emit `tc` operations (e.g.,
+    /// batch control) or when, given `execution_mode` and the current
+    /// configuration (lazy queue settings), no immediate changes are required.
+    ///
+    /// Arguments:
+    /// - `config`: Current loaded configuration used for interfaces, rates and SQM.
+    /// - `execution_mode`: Whether we're building the tree or applying live updates.
+    ///
+    /// Returns:
+    /// - `Some(Vec<Vec<String>>)` where each inner `Vec<String>` is a single
+    ///   `tc` invocation's argument list (without the binary), or `None` if
+    ///   nothing should be executed for this command.
     pub fn to_commands(
         &self,
         config: &Arc<lqos_config::Config>,
@@ -622,6 +681,21 @@ impl BakeryCommands {
         Some(result)
     }
 
+    /// Translate this circuit definition into `tc` deletions to prune it.
+    ///
+    /// Builds the sequence of `tc` argument lists to remove SQM qdiscs and/or
+    /// HTB classes corresponding to this circuit. This only applies when
+    /// `self` is `BakeryCommands::AddCircuit`; otherwise returns `None`.
+    ///
+    /// Behavior depends on `force` and the lazy-queue mode in `config`:
+    /// - When `force` is `true`, both SQM qdiscs and HTB classes are removed.
+    /// - When `force` is `false` and `LazyQueueMode::Htb`, only SQM is pruned.
+    /// - When `force` is `false` and `LazyQueueMode::Full`, both are pruned.
+    /// - If lazy queues are disabled, returns `None` (no pruning to do).
+    ///
+    /// Returns `Some(Vec<Vec<String>>)` of `tc` argv arrays in execution
+    /// order, or `None` if no actions are required or the command is not a
+    /// circuit.
     pub fn to_prune(
         &self,
         config: &Arc<lqos_config::Config>,

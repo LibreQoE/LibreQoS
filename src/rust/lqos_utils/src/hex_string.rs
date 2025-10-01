@@ -48,10 +48,10 @@ mod tests {
 
     #[test]
     fn hex_string_success() {
-        assert_eq!(read_hex_string("0x12AD").unwrap(), 4781);
-        assert_eq!(read_hex_string("12AD").unwrap(), 4781);
-        assert_eq!(read_hex_string("0x12ad").unwrap(), 4781);
-        assert_eq!(read_hex_string("12Ad").unwrap(), 4781);
+        assert_eq!(read_hex_string("0x12AD").expect("Hex parse failure"), 4781);
+        assert_eq!(read_hex_string("12AD").expect("Hex parse failure"), 4781);
+        assert_eq!(read_hex_string("0x12ad").expect("Hex parse failure"), 4781);
+        assert_eq!(read_hex_string("12Ad").expect("Hex parse failure"), 4781);
     }
 
     #[test]

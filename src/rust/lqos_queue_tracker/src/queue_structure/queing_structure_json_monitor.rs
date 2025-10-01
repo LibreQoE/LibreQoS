@@ -59,13 +59,11 @@ fn update_queue_structure() {
 /// Fires up a Linux file system watcher than notifies
 /// when `queuingStructure.json` changes, and triggers a reload.
 fn watch_for_queueing_structure_changing() -> Result<(), QueueWatcherError> {
-    // Obtain the path to watch
-    let watch_path = QueueNetwork::path();
-    if watch_path.is_err() {
+    // Get the path to watch
+    let Ok(watch_path) = QueueNetwork::path() else {
         error!("Could not create path for queuingStructure.json");
         return Err(QueueWatcherError::CannotCreatePath);
-    }
-    let watch_path = watch_path.unwrap();
+    };
 
     // Do the watching
     let mut watcher = FileWatcher::new("queueingStructure.json", watch_path);

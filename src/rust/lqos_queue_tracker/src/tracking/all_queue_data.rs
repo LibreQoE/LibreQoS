@@ -139,8 +139,8 @@ impl AllQueueData {
         lock.iter()
             .filter(|(_, q)| q.prev_drops.is_some() && q.prev_marks.is_some())
             .for_each(|(_, q)| {
-                drops += q.drops.checked_sub_or_zero(q.prev_drops.unwrap());
-                marks += q.marks.checked_sub_or_zero(q.prev_marks.unwrap());
+                drops += q.drops.checked_sub_or_zero(q.prev_drops.unwrap_or_default());
+                marks += q.marks.checked_sub_or_zero(q.prev_marks.unwrap_or_default());
             });
 
         TOTAL_QUEUE_STATS.drops.set_down(drops.down);

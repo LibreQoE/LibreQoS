@@ -862,7 +862,7 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load shaped devices snapshot and pick devices in the target circuit
+    // Load "shaped devices" snapshot and pick devices in the target circuit
     let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
     let mut device_indexes: Vec<usize> = Vec::new();
     for (idx, dev) in shaped.devices.iter().enumerate() {
@@ -890,9 +890,9 @@ async fn circuit_snapshot_streaming(
         for (xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
             if te.circuit_hash != Some(circuit_hash) { continue; }
-            // retire_check is local; use same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
+            // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            // Map IP to device via trie
+            // Map IP to a device via trie
             let lookup = xdp_ip.as_ipv6();
             if let Some((_, id)) = shaped.trie.longest_match(lookup) {
                 if aggregates.contains_key(id) {
@@ -1062,7 +1062,9 @@ async fn tree_snapshot_streaming(
     }
 
     // Use the same data source as local_api::network_tree
-    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+    let Ok(net_json) = crate::shaped_devices_tracker::NETWORK_JSON.read() else {
+        anyhow::bail!("RwLock Poisoning");
+    };
     let result: Vec<(usize, LiveNetworkTransport)> = net_json
         .get_nodes_when_ready()
         .iter()

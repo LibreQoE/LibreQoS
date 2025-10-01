@@ -1,5 +1,6 @@
 //! Collection of utility functions for LibreQoS
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 mod commands;
 

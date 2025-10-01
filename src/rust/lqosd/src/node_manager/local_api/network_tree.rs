@@ -3,7 +3,9 @@ use axum::Json;
 use lqos_config::NetworkJsonTransport;
 
 pub async fn get_network_tree() -> Json<Vec<(usize, NetworkJsonTransport)>> {
-    let net_json = NETWORK_JSON.read().unwrap();
+    let Ok(net_json) = NETWORK_JSON.read() else {
+        return Json(vec![]);
+    };
     let result: Vec<(usize, NetworkJsonTransport)> = net_json
         .get_nodes_when_ready()
         .iter()

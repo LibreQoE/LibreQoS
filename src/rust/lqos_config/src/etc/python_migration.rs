@@ -13,6 +13,10 @@ use tracing::error;
 pub enum PythonMigrationError {
     #[error("The ispConfig.py file does not exist.")]
     ConfigFileNotFound,
+    #[error("String not readable UTF-8")]
+    BadString,
+    #[error("Serialization Error: {e:?}")]
+    Serialize{ e: Box<dyn std::error::Error> }
 }
 
 fn isp_config_py_path(cfg: &EtcLqos) -> PathBuf {
@@ -154,11 +158,11 @@ impl PythonMigration {
                 error!("Error running Python migrator: {:?}", output);
                 return Err(PythonMigrationError::ConfigFileNotFound);
             }
-            let json = String::from_utf8(output.stdout).unwrap();
-            let json: Self = serde_json::from_str(&json).unwrap();
-            return Ok(json);
+            let json = String::from_utf8(output.stdout).map_err(|_| PythonMigrationError::BadString)?;
+            let json: Self = serde_json::from_str(&json).map_err(|e| PythonMigrationError::Serialize { e: Box::new(e) })?;
+            Ok(json)
         } else {
-            return Err(PythonMigrationError::ConfigFileNotFound);
+            Err(PythonMigrationError::ConfigFileNotFound)
         }
     }
 }

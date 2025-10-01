@@ -33,9 +33,16 @@ impl QueueStore {
         self.prev_download = Some(self.current_download.clone());
         self.current_download = download.clone();
         self.current_upload = upload.clone();
-        let new_diff_up = make_queue_diff(self.prev_upload.as_ref().unwrap(), &self.current_upload);
-        let new_diff_dn =
-            make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
+        let Some(prev_up) = self.prev_upload.as_ref() else {
+            tracing::info!("QueueStore.update: previous upload state missing; skipping update");
+            return;
+        };
+        let Some(prev_dn) = self.prev_download.as_ref() else {
+            tracing::info!("QueueStore.update: previous download state missing; skipping update");
+            return;
+        };
+        let new_diff_up = make_queue_diff(prev_up, &self.current_upload);
+        let new_diff_dn = make_queue_diff(prev_dn, &self.current_download);
 
         if let (Ok(new_diff_dn), Ok(new_diff_up)) = (new_diff_dn, new_diff_up) {
             self.history[self.history_head] = (new_diff_dn, new_diff_up);

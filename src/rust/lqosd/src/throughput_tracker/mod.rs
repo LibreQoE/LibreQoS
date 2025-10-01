@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::time::{Duration, Instant};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -156,7 +156,9 @@ fn throughput_task(
 
         // Formerly a "spawn blocking" blob
         {
-            let mut net_json_calc = NETWORK_JSON.write().unwrap();
+            let Ok(mut net_json_calc) = NETWORK_JSON.write() else {
+                continue;
+            };
             timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
@@ -204,24 +206,39 @@ fn throughput_task(
                 system_usage_actor.clone(),
             );
         } else {
-            let elapsed = last_submitted_to_lts.unwrap().elapsed();
-            let elapsed_f64 = elapsed.as_secs_f64();
-            // Temporary: place this in a thread to not block the timer
-            let my_system_usage_actor = system_usage_actor.clone();
-            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
-            if elapsed_f64 < 2.0 {
-                std::thread::Builder::new()
-                    .name("Throughput Stats Submit".to_string())
-                    .spawn(move || {
-                        stats_submission::submit_throughput_stats(
-                            elapsed_f64,
-                            stats_counter,
-                            my_system_usage_actor,
-                        );
-                    })
-                    .unwrap()
-                    .join()
-                    .unwrap();
+            if let Some(last) = last_submitted_to_lts {
+                let elapsed_f64 = last.elapsed().as_secs_f64();
+                // Temporary: place this in a thread to not block the timer
+                let my_system_usage_actor = system_usage_actor.clone();
+                // Submit if a reasonable amount of time has passed - drop if there was a long hitch
+                if elapsed_f64 < 2.0 {
+                    match std::thread::Builder::new()
+                        .name("Throughput Stats Submit".to_string())
+                        .spawn(move || {
+                            stats_submission::submit_throughput_stats(
+                                elapsed_f64,
+                                stats_counter,
+                                my_system_usage_actor,
+                            );
+                        }) {
+                        Ok(handle) => {
+                            if let Err(e) = handle.join() {
+                                info!(
+                                    "Throughput stats submit thread join error (ignored): {:?}",
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            info!(
+                                "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                                e
+                            );
+                        }
+                    }
+                }
+            } else {
+                info!("No last submission timestamp; skipping stats submission this cycle");
             }
         }
         last_submitted_to_lts = Some(Instant::now());
@@ -493,8 +510,18 @@ pub fn xdp_pping_compat() -> BusResponse {
                 if samples > 0 {
                     valid_samples.sort_by(|a, b| (*a).cmp(b));
                     let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
-                    let max = *(valid_samples.iter().max().unwrap()) as f32 / 100.0;
-                    let min = *(valid_samples.iter().min().unwrap()) as f32 / 100.0;
+                    let min = if let Some(v) = valid_samples.first() {
+                        *v as f32 / 100.0
+                    } else {
+                        // No valid min; skip this submission as if no samples
+                        return None;
+                    };
+                    let max = if let Some(v) = valid_samples.last() {
+                        *v as f32 / 100.0
+                    } else {
+                        // No valid max; skip this submission as if no samples
+                        return None;
+                    };
                     let sum = valid_samples.iter().sum::<u32>() as f32 / 100.0;
                     let avg = sum / samples as f32;
 
@@ -661,7 +688,9 @@ pub fn all_unknown_ips() -> BusResponse {
         warn!("This only happens immediately after a reboot.");
         return BusResponse::NotReadyYet;
     }
-    let boot_time = boot_time.unwrap();
+    let Ok(boot_time) = boot_time else {
+        return BusResponse::Fail("Boot time unavailable".to_string())
+    };
 
     // Safely convert TimeSpec to Duration - handle potential negative values
     let time_since_boot = match boot_time.tv_sec() {

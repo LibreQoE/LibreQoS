@@ -16,12 +16,13 @@ pub fn num_possible_cpus() -> Result<u32, PossibleCpuError> {
     };
 
     let file_contents = read_to_string(path);
-    if file_contents.is_err() {
-        error!("Unable to read contents of /sys/devices/system/cpu/possible");
-        error!("{file_contents:?}");
+    let Ok(file_contents) = file_contents else {
+        if file_contents.is_err() {
+            error!("Unable to read contents of /sys/devices/system/cpu/possible");
+            error!("{file_contents:?}");
+        }
         return Err(PossibleCpuError::UnableToRead);
-    }
-    let file_contents = file_contents.unwrap();
+    };
 
     parse_cpu_string(&file_contents)
 }
@@ -59,24 +60,24 @@ mod test {
     #[test]
     fn test_unable_to_parse() {
         assert_eq!(
-            parse_cpu_string("blah").err().unwrap(),
+            parse_cpu_string("blah").err().expect("Parse error"),
             PossibleCpuError::ParseError
         );
     }
 
     #[test]
     fn test_four_cpus() {
-        assert_eq!(4, parse_cpu_string("0-3").unwrap());
+        assert_eq!(4, parse_cpu_string("0-3").expect("0-3 fail"));
     }
 
     #[test]
     fn test_sixteen_cpus() {
-        assert_eq!(16, parse_cpu_string("0-15").unwrap());
+        assert_eq!(16, parse_cpu_string("0-15").expect("0-15 fail"));
     }
 
     #[test]
     fn test_againt_c() {
         let cpu_count = unsafe { libbpf_sys::libbpf_num_possible_cpus() } as u32;
-        assert_eq!(cpu_count, num_possible_cpus().unwrap());
+        assert_eq!(cpu_count, num_possible_cpus().expect("Failure in num_possible_cpus"));
     }
 }
