@@ -121,6 +121,8 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
 }
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+// Prevent unbounded growth while waiting for Welcome
+const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
 async fn persistent_connection(
     mut rx: tokio::sync::mpsc::Receiver<ConnectionCommand>,
@@ -231,6 +233,13 @@ async fn persistent_connection(
                                     let _ = responder.send(Err(()));
                                     continue 'message_pump;
                                 }
+                                // Guard: avoid unbounded growth if Insight doesn't reply
+                                const MAX_PENDING_HISTORY: usize = 256;
+                                if pending_history.len() >= MAX_PENDING_HISTORY {
+                                    warn!("Too many pending history requests ({}); dropping newest", MAX_PENDING_HISTORY);
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
 
                                 let request_id = next_history_request_id;
                                 next_history_request_id = next_history_request_id.wrapping_add(1);
@@ -278,6 +287,10 @@ async fn persistent_connection(
                                     let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                 } else {
                                     debug!("Queuing ChatbotStart until connection permitted (request_id={})", request_id);
+                                    if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                        warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                        let _ = pending_chatbot_messages.drain(..1);
+                                    }
                                     pending_chatbot_messages.push(bytes);
                                 }
                             }
@@ -288,6 +301,10 @@ async fn persistent_connection(
                                         let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                     } else {
                                         debug!("Queuing ChatbotUserInput until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
                                         pending_chatbot_messages.push(bytes);
                                     }
                                 }
@@ -300,6 +317,10 @@ async fn persistent_connection(
                                         let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
                                     } else {
                                         debug!("Queuing ChatbotStop until connection permitted (request_id={})", request_id);
+                                        if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
+                                            warn!("Pending chatbot queue full ({}); dropping oldest", MAX_PENDING_CHATBOT_MESSAGES);
+                                            let _ = pending_chatbot_messages.drain(..1);
+                                        }
                                         pending_chatbot_messages.push(bytes);
                                     }
                                 }
@@ -643,6 +664,7 @@ async fn api_request(
     // Make a request to http://127.0.0.1:9122/{url_suffix} using the specified method and body (if present),
     // and return the result (status, headers, body) to Insight as an ApiReply.
     let client = reqwest::Client::builder()
+        .connect_timeout(TCP_TIMEOUT)
         .timeout(TCP_TIMEOUT)
         .build()?;
 
