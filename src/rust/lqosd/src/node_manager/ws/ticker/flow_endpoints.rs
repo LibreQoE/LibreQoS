@@ -19,11 +19,20 @@ pub async fn endpoints_by_country(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::CurrentEndpointsByCountry;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("EndpointsByCountry: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                "EndpointsByCountry: failed to receive throughput from bus: {:?}",
+                e
+            );
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentEndpointsByCountry(countries) = reply {
             let message = json!(
@@ -53,11 +62,20 @@ pub async fn ether_protocols(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::EtherProtocolSummary;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("EtherProtocols: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(
+                "EtherProtocols: failed to receive throughput from bus: {:?}",
+                e
+            );
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::EtherProtocols {
             v4_bytes,
@@ -102,11 +120,17 @@ pub async fn ip_protocols(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::IpProtocolSummary;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("IpProtocols: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("IpProtocols: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::IpProtocols(ip_data) = reply {
             let message = json!(
@@ -134,11 +158,17 @@ pub async fn flow_duration(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::FlowDuration;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("FlowDurations: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("FlowDurations: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::FlowDuration(flow_data) = reply {
             let message = json!(

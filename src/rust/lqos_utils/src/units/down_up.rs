@@ -168,10 +168,11 @@ where
 
 /// Divides two DownUpOrder values, returning a tuple of the results.
 pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, f64) {
-    (
-        left.down as f64 / right.down as f64,
-        left.up as f64 / right.up as f64,
-    )
+    #[inline(always)]
+    fn safe_div(n: u64, d: u64) -> f64 {
+        if d == 0 { 0.0 } else { n as f64 / d as f64 }
+    }
+    (safe_div(left.down, right.down), safe_div(left.up, right.up))
 }
 
 #[cfg(test)]

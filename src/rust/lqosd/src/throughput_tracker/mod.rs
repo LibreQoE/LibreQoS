@@ -417,10 +417,12 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
+    // Use a total order for floating-point comparison to avoid panics
+    // when NaN/Inf are present and ensure comparator transitivity.
     full_list.sort_by(|a, b| {
         let total_a = a.6.0 + a.6.1;
         let total_b = b.6.0 + b.6.1;
-        total_b.partial_cmp(&total_a).unwrap_or(std::cmp::Ordering::Equal)
+        total_b.total_cmp(&total_a)
     });
     let result = full_list
         .iter()
