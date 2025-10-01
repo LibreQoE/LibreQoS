@@ -33,11 +33,11 @@ pub enum MigrationError {
 pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     debug!("Checking config file version");
     let raw =
-        std::fs::read_to_string(&config_location).map_err(|e| MigrationError::ReadError(e))?;
+        std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
 
     let doc = raw
         .parse::<DocumentMut>()
-        .map_err(|e| MigrationError::ParseError(e))?;
+        .map_err(MigrationError::ParseError)?;
     if let Some((_key, version)) = doc.get_key_value("version") {
         debug!(
             "Configuration file is at version {}",
@@ -60,7 +60,7 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
         let new_config = migrate_14_to_15()?;
         // Back up the old configuration
         std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
-            .map_err(|e| MigrationError::ReadError(e))?;
+            .map_err(MigrationError::ReadError)?;
 
         // Rename the old Python configuration
         let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
@@ -78,8 +78,8 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
 
 fn migrate_14_to_15() -> Result<Config, MigrationError> {
     // Load the 1.4 config file
-    let old_config = EtcLqos::load().map_err(|e| MigrationError::LoadError(e))?;
-    let python_config = PythonMigration::load().map_err(|e| MigrationError::PythonLoadError(e))?;
+    let old_config = EtcLqos::load().map_err(MigrationError::LoadError)?;
+    let python_config = PythonMigration::load().map_err(MigrationError::PythonLoadError)?;
     let new_config = do_migration_14_to_15(&old_config, &python_config)?;
     Ok(new_config)
 }
@@ -93,7 +93,7 @@ fn do_migration_14_to_15(
 
     migrate_top_level(old_config, &mut new_config)?;
     migrate_tunables(old_config, &mut new_config)?;
-    migrate_bridge(old_config, &python_config, &mut new_config)?;
+    migrate_bridge(old_config, python_config, &mut new_config)?;
     migrate_lts(old_config, &mut new_config)?;
     migrate_ip_ranges(python_config, &mut new_config)?;
     migrate_integration_common(python_config, &mut new_config)?;

@@ -21,13 +21,12 @@ pub enum PythonMigrationError {
 
 fn isp_config_py_path(cfg: &EtcLqos) -> PathBuf {
     let base_path = Path::new(&cfg.lqos_directory);
-    let final_path = base_path.join("ispConfig.py");
-    final_path
+    base_path.join("ispConfig.py")
 }
 
 /// Does thie ispConfig.py file exist?
 fn config_exists(cfg: &EtcLqos) -> bool {
-    isp_config_py_path(&cfg).exists()
+    isp_config_py_path(cfg).exists()
 }
 
 #[derive(Serialize, Deserialize, Default)]

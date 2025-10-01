@@ -82,10 +82,10 @@ impl TcHandle {
     }
 }
 
-impl ToString for TcHandle {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for TcHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (major, minor) = self.get_major_minor();
-        format!("{major:x}:{minor:x}")
+        write!(f, "{major:x}:{minor:x}")
     }
 }
 

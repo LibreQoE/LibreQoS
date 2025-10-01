@@ -2,7 +2,6 @@ mod serializable;
 mod shaped_device;
 
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use encoding_rs;
 use lqos_utils::XdpIpAddress;
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
@@ -63,7 +62,7 @@ impl ConfigShapedDevices {
 
     fn handle_encodings(bytes: &[u8]) -> Vec<u8> {
         // First, handle BOM if present
-        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(&bytes) {
+        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(bytes) {
             let mut result = Vec::new();
             let (decoded, _, _) = encoding.decode(&bytes[bom_length..]);
             result.extend_from_slice(decoded.as_bytes());
