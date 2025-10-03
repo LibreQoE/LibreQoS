@@ -376,125 +376,169 @@ def validateNetworkAndDevices():
 	else:
 		return False
 
+def read_shaped_devices(shapedDevicesFile):
+	"""
+	Load and parse ShapedDevices CSV into normalized device dicts without side effects.
+
+	Returns a list of dictionaries with keys:
+	- circuitID, circuitName, deviceID, deviceName, ParentNode, mac
+	- ipv4s: list[str] (each entry may be host or CIDR)
+	- ipv6s: list[str]
+	- minDownload, minUpload, maxDownload, maxUpload: float
+	- comment: str
+
+	This function handles BOM/encoding and strips header/comments.
+	"""
+	# Read raw bytes and handle encoding/BOM
+	with open(shapedDevicesFile, 'rb') as f:
+		raw_bytes = f.read()
+
+	# Handle BOMs and encoding
+	if raw_bytes.startswith(b'\xef\xbb\xbf'):  # UTF-8 BOM
+		raw_bytes = raw_bytes[3:]
+		text_content = raw_bytes.decode('utf-8')
+	elif raw_bytes.startswith(b'\xff\xfe') or raw_bytes.startswith(b'\xfe\xff'):
+		# UTF-16 BOM (LE/BE) — let Python detect via 'utf-16'
+		text_content = raw_bytes.decode('utf-16')
+	else:
+		try:
+			text_content = raw_bytes.decode('utf-8')
+		except UnicodeDecodeError:
+			detected = chardet.detect(raw_bytes)
+			encoding = detected['encoding'] or 'utf-8'
+			text_content = raw_bytes.decode(encoding, errors='replace')
+
+	devices = []
+	with io.StringIO(text_content) as csv_file:
+		csv_reader = csv.reader(csv_file, delimiter=',')
+		rows = [row for row in csv_reader if row and not row[0].startswith('#')]
+		if not rows:
+			return devices
+		# Drop header
+		rows = rows[1:]
+		for row in rows:
+			(
+				circuitID,
+				circuitName,
+				deviceID,
+				deviceName,
+				ParentNode,
+				mac,
+				ipv4_input,
+				ipv6_input,
+				downloadMin,
+				uploadMin,
+				downloadMax,
+				uploadMax,
+				comment,
+			) = row
+
+			# Split IPv4/IPv6 lists (keep strings; validation happens elsewhere)
+			ipv4s = []
+			if ipv4_input:
+				ipv4_clean = ipv4_input.replace(' ', '')
+				ipv4s = ipv4_clean.split(',') if ',' in ipv4_clean else [ipv4_clean]
+
+			ipv6s = []
+			if ipv6_input:
+				ipv6_clean = ipv6_input.replace(' ', '')
+				ipv6s = ipv6_clean.split(',') if ',' in ipv6_clean else [ipv6_clean]
+
+			devices.append(
+				{
+					"circuitID": circuitID,
+					"circuitName": circuitName,
+					"deviceID": deviceID,
+					"deviceName": deviceName,
+					"ParentNode": ParentNode if ParentNode != "" else "none",
+					"mac": mac,
+					"ipv4s": ipv4s,
+					"ipv6s": ipv6s,
+					"minDownload": float(downloadMin),
+					"minUpload": float(uploadMin),
+					"maxDownload": float(downloadMax),
+					"maxUpload": float(uploadMax),
+					"comment": comment,
+				}
+			)
+
+	return devices
+
 def loadSubscriberCircuits(shapedDevicesFile):
 	# Load Subscriber Circuits & Devices
 	subscriberCircuits = []
 	knownCircuitIDs = []
 	counterForCircuitsWithoutParentNodes = 0
 	dictForCircuitsWithoutParentNodes = {}
-	with open(shapedDevicesFile) as csv_file:
-		csv_reader = csv.reader(csv_file, delimiter=',')
-		# Remove comments if any
-		commentsRemoved = []
-		for row in csv_reader:
-			if not row[0].startswith('#'):
-				commentsRemoved.append(row)
-		# Remove header
-		commentsRemoved.pop(0)
-		for row in commentsRemoved:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
-			# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-			if monitor_mode_only() == True:
-				downloadMin = 10000
-				uploadMin = 10000
-				downloadMax = 10000
-				uploadMax = 10000
-			ipv4_subnets_and_hosts = []
-			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each
-			if ipv4_input != "":
-				ipv4_input = ipv4_input.replace(' ','')
-				if "," in ipv4_input:
-					ipv4_list = ipv4_input.split(',')
-				else:
-					ipv4_list = [ipv4_input]
-				for ipEntry in ipv4_list:
-					ipv4_subnets_and_hosts.append(ipEntry)
-			ipv6_subnets_and_hosts = []
-			if ipv6_input != "":
-				ipv6_input = ipv6_input.replace(' ','')
-				if "," in ipv6_input:
-					ipv6_list = ipv6_input.split(',')
-				else:
-					ipv6_list = [ipv6_input]
-				for ipEntry in ipv6_list:
-					ipv6_subnets_and_hosts.append(ipEntry)
-			# If there is something in the circuit ID field
-			if circuitID != "":
-				# Seen circuit before
-				if circuitID in knownCircuitIDs:
-					for circuit in subscriberCircuits:
-						if circuit['circuitID'] == circuitID:
-							if circuit['ParentNode'] != "none":
-								if circuit['ParentNode'] != ParentNode:
-									errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
-									raise ValueError(errorMessageString)
-							# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
-							if monitor_mode_only() == False:
-								if ((circuit['minDownload'] != float(downloadMin))
-									or (circuit['minUpload'] != float(uploadMin))
-									or (circuit['maxDownload'] != float(downloadMax))
-									or (circuit['maxUpload'] != float(uploadMax))):
-									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
-							devicesListForCircuit = circuit['devices']
-							thisDevice = 	{
-											  "deviceID": deviceID,
-											  "deviceName": deviceName,
-											  "mac": mac,
-											  "ipv4s": ipv4_subnets_and_hosts,
-											  "ipv6s": ipv6_subnets_and_hosts,
-											  "comment": comment
-											}
-							devicesListForCircuit.append(thisDevice)
-							circuit['devices'] = devicesListForCircuit
-				# Have not seen circuit before
-				else:
-					knownCircuitIDs.append(circuitID)
-					if ParentNode == "":
-						ParentNode = "none"
-					#ParentNode = ParentNode.strip()
-					deviceListForCircuit = []
-					thisDevice = 	{
-									  "deviceID": deviceID,
-									  "deviceName": deviceName,
-									  "mac": mac,
-									  "ipv4s": ipv4_subnets_and_hosts,
-									  "ipv6s": ipv6_subnets_and_hosts,
-									  "comment": comment
-									}
-					deviceListForCircuit.append(thisDevice)
-					thisCircuit = {
-					  "circuitID": circuitID,
-					  "circuitName": circuitName,
-					  "ParentNode": ParentNode,
-					  "devices": deviceListForCircuit,
-					  "minDownload": float(downloadMin),
-					  "minUpload": float(uploadMin),
-					  "maxDownload": float(downloadMax),
-					  "maxUpload": float(uploadMax),
-					  "classid": '',
-					  "comment": comment
-					}
-					if thisCircuit['ParentNode'] == 'none':
-						thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax))) 
-						counterForCircuitsWithoutParentNodes += 1
-					subscriberCircuits.append(thisCircuit)
-			# If there is nothing in the circuit ID field
+
+	# Load and normalize devices first
+	devices = read_shaped_devices(shapedDevicesFile)
+
+	for dev in devices:
+		circuitID = dev['circuitID']
+		circuitName = dev['circuitName']
+		deviceID = dev['deviceID']
+		deviceName = dev['deviceName']
+		ParentNode = dev['ParentNode']
+		mac = dev['mac']
+		ipv4_subnets_and_hosts = dev['ipv4s']
+		ipv6_subnets_and_hosts = dev['ipv6s']
+		downloadMin = dev['minDownload']
+		uploadMin = dev['minUpload']
+		downloadMax = dev['maxDownload']
+		uploadMax = dev['maxUpload']
+		comment = dev['comment']
+
+		# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
+		if monitor_mode_only() == True:
+			downloadMin = 10000
+			uploadMin = 10000
+			downloadMax = 10000
+			uploadMax = 10000
+
+		# If there is something in the circuit ID field
+		if circuitID != "":
+			# Seen circuit before
+			if circuitID in knownCircuitIDs:
+				for circuit in subscriberCircuits:
+					if circuit['circuitID'] == circuitID:
+						if circuit['ParentNode'] != "none":
+							if circuit['ParentNode'] != ParentNode:
+								errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
+								raise ValueError(errorMessageString)
+						# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
+						if monitor_mode_only() == False:
+							if ((circuit['minDownload'] != float(downloadMin))
+								or (circuit['minUpload'] != float(uploadMin))
+								or (circuit['maxDownload'] != float(downloadMax))
+								or (circuit['maxUpload'] != float(uploadMax))):
+								warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
+						devicesListForCircuit = circuit['devices']
+						thisDevice = 	{
+											"deviceID": deviceID,
+											"deviceName": deviceName,
+											"mac": mac,
+											"ipv4s": ipv4_subnets_and_hosts,
+											"ipv6s": ipv6_subnets_and_hosts,
+											"comment": comment
+										}
+						devicesListForCircuit.append(thisDevice)
+						circuit['devices'] = devicesListForCircuit
+			# Have not seen circuit before
 			else:
-				# Copy deviceName to circuitName if none defined already
-				if circuitName == "":
-					circuitName = deviceName
+				knownCircuitIDs.append(circuitID)
 				if ParentNode == "":
 					ParentNode = "none"
 				#ParentNode = ParentNode.strip()
 				deviceListForCircuit = []
 				thisDevice = 	{
-								  "deviceID": deviceID,
-								  "deviceName": deviceName,
-								  "mac": mac,
-								  "ipv4s": ipv4_subnets_and_hosts,
-								  "ipv6s": ipv6_subnets_and_hosts,
-								}
+								"deviceID": deviceID,
+								"deviceName": deviceName,
+								"mac": mac,
+								"ipv4s": ipv4_subnets_and_hosts,
+								"ipv6s": ipv6_subnets_and_hosts,
+								"comment": comment
+							}
 				deviceListForCircuit.append(thisDevice)
 				thisCircuit = {
 				  "circuitID": circuitID,
@@ -510,9 +554,44 @@ def loadSubscriberCircuits(shapedDevicesFile):
 				}
 				if thisCircuit['ParentNode'] == 'none':
 					thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
+					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax))) 
 					counterForCircuitsWithoutParentNodes += 1
 				subscriberCircuits.append(thisCircuit)
+	# If there is nothing in the circuit ID field
+		else:
+			# Copy deviceName to circuitName if none defined already
+			if circuitName == "":
+				circuitName = deviceName
+			if ParentNode == "":
+				ParentNode = "none"
+			#ParentNode = ParentNode.strip()
+			deviceListForCircuit = []
+			thisDevice = 	{
+							"deviceID": deviceID,
+							"deviceName": deviceName,
+							"mac": mac,
+							"ipv4s": ipv4_subnets_and_hosts,
+							"ipv6s": ipv6_subnets_and_hosts,
+						}
+			deviceListForCircuit.append(thisDevice)
+			thisCircuit = {
+			  "circuitID": circuitID,
+			  "circuitName": circuitName,
+			  "ParentNode": ParentNode,
+			  "devices": deviceListForCircuit,
+			  "minDownload": float(downloadMin),
+			  "minUpload": float(uploadMin),
+			  "maxDownload": float(downloadMax),
+			  "maxUpload": float(uploadMax),
+			  "classid": '',
+			  "comment": comment
+			}
+			if thisCircuit['ParentNode'] == 'none':
+				thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
+				dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
+				counterForCircuitsWithoutParentNodes += 1
+			subscriberCircuits.append(thisCircuit)
+
 	return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
 
 def refreshShapers():

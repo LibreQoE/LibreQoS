@@ -58,6 +58,7 @@ RUSTPROGS=(
   lqos_map_perf
   uisp_integration
   lqos_support_tool
+  lqos_overrides
 )
 
 ####################################################

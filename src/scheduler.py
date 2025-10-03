@@ -1,5 +1,8 @@
 import time
 import datetime
+import csv
+import io
+import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
 import sys
@@ -7,7 +10,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    calculate_hash, scheduler_alive, scheduler_error
+    calculate_hash, scheduler_alive, scheduler_error, overrides_append_devices
 
 if automatic_import_splynx():
     from integrationSplynx import importFromSplynx
@@ -52,16 +55,6 @@ def capture_output_and_run(func):
         scheduler_error(error_msg)
 
 def importFromCRM():
-    # Check Insight Topology Status
-    run_crm = True
-    if enable_insight_topology() and not insight_topology_role == "Primary":
-        # This node is not the primary Insight Topology node, skip CRM import
-        print("Skipping CRM import as this node is not the primary Insight Topology node.")
-        run_crm = False
-        return
-    if not run_crm:
-        return
-
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -91,6 +84,135 @@ def importFromCRM():
     binPath = get_libreqos_directory() + "/bin"
     if os.path.isfile(path):
         subprocess.Popen(path, cwd=binPath)
+    # Handle lqos_overrides
+    try:
+        apply_lqos_overrides()
+    except Exception as e:
+        scheduler_error(f"Failed to apply lqos_overrides: {e}")
+        print(f"Failed to apply lqos_overrides: {e}")
+
+
+# --------------- Overrides Handling ---------------
+
+SHAPED_DEVICES_HEADER = [
+    "Circuit ID",
+    "Circuit Name",
+    "Device ID",
+    "Device Name",
+    "Parent Node",
+    "MAC",
+    "IPv4",
+    "IPv6",
+    "Download Min Mbps",
+    "Upload Min Mbps",
+    "Download Max Mbps",
+    "Upload Max Mbps",
+    "Comment",
+]
+
+
+def shaped_devices_csv_path() -> str:
+    base_dir = get_libreqos_directory()
+    return base_dir + "/ShapedDevices.csv"
+
+
+def read_shaped_devices_csv(path: str):
+    """Read CSV with comment stripping and header handling. Returns (header, rows)."""
+    if not os.path.isfile(path):
+        return SHAPED_DEVICES_HEADER, []
+
+    with open(path, 'rb') as f:
+        raw_bytes = f.read()
+
+    # Handle BOMs and encoding similar to LibreQoS.py
+    if raw_bytes.startswith(b'\xef\xbb\xbf'):
+        raw_bytes = raw_bytes[3:]
+        text_content = raw_bytes.decode('utf-8')
+    elif raw_bytes.startswith(b'\xff\xfe') or raw_bytes.startswith(b'\xfe\xff'):
+        text_content = raw_bytes.decode('utf-16')
+    else:
+        try:
+            text_content = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            detected = chardet.detect(raw_bytes)
+            encoding = detected['encoding'] or 'utf-8'
+            text_content = raw_bytes.decode(encoding, errors='replace')
+
+    with io.StringIO(text_content) as csv_file:
+        reader = csv.reader(csv_file, delimiter=',')
+        rows = [row for row in reader if row and not row[0].startswith('#')]
+        if not rows:
+            return SHAPED_DEVICES_HEADER, []
+        header = rows[0]
+        data_rows = rows[1:]
+        return header, data_rows
+
+
+def override_devices_to_rows(devices):
+    """Convert override device dicts to CSV rows (13 columns)."""
+    rows = []
+    for d in devices:
+        ipv4s = d.get('ipv4s', [])
+        ipv6s = d.get('ipv6s', [])
+        row = [
+            d.get('circuitID', ''),
+            d.get('circuitName', ''),
+            d.get('deviceID', ''),
+            d.get('deviceName', ''),
+            d.get('ParentNode', ''),
+            d.get('mac', ''),
+            ','.join(ipv4s),
+            ','.join(ipv6s),
+            str(d.get('minDownload', '')),
+            str(d.get('minUpload', '')),
+            str(d.get('maxDownload', '')),
+            str(d.get('maxUpload', '')),
+            d.get('comment', ''),
+        ]
+        rows.append(row)
+    return rows
+
+
+def merge_rows_replace_by_device_id(existing_rows, override_rows):
+    """Replace existing rows by device_id if present, else append."""
+    index_by_device = {}
+    for idx, row in enumerate(existing_rows):
+        if len(row) >= 3:
+            index_by_device[row[2]] = idx
+    merged = list(existing_rows)
+    changed = False
+    for o in override_rows:
+        device_id = o[2] if len(o) >= 3 else ''
+        if device_id in index_by_device:
+            idx = index_by_device[device_id]
+            if merged[idx] != o:
+                merged[idx] = o
+                changed = True
+        else:
+            merged.append(o)
+            changed = True
+    return merged, changed
+
+
+def write_shaped_devices_csv(path: str, header, rows):
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def apply_lqos_overrides():
+    """Load ShapedDevices.csv, append/replace rows from overrides, and save back."""
+    path = shaped_devices_csv_path()
+    header, rows = read_shaped_devices_csv(path)
+    extra = overrides_append_devices()
+    if not extra:
+        return
+    override_rows = override_devices_to_rows(extra)
+    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+    if changed:
+        write_shaped_devices_csv(path, header if header else SHAPED_DEVICES_HEADER, merged_rows)
+        print("Updated ShapedDevices.csv with override devices")
 
 
 def importAndShapeFullReload():

@@ -43,6 +43,11 @@ impl OverrideFile {
         Ok(())
     }
 
+    /// Borrow the list of devices to append without modifying the file.
+    pub fn devices_to_append(&self) -> &[ShapedDevice] {
+        &self.devices_to_append
+    }
+
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
     pub fn add_append_shaped_device_return_changed(&mut self, device: ShapedDevice) -> bool {
         if let Some(existing) = self

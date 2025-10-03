@@ -31,6 +31,8 @@ enum AppendDevicesCommand {
     DeleteCircuitId { #[arg(long)] circuit_id: String },
     /// Delete appended device(s) by device ID
     DeleteDeviceId { #[arg(long)] device_id: String },
+    /// List current appended devices
+    List,
 }
 
 #[derive(Args, Debug)]
@@ -158,6 +160,10 @@ fn main() -> Result<()> {
                 } else {
                     println!("No devices matched device_id {device_id}.");
                 }
+            }
+            AppendDevicesCommand::List => {
+                let list = overrides.devices_to_append();
+                println!("{}", serde_json::to_string_pretty(&list)?);
             }
         },
     }

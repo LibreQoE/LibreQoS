@@ -5,6 +5,7 @@ use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -98,6 +99,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_append_devices, m)?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -297,6 +299,51 @@ fn validate_shaped_devices() -> PyResult<String> {
         }
     }
     Ok("".to_string())
+}
+
+/// Returns a Python list of dictionaries representing devices to append to ShapedDevices.csv
+/// The dictionary keys mirror the normalized loader used in LibreQoS.py:
+/// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
+/// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload, maxUpload, comment.
+#[pyfunction]
+fn overrides_append_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for dev in overrides.devices_to_append().iter() {
+        let ipv4s: Vec<String> = dev
+            .ipv4
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+        let ipv6s: Vec<String> = dev
+            .ipv6
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+
+        let d = PyDict::new(py);
+        d.set_item("circuitID", dev.circuit_id.clone())?;
+        d.set_item("circuitName", dev.circuit_name.clone())?;
+        d.set_item("deviceID", dev.device_id.clone())?;
+        d.set_item("deviceName", dev.device_name.clone())?;
+        d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item("mac", dev.mac.clone())?;
+        d.set_item("ipv4s", ipv4s)?;
+        d.set_item("ipv6s", ipv6s)?;
+        d.set_item("minDownload", dev.download_min_mbps)?;
+        d.set_item("minUpload", dev.upload_min_mbps)?;
+        d.set_item("maxDownload", dev.download_max_mbps)?;
+        d.set_item("maxUpload", dev.upload_max_mbps)?;
+        d.set_item("comment", dev.comment.clone())?;
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
 }
 
 #[pyfunction]

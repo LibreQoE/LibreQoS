@@ -1982,6 +1982,7 @@ dependencies = [
  "chrono",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "lqos_utils",
  "nix",
  "pyo3",
