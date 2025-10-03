@@ -39,6 +39,7 @@ LQOS_FILES=(
   integrationUISProutes.template.csv
   integrationSplynxBandwidths.template.csv
   ../requirements.txt
+  update_api.sh
 )
 
 LQOS_BIN_FILES=(
@@ -135,6 +136,11 @@ popd > /dev/null || exit
 for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
+
+# Ensure update_api.sh is executable in the package
+if [ -f "$LQOS_DIR/update_api.sh" ]; then
+  chmod a+x "$LQOS_DIR/update_api.sh" || true
+fi
 
 # Copy files into the LibreQoS/bin directory
 for file in "${LQOS_BIN_FILES[@]}"; do
