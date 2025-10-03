@@ -4060,6 +4060,7 @@ dependencies = [
  "ip_network_table",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "petgraph",
  "serde",
  "serde_cbor",

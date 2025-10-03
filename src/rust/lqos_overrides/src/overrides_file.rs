@@ -40,6 +40,21 @@ pub enum NetworkAdjustment {
     },
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct UispOverrides {
+    #[serde(default)]
+    pub bandwidth_overrides: std::collections::HashMap<String, (f32, f32)>,
+    #[serde(default)]
+    pub route_overrides: Vec<UispRouteOverride>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UispRouteOverride {
+    pub from_site: String,
+    pub to_site: String,
+    pub cost: u32,
+}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct OverrideFile {
     /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
@@ -53,6 +68,9 @@ pub struct OverrideFile {
     /// Adjustments that affect network.json structure/settings.
     #[serde(default)]
     network_adjustments: Vec<NetworkAdjustment>,
+    /// UISP integration consolidated overrides
+    #[serde(default)]
+    uisp: Option<UispOverrides>,
 }
 
 impl OverrideFile {
@@ -95,6 +113,11 @@ impl OverrideFile {
     /// Borrow the list of network adjustments without modifying the file.
     pub fn network_adjustments(&self) -> &[NetworkAdjustment] {
         &self.network_adjustments
+    }
+
+    /// Borrow UISP overrides if present
+    pub fn uisp(&self) -> Option<&UispOverrides> {
+        self.uisp.as_ref()
     }
 
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
@@ -154,6 +177,37 @@ impl OverrideFile {
     pub fn remove_network_adjustment_by_index(&mut self, index: usize) -> bool {
         if index < self.network_adjustments.len() {
             self.network_adjustments.remove(index);
+            return true;
+        }
+        false
+    }
+
+    fn ensure_uisp_mut(&mut self) -> &mut UispOverrides {
+        if self.uisp.is_none() {
+            self.uisp = Some(UispOverrides::default());
+        }
+        self.uisp.as_mut().unwrap()
+    }
+
+    pub fn set_uisp_bandwidth_override(&mut self, site_name: String, down: f32, up: f32) {
+        let uisp = self.ensure_uisp_mut();
+        uisp.bandwidth_overrides.insert(site_name, (down, up));
+    }
+
+    pub fn remove_uisp_bandwidth_override(&mut self, site_name: &str) -> bool {
+        let uisp = self.ensure_uisp_mut();
+        uisp.bandwidth_overrides.remove(site_name).is_some()
+    }
+
+    pub fn add_uisp_route_override(&mut self, from_site: String, to_site: String, cost: u32) {
+        let uisp = self.ensure_uisp_mut();
+        uisp.route_overrides.push(UispRouteOverride { from_site, to_site, cost });
+    }
+
+    pub fn remove_uisp_route_by_index(&mut self, index: usize) -> bool {
+        let uisp = self.ensure_uisp_mut();
+        if index < uisp.route_overrides.len() {
+            uisp.route_overrides.remove(index);
             return true;
         }
         false

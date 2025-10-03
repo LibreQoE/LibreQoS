@@ -31,6 +31,11 @@ enum Commands {
         #[command(subcommand)]
         command: NetworkAdjustmentsCommand,
     },
+    /// Manage UISP integration overrides (bandwidth, routes)
+    Uisp {
+        #[command(subcommand)]
+        command: UispCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -71,6 +76,22 @@ enum NetworkAdjustmentsCommand {
     DeleteIndex { #[arg(long)] index: usize },
     /// List current network adjustments
     List,
+}
+
+#[derive(Subcommand, Debug)]
+enum UispCommand {
+    /// Set per-site bandwidth override
+    BandwidthSet { #[arg(long)] site_name: String, #[arg(long)] down: f32, #[arg(long)] up: f32 },
+    /// Remove a per-site bandwidth override
+    BandwidthRemove { #[arg(long)] site_name: String },
+    /// List bandwidth overrides
+    BandwidthList,
+    /// Add a route override
+    RouteAdd { #[arg(long)] from_site: String, #[arg(long)] to_site: String, #[arg(long)] cost: u32 },
+    /// Remove a route override by index
+    RouteRemoveIndex { #[arg(long)] index: usize },
+    /// List route overrides
+    RouteList,
 }
 
 #[derive(Args, Debug)]
@@ -322,6 +343,50 @@ fn main() -> Result<()> {
             NetworkAdjustmentsCommand::List => {
                 let list = overrides.network_adjustments();
                 println!("{}", serde_json::to_string_pretty(&list)?);
+            }
+        },
+        Commands::Uisp { command: cmd } => match cmd {
+            UispCommand::BandwidthSet { site_name, down, up } => {
+                overrides.set_uisp_bandwidth_override(site_name, down, up);
+                overrides.save()?;
+                println!("Set UISP bandwidth override; overrides saved.");
+            }
+            UispCommand::BandwidthRemove { site_name } => {
+                let removed = overrides.remove_uisp_bandwidth_override(&site_name);
+                if removed {
+                    overrides.save()?;
+                    println!("Removed UISP bandwidth override for {site_name}; overrides saved.");
+                } else {
+                    println!("No UISP bandwidth override found for {site_name}.");
+                }
+            }
+            UispCommand::BandwidthList => {
+                if let Some(uisp) = overrides.uisp() {
+                    println!("{}", serde_json::to_string_pretty(&uisp.bandwidth_overrides)?);
+                } else {
+                    println!("{}", "{}");
+                }
+            }
+            UispCommand::RouteAdd { from_site, to_site, cost } => {
+                overrides.add_uisp_route_override(from_site, to_site, cost);
+                overrides.save()?;
+                println!("Added UISP route override; overrides saved.");
+            }
+            UispCommand::RouteRemoveIndex { index } => {
+                let removed = overrides.remove_uisp_route_by_index(index);
+                if removed {
+                    overrides.save()?;
+                    println!("Removed UISP route override at index {index}; overrides saved.");
+                } else {
+                    println!("No UISP route override at index {index}.");
+                }
+            }
+            UispCommand::RouteList => {
+                if let Some(uisp) = overrides.uisp() {
+                    println!("{}", serde_json::to_string_pretty(&uisp.route_overrides)?);
+                } else {
+                    println!("[]");
+                }
             }
         },
     }
