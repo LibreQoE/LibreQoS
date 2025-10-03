@@ -101,6 +101,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_network_adjustments, m)?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -387,6 +388,32 @@ fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
                 d.set_item("type", "reparent_circuit")?;
                 d.set_item("circuit_id", circuit_id.clone())?;
                 d.set_item("parent_node", parent_node.clone())?;
+            }
+        }
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of network adjustments as Python dicts.
+#[pyfunction]
+fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.network_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed { site_name, download_bandwidth_mbps, upload_bandwidth_mbps } => {
+                d.set_item("type", "adjust_site_speed")?;
+                d.set_item("site_name", site_name.clone())?;
+                if let Some(v) = download_bandwidth_mbps { d.set_item("download_bandwidth_mbps", *v)?; }
+                if let Some(v) = upload_bandwidth_mbps { d.set_item("upload_bandwidth_mbps", *v)?; }
             }
         }
         let obj: PyObject = d.unbind().into();

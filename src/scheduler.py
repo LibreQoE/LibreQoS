@@ -2,6 +2,7 @@ import time
 import datetime
 import csv
 import io
+import json
 import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
@@ -10,7 +11,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments
+    calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
 
 if automatic_import_splynx():
     from integrationSplynx import importFromSplynx
@@ -23,6 +24,7 @@ if automatic_import_wispgate():
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
+import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 network_hash = 0
@@ -270,6 +272,93 @@ def apply_lqos_overrides():
     if changed:
         write_shaped_devices_csv(path, header if header else SHAPED_DEVICES_HEADER, merged_rows)
         print("Updated ShapedDevices.csv with overrides")
+
+    # 3) Load, adjust, and optionally save network.json
+    nj_path = network_json_path()
+    network = load_network_json(nj_path)
+    net_changed = apply_network_adjustments(network)
+    if net_changed:
+        write_network_json(nj_path, network)
+        print("Updated network.json with overrides")
+
+
+# --------------- Network JSON handling ---------------
+
+def network_json_path() -> str:
+    base_dir = get_libreqos_directory()
+    if enable_insight_topology():
+        insight_path = os.path.join(base_dir, "network.insight.json")
+        if os.path.exists(insight_path):
+            return insight_path
+    return os.path.join(base_dir, "network.json")
+
+
+def load_network_json(path: str):
+    if not os.path.isfile(path):
+        return {}
+    with open(path, 'r', encoding='utf-8') as f:
+        try:
+            return json.loads(f.read())
+        except Exception:
+            return {}
+
+
+def apply_network_adjustments(network: dict) -> bool:
+    """Apply network adjustments from overrides to the network JSON structure.
+
+    Currently supports: adjust_site_speed (by site_name) updating
+    downloadBandwidthMbps and uploadBandwidthMbps at the matching node.
+    Returns True if any changes were applied.
+    """
+    try:
+        adjustments = overrides_network_adjustments()
+    except Exception as e:
+        print(f"Failed to read network adjustments: {e}")
+        return False
+
+    if not adjustments:
+        return False
+
+    def adjust_node(tree: dict, site: str, dl_opt, ul_opt) -> bool:
+        changed_local = False
+        for key in list(tree.keys()):
+            if key == 'children':
+                child = tree.get('children')
+                if isinstance(child, dict):
+                    if adjust_node(child, site, dl_opt, ul_opt):
+                        changed_local = True
+                continue
+            node = tree.get(key)
+            if isinstance(node, dict):
+                if key == site:
+                    if dl_opt is not None:
+                        node['downloadBandwidthMbps'] = int(dl_opt)
+                        changed_local = True
+                    if ul_opt is not None:
+                        node['uploadBandwidthMbps'] = int(ul_opt)
+                        changed_local = True
+                # Recurse into children
+                if 'children' in node and isinstance(node['children'], dict):
+                    if adjust_node(node['children'], site, dl_opt, ul_opt):
+                        changed_local = True
+        return changed_local
+
+    net_changed = False
+    for adj in adjustments:
+        if adj.get('type') == 'adjust_site_speed':
+            site = adj.get('site_name', '')
+            dl = adj.get('download_bandwidth_mbps', None)
+            ul = adj.get('upload_bandwidth_mbps', None)
+            if site:
+                if adjust_node(network, site, dl, ul):
+                    net_changed = True
+
+    return net_changed
+
+
+def write_network_json(path: str, network: dict):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(json.dumps(network, indent=4))
 
 
 def importAndShapeFullReload():

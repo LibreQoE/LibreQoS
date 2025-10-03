@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use clap::{Args, Parser, Subcommand};
 
 use lqos_config::ShapedDevice;
-use lqos_overrides::{CircuitAdjustment, OverrideFile};
+use lqos_overrides::{CircuitAdjustment, NetworkAdjustment, OverrideFile};
 
 #[derive(Parser, Debug)]
 #[command(name = "lqos_overrides")]
@@ -25,6 +25,11 @@ enum Commands {
     Adjustments {
         #[command(subcommand)]
         command: AdjustmentsCommand,
+    },
+    /// Manage network (network.json) adjustments
+    NetworkAdjustments {
+        #[command(subcommand)]
+        command: NetworkAdjustmentsCommand,
     },
 }
 
@@ -55,6 +60,16 @@ enum AdjustmentsCommand {
     /// Remove an adjustment by index (see list)
     DeleteIndex { #[arg(long)] index: usize },
     /// List current adjustments
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum NetworkAdjustmentsCommand {
+    /// Add site speed adjustment
+    AddSiteSpeed(AddSiteSpeedArgs),
+    /// Remove a network adjustment by index (see list)
+    DeleteIndex { #[arg(long)] index: usize },
+    /// List current network adjustments
     List,
 }
 
@@ -176,6 +191,16 @@ struct AddDeviceSpeedArgs {
     max_upload_bandwidth: Option<f32>,
 }
 
+#[derive(Args, Debug, Default)]
+struct AddSiteSpeedArgs {
+    #[arg(long)]
+    site_name: String,
+    #[arg(long)]
+    download_bandwidth_mbps: Option<u32>,
+    #[arg(long)]
+    upload_bandwidth_mbps: Option<u32>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -271,6 +296,31 @@ fn main() -> Result<()> {
             }
             AdjustmentsCommand::List => {
                 let list = overrides.circuit_adjustments();
+                println!("{}", serde_json::to_string_pretty(&list)?);
+            }
+        },
+        Commands::NetworkAdjustments { command: cmd } => match cmd {
+            NetworkAdjustmentsCommand::AddSiteSpeed(args) => {
+                let adj = NetworkAdjustment::AdjustSiteSpeed {
+                    site_name: args.site_name,
+                    download_bandwidth_mbps: args.download_bandwidth_mbps,
+                    upload_bandwidth_mbps: args.upload_bandwidth_mbps,
+                };
+                overrides.add_network_adjustment(adj);
+                overrides.save()?;
+                println!("Added site speed adjustment; overrides saved.");
+            }
+            NetworkAdjustmentsCommand::DeleteIndex { index } => {
+                let ok = overrides.remove_network_adjustment_by_index(index);
+                if ok {
+                    overrides.save()?;
+                    println!("Removed network adjustment at index {index}; overrides saved.");
+                } else {
+                    println!("No network adjustment at index {index}.");
+                }
+            }
+            NetworkAdjustmentsCommand::List => {
+                let list = overrides.network_adjustments();
                 println!("{}", serde_json::to_string_pretty(&list)?);
             }
         },

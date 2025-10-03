@@ -30,14 +30,29 @@ pub enum CircuitAdjustment {
     ReparentCircuit { circuit_id: String, parent_node: String },
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum NetworkAdjustment {
+    AdjustSiteSpeed {
+        site_name: String,
+        download_bandwidth_mbps: Option<u32>,
+        upload_bandwidth_mbps: Option<u32>,
+    },
+}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct OverrideFile {
     /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
     /// for adding persistent "catch all", or API-controlled new devices that are somehow detached
     /// from the scheduler integration.
+    #[serde(default, alias = "devices_to_append")]
     persistent_devices: Vec<ShapedDevice>,
     /// Adjustments that the scheduler will apply to circuits/devices when persisting CSV.
+    #[serde(default)]
     circuit_adjustments: Vec<CircuitAdjustment>,
+    /// Adjustments that affect network.json structure/settings.
+    #[serde(default)]
+    network_adjustments: Vec<NetworkAdjustment>,
 }
 
 impl OverrideFile {
@@ -75,6 +90,11 @@ impl OverrideFile {
     /// Borrow the list of circuit adjustments without modifying the file.
     pub fn circuit_adjustments(&self) -> &[CircuitAdjustment] {
         &self.circuit_adjustments
+    }
+
+    /// Borrow the list of network adjustments without modifying the file.
+    pub fn network_adjustments(&self) -> &[NetworkAdjustment] {
+        &self.network_adjustments
     }
 
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
@@ -120,6 +140,20 @@ impl OverrideFile {
     pub fn remove_circuit_adjustment_by_index(&mut self, index: usize) -> bool {
         if index < self.circuit_adjustments.len() {
             self.circuit_adjustments.remove(index);
+            return true;
+        }
+        false
+    }
+
+    /// Add a network adjustment entry.
+    pub fn add_network_adjustment(&mut self, adj: NetworkAdjustment) {
+        self.network_adjustments.push(adj);
+    }
+
+    /// Remove a network adjustment by index. Returns true if removed.
+    pub fn remove_network_adjustment_by_index(&mut self, index: usize) -> bool {
+        if index < self.network_adjustments.len() {
+            self.network_adjustments.remove(index);
             return true;
         }
         false
