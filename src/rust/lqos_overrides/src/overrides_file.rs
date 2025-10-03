@@ -8,12 +8,36 @@ use crate::overrides_file::file_lock::FileLock;
 
 mod file_lock;
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CircuitAdjustment {
+    CircuitAdjustSpeed {
+        circuit_id: String,
+        min_download_bandwidth: Option<f32>,
+        max_download_bandwidth: Option<f32>,
+        min_upload_bandwidth: Option<f32>,
+        max_upload_bandwidth: Option<f32>,
+    },
+    DeviceAdjustSpeed {
+        device_id: String,
+        min_download_bandwidth: Option<f32>,
+        max_download_bandwidth: Option<f32>,
+        min_upload_bandwidth: Option<f32>,
+        max_upload_bandwidth: Option<f32>,
+    },
+    RemoveCircuit { circuit_id: String },
+    RemoveDevice { device_id: String },
+    ReparentCircuit { circuit_id: String, parent_node: String },
+}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct OverrideFile {
     /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
     /// for adding persistent "catch all", or API-controlled new devices that are somehow detached
     /// from the scheduler integration.
     persistent_devices: Vec<ShapedDevice>,
+    /// Adjustments that the scheduler will apply to circuits/devices when persisting CSV.
+    circuit_adjustments: Vec<CircuitAdjustment>,
 }
 
 impl OverrideFile {
@@ -37,7 +61,7 @@ impl OverrideFile {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
         let path = Path::new(&config.lqos_directory).join("lqos_overrides.json");
-        let as_json = serde_json::to_string(self)?;
+        let as_json = serde_json::to_string_pretty(self)?;
         std::fs::write(&path, as_json.as_bytes())?;
         drop(lock); // Explicitly drop for clarity. RAII does it anyway.
         Ok(())
@@ -46,6 +70,11 @@ impl OverrideFile {
     /// Borrow the list of persistent devices without modifying the file.
     pub fn persistent_devices(&self) -> &[ShapedDevice] {
         &self.persistent_devices
+    }
+
+    /// Borrow the list of circuit adjustments without modifying the file.
+    pub fn circuit_adjustments(&self) -> &[CircuitAdjustment] {
+        &self.circuit_adjustments
     }
 
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
@@ -80,5 +109,19 @@ impl OverrideFile {
         self.persistent_devices
             .retain(|d| d.device_id != device_id);
         before.saturating_sub(self.persistent_devices.len())
+    }
+
+    /// Add a circuit adjustment entry.
+    pub fn add_circuit_adjustment(&mut self, adj: CircuitAdjustment) {
+        self.circuit_adjustments.push(adj);
+    }
+
+    /// Remove a circuit adjustment by index. Returns true if removed.
+    pub fn remove_circuit_adjustment_by_index(&mut self, index: usize) -> bool {
+        if index < self.circuit_adjustments.len() {
+            self.circuit_adjustments.remove(index);
+            return true;
+        }
+        false
     }
 }

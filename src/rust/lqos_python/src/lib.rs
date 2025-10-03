@@ -100,6 +100,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -339,6 +340,55 @@ fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
         d.set_item("maxDownload", dev.download_max_mbps)?;
         d.set_item("maxUpload", dev.upload_max_mbps)?;
         d.set_item("comment", dev.comment.clone())?;
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of circuit adjustments as Python dicts.
+#[pyfunction]
+fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.circuit_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::CircuitAdjustment::CircuitAdjustSpeed { circuit_id, min_download_bandwidth, max_download_bandwidth, min_upload_bandwidth, max_upload_bandwidth } => {
+                d.set_item("type", "circuit_adjust_speed")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                if let Some(v) = min_download_bandwidth { d.set_item("min_download_bandwidth", *v)?; }
+                if let Some(v) = max_download_bandwidth { d.set_item("max_download_bandwidth", *v)?; }
+                if let Some(v) = min_upload_bandwidth { d.set_item("min_upload_bandwidth", *v)?; }
+                if let Some(v) = max_upload_bandwidth { d.set_item("max_upload_bandwidth", *v)?; }
+            }
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSpeed { device_id, min_download_bandwidth, max_download_bandwidth, min_upload_bandwidth, max_upload_bandwidth } => {
+                d.set_item("type", "device_adjust_speed")?;
+                d.set_item("device_id", device_id.clone())?;
+                if let Some(v) = min_download_bandwidth { d.set_item("min_download_bandwidth", *v)?; }
+                if let Some(v) = max_download_bandwidth { d.set_item("max_download_bandwidth", *v)?; }
+                if let Some(v) = min_upload_bandwidth { d.set_item("min_upload_bandwidth", *v)?; }
+                if let Some(v) = max_upload_bandwidth { d.set_item("max_upload_bandwidth", *v)?; }
+            }
+            lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
+                d.set_item("type", "remove_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::RemoveDevice { device_id } => {
+                d.set_item("type", "remove_device")?;
+                d.set_item("device_id", device_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::ReparentCircuit { circuit_id, parent_node } => {
+                d.set_item("type", "reparent_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("parent_node", parent_node.clone())?;
+            }
+        }
         let obj: PyObject = d.unbind().into();
         out.push(obj);
     }

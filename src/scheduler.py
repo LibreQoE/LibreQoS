@@ -10,7 +10,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices
+    calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments
 
 if automatic_import_splynx():
     from integrationSplynx import importFromSplynx
@@ -202,17 +202,74 @@ def write_shaped_devices_csv(path: str, header, rows):
 
 
 def apply_lqos_overrides():
-    """Load ShapedDevices.csv, append/replace rows from overrides, and save back."""
+    """Load ShapedDevices.csv, apply persistent devices and circuit adjustments, and save back."""
     path = shaped_devices_csv_path()
     header, rows = read_shaped_devices_csv(path)
+
+    # 1) Persistent devices: replace by device_id or append
     extra = overrides_persistent_devices()
-    if not extra:
-        return
-    override_rows = override_devices_to_rows(extra)
+    override_rows = override_devices_to_rows(extra or [])
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+
+    # 2) Circuit adjustments: speed changes, removals, reparenting
+    try:
+        adjustments = overrides_circuit_adjustments()
+    except Exception as e:
+        print(f"Failed to read circuit adjustments: {e}")
+        adjustments = []
+
+    def set_if_some(value_opt, current_str):
+        if value_opt is None:
+            return current_str
+        try:
+            return str(float(value_opt))
+        except Exception:
+            return current_str
+
+    if adjustments:
+        for adj in adjustments:
+            t = adj.get('type')
+            if t == 'circuit_adjust_speed':
+                cid = adj.get('circuit_id', '')
+                for r in merged_rows:
+                    if len(r) >= 12 and r[0] == cid:
+                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
+                        changed = True
+            elif t == 'device_adjust_speed':
+                did = adj.get('device_id', '')
+                for r in merged_rows:
+                    if len(r) >= 12 and r[2] == did:
+                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
+                        changed = True
+            elif t == 'remove_circuit':
+                cid = adj.get('circuit_id', '')
+                before = len(merged_rows)
+                merged_rows = [r for r in merged_rows if len(r) < 1 or r[0] != cid]
+                if len(merged_rows) != before:
+                    changed = True
+            elif t == 'remove_device':
+                did = adj.get('device_id', '')
+                before = len(merged_rows)
+                merged_rows = [r for r in merged_rows if len(r) < 3 or r[2] != did]
+                if len(merged_rows) != before:
+                    changed = True
+            elif t == 'reparent_circuit':
+                cid = adj.get('circuit_id', '')
+                parent_node = adj.get('parent_node', '')
+                for r in merged_rows:
+                    if len(r) >= 5 and r[0] == cid:
+                        r[4] = parent_node
+                        changed = True
+
     if changed:
         write_shaped_devices_csv(path, header if header else SHAPED_DEVICES_HEADER, merged_rows)
-        print("Updated ShapedDevices.csv with override devices")
+        print("Updated ShapedDevices.csv with overrides")
 
 
 def importAndShapeFullReload():

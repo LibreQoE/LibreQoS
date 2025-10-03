@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use clap::{Args, Parser, Subcommand};
 
 use lqos_config::ShapedDevice;
-use lqos_overrides::OverrideFile;
+use lqos_overrides::{CircuitAdjustment, OverrideFile};
 
 #[derive(Parser, Debug)]
 #[command(name = "lqos_overrides")]
@@ -21,6 +21,11 @@ enum Commands {
         #[command(subcommand)]
         command: PersistentDevicesCommand,
     },
+    /// Manage circuit/device adjustments
+    Adjustments {
+        #[command(subcommand)]
+        command: AdjustmentsCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -32,6 +37,24 @@ enum PersistentDevicesCommand {
     /// Delete persistent device(s) by device ID
     DeleteDeviceId { #[arg(long)] device_id: String },
     /// List current persistent devices
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum AdjustmentsCommand {
+    /// Add a circuit speed adjustment
+    AddCircuitSpeed(AddCircuitSpeedArgs),
+    /// Add a device speed adjustment
+    AddDeviceSpeed(AddDeviceSpeedArgs),
+    /// Add a circuit removal adjustment
+    AddRemoveCircuit { #[arg(long)] circuit_id: String },
+    /// Add a device removal adjustment
+    AddRemoveDevice { #[arg(long)] device_id: String },
+    /// Add a circuit reparent adjustment
+    AddReparentCircuit { #[arg(long)] circuit_id: String, #[arg(long)] parent_node: String },
+    /// Remove an adjustment by index (see list)
+    DeleteIndex { #[arg(long)] index: usize },
+    /// List current adjustments
     List,
 }
 
@@ -125,6 +148,34 @@ impl AddArgs {
     }
 }
 
+#[derive(Args, Debug, Default)]
+struct AddCircuitSpeedArgs {
+    #[arg(long)]
+    circuit_id: String,
+    #[arg(long)]
+    min_download_bandwidth: Option<f32>,
+    #[arg(long)]
+    max_download_bandwidth: Option<f32>,
+    #[arg(long)]
+    min_upload_bandwidth: Option<f32>,
+    #[arg(long)]
+    max_upload_bandwidth: Option<f32>,
+}
+
+#[derive(Args, Debug, Default)]
+struct AddDeviceSpeedArgs {
+    #[arg(long)]
+    device_id: String,
+    #[arg(long)]
+    min_download_bandwidth: Option<f32>,
+    #[arg(long)]
+    max_download_bandwidth: Option<f32>,
+    #[arg(long)]
+    min_upload_bandwidth: Option<f32>,
+    #[arg(long)]
+    max_upload_bandwidth: Option<f32>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -163,6 +214,63 @@ fn main() -> Result<()> {
             }
             PersistentDevicesCommand::List => {
                 let list = overrides.persistent_devices();
+                println!("{}", serde_json::to_string_pretty(&list)?);
+            }
+        },
+        Commands::Adjustments { command: cmd } => match cmd {
+            AdjustmentsCommand::AddCircuitSpeed(args) => {
+                let adj = CircuitAdjustment::CircuitAdjustSpeed {
+                    circuit_id: args.circuit_id,
+                    min_download_bandwidth: args.min_download_bandwidth,
+                    max_download_bandwidth: args.max_download_bandwidth,
+                    min_upload_bandwidth: args.min_upload_bandwidth,
+                    max_upload_bandwidth: args.max_upload_bandwidth,
+                };
+                overrides.add_circuit_adjustment(adj);
+                overrides.save()?;
+                println!("Added circuit speed adjustment; overrides saved.");
+            }
+            AdjustmentsCommand::AddDeviceSpeed(args) => {
+                let adj = CircuitAdjustment::DeviceAdjustSpeed {
+                    device_id: args.device_id,
+                    min_download_bandwidth: args.min_download_bandwidth,
+                    max_download_bandwidth: args.max_download_bandwidth,
+                    min_upload_bandwidth: args.min_upload_bandwidth,
+                    max_upload_bandwidth: args.max_upload_bandwidth,
+                };
+                overrides.add_circuit_adjustment(adj);
+                overrides.save()?;
+                println!("Added device speed adjustment; overrides saved.");
+            }
+            AdjustmentsCommand::AddRemoveCircuit { circuit_id } => {
+                let adj = CircuitAdjustment::RemoveCircuit { circuit_id };
+                overrides.add_circuit_adjustment(adj);
+                overrides.save()?;
+                println!("Added remove-circuit adjustment; overrides saved.");
+            }
+            AdjustmentsCommand::AddRemoveDevice { device_id } => {
+                let adj = CircuitAdjustment::RemoveDevice { device_id };
+                overrides.add_circuit_adjustment(adj);
+                overrides.save()?;
+                println!("Added remove-device adjustment; overrides saved.");
+            }
+            AdjustmentsCommand::AddReparentCircuit { circuit_id, parent_node } => {
+                let adj = CircuitAdjustment::ReparentCircuit { circuit_id, parent_node };
+                overrides.add_circuit_adjustment(adj);
+                overrides.save()?;
+                println!("Added reparent-circuit adjustment; overrides saved.");
+            }
+            AdjustmentsCommand::DeleteIndex { index } => {
+                let ok = overrides.remove_circuit_adjustment_by_index(index);
+                if ok {
+                    overrides.save()?;
+                    println!("Removed adjustment at index {index}; overrides saved.");
+                } else {
+                    println!("No adjustment at index {index}.");
+                }
+            }
+            AdjustmentsCommand::List => {
+                let list = overrides.circuit_adjustments();
                 println!("{}", serde_json::to_string_pretty(&list)?);
             }
         },
