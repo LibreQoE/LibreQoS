@@ -56,7 +56,6 @@ RUSTPROGS=(
   lqos_setup
   lqos_map_perf
   uisp_integration
-  lqos_support_tool
 )
 
 ####################################################
@@ -89,8 +88,17 @@ popd > /dev/null || exit
 
 # Build the Rust programs (before the control file, we need to LDD lqosd)
 pushd rust > /dev/null || exit
-#cargo clean
-cargo build --all --release
+# Build only required binaries and artifacts (exclude lqos_support_tool executable)
+cargo build --release \
+  -p lqosd \
+  -p lqtop \
+  -p xdp_iphash_to_cpu_cmdline \
+  -p xdp_pping \
+  -p lqusers \
+  -p lqos_setup \
+  -p lqos_map_perf \
+  -p uisp_integration \
+  -p lqos_python
 popd > /dev/null || exit
 
 # Create the post-installation file
