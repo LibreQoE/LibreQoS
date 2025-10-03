@@ -10,10 +10,10 @@ mod file_lock;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct OverrideFile {
-    /// Devices that will be appended to ShapedDevices.csv by LibreQoS.py when rebuilding. Useful
+    /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
     /// for adding persistent "catch all", or API-controlled new devices that are somehow detached
     /// from the scheduler integration.
-    devices_to_append: Vec<ShapedDevice>,
+    persistent_devices: Vec<ShapedDevice>,
 }
 
 impl OverrideFile {
@@ -43,15 +43,15 @@ impl OverrideFile {
         Ok(())
     }
 
-    /// Borrow the list of devices to append without modifying the file.
-    pub fn devices_to_append(&self) -> &[ShapedDevice] {
-        &self.devices_to_append
+    /// Borrow the list of persistent devices without modifying the file.
+    pub fn persistent_devices(&self) -> &[ShapedDevice] {
+        &self.persistent_devices
     }
 
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
-    pub fn add_append_shaped_device_return_changed(&mut self, device: ShapedDevice) -> bool {
+    pub fn add_persistent_shaped_device_return_changed(&mut self, device: ShapedDevice) -> bool {
         if let Some(existing) = self
-            .devices_to_append
+            .persistent_devices
             .iter()
             .find(|d| d.device_id == device.device_id)
         {
@@ -60,25 +60,25 @@ impl OverrideFile {
                 return false;
             }
         }
-        self.devices_to_append
+        self.persistent_devices
             .retain(|d| d.device_id != device.device_id);
-        self.devices_to_append.push(device);
+        self.persistent_devices.push(device);
         true
     }
 
     /// Remove all devices matching `circuit_id`. Returns number removed.
-    pub fn remove_append_shaped_device_by_circuit_count(&mut self, circuit_id: &str) -> usize {
-        let before = self.devices_to_append.len();
-        self.devices_to_append
+    pub fn remove_persistent_shaped_device_by_circuit_count(&mut self, circuit_id: &str) -> usize {
+        let before = self.persistent_devices.len();
+        self.persistent_devices
             .retain(|d| d.circuit_id != circuit_id);
-        before.saturating_sub(self.devices_to_append.len())
+        before.saturating_sub(self.persistent_devices.len())
     }
 
     /// Remove all devices matching `device_id`. Returns number removed.
-    pub fn remove_append_shaped_device_by_device_count(&mut self, device_id: &str) -> usize {
-        let before = self.devices_to_append.len();
-        self.devices_to_append
+    pub fn remove_persistent_shaped_device_by_device_count(&mut self, device_id: &str) -> usize {
+        let before = self.persistent_devices.len();
+        self.persistent_devices
             .retain(|d| d.device_id != device_id);
-        before.saturating_sub(self.devices_to_append.len())
+        before.saturating_sub(self.persistent_devices.len())
     }
 }

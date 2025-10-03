@@ -16,22 +16,22 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Manage appended shaped devices
-    AppendDevices {
+    /// Manage persistent shaped devices
+    PersistentDevices {
         #[command(subcommand)]
-        command: AppendDevicesCommand,
+        command: PersistentDevicesCommand,
     },
 }
 
 #[derive(Subcommand, Debug)]
-enum AppendDevicesCommand {
-    /// Add a shaped device to append list
+enum PersistentDevicesCommand {
+    /// Add a persistent shaped device
     Add(AddArgs),
-    /// Delete all appended devices with a circuit ID
+    /// Delete all persistent devices with a circuit ID
     DeleteCircuitId { #[arg(long)] circuit_id: String },
-    /// Delete appended device(s) by device ID
+    /// Delete persistent device(s) by device ID
     DeleteDeviceId { #[arg(long)] device_id: String },
-    /// List current appended devices
+    /// List current persistent devices
     List,
 }
 
@@ -132,10 +132,10 @@ fn main() -> Result<()> {
     let mut overrides = OverrideFile::load()?;
 
     match cli.command {
-        Commands::AppendDevices { command: cmd } => match cmd {
-            AppendDevicesCommand::Add(args) => {
+        Commands::PersistentDevices { command: cmd } => match cmd {
+            PersistentDevicesCommand::Add(args) => {
                 let device = args.into_device()?;
-                let changed = overrides.add_append_shaped_device_return_changed(device);
+                let changed = overrides.add_persistent_shaped_device_return_changed(device);
                 if changed {
                     overrides.save()?;
                     println!("Added device; overrides saved.");
@@ -143,8 +143,8 @@ fn main() -> Result<()> {
                     println!("No changes (device already present).");
                 }
             }
-            AppendDevicesCommand::DeleteCircuitId { circuit_id } => {
-                let removed = overrides.remove_append_shaped_device_by_circuit_count(&circuit_id);
+            PersistentDevicesCommand::DeleteCircuitId { circuit_id } => {
+                let removed = overrides.remove_persistent_shaped_device_by_circuit_count(&circuit_id);
                 if removed > 0 {
                     overrides.save()?;
                     println!("Removed {removed} device(s) by circuit_id; overrides saved.");
@@ -152,8 +152,8 @@ fn main() -> Result<()> {
                     println!("No devices matched circuit_id {circuit_id}.");
                 }
             }
-            AppendDevicesCommand::DeleteDeviceId { device_id } => {
-                let removed = overrides.remove_append_shaped_device_by_device_count(&device_id);
+            PersistentDevicesCommand::DeleteDeviceId { device_id } => {
+                let removed = overrides.remove_persistent_shaped_device_by_device_count(&device_id);
                 if removed > 0 {
                     overrides.save()?;
                     println!("Removed {removed} device(s) by device_id; overrides saved.");
@@ -161,8 +161,8 @@ fn main() -> Result<()> {
                     println!("No devices matched device_id {device_id}.");
                 }
             }
-            AppendDevicesCommand::List => {
-                let list = overrides.devices_to_append();
+            PersistentDevicesCommand::List => {
+                let list = overrides.persistent_devices();
                 println!("{}", serde_json::to_string_pretty(&list)?);
             }
         },

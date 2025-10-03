@@ -10,7 +10,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    calculate_hash, scheduler_alive, scheduler_error, overrides_append_devices
+    calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices
 
 if automatic_import_splynx():
     from integrationSplynx import importFromSplynx
@@ -205,7 +205,7 @@ def apply_lqos_overrides():
     """Load ShapedDevices.csv, append/replace rows from overrides, and save back."""
     path = shaped_devices_csv_path()
     header, rows = read_shaped_devices_csv(path)
-    extra = overrides_append_devices()
+    extra = overrides_persistent_devices()
     if not extra:
         return
     override_rows = override_devices_to_rows(extra)

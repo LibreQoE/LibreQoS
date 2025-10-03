@@ -99,7 +99,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
-    m.add_function(wrap_pyfunction!(overrides_append_devices, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -301,19 +301,19 @@ fn validate_shaped_devices() -> PyResult<String> {
     Ok("".to_string())
 }
 
-/// Returns a Python list of dictionaries representing devices to append to ShapedDevices.csv
+/// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
 /// The dictionary keys mirror the normalized loader used in LibreQoS.py:
 /// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
 /// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload, maxUpload, comment.
 #[pyfunction]
-fn overrides_append_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     let overrides = match lqos_overrides::OverrideFile::load() {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
 
     let mut out: Vec<PyObject> = Vec::new();
-    for dev in overrides.devices_to_append().iter() {
+    for dev in overrides.persistent_devices().iter() {
         let ipv4s: Vec<String> = dev
             .ipv4
             .iter()
