@@ -188,28 +188,50 @@ fn apply_diff(
         return Ok(()); // Nothing to do
     }
 
-    // Batch requests to avoid large payloads; finish with a ClearHotCache
+    // Batch requests to avoid large payloads; flush hot cache immediately after
+    // finishing all upserts so shaping resumes sooner. Then process deletions.
     const CHUNK: usize = 512;
-    let mut requests: Vec<BusRequest> = Vec::new();
-    requests.extend(upserts.into_iter());
-    requests.extend(deletes.into_iter());
-    let mut idx = 0;
     let rt = Builder::new_current_thread().enable_all().build()?;
-    while idx < requests.len() {
-        let end = usize::min(idx + CHUNK, requests.len());
-        let mut chunk = requests[idx..end].to_vec();
-        // Only add ClearHotCache on the final chunk
-        if end == requests.len() {
-            chunk.push(BusRequest::ClearHotCache);
-        }
-        let responses = rt.block_on(async { bus_request(chunk).await })?;
-        // Scan for failures
-        for resp in responses {
-            if let BusResponse::Fail(e) = resp {
-                return Err(anyhow!("Mapping update failed: {}", e));
+
+    // 1) Send upserts in chunks. Append ClearHotCache to the LAST upsert chunk.
+    if upsert_count > 0 {
+        let mut idx = 0;
+        while idx < upserts.len() {
+            let end = usize::min(idx + CHUNK, upserts.len());
+            let mut chunk = upserts[idx..end].to_vec();
+            if end == upserts.len() {
+                // Flush hot cache right after the last upsert chunk
+                chunk.push(BusRequest::ClearHotCache);
             }
+            let responses = rt.block_on(async { bus_request(chunk).await })?;
+            for resp in responses {
+                if let BusResponse::Fail(e) = resp {
+                    return Err(anyhow!("Mapping upsert failed: {}", e));
+                }
+            }
+            idx = end;
         }
-        idx = end;
+    }
+
+    // 2) Send deletions in chunks. If there were no upserts, flush once at the end
+    // to ensure cache coherence for removals.
+    if delete_count > 0 {
+        let mut idx = 0;
+        while idx < deletes.len() {
+            let end = usize::min(idx + CHUNK, deletes.len());
+            let mut chunk = deletes[idx..end].to_vec();
+            if upsert_count == 0 && end == deletes.len() {
+                // No upserts earlier; flush once after the final delete chunk
+                chunk.push(BusRequest::ClearHotCache);
+            }
+            let responses = rt.block_on(async { bus_request(chunk).await })?;
+            for resp in responses {
+                if let BusResponse::Fail(e) = resp {
+                    return Err(anyhow!("Mapping delete failed: {}", e));
+                }
+            }
+            idx = end;
+        }
     }
     let elapsed = started.elapsed();
     info!(
