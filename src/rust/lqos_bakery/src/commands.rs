@@ -52,6 +52,8 @@ pub enum BakeryCommands {
         /// All active circuit IDs
         circuit_ids: HashSet<i64>,
     },
+    /// Re-run mapping diff and apply updates via the bus
+    ResyncMappings,
     /// Periodic tick
     Tick,
     /// Change an existing site's HTB rates live without a rebuild.
@@ -123,6 +125,10 @@ pub enum BakeryCommands {
         class_major: u16,
         /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// CPU to be used for downlink mapping on ISP-facing interface
+        down_cpu: u32,
+        /// CPU to be used for uplink mapping on Internet-facing interface
+        up_cpu: u32,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
     },
@@ -198,6 +204,8 @@ impl BakeryCommands {
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                down_cpu: _,
+                up_cpu: _,
                 ip_addresses: _,
             } => Self::add_circuit(
                 execution_mode,

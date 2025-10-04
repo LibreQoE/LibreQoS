@@ -7,8 +7,11 @@ pub(crate) enum CircuitDiffResult<'a> {
     NoChange,
     CircuitsChanged {
         newly_added: Vec<&'a Arc<BakeryCommands>>,
-        removed_circuits: Vec<i64>, // Just store the circuit hash for removal
-        updated_circuits: Vec<&'a Arc<BakeryCommands>>,
+        removed_circuits: Vec<i64>,
+        /// Circuits whose TC-relevant parameters changed (requires rebuild)
+        updated_tc: Vec<&'a Arc<BakeryCommands>>,
+        /// Circuits whose IP lists changed only (mapping diff only)
+        updated_ip_only: Vec<&'a Arc<BakeryCommands>>,
     },
 }
 
@@ -44,28 +47,48 @@ pub(crate) fn diff_circuits<'a>(
     }
 
     // Find any circuits that have changed in `new_circuits` compared to `old_circuits`
-    let mut updated_circuits = Vec::new();
+    let mut updated_tc = Vec::new();
+    let mut updated_ip_only = Vec::new();
     for (circuit_hash, old_cmd) in old_circuits {
-        if let Some(new_cmd) = new_circuits.get(circuit_hash)
-            && has_circuit_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
-                updated_circuits.push(*new_cmd);
+        if let Some(new_cmd) = new_circuits.get(circuit_hash) {
+            if has_circuit_changed_tc_params(old_cmd.as_ref(), new_cmd.as_ref()) {
+                updated_tc.push(*new_cmd);
+            } else if has_circuit_ip_only_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
+                updated_ip_only.push(*new_cmd);
             }
+        }
     }
 
     // If there are any changes, return them
-    if !newly_added.is_empty() || !removed_circuits.is_empty() || !updated_circuits.is_empty() {
-        CircuitDiffResult::CircuitsChanged {
-            newly_added,
-            removed_circuits,
-            updated_circuits,
-        }
+    if !newly_added.is_empty()
+        || !removed_circuits.is_empty()
+        || !updated_tc.is_empty()
+        || !updated_ip_only.is_empty()
+    {
+        CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_tc, updated_ip_only }
     } else {
         CircuitDiffResult::NoChange
     }
 }
 
-fn has_circuit_changed(circuit_a: &BakeryCommands, circuit_b: &BakeryCommands) -> bool {
-    let BakeryCommands::AddCircuit {
+fn extract<'a>(
+    circuit: &'a BakeryCommands,
+) -> Option<(
+    i64,
+    &'a lqos_bus::TcHandle,
+    &'a lqos_bus::TcHandle,
+    u16,
+    f32,
+    f32,
+    f32,
+    f32,
+    u16,
+    u16,
+    u32,
+    u32,
+    &'a String,
+)> {
+    if let BakeryCommands::AddCircuit {
         circuit_hash,
         parent_class_id,
         up_parent_class_id,
@@ -76,44 +99,39 @@ fn has_circuit_changed(circuit_a: &BakeryCommands, circuit_b: &BakeryCommands) -
         upload_bandwidth_max,
         class_major,
         up_class_major,
+        down_cpu,
+        up_cpu,
         ip_addresses,
-    } = circuit_a
-    else {
-        warn!(
-            "circuit_changed called on non-circuit command: {:?}",
-            circuit_a
-        );
-        return false; // Not a circuit command
-    };
-    let BakeryCommands::AddCircuit {
-        circuit_hash: other_circuit_hash,
-        parent_class_id: other_parent_class_id,
-        up_parent_class_id: other_up_parent_class_id,
-        class_minor: other_class_minor,
-        download_bandwidth_min: other_download_bandwidth_min,
-        upload_bandwidth_min: other_upload_bandwidth_min,
-        download_bandwidth_max: other_download_bandwidth_max,
-        upload_bandwidth_max: other_upload_bandwidth_max,
-        class_major: other_class_major,
-        up_class_major: other_up_class_major,
-        ip_addresses: other_ip_addresses,
-    } = circuit_b
-    else {
-        warn!(
-            "circuit_changed called on non-circuit command: {:?}",
-            circuit_b
-        );
-        return false; // Not a circuit command
-    };
-    if circuit_hash != other_circuit_hash {
-        // This should never happen
-        warn!(
-            "Circuit hashes do not match: {} != {}",
-            circuit_hash, other_circuit_hash
-        );
-        return false; // Different circuit hashes
+    } = circuit
+    {
+        Some((
+            *circuit_hash,
+            parent_class_id,
+            up_parent_class_id,
+            *class_minor,
+            *download_bandwidth_min,
+            *upload_bandwidth_min,
+            *download_bandwidth_max,
+            *upload_bandwidth_max,
+            *class_major,
+            *up_class_major,
+            *down_cpu,
+            *up_cpu,
+            ip_addresses,
+        ))
+    } else {
+        None
     }
+}
 
+/// Compare all TC-relevant parameters (everything except IP lists).
+pub(crate) fn has_circuit_changed_tc_params(a: &BakeryCommands, b: &BakeryCommands) -> bool {
+    let Some((hash_a, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, down_cpu, up_cpu, _)) = extract(a) else { return false };
+    let Some((hash_b, other_parent_class_id, other_up_parent_class_id, other_class_minor, other_download_bandwidth_min, other_upload_bandwidth_min, other_download_bandwidth_max, other_upload_bandwidth_max, other_class_major, other_up_class_major, other_down_cpu, other_up_cpu, _)) = extract(b) else { return false };
+    if hash_a != hash_b {
+        warn!("Circuit hashes do not match: {} != {}", hash_a, hash_b);
+        return false;
+    }
     parent_class_id != other_parent_class_id
         || up_parent_class_id != other_up_parent_class_id
         || class_minor != other_class_minor
@@ -123,5 +141,20 @@ fn has_circuit_changed(circuit_a: &BakeryCommands, circuit_b: &BakeryCommands) -
         || upload_bandwidth_max != other_upload_bandwidth_max
         || class_major != other_class_major
         || up_class_major != other_up_class_major
-        || ip_addresses != other_ip_addresses
+        || down_cpu != other_down_cpu
+        || up_cpu != other_up_cpu
+}
+
+/// Returns true if ONLY the IP list changed.
+pub(crate) fn has_circuit_ip_only_changed(a: &BakeryCommands, b: &BakeryCommands) -> bool {
+    let Some((hash_a, _, _, _, _, _, _, _, _, _, _, _, ip_addresses)) = extract(a) else { return false };
+    let Some((hash_b, _, _, _, _, _, _, _, _, _, _, _, other_ip_addresses)) = extract(b) else { return false };
+    if hash_a != hash_b {
+        warn!("Circuit hashes do not match: {} != {}", hash_a, hash_b);
+        return false;
+    }
+    if has_circuit_changed_tc_params(a, b) {
+        return false;
+    }
+    ip_addresses != other_ip_addresses
 }

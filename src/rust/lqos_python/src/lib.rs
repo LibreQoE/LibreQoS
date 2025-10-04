@@ -884,6 +884,8 @@ enum BakeryCommands {
         upload_bandwidth_max: f32,
         class_major: u16,
         up_class_major: u16,
+        down_cpu: u32,
+        up_cpu: u32,
         ip_addresses: String,
     },
 }
@@ -968,6 +970,8 @@ impl Bakery {
                                     upload_bandwidth_max,
                                     class_major,
                                     up_class_major,
+                                    down_cpu,
+                                    up_cpu,
                                     ip_addresses,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
@@ -981,6 +985,8 @@ impl Bakery {
                                         upload_bandwidth_max: *upload_bandwidth_max,
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
+                                        down_cpu: *down_cpu,
+                                        up_cpu: *up_cpu,
                                         ip_addresses: ip_addresses.clone(),
                                     };
                                     requests.push(command);
@@ -1047,6 +1053,8 @@ impl Bakery {
         upload_bandwidth_max: f32,
         class_major: u16,
         up_class_major: u16,
+        down_cpu: String,
+        up_cpu: String,
         ip_addresses: String,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
@@ -1062,6 +1070,8 @@ impl Bakery {
             upload_bandwidth_max,
             class_major,
             up_class_major,
+            down_cpu: read_hex_string(&down_cpu).unwrap_or(0),
+            up_cpu: read_hex_string(&up_cpu).unwrap_or(0),
             ip_addresses,
         };
         self.queue.push(command);

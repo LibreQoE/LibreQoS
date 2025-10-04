@@ -21,8 +21,8 @@ import shutil
 import binpacking
 from deepdiff import DeepDiff
 
-from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
-	is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
+from liblqos_python import is_lqosd_alive, clear_ip_mappings, validate_shaped_devices, \
+	is_libre_already_running, create_lock_file, free_lock_file, \
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
@@ -519,8 +519,7 @@ def refreshShapers():
 	
 	# Starting
 	print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-	# Create a single batch of xdp update commands to execute together
-	ipMapBatch = BatchedCommands()
+	# Bakery manages mappings; Python no longer batches XDP mapping updates.
 	
 	# Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
 	if enable_actual_shell_commands() == False:
@@ -1071,8 +1070,10 @@ def refreshShapers():
 							circuit['maxUpload'],
 							int(circuit['classMajor'], 16),
 							int(circuit['up_classMajor'], 16),
+							data[node]['cpuNum'],
+							data[node]['up_cpuNum'],
 							ip_addresses_str,
-						)
+							)
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
@@ -1093,17 +1094,17 @@ def refreshShapers():
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									ipMapBatch.add_ip_mapping(str(ipv4), circuit['classid'], data[node]['cpuNum'], False)
+									# Bakery manages IP mappings; Python no longer issues per-IP mapping updates
 									#xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 									if on_a_stick():
-										ipMapBatch.add_ip_mapping(str(ipv4), circuit['up_classid'], data[node]['up_cpuNum'], True)
+										pass
 										#xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['ipv6s']:
 								for ipv6 in device['ipv6s']:
-									ipMapBatch.add_ip_mapping(str(ipv6), circuit['classid'], data[node]['cpuNum'], False)
+									# Bakery manages IP mappings; Python no longer issues per-IP mapping updates
 									#xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 									if on_a_stick():
-										ipMapBatch.add_ip_mapping(str(ipv6), circuit['up_classid'], data[node]['up_cpuNum'], True)
+										pass
 										#xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
@@ -1135,10 +1136,7 @@ def refreshShapers():
 		
 		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		xdpStartTime = datetime.now()
-		if enable_actual_shell_commands():
-			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
-			clear_ip_mappings() # Use the bus
+		# Bakery manages mappings now; do not globally clear IP mappings here.
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
 		# Commented out - the daemon does this
@@ -1170,18 +1168,11 @@ def refreshShapers():
 		# Execute actual XDP-CPUMAP-TC filter commands
 		xdpFilterStartTime = datetime.now()
 		print("Executing XDP-CPUMAP-TC IP filter commands")
-		numXdpCommands = ipMapBatch.length()
+		numXdpCommands = 0
 		if enable_actual_shell_commands():
-			ipMapBatch.finish_ip_mappings()
-			ipMapBatch.submit()
-			#for command in xdpCPUmapCommands:
-			#	logging.info(command)
-			#	commands = command.split(' ')
-			#	proc = subprocess.Popen(commands, stdout=subprocess.DEVNULL)
+			logging.info("Mappings managed by bakery; no Python-side XDP updates")
 		else:
-			ipMapBatch.log()
-			#for command in xdpCPUmapCommands:
-			#	logging.info(command)
+			logging.info("[dry-run] Mappings managed by bakery; no Python-side XDP updates")
 		print("Executed " + str(numXdpCommands) + " XDP-CPUMAP-TC IP filter commands")
 		#print(xdpCPUmapCommands)
 		xdpFilterEndTime = datetime.now()

@@ -23,6 +23,7 @@ mod commands;
 mod diff;
 mod queue_math;
 mod utils;
+mod mapping;
 
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -119,6 +120,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             BakeryCommands::Tick => {
                 // Reset per-cycle counters at the start of the tick
                 handle_tick(&mut circuits, &mut live_circuits, &mut sites);
+            }
+            BakeryCommands::ResyncMappings => {
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration for resync.");
+                    continue;
+                };
+                if let Err(e) = mapping::update_ip_mappings_via_bus(&circuits, &config) {
+                    warn!("Mapping resync failed: {:#}", e);
+                } else {
+                    info!("Mapping resync completed successfully");
+                }
             }
             BakeryCommands::ChangeSiteSpeedLive {
                 site_hash,
@@ -236,16 +248,7 @@ fn handle_commit_batch(
         return;
     }
 
-    // Check if we should do a full reload based on the number of circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged {
-        newly_added: _,
-        removed_circuits: _,
-        updated_circuits: _,
-    } = &circuit_change_mode
-    {
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
-        return; // Skip the rest of this CommitBatch processing
-    }
+    // Note: circuit-change handling moved below to respect IP-only vs TC-relevant updates
 
     // Declare any site speed changes that need to be applied. We're sending them
     // to ourselves as future commands via the BakeryCommands channel.
@@ -291,87 +294,27 @@ fn handle_commit_batch(
     if let diff::CircuitDiffResult::CircuitsChanged {
         newly_added,
         removed_circuits,
-        updated_circuits,
+        updated_tc,
+        updated_ip_only,
     } = circuit_change_mode
     {
-        // Process removed circuits (including those that are being updated)
-        let mut circuits_to_remove = removed_circuits;
-        if !updated_circuits.is_empty() {
-            // For updates, we need to remove the old version first
-            for cmd in &updated_circuits {
-                if let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd.as_ref() {
-                    circuits_to_remove.push(*circuit_hash);
-                }
-            }
+        // Any TC-relevant change (added/removed/updated_tc) triggers full reload
+        if !newly_added.is_empty() || !removed_circuits.is_empty() || !updated_tc.is_empty() {
+            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            return;
         }
 
-        // Removing circuits.
-        if !circuits_to_remove.is_empty() {
-            for circuit_hash in circuits_to_remove {
-                if let Some(circuit) = circuits.remove(&circuit_hash) {
-                    let was_activated = live_circuits.contains_key(&circuit_hash);
-
-                    // Only generate removal commands if appropriate for the mode
-                    let commands = match config.queues.lazy_queues.as_ref() {
-                        None | Some(LazyQueueMode::No) => {
-                            // Non-lazy: everything was created, delete everything
-                            circuit.to_prune(&config, true)
-                        }
-                        Some(LazyQueueMode::Htb) => {
-                            // HTB mode: only delete CAKE if it was created
-                            if was_activated {
-                                circuit.to_prune(&config, false) // This will only delete CAKE, not HTB
-                            } else {
-                                None // CAKE was never created, nothing to delete
-                            }
-                        }
-                        Some(LazyQueueMode::Full) => {
-                            // Full lazy: only delete the circuit if activated
-                            if was_activated {
-                                circuit.to_prune(&config, true)
-                            } else {
-                                None // Nothing was created, nothing to delete
-                            }
-                        }
-                    };
-
-                    if let Some(cmd) = commands {
-                        execute_in_memory(&cmd, "removing circuit");
-                    }
-                    live_circuits.remove(&circuit_hash);
-                } else {
-                    warn!(
-                        "RemoveCircuit received for unknown circuit: {}",
-                        circuit_hash
-                    );
-                    continue;
+        // Only IP-only updates: update map state and run mapping diff only
+        if !updated_ip_only.is_empty() {
+            for command in updated_ip_only {
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
+                    circuits.insert(*circuit_hash, Arc::clone(command));
                 }
             }
-        }
-        // Newly added is a little harder
-        if !newly_added.is_empty() {
-            // Collect both newly added and updated circuits
-            let mut all_new_circuits: Vec<&Arc<BakeryCommands>> = newly_added;
-            all_new_circuits.extend(updated_circuits);
-
-            let commands: Vec<Vec<String>> = all_new_circuits
-                .iter()
-                .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
-                .flatten()
-                .collect();
-            if commands.is_empty() {
-                debug!("No commands to execute for newly added circuits.");
-            } else {
-                execute_in_memory(&commands, "adding new circuits");
-                // Update the circuit map with the newly added circuits
-                for command in all_new_circuits {
-                    if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
-                        circuits.insert(*circuit_hash, Arc::clone(command));
-                    } else {
-                        warn!("AddCircuit received a non-circuit command: {:?}", command);
-                    }
-                }
+            if let Err(e) = mapping::update_ip_mappings_via_bus(circuits, &config) {
+                warn!("Mapping update failed (IP-only): {:#}", e);
             }
+            return;
         }
     }
 }
@@ -647,4 +590,9 @@ fn process_batch(
     let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
     write_command_file(&path, &commands);
     execute_in_memory(&commands, "processing batch");
+
+    // After TC commands, update IP mappings via the bus using a diffed approach
+    if let Err(e) = mapping::update_ip_mappings_via_bus(circuits, config) {
+        warn!("Mapping update failed: {:#}", e);
+    }
 }

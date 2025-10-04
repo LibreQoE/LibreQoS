@@ -282,9 +282,16 @@ pub enum BusRequest {
         class_major: u16,
         /// The upload class major version for the circuit
         up_class_major: u16,
+        /// CPU to be used for downlink mapping on ISP-facing interface
+        down_cpu: u32,
+        /// CPU to be used for uplink mapping on Internet-facing interface
+        up_cpu: u32,
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
     },
+
+    /// Ask the Bakery to recompute and resync IP mappings via diff
+    BakeryResyncMappings,
 
     /// Get current Stormguard statistics
     GetStormguardStats,

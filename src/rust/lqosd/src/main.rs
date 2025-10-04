@@ -473,6 +473,15 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
+            BusRequest::BakeryResyncMappings => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::ResyncMappings);
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
             BusRequest::BakeryMqSetup {
                 queues_available,
                 stick_offset,
@@ -526,10 +535,53 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                down_cpu,
+                up_cpu,
                 ip_addresses,
             } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
+                    // Canonicalize IP list: trim, lowercase IPv6, parse and reformat where possible,
+                    // deduplicate, and sort for stability.
+                    let canon_ips = if ip_addresses.is_empty() {
+                        String::new()
+                    } else {
+                        // Dedup with a set, but keep metadata to sort IPv4 before IPv6
+                        #[derive(Clone)]
+                        struct Item { txt: String, fam: u8 }
+                        let mut seen = std::collections::HashSet::<String>::new();
+                        let mut items: Vec<Item> = Vec::new();
+                        for raw in ip_addresses.split(',') {
+                            let s = raw.trim().to_lowercase();
+                            if s.is_empty() { continue; }
+                            let (norm, fam) = if let Some(slash) = s.find('/') {
+                                let (addr_part, prefix_part) = s.split_at(slash);
+                                let prefix = &prefix_part[1..];
+                                if let Ok(addr) = addr_part.parse::<IpAddr>() {
+                                    let ok_prefix = prefix.parse::<u8>().ok().map(|p| match addr {
+                                        IpAddr::V4(_) => p <= 32,
+                                        IpAddr::V6(_) => p <= 128,
+                                    }).unwrap_or(false);
+                                    if ok_prefix {
+                                        (format!("{}/{}", addr, prefix), match addr { IpAddr::V4(_) => 0, IpAddr::V6(_) => 1 })
+                                    } else {
+                                        (s.clone(), 2)
+                                    }
+                                } else {
+                                    (s.clone(), 2)
+                                }
+                            } else if let Ok(addr) = s.parse::<IpAddr>() {
+                                (addr.to_string(), match addr { IpAddr::V4(_) => 0, IpAddr::V6(_) => 1 })
+                            } else {
+                                (s.clone(), 2)
+                            };
+                            if seen.insert(norm.clone()) {
+                                items.push(Item { txt: norm, fam });
+                            }
+                        }
+                        items.sort_by(|a, b| (a.fam, &a.txt).cmp(&(b.fam, &b.txt)));
+                        items.into_iter().map(|i| i.txt).collect::<Vec<_>>().join(",")
+                    };
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
                         circuit_hash: *circuit_hash,
                         parent_class_id: *parent_class_id,
@@ -541,7 +593,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         upload_bandwidth_max: upload_bandwidth_max.clone(),
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
-                        ip_addresses: ip_addresses.clone(),
+                        down_cpu: *down_cpu,
+                        up_cpu: *up_cpu,
+                        ip_addresses: canon_ips,
                     });
                     BusResponse::Ack
                 } else {
