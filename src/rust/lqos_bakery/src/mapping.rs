@@ -30,16 +30,22 @@ fn build_desired_maps(
 
     for (_hash, cmd) in circuits.iter() {
         if let BakeryCommands::AddCircuit {
-            parent_class_id,
-            up_parent_class_id,
+            class_major,
+            up_class_major,
+            class_minor,
             ip_addresses,
             down_cpu,
             up_cpu,
             ..
         } = cmd.as_ref()
         {
-            down_handles.insert(*parent_class_id);
-            up_handles.insert(*up_parent_class_id);
+            // Map to the circuit leaf class handles (major:minor), not the parent site class.
+            let down_leaf = TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
+            let up_leaf = TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
+
+            // Track known handles by direction so we only touch our own mappings
+            down_handles.insert(down_leaf);
+            up_handles.insert(up_leaf);
 
             if ip_addresses.is_empty() {
                 continue;
@@ -49,9 +55,9 @@ fn build_desired_maps(
                 if ip.is_empty() {
                     continue;
                 }
-                down.insert(ip.to_string(), (*parent_class_id, *down_cpu));
+                down.insert(ip.to_string(), (down_leaf, *down_cpu));
                 if on_a_stick {
-                    up.insert(ip.to_string(), (*up_parent_class_id, *up_cpu));
+                    up.insert(ip.to_string(), (up_leaf, *up_cpu));
                 }
             }
         }
