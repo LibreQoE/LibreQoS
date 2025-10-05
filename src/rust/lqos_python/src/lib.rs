@@ -61,6 +61,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ignore_subnets, m)?)?;
     m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
     m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
+    m.add_function(wrap_pyfunction!(integration_common_use_mikrotik_ipv6, m)?)?;
     m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
     m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
     m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
@@ -77,8 +78,12 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -458,7 +463,13 @@ fn circuit_name_use_address() -> PyResult<bool> {
 #[pyfunction]
 fn find_ipv6_using_mikrotik() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.uisp_integration.ipv6_with_mikrotik)
+    Ok(config.uisp_integration.ipv6_with_mikrotik || config.integration_common.use_mikrotik_ipv6)
+}
+
+#[pyfunction]
+fn integration_common_use_mikrotik_ipv6() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.use_mikrotik_ipv6)
 }
 
 #[pyfunction]
@@ -582,6 +593,24 @@ fn splynx_strategy() -> PyResult<String> {
 }
 
 #[pyfunction]
+fn netzur_api_key() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.api_key.clone())
+}
+
+#[pyfunction]
+fn netzur_api_url() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.api_url.clone())
+}
+
+#[pyfunction]
+fn netzur_api_timeout() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.timeout_secs)
+}
+
+#[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.enable_uisp)
@@ -591,6 +620,12 @@ fn automatic_import_uisp() -> PyResult<bool> {
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.spylnx_integration.enable_spylnx)
+}
+
+#[pyfunction]
+fn automatic_import_netzur() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.netzur_integration.enable_netzur)
 }
 
 #[pyfunction]

@@ -58,6 +58,10 @@
                         type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
                         class="fa fa-link"></i> Splynx
                 </button>
+                <button class="nav-link" id="v-pills-netzur-tab" data-bs-toggle="pill" data-bs-target="#v-pills-netzur"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-link"></i> Netzur
+                </button>
                 <button class="nav-link" id="v-pills-uisp-tab" data-bs-toggle="pill" data-bs-target="#v-pills-uisp"
                         type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
                         class="fa fa-link"></i> UISP
@@ -357,6 +361,10 @@
                             <td><input type="checkbox" id="bindOverwriteNetJson"/></td>
                         </tr>
                         <tr>
+                            <td><label for="bindIntegrationMikrotik">Enrich IPv6 via Mikrotik: </label></td>
+                            <td><input type="checkbox" id="bindIntegrationMikrotik"/></td>
+                        </tr>
+                        <tr>
                             <td><label for="bindQueueRefreshInterval">Queue Refresh Interval (Minutes): </label></td>
                             <td><input type="number" id="bindQueueRefreshInterval"/></td>
                         </tr>
@@ -382,6 +390,29 @@
                         <tr>
                             <td><label for="bindSplynxApiUrl">API URL: </label></td>
                             <td><input type="text" id="bindSplynxApiUrl"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Netzur Tab -->
+                <div class="tab-pane fade" id="v-pills-netzur" role="tabpanel" aria-labelledby="v-pills-netzur-tab">
+                    <h2><i class="fa fa-link"></i> Netzur Integration Settings</h2>
+                    <table class="table table-bordered">
+                        <tr>
+                            <td><label for="bindNetzurEnable">Enable Netzur Integration: </label></td>
+                            <td><input type="checkbox" id="bindNetzurEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNetzurApiKey">API Key: </label></td>
+                            <td><input type="text" id="bindNetzurApiKey"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNetzurApiUrl">API URL: </label></td>
+                            <td><input type="text" id="bindNetzurApiUrl"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNetzurTimeout">Request Timeout (seconds): </label></td>
+                            <td><input type="number" min="15" id="bindNetzurTimeout"/></td>
                         </tr>
                     </table>
                 </div>

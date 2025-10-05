@@ -5,6 +5,7 @@
     + [Promover Nodos a Raíz (Optimización de Rendimiento)](#promover-nodos-a-raíz-optimización-de-rendimiento)
     + [Acceso API de Splynx](#acceso-api-de-splynx)
     + [Sobrescrituras de Splynx](#sobrescrituras-de-splynx)
+  * [Integración con Netzur](#integración-con-netzur)
   * [Integración con UISP](#integración-con-uisp)
     + [Estrategias de Topología](#estrategias-de-topología-1)
     + [Estrategias de Manejo de Suspensiones](#estrategias-de-manejo-de-suspensiones)
@@ -124,6 +125,33 @@ Hay una plantilla disponible en la carpeta `/opt/libreqos/src`. Para usarla, cop
 sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
 ```
 Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+
+## Integración con Netzur
+
+Los despliegues de Netzur proporcionan un endpoint REST con información de zonas y clientes protegido con token Bearer. Configure la sección `[netzur_integration]` en `/etc/lqos.conf`:
+
+```ini
+[netzur_integration]
+enable_netzur = true
+api_key = "su-token-netzur"
+api_url = "https://netzur.ejemplo.com/api/libreqos"
+timeout_secs = 60
+use_mikrotik_ipv6 = false
+```
+
+- `enable_netzur` habilita la importación automática desde `lqos_scheduler`.
+- `api_key` es el token Bearer generado dentro de Netzur.
+- `api_url` debe devolver un JSON con los arreglos `zones` (convertidos en sitios) y `customers` (convertidos en circuitos y dispositivos).
+- `timeout_secs` permite incrementar el tiempo de espera de la petición cuando el API responde lentamente (por defecto 60 segundos).
+- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `mikrotikDHCPRouterList.csv`.
+
+Para una importación manual:
+
+```bash
+python3 integrationNetzur.py
+```
+
+La integración actualiza `ShapedDevices.csv` y, salvo que `always_overwrite_network_json` esté deshabilitado, también `network.json`. Ajuste la opción Integración → Común si necesita preservar un `network.json` existente entre ejecuciones de Netzur.
 
 ## Integración con UISP
 

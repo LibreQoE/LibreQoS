@@ -34,7 +34,7 @@ Más información sobre cómo [configurar integraciones aquí](../TechnicalDocs/
 
 Network.json permite a los operadores de ISP definir una topología de red jerárquica o una topología de red plana.
 
-Si planea utilizar las integraciones UISP o Splynx integradas, no es necesario que cree un archivo network.json todavía.
+Si planea utilizar las integraciones UISP, Splynx o Netzur integradas, no es necesario que cree un archivo network.json todavía.
 Si planea utilizar la integración UISP integrada, esta se creará automáticamente la primera vez que se ejecute (suponiendo que network.json aún no exista).
 
 Si no va a utilizar una integración, puede definir manualmente el archivo network.json siguiendo el archivo de plantilla: network.example.json
