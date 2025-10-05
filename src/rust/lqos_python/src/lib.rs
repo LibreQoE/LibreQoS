@@ -595,19 +595,37 @@ fn splynx_strategy() -> PyResult<String> {
 #[pyfunction]
 fn netzur_api_key() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.netzur_integration.api_key.clone())
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_key.clone())
+            .unwrap_or_default(),
+    )
 }
 
 #[pyfunction]
 fn netzur_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.netzur_integration.api_url.clone())
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_url.clone())
+            .unwrap_or_default(),
+    )
 }
 
 #[pyfunction]
 fn netzur_api_timeout() -> PyResult<u64> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.netzur_integration.timeout_secs)
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.timeout_secs)
+            .unwrap_or(60),
+    )
 }
 
 #[pyfunction]
@@ -625,7 +643,13 @@ fn automatic_import_splynx() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_netzur() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.netzur_integration.enable_netzur)
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.enable_netzur)
+            .unwrap_or(false),
+    )
 }
 
 #[pyfunction]
