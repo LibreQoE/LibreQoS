@@ -10,7 +10,7 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 cd ~
 sudo apt-get update
 sudo apt-get upgrade
-wget http://download.libreqos.com/libreqos_1.5-RC2.202510052233-1_amd64.deb
+wget https://download.libreqos.com/libreqos_1.5-RC2.202510052233-1_amd64.deb
 sudo apt install ./libreqos_1.5-RC2.202510052233-1_amd64.deb
 sudo systemctl restart lqosd lqos_scheduler
 ```
