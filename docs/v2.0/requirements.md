@@ -33,7 +33,7 @@ Below is a table of approximate aggregate capacity, assuming a CPU with a [singl
 
 ### Hyper-threading
 
-Please [disable Hyper-Threading](https://www.youtube.com/watch?v=G70QtUAxomU) (Simultaneous Multi-Threading) in the BIOS/UEFI settings, as it can interfere with XDP processing.
+Please [disable Hyper-Threading](prereq.md) (Simultaneous Multi-Threading) in the BIOS/UEFI settings, as it can interfere with XDP processing.
 
 ### Memory
 * Recommended RAM:
@@ -68,7 +68,7 @@ Please [disable Hyper-Threading](https://www.youtube.com/watch?v=G70QtUAxomU) (S
 
 ##### MS-01 Notes:
 
-As with any machine running LibreQoS, please be sure to [disable hyperthreading](prereq.html). Specific to the MS-01, please consider [replacing the thermal paste](https://www.youtube.com/watch?v=G70QtUAxomU) to lower CPU temps by about 20 degrees celcius (Note: this may void the warranty).
+As with any machine running LibreQoS, please be sure to [disable hyperthreading](prereq.md). Specific to the MS-01, please consider [replacing the thermal paste](https://www.youtube.com/watch?v=G70QtUAxomU) to lower CPU temps by about 20 degrees celcius (Note: this may void the warranty).
 
 #### Rackmount Servers (10G to 100G)
 
@@ -90,7 +90,7 @@ Such vendors often stock servers capable of 10 Gbps throughput, for around $500 
 
 #### Server Setup Prerequisites
 
-[Server Setup Prerequisites](prereq.html)
+[Server Setup Prerequisites](prereq.md)
 
 ### Network Interface Requirements
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
