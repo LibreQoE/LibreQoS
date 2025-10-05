@@ -114,6 +114,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -1100,4 +1102,29 @@ impl Bakery {
         self.queue.push(command);
         Ok(())
     }
+}
+
+/// Report that the scheduler is still alive
+#[pyfunction]
+fn scheduler_alive(_py: Python) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerReady]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerError(error)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

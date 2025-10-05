@@ -53,11 +53,11 @@ where
     }
 }
 
-impl<T> Into<DownUpOrder<T>> for UpDownOrder<T> {
-    fn into(self) -> DownUpOrder<T> {
+impl<T> From<UpDownOrder<T>> for DownUpOrder<T> {
+    fn from(val: UpDownOrder<T>) -> Self {
         DownUpOrder {
-            up: self.down,
-            down: self.up,
+            up: val.down,
+            down: val.up,
         }
     }
 }

@@ -3,7 +3,9 @@
 
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::get_username;
+use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
+use axum::http::header;
 use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
@@ -31,6 +33,40 @@ fn js_tf(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
 
+// Escape HTML special characters for use in attributes
+fn escape_html_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+// HTML template for API link when available (embedded page)
+const API_LINK_ACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="apiLink" href="api_docs.html">
+        <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
+    </a>
+    
+</li>"#;
+
+// HTML template for API link when unavailable
+const API_LINK_INACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="apiLink" href="api.html">
+        <i class="fa fa-fw fa-centerline fa-code nav-icon"></i> API Docs
+    </a>
+</li>"#;
+
+// HTML template for chat link when available (embedded page)
+const CHAT_LINK_ACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="chatLink" href="chatbot.html">
+        <i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby
+    </a>
+</li>"#;
+
 static GIT_HASH: &str = env!("GIT_HASH");
 
 pub async fn apply_templates(
@@ -42,7 +78,7 @@ pub async fn apply_templates(
         let path = &req.uri().path().to_string();
         path.ends_with(".html")
     };
-    let config = load_config().unwrap();
+    let config = load_config().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::from("Cannot load configuration")))?;
 
     // TODO: Cache this once we're not continually making changes
     let template_text = {
@@ -50,7 +86,7 @@ pub async fn apply_templates(
             .join("bin")
             .join("static2")
             .join("template.html");
-        std::fs::read_to_string(path).unwrap()
+        std::fs::read_to_string(path).expect("Cannot read template html file")
     };
 
     // Update the displayed username
@@ -80,22 +116,25 @@ pub async fn apply_templates(
             }
         }
 
-        // Title
+        // Title and node_id
         let mut title = "LibreQoS Node Manager".to_string();
+        let mut node_id_js = String::new();
         if let Ok(config) = load_config() {
             title = config.node_name.clone();
+            node_id_js = escape_html_attr(&config.node_id);
         }
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
-            js_tf(new_version)
+            js_tf(new_version),
+            node_id_js
         );
 
         let (mut res_parts, res_body) = res.into_parts();
-        let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
+        let bytes = to_bytes(res_body, 1_000_000).await.expect("Cannot read template bytes");
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)
@@ -103,11 +142,39 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
-        let byte_string = byte_string
-            .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
+        // Handle API_LINK placeholder (require service + valid Insight)
+        let api_link = if is_api_available() && script_has_insight {
+            API_LINK_ACTIVE
+        } else {
+            API_LINK_INACTIVE
+        };
+        let byte_string = byte_string.replace("%%API_LINK%%", api_link);
+
+        // Handle CHAT_LINK placeholder
+        // Libby (chatbot) no longer depends on the local API service being up.
+        // Always show the link to the chatbot page; the page will surface availability.
+        let chat_link = CHAT_LINK_ACTIVE;
+        let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
+
+        // Replace SCHEDULER_STATUS with a simple placeholder for client-side rendering
+        // The client JS will fetch status and populate this container.
+        let scheduler_placeholder = r##"
+<li class="nav-item" id="schedulerStatus">
+    <a class="nav-link" href="#" id="schedulerStatusLink">
+        <i class="fa fa-fw fa-centerline fa-circle-notch fa-spin"></i> Scheduler
+    </a>
+</li>
+"##;
+        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
+
+        let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }
+        // Prevent caching of the composed HTML to avoid stale menus/status
+        res_parts
+            .headers
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {

@@ -5,7 +5,7 @@ use crate::strategies::full::parse::parse_uisp_datasets;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::warn;
 use uisp::{DataLink, Device, Site};
@@ -89,7 +89,7 @@ impl UispData {
     }
 
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {
-        let mut mappings = HashMap::new();
+        let mut mappings: HashMap<String, HashSet<String>> = HashMap::new();
         for client in self.find_client_sites() {
             let mut found = false;
             let mut parent = None;
@@ -126,8 +126,7 @@ impl UispData {
                                         self.find_device_by_id(&to_device.identification.id)
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent =
-                                                Some(("AP", apdev.identification.id.clone()));
+                                            parent = Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }
@@ -142,8 +141,7 @@ impl UispData {
                                         self.find_device_by_id(&from_device.identification.id)
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent =
-                                                Some(("AP", apdev.identification.id.clone()));
+                                            parent = Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }
@@ -192,16 +190,25 @@ impl UispData {
                 //println!("Client {} has no obvious parent AP", client.name);
                 let entry = mappings
                     .entry("Orphans".to_string())
-                    .or_insert_with(Vec::new);
-                entry.push(client.id.clone());
+                    .or_insert_with(HashSet::new);
+                entry.insert(client.id.clone());
             } else {
                 //info!("Client {} is connected to {:?}", client.name, parent);
                 if let Some((_, parent)) = &parent {
-                    let entry = mappings.entry(parent.to_string()).or_insert_with(Vec::new);
-                    entry.push(client.id.clone());
+                    let entry = mappings
+                        .entry(parent.to_string())
+                        .or_insert_with(HashSet::new);
+                    entry.insert(client.id.clone());
                 }
             }
         }
         mappings
+            .into_iter()
+            .map(|(ap, sites)| {
+                let mut sites_vec: Vec<_> = sites.into_iter().collect();
+                sites_vec.sort();
+                (ap, sites_vec)
+            })
+            .collect()
     }
 }

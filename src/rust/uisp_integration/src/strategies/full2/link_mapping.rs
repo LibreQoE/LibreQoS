@@ -2,8 +2,14 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum LinkMapping {
-    Ethernet { speed_mbps: u64 },
-    DevicePair { device_a: String, device_b: String, speed_mbps: u64, }
+    Ethernet {
+        speed_mbps: u64,
+    },
+    DevicePair {
+        device_a: String,
+        device_b: String,
+        speed_mbps: u64,
+    },
 }
 
 impl LinkMapping {

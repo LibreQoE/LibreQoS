@@ -1,10 +1,10 @@
+use crate::config_builder::CURRENT_CONFIG;
 use cursive::{
+    Cursive,
     view::{Nameable, Resizable},
     views::{Button, Dialog, EditView, LinearLayout, SelectView, TextView},
-    Cursive,
 };
 use ip_network::IpNetwork;
-use crate::config_builder::CURRENT_CONFIG;
 
 /// Shows and manages the list of allowed IP ranges.
 pub fn ranges(s: &mut Cursive) {
@@ -14,7 +14,11 @@ pub fn ranges(s: &mut Cursive) {
     };
 
     let select_view = SelectView::<String>::new()
-        .with_all(initial_ranges.iter().map(|range| (range.clone(), range.clone())))
+        .with_all(
+            initial_ranges
+                .iter()
+                .map(|range| (range.clone(), range.clone())),
+        )
         .on_submit(|_s, range: &str| {
             let mut config = CURRENT_CONFIG.lock();
             config.allow_subnets.push(range.parse().unwrap());
@@ -60,10 +64,12 @@ pub fn ranges(s: &mut Cursive) {
             .child(TextView::new("Press Enter to add the range"))
         );
 
-        s.add_layer(
-            Dialog::around(layout)
-                .title("Allowed IP Ranges")
-                .button("OK", |s| { s.pop_layer(); })
-                .full_screen()
-        );
+    s.add_layer(
+        Dialog::around(layout)
+            .title("Allowed IP Ranges")
+            .button("OK", |s| {
+                s.pop_layer();
+            })
+            .full_screen(),
+    );
 }

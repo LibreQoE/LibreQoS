@@ -36,7 +36,7 @@ pub fn time_since_boot() -> Result<TimeSpec, TimeError> {
 pub fn boot_time_nanos_to_unix_now(start_time_nanos_since_boot: u64) -> Result<u64, TimeError> {
     let time_since_boot = time_since_boot()?;
     let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+    let boot_time = unix_now()? - since_boot.as_secs();
     Ok(boot_time + Duration::from_nanos(start_time_nanos_since_boot).as_secs())
 }
 

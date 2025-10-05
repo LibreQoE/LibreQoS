@@ -83,8 +83,11 @@ struct FlowTracker {
 }
 
 impl FlowTracker {
-    fn new() -> Self {
-        let config = lqos_config::load_config().unwrap();
+    fn new() -> anyhow::Result<Self> {
+        let Ok(config) = lqos_config::load_config() else {
+            error!("Unable to read configuration. Flow tracker cannot run.");
+            anyhow::bail!("Unable to build flow tracker");
+        };
         let mut ignore_subnets = ip_network_table::IpNetworkTable::new();
         if let Some(flows) = &config.flows {
             if let Some(subnets) = &flows.do_not_track_subnets {
@@ -101,18 +104,18 @@ impl FlowTracker {
                         let ip = if split[0].contains(":") {
                             // It's IPv6
                             mask = split[1].parse().unwrap_or(128);
-                            let ip: Ipv6Addr = split[0].parse().unwrap();
+                            let ip: Ipv6Addr = split[0].parse()?;
                             ip
                         } else {
                             // It's IPv4
                             mask = split[1].parse().unwrap_or(32);
-                            let ip: Ipv4Addr = split[0].parse().unwrap();
+                            let ip: Ipv4Addr = split[0].parse()?;
                             mask += 96;
                             ip.to_ipv6_mapped()
                         };
                         //println!("{:?} {:?}", ip, mask);
 
-                        let addr = ip_network::IpNetwork::new(ip, mask).unwrap();
+                        let addr = ip_network::IpNetwork::new(ip, mask)?;
                         ignore_subnets.insert(addr, true);
                     } else {
                         error!("Invalid subnet: {}", subnet);
@@ -122,10 +125,10 @@ impl FlowTracker {
             }
         }
 
-        Self {
+        Ok(Self {
             flow_rtt: FxHashMap::default(),
             ignore_subnets,
-        }
+        })
     }
 }
 
@@ -159,7 +162,10 @@ impl FlowActor {
         std::thread::Builder::new()
             .name("FlowActor".to_string())
             .spawn(move || {
-                let mut flows = FlowTracker::new();
+                let Ok(mut flows) = FlowTracker::new() else {
+                    error!("Flow tracker cannot start");
+                    return;
+                };
 
                 use crossbeam_channel::select;
 
@@ -276,7 +282,10 @@ pub unsafe extern "C" fn flowbee_handle_events(
         // Copy the bytes (to free the ringbuffer slot)
         let data_u8 = data as *const u8;
         let data_slice: &[u8] = unsafe { slice::from_raw_parts(data_u8, EVENT_SIZE) };
-        if let Ok(_) = FLOW_BYTES.push(data_slice.try_into().unwrap()) {
+        let Ok(data_slice) = data_slice.try_into() else {
+            return 0;
+        };
+        if let Ok(_) = FLOW_BYTES.push(data_slice) {
             if tx.try_send(()).is_err() {
                 warn!("Could not submit flow event - buffer full");
             }

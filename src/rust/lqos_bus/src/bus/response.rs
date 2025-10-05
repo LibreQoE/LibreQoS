@@ -173,10 +173,18 @@ pub enum BusResponse {
 
     /// Summary of IP Protocols
     IpProtocols(Vec<(String, DownUpOrder<u64>)>),
-    
+
     /// Stormguard statistics
     StormguardStats(Vec<(String, u64, u64)>),
-    
+
     /// Bakery statistics
     BakeryActiveCircuits(usize),
+
+    /// Scheduler status
+    SchedulerStatus {
+        /// Is the scheduler running
+        running: bool,
+        /// Any error message from integrations
+        error: Option<String>,
+    },
 }

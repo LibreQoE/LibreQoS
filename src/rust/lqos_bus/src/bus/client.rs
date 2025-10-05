@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
-use crate::{
-    bus::{BusClientError}, BusReply, BusRequest, BusResponse, BusSession, BUS_SOCKET_PATH
-};
+use crate::{BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession, bus::BusClientError};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -54,16 +52,17 @@ impl LibreqosBusClient {
     ///
     /// ## Arguments
     /// * `requests` a vector of `BusRequest` requests to make.
-    /// 
+    ///
     /// **Returns** Either an error, or a vector of `BusResponse` replies
-    pub async fn request(&mut self, requests: Vec<BusRequest>) -> Result<Vec<BusResponse>, BusClientError> {
+    pub async fn request(
+        &mut self,
+        requests: Vec<BusRequest>,
+    ) -> Result<Vec<BusResponse>, BusClientError> {
         let request_id = self.request_id;
         self.request_id += 1;
         // Mirror the code in unix_socket_server::listen
 
-        let session = BusSession {
-            requests,
-        };
+        let session = BusSession { requests };
         let Ok(session_bytes) = bincode::serialize(&session) else {
             error!("Unable to serialize session.");
             return Err(BusClientError::EncodingError);
@@ -84,29 +83,38 @@ impl LibreqosBusClient {
 
         // Read the response
         let mut response_id = [0u8; 8];
-        self.stream.read_exact(&mut response_id).await.map_err(|_| {
-            error!("Unable to read response ID from {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamReadError
-        })?;
+        self.stream
+            .read_exact(&mut response_id)
+            .await
+            .map_err(|_| {
+                error!("Unable to read response ID from {BUS_SOCKET_PATH} stream.");
+                BusClientError::StreamReadError
+            })?;
         let response_id = u64::from_le_bytes(response_id);
         if response_id != request_id {
             error!("Received response ID {response_id} does not match request ID {request_id}.");
             return Err(BusClientError::StreamReadError);
         }
         let mut response_size = [0u8; 8];
-        self.stream.read_exact(&mut response_size).await.map_err(|_| {
-            error!("Unable to read response size from {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamReadError
-        })?;
+        self.stream
+            .read_exact(&mut response_size)
+            .await
+            .map_err(|_| {
+                error!("Unable to read response size from {BUS_SOCKET_PATH} stream.");
+                BusClientError::StreamReadError
+            })?;
         let response_size = u64::from_le_bytes(response_size) as usize;
         if response_size == 0 {
             return Ok(Vec::new());
         }
         let mut response_bytes = vec![0u8; response_size];
-        self.stream.read_exact(&mut response_bytes).await.map_err(|_| {
-            error!("Unable to read response from {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamReadError
-        })?;
+        self.stream
+            .read_exact(&mut response_bytes)
+            .await
+            .map_err(|_| {
+                error!("Unable to read response from {BUS_SOCKET_PATH} stream.");
+                BusClientError::StreamReadError
+            })?;
         let response: BusReply = match bincode::deserialize(&response_bytes) {
             Ok(response) => response,
             Err(e) => {
@@ -118,7 +126,11 @@ impl LibreqosBusClient {
             return Ok(Vec::new());
         }
         if response.responses.len() != session.requests.len() {
-            error!("Received {} responses, expected {}", response.responses.len(), session.requests.len());
+            error!(
+                "Received {} responses, expected {}",
+                response.responses.len(),
+                session.requests.len()
+            );
             return Err(BusClientError::DecodingError);
         }
         Ok(response.responses)

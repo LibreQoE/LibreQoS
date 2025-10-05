@@ -1,7 +1,9 @@
 //! Provides an interface to the Heimdall packet watching
 //! system. Heimdall watches traffic flows, and is notified
 //! about their contents via the eBPF Perf system.
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
+
 mod config;
 /// Interface to the performance tracking system
 pub mod perf_interface;
@@ -45,7 +47,10 @@ pub fn start_heimdall() -> Result<()> {
     std::thread::Builder::new()
         .name("Heimdall Packet Watcher".to_string())
         .spawn(move || {
-            let mut tfd = TimerFd::new().unwrap();
+            let Ok(mut tfd) = TimerFd::new() else {
+                error!("Unable to created timer file descriptor. No Heimdall data will be available.");
+                return;
+            };
             assert_eq!(tfd.get_state(), TimerState::Disarmed);
             tfd.set_state(
                 TimerState::Periodic {

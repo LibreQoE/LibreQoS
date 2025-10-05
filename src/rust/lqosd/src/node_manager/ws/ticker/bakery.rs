@@ -9,7 +9,10 @@ pub async fn bakery_ticker(
     pubsub: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
 ) {
-    if !pubsub.is_channel_alive(PublishedChannels::BakeryStatus).await {
+    if !pubsub
+        .is_channel_alive(PublishedChannels::BakeryStatus)
+        .await
+    {
         return;
     }
 
@@ -29,8 +32,10 @@ pub async fn bakery_ticker(
                             },
                         }
                     });
-                    
-                    pubsub.send(PublishedChannels::BakeryStatus, msg.to_string()).await;
+
+                    pubsub
+                        .send(PublishedChannels::BakeryStatus, msg.to_string())
+                        .await;
                 }
             }
         }

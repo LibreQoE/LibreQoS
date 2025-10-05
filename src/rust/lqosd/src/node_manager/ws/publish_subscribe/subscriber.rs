@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use allocative::Allocative;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 #[derive(Allocative)]

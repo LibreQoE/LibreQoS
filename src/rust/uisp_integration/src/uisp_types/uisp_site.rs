@@ -76,17 +76,28 @@ impl UispSite {
         let mut burst_down_mbps: f32 = 0.0;
         let mut burst_up_mbps: f32 = 0.0;
         if let Some(qos) = &value.qos {
-            if let Some(d) = qos.downloadSpeed { base_down_mbps = (d as f32) / 1_000_000.0; }
-            if let Some(u) = qos.uploadSpeed { base_up_mbps = (u as f32) / 1_000_000.0; }
-            if let Some(db) = qos.downloadBurstSize { burst_down_mbps = (db as f32) * 8.0 / 1000.0 / 1024.0; }
-            if let Some(ub) = qos.uploadBurstSize { burst_up_mbps = (ub as f32) * 8.0 / 1000.0 / 1024.0; }
+            if let Some(d) = qos.downloadSpeed {
+                base_down_mbps = (d as f32) / 1_000_000.0;
+            }
+            if let Some(u) = qos.uploadSpeed {
+                base_up_mbps = (u as f32) / 1_000_000.0;
+            }
+            if let Some(db) = qos.downloadBurstSize {
+                burst_down_mbps = (db as f32) * 8.0 / 1000.0 / 1024.0;
+            }
+            if let Some(ub) = qos.uploadBurstSize {
+                burst_up_mbps = (ub as f32) * 8.0 / 1000.0 / 1024.0;
+            }
         }
         let suspended = value.is_suspended();
 
         if suspended {
             match config.uisp_integration.suspended_strategy.as_str() {
                 "slow" => {
-                    warn!("{} is suspended. Using slow strategy.", value.name_or_blank());
+                    warn!(
+                        "{} is suspended. Using slow strategy.",
+                        value.name_or_blank()
+                    );
                     // Keep capacity minimal for infra calculations
                     max_down_mbps = 1;
                     max_up_mbps = 1;

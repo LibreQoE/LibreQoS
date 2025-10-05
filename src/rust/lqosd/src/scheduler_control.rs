@@ -2,8 +2,8 @@
 
 // TODO: Add a Docker "start scheduler" function (see the `dockerization` branch).
 
-use std::process::Command;
 use anyhow::Result;
+use std::process::Command;
 
 pub fn enable_scheduler() -> Result<()> {
     // TODO: we also need a Docker version

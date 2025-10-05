@@ -230,7 +230,6 @@ pub enum BusRequest {
     BlackboardFinish,
 
     // lqos_bakery requests
-
     /// Start a bakery session
     BakeryStart,
     /// Request a bakery commit
@@ -240,7 +239,7 @@ pub enum BusRequest {
         /// The number of queues available
         queues_available: usize,
         /// The "stick offset" calculated in LibreQoS.py
-        stick_offset: usize
+        stick_offset: usize,
     },
     /// Add a site to the bakery
     BakeryAddSite {
@@ -286,12 +285,27 @@ pub enum BusRequest {
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
     },
-    
+
     /// Get current Stormguard statistics
     GetStormguardStats,
-    
+
     /// Get current Bakery statistics
     GetBakeryStats,
+
+    /// Announce that the API is ready
+    ApiReady,
+
+    /// Announce that the chatbot is ready
+    ChatbotReady,
+
+    /// Announce that the scheduler is ready
+    SchedulerReady,
+
+    /// Announce a scheduler error
+    SchedulerError(String),
+
+    /// Check the scheduler status
+    CheckSchedulerStatus,
 }
 
 /// Defines the parts of the blackboard

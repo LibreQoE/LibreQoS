@@ -7,20 +7,20 @@ use crate::throughput_tracker::{
     Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
     min_max_median_tcp_retransmits,
 };
+use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::{load_config, ShapedDevice};
+use lqos_config::{ShapedDevice, load_config};
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
-use uuid::Uuid;
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::sync::atomic::AtomicI64;
-use csv::ReaderBuilder;
 use tracing::debug;
 use tracing::log::warn;
+use uuid::Uuid;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
@@ -30,9 +30,9 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
 /// TODO: Remove when LTS/Insight support fractional rates
 fn rate_for_submission(rate_mbps: f32) -> u32 {
     if rate_mbps < 1.0 {
-        1  // Round up small fractional rates to 1 Mbps for now
+        1 // Round up small fractional rates to 1 Mbps for now
     } else {
-        rate_mbps.round() as u32  // Round to nearest integer
+        rate_mbps.round() as u32 // Round to nearest integer
     }
 }
 
@@ -51,7 +51,8 @@ pub(crate) fn submit_throughput_stats(
         return;
     }
     if let Some(license_key) = &config.long_term_stats.license_key {
-        if license_key.trim().is_empty() { // There's a license key but it's empty
+        if license_key.trim().is_empty() {
+            // There's a license key but it's empty
             return;
         }
         if license_key.trim().replace("-", "").parse::<Uuid>().is_err() {
@@ -69,7 +70,7 @@ pub(crate) fn submit_throughput_stats(
     };
     if !can_submit {
         return;
-    }    
+    }
 
     // Gather Global Stats
     let packets_per_second = (
@@ -236,9 +237,7 @@ pub(crate) fn submit_throughput_stats(
         {
             warn!("Error sending message to LTS2.");
         }
-        if let Err(e) =
-            crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64)
-        {
+        if let Err(e) = crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64) {
             debug!("Error sending message to LTS2. {e:?}");
         }
 
@@ -283,10 +282,10 @@ pub(crate) fn submit_throughput_stats(
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
                     if h.bytes_per_second.down > *dl {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     } else if h.bytes_per_second.up > *ul {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     }
                 }
@@ -294,7 +293,7 @@ pub(crate) fn submit_throughput_stats(
                 if crazy {
                     return;
                 }
-                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     c.bytes += h.bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
@@ -302,7 +301,7 @@ pub(crate) fn submit_throughput_stats(
                     c.icmp_packets += h.icmp_packets;
                 } else {
                     circuit_throughput.insert(
-                        h.circuit_hash.unwrap(),
+                        h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
                             bytes: h.bytes_per_second,
                             packets: h.packets_per_second,
@@ -324,10 +323,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_hash.unwrap(), h.tcp_retransmits);
+                    circuit_retransmits.insert(h.circuit_hash.unwrap_or(0), h.tcp_retransmits);
                 }
             });
 
@@ -341,10 +340,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
-                    c.push(h.median_latency().unwrap());
+                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap_or(0)) {
+                    c.push(h.median_latency().unwrap_or(0.0));
                 } else {
-                    circuit_rtt.insert(h.circuit_hash.unwrap(), vec![h.median_latency().unwrap()]);
+                    circuit_rtt.insert(h.circuit_hash.unwrap_or(0), vec![h.median_latency().unwrap_or(0.0)]);
                 }
             });
 
@@ -429,7 +428,7 @@ pub(crate) fn submit_throughput_stats(
 
         // Network tree stats
         let tree = {
-            let reader = NETWORK_JSON.read().unwrap();
+            let reader = NETWORK_JSON.read();
             reader.get_nodes_when_ready().clone()
         };
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();

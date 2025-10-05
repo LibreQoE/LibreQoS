@@ -1,9 +1,9 @@
 use allocative_derive::Allocative;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::Serialize;
 use std::net::IpAddr;
-use parking_lot::Mutex;
 use tracing::error;
 
 mod asn;
@@ -63,8 +63,9 @@ impl FlowAnalysisSystem {
 
 pub fn setup_flow_analysis() -> anyhow::Result<()> {
     // This is locking the table, which triggers lazy-loading of the
-    // data. It's not actually doing nothing.
-    ANALYSIS.asn_table.lock();
+    // data.
+    let black_box = ANALYSIS.asn_table.lock();
+    drop(black_box);
     Ok(())
 }
 

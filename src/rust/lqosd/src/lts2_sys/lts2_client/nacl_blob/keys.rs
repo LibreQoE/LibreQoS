@@ -12,7 +12,7 @@ impl KeyStore {
     }
 
     pub fn public_key_as_cbor_bytes(&self) -> Vec<u8> {
-        serde_cbor::to_vec(&self.keys.public_key).unwrap()
+        serde_cbor::to_vec(&self.keys.public_key).unwrap_or(vec![])
     }
 }
 
@@ -50,8 +50,8 @@ mod test {
     #[test]
     fn test_serialize_keypair() {
         let keypair = KeyPair::r#gen();
-        let serialized = serde_cbor::to_vec(&keypair).unwrap();
-        let deserialized: KeyPair = serde_cbor::from_slice(&serialized).unwrap();
+        let serialized = serde_cbor::to_vec(&keypair).expect("Cannot serialize keypair");
+        let deserialized: KeyPair = serde_cbor::from_slice(&serialized).expect("Cannot deserialize keypair");
         assert_eq!(keypair, deserialized);
     }
 }

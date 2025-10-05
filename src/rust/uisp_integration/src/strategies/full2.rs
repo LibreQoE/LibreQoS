@@ -15,9 +15,9 @@ use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
 use crate::uisp_types::UispDevice;
 use lqos_config::Config;
+use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
-use petgraph::Directed;
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
@@ -77,7 +77,14 @@ pub async fn build_full_network_v2(
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
     let mut device_map = HashMap::new();
-    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map, &config, &bandwidth_overrides);
+    add_devices_to_graph(
+        &uisp_data,
+        &mut graph,
+        &mut site_map,
+        &mut device_map,
+        &config,
+        &bandwidth_overrides,
+    );
 
     // Now we iterate all the data links looking for DEVICE linkage
     add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map, &config);
@@ -86,8 +93,16 @@ pub async fn build_full_network_v2(
     let orphans = graph.add_node(GraphMapping::GeneratedSite {
         name: "Orphans".to_string(),
     });
-    graph.add_edge(root_idx, orphans, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
-    graph.add_edge(orphans, root_idx, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
+    graph.add_edge(
+        root_idx,
+        orphans,
+        LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+    );
+    graph.add_edge(
+        orphans,
+        root_idx,
+        LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
+    );
     for (_, site_ref) in site_map.iter() {
         if *site_ref == root_idx {
             continue;
@@ -100,8 +115,16 @@ pub async fn build_full_network_v2(
                 "No path is detected from {:?} to {}",
                 graph[*site_ref], root_site_name
             );
-            graph.add_edge(*site_ref, orphans, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
-            graph.add_edge(orphans, *site_ref, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
+            graph.add_edge(
+                *site_ref,
+                orphans,
+                LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+            );
+            graph.add_edge(
+                orphans,
+                *site_ref,
+                LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
+            );
         }
     }
 
@@ -206,7 +229,7 @@ pub async fn build_full_network_v2(
                     },
                     |_| 0,
                 )
-                    .unwrap_or((0, vec![]));
+                .unwrap_or((0, vec![]));
 
                 // println!("From node to root:");
                 // println!("{:?}", route_from_node_to_root);
@@ -229,11 +252,18 @@ pub async fn build_full_network_v2(
                     );
                 } else {
                     // Obtain capacities from route traversal
-                    let mut download_capacity = min_capacity_along_route(&graph, &route_from_root_to_node.1);
-                    let mut upload_capacity = min_capacity_along_route(&graph, &route_from_node_to_root.1);
+                    let mut download_capacity =
+                        min_capacity_along_route(&graph, &route_from_root_to_node.1);
+                    let mut upload_capacity =
+                        min_capacity_along_route(&graph, &route_from_node_to_root.1);
 
                     // Apply AP capacities
-                    if let GraphMapping::AccessPoint { download_mbps, upload_mbps, .. } = &graph[node] {
+                    if let GraphMapping::AccessPoint {
+                        download_mbps,
+                        upload_mbps,
+                        ..
+                    } = &graph[node]
+                    {
                         //println!("AP device capacity: {download_mbps}/{upload_mbps} (prev {download_capacity}/{upload_capacity})");
                         download_capacity = u64::min(download_capacity, *download_mbps);
                         upload_capacity = u64::min(upload_capacity, *upload_mbps);
@@ -261,14 +291,20 @@ pub async fn build_full_network_v2(
                             info!("Capacity was: {} / {}", download_capacity, upload_capacity);
                             download_capacity = bw_override.0 as u64;
                             upload_capacity = bw_override.1 as u64;
-                            info!("Capacity is now: {} / {}", download_capacity, upload_capacity);
+                            info!(
+                                "Capacity is now: {} / {}",
+                                download_capacity, upload_capacity
+                            );
                         }
                     }
 
-                    let parent_node = route_from_root_to_node.1[route_from_root_to_node.1.len() - 2];
+                    let parent_node =
+                        route_from_root_to_node.1[route_from_root_to_node.1.len() - 2];
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
-                        let parent = graph[route_from_root_to_node.1[route_from_root_to_node.1.len() - 2]].name();
+                        let parent = graph
+                            [route_from_root_to_node.1[route_from_root_to_node.1.len() - 2]]
+                            .name();
                         parents.insert(
                             name.to_owned(),
                             NetJsonParent {
@@ -288,27 +324,28 @@ pub async fn build_full_network_v2(
     }
 
     // Process promote_to_root list
-    let promote_to_root_set: std::collections::HashSet<String> = 
-        config.integration_common.promote_to_root
-            .as_ref()
-            .map(|list| list.iter().cloned().collect())
-            .unwrap_or_default();
+    let promote_to_root_set: std::collections::HashSet<String> = config
+        .integration_common
+        .promote_to_root
+        .as_ref()
+        .map(|list| list.iter().cloned().collect())
+        .unwrap_or_default();
 
     if !promote_to_root_set.is_empty() {
-        info!("Applying promote_to_root rules for {} nodes: {:?}", 
-              promote_to_root_set.len(), promote_to_root_set);
+        info!(
+            "Applying promote_to_root rules for {} nodes: {:?}",
+            promote_to_root_set.len(),
+            promote_to_root_set
+        );
     }
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
     let mut visited = HashSet::new();
-    for (name, node_info) in parents
-        .iter()
-        .filter(|(_name, parent)| {
-            // Include if it's a direct child of root OR if it's in promote_to_root list
-            parent.parent_name == root_site_name || promote_to_root_set.contains(_name.as_str())
-        })
-    {
+    for (name, node_info) in parents.iter().filter(|(_name, parent)| {
+        // Include if it's a direct child of root OR if it's in promote_to_root list
+        parent.parent_name == root_site_name || promote_to_root_set.contains(_name.as_str())
+    }) {
         network_json.insert(
             name.into(),
             walk_parents(&parents, name, &node_info, &config, &graph, &mut visited).into(),
@@ -331,6 +368,7 @@ pub async fn build_full_network_v2(
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
+    let mut seen_pairs = HashSet::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
@@ -340,47 +378,67 @@ pub async fn build_full_network_v2(
             let Some(site) = uisp_data.sites.iter().find(|s| s.id == *site_id) else {
                 continue;
             };
-            info!("Processing site: {} (ID: {}) with AP: {} (ID: {})", 
-                  site.name, site.id, ap_device.name, ap_device.id);
+            info!(
+                "Processing site: {} (ID: {}) with AP: {} (ID: {})",
+                site.name, site.id, ap_device.name, ap_device.id
+            );
             for device in uisp_data.devices.iter().filter(|d| d.site_id == *site_id) {
                 if !device.has_address() {
                     continue;
                 }
 
                 // Compute subscriber rates: prefer UISP QoS + burst; fallback to capacity-based
-                let (mut download_min, mut download_max, mut upload_min, mut upload_max) = if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
-                    (
-                        f32::max(0.1, dl_min),
-                        f32::max(0.1, dl_max),
-                        f32::max(0.1, ul_min),
-                        f32::max(0.1, ul_max),
-                    )
-                } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
-                    (0.1, 0.1, 0.1, 0.1)
-                } else {
-                    let download_f32 = (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                    let upload_f32 = (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                    let download_min_f32 = download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                    let upload_min_f32 = upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                    (
-                        f32::max(0.1, download_min_f32),
-                        f32::max(0.1, download_f32),
-                        f32::max(0.1, upload_min_f32),
-                        f32::max(0.1, upload_f32),
-                    )
-                };
+                let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                    if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
+                        (
+                            f32::max(0.1, dl_min),
+                            f32::max(0.1, dl_max),
+                            f32::max(0.1, ul_min),
+                            f32::max(0.1, ul_max),
+                        )
+                    } else if site.suspended && config.uisp_integration.suspended_strategy == "slow"
+                    {
+                        (0.1, 0.1, 0.1, 0.1)
+                    } else {
+                        let download_f32 = (site.max_down_mbps as f32)
+                            * config.uisp_integration.bandwidth_overhead_factor;
+                        let upload_f32 = (site.max_up_mbps as f32)
+                            * config.uisp_integration.bandwidth_overhead_factor;
+                        let download_min_f32 =
+                            download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                        let upload_min_f32 =
+                            upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                        (
+                            f32::max(0.1, download_min_f32),
+                            f32::max(0.1, download_f32),
+                            f32::max(0.1, upload_min_f32),
+                            f32::max(0.1, upload_f32),
+                        )
+                    };
                 // Ensure max >= min
-                if download_max < download_min { download_max = download_min; }
-                if upload_max < upload_min { upload_max = upload_min; }
+                if download_max < download_min {
+                    download_max = download_min;
+                }
+                if upload_max < upload_min {
+                    upload_max = upload_min;
+                }
 
                 let parent_node = {
                     if parents.get(&ap_device.name).is_some() {
                         ap_device.name.clone()
                     } else {
-                        warn!("AP device '{}' not found in parents HashMap, assigning to Orphans", ap_device.name);
+                        warn!(
+                            "AP device '{}' not found in parents HashMap, assigning to Orphans",
+                            ap_device.name
+                        );
                         "Orphans".to_string()
                     }
                 };
+
+                let key = (site.id.clone(), device.id.clone());
+                if !seen_pairs.insert(key) {
+                    continue;
+                }
 
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
@@ -397,8 +455,10 @@ pub async fn build_full_network_v2(
                     upload_max,
                     comment: "".to_string(),
                 };
-                info!("Created shaped device for '{}' in site '{}' with parent '{}'", 
-                      device.name, site.name, parent_node);
+                info!(
+                    "Created shaped device for '{}' in site '{}' with parent '{}'",
+                    device.name, site.name, parent_node
+                );
                 shaped_devices.push(shaped_device);
             }
         }
@@ -507,7 +567,10 @@ fn get_capacity_from_datalink_device(
         return (device.download, device.upload);
     }
 
-    (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)
+    (
+        config.queues.generated_pn_download_mbps,
+        config.queues.generated_pn_upload_mbps,
+    )
 }
 
 fn add_devices_to_graph(
@@ -523,7 +586,11 @@ fn add_devices_to_graph(
             continue;
         };
         let site_id = &site_id.id;
-        let Some(device_details) = uisp_data.devices.iter().find(|d| d.id == device.identification.id) else {
+        let Some(device_details) = uisp_data
+            .devices
+            .iter()
+            .find(|d| d.id == device.identification.id)
+        else {
             continue;
         };
         let Some(site_ref) = site_map.get(site_id) else {
@@ -558,8 +625,16 @@ fn add_devices_to_graph(
         };
         let device_ref = graph.add_node(device_entry);
         device_map.insert(device.identification.id.clone(), device_ref);
-        let _ = graph.add_edge(device_ref, *site_ref, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
-        let _ = graph.add_edge(*site_ref, device_ref, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
+        let _ = graph.add_edge(
+            device_ref,
+            *site_ref,
+            LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+        );
+        let _ = graph.add_edge(
+            *site_ref,
+            device_ref,
+            LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
+        );
     }
 }
 
@@ -600,7 +675,11 @@ fn link_capacity_mbps_for_routing(
 ) -> u64 {
     match link_mapping {
         LinkMapping::Ethernet { speed_mbps } => *speed_mbps,
-        LinkMapping::DevicePair { speed_mbps, device_a, device_b } => {
+        LinkMapping::DevicePair {
+            speed_mbps,
+            device_a,
+            device_b,
+        } => {
             // Check for overrides: make sure we have both devices (we need names, are storing IDs)
             let Some(device_a) = devices.iter().find(|d| d.id == *device_a) else {
                 return *speed_mbps;
@@ -610,22 +689,22 @@ fn link_capacity_mbps_for_routing(
             };
 
             // Check for the direct direction
-            if let Some(route_override) = route_overrides
-                .iter()
-                .find(|route_override|
-                    (route_override.from_site == device_a.name || route_override.to_site == device_a.name)
-                        && (route_override.from_site == device_b.name || route_override.to_site == device_b.name)
-                ) {
+            if let Some(route_override) = route_overrides.iter().find(|route_override| {
+                (route_override.from_site == device_a.name
+                    || route_override.to_site == device_a.name)
+                    && (route_override.from_site == device_b.name
+                        || route_override.to_site == device_b.name)
+            }) {
                 return route_override.cost as u64;
             }
 
             // Check for the reverse direction
-            if let Some(route_override) = route_overrides
-                .iter()
-                .find(|route_override|
-                    (route_override.from_site == device_b.name || route_override.to_site == device_b.name)
-                        && (route_override.from_site == device_a.name || route_override.to_site == device_a.name)
-                ) {
+            if let Some(route_override) = route_overrides.iter().find(|route_override| {
+                (route_override.from_site == device_b.name
+                    || route_override.to_site == device_b.name)
+                    && (route_override.from_site == device_a.name
+                        || route_override.to_site == device_a.name)
+            }) {
                 return route_override.cost as u64;
             }
 
@@ -634,14 +713,10 @@ fn link_capacity_mbps_for_routing(
     }
 }
 
-use petgraph::prelude::*;
 use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
+use petgraph::prelude::*;
 
-fn edges_from_node_path(
-    graph: &GraphType,
-    path: &[NodeIndex],
-) -> Vec<EdgeIndex>
-{
+fn edges_from_node_path(graph: &GraphType, path: &[NodeIndex]) -> Vec<EdgeIndex> {
     let mut edge_ids = Vec::new();
     for window in path.windows(2) {
         let source = window[0];
@@ -657,10 +732,7 @@ fn edges_from_node_path(
     edge_ids
 }
 
-fn min_capacity_along_route(
-    graph: &GraphType,
-    path: &[NodeIndex],
-) -> u64 {
+fn min_capacity_along_route(graph: &GraphType, path: &[NodeIndex]) -> u64 {
     edges_from_node_path(graph, path)
         .iter()
         .map(|edge| graph[*edge].capacity_mbps())
@@ -680,9 +752,13 @@ struct SquashCandidate {
     endpoint_b_name: String,
 }
 
-fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients: &HashSet<String>, config: &Arc<Config>) {
+fn find_point_to_point_squash_candidates(
+    graph: &mut GraphType,
+    aps_with_clients: &HashSet<String>,
+    config: &Arc<Config>,
+) {
     let mut candidates = Vec::new();
-    
+
     // Find all nodes with exactly total degree 4 in bidirectional graph (2 unique neighbors)
     // This accounts for bidirectional edges: A->B and B->A both exist
     let relay_nodes: Vec<NodeIndex> = graph
@@ -691,7 +767,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             let incoming = graph.neighbors_directed(node, petgraph::Incoming).count();
             let outgoing = graph.neighbors_directed(node, petgraph::Outgoing).count();
             let total_degree = incoming + outgoing;
-            
+
             // In bidirectional graph, relay nodes have degree 4 (2 in, 2 out)
             // but only 2 unique neighbors
             if total_degree == 4 {
@@ -708,7 +784,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             }
         })
         .collect();
-    
+
     // For each potential relay node, check if it's part of a 2-relay chain
     for &relay_node in &relay_nodes {
         // Skip if this relay node is an AP with clients
@@ -725,15 +801,15 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
         for neighbor in graph.neighbors_directed(relay_node, petgraph::Outgoing) {
             unique_neighbors.insert(neighbor);
         }
-        
+
         if unique_neighbors.len() != 2 {
             continue;
         }
-        
+
         let neighbors: Vec<NodeIndex> = unique_neighbors.into_iter().collect();
         let node_a = neighbors[0];
         let node_b = neighbors[1];
-        
+
         // Check if each neighbor is a relay or endpoint in bidirectional context
         let is_node_a_relay = {
             let mut a_neighbors = std::collections::HashSet::new();
@@ -747,7 +823,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             let a_outgoing = graph.neighbors_directed(node_a, petgraph::Outgoing).count();
             (a_incoming + a_outgoing) == 4 && a_neighbors.len() == 2
         };
-        
+
         let is_node_b_relay = {
             let mut b_neighbors = std::collections::HashSet::new();
             for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
@@ -760,7 +836,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             let b_outgoing = graph.neighbors_directed(node_b, petgraph::Outgoing).count();
             (b_incoming + b_outgoing) == 4 && b_neighbors.len() == 2
         };
-        
+
         // We want exactly one of the neighbors to be a relay and one to be an endpoint
         // Case 1: node_a is endpoint, node_b is relay
         if !is_node_a_relay && is_node_b_relay {
@@ -772,12 +848,13 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             for neighbor in graph.neighbors_directed(node_a, petgraph::Outgoing) {
                 node_a_neighbors.insert(neighbor);
             }
-            let is_node_a_meaningful = node_a_neighbors.len() >= 3 && !matches!(graph[node_a], GraphMapping::AccessPoint { .. });
-            
+            let is_node_a_meaningful = node_a_neighbors.len() >= 3
+                && !matches!(graph[node_a], GraphMapping::AccessPoint { .. });
+
             if !is_node_a_meaningful {
                 continue;
             }
-            
+
             // Also verify that node_b is a pure relay (exactly 2 unique neighbors, no more)
             let mut node_b_neighbors = std::collections::HashSet::new();
             for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
@@ -789,14 +866,14 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             if node_b_neighbors.len() != 2 {
                 continue;
             }
-            
+
             // Check if node_b (relay) is an AP with clients - if so, skip
             if let GraphMapping::AccessPoint { id, .. } = &graph[node_b] {
                 if aps_with_clients.contains(id) {
                     continue;
                 }
             }
-            
+
             // Find the other neighbor of node_b (the endpoint on the far side)
             let mut b_neighbors = std::collections::HashSet::new();
             for neighbor in graph.neighbors_directed(node_b, petgraph::Incoming) {
@@ -806,7 +883,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
                 b_neighbors.insert(neighbor);
             }
             b_neighbors.remove(&relay_node); // Remove the current relay node
-            
+
             if b_neighbors.len() == 1 {
                 let endpoint_b = *b_neighbors.iter().next().unwrap();
                 // Verify endpoint_b is not a relay
@@ -817,28 +894,36 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
                 for neighbor in graph.neighbors_directed(endpoint_b, petgraph::Outgoing) {
                     endpoint_b_neighbors.insert(neighbor);
                 }
-                let endpoint_b_degree = graph.neighbors_directed(endpoint_b, petgraph::Incoming).count() + 
-                                       graph.neighbors_directed(endpoint_b, petgraph::Outgoing).count();
-                
+                let endpoint_b_degree = graph
+                    .neighbors_directed(endpoint_b, petgraph::Incoming)
+                    .count()
+                    + graph
+                        .neighbors_directed(endpoint_b, petgraph::Outgoing)
+                        .count();
+
                 // Endpoint must not be a relay AND must have sufficient connections to be meaningful
                 // Also prefer Sites over AccessPoints as endpoints
-                let is_meaningful_endpoint = !(endpoint_b_degree == 4 && endpoint_b_neighbors.len() == 2) && 
-                                           endpoint_b_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
-                                           !matches!(graph[endpoint_b], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                let is_meaningful_endpoint = !(endpoint_b_degree == 4 && endpoint_b_neighbors.len() == 2)
+                        && endpoint_b_neighbors.len() >= 3 // Must connect to at least 3 other nodes
+                        && !matches!(graph[endpoint_b], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
                 if is_meaningful_endpoint {
                     // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
-                    let do_not_squash = &config.uisp_integration.do_not_squash_sites.clone().unwrap_or_default();
+                    let do_not_squash = &config
+                        .uisp_integration
+                        .do_not_squash_sites
+                        .clone()
+                        .unwrap_or_default();
                     let node_names = [
                         &graph[node_a].name(),
-                        &graph[relay_node].name(), 
+                        &graph[relay_node].name(),
                         &graph[node_b].name(),
-                        &graph[endpoint_b].name()
+                        &graph[endpoint_b].name(),
                     ];
-                    
+
                     if node_names.iter().any(|name| do_not_squash.contains(*name)) {
                         continue;
                     }
-                    
+
                     candidates.push(SquashCandidate {
                         endpoint_a: node_a,
                         endpoint_a_name: graph[node_a].name(),
@@ -852,8 +937,8 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
                 }
             }
         }
-        
-        // Case 2: node_a is relay, node_b is endpoint  
+
+        // Case 2: node_a is relay, node_b is endpoint
         if is_node_a_relay && !is_node_b_relay {
             // First check that node_b is a meaningful endpoint
             let mut node_b_neighbors = std::collections::HashSet::new();
@@ -863,12 +948,13 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             for neighbor in graph.neighbors_directed(node_b, petgraph::Outgoing) {
                 node_b_neighbors.insert(neighbor);
             }
-            let is_node_b_meaningful = node_b_neighbors.len() >= 3 && !matches!(graph[node_b], GraphMapping::AccessPoint { .. });
-            
+            let is_node_b_meaningful = node_b_neighbors.len() >= 3
+                && !matches!(graph[node_b], GraphMapping::AccessPoint { .. });
+
             if !is_node_b_meaningful {
                 continue;
             }
-            
+
             // Also verify that node_a is a pure relay (exactly 2 unique neighbors, no more)
             let mut node_a_neighbors = std::collections::HashSet::new();
             for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
@@ -880,14 +966,14 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             if node_a_neighbors.len() != 2 {
                 continue;
             }
-            
+
             // Check if node_a (relay) is an AP with clients - if so, skip
             if let GraphMapping::AccessPoint { id, .. } = &graph[node_a] {
                 if aps_with_clients.contains(id) {
                     continue;
                 }
             }
-            
+
             // Find the other neighbor of node_a (the endpoint on the far side)
             let mut a_neighbors = std::collections::HashSet::new();
             for neighbor in graph.neighbors_directed(node_a, petgraph::Incoming) {
@@ -897,7 +983,7 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
                 a_neighbors.insert(neighbor);
             }
             a_neighbors.remove(&relay_node); // Remove the current relay node
-            
+
             if a_neighbors.len() == 1 {
                 let endpoint_a = *a_neighbors.iter().next().unwrap();
                 // Verify endpoint_a is not a relay
@@ -908,28 +994,36 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
                 for neighbor in graph.neighbors_directed(endpoint_a, petgraph::Outgoing) {
                     endpoint_a_neighbors.insert(neighbor);
                 }
-                let endpoint_a_degree = graph.neighbors_directed(endpoint_a, petgraph::Incoming).count() + 
-                                       graph.neighbors_directed(endpoint_a, petgraph::Outgoing).count();
-                
+                let endpoint_a_degree = graph
+                    .neighbors_directed(endpoint_a, petgraph::Incoming)
+                    .count()
+                    + graph
+                        .neighbors_directed(endpoint_a, petgraph::Outgoing)
+                        .count();
+
                 // Endpoint must not be a relay AND must have sufficient connections to be meaningful
                 // Also prefer Sites over AccessPoints as endpoints
-                let is_meaningful_endpoint = !(endpoint_a_degree == 4 && endpoint_a_neighbors.len() == 2) && 
-                                           endpoint_a_neighbors.len() >= 3 && // Must connect to at least 3 other nodes
-                                           !matches!(graph[endpoint_a], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
+                let is_meaningful_endpoint = !(endpoint_a_degree == 4 && endpoint_a_neighbors.len() == 2)
+                        && endpoint_a_neighbors.len() >= 3 // Must connect to at least 3 other nodes
+                        && !matches!(graph[endpoint_a], GraphMapping::AccessPoint { .. }); // Avoid APs as endpoints
                 if is_meaningful_endpoint {
                     // Check do_not_squash_sites - skip if any node in the chain is in the exclusion list
-                    let do_not_squash = &config.uisp_integration.do_not_squash_sites.clone().unwrap_or_default();
+                    let do_not_squash = &config
+                        .uisp_integration
+                        .do_not_squash_sites
+                        .clone()
+                        .unwrap_or_default();
                     let node_names = [
                         &graph[endpoint_a].name(),
                         &graph[node_a].name(),
                         &graph[relay_node].name(),
-                        &graph[node_b].name()
+                        &graph[node_b].name(),
                     ];
-                    
+
                     if node_names.iter().any(|name| do_not_squash.contains(*name)) {
                         continue;
                     }
-                    
+
                     candidates.push(SquashCandidate {
                         endpoint_a,
                         endpoint_a_name: graph[endpoint_a].name(),
@@ -944,73 +1038,93 @@ fn find_point_to_point_squash_candidates(graph: &mut GraphType, aps_with_clients
             }
         }
     }
-    
+
     // Remove duplicates (same chain detected from both relay nodes)
     candidates.dedup_by(|a, b| {
-        (a.endpoint_a == b.endpoint_a && a.endpoint_b == b.endpoint_b) ||
-        (a.endpoint_a == b.endpoint_b && a.endpoint_b == b.endpoint_a)
+        (a.endpoint_a == b.endpoint_a && a.endpoint_b == b.endpoint_b)
+            || (a.endpoint_a == b.endpoint_b && a.endpoint_b == b.endpoint_a)
     });
-    
-    info!("Found {} point-to-point squash candidates:", candidates.len());
+
+    info!(
+        "Found {} point-to-point squash candidates:",
+        candidates.len()
+    );
     for candidate in &candidates {
-        info!("  {} -> {} -> {} -> {}", 
-                candidate.endpoint_a_name,
-                candidate.relay_a_name, 
-                candidate.relay_b_name,
-                candidate.endpoint_b_name);
+        info!(
+            "  {} -> {} -> {} -> {}",
+            candidate.endpoint_a_name,
+            candidate.relay_a_name,
+            candidate.relay_b_name,
+            candidate.endpoint_b_name
+        );
     }
-    
+
     // Perform the actual squashing
     perform_squashing(graph, &candidates);
 }
 
 fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     let mut nodes_to_remove = std::collections::HashSet::new();
-    
+
     info!("Performing squashing on {} candidates...", candidates.len());
-    
+
     for candidate in candidates {
-        info!("Squashing: {} -> {} -> {} -> {}", 
-                candidate.endpoint_a_name,
-                candidate.relay_a_name,
-                candidate.relay_b_name,
-                candidate.endpoint_b_name);
-        
+        info!(
+            "Squashing: {} -> {} -> {} -> {}",
+            candidate.endpoint_a_name,
+            candidate.relay_a_name,
+            candidate.relay_b_name,
+            candidate.endpoint_b_name
+        );
+
         // Calculate the minimum capacity along the original chain in both directions
-        let chain_nodes = [candidate.endpoint_a, candidate.relay_a, candidate.relay_b, candidate.endpoint_b];
+        let chain_nodes = [
+            candidate.endpoint_a,
+            candidate.relay_a,
+            candidate.relay_b,
+            candidate.endpoint_b,
+        ];
         let (forward_capacity, reverse_capacity) = calculate_chain_capacity(graph, &chain_nodes);
-        
+
         // Check if endpoints still exist (previous squashing might have removed them)
-        if !graph.node_weight(candidate.endpoint_a).is_some() || !graph.node_weight(candidate.endpoint_b).is_some() {
+        if !graph.node_weight(candidate.endpoint_a).is_some()
+            || !graph.node_weight(candidate.endpoint_b).is_some()
+        {
             info!("  Skipping - endpoints no longer exist");
             continue;
         }
-        
+
         // Check if there's already a direct edge between endpoints
-        if graph.find_edge(candidate.endpoint_a, candidate.endpoint_b).is_some() {
+        if graph
+            .find_edge(candidate.endpoint_a, candidate.endpoint_b)
+            .is_some()
+        {
             info!("  Skipping - direct edge already exists");
             continue;
         }
-        
+
         // Create direct bidirectional edges between endpoints with proper capacities
         graph.add_edge(
             candidate.endpoint_a,
             candidate.endpoint_b,
-            LinkMapping::ethernet(forward_capacity)
+            LinkMapping::ethernet(forward_capacity),
         );
         graph.add_edge(
             candidate.endpoint_b,
             candidate.endpoint_a,
-            LinkMapping::ethernet(reverse_capacity)
+            LinkMapping::ethernet(reverse_capacity),
         );
-        
+
         // Mark relay nodes for removal
         nodes_to_remove.insert(candidate.relay_a);
         nodes_to_remove.insert(candidate.relay_b);
-        
-        info!("  Created direct link with {}/{}Mbps capacity (forward/reverse)", forward_capacity, reverse_capacity);
+
+        info!(
+            "  Created direct link with {}/{}Mbps capacity (forward/reverse)",
+            forward_capacity, reverse_capacity
+        );
     }
-    
+
     // Remove all relay nodes that are no longer needed
     let removed_count = nodes_to_remove.len();
     for node_to_remove in nodes_to_remove {
@@ -1020,36 +1134,47 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
             info!("Removed relay node: {}", node_name);
         }
     }
-    
-    info!("Squashing complete: removed {} relay nodes, created {} direct links", 
-             removed_count, candidates.len());
+
+    info!(
+        "Squashing complete: removed {} relay nodes, created {} direct links",
+        removed_count,
+        candidates.len()
+    );
 }
 
 fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u64, u64) {
     let mut min_forward_capacity = u64::MAX;
     let mut min_reverse_capacity = u64::MAX;
-    
+
     // Check capacity of each edge in both directions along the chain
     for window in chain_nodes.windows(2) {
         let from_node = window[0];
         let to_node = window[1];
-        
+
         // Forward direction
         if let Some(edge_idx) = graph.find_edge(from_node, to_node) {
             let edge_capacity = graph[edge_idx].capacity_mbps();
             min_forward_capacity = min_forward_capacity.min(edge_capacity);
         }
-        
+
         // Reverse direction
         if let Some(edge_idx) = graph.find_edge(to_node, from_node) {
             let edge_capacity = graph[edge_idx].capacity_mbps();
             min_reverse_capacity = min_reverse_capacity.min(edge_capacity);
         }
     }
-    
+
     // Default to 100Mbps if we couldn't determine capacity
-    let forward_capacity = if min_forward_capacity == u64::MAX { 100 } else { min_forward_capacity };
-    let reverse_capacity = if min_reverse_capacity == u64::MAX { 100 } else { min_reverse_capacity };
-    
+    let forward_capacity = if min_forward_capacity == u64::MAX {
+        100
+    } else {
+        min_forward_capacity
+    };
+    let reverse_capacity = if min_reverse_capacity == u64::MAX {
+        100
+    } else {
+        min_reverse_capacity
+    };
+
     (forward_capacity, reverse_capacity)
 }

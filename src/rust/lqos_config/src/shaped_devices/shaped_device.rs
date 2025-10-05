@@ -120,7 +120,10 @@ impl ShapedDevice {
                     .parse::<f32>()
                     .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[8].to_string()))?;
                 if rate < 0.01 {
-                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Download min rate {} too small (minimum 0.01 Mbps)", rate)));
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                        "Download min rate {} too small (minimum 0.01 Mbps)",
+                        rate
+                    )));
                 }
                 rate
             },
@@ -129,7 +132,10 @@ impl ShapedDevice {
                     .parse::<f32>()
                     .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[9].to_string()))?;
                 if rate < 0.01 {
-                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Upload min rate {} too small (minimum 0.01 Mbps)", rate)));
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                        "Upload min rate {} too small (minimum 0.01 Mbps)",
+                        rate
+                    )));
                 }
                 rate
             },
@@ -138,7 +144,10 @@ impl ShapedDevice {
                     .parse::<f32>()
                     .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[10].to_string()))?;
                 if rate < 0.01 {
-                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Download max rate {} too small (minimum 0.01 Mbps)", rate)));
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                        "Download max rate {} too small (minimum 0.01 Mbps)",
+                        rate
+                    )));
                 }
                 rate
             },
@@ -147,7 +156,10 @@ impl ShapedDevice {
                     .parse::<f32>()
                     .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[11].to_string()))?;
                 if rate < 0.01 {
-                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Upload max rate {} too small (minimum 0.01 Mbps)", rate)));
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                        "Upload max rate {} too small (minimum 0.01 Mbps)",
+                        rate
+                    )));
                 }
                 rate
             },
@@ -267,13 +279,23 @@ mod tests {
     fn test_fractional_rate_parsing() {
         // Test parsing fractional rates
         let record = StringRecord::from(vec![
-            "test1", "Test Circuit", "device1", "Test Device", "site1",
-            "00:00:00:00:00:01", "192.168.1.1", "", 
-            "0.5", "1.0", "2.5", "3.0", "Test fractional rates"
+            "test1",
+            "Test Circuit",
+            "device1",
+            "Test Device",
+            "site1",
+            "00:00:00:00:00:01",
+            "192.168.1.1",
+            "",
+            "0.5",
+            "1.0",
+            "2.5",
+            "3.0",
+            "Test fractional rates",
         ]);
-        
+
         let device = ShapedDevice::from_csv(&record).expect("Should parse fractional rates");
-        
+
         assert_eq!(device.download_min_mbps, 0.5);
         assert_eq!(device.upload_min_mbps, 1.0);
         assert_eq!(device.download_max_mbps, 2.5);
@@ -284,13 +306,23 @@ mod tests {
     fn test_integer_rate_parsing() {
         // Test parsing integer rates (backward compatibility)
         let record = StringRecord::from(vec![
-            "test2", "Test Circuit 2", "device2", "Test Device 2", "site2",
-            "00:00:00:00:00:02", "192.168.1.2", "",
-            "10", "20", "100", "200", "Integer rates"
+            "test2",
+            "Test Circuit 2",
+            "device2",
+            "Test Device 2",
+            "site2",
+            "00:00:00:00:00:02",
+            "192.168.1.2",
+            "",
+            "10",
+            "20",
+            "100",
+            "200",
+            "Integer rates",
         ]);
-        
+
         let device = ShapedDevice::from_csv(&record).expect("Should parse integer rates");
-        
+
         assert_eq!(device.download_min_mbps, 10.0);
         assert_eq!(device.upload_min_mbps, 20.0);
         assert_eq!(device.download_max_mbps, 100.0);
@@ -301,11 +333,21 @@ mod tests {
     fn test_rate_validation_too_small() {
         // Test that rates below 0.01 are rejected
         let record = StringRecord::from(vec![
-            "test3", "Test Circuit 3", "device3", "Test Device 3", "site3",
-            "00:00:00:00:00:03", "192.168.1.3", "",
-            "0.001", "1.0", "2.5", "3.0", "Rate too small"
+            "test3",
+            "Test Circuit 3",
+            "device3",
+            "Test Device 3",
+            "site3",
+            "00:00:00:00:00:03",
+            "192.168.1.3",
+            "",
+            "0.001",
+            "1.0",
+            "2.5",
+            "3.0",
+            "Rate too small",
         ]);
-        
+
         let result = ShapedDevice::from_csv(&record);
         assert!(result.is_err(), "Should reject rates below 0.01 Mbps");
     }
@@ -314,11 +356,21 @@ mod tests {
     fn test_invalid_rate_parsing() {
         // Test that invalid rate strings are rejected
         let record = StringRecord::from(vec![
-            "test4", "Test Circuit 4", "device4", "Test Device 4", "site4",
-            "00:00:00:00:00:04", "192.168.1.4", "",
-            "invalid", "1.0", "2.5", "3.0", "Invalid rate"
+            "test4",
+            "Test Circuit 4",
+            "device4",
+            "Test Device 4",
+            "site4",
+            "00:00:00:00:00:04",
+            "192.168.1.4",
+            "",
+            "invalid",
+            "1.0",
+            "2.5",
+            "3.0",
+            "Invalid rate",
         ]);
-        
+
         let result = ShapedDevice::from_csv(&record);
         assert!(result.is_err(), "Should reject invalid rate strings");
     }

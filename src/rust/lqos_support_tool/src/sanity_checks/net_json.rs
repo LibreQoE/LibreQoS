@@ -1,5 +1,5 @@
 use crate::sanity_checks::SanityCheck;
-use lqos_config::{load_config, NetworkJson};
+use lqos_config::{NetworkJson, load_config};
 use serde_json::Value;
 use std::path::Path;
 

@@ -3,6 +3,49 @@ import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
 
+function escapeAttr(text) {
+    if (text === undefined || text === null) return "";
+    return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
+
+function loadSchedulerStatus() {
+    const container = document.getElementById('schedulerStatus');
+    if (!container) return;
+    $.get('/local-api/scheduler/status', (data) => {
+        const color = data.available ? 'text-success' : 'text-danger';
+        const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
+        container.innerHTML = `
+            <a class="nav-link ${color}" href="#" id="schedulerStatusLink">
+                <i class="fa fa-fw fa-centerline ${icon}"></i> Scheduler
+            </a>`;
+
+        // Click opens details modal only; no tooltip
+        $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
+            e.preventDefault();
+            openSchedulerModal();
+        });
+    });
+}
+
+function openSchedulerModal() {
+    const modalEl = document.getElementById('schedulerModal');
+    if (!modalEl) return;
+    const myModal = new bootstrap.Modal(modalEl, { focus: true });
+    myModal.show();
+    $("#schedulerDetailsBody").html("<i class='fa fa-spinner fa-spin'></i> Loading scheduler status...");
+    $.ajax({
+        url: '/local-api/scheduler/details',
+        method: 'GET',
+        success: (text) => { $("#schedulerDetailsBody").text(text); },
+        error: () => { $("#schedulerDetailsBody").text('Failed to load scheduler details'); }
+    });
+}
+
 function getDeviceCounts() {
     $.get("/local-api/deviceCount", (data) => {
         //console.log(data);
@@ -177,6 +220,57 @@ function setupReload() {
     }
 }
 
+function setupDynamicUrls() {
+    // Get the current host and protocol from the browser
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // Construct API URL (port 9122)
+    // The Swagger UI lives at /api-docs/ (dash, trailing slash)
+    const apiUrl = `${currentProtocol}//${currentHost}:9122/api-docs/`;
+    
+    // Construct Chat URL (port 9121)
+    const chatUrl = `${currentProtocol}//${currentHost}:9121/`;
+    
+    // Update API link only if it has the placeholder
+    const apiLink = document.getElementById('apiLink');
+    if (apiLink) {
+        const hrefAttr = apiLink.getAttribute('href');
+        if (hrefAttr === '%%API_URL%%') {
+            apiLink.href = apiUrl;
+        }
+    }
+    
+    // Update Chat link if it exists (only created when chatbot is available)
+    const chatLink = document.getElementById('chatLink');
+    if (chatLink) {
+        // If server rendered a disabled span, swap it for an active link.
+        if (chatLink.tagName && chatLink.tagName.toLowerCase() !== 'a') {
+            const parentLi = chatLink.closest('li');
+            const a = document.createElement('a');
+            a.className = 'nav-link';
+            a.id = 'chatLink';
+            a.href = 'chatbot.html';
+            a.innerHTML = '<i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby';
+            if (parentLi) parentLi.replaceChild(a, chatLink); else chatLink.replaceWith(a);
+        } else {
+            const hrefAttr = chatLink.getAttribute('href');
+            if (hrefAttr === '%%CHAT_URL%%' || !hrefAttr) {
+                // Prefer embedded chatbot page
+                chatLink.href = 'chatbot.html';
+            }
+        }
+    }
+}
+
+function initSchedulerTooltips() {
+    // Initialize Bootstrap tooltips for scheduler status elements
+    const schedulerElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    schedulerElements.forEach(element => {
+        new bootstrap.Tooltip(element);
+    });
+}
+
 initLogout();
 initDayNightMode();
 initRedact();
@@ -184,3 +278,6 @@ initColorBlind();
 getDeviceCounts();
 setupSearch();
 setupReload();
+setupDynamicUrls();
+initSchedulerTooltips();
+loadSchedulerStatus();

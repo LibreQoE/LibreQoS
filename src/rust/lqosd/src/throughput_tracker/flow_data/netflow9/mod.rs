@@ -41,7 +41,7 @@ impl Netflow9 {
                         last_sent = std::time::Instant::now();
                     }
                 }
-                
+
                 // Handle any remaining flows when shutting down
                 if !accumulator.is_empty() {
                     for chunk in accumulator.chunks(14) {

@@ -6,5 +6,5 @@ use allocative::Allocative;
 pub enum StormguardState {
     Warmup,
     Running,
-    Cooldown{ start: Instant, duration_secs: f32 },
+    Cooldown { start: Instant, duration_secs: f32 },
 }

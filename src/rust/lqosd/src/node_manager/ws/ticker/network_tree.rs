@@ -18,11 +18,17 @@ pub async fn network_tree(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetFullNetworkMap;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("NetworkTree: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("NetworkTree: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::NetworkMap(nodes) = reply {
             let message = json!(
@@ -42,11 +48,17 @@ pub async fn all_circuits(
 ) -> Vec<Circuit> {
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetAllCircuits;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("AllCircuits: failed to send request to bus: {:?}", e);
+        return Vec::new();
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("AllCircuits: failed to receive throughput from bus: {:?}", e);
+            return Vec::new();
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CircuitData(circuits) = reply {
             return circuits;

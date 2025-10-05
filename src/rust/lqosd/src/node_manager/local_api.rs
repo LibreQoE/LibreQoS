@@ -10,6 +10,7 @@ pub mod lts;
 mod network_tree;
 mod packet_analysis;
 mod reload_libreqos;
+mod scheduler;
 mod search;
 mod shaped_device_api;
 mod support;
@@ -21,6 +22,8 @@ use crate::node_manager::auth::auth_layer;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
+use axum_extra::extract::CookieJar;
+use serde::Serialize;
 use tower_http::cors::CorsLayer;
 
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
@@ -57,6 +60,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/updateUser", post(config::update_user))
         .route("/deleteUser", post(config::delete_user))
         .route("/circuitById", post(circuit::get_circuit_by_id))
+        .route("/hashCircuit", post(circuit::hash_circuit))
         .route("/circuits/count", get(circuit_count::get_circuit_count))
         .route(
             "/requestAnalysis/:ip",
@@ -80,7 +84,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/containerStatus", get(container_status::container_status))
         .route("/ltsSignUp", post(lts::lts_trial_signup))
         .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
-        .route("/lts24", get(lts::last_24_hours))
+        //.route("/lts24", get(lts::last_24_hours))
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
         .route("/ltsPackets/:seconds", get(lts::packets_period))
         .route(
@@ -88,7 +92,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             get(lts::percent_shaped_period),
         )
         .route("/ltsFlows/:seconds", get(lts::percent_flows_period))
-        .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
+        //.route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
         .route("/ltsCake/:seconds", get(lts::cake_period))
         .route("/ltsRttHisto/:seconds", get(lts::rtt_histo_period))
         .route(
@@ -99,7 +103,21 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ltsWorst10Rxmit/:seconds", get(lts::worst10_rxmit_period))
         .route("/ltsTopFlows/:seconds", get(lts::top10_flows_period))
         .route("/ltsRecentMedian", get(lts::recent_medians))
+        .route("/scheduler/status", get(scheduler::scheduler_status))
+        .route("/scheduler/details", get(scheduler::scheduler_details))
+        .route("/chatbot_sso_token", get(chatbot_sso_token))
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
+}
+
+#[derive(Serialize)]
+struct ChatbotToken {
+    token: Option<String>,
+}
+
+async fn chatbot_sso_token(jar: CookieJar) -> axum::Json<ChatbotToken> {
+    // Node Manager stores auth as a cookie named "User-Token"
+    let tok = jar.get("User-Token").map(|c| c.value().to_string());
+    axum::Json(ChatbotToken { token: tok })
 }

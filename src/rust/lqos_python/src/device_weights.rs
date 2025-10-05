@@ -55,7 +55,11 @@ fn get_weights_from_lts(
 
     // Build the URL
     let config = load_config()?;
-    let base_url = config.long_term_stats.lts_url.clone().unwrap_or("insight.libreqos.com".to_string());
+    let base_url = config
+        .long_term_stats
+        .lts_url
+        .clone()
+        .unwrap_or("insight.libreqos.com".to_string());
     let url = format!("https://{}/shaper_api/deviceWeights", base_url);
 
     // Make a BLOCKING reqwest call (we're not in an async context)

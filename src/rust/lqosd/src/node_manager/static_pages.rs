@@ -4,8 +4,8 @@ use anyhow::{Result, bail};
 use axum::Router;
 use lqos_config::load_config;
 use std::path::Path;
-use tower_http::services::{ServeDir, ServeFile};
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 pub(super) fn vendor_route() -> Result<Router> {
     let config = load_config()?;
@@ -39,6 +39,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "flow_map.html",
         "all_tree_sankey.html",
         "asn_explorer.html",
+        "api_docs.html",
+        "chatbot.html",
         "lts_trial.html",
         "lts_trial_success.html",
         "lts_trial_fail.html",
@@ -60,6 +62,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_users.html",
         "config_wispgate.html",
         "config_stormguard.html",
+        "api.html",
     ];
 
     // Iterate through pages and construct the router
