@@ -33,7 +33,7 @@ Below is a table of approximate aggregate capacity, assuming a CPU with a [singl
 
 ### Hyper-threading
 
-It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in the BIOS/UEFI settings, as it can interfere with XDP processing.
+Please [disable Hyper-Threading](https://www.youtube.com/watch?v=G70QtUAxomU) (Simultaneous Multi-Threading) in the BIOS/UEFI settings, as it can interfere with XDP processing.
 
 ### Memory
 * Recommended RAM:
@@ -66,6 +66,10 @@ It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in t
 | ECC                     | No                                                                                     |
 | Power                   | 19V DC                                                                                 |
 
+##### MS-01 Notes:
+
+As with any machine running LibreQoS, please be sure to [disable hyperthreading](prereq.html). Specific to the MS-01, please consider [replacing the thermal paste](https://www.youtube.com/watch?v=G70QtUAxomU) to lower CPU temps by about 20 degrees celcius (Note: this may void the warranty).
+
 #### Rackmount Servers (10G to 100G)
 
 | Throughput              |                                     10 Gbps                                    |                                                                                               10 Gbps                                                                                               |                                                  25 Gbps                                                 |                                        50 Gbps                                        |                                       100 Gbps                                      |
@@ -83,6 +87,10 @@ It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in t
 
 Another cost-effective solution is to procure a used server from a reputable vendor, such as [TheServerStore](https://www.theserverstore.com/).
 Such vendors often stock servers capable of 10 Gbps throughput, for around $500 USD.
+
+#### Server Setup Prerequisites
+
+[Server Setup Prerequisites](prereq.html)
 
 ### Network Interface Requirements
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
