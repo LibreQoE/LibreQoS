@@ -81,19 +81,15 @@ def importFromCRM():
             print(error_msg)
             scheduler_error(error_msg)
     elif automatic_import_splynx():
-<<<<<<< HEAD
         try:
-            importFromSplynx()
+            capture_output_and_run(importFromSplynx)
         except:
             print("Failed to import from Splynx")
     elif automatic_import_netzur():
         try:
-            importFromNetzur()
+            capture_output_and_run(importFromNetzur)
         except:
             print("Failed to import from Netzur")
-=======
-        capture_output_and_run(importFromSplynx)
->>>>>>> develop
     elif automatic_import_powercode():
         capture_output_and_run(importFromPowercode)
     elif automatic_import_sonar():
