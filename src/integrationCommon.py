@@ -8,6 +8,7 @@ from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_downloa
 	exception_cpes, promote_to_root_list, client_bandwidth_multiplier
 import ipaddress
 import enum
+import json
 import os
 
 def isInAllowedSubnets(inputIP):
@@ -141,6 +142,7 @@ class NetworkGraph:
 		]
 		self.excludeSites = exclude_sites()
 		self.exceptionCPEs = exception_cpes()
+		self.errors: List[str] = []
 		
 		# Initialize optimization structures
 		self._id_to_index = {"FakeRoot": 0}
@@ -149,8 +151,25 @@ class NetworkGraph:
 		self._cache_valid = False
 		
 		if find_ipv6_using_mikrotik():
-			from mikrotikFindIPv6 import pullMikrotikIPv6  
-			self.ipv4ToIPv6 = pullMikrotikIPv6()
+			csv_path = "mikrotikDHCPRouterList.csv"
+			try:
+				from mikrotikFindIPv6 import pullMikrotikIPv6  
+				mikrotik_map = pullMikrotikIPv6(csv_path)
+				if isinstance(mikrotik_map, str):
+					mikrotik_map = json.loads(mikrotik_map)
+				self.ipv4ToIPv6 = mikrotik_map
+			except FileNotFoundError:
+				self.errors.append("Mikrotik IPv6 enrichment skipped: missing mikrotikDHCPRouterList.csv")
+				self.ipv4ToIPv6 = {}
+			except json.JSONDecodeError as exc:
+				self.errors.append(f"Mikrotik IPv6 enrichment skipped: unable to parse Mikrotik data ({exc})")
+				self.ipv4ToIPv6 = {}
+			except ModuleNotFoundError as exc:
+				self.errors.append(f"Mikrotik IPv6 enrichment skipped: missing dependency ({exc})")
+				self.ipv4ToIPv6 = {}
+			except Exception as exc:
+				self.errors.append(f"Mikrotik IPv6 enrichment failed: {exc}")
+				self.ipv4ToIPv6 = {}
 		else:
 			self.ipv4ToIPv6 = {}
 
@@ -169,6 +188,9 @@ class NetworkGraph:
 			
 			# Invalidate cache
 			self._cache_valid = False
+
+	def getErrors(self) -> List[str]:
+		return list(self.errors)
 
 	def replaceRootNode(self, node: NetworkNode) -> None:
 		# Replaces the automatically generated root node

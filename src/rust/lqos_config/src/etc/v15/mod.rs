@@ -12,6 +12,7 @@ mod powercode_integration;
 mod queues;
 mod sonar_integration;
 mod spylnx_integration;
+mod netzur_integration;
 mod stormguard;
 mod tuning;
 mod uisp_integration;

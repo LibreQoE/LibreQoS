@@ -1,0 +1,33 @@
+<div id="configMenuContainer"></div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableNetzur">
+                <label class="form-check-label" for="enableNetzur">Enable Netzur Integration</label>
+                <div class="form-text">Toggle automated imports from Netzur CRM</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netzurApiKey" class="form-label">API Key</label>
+                <input type="text" class="form-control" id="netzurApiKey">
+                <div class="form-text">Bearer token generated within Netzur</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netzurApiUrl" class="form-label">API URL</label>
+                <input type="text" class="form-control" id="netzurApiUrl">
+                <div class="form-text">Base endpoint serving the zones/customers payload</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netzurTimeout" class="form-label">Request Timeout (seconds)</label>
+                <input type="number" class="form-control" id="netzurTimeout" min="15" step="5">
+                <div class="form-text">Adjust only if the API routinely needs more than 60 seconds</div>
+            </div>
+
+            <button type="button" id="saveNetzur" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+<script src="config_netzur.js%CACHEBUSTERS%"></script>

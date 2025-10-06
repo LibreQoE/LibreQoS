@@ -92,6 +92,12 @@ pub struct PythonMigration {
     pub splynx_api_key: String,
     pub splynx_api_secret: String,
     pub splynx_api_url: String,
+    #[serde(rename = "automaticImportNetzur")]
+    pub automatic_import_netzur: bool,
+    pub netzur_api_key: String,
+    pub netzur_api_url: String,
+    #[serde(rename = "netzur_api_timeout")]
+    pub netzur_api_timeout: i64,
     #[serde(rename = "automaticImportUISP")]
     pub automatic_import_uisp: bool,
     #[serde(rename = "uispAuthToken")]
