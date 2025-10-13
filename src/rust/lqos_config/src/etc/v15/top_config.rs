@@ -1,7 +1,6 @@
 //! Top-level configuration file for LibreQoS.
 
 use super::tuning::Tunables;
-use crate::etc::v15::stormguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;

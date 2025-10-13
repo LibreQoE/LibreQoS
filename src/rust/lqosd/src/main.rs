@@ -22,7 +22,6 @@ mod tool_status;
 mod tuning;
 mod validation;
 mod version_checks;
-mod scheduler_control;
 mod sandwich;
 
 #[cfg(feature = "flamegraphs")]
