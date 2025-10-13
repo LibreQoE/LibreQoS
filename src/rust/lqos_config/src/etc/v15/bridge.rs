@@ -72,7 +72,7 @@ impl Default for BridgeConfig {
     }
 }
 
-/// Represents a single-interface configuration with VLANs.
+/// Represents a single-interface bridge
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct SingleInterfaceConfig {
     /// The name of the interface

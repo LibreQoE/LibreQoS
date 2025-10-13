@@ -3,8 +3,8 @@
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
-use pyo3::prelude::*;
 use pyo3::exceptions::PyOSError;
+use pyo3::prelude::*;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -38,8 +38,14 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
-    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps, m)?)?;
-    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        upstream_bandwidth_capacity_download_mbps,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        upstream_bandwidth_capacity_upload_mbps,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(interface_a, m)?)?;
     m.add_function(wrap_pyfunction!(interface_b, m)?)?;
     m.add_function(wrap_pyfunction!(enable_actual_shell_commands, m)?)?;
@@ -55,6 +61,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ignore_subnets, m)?)?;
     m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
     m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
+    m.add_function(wrap_pyfunction!(integration_common_use_mikrotik_ipv6, m)?)?;
     m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
     m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
     m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
@@ -71,8 +78,12 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -103,6 +114,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -450,7 +463,13 @@ fn circuit_name_use_address() -> PyResult<bool> {
 #[pyfunction]
 fn find_ipv6_using_mikrotik() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.uisp_integration.ipv6_with_mikrotik)
+    Ok(config.uisp_integration.ipv6_with_mikrotik || config.integration_common.use_mikrotik_ipv6)
+}
+
+#[pyfunction]
+fn integration_common_use_mikrotik_ipv6() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.use_mikrotik_ipv6)
 }
 
 #[pyfunction]
@@ -574,6 +593,42 @@ fn splynx_strategy() -> PyResult<String> {
 }
 
 #[pyfunction]
+fn netzur_api_key() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_key.clone())
+            .unwrap_or_default(),
+    )
+}
+
+#[pyfunction]
+fn netzur_api_url() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_url.clone())
+            .unwrap_or_default(),
+    )
+}
+
+#[pyfunction]
+fn netzur_api_timeout() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.timeout_secs)
+            .unwrap_or(60),
+    )
+}
+
+#[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.enable_uisp)
@@ -583,6 +638,18 @@ fn automatic_import_uisp() -> PyResult<bool> {
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.spylnx_integration.enable_spylnx)
+}
+
+#[pyfunction]
+fn automatic_import_netzur() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.enable_netzur)
+            .unwrap_or(false),
+    )
 }
 
 #[pyfunction]
@@ -1059,4 +1126,29 @@ impl Bakery {
         self.queue.push(command);
         Ok(())
     }
+}
+
+/// Report that the scheduler is still alive
+#[pyfunction]
+fn scheduler_alive(_py: Python) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerReady]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerError(error)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

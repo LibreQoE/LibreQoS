@@ -2,7 +2,6 @@ use cursive::views::{Dialog, LinearLayout, TextView};
 
 use crate::interfaces;
 
-
 pub fn preflight() {
     let interfaces = interfaces::get_interfaces().unwrap();
     if interfaces.is_empty() {

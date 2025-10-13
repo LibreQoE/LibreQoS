@@ -33,7 +33,9 @@ pub fn request_free_trial(trial: FreeTrialDetails, sender: oneshot::Sender<Strin
     if let Ok(mut socket) = TcpStream::connect(format!("{}:9122", remote_host)) {
         if let Err(e) = nacl_blob::transmit_hello(&keys, 0x8342, 2, &mut socket) {
             println!("Failed to send hello to license server. {e:?}");
-            sender.send("FAIL".to_string()).unwrap();
+            sender
+                .send("FAIL".to_string())
+                .expect("failed to send free-trial failure to requester");
             return;
         }
 
@@ -57,7 +59,9 @@ pub fn request_free_trial(trial: FreeTrialDetails, sender: oneshot::Sender<Strin
                 nacl_blob::transmit_payload(&keys, &server_hello.public_key, &req, &mut socket)
             {
                 println!("Failed to send license key to license server. {e:?}");
-                sender.send("FAIL".to_string()).unwrap();
+                sender
+                    .send("FAIL".to_string())
+                    .expect("failed to send free-trial failure to requester");
                 return;
             }
 
@@ -67,16 +71,24 @@ pub fn request_free_trial(trial: FreeTrialDetails, sender: oneshot::Sender<Strin
                 &mut socket,
             ) {
                 if response.success {
-                    sender.send(response.license_key).unwrap();
+                    sender
+                        .send(response.license_key)
+                        .expect("failed to send license key to requester")
                 } else {
-                    sender.send("FAIL".to_string()).unwrap();
+                    sender
+                        .send("FAIL".to_string())
+                        .expect("failed to send free-trial failure to requester")
                 }
             } else {
-                sender.send("FAIL".to_string()).unwrap();
+                sender
+                    .send("FAIL".to_string())
+                    .expect("failed to send free-trial failure to requester")
             }
         } else {
             println!("Failed to receive hello from license server.");
-            sender.send("FAIL".to_string()).unwrap();
+            sender
+                .send("FAIL".to_string())
+                .expect("failed to send free-trial failure to requester");
             return;
         }
     }

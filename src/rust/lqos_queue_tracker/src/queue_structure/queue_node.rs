@@ -172,7 +172,7 @@ impl QueueNode {
                         grab_string_option!(result.circuit_id, key.as_str(), value);
                         if result.circuit_id.is_some() {
                             result.circuit_hash =
-                                Some(hash_to_i64(result.circuit_id.as_ref().unwrap()));
+                                Some(hash_to_i64(result.circuit_id.as_ref().unwrap_or(&"".to_string())));
                         }
                     }
                     "circuitName" => {
@@ -182,7 +182,7 @@ impl QueueNode {
                         grab_string_option!(result.parent_node, key.as_str(), value);
                         if result.parent_node.is_some() {
                             result.parent_hash =
-                                Some(hash_to_i64(result.parent_node.as_ref().unwrap()));
+                                Some(hash_to_i64(result.parent_node.as_ref().unwrap_or(&"".to_string())));
                         }
                     }
                     "comment" => {
@@ -192,7 +192,7 @@ impl QueueNode {
                         grab_string_option!(result.device_id, key.as_str(), value);
                         if result.device_id.is_some() {
                             result.device_hash =
-                                Some(hash_to_i64(result.device_id.as_ref().unwrap()));
+                                Some(hash_to_i64(result.device_id.as_ref().unwrap_or(&"".to_string())));
                         }
                     }
                     "deviceName" => {
@@ -207,12 +207,14 @@ impl QueueNode {
                         if let Value::Array(array) = value {
                             for c in array.iter() {
                                 let n = QueueNode::from_json(key, c);
-                                if n.is_err() {
-                                    error!("Unable to read circuit children");
-                                    error!("{:?}", n);
+                                let Ok(n) = n else {
+                                    if n.is_err() {
+                                        error!("Unable to read circuit children");
+                                        error!("{:?}", n);
+                                    }
                                     return Err(QueueStructureError::Circuit);
-                                }
-                                result.circuits.push(n.unwrap());
+                                };
+                                result.circuits.push(n);
                             }
                         }
                     }
@@ -220,12 +222,12 @@ impl QueueNode {
                         if let Value::Array(array) = value {
                             for c in array.iter() {
                                 let n = QueueNode::from_json(key, c);
-                                if n.is_err() {
+                                let Ok(n) = n else {
                                     error!("Unable to read device children");
                                     error!("{:?}", n);
                                     return Err(QueueStructureError::Device);
-                                }
-                                result.devices.push(n.unwrap());
+                                };
+                                result.devices.push(n);
                             }
                         }
                     }
@@ -233,14 +235,16 @@ impl QueueNode {
                         if let Value::Object(map) = value {
                             for (key, c) in map.iter() {
                                 let n = QueueNode::from_json(key, c);
-                                if n.is_err() {
-                                    error!(
-                                        "Unable to read children. Don't worry, we all feel that way sometimes."
-                                    );
-                                    error!("{:?}", n);
+                                let Ok(n) = n else {
+                                    if n.is_err() {
+                                        error!(
+                                            "Unable to read children. Don't worry, we all feel that way sometimes."
+                                        );
+                                        error!("{:?}", n);
+                                    }
                                     return Err(QueueStructureError::Children);
-                                }
-                                result.circuits.push(n.unwrap());
+                                };
+                                result.circuits.push(n);
                             }
                         } else {
                             warn!("Children was not an object");
@@ -293,14 +297,16 @@ mod test {
         let mut result = super::super::QueueNetwork {
             cpu_node: Vec::new(),
         };
-        let json: Value = serde_json::from_str(raw_string).unwrap();
+        let json: Value = serde_json::from_str(raw_string).unwrap_or_default();
         if let Value::Object(map) = &json {
             if let Some(network) = map.get("Network") {
                 if let Value::Object(map) = network {
                     for (key, value) in map.iter() {
-                        result
-                            .cpu_node
-                            .push(QueueNode::from_json(key, value).unwrap());
+                        if let Ok(node) = QueueNode::from_json(key, value) {
+                            result
+                                .cpu_node
+                                .push(node);
+                        }
                     }
                 } else {
                     panic!("Unable to parse network object structure");

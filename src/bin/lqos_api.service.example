@@ -1,0 +1,12 @@
+[Unit]
+After=network.service lqosd.service
+Requires=lqosd.service
+
+[Service]
+WorkingDirectory=/opt/libreqos/src/bin
+ExecStart=/opt/libreqos/src/bin/lqos_api
+Restart=always
+
+[Install]
+WantedBy=default.target
+

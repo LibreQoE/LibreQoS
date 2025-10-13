@@ -1,19 +1,19 @@
-mod bridge_mode;
-mod interfaces;
-mod config_builder;
 mod bandwidth;
+mod bridge_mode;
+mod config_builder;
+mod interfaces;
 mod ip_range;
-mod webusers;
 mod preflight;
+mod webusers;
 
 use std::path::Path;
 
 use bandwidth::bandwidth_view;
 use config_builder::CURRENT_CONFIG;
 use cursive::{
-    view::{Margins, Nameable, Resizable}, views::{
-        Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView
-    }, Rect, Vec2, View
+    Rect, Vec2, View,
+    view::{Margins, Nameable, Resizable},
+    views::{Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView},
 };
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
@@ -64,7 +64,7 @@ fn main() {
         let config = lqos_config::load_config().unwrap_or_default();
         (config.node_id.clone(), config.node_name.clone())
     };
-    
+
     ui.add_layer(
         Dialog::new()
             .title(&format!("LQOS Setup - v{VERSION}"))
@@ -116,23 +116,23 @@ fn main() {
                         LinearLayout::horizontal()
                             .child(
                                 LinearLayout::vertical()
-                                .child(TextView::new("Node Id  :"))
-                                .child(TextView::new("Node Name:"))
+                                    .child(TextView::new("Node Id  :"))
+                                    .child(TextView::new("Node Name:")),
                             )
                             .child(
                                 LinearLayout::vertical()
                                     .child(TextView::new(node_id))
                                     .child(
                                         EditView::new()
-                                        .on_edit(|_s, content, _cursor| {
-                                            let mut config = CURRENT_CONFIG.lock();
-                                            config.node_name = content.to_string();
-                                        })
-                                        .content(node_name)
-                                        .with_name("node_name")
-                                    )
-                            )
-                    )
+                                            .on_edit(|_s, content, _cursor| {
+                                                let mut config = CURRENT_CONFIG.lock();
+                                                config.node_name = content.to_string();
+                                            })
+                                            .content(node_name)
+                                            .with_name("node_name"),
+                                    ),
+                            ),
+                    ),
             )
             .padding(Margins::lrtb(1, 1, 1, 1))
             .button("Bridge Mode", bridge_mode::bridge_mode)
@@ -146,13 +146,75 @@ fn main() {
 }
 
 fn finalize(ui: &mut cursive::Cursive) {
-    let mut event_log = Vec::new();    
+    // If we cannot load the config but a file exists, warn the user and
+    // take a backup before proceeding to create a new config.
+    let config_path = Path::new("/etc/lqos.conf");
+    let load_result = lqos_config::load_config();
+    if load_result.is_err() && config_path.exists() {
+        let backup_path = "/etc/lqos.conf.setupbackup";
+        let backup_result = std::fs::copy(config_path, backup_path);
+
+        let msg = match backup_result {
+            Ok(_) => format!(
+                "An existing configuration file was found at /etc/lqos.conf,\n\
+but it could not be read or parsed.\n\n\
+A backup has been saved to: {}\n\n\
+Press Continue to create a new configuration using defaults,\n\
+or Cancel to exit and investigate.",
+                backup_path
+            ),
+            Err(e) => format!(
+                "An existing configuration file was found at /etc/lqos.conf,\n\
+but it could not be read or parsed.\n\n\
+Attempted to back it up, but failed: {:?}\n\n\
+Press Continue to create a new configuration using defaults,\n\
+or Cancel to exit and investigate.",
+                e
+            ),
+        };
+
+        ui.add_layer(
+            Dialog::around(TextView::new(msg))
+                .title("Existing Config Unreadable")
+                .button("Continue", |s| {
+                    s.pop_layer();
+                    continue_finalize(s);
+                })
+                .button("Cancel", |s| {
+                    s.pop_layer();
+                }),
+        );
+        return;
+    }
+
+    // Otherwise, proceed to saving normally.
+    continue_finalize(ui);
+}
+
+fn continue_finalize(ui: &mut cursive::Cursive) {
+    let mut event_log = Vec::new();
 
     // Update/Create the config file.
     let mut config = if let Ok(config) = lqos_config::load_config() {
         event_log.push("Loaded existing configuration".to_string());
         (*config).clone()
     } else {
+        // If the file exists but couldn't be read, ensure we also log that a
+        // backup was attempted (final safeguard; may already have been done
+        // before showing the warning dialog).
+        if Path::new("/etc/lqos.conf").exists() {
+            let backup_path = "/etc/lqos.conf.setupbackup";
+            match std::fs::copy("/etc/lqos.conf", backup_path) {
+                Ok(_) => event_log.push(format!(
+                    "Existing /etc/lqos.conf could not be loaded. Backup saved to {}.",
+                    backup_path
+                )),
+                Err(e) => event_log.push(format!(
+                    "Existing /etc/lqos.conf could not be loaded. Backup attempt failed: {:?}.",
+                    e
+                )),
+            }
+        }
         event_log.push("Creating new configuration".to_string());
         lqos_config::Config::default()
     };
@@ -198,7 +260,9 @@ fn finalize(ui: &mut cursive::Cursive) {
         ui.add_layer(
             Dialog::around(TextView::new(msg))
                 .title("Error")
-                .button("OK", |s| { s.pop_layer(); }),
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
         );
         return;
     }
@@ -216,8 +280,7 @@ fn finalize(ui: &mut cursive::Cursive) {
 
     // Does ShapedDevices.csv exist?
     if !shaped_devices_exists() {
-        const EMPTY_SHAPED_DEVICES: &str = 
-r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+        const EMPTY_SHAPED_DEVICES: &str = r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
 \"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,"#;
 
         let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
@@ -227,18 +290,18 @@ r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Downl
         event_log.push("ShapedDevices.csv already exists - not updated.".to_string());
     }
 
-        // Display final report
-        use cursive::views::{Dialog, LinearLayout, TextView};
-    
-        let report = cursive::With::with(LinearLayout::vertical(), |layout| {
-                for line in &event_log {
-                    layout.add_child(TextView::new(line));
-                }
-            });
-    
-        ui.add_layer(
-            Dialog::around(report)
-                .title("Setup Complete")
-                .button("OK", |ui| ui.quit())
-        );
+    // Display final report
+    use cursive::views::{Dialog, LinearLayout, TextView};
+
+    let report = cursive::With::with(LinearLayout::vertical(), |layout| {
+        for line in &event_log {
+            layout.add_child(TextView::new(line));
+        }
+    });
+
+    ui.add_layer(
+        Dialog::around(report)
+            .title("Setup Complete")
+            .button("OK", |ui| ui.quit()),
+    );
 }

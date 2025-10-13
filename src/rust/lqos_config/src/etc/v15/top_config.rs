@@ -1,6 +1,7 @@
 //! Top-level configuration file for LibreQoS.
 
 use super::tuning::Tunables;
+use crate::etc::v15::stormguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -59,6 +60,10 @@ pub struct Config {
     /// Spylnx Integration
     pub spylnx_integration: super::spylnx_integration::SplynxIntegration,
 
+    /// Netzur Integration configuration. Optional so older configs without this
+    /// section still deserialize cleanly.
+    pub netzur_integration: Option<super::netzur_integration::NetzurIntegration>,
+
     /// UISP Integration
     pub uisp_integration: super::uisp_integration::UispIntegration,
 
@@ -79,7 +84,7 @@ pub struct Config {
 
     /// Listen options for the webserver
     pub webserver_listen: Option<String>,
-    
+
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
 
@@ -148,6 +153,7 @@ impl Default for Config {
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
             spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
+            netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             sonar_integration: super::sonar_integration::SonarIntegration::default(),
@@ -240,7 +246,7 @@ mod test {
 
     #[test]
     fn load_example() {
-        let config = Config::load_from_string(include_str!("example.toml")).unwrap();
+        let config = Config::load_from_string(include_str!("example.toml")).expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
     }
 }

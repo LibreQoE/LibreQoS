@@ -5,6 +5,7 @@
 //! * `ShapedDevices.csv` files.
 //! * `network.json` files.
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
 mod etc;
@@ -16,6 +17,8 @@ pub use authentication::{UserRole, WebUser, WebUsers};
 pub use etc::{
     BridgeConfig, Config, Tunables, disable_xdp_bridge, enable_long_term_stats, load_config,
     update_config, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, SandwichMode, SandwichRateLimiter,
+    BridgeConfig, Config, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, Tunables,
+    disable_xdp_bridge, enable_long_term_stats, load_config, update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;

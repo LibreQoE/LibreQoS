@@ -81,7 +81,7 @@ Learn more about [configuring integrations here](integrations.md).
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
-If you plan to use the built-in UISP or Splynx integrations, you do not need to create a network.json file quite yet.
+If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.
 If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).
 
 If you will not be using an integration, you can manually define the network.json following the template file - [network.example.json](https://github.com/LibreQoE/LibreQoS/blob/develop/src/network.example.json). Below is a table illustration of network.example.json. 

@@ -1,15 +1,50 @@
+use crate::lts2_sys::control_channel::{ControlChannelCommand, HistoryQueryResultPayload, RemoteInsightRequest};
 use crate::node_manager::local_api::lts::{
-    AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
+    AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
     ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,
 };
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::shaper_queries_actor::caches::Caches;
-use crate::node_manager::shaper_queries_actor::{ShaperQueryCommand, remote_insight};
-use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::oneshot;
 use tracing::{info, warn};
 
+#[derive(Clone)]
+struct HistoryClient {
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+}
+
+impl HistoryClient {
+    fn new(control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>) -> Self {
+        Self { control_tx }
+    }
+
+    async fn request(
+        &self,
+        request: RemoteInsightRequest,
+    ) -> Result<HistoryQueryResultPayload, ()> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .control_tx
+            .send(ControlChannelCommand::FetchHistory {
+                request,
+                responder: tx,
+            })
+            .await
+            .is_err()
+        {
+            return Err(());
+        }
+
+        match rx.await {
+            Ok(result) => result,
+            Err(_) => Err(()),
+        }
+    }
+}
+
 macro_rules! shaper_query {
-    ($type:ty, $caches:expr, $seconds:expr, $reply:expr, $broadcast:expr, $call:expr) => {
+    ($type:ty, $caches:expr, $seconds:expr, $reply:expr, $client:expr, $request:expr) => {
         info!(
             "SQ Shaper query {} for {} seconds.",
             stringify!($type),
@@ -26,38 +61,41 @@ macro_rules! shaper_query {
         }
 
         let my_caches = $caches.clone();
-        let mut my_broadcast_rx = $broadcast.resubscribe();
+        let my_client = $client.clone();
+        let my_reply = $reply;
+        let request_value = $request;
+        let seconds_value = $seconds;
         info!("SQ Spawning");
         tokio::spawn(async move {
-            let mut failed = true;
-            let mut fail_count = 0;
-            while failed && fail_count < 3 {
-                info!("Making the call");
-                failed = $call.await;
-                fail_count += 1;
-            }
-
-            let mut timer = tokio::time::interval(Duration::from_secs(30));
-            let mut timer_count = 0;
+            let request = request_value;
+            let mut attempts = 0;
             loop {
-                tokio::select! {
-                    _ = timer.tick() => {
-                        // Timed out
-                        timer_count += 1;
-                        if timer_count > 1 {
-                            let _ = $reply.send(vec![]);
-                            break;
+                info!("SQ Requesting history (attempt {})", attempts + 1);
+                match my_client.request(request.clone()).await {
+                    Ok(payload) => {
+                        let data = payload.data.unwrap_or_default();
+                        my_caches.store(payload.tag, payload.seconds, data).await;
+                        if let Some(result) = my_caches.get::<$type>(seconds_value).await {
+                            if my_reply.send(result).is_err() {
+                                warn!("Failed to send. Oneshot died?");
+                            }
+                        } else {
+                            if my_reply.send(Vec::<$type>::new()).is_err() {
+                                warn!("Failed to send. Oneshot died?");
+                            }
                         }
+                        break;
                     }
-                    Ok(_msg) = my_broadcast_rx.recv() => {
-                        // Cache updated
-                        info!("SQ Cache update hit");
-                        if let Some(result) = my_caches.get($seconds).await {
-                            if let Err(_e) = $reply.send(result) {
+                    Err(()) => {
+                        attempts += 1;
+                        if attempts >= 3 {
+                            warn!("History request exhausted retries");
+                            if my_reply.send(Vec::<$type>::new()).is_err() {
                                 warn!("Failed to send. Oneshot died?");
                             }
                             break;
                         }
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
             }
@@ -66,133 +104,73 @@ macro_rules! shaper_query {
     };
 }
 
-pub async fn shaper_queries(mut rx: tokio::sync::mpsc::Receiver<ShaperQueryCommand>) {
+pub async fn shaper_queries(
+    mut rx: tokio::sync::mpsc::Receiver<ShaperQueryCommand>,
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+) {
     info!("Starting the shaper query actor.");
 
     // Initialize the cache system
-    let (caches, broadcast_rx) = Caches::new();
-    let remote_insight = Arc::new(remote_insight::RemoteInsight::new(caches.clone()));
+    let (caches, _broadcast_rx) = Caches::new();
+    let history_client = HistoryClient::new(control_tx);
 
     while let Some(command) = rx.recv().await {
         info!("SQ: Received a command.");
         caches.cleanup().await;
         info!("SQ: Cleaned up the caches.");
 
-        let my_remote_insight = remote_insight.clone();
+        let client = history_client.clone();
         match command {
             ShaperQueryCommand::ShaperThroughput { seconds, reply } => {
-                shaper_query!(
-                    ThroughputData,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight.command(
-                        remote_insight::RemoteInsightCommand::ShaperThroughput { seconds }
-                    )
-                );
+                let request = RemoteInsightRequest::ShaperThroughput { seconds };
+                shaper_query!(ThroughputData, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperPackets { seconds, reply } => {
-                shaper_query!(
-                    FullPacketData,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperPackets { seconds })
-                );
+                let request = RemoteInsightRequest::ShaperPackets { seconds };
+                shaper_query!(FullPacketData, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperPercent { seconds, reply } => {
-                shaper_query!(
-                    PercentShapedWeb,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperPercent { seconds })
-                );
+                let request = RemoteInsightRequest::ShaperPercent { seconds };
+                shaper_query!(PercentShapedWeb, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperFlows { seconds, reply } => {
-                shaper_query!(
-                    FlowCountViewWeb,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperFlows { seconds })
-                );
+                let request = RemoteInsightRequest::ShaperFlows { seconds };
+                shaper_query!(FlowCountViewWeb, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperRttHistogram { seconds, reply } => {
+                let request = RemoteInsightRequest::ShaperRttHistogram { seconds };
                 shaper_query!(
                     ShaperRttHistogramEntry,
                     caches,
                     seconds,
                     reply,
-                    broadcast_rx,
-                    my_remote_insight.command(
-                        remote_insight::RemoteInsightCommand::ShaperRttHistogram { seconds }
-                    )
+                    client,
+                    request
                 );
             }
             ShaperQueryCommand::ShaperTopDownloaders { seconds, reply } => {
-                shaper_query!(
-                    Top10Circuit,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight.command(
-                        remote_insight::RemoteInsightCommand::ShaperTopDownloaders { seconds }
-                    )
-                );
+                let request = RemoteInsightRequest::ShaperTopDownloaders { seconds };
+                shaper_query!(Top10Circuit, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperWorstRtt { seconds, reply } => {
-                shaper_query!(
-                    Worst10RttCircuit,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperWorstRtt { seconds })
-                );
+                let request = RemoteInsightRequest::ShaperWorstRtt { seconds };
+                shaper_query!(Worst10RttCircuit, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperWorstRxmit { seconds, reply } => {
-                shaper_query!(
-                    Worst10RxmitCircuit,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight.command(
-                        remote_insight::RemoteInsightCommand::ShaperWorstRxmit { seconds }
-                    )
-                );
+                let request = RemoteInsightRequest::ShaperWorstRxmit { seconds };
+                shaper_query!(Worst10RxmitCircuit, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperTopFlows { seconds, reply } => {
-                shaper_query!(
-                    AsnFlowSizeWeb,
-                    caches,
-                    seconds,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperTopFlows { seconds })
-                );
+                let request = RemoteInsightRequest::ShaperTopFlows { seconds };
+                shaper_query!(AsnFlowSizeWeb, caches, seconds, reply, client, request);
             }
             ShaperQueryCommand::ShaperRecentMedian { reply } => {
-                shaper_query!(
-                    RecentMedians,
-                    caches,
-                    0,
-                    reply,
-                    broadcast_rx,
-                    my_remote_insight
-                        .command(remote_insight::RemoteInsightCommand::ShaperRecentMedians)
-                );
+                let request = RemoteInsightRequest::ShaperRecentMedians;
+                shaper_query!(RecentMedians, caches, 0, reply, client, request);
+            }
+            ShaperQueryCommand::CakeTotals { seconds, reply } => {
+                let request = RemoteInsightRequest::CakeStatsTotals { seconds };
+                shaper_query!(CakeData, caches, seconds, reply, client, request);
             }
         }
         info!("SQ Looping");

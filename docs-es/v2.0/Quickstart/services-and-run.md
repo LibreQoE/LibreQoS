@@ -9,7 +9,7 @@
 
 ### lqos_scheduler
 
-- lqos_scheduler performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
+- lqos_scheduler performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).
 - Actions:
   - On start: Run a full setup of queues
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
@@ -34,7 +34,7 @@ Lqosd will provide specific reasons it failed, such as an interface not being up
 
 In the background, lqos_scheduler runs the Python script scheduler.py, which in turn runs the Python script LibreQoS.py
 
-- scheduler.py: performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
+- scheduler.py: performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).
 - LibreQoS.py: creates and updates queues / shaping of devices
 
 One-time runs of these individual components can be very helpful for debugging and to make sure everything is correctly configured.

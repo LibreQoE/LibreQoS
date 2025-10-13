@@ -22,7 +22,8 @@ pub async fn get_config(
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    let config = lqos_config::load_config().unwrap();
+    let config = lqos_config::load_config()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json((*config).clone()))
 }
 
@@ -50,8 +51,8 @@ pub async fn network_json() -> Json<Value> {
     if let Ok(config) = lqos_config::load_config() {
         let path = std::path::Path::new(&config.lqos_directory).join("network.json");
         if path.exists() {
-            let raw = std::fs::read_to_string(path).unwrap();
-            let json: Value = serde_json::from_str(&raw).unwrap();
+            let raw = std::fs::read_to_string(path).expect("Unable to read network json");
+            let json: Value = serde_json::from_str(&raw).expect("Unable to read network json");
             return Json(json);
         }
     }
@@ -73,7 +74,7 @@ pub async fn update_lqosd_config(
     let config: Config = (*data).clone();
     bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
         .await
-        .unwrap();
+        .expect("Unable to update config");
     "Ok".to_string()
 }
 
@@ -91,31 +92,34 @@ pub async fn update_network_and_devices(
         return "Unauthorized".to_string();
     }
 
-    let config = lqos_config::load_config().unwrap();
+    let config = lqos_config::load_config().expect("Unable to load LibreQoS config");
 
     // Save network.json
-    let serialized_string = serde_json::to_string_pretty(&data.network_json).unwrap();
+    let serialized_string = serde_json::to_string_pretty(&data.network_json)
+        .expect("Unable to serialize network.json payload");
     let net_json_path = std::path::Path::new(&config.lqos_directory).join("network.json");
     let net_json_backup_path =
         std::path::Path::new(&config.lqos_directory).join("network.json.backup");
     if net_json_path.exists() {
         // Make a backup
-        std::fs::copy(&net_json_path, net_json_backup_path).unwrap();
+        std::fs::copy(&net_json_path, net_json_backup_path)
+            .expect("Unable to create network.json backup");
     }
-    std::fs::write(net_json_path, serialized_string).unwrap();
+    std::fs::write(net_json_path, serialized_string).expect("Unable to write network.json");
 
     // Save the Shaped Devices
     let sd_path = std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let sd_backup_path =
         std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
     if sd_path.exists() {
-        std::fs::copy(&sd_path, sd_backup_path).unwrap();
+        std::fs::copy(&sd_path, sd_backup_path)
+            .expect("Unable to create ShapedDevices.csv backup");
     }
     let mut copied = ConfigShapedDevices::default();
     copied.replace_with_new_data(data.shaped_devices.clone());
     copied
         .write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory))
-        .unwrap();
+        .expect("Unable to write ShapedDevices.csv");
     SHAPED_DEVICES.store(Arc::new(copied));
 
     "Ok".to_string()

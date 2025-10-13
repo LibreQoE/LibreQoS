@@ -48,7 +48,8 @@ pub fn start_version_check() -> Result<()> {
                         continue;
                     }
                     Ok(update_available) => {
-                        NEW_VERSION_AVAILABLE.store(update_available, std::sync::atomic::Ordering::Relaxed);
+                        NEW_VERSION_AVAILABLE
+                            .store(update_available, std::sync::atomic::Ordering::Relaxed);
                     }
                 }
 

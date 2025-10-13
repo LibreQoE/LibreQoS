@@ -23,11 +23,17 @@ pub async fn top_flows_bytes(
         flow_type: TopFlowType::Bytes,
         n: 10,
     };
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("TopFlowsBytes: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("TopFlowsBytes: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {
             let message = json!(
@@ -60,11 +66,17 @@ pub async fn top_flows_rate(
         flow_type: TopFlowType::RateEstimate,
         n: 10,
     };
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("TopFlowsRate: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("TopFlowsRate: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {
             let message = json!(

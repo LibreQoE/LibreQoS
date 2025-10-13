@@ -228,16 +228,16 @@ fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
     use sha2::Digest;
     use sha2::digest::Update;
 
-    if cfg.node_id.is_none() {
-        if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
-            let hash = sha2::Sha256::new().chain(machine_id).finalize();
-            cfg.node_id = Some(format!("{:x}", hash));
-            cfg_doc["node_id"] = value(format!("{:x}", hash));
-            println!("Updating");
-            if let Err(e) = cfg.save(cfg_doc) {
-                error!("Unable to save /etc/lqos.conf");
-                error!("{e:?}");
-            }
+    if cfg.node_id.is_none()
+        && let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id")
+    {
+        let hash = sha2::Sha256::new().chain(machine_id).finalize();
+        cfg.node_id = Some(format!("{:x}", hash));
+        cfg_doc["node_id"] = value(format!("{:x}", hash));
+        println!("Updating");
+        if let Err(e) = cfg.save(cfg_doc) {
+            error!("Unable to save /etc/lqos.conf");
+            error!("{e:?}");
         }
     }
 }
@@ -262,14 +262,14 @@ mod test {
 
     #[test]
     fn round_trip_toml() {
-        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         let reserialized = doc.to_string();
         assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
     }
 
     #[test]
     fn add_node_id() {
-        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         doc["node_id"] = toml_edit::value("test");
         let reserialized = doc.to_string();
         assert!(reserialized.contains("node_id = \"test\""));

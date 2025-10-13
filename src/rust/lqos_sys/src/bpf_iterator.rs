@@ -6,8 +6,8 @@ use crate::{
     lqos_kernel::bpf,
 };
 use lqos_utils::XdpIpAddress;
-use std::sync::OnceLock;
 use parking_lot::Mutex;
+use std::sync::OnceLock;
 use std::{fmt::Debug, fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd};
 use thiserror::Error;
 use tracing::error;

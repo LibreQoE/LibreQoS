@@ -52,10 +52,10 @@ pub fn load_libreqos() -> Result<String, ProgramControlError> {
         .arg("lqos_scheduler")
         .output()
         .map_err(|_| ProgramControlError::CommandFailed)?;
-    let restart_stdout =
-        String::from_utf8(restart_result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
-    let restart_stderr =
-        String::from_utf8(restart_result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
+    let restart_stdout = String::from_utf8(restart_result.stdout)
+        .map_err(|_| ProgramControlError::StdInErrAccess)?;
+    let restart_stderr = String::from_utf8(restart_result.stderr)
+        .map_err(|_| ProgramControlError::StdInErrAccess)?;
 
     result_display += &restart_stdout;
     result_display += &restart_stderr;

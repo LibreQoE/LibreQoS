@@ -6,31 +6,35 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
+
+use lqos_bakery::BakeryCommands;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
 use tracing::{debug, info};
-use lqos_bakery::BakeryCommands;
 
 mod config;
+mod datalog;
 mod queue_structure;
 mod site_state;
-mod datalog;
-
-use datalog::LogCommand;
 
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
+/// Globally accessible stormguard statistics
 pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 
 /// Launches the StormGuard component. Will exit if there's
 /// nothing to do.
-pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>) -> anyhow::Result<()> {
+pub async fn start_stormguard(
+    bakery: crossbeam_channel::Sender<BakeryCommands>,
+) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
-    
+
     // Initialize in "waiting" state - we'll configure when queue structure is available
     let mut config: Option<config::StormguardConfig> = None;
     let mut log_sender: Option<std::sync::mpsc::Sender<datalog::LogCommand>> = None;
@@ -42,10 +46,11 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
 
     loop {
         interval.tick().await;
-        
+
         // Check if queue structure has changed or if we need initial configuration
-        let queue_structure_changed = QUEUE_STRUCTURE_CHANGED_STORMGUARD.swap(false, std::sync::atomic::Ordering::Relaxed);
-        
+        let queue_structure_changed =
+            QUEUE_STRUCTURE_CHANGED_STORMGUARD.swap(false, std::sync::atomic::Ordering::Relaxed);
+
         if config.is_none() || queue_structure_changed {
             // Try to (re)configure StormGuard
             match config::configure() {
@@ -59,7 +64,8 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
                         if log_sender.is_none() {
                             log_sender = datalog::start_datalog(&new_config).ok();
                         }
-                        site_state_tracker = Some(site_state::SiteStateTracker::from_config(&new_config));
+                        site_state_tracker =
+                            Some(site_state::SiteStateTracker::from_config(&new_config));
                         config = Some(new_config);
                     }
                 }
@@ -69,7 +75,7 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
                 }
             }
         }
-        
+
         // Only process if we have a valid configuration
         if let (Some(cfg), Some(tracker)) = (&config, &mut site_state_tracker) {
             // Update all the ring buffers
@@ -80,7 +86,12 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
             let recommendations = tracker.recommendations();
             if !recommendations.is_empty() {
                 if let Some(sender) = &log_sender {
-                    tracker.apply_recommendations(recommendations, cfg, sender.clone(), bakery.clone());
+                    tracker.apply_recommendations(
+                        recommendations,
+                        cfg,
+                        sender.clone(),
+                        bakery.clone(),
+                    );
                 }
             }
         }

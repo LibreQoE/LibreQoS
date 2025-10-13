@@ -9,7 +9,10 @@ pub async fn stormguard_ticker(
     pubsub: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
 ) {
-    if !pubsub.is_channel_alive(PublishedChannels::StormguardStatus).await {
+    if !pubsub
+        .is_channel_alive(PublishedChannels::StormguardStatus)
+        .await
+    {
         return;
     }
 
@@ -26,7 +29,9 @@ pub async fn stormguard_ticker(
                         "data": stats,
                     });
 
-                    pubsub.send(PublishedChannels::StormguardStatus, msg.to_string()).await;
+                    pubsub
+                        .send(PublishedChannels::StormguardStatus, msg.to_string())
+                        .await;
                 }
             }
         }

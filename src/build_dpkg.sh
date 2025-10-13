@@ -20,6 +20,7 @@ LQOS_FILES=(
   csvToNetworkJSON.py
   integrationCommon.py
   integrationPowercode.py
+  integrationNetzur.py
   integrationRestHttp.py
   integrationSonar.py
   integrationSplynx.py
@@ -39,11 +40,13 @@ LQOS_FILES=(
   integrationUISProutes.template.csv
   integrationSplynxBandwidths.template.csv
   ../requirements.txt
+  update_api.sh
 )
 
 LQOS_BIN_FILES=(
   lqos_scheduler.service.example
   lqosd.service.example
+  lqos_api.service.example
 )
 
 RUSTPROGS=(
@@ -55,7 +58,6 @@ RUSTPROGS=(
   lqos_setup
   lqos_map_perf
   uisp_integration
-  lqos_support_tool
 )
 
 ####################################################
@@ -88,8 +90,17 @@ popd > /dev/null || exit
 
 # Build the Rust programs (before the control file, we need to LDD lqosd)
 pushd rust > /dev/null || exit
-#cargo clean
-cargo build --all --release
+# Build only required binaries and artifacts (exclude lqos_support_tool executable)
+cargo build --release \
+  -p lqosd \
+  -p lqtop \
+  -p xdp_iphash_to_cpu_cmdline \
+  -p xdp_pping \
+  -p lqusers \
+  -p lqos_setup \
+  -p lqos_map_perf \
+  -p uisp_integration \
+  -p lqos_python
 popd > /dev/null || exit
 
 # Create the post-installation file
@@ -113,18 +124,22 @@ sudo chown -R $USER /opt/libreqos
 # - Setup the services
 cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
-/bin/systemctl daemon-reload
+cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+/bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
-/bin/systemctl enable lqosd lqos_scheduler
-/bin/systemctl start lqosd lqos_scheduler
+/bin/systemctl enable lqosd lqos_scheduler lqos_api || true
+/bin/systemctl start lqosd lqos_scheduler lqos_api || true
 EOF
 
 # Uninstall Script
 cat <<EOF > postrm
 #!/bin/bash
-/bin/systemctl stop lqosd lqos_scheduler
-/bin/systemctl disable lqosd lqos_scheduler
+set +e
+/bin/systemctl stop lqosd lqos_scheduler lqos_api || true
+/bin/systemctl disable lqosd lqos_scheduler lqos_api || true
+/bin/systemctl daemon-reload || true
+exit 0
 EOF
 chmod a+x postinst postrm
 popd > /dev/null || exit
@@ -133,6 +148,11 @@ popd > /dev/null || exit
 for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
+
+# Ensure update_api.sh is executable in the package
+if [ -f "$LQOS_DIR/update_api.sh" ]; then
+  chmod a+x "$LQOS_DIR/update_api.sh" || true
+fi
 
 # Copy files into the LibreQoS/bin directory
 for file in "${LQOS_BIN_FILES[@]}"; do
@@ -201,6 +221,14 @@ echo "Point a browser at http://\$MY_IP:9123/ to manage it."
 echo \"\"
 EOF
 popd || exit
+
+####################################################
+# Bundle the API into src/bin
+echo "Fetching lqos_api (api.zip) ..."
+curl -fsSL -o /tmp/lqos_api.zip "https://download.libreqos.com/api.zip"
+unzip -o /tmp/lqos_api.zip -d "$LQOS_DIR/bin"
+chmod +x "$LQOS_DIR/bin/lqos_api" || true
+rm -f /tmp/lqos_api.zip
 
 ####################################################
 # Assemble the package

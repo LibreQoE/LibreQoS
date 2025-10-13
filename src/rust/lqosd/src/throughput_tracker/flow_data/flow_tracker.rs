@@ -9,8 +9,8 @@ use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use parking_lot::Mutex;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct AsnId(pub u32);

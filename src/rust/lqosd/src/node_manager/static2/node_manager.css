@@ -27,6 +27,16 @@ body {
 .sidebar .nav-link {
     color: var(--bs-secondary);
 }
+.sidebar .nav-link.no-hover,
+.sidebar .nav-link.no-hover:hover {
+    background-color: transparent !important;
+    cursor: not-allowed;
+}
+.sidebar .nav-link.disabled,
+.sidebar .nav-link[aria-disabled="true"] {
+    color: var(--bs-secondary-color) !important;
+    pointer-events: none;
+}
 .sidebar .nav-item :hover {
     background-color: var(--bs-info-bg-subtle);
 }

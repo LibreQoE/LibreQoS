@@ -8,7 +8,7 @@ mod request;
 pub mod response;
 mod session;
 mod unix_socket_server;
-pub use client::{bus_request, LibreqosBusClient};
+pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{BlackboardSystem, BusRequest, TopFlowType};
