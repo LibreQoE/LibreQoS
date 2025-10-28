@@ -26,10 +26,20 @@ pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;
 
 /// The name of the veth interface facing the Internet in sandwich mode
-pub const SANDWICH_TO_INTERNET: &str = "veth_lq_inet";
+pub const SANDWICH_TO_INTERNET: &str = "v_inet_lq";
+
+/// The name of the other half of the veth facing the Internet in sandwich mode
+pub const SANDWICH_TO_INTERNET2: &str = "v_inet_phy";
+
 /// The name of the veth interface facing the ISP in sandwich mode
-pub const SANDWICH_TO_NETWORK: &str = "veth_lq_isp";
+pub const SANDWICH_TO_NETWORK: &str = "v_isp_lq";
+
+/// The name of the other half of veth interface facing the ISP in sandwich mode
+pub const SANDWICH_TO_NETWORK2: &str = "v_isp_phy";
+
+
 /// The name of the bridge facing the Internet in sandwich mode
 pub const BRIDGE_TO_INTERNET: &str = "br_lq_inet";
+
 /// The name of the bridge facing the ISP in sandwich mode
 pub const BRIDGE_TO_NETWORK: &str = "br_lq_isp";

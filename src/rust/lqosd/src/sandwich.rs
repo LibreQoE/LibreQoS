@@ -1,5 +1,5 @@
-use lqos_config::{Config, SandwichMode, SandwichRateLimiter, BRIDGE_TO_INTERNET, BRIDGE_TO_NETWORK, SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK};
-use tracing::info;
+use lqos_config::{Config, SandwichMode, SandwichRateLimiter, BRIDGE_TO_INTERNET, BRIDGE_TO_NETWORK, SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2, SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2};
+use tracing::{info, warn};
 use std::process::Stdio;
 
 /// Set up sandwich mode, if configured.
@@ -11,6 +11,10 @@ pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<bool> {
     let Some(SandwichMode::Full { with_rate_limiter, rate_override_mbps_down, rate_override_mbps_up, queue_override, use_fq_codel }) = &bridge_config.sandwich else {
         return Ok(false); // No sandwich mode, not an error
     };
+    if !bridge_config.use_xdp_bridge {
+        warn!("Sandwich mode requires XDP bridge. Running without sandwich mode.");
+        return Ok(false);
+    }
     info!("Enabling sandwich mode.");
 
     // Tear down all existing bridges and veth pairs
@@ -18,19 +22,21 @@ pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<bool> {
 
     // Create the veth pair
     let num_queues = queue_override.unwrap_or(lqos_sys::num_possible_cpus()? as usize);
-    create_veth(SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK, num_queues)?;
-    info!("Created veth pair {} <-> {}", SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK);
-    //create_veth(SANDWICH_TO_NETWORK, SANDWICH_TO_INTERNET, num_queues, 121)?;
-    //info!("Created veth pair {} <-> {}", SANDWICH_TO_NETWORK, SANDWICH_TO_INTERNET);
+    create_veth(SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2, num_queues)?;
+    create_veth(SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2, num_queues)?;
+    info!("Created veth pair {} <-> {}", SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2);
+    info!("Created veth pair {} <-> {}", SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2);
     veth_up(SANDWICH_TO_INTERNET)?;
+    veth_up(SANDWICH_TO_INTERNET2)?;
     veth_up(SANDWICH_TO_NETWORK)?;
+    veth_up(SANDWICH_TO_NETWORK2)?;
 
     // Create the bridges on each end
     // Attach the veth ends to the bridges
     // Attach the physical interfaces to the bridges
     // Bring up all interfaces and bridges
-    let to_internet = vec![SANDWICH_TO_INTERNET, &bridge_config.to_internet];
-    let to_network = vec![SANDWICH_TO_NETWORK, &bridge_config.to_network];
+    let to_internet = vec![SANDWICH_TO_INTERNET2, &bridge_config.to_internet];
+    let to_network = vec![SANDWICH_TO_NETWORK2, &bridge_config.to_network];
     create_bridge(BRIDGE_TO_INTERNET, &to_internet)?;
     create_bridge(BRIDGE_TO_NETWORK, &to_network)?;
 
@@ -188,17 +194,16 @@ fn create_egress_htb_limit(interface: &str, rate_mbps: u64, use_fq_codel: bool) 
         .stderr(Stdio::null())
         .status();
 
-    // Root HTB qdisc with tuned r2q to keep quantum reasonable
+    // Root HTB qdisc
     std::process::Command::new("tc")
-        .args(&["qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "1", "r2q", "100"])
+        .args(&["qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "1"])
         .status()?;
 
     // Single HTB class at the target rate with an explicit quantum around MTU
     let add_status = std::process::Command::new("tc")
         .args(&["class", "add", "dev", interface, "parent", "1:", "classid", "1:1", "htb",
                 "rate", &format!("{}mbit", rate_mbps),
-                "ceil", &format!("{}mbit", rate_mbps),
-                "quantum", "1514"])
+                "ceil", &format!("{}mbit", rate_mbps)])
         .status()?;
     if !add_status.success() {
         // Fallback to change if class already exists

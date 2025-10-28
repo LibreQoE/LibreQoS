@@ -156,22 +156,13 @@ fn main() -> Result<()> {
         )?
     } else {
         let is_sandwich = sandwich::make_me_a_sandwich(&config)?;
-
-        if !is_sandwich {
-            LibreQoSKernels::new(
-                &config.internet_interface(),
-                &config.isp_interface(),
-                Some(heimdall_handle_events),
-                Some(flowbee_handle_events),
-            )?
-        } else {
-            LibreQoSKernels::new(
-                &config.isp_interface(),
-                &config.internet_interface(),
-                Some(heimdall_handle_events),
-                Some(flowbee_handle_events),
-            )?
-        }
+        tracing::debug!("Sandwich mode: {is_sandwich}");
+        LibreQoSKernels::new(
+            &config.internet_interface(),
+            &config.isp_interface(),
+            Some(heimdall_handle_events),
+            Some(flowbee_handle_events),
+        )?
     };
 
     // Start the Bakery for TC command execution

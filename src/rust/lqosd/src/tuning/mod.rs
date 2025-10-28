@@ -17,6 +17,12 @@ pub fn tune_lqosd_from_config_file() -> Result<()> {
     );
     offloads::ethtool_tweaks(&config.internet_interface(), &config.tuning);
     offloads::ethtool_tweaks(&config.isp_interface(), &config.tuning);
+
+    if let Some(br) = config.bridge.as_ref()&& let Some(lqos_config::SandwichMode::Full { .. }) = br.sandwich.as_ref() {
+        offloads::ethtool_tweaks(&config.internet_interface_physical(), &config.tuning);
+        offloads::ethtool_tweaks(&config.isp_interface_physical(), &config.tuning);
+    }
+
     let interval = config.queue_check_period_ms;
     set_queue_refresh_interval(interval);
     Ok(())
