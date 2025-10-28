@@ -3,13 +3,13 @@ use tracing::info;
 use std::process::Stdio;
 
 /// Set up sandwich mode, if configured.
-pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<()> {
+pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<bool> {
     // https://www.explainxkcd.com/wiki/index.php/149:_Sandwich
     let Some(bridge_config) = &config.bridge else {
         return Err(anyhow::anyhow!("Bridge mode required"));
     };
     let Some(SandwichMode::Full { with_rate_limiter, rate_override_mbps_down, rate_override_mbps_up, queue_override, use_fq_codel }) = &bridge_config.sandwich else {
-        return Ok(()); // No sandwich mode, not an error
+        return Ok(false); // No sandwich mode, not an error
     };
     info!("Enabling sandwich mode.");
 
@@ -57,7 +57,7 @@ pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<()> {
         }
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Tear down sandwich mode, if configured.

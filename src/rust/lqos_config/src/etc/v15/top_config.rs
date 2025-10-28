@@ -175,7 +175,7 @@ impl Config {
         if let Some(bridge) = &self.bridge {
             if matches!(bridge.sandwich, Some(super::bridge::SandwichMode::Full { .. })) {
                 // In sandwich mode, the internet interface is the veth pair
-                SANDWICH_TO_NETWORK.to_string()
+                SANDWICH_TO_INTERNET.to_string()
             } else {
                 bridge.to_internet.clone()
             }
@@ -202,7 +202,7 @@ impl Config {
         if let Some(bridge) = &self.bridge {
             if matches!(bridge.sandwich, Some(super::bridge::SandwichMode::Full { .. })) {
                 // In sandwich mode, the ISP interface is the veth pair
-                SANDWICH_TO_INTERNET.to_string()
+                SANDWICH_TO_NETWORK.to_string()
             } else {
                 bridge.to_network.clone()
             }
