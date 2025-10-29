@@ -309,10 +309,15 @@ pub enum BusRequest {
 
     /// Bakery: Change Site Speed
     BakeryChangeSiteSpeedLive {
+        /// The hash of the site to target
         site_hash: i64,
+        /// Commit download bandwidth in Mbps
         download_bandwidth_min: f32,
+        /// Commit upload bandwidth in Mbps
         upload_bandwidth_min: f32,
+        /// Ceiling download bandwidth in Mbps
         download_bandwidth_max: f32,
+        /// Ceiling upload bandwidth in Mbps
         upload_bandwidth_max: f32,
     },
 }
