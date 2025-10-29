@@ -306,6 +306,15 @@ pub enum BusRequest {
 
     /// Check the scheduler status
     CheckSchedulerStatus,
+
+    /// Bakery: Change Site Speed
+    BakeryChangeSiteSpeedLive {
+        site_hash: i64,
+        download_bandwidth_min: f32,
+        upload_bandwidth_min: f32,
+        download_bandwidth_max: f32,
+        upload_bandwidth_max: f32,
+    },
 }
 
 /// Defines the parts of the blackboard

@@ -473,6 +473,20 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
+            BusRequest::BakeryChangeSiteSpeedLive { site_hash, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let command = lqos_bakery::BakeryCommands::ChangeSiteSpeedLive {
+                        site_hash: *site_hash,
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                    };
+                    let _ = sender.send(command);
+                }
+                BusResponse::Ack
+            }
             BusRequest::BakeryMqSetup {
                 queues_available,
                 stick_offset,
