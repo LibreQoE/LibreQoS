@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 lqos_config = { path = "../lqos_config" }
 lqos_bus = { path = "../lqos_bus" }
+lqos_sys = { path = "../lqos_sys" }
 anyhow.workspace = true
 tracing.workspace = true
 crossbeam-channel.workspace = true
