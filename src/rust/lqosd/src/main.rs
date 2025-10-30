@@ -250,6 +250,21 @@ fn main() -> Result<()> {
                 return;
             };
             tokio_runtime.block_on(async {
+                    // Notify bakery when the bus socket becomes available
+                    tokio::spawn(async move {
+                        use tokio::time::{sleep, Duration};
+                        // Wait up to ~5 seconds for the socket to appear
+                        for _ in 0..100u32 {
+                            if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                                break;
+                            }
+                            sleep(Duration::from_millis(50)).await;
+                        }
+                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                            let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
+                        }
+                    });
+
                     tokio::spawn(async move {
                         match lts2_sys::control_channel::start_control_channel(control_channel)
                             .await

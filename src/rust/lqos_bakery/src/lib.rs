@@ -34,7 +34,7 @@ use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
 pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 use crate::commands::ExecutionMode;
-use crate::diff::{SiteDiffResult, diff_sites};
+use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
@@ -235,6 +235,19 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             } => {
                 handle_map_ip(&ip_address, tc_handle, cpu, upload, &mut mapping_staged);
             }
+            BakeryCommands::BusReady => {
+                if !mapping_seeded {
+                    match attempt_seed_mappings(&circuits, &mut mapping_current, &mut mapping_unknown) {
+                        Ok(_) => {
+                            let total = mapping_current.len();
+                            let unknown = mapping_unknown.len();
+                            info!("Bakery mappings seeded: total={}, unknown={}", total, unknown);
+                            mapping_seeded = true;
+                        }
+                        Err(e) => warn!("Bakery: Failed to seed IP mappings at bus-ready: {:?}", e),
+                    }
+                }
+            }
             BakeryCommands::DelIp { ip_address, upload } => {
                 handle_del_ip(&ip_address, upload, &mut mapping_staged, &mut mapping_current);
             }
@@ -248,7 +261,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 if !mapping_seeded {
                     match attempt_seed_mappings(&circuits, &mut mapping_current, &mut mapping_unknown) {
                         Ok(_) => {
-                            info!("Bakery: Seeded IP mappings from kernel");
+                            let total = mapping_current.len();
+                            let unknown = mapping_unknown.len();
+                            info!("Bakery mappings seeded: total={}, unknown={}", total, unknown);
                             mapping_seeded = true;
                         }
                         Err(e) => warn!("Bakery: Failed to seed IP mappings: {:?}", e),
@@ -444,37 +459,41 @@ fn handle_commit_batch(
     let site_change_mode = diff_sites(&new_batch, sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
-        info!("Site structure has changed, performing full reload.");
+        info!("Bakery full reload: site_struct=1, circuit_struct=0");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
-    let circuit_change_mode = diff::diff_circuits(&new_batch, circuits);
+    let circuit_change_mode = diff_circuits(&new_batch, circuits);
 
     // If neither has changed, there's nothing to do.
     if matches!(site_change_mode, SiteDiffResult::NoChange)
-        && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange)
+        && matches!(circuit_change_mode, CircuitDiffResult::NoChange)
     {
         // No changes detected, skip processing
         info!("No changes detected in batch, skipping processing.");
         return;
     }
 
-    // Check if we should do a full reload based on the number of circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged {
-        newly_added: _,
-        removed_circuits: _,
-        updated_circuits: _,
-    } = &circuit_change_mode
-    {
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
-        return; // Skip the rest of this CommitBatch processing
+    // If any structural changes occurred, do a full reload
+    if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode {
+        if !categories.structural_changed.is_empty() {
+            info!(
+                "Bakery full reload: site_struct=0, circuit_struct={}",
+                categories.structural_changed.len()
+            );
+            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
     }
 
     // Declare any site speed changes that need to be applied. We're sending them
     // to ourselves as future commands via the BakeryCommands channel.
+    let mut site_speed_change_count = 0usize;
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
+        site_speed_change_count = changes.len();
         for change in &changes {
             let BakeryCommands::AddSite {
                 site_hash,
@@ -499,6 +518,7 @@ fn handle_commit_batch(
                 upload_bandwidth_max: *upload_bandwidth_max,
             }) {
                 error!("Channel full, falling back to full rebuild: {}", e);
+                info!("Bakery full reload: site_struct=0, circuit_struct=0");
                 full_reload(
                     batch,
                     sites,
@@ -512,89 +532,109 @@ fn handle_commit_batch(
         }
     }
 
-    // Now we can process circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged {
-        newly_added,
-        removed_circuits,
-        updated_circuits,
-    } = circuit_change_mode
-    {
-        // Process removed circuits (including those that are being updated)
-        let mut circuits_to_remove = removed_circuits;
-        if !updated_circuits.is_empty() {
-            // For updates, we need to remove the old version first
-            for cmd in &updated_circuits {
-                if let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd.as_ref() {
-                    circuits_to_remove.push(*circuit_hash);
-                }
-            }
-        }
+    // Now we can process circuit changes incrementally
+    if let CircuitDiffResult::Categorized(categories) = circuit_change_mode {
+        // One-line summary of changes (info!)
+        info!(
+            "Bakery changes: sites_speed={}, circuits_added={}, removed={}, speed={}, ip={}",
+            site_speed_change_count,
+            categories.newly_added.len(),
+            categories.removed_circuits.len(),
+            categories.speed_changed.len(),
+            categories.ip_changed.len()
+        );
 
-        // Removing circuits.
-        if !circuits_to_remove.is_empty() {
-            for circuit_hash in circuits_to_remove {
+        // 1) Removals
+        if !categories.removed_circuits.is_empty() {
+            for circuit_hash in categories.removed_circuits {
                 if let Some(circuit) = circuits.remove(&circuit_hash) {
                     let was_activated = live_circuits.contains_key(&circuit_hash);
-
-                    // Only generate removal commands if appropriate for the mode
                     let commands = match config.queues.lazy_queues.as_ref() {
-                        None | Some(LazyQueueMode::No) => {
-                            // Non-lazy: everything was created, delete everything
-                            circuit.to_prune(&config, true)
-                        }
+                        None | Some(LazyQueueMode::No) => circuit.to_prune(&config, true),
                         Some(LazyQueueMode::Htb) => {
-                            // HTB mode: only delete CAKE if it was created
-                            if was_activated {
-                                circuit.to_prune(&config, false) // This will only delete CAKE, not HTB
-                            } else {
-                                None // CAKE was never created, nothing to delete
-                            }
+                            if was_activated { circuit.to_prune(&config, false) } else { None }
                         }
                         Some(LazyQueueMode::Full) => {
-                            // Full lazy: only delete the circuit if activated
-                            if was_activated {
-                                circuit.to_prune(&config, true)
-                            } else {
-                                None // Nothing was created, nothing to delete
-                            }
+                            if was_activated { circuit.to_prune(&config, true) } else { None }
                         }
                     };
-
-                    if let Some(cmd) = commands {
-                        execute_in_memory(&cmd, "removing circuit");
-                    }
+                    if let Some(cmd) = commands { execute_in_memory(&cmd, "removing circuit"); }
                     live_circuits.remove(&circuit_hash);
                 } else {
-                    warn!(
-                        "RemoveCircuit received for unknown circuit: {}",
-                        circuit_hash
-                    );
-                    continue;
+                    warn!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
                 }
             }
         }
-        // Newly added is a little harder
-        if !newly_added.is_empty() {
-            // Collect both newly added and updated circuits
-            let mut all_new_circuits: Vec<&Arc<BakeryCommands>> = newly_added;
-            all_new_circuits.extend(updated_circuits);
 
-            let commands: Vec<Vec<String>> = all_new_circuits
+        // 2) Speed changes (avoid linux TC deadlock by removing qdisc first)
+        if !categories.speed_changed.is_empty() {
+            let mut commands = Vec::new();
+            for cmd in &categories.speed_changed {
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd.as_ref() {
+                    let was_activated = live_circuits.contains_key(circuit_hash);
+                    match config.queues.lazy_queues.as_ref() {
+                        None | Some(LazyQueueMode::No) => {
+                            // Remove both HTB and CAKE; then re-add fully
+                            if let Some(prune) = cmd.to_prune(&config, true) { commands.extend(prune); }
+                            if let Some(add) = cmd.to_commands(&config, ExecutionMode::Builder) { commands.extend(add); }
+                            circuits.insert(*circuit_hash, Arc::clone(cmd));
+                        }
+                        Some(LazyQueueMode::Htb) => {
+                            if was_activated {
+                                // Remove CAKE only
+                                if let Some(prune) = cmd.to_prune(&config, false) { commands.extend(prune); }
+                                // Update HTB with Builder (HTB only in Htb mode)
+                                if let Some(add_htb) = cmd.to_commands(&config, ExecutionMode::Builder) { commands.extend(add_htb); }
+                                // Re-add CAKE via LiveUpdate to minimize unshaped window
+                                if let Some(add_qdisc) = cmd.to_commands(&config, ExecutionMode::LiveUpdate) { commands.extend(add_qdisc); }
+                            } else {
+                                // Not active: just ensure HTB state reflects new rates
+                                if let Some(add_htb) = cmd.to_commands(&config, ExecutionMode::Builder) { commands.extend(add_htb); }
+                            }
+                            circuits.insert(*circuit_hash, Arc::clone(cmd));
+                        }
+                        Some(LazyQueueMode::Full) => {
+                            if was_activated {
+                                // Remove both, re-add in LiveUpdate (HTB + CAKE)
+                                if let Some(prune) = cmd.to_prune(&config, true) { commands.extend(prune); }
+                                if let Some(add_all) = cmd.to_commands(&config, ExecutionMode::LiveUpdate) { commands.extend(add_all); }
+                            } else {
+                                // Not active: no TC state to touch; just record new definition
+                            }
+                            circuits.insert(*circuit_hash, Arc::clone(cmd));
+                        }
+                    }
+                }
+            }
+            if !commands.is_empty() {
+                execute_in_memory(&commands, "updating circuit speeds");
+            }
+        }
+
+        // 3) Additions
+        if !categories.newly_added.is_empty() {
+            let commands: Vec<Vec<String>> = categories
+                .newly_added
                 .iter()
                 .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
                 .collect();
-            if commands.is_empty() {
-                debug!("No commands to execute for newly added circuits.");
-            } else {
+            if !commands.is_empty() {
                 execute_in_memory(&commands, "adding new circuits");
-                // Update the circuit map with the newly added circuits
-                for command in all_new_circuits {
-                    if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
-                        circuits.insert(*circuit_hash, Arc::clone(command));
-                    } else {
-                        warn!("AddCircuit received a non-circuit command: {:?}", command);
-                    }
+            }
+            for command in categories.newly_added {
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
+                    circuits.insert(*circuit_hash, Arc::clone(command));
+                }
+            }
+        }
+
+        // 4) IP-only changes require no TC commands; mappings already handled by mapping engine
+        // We still refresh the stored circuit snapshot for those entries
+        if !categories.ip_changed.is_empty() {
+            for command in categories.ip_changed {
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
+                    circuits.insert(*circuit_hash, Arc::clone(command));
                 }
             }
         }

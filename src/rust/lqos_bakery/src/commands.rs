@@ -47,6 +47,8 @@ pub enum ExecutionMode {
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
+    /// Notification that the bus socket is ready; bakery can seed mappings
+    BusReady,
     /// Add or update an IP mapping (mirrors `MapIpToFlow` from the bus)
     MapIp {
         /// The IP address to map (may include CIDR prefix)
