@@ -87,14 +87,14 @@ fn parse_ip_list(s: &str) -> Vec<String> {
         .collect()
 }
 
-fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
+/*fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
     if let Some((addr, pfx)) = ip.split_once('/') {
         if let Ok(n) = pfx.parse::<u32>() {
             return (addr.to_string(), n);
         }
     }
     if ip.contains(':') { (ip.to_string(), 128) } else { (ip.to_string(), 32) }
-}
+}*/
 
 fn tc_handle_from_major_minor(major: u16, minor: u16) -> TcHandle {
     TcHandle::from_u32(((major as u32) << 16) | (minor as u32))
@@ -226,6 +226,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     }
     #[derive(Clone, Debug)]
     struct MappingVal {
+        #[allow(dead_code)]
         handle: TcHandle,
         cpu: u32,
     }
