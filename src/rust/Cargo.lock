@@ -1896,6 +1896,7 @@ dependencies = [
  "lqos_config",
  "once_cell",
  "parking_lot",
+ "tokio",
  "tracing",
 ]
 

@@ -157,8 +157,7 @@ def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enable_actual_shell_commands():
 		# Clear IP filters and remove xdp program from interfaces
-		#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
-		clear_ip_mappings() # Use the bus
+		# The bakery tracks and prunes mappings; avoid clearing everything here.
 		clearPriorSettings(interfaceA, interfaceB)
 
 def findQueuesAvailable(interfaceName):
@@ -1135,10 +1134,8 @@ def refreshShapers():
 		
 		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		xdpStartTime = datetime.now()
-		if enable_actual_shell_commands():
-			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
-			clear_ip_mappings() # Use the bus
+		#if enable_actual_shell_commands():
+		# The bakery will handle stale mapping cleanup; avoid clearing mappings here.
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
 		# Commented out - the daemon does this

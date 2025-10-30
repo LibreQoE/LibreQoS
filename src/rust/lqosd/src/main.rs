@@ -350,10 +350,42 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tc_handle,
                 cpu,
                 upload,
-            } => map_ip_to_flow(ip_address, tc_handle, *cpu, *upload),
-            BusRequest::ClearHotCache => clear_hot_cache(),
-            BusRequest::DelIpFlow { ip_address, upload } => del_ip_flow(ip_address, *upload),
-            BusRequest::ClearIpFlow => clear_ip_flows(),
+            } => {
+                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
+                        ip_address: ip_address.clone(),
+                        tc_handle: *tc_handle,
+                        cpu: *cpu,
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearHotCache => {
+                // Let the bakery finalize staged mapping changes, then clear hot cache.
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitMappings);
+                }
+                clear_hot_cache()
+            }
+            BusRequest::DelIpFlow { ip_address, upload } => {
+                let resp = del_ip_flow(ip_address, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
+                        ip_address: ip_address.clone(),
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearIpFlow => {
+                let resp = clear_ip_flows();
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::ClearIpAll);
+                }
+                resp
+            }
             BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),

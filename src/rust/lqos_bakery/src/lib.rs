@@ -39,6 +39,7 @@ use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
+use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient, TcHandle};
 
 /// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
@@ -70,6 +71,145 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut circuits: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut live_circuits: HashMap<i64, u64> = HashMap::new();
 
+    // Mapping state
+    #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+    struct MappingKey {
+        ip: String,
+        prefix: u32,
+        upload: bool,
+    }
+    #[derive(Clone, Debug)]
+    struct MappingVal {
+        handle: TcHandle,
+        cpu: u32,
+    }
+    // Current kernel view (authoritative state) as tracked by the bakery
+    let mut mapping_current: HashMap<MappingKey, MappingVal> = HashMap::new();
+    // Next desired set staged during a batch (Python batches or other tools)
+    let mut mapping_staged: Option<HashMap<MappingKey, MappingVal>> = None;
+    // Keys that exist in the kernel but we couldn't classify to a known circuit (never delete automatically)
+    let mut mapping_unknown: HashSet<MappingKey> = HashSet::new();
+    let mut mapping_seeded: bool = false;
+
+    fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
+        if let Some((addr, pfx)) = ip.split_once('/') {
+            if let Ok(n) = pfx.parse::<u32>() {
+                return (addr.to_string(), n);
+            }
+        }
+        // No prefix provided; infer by address family
+        // Simple heuristic: ':' suggests IPv6
+        if ip.contains(':') {
+            (ip.to_string(), 128)
+        } else {
+            (ip.to_string(), 32)
+        }
+    }
+
+    fn handle_map_ip(
+        ip_address: &str,
+        tc_handle: TcHandle,
+        cpu: u32,
+        upload: bool,
+        mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
+    ) {
+        let (ip, prefix) = parse_ip_and_prefix(ip_address);
+        let key = MappingKey { ip, prefix, upload };
+        let val = MappingVal { handle: tc_handle, cpu };
+        if mapping_staged.is_none() {
+            *mapping_staged = Some(HashMap::new());
+        }
+        if let Some(stage) = mapping_staged.as_mut() {
+            stage.insert(key, val);
+        }
+    }
+
+    fn handle_del_ip(
+        ip_address: &str,
+        upload: bool,
+        mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
+        mapping_current: &mut HashMap<MappingKey, MappingVal>,
+    ) {
+        // Best-effort deletion: if exact prefix was provided, remove that, else try common host prefixes
+        let (ip, prefix) = parse_ip_and_prefix(ip_address);
+        let key = MappingKey { ip: ip.clone(), prefix, upload };
+        if let Some(stage) = mapping_staged.as_mut() {
+            stage.remove(&key);
+        }
+        mapping_current.remove(&key);
+    }
+
+    fn build_handle_sets(
+        circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    ) -> (HashSet<TcHandle>, HashSet<TcHandle>) {
+        let mut down = HashSet::new();
+        let mut up = HashSet::new();
+        for (_k, v) in circuits.iter() {
+            if let BakeryCommands::AddCircuit {
+                class_minor,
+                class_major,
+                up_class_major,
+                ..
+            } = v.as_ref()
+            {
+                let down_tc = TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
+                let up_tc = TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
+                down.insert(down_tc);
+                up.insert(up_tc);
+            }
+        }
+        (down, up)
+    }
+
+    fn attempt_seed_mappings(
+        circuits: &HashMap<i64, Arc<BakeryCommands>>,
+        mapping_current: &mut HashMap<MappingKey, MappingVal>,
+        mapping_unknown: &mut HashSet<MappingKey>,
+    ) -> anyhow::Result<()> {
+        // Build classification sets
+        let (down_set, up_set) = build_handle_sets(circuits);
+
+        // Create a small runtime to make a one-shot bus request
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        rt.block_on(async {
+            let mut bus = LibreqosBusClient::new().await?;
+            let reply = bus.request(vec![BusRequest::ListIpFlow]).await?;
+            for r in reply.iter() {
+                if let BusResponse::MappedIps(list) = r {
+                    for m in list.iter() {
+                        // m.ip_address does not include prefix, prefix_length is provided
+                        let key = MappingKey {
+                            ip: m.ip_address.clone(),
+                            prefix: m.prefix_length,
+                            upload: if up_set.contains(&m.tc_handle) {
+                                true
+                            } else if down_set.contains(&m.tc_handle) {
+                                false
+                            } else {
+                                // Unknown mapping (do not delete automatically)
+                                let k = MappingKey {
+                                    ip: m.ip_address.clone(),
+                                    prefix: m.prefix_length,
+                                    upload: false, // default; upload is unknown
+                                };
+                                mapping_unknown.insert(k.clone());
+                                mapping_current.insert(
+                                    k,
+                                    MappingVal { handle: m.tc_handle, cpu: m.cpu },
+                                );
+                                continue;
+                            },
+                        };
+                        mapping_current.insert(key, MappingVal { handle: m.tc_handle, cpu: m.cpu });
+                    }
+                }
+            }
+            anyhow::Ok(())
+        })
+    }
+
     {
         let Ok(config) = lqos_config::load_config() else {
             error!("Failed to load configuration, exiting Bakery thread.");
@@ -86,6 +226,91 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         debug!("Bakery received command: {:?}", command);
 
         match command {
+            // Mapping events (mirrored from lqosd bus handling)
+            BakeryCommands::MapIp {
+                ip_address,
+                tc_handle,
+                cpu,
+                upload,
+            } => {
+                handle_map_ip(&ip_address, tc_handle, cpu, upload, &mut mapping_staged);
+            }
+            BakeryCommands::DelIp { ip_address, upload } => {
+                handle_del_ip(&ip_address, upload, &mut mapping_staged, &mut mapping_current);
+            }
+            BakeryCommands::ClearIpAll => {
+                mapping_current.clear();
+                mapping_unknown.clear();
+                mapping_staged = None;
+            }
+            BakeryCommands::CommitMappings => {
+                // Ensure we are seeded before first commit to avoid assuming empty kernel state.
+                if !mapping_seeded {
+                    match attempt_seed_mappings(&circuits, &mut mapping_current, &mut mapping_unknown) {
+                        Ok(_) => {
+                            info!("Bakery: Seeded IP mappings from kernel");
+                            mapping_seeded = true;
+                        }
+                        Err(e) => warn!("Bakery: Failed to seed IP mappings: {:?}", e),
+                    }
+                }
+
+                if let Some(staged) = mapping_staged.take() {
+                    // Remove stale mappings: present in current, not in staged; never delete unknowns
+                    let mut stale = Vec::new();
+                    for k in mapping_current.keys() {
+                        if mapping_unknown.contains(k) {
+                            continue; // don't touch unknowns
+                        }
+                        if !staged.contains_key(k) {
+                            stale.push(k.clone());
+                        }
+                    }
+
+                    if !stale.is_empty() {
+                        // Batch deletions via the bus client
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build();
+                        if let Ok(rt) = rt {
+                            let stale_to_delete = stale.clone();
+                            let _ = rt.block_on(async move {
+                                if let Ok(mut bus) = LibreqosBusClient::new().await {
+                                    // chunk operations to keep request sizes reasonable
+                                    const CHUNK: usize = 512;
+                                    for chunk in stale_to_delete.chunks(CHUNK) {
+                                        let mut reqs = Vec::with_capacity(chunk.len());
+                                        for k in chunk.iter() {
+                                            // Recompose an IP string with prefix if not host (/32 or /128)
+                                            let ip = if k.prefix == 32 || k.prefix == 128 {
+                                                k.ip.clone()
+                                            } else {
+                                                format!("{}/{}", k.ip, k.prefix)
+                                            };
+                                            reqs.push(BusRequest::DelIpFlow {
+                                                ip_address: ip,
+                                                upload: k.upload,
+                                            });
+                                        }
+                                        let _ = bus.request(reqs).await;
+                                    }
+                                }
+                            });
+                        } else {
+                            warn!("Bakery: Unable to create runtime for stale IP deletions");
+                        }
+
+                        for k in stale.into_iter() {
+                            mapping_current.remove(&k);
+                        }
+                    }
+
+                    // Merge staged into current (they are already applied in kernel by lqosd)
+                    for (k, v) in staged.into_iter() {
+                        mapping_current.insert(k, v);
+                    }
+                }
+            }
             BakeryCommands::StartBatch => {
                 batch = Some(Vec::new());
             }

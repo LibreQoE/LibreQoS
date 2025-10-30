@@ -47,6 +47,28 @@ pub enum ExecutionMode {
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
+    /// Add or update an IP mapping (mirrors `MapIpToFlow` from the bus)
+    MapIp {
+        /// The IP address to map (may include CIDR prefix)
+        ip_address: String,
+        /// Classifier handle (major:minor)
+        tc_handle: TcHandle,
+        /// CPU index
+        cpu: u32,
+        /// Upload map (on-a-stick second map)
+        upload: bool,
+    },
+    /// Delete an IP mapping (mirrors `DelIpFlow` from the bus)
+    DelIp {
+        /// The IP address to unmap (may include CIDR prefix)
+        ip_address: String,
+        /// Upload map (on-a-stick second map)
+        upload: bool,
+    },
+    /// Clear all IP mappings (mirrors `ClearIpFlow` from the bus)
+    ClearIpAll,
+    /// Commit the current set of staged IP mappings and perform stale cleanup.
+    CommitMappings,
     /// Send this when circuits are seen by the throughput tracker
     OnCircuitActivity {
         /// All active circuit IDs
