@@ -102,6 +102,7 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         class_major,
         up_class_major,
         ip_addresses,
+        sqm_override,
         ..
     } = a
     else {
@@ -119,6 +120,7 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         class_major: other_class_major,
         up_class_major: other_up_class_major,
         ip_addresses: other_ip_addresses,
+        sqm_override: other_sqm_override,
         ..
     } = b
     else {
@@ -139,7 +141,8 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
     let speed = download_bandwidth_min != other_download_bandwidth_min
         || upload_bandwidth_min != other_upload_bandwidth_min
         || download_bandwidth_max != other_download_bandwidth_max
-        || upload_bandwidth_max != other_upload_bandwidth_max;
+        || upload_bandwidth_max != other_upload_bandwidth_max
+        || sqm_override != other_sqm_override; // treat SQM override changes as speed-level changes
 
     let ip = ip_addresses != other_ip_addresses;
 

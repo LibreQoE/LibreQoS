@@ -77,6 +77,8 @@ struct Migration {
     final_minor: u16,
     // IP list for remapping
     ips: Vec<String>,
+    // Per-circuit SQM override ("cake" or "fq_codel"), if any
+    sqm_override: Option<String>,
     stage: MigrationStage,
 }
 
@@ -166,6 +168,7 @@ fn build_temp_add_cmd(
         class_major,
         up_class_major,
         ip_addresses,
+        sqm_override,
         ..
     } = base
     {
@@ -181,6 +184,7 @@ fn build_temp_add_cmd(
             class_major: *class_major,
             up_class_major: *up_class_major,
             ip_addresses: ip_addresses.clone(),
+            sqm_override: sqm_override.clone(),
         })
     } else {
         None
@@ -538,6 +542,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
                                     ip_addresses: "".to_string(),
+                                    sqm_override: mig.sqm_override.clone(),
                                 },
                                 mig.shadow_minor,
                                 mig.old_down_min,
@@ -604,6 +609,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
                                     ip_addresses: "".to_string(),
+                                    sqm_override: mig.sqm_override.clone(),
                                 },
                                 mig.old_minor,
                                 mig.old_down_min,
@@ -678,6 +684,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
                                     ip_addresses: "".to_string(),
+                                    sqm_override: mig.sqm_override.clone(),
                                 },
                                 mig.shadow_minor,
                                 mig.old_down_min,
@@ -922,6 +929,7 @@ fn handle_commit_batch(
                     class_major,
                     up_class_major,
                     ip_addresses,
+                    sqm_override,
                 } = cmd.as_ref()
                 {
                     let was_activated = live_circuits.contains_key(circuit_hash);
@@ -956,6 +964,7 @@ fn handle_commit_batch(
                                         shadow_minor,
                                         final_minor: *class_minor,
                                         ips: parse_ip_list(ip_addresses),
+                                        sqm_override: sqm_override.clone(),
                                         stage: MigrationStage::PrepareShadow,
                                     };
                                     migrations.insert(*circuit_hash, mig);

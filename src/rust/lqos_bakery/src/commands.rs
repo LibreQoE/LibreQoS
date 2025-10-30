@@ -1,13 +1,14 @@
 use crate::MQ_CREATED;
 use crate::queue_math::{
     format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup,
+    sqm_tokens_for,
 };
 use allocative::Allocative;
 use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -21,7 +22,7 @@ struct AddSiteParams {
     upload_bandwidth_max: f32,
 }
 
-#[derive(Debug, Clone, Copy, Allocative)]
+#[derive(Debug, Clone, Allocative)]
 struct AddCircuitParams {
     circuit_hash: i64,
     parent_class_id: TcHandle,
@@ -33,6 +34,8 @@ struct AddCircuitParams {
     upload_bandwidth_max: f32,
     class_major: u16,
     up_class_major: u16,
+    // Optional per-circuit SQM override: "cake" or "fq_codel"
+    sqm_override: Option<String>,
 }
 
 /// Execution Mode
@@ -46,7 +49,7 @@ pub enum ExecutionMode {
 
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
-pub enum BakeryCommands {
+    pub enum BakeryCommands {
     /// Notification that the bus socket is ready; bakery can seed mappings
     BusReady,
     /// Add or update an IP mapping (mirrors `MapIpToFlow` from the bus)
@@ -149,6 +152,8 @@ pub enum BakeryCommands {
         up_class_major: u16,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
+        /// Optional per-circuit SQM override: "cake" or "fq_codel"
+        sqm_override: Option<String>,
     },
     /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
@@ -223,6 +228,7 @@ impl BakeryCommands {
                 class_major,
                 up_class_major,
                 ip_addresses: _,
+                sqm_override,
             } => Self::add_circuit(
                 execution_mode,
                 config,
@@ -237,6 +243,7 @@ impl BakeryCommands {
                     upload_bandwidth_max: *upload_bandwidth_max,
                     class_major: *class_major,
                     up_class_major: *up_class_major,
+                    sqm_override: sqm_override.clone(),
                 },
             ),
             _ => None,
@@ -582,6 +589,17 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
+        if let Some(ref s) = params.sqm_override {
+            if s.eq_ignore_ascii_case("fq_codel") {
+                debug!(
+                    "Bakery: building AddCircuit with fq_codel override (circuit_hash={}, class_minor=0x{:x}, class_major=0x{:x}, up_class_major=0x{:x})",
+                    params.circuit_hash,
+                    params.class_minor,
+                    params.class_major,
+                    params.up_class_major
+                );
+            }
+        }
         let do_htb;
         let do_sqm;
 
@@ -674,7 +692,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(params.download_bandwidth_max, config));
+            sqm_command.extend(sqm_tokens_for(
+                params.download_bandwidth_max,
+                config,
+                &params.sqm_override,
+            ));
             result.push(sqm_command);
         }
 
@@ -712,7 +734,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
-            sqm_command.extend(sqm_rate_fixup(params.upload_bandwidth_max, config));
+            sqm_command.extend(sqm_tokens_for(
+                params.upload_bandwidth_max,
+                config,
+                &params.sqm_override,
+            ));
             result.push(sqm_command);
         }
 

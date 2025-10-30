@@ -133,6 +133,9 @@ impl ConfigShapedDevices {
         let mut reader = ReaderBuilder::new()
             .comment(Some(b'#'))
             .trim(csv::Trim::All)
+            // Allow optional trailing fields like per-circuit SQM override
+            // without forcing all rows to match header length.
+            .flexible(true)
             .from_reader(utf8_bytes.as_slice());
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])

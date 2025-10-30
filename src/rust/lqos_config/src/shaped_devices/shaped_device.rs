@@ -57,6 +57,12 @@ pub struct ShapedDevice {
     /// Generic comments field, does nothing.
     pub comment: String,
 
+    /// Optional per-circuit SQM override token. Strictly limited to
+    /// "cake" or "fq_codel" when present. Empty or missing means
+    /// "use global default".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sqm_override: Option<String>,
+
     /// Hash of the circuit ID, used for internal lookups.
     #[serde(skip)]
     pub circuit_hash: i64,
@@ -75,7 +81,7 @@ impl ShapedDevice {
     ///
     /// This function parses a CSV record containing device configuration data and constructs
     /// a `ShapedDevice` with all necessary fields populated. The CSV record must contain
-    /// exactly 13 fields in the following order:
+    /// exactly 13 fields in the following order (optionally a 14th `sqm` field may be present):
     ///
     /// 1. Circuit ID
     /// 2. Circuit Name
@@ -90,6 +96,7 @@ impl ShapedDevice {
     /// 11. Download Max Mbps
     /// 12. Upload Max Mbps
     /// 13. Comment
+    /// 14. sqm (optional; allowed values: "cake" or "fq_codel")
     ///
     /// # Arguments
     ///
@@ -106,7 +113,8 @@ impl ShapedDevice {
     /// * The bandwidth values (min/max upload/download) cannot be parsed as unsigned integers
     /// * The CSV record doesn't contain the expected number of fields
     pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
-        Ok(Self {
+        // Parse mandatory fields (first 13 entries)
+        let mut device = Self {
             circuit_id: record[0].to_string(),
             circuit_name: record[1].to_string(),
             device_id: record[2].to_string(),
@@ -164,10 +172,28 @@ impl ShapedDevice {
                 rate
             },
             comment: record[12].to_string(),
+            sqm_override: None,
             circuit_hash: hash_to_i64(&record[0]),
             device_hash: hash_to_i64(&record[2]),
             parent_hash: hash_to_i64(&record[4]),
-        })
+        };
+
+        // Optional 14th field: per-circuit SQM override token
+        if record.len() >= 14 {
+            let token = record[13].trim().to_lowercase();
+            if !token.is_empty() {
+                match token.as_str() {
+                    "cake" | "fq_codel" => device.sqm_override = Some(token),
+                    other => {
+                        return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                            "Invalid sqm override '{other}'. Allowed values: 'cake' or 'fq_codel'"
+                        )));
+                    }
+                }
+            }
+        }
+
+        Ok(device)
     }
 
     pub(crate) fn parse_cidr_v4(address: &str) -> Result<(Ipv4Addr, u32), ShapedDevicesError> {

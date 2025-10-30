@@ -107,3 +107,47 @@ pub(crate) fn sqm_rate_fixup(rate: f32, config: &Arc<lqos_config::Config>) -> Ve
     }
     result
 }
+
+/// Build SQM token vector for a circuit given an optional per-circuit override.
+/// - None: use config default with cake low-rate RTT fixups (existing behavior)
+/// - Some("fq_codel"): use fq_codel
+/// - Some("cake"): use config default if it starts with "cake", otherwise fallback to
+///   "cake diffserv4"; then apply low-rate RTT fixups.
+pub(crate) fn sqm_tokens_for(
+    rate: f32,
+    config: &Arc<lqos_config::Config>,
+    override_opt: &Option<String>,
+) -> Vec<String> {
+    match override_opt.as_deref() {
+        None => sqm_rate_fixup(rate, config),
+        Some("fq_codel") => vec!["fq_codel".to_string()],
+        Some("cake") => {
+            let default = &config.queues.default_sqm;
+            let mut base = if default.starts_with("cake") {
+                sqm_as_vec(config)
+            } else {
+                vec!["cake".to_string(), "diffserv4".to_string()]
+            };
+            // If RTT already specified, leave as-is; otherwise apply low-rate fixups
+            let has_rtt = base.iter().any(|s| s == "rtt");
+            if !has_rtt {
+                // Mirror the thresholds used in sqm_rate_fixup
+                if rate <= 1.0 {
+                    base.push("rtt".to_string());
+                    base.push("300".to_string());
+                } else if rate <= 2.0 {
+                    base.push("rtt".to_string());
+                    base.push("180".to_string());
+                } else if rate <= 3.0 {
+                    base.push("rtt".to_string());
+                    base.push("140".to_string());
+                } else if rate <= 4.0 {
+                    base.push("rtt".to_string());
+                    base.push("120".to_string());
+                }
+            }
+            base
+        }
+        Some(_) => sqm_rate_fixup(rate, config), // defensive fallback
+    }
+}

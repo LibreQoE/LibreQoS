@@ -944,6 +944,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     },
 }
 
@@ -1028,6 +1029,7 @@ impl Bakery {
                                     class_major,
                                     up_class_major,
                                     ip_addresses,
+                                    sqm_override,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
@@ -1041,6 +1043,7 @@ impl Bakery {
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
                                         ip_addresses: ip_addresses.clone(),
+                                        sqm_override: sqm_override.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -1107,6 +1110,7 @@ impl Bakery {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1122,6 +1126,7 @@ impl Bakery {
             class_major,
             up_class_major,
             ip_addresses,
+            sqm_override,
         };
         self.queue.push(command);
         Ok(())
