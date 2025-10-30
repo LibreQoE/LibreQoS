@@ -755,7 +755,16 @@ def refreshShapers():
 			# - After processing all circuits for a node, we add CIRCUIT_PADDING to the minor counter
 			# - This creates gaps that allow adding new circuits without affecting other ClassIDs
 			# - Children are also sorted before recursive processing to ensure deterministic traversal
-			for node in sorted(data.keys()):
+			# For top-level binpacked keys (CpueQueueN), enforce numeric ordering of N
+			keys = list(data.keys())
+			if depth == 0 and len(keys) > 0 and all(k.startswith("CpueQueue") for k in keys):
+				try:
+					keys.sort(key=lambda k: int(k.replace("CpueQueue", "")))
+				except Exception:
+					keys = sorted(keys)
+			else:
+				keys = sorted(keys)
+			for node in keys:
 				#if data[node]['type'] == "virtual":
 				#	print(node + " is a virtual node. Skipping.")
 				#	if depth == 0:
@@ -903,6 +912,11 @@ def refreshShapers():
 			print("BinPacking is enabled, so we're going to sort your network.")
 			cpuBin = {}
 			weights = get_tree_weights()
+			# Stable tie-breaking: sort by (-weight, name) so equal weights have deterministic order
+			try:
+				weights = sorted(weights, key=lambda w: (-int(w.weight), str(w.name)))
+			except Exception:
+				pass
 			for w in weights:
 				cpuBin[w.name] = w.weight
 			bins = binpacking.to_constant_bin_number(cpuBin, queuesAvailable)
@@ -917,7 +931,8 @@ def refreshShapers():
 					'type': 'site',
 					'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
 					'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
-					'children': {}
+					'children': {},
+					'name': cpuKey
 				}
 			for node in network:
 				found = False
@@ -1009,7 +1024,7 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in sorted(data.keys()):
-				site_name = data[node]['name'] if 'name' in data[node] else "root"
+				site_name = data[node]['name'] if 'name' in data[node] else node
 				bakery.add_site(
 					site_name,
 					data[node]['parentClassID'],
