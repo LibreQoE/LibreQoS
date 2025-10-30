@@ -10,6 +10,7 @@ pub enum PublishedChannels {
     RttHistogram,
     FlowCount,
     TopDownloads,
+    TopUploads,
     WorstRTT,
     WorstRetransmits,
     TopFlowsBytes,

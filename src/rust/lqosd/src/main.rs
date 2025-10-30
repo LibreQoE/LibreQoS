@@ -340,6 +340,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetTopNDownloaders { start, end } => {
                 throughput_tracker::top_n(*start, *end)
             }
+            BusRequest::GetTopNUploaders { start, end } => {
+                throughput_tracker::top_n_up(*start, *end)
+            }
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)

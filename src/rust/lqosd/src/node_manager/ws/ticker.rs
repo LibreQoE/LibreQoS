@@ -52,6 +52,7 @@ async fn one_second_cadence(
             rtt_histogram::rtt_histo(channels.clone(), bus_tx.clone()),
             flow_counter::flow_count(channels.clone(), bus_tx.clone()),
             top_10::top_10_downloaders(channels.clone(), bus_tx.clone()),
+            top_10::top_10_uploaders(channels.clone(), bus_tx.clone()),
             top_10::worst_10_downloaders(channels.clone(), bus_tx.clone()),
             top_10::worst_10_retransmit(channels.clone(), bus_tx.clone()),
             top_flows::top_flows_bytes(channels.clone(), bus_tx.clone()),
