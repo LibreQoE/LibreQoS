@@ -6,15 +6,21 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "LibreQoS"
-copyright = "2024, LibreQoE, LLC"
-author = "Zach Biles"
-release = "2.0"
+import datetime
+year = datetime.date.today().year
+
+project = "LibreQoE"
+copyright = str(year) + ", LibreQoE, LLC"
+author = "LibreQoE, LLC"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = ["myst_parser"]
+
+myst_enable_extensions = [
+    'substitution'
+]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
@@ -40,3 +46,17 @@ html_theme_options = {
     'includehidden': True,
     'titles_only': False
 }
+
+def ultimateReplace(app, docname, source):
+    result = source[0]
+    for key in app.config.ultimate_replacements:
+        result = result.replace(key, app.config.ultimate_replacements[key])
+    source[0] = result
+
+ultimate_replacements = {
+    "{deb_url_v1_5}" : "https://download.libreqos.com/libreqos_1.5-RC2.202510052233-1_amd64.deb"
+}
+
+def setup(app):
+   app.add_config_value('ultimate_replacements', {}, True)
+   app.connect('source-read', ultimateReplace)
