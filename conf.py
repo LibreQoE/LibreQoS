@@ -6,9 +6,12 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+import datetime
+year = datetime.date.today().year
+
 project = "LibreQoE"
-copyright = "2024, LibreQoE, LLC"
-author = "Zach Biles"
+copyright = str(year) + ", LibreQoE, LLC"
+author = "LibreQoE, LLC"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
