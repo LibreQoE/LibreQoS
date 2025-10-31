@@ -27,6 +27,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
+    fast_queues_fq_codel, \
     Bakery
 
 R2Q = 10
@@ -1115,9 +1116,20 @@ def refreshShapers():
                             # SQM Fixup for lower rates (and per-circuit override)
                             def effective_sqm_str(rate, override):
                                 base = sqm()
-                                if override is None or override == '':
+                                # Treat None, empty, or falsy as no override
+                                if not override:
+                                    # Apply fast-queue threshold: prefer fq_codel for very fast circuits when no override
+                                    try:
+                                        thresh = fast_queues_fq_codel()
+                                    except Exception:
+                                        thresh = 1000.0
+                                    if rate >= thresh:
+                                        return 'fq_codel'
                                     return sqmFixupRate(rate, base)
-                                ov = override.lower()
+                                try:
+                                    ov = str(override).strip().lower()
+                                except Exception:
+                                    ov = ''
                                 if ov == 'none':
                                     return ''
                                 if ov == 'fq_codel':

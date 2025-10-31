@@ -119,7 +119,14 @@ pub(crate) fn sqm_tokens_for(
     override_opt: &Option<String>,
 ) -> Vec<String> {
     match override_opt.as_deref() {
-        None => sqm_rate_fixup(rate, config),
+        None => {
+            // Prefer fq_codel for very fast circuits if configured
+            let threshold = config.queues.fast_queues_fq_codel.unwrap_or(1000.0) as f32;
+            if rate >= threshold {
+                return vec!["fq_codel".to_string()];
+            }
+            sqm_rate_fixup(rate, config)
+        }
         Some("fq_codel") => vec!["fq_codel".to_string()],
         Some("cake") => {
             let default = &config.queues.default_sqm;
