@@ -23,3 +23,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
+
+rst_epilog = """
+.. |deb_url_v1_5| replace:: https://download.libreqos.com/libreqos_1.5-RC2.202510052233-1_amd64.deb
+"""
