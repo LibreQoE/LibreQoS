@@ -764,15 +764,24 @@ function subscribeToCake() {
             try {
                 const kindDown = (msg.kind_down || '').toLowerCase();
                 const kindUp = (msg.kind_up || '').toLowerCase();
-                let displayKind = 'Shaper Overview';
-                if (kindDown === 'cake' || kindUp === 'cake') {
-                    displayKind = 'CAKE Shaper Overview';
-                } else if (kindDown === 'fq_codel' || kindUp === 'fq_codel') {
-                    displayKind = 'fq_codel Shaper Overview';
-                }
                 const tabBtn = document.getElementById('cake-tab');
-                if (tabBtn) {
-                    tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+                const tabLi = tabBtn ? tabBtn.parentElement : null;
+                if (kindDown === 'none' && kindUp === 'none') {
+                    // Hide the shaper overview tab entirely for SQM=none
+                    if (tabLi) tabLi.style.display = 'none';
+                    const tabContent = document.getElementById('cake');
+                    if (tabContent) tabContent.style.display = 'none';
+                    return; // Skip building graphs
+                } else {
+                    let displayKind = 'Shaper Overview';
+                    if (kindDown === 'cake' || kindUp === 'cake') {
+                        displayKind = 'CAKE Shaper Overview';
+                    } else if (kindDown === 'fq_codel' || kindUp === 'fq_codel') {
+                        displayKind = 'fq_codel Shaper Overview';
+                    }
+                    if (tabBtn) {
+                        tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+                    }
                 }
             } catch (e) { /* ignore */ }
             const cakeTab = document.getElementById("cake");

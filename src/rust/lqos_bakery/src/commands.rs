@@ -601,7 +601,7 @@ impl BakeryCommands {
             }
         }
         let do_htb;
-        let do_sqm;
+        let mut do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
             // In builder mode, if we're fully lazy - we don't do anything.
@@ -635,6 +635,13 @@ impl BakeryCommands {
                     do_htb = true;
                     do_sqm = true;
                 }
+            }
+        }
+
+        // If override is 'none', disable SQM regardless of lazy settings
+        if let Some(ref s) = params.sqm_override {
+            if s.eq_ignore_ascii_case("none") {
+                do_sqm = false;
             }
         }
 
@@ -771,6 +778,7 @@ impl BakeryCommands {
             class_minor,
             class_major,
             up_class_major,
+            sqm_override,
             ..
         } = self
         else {
@@ -804,6 +812,9 @@ impl BakeryCommands {
                 }
             }
         }
+
+        // If SQM was disabled via override, skip pruning qdisc
+        let prune_sqm = prune_sqm && !matches!(sqm_override.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
 
         if prune_sqm {
             // Prune the SQM qdisc

@@ -183,7 +183,7 @@ impl ShapedDevice {
             let token = record[13].trim().to_lowercase();
             if !token.is_empty() {
                 match token.as_str() {
-                    "cake" | "fq_codel" => device.sqm_override = Some(token),
+                    "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
                     other => {
                         return Err(ShapedDevicesError::CsvEntryParseError(format!(
                             "Invalid sqm override '{other}'. Allowed values: 'cake' or 'fq_codel'"

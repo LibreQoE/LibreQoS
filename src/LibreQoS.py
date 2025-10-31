@@ -1118,6 +1118,8 @@ def refreshShapers():
                                 if override is None or override == '':
                                     return sqmFixupRate(rate, base)
                                 ov = override.lower()
+                                if ov == 'none':
+                                    return ''
                                 if ov == 'fq_codel':
                                     return 'fq_codel'
                                 if ov == 'cake':
@@ -1126,8 +1128,9 @@ def refreshShapers():
                                 return sqmFixupRate(rate, base)
                             sqm_override = circuit['sqm'] if 'sqm' in circuit else None
                             useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override)
-                            command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                            linuxTCcommands.append(command)
+                            if useSqm != '':
+                                command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                                linuxTCcommands.append(command)
                         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
                         linuxTCcommands.append(command)
                         # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
@@ -1135,9 +1138,9 @@ def refreshShapers():
                             # SQM Fixup for lower rates (and per-circuit override)
                             sqm_override = circuit['sqm'] if 'sqm' in circuit else None
                             useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override)
-                            command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                            linuxTCcommands.append(command)
-                        pass
+                            if useSqm != '':
+                                command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                                linuxTCcommands.append(command)
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:

@@ -63,12 +63,12 @@ impl Into<QueueStoreTransit> for QueueStore {
         let kind_down = match &self.current_download {
             QueueType::Cake(_) => "cake",
             QueueType::FqCodel(_) => "fq_codel",
-            _ => "",
+            _ => "none",
         };
         let kind_up = match &self.current_upload {
             QueueType::Cake(_) => "cake",
             QueueType::FqCodel(_) => "fq_codel",
-            _ => "",
+            _ => "none",
         };
         QueueStoreTransit {
             history: self
