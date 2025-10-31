@@ -19,8 +19,8 @@
 cd ~
 sudo apt-get update
 sudo apt-get upgrade
-wget https://download.libreqos.com/libreqos_1.5-RC2.202510052233-1_amd64.deb
-sudo apt install ./libreqos_1.5-RC2.202510052233-1_amd64.deb
+wget {deb_url_v1_5}
+sudo apt install ./{deb_url_v1_5}
 ```
 
 ### Instalación con Git (Solo para Desarrolladores - No Recomendado)
