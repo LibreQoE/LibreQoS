@@ -79,6 +79,7 @@ function newSdRow() {
         download_max_mbps: 100,
         upload_max_mbps: 100,
         comment: "",
+        sqm_override: "",
     });
     shapedDevices();
 }
@@ -92,7 +93,7 @@ function shapedDevices() {
     console.log(shaped_devices);
     let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
     html += "<thead style='position: sticky; top: 0; height: 50px; background: navy; color: white;'>";
-    html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
+    html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th>SQM</th><th></th></th></tr>";
     html += "</thead>";
     for (var i=0; i<shaped_devices.length; i++) {
         let row = shaped_devices[i];
@@ -110,6 +111,18 @@ function shapedDevices() {
         html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
         html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
         html += makeSheetBox(i, "comment", row.comment, true);
+        // SQM override dropdown (optional)
+        let selectedSqm = (row.sqm_override || "").toLowerCase();
+        let sqmHtml = "<td style='padding: 0px'>";
+        sqmHtml += "<select id='" + rowPrefix(i, "sqm_override") + "' style='font-size: 8pt; width: 120px;'>";
+        const opts = ["", "cake", "fq_codel", "none"]; // empty means default
+        const labels = {"": "(default)", "cake": "cake", "fq_codel": "fq_codel", "none": "none"};
+        for (let k = 0; k < opts.length; k++) {
+            const v = opts[k];
+            sqmHtml += "<option value='" + v + "'" + (selectedSqm === v ? " selected" : "") + ">" + labels[v] + "</option>";
+        }
+        sqmHtml += "</select></td>";
+        html += sqmHtml;
         html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
 
         html += "</tr>";
@@ -156,6 +169,13 @@ function start() {
             row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
             row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
             row.comment = $("#" + rowPrefix(i, "comment")).val();
+            const sqmSel = $("#" + rowPrefix(i, "sqm_override")).val();
+            // Store empty selection as undefined (omit) to default to global setting
+            if (sqmSel && sqmSel.length > 0) {
+                row.sqm_override = sqmSel;
+            } else {
+                delete row.sqm_override;
+            }
         }
 
         saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
