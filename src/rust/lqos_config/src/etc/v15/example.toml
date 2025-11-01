@@ -53,12 +53,19 @@ allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/16", "192.168.0.0/1
 circuit_name_as_address = false
 always_overwrite_network_json = false
 queue_refresh_interval_mins = 30
+use_mikrotik_ipv6 = false
 
 [spylnx_integration]
 enable_spylnx = false
 api_key = ""
 api_secret = ""
 url = ""
+
+[netzur_integration]
+enable_netzur = false
+api_key = ""
+api_url = ""
+timeout_secs = 60
 
 [uisp_integration]
 enable_uisp = false

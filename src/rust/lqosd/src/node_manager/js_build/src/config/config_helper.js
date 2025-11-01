@@ -146,6 +146,7 @@ export function renderConfigMenu(currentPage) {
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_spylnx.html", icon: "fa-link", text: "Splynx", id: "spylnx" },
+        { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
         { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
         { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },

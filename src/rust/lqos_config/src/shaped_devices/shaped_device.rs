@@ -57,6 +57,12 @@ pub struct ShapedDevice {
     /// Generic comments field, does nothing.
     pub comment: String,
 
+    /// Optional per-circuit SQM override token. Strictly limited to
+    /// "cake" or "fq_codel" when present. Empty or missing means
+    /// "use global default".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sqm_override: Option<String>,
+
     /// Hash of the circuit ID, used for internal lookups.
     #[serde(skip)]
     pub circuit_hash: i64,
@@ -75,7 +81,7 @@ impl ShapedDevice {
     ///
     /// This function parses a CSV record containing device configuration data and constructs
     /// a `ShapedDevice` with all necessary fields populated. The CSV record must contain
-    /// exactly 13 fields in the following order:
+    /// exactly 13 fields in the following order (optionally a 14th `sqm` field may be present):
     ///
     /// 1. Circuit ID
     /// 2. Circuit Name
@@ -90,6 +96,10 @@ impl ShapedDevice {
     /// 11. Download Max Mbps
     /// 12. Upload Max Mbps
     /// 13. Comment
+    /// 14. sqm (optional; allowed values: "cake", "fq_codel", "none", or
+    ///     a directional override in the form "down/up". Either side may be
+    ///     empty to indicate no override for that direction, e.g. "cake/" or
+    ///     "/fq_codel".)
     ///
     /// # Arguments
     ///
@@ -106,7 +116,8 @@ impl ShapedDevice {
     /// * The bandwidth values (min/max upload/download) cannot be parsed as unsigned integers
     /// * The CSV record doesn't contain the expected number of fields
     pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
-        Ok(Self {
+        // Parse mandatory fields (first 13 entries)
+        let mut device = Self {
             circuit_id: record[0].to_string(),
             circuit_name: record[1].to_string(),
             device_id: record[2].to_string(),
@@ -164,10 +175,51 @@ impl ShapedDevice {
                 rate
             },
             comment: record[12].to_string(),
+            sqm_override: None,
             circuit_hash: hash_to_i64(&record[0]),
             device_hash: hash_to_i64(&record[2]),
             parent_hash: hash_to_i64(&record[4]),
-        })
+        };
+
+        // Optional 14th field: per-circuit SQM override token
+        if record.len() >= 14 {
+            let raw = record[13].trim();
+            if !raw.is_empty() {
+                // Normalize case and whitespace around optional '/'
+                let token = raw.to_lowercase();
+                if token.contains('/') {
+                    // Directional override: down/up (either may be empty)
+                    let mut parts = token.splitn(2, '/');
+                    let down = parts.next().unwrap_or("").trim();
+                    let up = parts.next().unwrap_or("").trim();
+
+                    // Validate each side if present
+                    let valid = |s: &str| -> bool {
+                        matches!(s, "" | "cake" | "fq_codel" | "none")
+                    };
+                    if !valid(down) || !valid(up) {
+                        return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                            "Invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"
+                        )));
+                    }
+
+                    // Store normalized (trimmed, lowercase) representation exactly as down/up
+                    device.sqm_override = Some(format!("{down}/{up}"));
+                } else {
+                    // Single token applies to both directions when used
+                    match token.as_str() {
+                        "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
+                        other => {
+                            return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                                "Invalid sqm override '{other}'. Allowed values: 'cake', 'fq_codel', 'none', or down/up"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(device)
     }
 
     pub(crate) fn parse_cidr_v4(address: &str) -> Result<(Ipv4Addr, u32), ShapedDevicesError> {

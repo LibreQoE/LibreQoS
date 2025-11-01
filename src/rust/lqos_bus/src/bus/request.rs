@@ -284,6 +284,8 @@ pub enum BusRequest {
         up_class_major: u16,
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
+        /// Optional per-circuit SQM override: "cake" or "fq_codel"
+        sqm_override: Option<String>,
     },
 
     /// Get current Stormguard statistics

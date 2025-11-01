@@ -46,7 +46,7 @@ Más información sobre [configuración de integraciones aquí.](integrations-es
 
 Network.json permite a los operadores de internet (ISP) definir una topología de red jerárquica o plana.
 
-Si planea usar las integraciones ya incluidas en LibreQoS de UISP o Splynx, no necesita todavía crear un archivo network.json.
+Si planea usar las integraciones ya incluidas en LibreQoS de UISP, Splynx o Netzur, no necesita todavía crear un archivo network.json.
 Si planea usar la integración ya incluida de UISP, el archivo network.json se creará en automático durante la primera ejecución (siempre y cuando network.json no exista previamente).
 
 Si no planea usar una integración, puede definir manualmente el archivo network.json siguiendo el archivo de plantilla - [network.example.json](https://github.com/LibreQoE/LibreQoS/blob/develop/src/network.example.json). A continuación se muestra una ilustración en tabla del network.example.json. 

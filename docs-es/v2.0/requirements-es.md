@@ -33,7 +33,7 @@ A continuación se muestra una tabla de la capacidad agregada aproximada, suponi
 
 ### Hyper-threading
 
-Se recomienda desactivar Hyper-Threading (Simultaneous Multi-Threading) en la configuración del BIOS/UEFI, ya que puede interferir con el procesamiento de XDP.
+Se recomienda [desactivar Hyper-Threading](prereq-es.md) (Simultaneous Multi-Threading) en la configuración del BIOS/UEFI, ya que puede interferir con el procesamiento de XDP.
 
 ### Memory
 * RAM Recomendada:
@@ -66,6 +66,10 @@ Se recomienda disponer de 50 GB o más de espacio en disco, tanto para servidore
 | ECC                     | No                                                                                     |
 | Energía                   | 19V DC                                                                                 |
 
+##### MS-01 Notes:
+
+Al igual que con cualquier máquina que ejecute LibreQoS, asegúrese de [desactivar Hyper-Threading](prereq-es.md). Específicamente para el MS-01, considere [reemplazar la pasta térmica](https://www.youtube.com/watch?v=G70QtUAxomU) para reducir la temperatura de la CPU en aproximadamente 20 grados centígrados (Nota: esto puede anular la garantía).
+
 #### Servidores Rackmount (10G to 100G)
 
 |        Rendimiento       |                                     10 Gbps                                    |                                                                                               10 Gbps                                                                                               |                                                  25 Gbps                                                 | 50 Gbps                                                                               | 100 Gbps                                                                            |
@@ -83,6 +87,10 @@ Se recomienda disponer de 50 GB o más de espacio en disco, tanto para servidore
 
 Otra solución rentable es adquirir un servidor usado de un proveedor de confianza, como [TheServerStore](https://www.theserverstore.com/).
 Estos proveedores suelen ofrecer servidores capaces de manejar un rendimiento de 10 Gbps, por alrededor de 500 USD.
+
+#### Server Setup Prerequisites
+
+[Requisitos previos para la configuración del servidor](prereq-es.md)
 
 ### Requisitos de Interfaces de Red
 * Una interfaz de red de administración completamente separada de las interfaces de regulamiento de tráfico. Usualmente esta sería la interfaz Ethernet integrada en la placa base.

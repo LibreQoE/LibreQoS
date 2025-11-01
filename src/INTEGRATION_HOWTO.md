@@ -148,5 +148,35 @@ You can also add a call to `net.plotNetworkGraph(False)` (use `True` to also inc
 
 ![](testdata/network_new.png)
 
+### Per‑Circuit SQM Overrides (Download/Upload)
+
+LibreQoS supports optional per‑circuit SQM overrides via the last column (`sqm`) of `ShapedDevices.csv`.
+
+- Accepted values:
+  - Single token: `cake`, `fq_codel`, or `none` (applies to both directions)
+  - Directional: `down/up` where each side is one of `cake`, `fq_codel`, `none`, or empty
+- Directional semantics:
+  - Left token is download, right token is upload (e.g., `cake/fq_codel`)
+  - Either side may be empty to leave that direction at default (e.g., `cake/` or `/fq_codel`)
+  - `none` disables the SQM qdisc for that direction
+- Normalization: Values are trimmed and lower‑cased; case is ignored on load
+- Defaults and fast‑queues: If a side is unspecified (empty) or the entire field is empty, the global default SQM applies for that side. The “fast queues to fq_codel” threshold is evaluated per direction when no explicit override is set.
+
+Examples:
+
+```
+# Both directions cake
+...,cake
+
+# Download cake, upload fq_codel
+...,cake/fq_codel
+
+# Download explicit (fq_codel), upload default
+...,fq_codel/
+
+# Disable upload SQM only
+...,/none
+```
+
 ## Longest Prefix Match Tip
 You could theoretically throttle all unknown IPs until they are associated with a client. For example, you could limit every unknown to 1.5x0.5 with single entry in ShapedDevices.csv, until you associate them with an account. IPs need to be non-exact matches. So you can't have two 192.168.1.1 entries, but you can have a 192.168.1.0/24 subnet and a 192.168.1.2/32 - they aren't duplicates, and the LPM search is smart enough to pick the most exact match.

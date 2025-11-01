@@ -39,6 +39,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
+    m.add_function(wrap_pyfunction!(fast_queues_fq_codel, m)?)?;
     m.add_function(wrap_pyfunction!(
         upstream_bandwidth_capacity_download_mbps,
         m
@@ -62,6 +63,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ignore_subnets, m)?)?;
     m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
     m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
+    m.add_function(wrap_pyfunction!(integration_common_use_mikrotik_ipv6, m)?)?;
     m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
     m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
     m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
@@ -78,8 +80,12 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -483,6 +489,18 @@ fn sqm() -> PyResult<String> {
     Ok(config.queues.default_sqm.clone())
 }
 
+/// Returns the Mbps threshold at or above which (if no per-circuit override is set)
+/// fq_codel should be preferred to reduce overhead on very fast circuits.
+/// Defaults to 1000.0 Mbps if not configured.
+#[pyfunction]
+fn fast_queues_fq_codel() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .queues
+        .fast_queues_fq_codel
+        .unwrap_or(1000.0) as f32)
+}
+
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
@@ -582,7 +600,13 @@ fn circuit_name_use_address() -> PyResult<bool> {
 #[pyfunction]
 fn find_ipv6_using_mikrotik() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.uisp_integration.ipv6_with_mikrotik)
+    Ok(config.uisp_integration.ipv6_with_mikrotik || config.integration_common.use_mikrotik_ipv6)
+}
+
+#[pyfunction]
+fn integration_common_use_mikrotik_ipv6() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.use_mikrotik_ipv6)
 }
 
 #[pyfunction]
@@ -706,6 +730,42 @@ fn splynx_strategy() -> PyResult<String> {
 }
 
 #[pyfunction]
+fn netzur_api_key() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_key.clone())
+            .unwrap_or_default(),
+    )
+}
+
+#[pyfunction]
+fn netzur_api_url() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.api_url.clone())
+            .unwrap_or_default(),
+    )
+}
+
+#[pyfunction]
+fn netzur_api_timeout() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.timeout_secs)
+            .unwrap_or(60),
+    )
+}
+
+#[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.enable_uisp)
@@ -715,6 +775,18 @@ fn automatic_import_uisp() -> PyResult<bool> {
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.spylnx_integration.enable_spylnx)
+}
+
+#[pyfunction]
+fn automatic_import_netzur() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(
+        config
+            .netzur_integration
+            .as_ref()
+            .map(|cfg| cfg.enable_netzur)
+            .unwrap_or(false),
+    )
 }
 
 #[pyfunction]
@@ -1009,6 +1081,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     },
 }
 
@@ -1093,6 +1166,7 @@ impl Bakery {
                                     class_major,
                                     up_class_major,
                                     ip_addresses,
+                                    sqm_override,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
@@ -1106,6 +1180,7 @@ impl Bakery {
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
                                         ip_addresses: ip_addresses.clone(),
+                                        sqm_override: sqm_override.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -1172,6 +1247,7 @@ impl Bakery {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1187,6 +1263,7 @@ impl Bakery {
             class_major,
             up_class_major,
             ip_addresses,
+            sqm_override,
         };
         self.queue.push(command);
         Ok(())

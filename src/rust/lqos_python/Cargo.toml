@@ -21,3 +21,7 @@ nix = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 chrono = "0.4.33"
+
+[dev-dependencies]
+tempfile = "3.10"
+toml = "0.8"

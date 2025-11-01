@@ -37,8 +37,6 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/devicesAll", get(shaped_device_api::all_shaped_devices))
         .route("/networkTree", get(network_tree::get_network_tree))
         .route("/sanity", get(support::run_sanity_check))
-        .route("/gatherSupport", post(support::gather_support_data))
-        .route("/submitSupport", post(support::submit_support_data))
         .route("/ltsCheck", get(lts::stats_check))
         .route("/search", post(search::search))
         .route("/unknownIps", get(unknown_ips::unknown_ips))
