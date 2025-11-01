@@ -1,0 +1,2 @@
+(()=>{$("#btnLogin").on("click",()=>{let e=$("#username").val(),r=$("#password").val();if(e===""){alert("You must enter a username");return}if(r===""){alert("You must enter a password");return}let n={username:e,password:r};$.ajax({type:"POST",url:"/doLogin",data:JSON.stringify(n),contentType:"application/json",success:()=>{window.location.href="/index.html"},error:()=>{alert("Login Incorrect")}})});})();
+//# sourceMappingURL=login.js.map

@@ -33,7 +33,7 @@ function makeSheetBox(rowId, boxId, value, small=false) {
 }
 
 function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" step=\"any\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
     return html;
 }
 

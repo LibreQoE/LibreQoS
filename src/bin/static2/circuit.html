@@ -1,0 +1,119 @@
+<div class="row">
+    <div class="col-3">
+        <h5><i class="fa fa-user"></i> <span id="circuitName" class="redactable"></span></h5>
+        <table class="table">
+            <tr>
+                <td style="font-weight: bold">Parent Node</td>
+                <td><span id="parentNode" class="redactable"></span></td>
+            </tr>
+            <tr>
+                <td style="font-weight: bold">Maximum Speed</td>
+                <td><span id="bwMax"></span></td>
+            </tr>
+            <tr>
+                <td style="font-weight: bold">Minimum Speed</td>
+                <td><span id="bwMin"></span></td>
+            </tr>
+            <tr>
+                <td colspan="2" id="captureButton">
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div class="col-3">
+        <div id="bitsGauge" style="width: 100%; height: 200px;"></div>
+    </div>
+    <div class="col-3" id="throughputGraph">
+        <i class="fa fa-spinner fa-spin"></i> Loading...
+    </div>
+    <div class="col-3" id="rxmitGraph">
+        <i class="fa fa-spinner fa-spin"></i> Loading...
+    </div>
+
+</div>
+
+<ul class="nav nav-tabs" id="myTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="devs-tab" data-bs-toggle="tab" data-bs-target="#devs" type="button" role="tab" aria-controls="devs" aria-selected="true">
+            <i class="fa fa-server"></i> Devices
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false">
+            <i class="fa fa-map"></i> Active Flows <span id="activeFlowCount" class="badge">0</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            <i class="fa fa-table"></i> Network Traffic
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="funnel-tab" data-bs-toggle="tab" data-bs-target="#funnel" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            <i class="fa fa-tree"></i> Queue Tree
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="cake-tab" data-bs-toggle="tab" data-bs-target="#cake" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            <i class="fa fa-birthday-cake"></i> CAKE Shaper Overview
+        </button>
+    </li>
+</ul>
+<div class="tab-content" id="myTabContent">
+    <div class="tab-pane fade show active" id="devs" role="tabpanel" aria-labelledby="devs-tab">
+        <div class="row" id="devices">
+            <i class="fa fa-spinner fa-spin"></i> Loading Devices...
+        </div>
+    </div>
+    <div class="tab-pane fade" id="sankey" role="tabpanel" aria-labelledby="sankey-tab">
+        <div class="row">
+            <div class="col-12">
+                <div id="flowSankey" style="height: 600px; width: 1024px"></div>
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="traffic" role="tabpanel" aria-labelledby="traffic-tab">
+        <div class="row">
+            <div class="col-12" id="allTraffic">
+                <i class="fa fa-spinner fa-spin"></i> Loading Traffic...
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="funnel" role="tabpanel" aria-labelledby="funnel-tab">
+        <div class="row">
+            <div class="col-12" id="theFunnel">
+                <i class="fa fa-spinner fa-spin"></i> Loading Queue Tree...
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="cake" role="tabpanel" aria-labelledby="cake-tab">
+        <div class="row">
+            <div class="col-4">
+                <div id="cakeBacklog" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDelays" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeQueueLength" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeTraffic" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeMarks" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDrops" style="height: 250px"></div>
+            </div>
+            <div class="col-3">
+                Queue Memory: <span id="cakeQueueMemory">?</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+<script src="circuit.js"></script>

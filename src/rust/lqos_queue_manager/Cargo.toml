@@ -1,0 +1,10 @@
+[package]
+name = "lqos_queue_manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+crossbeam-channel = "0"
+tracing = "0"
+oneshot = "0"

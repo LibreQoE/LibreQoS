@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/login.js"],
+  "sourcesContent": ["$(\"#btnLogin\").on('click', () => {\n    let username = $(\"#username\").val();\n    let password = $(\"#password\").val();\n    if (username === \"\") {\n        alert(\"You must enter a username\");\n        return;\n    }\n    if (password === \"\") {\n        alert(\"You must enter a password\");\n        return;\n    }\n\n    let login = {\n        username: username,\n        password: password\n    }\n\n    $.ajax({\n        type: \"POST\",\n        url: \"/doLogin\",\n        data: JSON.stringify(login),\n        contentType: 'application/json',\n        success: () => {\n            window.location.href = \"/index.html\";\n        },\n        error: () => {\n            alert(\"Login Incorrect\");\n        }\n    })\n});"],
+  "mappings": "MAAA,EAAE,WAAW,EAAE,GAAG,QAAS,IAAM,CAC7B,IAAIA,EAAW,EAAE,WAAW,EAAE,IAAI,EAC9BC,EAAW,EAAE,WAAW,EAAE,IAAI,EAClC,GAAID,IAAa,GAAI,CACjB,MAAM,2BAA2B,EACjC,MACJ,CACA,GAAIC,IAAa,GAAI,CACjB,MAAM,2BAA2B,EACjC,MACJ,CAEA,IAAIC,EAAQ,CACR,SAAUF,EACV,SAAUC,CACd,EAEA,EAAE,KAAK,CACH,KAAM,OACN,IAAK,WACL,KAAM,KAAK,UAAUC,CAAK,EAC1B,YAAa,mBACb,QAAS,IAAM,CACX,OAAO,SAAS,KAAO,aAC3B,EACA,MAAO,IAAM,CACT,MAAM,iBAAiB,CAC3B,CACJ,CAAC,CACL,CAAC",
+  "names": ["username", "password", "login"]
+}

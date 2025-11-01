@@ -1,0 +1,2 @@
+(()=>{$("#btnCreateUser").on("click",()=>{let e=$("#username").val(),n=$("#password").val(),t=document.getElementById("allowAnonymous").checked;if(e===""){alert("You must enter a username");return}if(n===""){alert("You must enter a password");return}let a={allow_anonymous:t,username:e,password:n};$.ajax({type:"POST",url:"/firstLogin",data:JSON.stringify(a),contentType:"application/json",success:()=>{window.location.href="/index.html"},error:()=>{alert("Something went wrong")}})});})();
+//# sourceMappingURL=first-run.js.map

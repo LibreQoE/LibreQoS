@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/first-run.js"],
+  "sourcesContent": ["$(\"#btnCreateUser\").on('click', () => {\n    let username = $(\"#username\").val();\n    let password = $(\"#password\").val();\n    let anon = document.getElementById(\"allowAnonymous\").checked;\n    if (username === \"\") {\n        alert(\"You must enter a username\");\n        return;\n    }\n    if (password === \"\") {\n        alert(\"You must enter a password\");\n        return;\n    }\n\n    let login = {\n        allow_anonymous: anon,\n        username: username,\n        password: password\n    }\n    $.ajax({\n        type: \"POST\",\n        url: \"/firstLogin\",\n        data: JSON.stringify(login),\n        contentType: 'application/json',\n        success: () => {\n            window.location.href = \"/index.html\";\n        },\n        error: () => {\n            alert(\"Something went wrong\");\n        }\n    })\n});"],
+  "mappings": "MAAA,EAAE,gBAAgB,EAAE,GAAG,QAAS,IAAM,CAClC,IAAIA,EAAW,EAAE,WAAW,EAAE,IAAI,EAC9BC,EAAW,EAAE,WAAW,EAAE,IAAI,EAC9BC,EAAO,SAAS,eAAe,gBAAgB,EAAE,QACrD,GAAIF,IAAa,GAAI,CACjB,MAAM,2BAA2B,EACjC,MACJ,CACA,GAAIC,IAAa,GAAI,CACjB,MAAM,2BAA2B,EACjC,MACJ,CAEA,IAAIE,EAAQ,CACR,gBAAiBD,EACjB,SAAUF,EACV,SAAUC,CACd,EACA,EAAE,KAAK,CACH,KAAM,OACN,IAAK,cACL,KAAM,KAAK,UAAUE,CAAK,EAC1B,YAAa,mBACb,QAAS,IAAM,CACX,OAAO,SAAS,KAAO,aAC3B,EACA,MAAO,IAAM,CACT,MAAM,sBAAsB,CAChC,CACJ,CAAC,CACL,CAAC",
+  "names": ["username", "password", "anon", "login"]
+}

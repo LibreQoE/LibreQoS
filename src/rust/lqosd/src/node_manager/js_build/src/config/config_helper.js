@@ -71,51 +71,41 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
     };
     console.log(submission);
 
-    // Send to server with enhanced error handling
-    /*$.ajax({
+    // Send to server (server returns plain text "Ok" on success)
+    $.ajax({
         type: "POST",
         url: "/local-api/updateNetworkAndDevices",
         contentType: 'application/json',
         data: JSON.stringify(submission),
-        dataType: 'json', // Expect JSON response
-        success: (response) => {
-            try {
-                if (response && response.success) {
-                    if (onComplete) onComplete(true, "Saved successfully");
-                } else {
-                    const msg = response?.message || "Unknown error occurred";
-                    if (onComplete) onComplete(false, msg);
-                    alert("Failed to save: " + msg);
-                }
-            } catch (e) {
-                console.error("Error parsing response:", e);
-                if (onComplete) onComplete(false, "Invalid server response");
-                alert("Invalid server response format");
+        success: (responseText) => {
+            if (typeof responseText === 'string' && responseText.trim() === 'Ok') {
+                if (onComplete) onComplete(true, "Saved successfully");
+            } else {
+                const msg = (typeof responseText === 'string' && responseText.length > 0)
+                    ? responseText
+                    : "Unknown error occurred";
+                if (onComplete) onComplete(false, msg);
             }
         },
         error: (xhr) => {
             let errorMsg = "Request failed";
             try {
                 if (xhr.responseText) {
-                    const json = JSON.parse(xhr.responseText);
-                    errorMsg = json.message || xhr.responseText;
+                    try {
+                        const json = JSON.parse(xhr.responseText);
+                        errorMsg = json.message || xhr.responseText;
+                    } catch (_) {
+                        errorMsg = xhr.responseText;
+                    }
                 } else if (xhr.statusText) {
                     errorMsg = xhr.statusText;
                 }
-                console.error("AJAX Error:", {
-                    status: xhr.status,
-                    statusText: xhr.statusText,
-                    response: xhr.responseText
-                });
             } catch (e) {
-                console.error("Error parsing error response:", e);
                 errorMsg = "Unknown error occurred";
             }
-            
             if (onComplete) onComplete(false, errorMsg);
-            alert("Error saving configuration: " + errorMsg);
         }
-    });*/
+    });
 }
 
 export function validNodeList(network_json) {
