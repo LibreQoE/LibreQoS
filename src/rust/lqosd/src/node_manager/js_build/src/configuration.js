@@ -1023,7 +1023,7 @@ function validateSd() {
         // Download Min
         controlId = "#" + rowPrefix(i, "download_min_mbps");
         let download_min = $(controlId).val();
-        download_min = parseInt(download_min);
+        download_min = parseFloat(download_min);
         if (isNaN(download_min)) {
             valid = false;
             errors.push("Download min is not a valid number");
@@ -1037,7 +1037,7 @@ function validateSd() {
         // Upload Min
         controlId = "#" + rowPrefix(i, "upload_min_mbps");
         let upload_min = $(controlId).val();
-        upload_min = parseInt(upload_min);
+        upload_min = parseFloat(upload_min);
         if (isNaN(upload_min)) {
             valid = false;
             errors.push("Upload min is not a valid number");
@@ -1051,7 +1051,7 @@ function validateSd() {
         // Download Max
         controlId = "#" + rowPrefix(i, "download_max_mbps");
         let download_max = $(controlId).val();
-        upload_min = parseInt(download_max);
+        upload_min = parseFloat(download_max);
         if (isNaN(download_max)) {
             valid = false;
             errors.push("Download Max is not a valid number");
@@ -1065,7 +1065,7 @@ function validateSd() {
         // Upload Max
         controlId = "#" + rowPrefix(i, "upload_max_mbps");
         let upload_max = $(controlId).val();
-        upload_min = parseInt(upload_max);
+        upload_min = parseFloat(upload_max);
         if (isNaN(upload_max)) {
             valid = false;
             errors.push("Upload Max is not a valid number");
@@ -1120,10 +1120,10 @@ function saveNetAndDevices() {
         row.mac = $("#" + rowPrefix(i, "mac")).val();
         row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
         row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
-        row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
-        row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
-        row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
-        row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+        row.download_min_mbps = parseFloat($("#" + rowPrefix(i, "download_min_mbps")).val());
+        row.upload_min_mbps = parseFloat($("#" + rowPrefix(i, "upload_min_mbps")).val());
+        row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
+        row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
         row.comment = $("#" + rowPrefix(i, "comment")).val();
     }
 

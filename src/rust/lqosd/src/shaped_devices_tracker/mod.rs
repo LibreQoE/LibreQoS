@@ -230,8 +230,8 @@ pub fn get_all_circuits() -> BusResponse {
                     device_id = Some(devices.devices[*c.1].device_id.clone());
                     device_name = Some(devices.devices[*c.1].device_name.clone());
                     parent_node = Some(devices.devices[*c.1].parent_node.clone());
-                    plan.down = devices.devices[*c.1].download_max_mbps;
-                    plan.up = devices.devices[*c.1].upload_max_mbps;
+                    plan.down = devices.devices[*c.1].download_max_mbps.round() as u32;
+                    plan.up = devices.devices[*c.1].upload_max_mbps.round() as u32;
                 }
 
                 Circuit {

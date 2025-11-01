@@ -228,10 +228,10 @@ pub(crate) fn submit_throughput_stats(
                                 circuit_id: device.circuit_id,
                                 circuit_name: device.circuit_name,
                                 circuit_hash,
-                                download_min_mbps: device.download_min_mbps,
-                                upload_min_mbps: device.upload_min_mbps,
-                                download_max_mbps: device.download_max_mbps,
-                                upload_max_mbps: device.upload_max_mbps,
+                                download_min_mbps: device.download_min_mbps.round() as u32,
+                                upload_min_mbps: device.upload_min_mbps.round() as u32,
+                                download_max_mbps: device.download_max_mbps.round() as u32,
+                                upload_max_mbps: device.upload_max_mbps.round() as u32,
                                 parent_node: device.parent_hash,
                                 parent_node_name: Some(device.parent_node),
                                 devices: vec![Lts2Device {
@@ -339,8 +339,8 @@ pub(crate) fn submit_throughput_stats(
                 (
                     d.circuit_hash,
                     (
-                        d.download_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
+                        (d.download_max_mbps as f64 * 1_000_000.0 * CRAZY_LIMIT as f64) as u64,
+                        (d.upload_max_mbps as f64 * 1_000_000.0 * CRAZY_LIMIT as f64) as u64,
                     ),
                 )
             })

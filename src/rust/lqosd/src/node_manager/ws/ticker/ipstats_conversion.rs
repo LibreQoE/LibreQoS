@@ -41,7 +41,10 @@ impl From<&IpStats> for IpStatsWithPlan {
                     &circuit.circuit_name
                 };
                 result.ip_address = format!("{}", name);
-                result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
+                result.plan = DownUpOrder::new(
+                    circuit.download_max_mbps.round() as u32,
+                    circuit.upload_max_mbps.round() as u32,
+                );
             }
         }
 

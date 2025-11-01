@@ -41,17 +41,17 @@ pub struct ShapedDevice {
 
     /// Minimum download: this is the bandwidth level the shaper will try
     /// to ensure is always available.
-    pub download_min_mbps: u32,
+    pub download_min_mbps: f32,
 
     /// Minimum upload: this is the bandwidth level the shaper will try to
     /// ensure is always available.
-    pub upload_min_mbps: u32,
+    pub upload_min_mbps: f32,
 
     /// Maximum download speed, when possible.
-    pub download_max_mbps: u32,
+    pub download_max_mbps: f32,
 
     /// Maximum upload speed when possible.
-    pub upload_max_mbps: u32,
+    pub upload_max_mbps: f32,
 
     /// Generic comments field, does nothing.
     pub comment: String,
@@ -81,16 +81,16 @@ impl ShapedDevice {
             ipv4: ShapedDevice::parse_ipv4(&record[6]),
             ipv6: ShapedDevice::parse_ipv6(&record[7]),
             download_min_mbps: record[8]
-                .parse()
+                .parse::<f32>()
                 .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[8].to_string()))?,
             upload_min_mbps: record[9]
-                .parse()
+                .parse::<f32>()
                 .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[9].to_string()))?,
             download_max_mbps: record[10]
-                .parse()
+                .parse::<f32>()
                 .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[10].to_string()))?,
             upload_max_mbps: record[11]
-                .parse()
+                .parse::<f32>()
                 .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[11].to_string()))?,
             comment: record[12].to_string(),
             circuit_hash: hash_to_i64(&record[0]),
