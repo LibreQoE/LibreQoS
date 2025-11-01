@@ -396,7 +396,15 @@ def loadSubscriberCircuits(shapedDevicesFile):
             # Optional per-circuit SQM override in last column
             sqm_override_token = ''
             if len(row) > 13:
-                sqm_override_token = row[13].strip().lower()
+                # Normalize: lowercase, trim, collapse spaces around '/'
+                raw_token = row[13]
+                token = raw_token.strip().lower()
+                if '/' in token:
+                    parts = token.split('/', 1)
+                    left = parts[0].strip()
+                    right = parts[1].strip()
+                    token = left + '/' + right
+                sqm_override_token = token
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
             # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
             if monitor_mode_only() == True:
@@ -1114,11 +1122,24 @@ def refreshShapers():
                         # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
                         if monitor_mode_only() == False:
                             # SQM Fixup for lower rates (and per-circuit override)
-                            def effective_sqm_str(rate, override):
+                            def effective_sqm_str(rate, override, direction):
                                 base = sqm()
-                                # Treat None, empty, or falsy as no override
-                                if not override:
-                                    # Apply fast-queue threshold: prefer fq_codel for very fast circuits when no override
+                                # Resolve per-direction token from override string
+                                chosen = None
+                                if override:
+                                    try:
+                                        ov = str(override).strip().lower()
+                                        if '/' in ov:
+                                            left, right = ov.split('/', 1)
+                                            left = left.strip()
+                                            right = right.strip()
+                                            chosen = left if direction == 'down' else right
+                                        else:
+                                            chosen = ov
+                                    except Exception:
+                                        chosen = None
+                                # If no explicit token for this direction, use default behavior
+                                if not chosen:
                                     try:
                                         thresh = fast_queues_fq_codel()
                                     except Exception:
@@ -1126,20 +1147,16 @@ def refreshShapers():
                                     if rate >= thresh:
                                         return 'fq_codel'
                                     return sqmFixupRate(rate, base)
-                                try:
-                                    ov = str(override).strip().lower()
-                                except Exception:
-                                    ov = ''
-                                if ov == 'none':
+                                if chosen == 'none':
                                     return ''
-                                if ov == 'fq_codel':
+                                if chosen == 'fq_codel':
                                     return 'fq_codel'
-                                if ov == 'cake':
+                                if chosen == 'cake':
                                     cake_base = base if base.startswith('cake') else 'cake diffserv4'
                                     return sqmFixupRate(rate, cake_base)
                                 return sqmFixupRate(rate, base)
                             sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override)
+                            useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override, 'down')
                             if useSqm != '':
                                 command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
                                 linuxTCcommands.append(command)
@@ -1149,7 +1166,7 @@ def refreshShapers():
                         if monitor_mode_only() == False:
                             # SQM Fixup for lower rates (and per-circuit override)
                             sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override)
+                            useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
                             if useSqm != '':
                                 command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
                                 linuxTCcommands.append(command)

@@ -96,7 +96,10 @@ impl ShapedDevice {
     /// 11. Download Max Mbps
     /// 12. Upload Max Mbps
     /// 13. Comment
-    /// 14. sqm (optional; allowed values: "cake" or "fq_codel")
+    /// 14. sqm (optional; allowed values: "cake", "fq_codel", "none", or
+    ///     a directional override in the form "down/up". Either side may be
+    ///     empty to indicate no override for that direction, e.g. "cake/" or
+    ///     "/fq_codel".)
     ///
     /// # Arguments
     ///
@@ -180,14 +183,37 @@ impl ShapedDevice {
 
         // Optional 14th field: per-circuit SQM override token
         if record.len() >= 14 {
-            let token = record[13].trim().to_lowercase();
-            if !token.is_empty() {
-                match token.as_str() {
-                    "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
-                    other => {
+            let raw = record[13].trim();
+            if !raw.is_empty() {
+                // Normalize case and whitespace around optional '/'
+                let token = raw.to_lowercase();
+                if token.contains('/') {
+                    // Directional override: down/up (either may be empty)
+                    let mut parts = token.splitn(2, '/');
+                    let down = parts.next().unwrap_or("").trim();
+                    let up = parts.next().unwrap_or("").trim();
+
+                    // Validate each side if present
+                    let valid = |s: &str| -> bool {
+                        matches!(s, "" | "cake" | "fq_codel" | "none")
+                    };
+                    if !valid(down) || !valid(up) {
                         return Err(ShapedDevicesError::CsvEntryParseError(format!(
-                            "Invalid sqm override '{other}'. Allowed values: 'cake' or 'fq_codel'"
+                            "Invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"
                         )));
+                    }
+
+                    // Store normalized (trimmed, lowercase) representation exactly as down/up
+                    device.sqm_override = Some(format!("{down}/{up}"));
+                } else {
+                    // Single token applies to both directions when used
+                    match token.as_str() {
+                        "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
+                        other => {
+                            return Err(ShapedDevicesError::CsvEntryParseError(format!(
+                                "Invalid sqm override '{other}'. Allowed values: 'cake', 'fq_codel', 'none', or down/up"
+                            )));
+                        }
                     }
                 }
             }

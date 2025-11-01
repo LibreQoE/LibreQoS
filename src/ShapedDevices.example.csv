@@ -16,11 +16,24 @@
 #
 # Backward Compatibility: Existing integer rates continue to work unchanged.
 #
+# Per‑Circuit SQM Override (last column `sqm`):
+# - Accepts: "cake", "fq_codel", "none" or directional form "down/up".
+# - Directional form: left token applies to download, right to upload. Either side may be empty
+#   to indicate no override for that direction (e.g., "cake/" or "/fq_codel").
+# - Case is ignored on load; values are normalized to trimmed, lowercase.
+# - "none" on a side disables the SQM qdisc for that direction.
+# - When a side is unspecified (empty) or the entire field is empty, LibreQoS uses the global
+#   default SQM for that side and still applies the fast‑queue threshold (fq_codel) per direction.
+#
 Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
 1,"968 Circle St., Gurnee, IL 60031",1,Device 1,AP_A,,"100.64.0.1, 100.64.0.14",fdd7:b724:0:100::/56,1,1,155,20,Standard integer rates,
 2,"31 Marconi Street, Lake In The Hills, IL 60156",2,Device 2,AP_A,,100.64.0.2,fdd7:b724:0:200::/56,0.5,0.5,2.5,1.0,Fractional rate example - small plan,fq_codel
 3,"255 NW. Newport Ave., Jamestown, NY 14701",3,Device 3,AP_9,,100.64.0.3,fdd7:b724:0:300::/56,1.25,0.75,10.5,5.25,Fractional rate example - medium plan,
 4,"8493 Campfire Street, Peabody, MA 01960",4,Device 4,AP_9,,100.64.0.4,fdd7:b724:0:400::/56,25.5,12.5,100.5,50.25,Fractional rate example - large plan,cake
+10,"Directional SQM example",12,Device 12,AP_1,,100.64.0.12,,50,20,200,50,Down=cake, Up=fq_codel,cake/fq_codel
+11,"Partial override example (down only)",13,Device 13,AP_1,,100.64.0.13,,50,20,200,50,Down=cake, Up=default,cake/
+12,"Partial override example (up only)",14,Device 14,AP_1,,100.64.0.14,,50,20,200,50,Down=default, Up=fq_codel,/fq_codel
+13,"Disable upload SQM",15,Device 15,AP_1,,100.64.0.15,,50,20,200,50,Down=default, Up=none,/none
 2794,"6 Littleton Drive, Ringgold, GA 30736",5,Device 5,AP_11,,100.64.0.5,fdd7:b724:0:500::/56,1,1,105,18,Standard integer rates,
 2794,"6 Littleton Drive, Ringgold, GA 30736",6,Device 6,AP_11,,100.64.0.6,fdd7:b724:0:600::/56,1,1,105,18,Standard integer rates,
 5,"93 Oklahoma Ave., Parsippany, NJ 07054",7,Device 7,AP_1,,100.64.0.7,fdd7:b724:0:700::/56,2.0,2.0,25.0,10.0,Mixed decimal rates,

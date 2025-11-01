@@ -638,12 +638,26 @@ impl BakeryCommands {
             }
         }
 
-        // If override is 'none', disable SQM regardless of lazy settings
-        if let Some(ref s) = params.sqm_override {
-            if s.eq_ignore_ascii_case("none") {
-                do_sqm = false;
+        // Parse per-direction override tokens: single token applies to both;
+        // directional form is "down/up" with either side optionally empty.
+        let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
+            match &params.sqm_override {
+                None => (None, None),
+                Some(s) => {
+                    if s.contains('/') {
+                        let mut it = s.splitn(2, '/');
+                        let down = it.next().unwrap_or("").trim();
+                        let up = it.next().unwrap_or("").trim();
+                        let map = |t: &str| -> Option<String> {
+                            if t.is_empty() { None } else { Some(t.to_string()) }
+                        };
+                        (map(down), map(up))
+                    } else {
+                        (Some(s.clone()), Some(s.clone()))
+                    }
+                }
             }
-        }
+        })();
 
         let mut result = Vec::new();
         /*
@@ -691,20 +705,22 @@ impl BakeryCommands {
             ]);
         }
         if !config.queues.monitor_only && do_sqm {
-            let mut sqm_command = vec![
-                "qdisc".to_string(),
-                "replace".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
-            ];
-            sqm_command.extend(sqm_tokens_for(
-                params.download_bandwidth_max,
-                config,
-                &params.sqm_override,
-            ));
-            result.push(sqm_command);
+            if !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")) {
+                let mut sqm_command = vec![
+                    "qdisc".to_string(),
+                    "replace".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "parent".to_string(),
+                    format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
+                ];
+                sqm_command.extend(sqm_tokens_for(
+                    params.download_bandwidth_max,
+                    config,
+                    &down_override_opt,
+                ));
+                result.push(sqm_command);
+            }
         }
 
         if do_htb {
@@ -733,20 +749,24 @@ impl BakeryCommands {
         }
 
         if !config.queues.monitor_only && do_sqm {
-            let mut sqm_command = vec![
-                "qdisc".to_string(),
-                "replace".to_string(),
-                "dev".to_string(),
-                config.internet_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
-            ];
-            sqm_command.extend(sqm_tokens_for(
-                params.upload_bandwidth_max,
-                config,
-                &params.sqm_override,
-            ));
-            result.push(sqm_command);
+            if !config.on_a_stick_mode() {
+                if !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")) {
+                    let mut sqm_command = vec![
+                        "qdisc".to_string(),
+                        "replace".to_string(),
+                        "dev".to_string(),
+                        config.internet_interface(),
+                        "parent".to_string(),
+                        format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
+                    ];
+                    sqm_command.extend(sqm_tokens_for(
+                        params.upload_bandwidth_max,
+                        config,
+                        &up_override_opt,
+                    ));
+                    result.push(sqm_command);
+                }
+            }
         }
 
         Some(result)
@@ -813,12 +833,29 @@ impl BakeryCommands {
             }
         }
 
-        // If SQM was disabled via override, skip pruning qdisc
-        let prune_sqm = prune_sqm && !matches!(sqm_override.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
-
         if prune_sqm {
-            // Prune the SQM qdisc
-            if !config.on_a_stick_mode() {
+            // Determine per-direction pruning based on override tokens
+            let (down_override_opt, up_override_opt) = match sqm_override.as_ref() {
+                None => (None, None),
+                Some(s) => {
+                    if s.contains('/') {
+                        let mut it = s.splitn(2, '/');
+                        let down = it.next().unwrap_or("").trim();
+                        let up = it.next().unwrap_or("").trim();
+                        let map = |t: &str| -> Option<String> {
+                            if t.is_empty() { None } else { Some(t.to_string()) }
+                        };
+                        (map(down), map(up))
+                    } else {
+                        (Some(s.clone()), Some(s.clone()))
+                    }
+                }
+            };
+
+            let prune_down = !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+            let prune_up = !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+
+            if prune_up && !config.on_a_stick_mode() {
                 result.push(vec![
                     "qdisc".to_string(),
                     "del".to_string(),
@@ -828,14 +865,16 @@ impl BakeryCommands {
                     format!("0x{:x}:0x{:x}", up_class_major, class_minor),
                 ]);
             }
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", class_major, class_minor),
-            ]);
+            if prune_down {
+                result.push(vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "parent".to_string(),
+                    format!("0x{:x}:0x{:x}", class_major, class_minor),
+                ]);
+            }
         }
 
         if prune_htb {
