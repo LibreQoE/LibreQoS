@@ -38,6 +38,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
+    m.add_function(wrap_pyfunction!(fast_queues_fq_codel, m)?)?;
     m.add_function(wrap_pyfunction!(
         upstream_bandwidth_capacity_download_mbps,
         m
@@ -362,6 +363,18 @@ fn check_config() -> PyResult<bool> {
 fn sqm() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.queues.default_sqm.clone())
+}
+
+/// Returns the Mbps threshold at or above which (if no per-circuit override is set)
+/// fq_codel should be preferred to reduce overhead on very fast circuits.
+/// Defaults to 1000.0 Mbps if not configured.
+#[pyfunction]
+fn fast_queues_fq_codel() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .queues
+        .fast_queues_fq_codel
+        .unwrap_or(1000.0) as f32)
 }
 
 #[pyfunction]
@@ -944,6 +957,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     },
 }
 
@@ -1028,6 +1042,7 @@ impl Bakery {
                                     class_major,
                                     up_class_major,
                                     ip_addresses,
+                                    sqm_override,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
@@ -1041,6 +1056,7 @@ impl Bakery {
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
                                         ip_addresses: ip_addresses.clone(),
+                                        sqm_override: sqm_override.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -1107,6 +1123,7 @@ impl Bakery {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1122,6 +1139,7 @@ impl Bakery {
             class_major,
             up_class_major,
             ip_addresses,
+            sqm_override,
         };
         self.queue.push(command);
         Ok(())

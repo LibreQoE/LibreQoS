@@ -250,6 +250,21 @@ fn main() -> Result<()> {
                 return;
             };
             tokio_runtime.block_on(async {
+                    // Notify bakery when the bus socket becomes available
+                    tokio::spawn(async move {
+                        use tokio::time::{sleep, Duration};
+                        // Wait up to ~5 seconds for the socket to appear
+                        for _ in 0..100u32 {
+                            if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                                break;
+                            }
+                            sleep(Duration::from_millis(50)).await;
+                        }
+                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                            let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
+                        }
+                    });
+
                     tokio::spawn(async move {
                         match lts2_sys::control_channel::start_control_channel(control_channel)
                             .await
@@ -350,10 +365,42 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tc_handle,
                 cpu,
                 upload,
-            } => map_ip_to_flow(ip_address, tc_handle, *cpu, *upload),
-            BusRequest::ClearHotCache => clear_hot_cache(),
-            BusRequest::DelIpFlow { ip_address, upload } => del_ip_flow(ip_address, *upload),
-            BusRequest::ClearIpFlow => clear_ip_flows(),
+            } => {
+                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
+                        ip_address: ip_address.clone(),
+                        tc_handle: *tc_handle,
+                        cpu: *cpu,
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearHotCache => {
+                // Let the bakery finalize staged mapping changes, then clear hot cache.
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitMappings);
+                }
+                clear_hot_cache()
+            }
+            BusRequest::DelIpFlow { ip_address, upload } => {
+                let resp = del_ip_flow(ip_address, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
+                        ip_address: ip_address.clone(),
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearIpFlow => {
+                let resp = clear_ip_flows();
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::ClearIpAll);
+                }
+                resp
+            }
             BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
@@ -527,7 +574,19 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 class_major,
                 up_class_major,
                 ip_addresses,
+                sqm_override,
             } => {
+                if let Some(s) = sqm_override.as_ref() {
+                    if s.eq_ignore_ascii_case("fq_codel") {
+                        tracing::info!(
+                            "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
+                            circuit_hash,
+                            parent_class_id.as_tc_string(),
+                            up_parent_class_id.as_tc_string(),
+                            class_minor
+                        );
+                    }
+                }
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -542,6 +601,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
                         ip_addresses: ip_addresses.clone(),
+                        sqm_override: sqm_override.clone(),
                     });
                     BusResponse::Ack
                 } else {
