@@ -197,6 +197,9 @@ pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
+/// Indicates that at least one command batch has been processed and applied.
+/// Used to avoid racing live activation against initial class creation.
+static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
 
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
 pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
@@ -1051,6 +1054,16 @@ fn handle_circuit_activity(
         _ => {}
     }
 
+    // Defer live activation until MQ and at least one commit has fully applied.
+    if !MQ_CREATED.load(Ordering::Relaxed) || !FIRST_COMMIT_APPLIED.load(Ordering::Relaxed) {
+        debug!(
+            "Skipping live activation: MQ_CREATED={}, FIRST_COMMIT_APPLIED={}",
+            MQ_CREATED.load(Ordering::Relaxed),
+            FIRST_COMMIT_APPLIED.load(Ordering::Relaxed)
+        );
+        return;
+    }
+
     let mut commands = Vec::new();
     for circuit_id in circuit_ids {
         if let Some(circuit) = live_circuits.get_mut(&circuit_id) {
@@ -1059,9 +1072,30 @@ fn handle_circuit_activity(
         }
 
         if let Some(command) = circuits.get(&circuit_id) {
-            let Some(cmd) = command.to_commands(&config, ExecutionMode::LiveUpdate) else {
-                continue;
-            };
+            // On first activation, ensure HTB exists in HTB-lazy mode by prepending
+            // Builder-mode HTB class creation (idempotent via "class replace").
+            let mut cmd = Vec::new();
+            match config.queues.lazy_queues.as_ref() {
+                Some(LazyQueueMode::Htb) => {
+                    if let Some(builder_cmds) = command.to_commands(&config, ExecutionMode::Builder) {
+                        cmd.extend(builder_cmds);
+                    }
+                    if let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate) {
+                        cmd.extend(live_cmds);
+                    }
+                    if cmd.is_empty() {
+                        // No commands to apply for this circuit
+                        continue;
+                    }
+                }
+                _ => {
+                    // Full lazy mode handles both HTB and SQM in LiveUpdate; or other modes
+                    let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate) else {
+                        continue;
+                    };
+                    cmd.extend(live_cmds);
+                }
+            }
             live_circuits.insert(circuit_id, current_timestamp());
             commands.extend(cmd);
         }
@@ -1308,4 +1342,7 @@ fn process_batch(
     let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
     write_command_file(&path, &commands);
     execute_in_memory(&commands, "processing batch");
+
+    // Mark that at least one batch has been applied, unblocking live activation.
+    FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
 }
