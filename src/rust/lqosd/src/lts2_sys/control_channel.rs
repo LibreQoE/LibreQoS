@@ -120,7 +120,7 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
     Ok(())
 }
 
-const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+const TCP_TIMEOUT: Duration = Duration::from_secs(30);
 // Prevent unbounded growth while waiting for Welcome
 const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
