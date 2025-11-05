@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tracing::warn;
 
 pub(crate) fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
     config
@@ -24,16 +25,46 @@ pub(crate) fn format_rate_for_tc(rate: u64) -> String {
 }
 
 pub(crate) fn format_rate_for_tc_f32(rate: f32) -> String {
-    // Format a rate in Mbps for TC commands with smart unit selection.
-    // - Rates >= 1000 Mbps use 'gbit'
-    // - Rates >= 1 Mbps use 'mbit'
-    // - Rates < 1 Mbps use 'kbit'
-    if rate >= 1000.0 {
-        format!("{:.1}gbit", rate as f64 / 1000.0)
-    } else if rate >= 1.0 {
-        format!("{:.1}mbit", rate as f64)
+    // Defensive formatting of a rate in Mbps for TC commands with smart unit selection.
+    // Guards against NaN/Inf/negative/zero and clamps to sane bounds so `tc` always
+    // receives a positive, finite value.
+
+    // Lower bound: 0.01 Mbps (10 kbit) to avoid "0kbit" or rounding to zero.
+    const MIN_RATE_MBPS: f32 = 0.01;
+    // Upper bound: 10,000,000 Mbps (10 Tbps) — arbitrary but sane cap to avoid infinities.
+    const MAX_RATE_MBPS: f32 = 10_000_000.0;
+
+    let mut r = rate;
+
+    // Handle NaN/Inf
+    if !r.is_finite() {
+        warn!("format_rate_for_tc_f32: non-finite rate detected ({:?}); clamping to {} Mbps", rate, MIN_RATE_MBPS);
+        r = MIN_RATE_MBPS;
+    }
+
+    // Clamp to bounds
+    if r < MIN_RATE_MBPS {
+        warn!(
+            "format_rate_for_tc_f32: rate below minimum ({:?}); clamping to {} Mbps",
+            r, MIN_RATE_MBPS
+        );
+        r = MIN_RATE_MBPS;
+    } else if r > MAX_RATE_MBPS {
+        warn!(
+            "format_rate_for_tc_f32: rate above maximum ({:?}); clamping to {} Mbps",
+            r, MAX_RATE_MBPS
+        );
+        r = MAX_RATE_MBPS;
+    }
+
+    // Format using thresholds
+    if r >= 1000.0 {
+        format!("{:.1}gbit", r as f64 / 1000.0)
+    } else if r >= 1.0 {
+        format!("{:.1}mbit", r as f64)
     } else {
-        format!("{:.0}kbit", rate as f64 * 1000.0)
+        // < 1 Mbps: kbit, whole number to match tc expectations
+        format!("{:.0}kbit", r as f64 * 1000.0)
     }
 }
 

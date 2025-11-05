@@ -591,6 +591,38 @@ def refreshShapers():
         with open(networkJSONfile, 'r') as j:
             network = json.loads(j.read())
 
+        # Normalize any zero or missing bandwidths in the network model early
+        # Some users may specify 0 for site bandwidths. HTB requires positive
+        # rates, so bump zeros to the parent/default capacity and log a warning.
+        def fix_zero_bandwidths(data, parentMaxDL, parentMaxUL):
+            for node in data:
+                if isinstance(node, str):
+                    if (isinstance(data[node], dict)) and (node != 'children'):
+                        # Ensure max bandwidths are positive. If 0 or missing, use parent's defaults.
+                        dl = data[node].get('downloadBandwidthMbps', None)
+                        ul = data[node].get('uploadBandwidthMbps', None)
+
+                        if dl is None or (isinstance(dl, (int, float)) and dl <= 0):
+                            logging.warning(f"Node '{node}' has downloadBandwidthMbps set to 0 or missing; using parent/default {parentMaxDL} Mbps.")
+                            data[node]['downloadBandwidthMbps'] = parentMaxDL
+                        if ul is None or (isinstance(ul, (int, float)) and ul <= 0):
+                            logging.warning(f"Node '{node}' has uploadBandwidthMbps set to 0 or missing; using parent/default {parentMaxUL} Mbps.")
+                            data[node]['uploadBandwidthMbps'] = parentMaxUL
+
+                        # Recurse into children with this node's maxima as the new parent defaults
+                        if 'children' in data[node]:
+                            fix_zero_bandwidths(
+                                data[node]['children'],
+                                data[node]['downloadBandwidthMbps'],
+                                data[node]['uploadBandwidthMbps'],
+                            )
+
+        fix_zero_bandwidths(
+            network,
+            upstream_bandwidth_capacity_download_mbps(),
+            upstream_bandwidth_capacity_upload_mbps(),
+        )
+
 
         # Pull rx/tx queues / CPU cores available
         # Handling the case when the number of queues for interfaces are different
@@ -710,6 +742,47 @@ def refreshShapers():
             #return data
         # Here is the actual call to the recursive function
         inheritBandwidthMaxes(network, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
+
+        # Ensure site-level minimums are strictly below maximums for HTB classes
+        def ensure_min_less_than_max(data):
+            for node in data:
+                if isinstance(node, str):
+                    if (isinstance(data[node], dict)) and (node != 'children'):
+                        try:
+                            dl_max = float(data[node].get('downloadBandwidthMbps', 0))
+                            ul_max = float(data[node].get('uploadBandwidthMbps', 0))
+                            dl_min = float(data[node].get('downloadBandwidthMbpsMin', dl_max))
+                            ul_min = float(data[node].get('uploadBandwidthMbpsMin', ul_max))
+                        except Exception:
+                            # If parsing fails, skip adjustment for this node
+                            dl_max = data[node].get('downloadBandwidthMbps', 0)
+                            ul_max = data[node].get('uploadBandwidthMbps', 0)
+                            dl_min = data[node].get('downloadBandwidthMbpsMin', dl_max)
+                            ul_min = data[node].get('uploadBandwidthMbpsMin', ul_max)
+
+                        def adjust(min_v, max_v):
+                            # Keep min strictly lower than max; support small max with fractional step
+                            if min_v >= max_v:
+                                if max_v >= 1.0:
+                                    return max_v - 1.0
+                                else:
+                                    return max(0.01, max_v - 0.01)
+                            return min_v
+
+                        new_dl_min = adjust(dl_min, dl_max)
+                        new_ul_min = adjust(ul_min, ul_max)
+                        if new_dl_min != dl_min:
+                            # Too noisy in practice; keep as debug for diagnostics
+                            logging.debug(f"Node '{node}' min download ({dl_min}) >= max ({dl_max}); lowering min to {new_dl_min}")
+                            data[node]['downloadBandwidthMbpsMin'] = new_dl_min
+                        if new_ul_min != ul_min:
+                            # Too noisy in practice; keep as debug for diagnostics
+                            logging.debug(f"Node '{node}' min upload ({ul_min}) >= max ({ul_max}); lowering min to {new_ul_min}")
+                            data[node]['uploadBandwidthMbpsMin'] = new_ul_min
+                        if 'children' in data[node]:
+                            ensure_min_less_than_max(data[node]['children'])
+
+        ensure_min_less_than_max(network)
 
         # Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
         def flattenB(data):
@@ -1083,6 +1156,27 @@ def refreshShapers():
                                 min_down = 0.01
                             if min_up == 1:
                                 min_up = 0.01
+                        # Ensure min < max for circuits as well
+                        try:
+                            max_down = float(circuit['maxDownload'])
+                            max_up = float(circuit['maxUpload'])
+                            md = float(min_down)
+                            mu = float(min_up)
+                        except Exception:
+                            max_down = circuit['maxDownload']
+                            max_up = circuit['maxUpload']
+                            md = min_down
+                            mu = min_up
+                        if md >= max_down:
+                            new_md = (max_down - 1.0) if max_down >= 1.0 else max(0.01, max_down - 0.01)
+                            # Too noisy in practice; keep as debug for diagnostics
+                            logging.debug(f"Circuit '{circuit.get('circuitID','unknown')}' min download ({md}) >= max ({max_down}); lowering min to {new_md}")
+                            min_down = new_md
+                        if mu >= max_up:
+                            new_mu = (max_up - 1.0) if max_up >= 1.0 else max(0.01, max_up - 0.01)
+                            # Too noisy in practice; keep as debug for diagnostics
+                            logging.debug(f"Circuit '{circuit.get('circuitID','unknown')}' min upload ({mu}) >= max ({max_up}); lowering min to {new_mu}")
+                            min_up = new_mu
                         # Generate TC commands to be executed later
                         tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
                         for device in circuit['devices']:
