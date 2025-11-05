@@ -1,12 +1,13 @@
 //! Top-level configuration file for LibreQoS.
 
 use super::tuning::Tunables;
-use crate::etc::v15::stormguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
 use uuid::Uuid;
+use crate::etc::v15::stormguard;
+use crate::{SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK};
 
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
@@ -172,6 +173,22 @@ impl Config {
     /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
+            if matches!(bridge.sandwich, Some(super::bridge::SandwichMode::Full { .. })) {
+                // In sandwich mode, the internet interface is the veth pair
+                SANDWICH_TO_INTERNET.to_string()
+            } else {
+                bridge.to_internet.clone()
+            }
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No internet interface configured")
+        }
+    }
+
+    /// Calculate the physical interface facing the Internet (ignoring sandwich mode)
+    pub fn internet_interface_physical(&self) -> String {
+        if let Some(bridge) = &self.bridge {
             bridge.to_internet.clone()
         } else if let Some(single_interface) = &self.single_interface {
             single_interface.interface.clone()
@@ -182,6 +199,22 @@ impl Config {
 
     /// Calculate the interface facing the ISP
     pub fn isp_interface(&self) -> String {
+        if let Some(bridge) = &self.bridge {
+            if matches!(bridge.sandwich, Some(super::bridge::SandwichMode::Full { .. })) {
+                // In sandwich mode, the ISP interface is the veth pair
+                SANDWICH_TO_NETWORK.to_string()
+            } else {
+                bridge.to_network.clone()
+            }
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No ISP interface configured")
+        }
+    }
+
+    /// Calculate the physical interface facing the ISP (ignoring sandwich mode)
+    pub fn isp_interface_physical(&self) -> String {
         if let Some(bridge) = &self.bridge {
             bridge.to_network.clone()
         } else if let Some(single_interface) = &self.single_interface {

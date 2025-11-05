@@ -295,8 +295,8 @@ pub fn attach_xdp_and_tc_to_interface(
                 // Build the interface and vlan map entries
                 crate::bifrost_maps::clear_bifrost()?;
                 crate::bifrost_maps::map_multi_interface_mode(
-                    &bridge.to_internet,
-                    &bridge.to_network,
+                    &etc.internet_interface(),
+                    &etc.isp_interface(),
                 )?;
 
                 // Actually attach the TC ingress program
