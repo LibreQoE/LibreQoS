@@ -141,3 +141,4 @@ src/bin/lqos_api
 /src/linux_tc_rust.txt
 /src/linux_tc_rust_live.txt
 /src/linux_tc_rust_prune.txt
+/src/planner_state.json
