@@ -48,8 +48,12 @@
 <script src="login.js"></script>
 
 <footer class="justify-content-center">
-    &copy; Copyright 2022-2024, LibreQoE LLC
+    &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC
 </footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
 
 <script src="vendor/bootstrap.bundle.min.js"></script>
 </body>
