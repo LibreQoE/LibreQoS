@@ -766,7 +766,11 @@ def refreshShapers():
                     if iid in changed:
                         state["last_change_ts"][iid] = now_ts
                     state["assignments"][iid] = b
-                bin_planner.save_state(state_path, state)
+                try:
+                    print(f"Saving planner state to {state_path} (generated PNs)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
             print("Finished planning generated parent nodes")
         else:
@@ -1225,7 +1229,11 @@ def refreshShapers():
                     if iid in changed:
                         state["last_change_ts"][iid] = now_ts
                     state["assignments"][iid] = b
-                bin_planner.save_state(state_path, state)
+                try:
+                    print(f"Saving planner state to {state_path} (top-level CPU binning)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
         # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
         minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
