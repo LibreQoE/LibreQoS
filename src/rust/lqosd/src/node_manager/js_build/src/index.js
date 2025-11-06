@@ -12,6 +12,17 @@ const defaultLayout = {
         {
             name: "Overview",
             dashlets: [
+                { tag: "shaperTopAsnDown", size: 6 },
+                { tag: "shaperTopAsnUp", size: 6 },
+                { tag: "shaperChildrenDown", size: 6 },
+                { tag: "shaperChildrenUp", size: 6 },
+                { tag: "shaperWorldMapDown", size: 6 },
+                { tag: "shaperWorldMapUp", size: 6 }
+            ]
+        },
+        {
+            name: "System Overview",
+            dashlets: [
                 { tag: "throughputBps", size: 2 },
                 { tag: "shapedUnshaped", size: 2 },
                 { tag: "throughputPps", size: 2 },
