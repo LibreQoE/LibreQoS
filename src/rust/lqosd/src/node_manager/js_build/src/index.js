@@ -12,6 +12,7 @@ const defaultLayout = {
         {
             name: "Overview",
             dashlets: [
+                { tag: "throughputRing", size: 12 },
                 { tag: "shaperTopAsnDown", size: 6 },
                 { tag: "shaperTopAsnUp", size: 6 },
                 { tag: "shaperChildrenDown", size: 6 },
@@ -27,7 +28,6 @@ const defaultLayout = {
                 { tag: "shapedUnshaped", size: 2 },
                 { tag: "throughputPps", size: 2 },
                 { tag: "trackedFlowsCount", size: 2 },
-                { tag: "throughputRing", size: 2 },
                 { tag: "rttHistogram", size: 2 },
                 { tag: "cpu", size: 3 },
                 { tag: "ram", size: 3 }
