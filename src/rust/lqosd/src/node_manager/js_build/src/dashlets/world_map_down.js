@@ -35,6 +35,7 @@ export class WorldMap3DGraph extends DashboardGraph {
             this.dom.classList.remove('muted');
         }
         const envColor = isDarkMode() ? '#000000' : '#e6eaef';
+        const landColor = isDarkMode() ? '#6a6a6a' : '#bcbcbc';
         this.option = {
             backgroundColor: 'transparent',
             geo3D: {
@@ -51,7 +52,12 @@ export class WorldMap3DGraph extends DashboardGraph {
                     ambient: { intensity: 0.0 }
                 },
                 viewControl: { distance: 70, alpha: 89, panMouseButton: 'left', rotateMouseButton: 'right' },
-                itemStyle: { color: '#bcbcbc' },
+                itemStyle: {
+                    color: landColor,
+                    // Hide coastlines/outlines that appear as stray dots at this zoom
+                    borderColor: landColor,
+                    borderWidth: 0.3
+                },
                 regionHeight: 0.5
             },
             series: [
@@ -77,8 +83,12 @@ export class WorldMap3DGraph extends DashboardGraph {
     onThemeChange(){
         // Only adjust the environment to maintain appropriate background
         const envColor = isDarkMode() ? '#000000' : '#e6eaef';
+        const landColor = isDarkMode() ? '#6a6a6a' : '#bcbcbc';
         if (!this.option.geo3D) this.option.geo3D = {};
         this.option.geo3D.environment = envColor;
+        if (!this.option.geo3D.itemStyle) this.option.geo3D.itemStyle = {};
+        this.option.geo3D.itemStyle.color = landColor;
+        this.option.geo3D.itemStyle.borderColor = landColor;
         this.chart.setOption(this.option, true);
     }
 }
