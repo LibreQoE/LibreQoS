@@ -1,6 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRttMs} from "../helpers/color_scales";
+import {isDarkMode} from "../helpers/dark_mode";
 
 function ensureWorldMap() {
     try {
@@ -33,15 +34,15 @@ export class WorldMap3DGraph extends DashboardGraph {
         if (this.dom && this.dom.classList) {
             this.dom.classList.remove('muted');
         }
+        const envColor = isDarkMode() ? '#000000' : '#e6eaef';
         this.option = {
             backgroundColor: 'transparent',
             geo3D: {
                 map: 'world',
                 shading: 'realistic',
                 silent: true,
-                // Use a fixed light environment to avoid theme side-effects
-                // and keep the canvas blending with the page.
-                environment: '#e6eaef',
+                // Match page theme: black in dark mode, light grey in light mode
+                environment: envColor,
                 realisticMaterial: { roughness: 0.8, metalness: 0 },
                 postEffect: { enable: true },
                 groundPlane: { show: false },
@@ -73,8 +74,13 @@ export class WorldMap3DGraph extends DashboardGraph {
         this.option.series[0].data = data;
         this.chart.setOption(this.option);
     }
-    // The world map ignores theme changes; keep a consistent look.
-    onThemeChange(){ this.chart.setOption(this.option, true); }
+    onThemeChange(){
+        // Only adjust the environment to maintain appropriate background
+        const envColor = isDarkMode() ? '#000000' : '#e6eaef';
+        if (!this.option.geo3D) this.option.geo3D = {};
+        this.option.geo3D.environment = envColor;
+        this.chart.setOption(this.option, true);
+    }
 }
 
 export class ShaperWorldMapDown extends BaseDashlet {
