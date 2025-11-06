@@ -53,6 +53,8 @@ This error is benign and does not reflect any issues. Please disregard it.
 
 ### Next Steps
 
+If the installation is successful, you will be able to access the LibreQoS WebUI at ```http://your_shaper_ip:9123```. Upon first visit, you can specify your preferred username and password.
+
 Next, you will want to configure your [CRM or NMS integration](integrations.md) using the Web Interface Configuration page. If you do not use a supported CRM/NMS, you will need to create a script or process to produce the needed files for LibreQoS to shape traffic - specifically network.json and ShapedDevices.csv. The format of these files are explained in further detail in later sections of this page.
 
 ## Configuration Via Web Interface
