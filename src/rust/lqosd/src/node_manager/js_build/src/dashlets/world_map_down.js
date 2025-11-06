@@ -31,29 +31,34 @@ export class WorldMap3DGraph extends DashboardGraph {
     constructor(id) {
         super(id);
         const dark = isDarkMode();
-        try {
-            if (this.dom) {
-                this.dom.style.backgroundColor = dark ? '#000000' : '#ffffff';
-            }
-        } catch (_) {}
         this.option = {
+            backgroundColor: 'transparent',
             geo3D: {
                 map: 'world',
                 shading: 'realistic',
                 silent: true,
-                environment: dark ? '#000' : '#eee',
+                environment: dark ? '#0b0d11' : '#e6eaef',
                 realisticMaterial: { roughness: 0.8, metalness: 0 },
-                postEffect: { enable: true },
+                postEffect: { enable: dark ? false : true },
                 groundPlane: { show: false },
-                light: { main: { intensity: 1, alpha: 30 }, ambient: { intensity: 0 } },
+                light: {
+                    main: { intensity: dark ? 0.6 : 1.0, alpha: 30 },
+                    ambient: { intensity: dark ? 0.2 : 0.0 }
+                },
                 viewControl: { distance: 70, alpha: 89, panMouseButton: 'left', rotateMouseButton: 'right' },
-                itemStyle: { color: dark ? '#000' : '#bcbcbc' },
+                itemStyle: { color: dark ? '#141a21' : '#bcbcbc' },
                 regionHeight: 0.5
             },
             series: [
                 {
-                    type: 'scatter3D', coordinateSystem: 'geo3D', blendMode: 'lighter',
-                    symbolSize: 2, lineStyle: { width: 0.2, opacity: 0.05 }, data: []
+                    type: 'scatter3D',
+                    coordinateSystem: 'geo3D',
+                    // Remove additive blending that causes glow in dark mode
+                    // blendMode: 'lighter',
+                    symbolSize: 2,
+                    itemStyle: { opacity: 0.6 },
+                    lineStyle: { width: 0.2, opacity: 0.05 },
+                    data: []
                 }
             ]
         };
@@ -66,15 +71,16 @@ export class WorldMap3DGraph extends DashboardGraph {
     }
     onThemeChange(){
         const dark = isDarkMode();
-        try {
-            if (this.dom) {
-                this.dom.style.backgroundColor = dark ? '#000000' : '#ffffff';
-            }
-        } catch (_) {}
+        this.option.backgroundColor = 'transparent';
         if (!this.option.geo3D) this.option.geo3D = {};
         if (!this.option.geo3D.itemStyle) this.option.geo3D.itemStyle = {};
-        this.option.geo3D.environment = dark ? '#000' : '#eee';
-        this.option.geo3D.itemStyle.color = dark ? '#000' : '#bcbcbc';
+        this.option.geo3D.environment = dark ? '#0b0d11' : '#e6eaef';
+        this.option.geo3D.itemStyle.color = dark ? '#141a21' : '#bcbcbc';
+        if (!this.option.geo3D.light) this.option.geo3D.light = {};
+        this.option.geo3D.light.main = { intensity: dark ? 0.6 : 1.0, alpha: 30 };
+        this.option.geo3D.light.ambient = { intensity: dark ? 0.2 : 0.0 };
+        if (!this.option.geo3D.postEffect) this.option.geo3D.postEffect = {};
+        this.option.geo3D.postEffect.enable = dark ? false : true;
         this.chart.setOption(this.option, true);
     }
 }
@@ -116,7 +122,7 @@ export class ShaperWorldMapDown extends BaseDashlet {
             const b = Number(rows[i][3] || 0);
             if (b > maxBytes) maxBytes = b;
         }
-        const minSize = 2, maxSize = 14;
+        const minSize = 1, maxSize = 8;
         const out = [];
         for (let i=0;i<rows.length;i++) {
             const lat = rows[i][0], lon = rows[i][1];
@@ -130,7 +136,7 @@ export class ShaperWorldMapDown extends BaseDashlet {
                 if (norm > 1) norm = 1;
             }
             const size = Math.round(minSize + (maxSize - minSize) * norm);
-            out.push({ value: [lon, lat], symbolSize: size, itemStyle: { color } });
+            out.push({ value: [lon, lat], symbolSize: size, itemStyle: { color, opacity: 0.6 } });
         }
         const hasData = out.length > 0;
         this._showEmpty(!hasData);
