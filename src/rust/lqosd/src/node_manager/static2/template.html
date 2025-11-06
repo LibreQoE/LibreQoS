@@ -205,7 +205,7 @@
     </div>
 
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
-    LibreQoS %%VERSION%%. &copy; Copyright 2022-2024, LibreQoE LLC. All Rights Reserved.
+    LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
 </footer>
 
     <script src="template.js"></script>
@@ -225,6 +225,9 @@
         });
         obs.observe(container, { childList: true, subtree: true });
     })();
+    
+    document.getElementById('year').textContent = new Date().getFullYear();
+        
     </script>
 
 </body>
