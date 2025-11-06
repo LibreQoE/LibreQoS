@@ -45,7 +45,8 @@ export class WorldMap3DGraph extends DashboardGraph {
                 // Match page theme: black in dark mode, light grey in light mode
                 environment: envColor,
                 realisticMaterial: { roughness: 0.8, metalness: 0 },
-                postEffect: { enable: true },
+                // Disable post-processing to avoid shimmer/pulsing
+                postEffect: { enable: false },
                 groundPlane: { show: false },
                 light: {
                     main: { intensity: 1.0, alpha: 30 },
@@ -74,10 +75,16 @@ export class WorldMap3DGraph extends DashboardGraph {
             ]
         };
         this.chart.setOption(this.option);
+        this.baseApplied = false;
     }
     update(data){
         this.chart.hideLoading();
-        // Only update series data to avoid re-rendering geo3D and post effects
+        // Ensure the base option (with geo3D) is applied once after the world map is registered.
+        if (!this.baseApplied && typeof echarts !== 'undefined' && echarts.getMap && echarts.getMap('world')) {
+            this.chart.setOption(this.option, true);
+            this.baseApplied = true;
+        }
+        // Then only update series data to avoid re-rendering geo3D and post effects
         this.chart.setOption({ series: [{ data }] }, false, false);
     }
     onThemeChange(){
@@ -90,6 +97,7 @@ export class WorldMap3DGraph extends DashboardGraph {
         this.option.geo3D.itemStyle.color = landColor;
         this.option.geo3D.itemStyle.borderColor = landColor;
         this.chart.setOption(this.option, true);
+        this.baseApplied = true;
     }
 }
 
