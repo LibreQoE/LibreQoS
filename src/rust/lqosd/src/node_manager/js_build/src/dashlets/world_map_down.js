@@ -1,7 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRttMs} from "../helpers/color_scales";
-import {isDarkMode} from "../helpers/dark_mode";
 
 function ensureWorldMap() {
     try {
@@ -30,23 +29,28 @@ function ensureWorldMap() {
 export class WorldMap3DGraph extends DashboardGraph {
     constructor(id) {
         super(id);
-        const dark = isDarkMode();
+        // Do not dim the world map; remove the global 'muted' filter.
+        if (this.dom && this.dom.classList) {
+            this.dom.classList.remove('muted');
+        }
         this.option = {
             backgroundColor: 'transparent',
             geo3D: {
                 map: 'world',
                 shading: 'realistic',
                 silent: true,
-                environment: dark ? '#0b0d11' : '#e6eaef',
+                // Use a fixed light environment to avoid theme side-effects
+                // and keep the canvas blending with the page.
+                environment: '#e6eaef',
                 realisticMaterial: { roughness: 0.8, metalness: 0 },
-                postEffect: { enable: dark ? false : true },
+                postEffect: { enable: true },
                 groundPlane: { show: false },
                 light: {
-                    main: { intensity: dark ? 0.6 : 1.0, alpha: 30 },
-                    ambient: { intensity: dark ? 0.2 : 0.0 }
+                    main: { intensity: 1.0, alpha: 30 },
+                    ambient: { intensity: 0.0 }
                 },
                 viewControl: { distance: 70, alpha: 89, panMouseButton: 'left', rotateMouseButton: 'right' },
-                itemStyle: { color: dark ? '#141a21' : '#bcbcbc' },
+                itemStyle: { color: '#bcbcbc' },
                 regionHeight: 0.5
             },
             series: [
@@ -69,20 +73,8 @@ export class WorldMap3DGraph extends DashboardGraph {
         this.option.series[0].data = data;
         this.chart.setOption(this.option);
     }
-    onThemeChange(){
-        const dark = isDarkMode();
-        this.option.backgroundColor = 'transparent';
-        if (!this.option.geo3D) this.option.geo3D = {};
-        if (!this.option.geo3D.itemStyle) this.option.geo3D.itemStyle = {};
-        this.option.geo3D.environment = dark ? '#0b0d11' : '#e6eaef';
-        this.option.geo3D.itemStyle.color = dark ? '#141a21' : '#bcbcbc';
-        if (!this.option.geo3D.light) this.option.geo3D.light = {};
-        this.option.geo3D.light.main = { intensity: dark ? 0.6 : 1.0, alpha: 30 };
-        this.option.geo3D.light.ambient = { intensity: dark ? 0.2 : 0.0 };
-        if (!this.option.geo3D.postEffect) this.option.geo3D.postEffect = {};
-        this.option.geo3D.postEffect.enable = dark ? false : true;
-        this.chart.setOption(this.option, true);
-    }
+    // The world map ignores theme changes; keep a consistent look.
+    onThemeChange(){ this.chart.setOption(this.option, true); }
 }
 
 export class ShaperWorldMapDown extends BaseDashlet {
