@@ -12,13 +12,21 @@ export class DashboardLayout {
                 this.tabs = parsed.tabs;
                 this.activeTab = parsed.activeTab || 0;
             } else {
-                // Old format - convert to new format with single tab
+                // Old format saved in localStorage (pre-tabs)
+                // Treat as a signal to reset to the new default layout,
+                // so users see the new Overview tab instead of a single-tab conversion.
                 this.version = 2;
-                this.tabs = [{
-                    name: "Dashboard",
-                    dashlets: Array.isArray(parsed) ? parsed : []
-                }];
-                this.activeTab = 0;
+                if (defaultLayout && defaultLayout.version === 2) {
+                    this.tabs = defaultLayout.tabs;
+                    this.activeTab = defaultLayout.activeTab || 0;
+                } else {
+                    this.tabs = [{
+                        name: "Dashboard",
+                        dashlets: defaultLayout || []
+                    }];
+                    this.activeTab = 0;
+                }
+                try { localStorage.removeItem(this.cookieName); } catch (e) {}
             }
         } else {
             // No saved layout - use default
