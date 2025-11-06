@@ -17,8 +17,8 @@ function ensureWorldMap() {
             s.onerror = () => onfail ? onfail() : reject();
             document.head.appendChild(s);
         };
-        // Prefer local vendor file if shipped
-        load('vendor/echarts_world.js', () => {
+        // Prefer local vendor file if shipped (static2/vendor/world.js)
+        load('vendor/world.js', () => {
             load('https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js');
         });
     });

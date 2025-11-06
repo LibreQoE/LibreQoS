@@ -11,7 +11,7 @@ function ensureWorldMap() {
     } catch (_) {}
     if (window._worldMapPromise) return window._worldMapPromise;
     window._worldMapPromise = new Promise((resolve, reject) => {
-        // Try local vendor first (ship as static2/vendor/echarts_world.js)
+        // Try local vendor first (static2/vendor/world.js)
         const load = (src, onfail) => {
             const s = document.createElement('script');
             s.src = src;
@@ -19,7 +19,7 @@ function ensureWorldMap() {
             s.onerror = () => onfail ? onfail() : reject();
             document.head.appendChild(s);
         };
-        load('vendor/echarts_world.js', () => {
+        load('vendor/world.js', () => {
             // Fallback to CDN if local not present
             load('https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js');
         });
