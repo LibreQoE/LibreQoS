@@ -3,6 +3,24 @@ import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRttMs} from "../helpers/color_scales";
 import {isDarkMode} from "../helpers/dark_mode";
 
+function ensureWorldMap() {
+    try {
+        if (typeof echarts !== 'undefined' && echarts.getMap && echarts.getMap('world')) {
+            return Promise.resolve();
+        }
+    } catch (_) {}
+    if (window._worldMapPromise) return window._worldMapPromise;
+    window._worldMapPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.id = 'echarts_world_js';
+        s.src = 'https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js';
+        s.onload = () => resolve();
+        s.onerror = () => reject();
+        document.head.appendChild(s);
+    });
+    return window._worldMapPromise;
+}
+
 export class WorldMap3DGraph extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -102,7 +120,12 @@ export class ShaperWorldMapDown extends BaseDashlet {
         this._showEmpty(!hasData);
         if (hasData) {
             this.last = out;
-            this.graph.update(out);
+            ensureWorldMap().then(() => {
+                this.graph.update(out);
+            }).catch(() => {
+                // If the world map fails to load, still attempt to render points
+                this.graph.update(out);
+            });
         }
     }
 }
