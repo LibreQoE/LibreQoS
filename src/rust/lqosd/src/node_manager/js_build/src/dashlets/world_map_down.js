@@ -31,6 +31,11 @@ export class WorldMap3DGraph extends DashboardGraph {
     constructor(id) {
         super(id);
         const dark = isDarkMode();
+        try {
+            if (this.dom) {
+                this.dom.style.backgroundColor = dark ? '#000000' : '#ffffff';
+            }
+        } catch (_) {}
         this.option = {
             geo3D: {
                 map: 'world',
@@ -61,6 +66,11 @@ export class WorldMap3DGraph extends DashboardGraph {
     }
     onThemeChange(){
         const dark = isDarkMode();
+        try {
+            if (this.dom) {
+                this.dom.style.backgroundColor = dark ? '#000000' : '#ffffff';
+            }
+        } catch (_) {}
         if (!this.option.geo3D) this.option.geo3D = {};
         if (!this.option.geo3D.itemStyle) this.option.geo3D.itemStyle = {};
         this.option.geo3D.environment = dark ? '#000' : '#eee';
