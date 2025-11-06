@@ -1,7 +1,70 @@
 # Configure LibreQoS
 
-## Main Configuration File
-### /etc/lqos.conf
+## Initial Configuration Via Setup Tool (From the .deb installer)
+<img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
+
+NOTES: 
+- The LibreQoS Setup Tool can only be controlled with a keyboard. Use the arrows to move around the tool, and click ```Enter``` to Select.
+- Clicking the ```Q``` key will close the setup tool without saving.
+- If you are in the process of using the setup tool and it closes beforehand, in order to launch again the setup tool you will have to run the following commands:
+  ```
+  sudo apt remove libreqos
+  sudo apt install ./{deb_url_v1_5}
+  ``` 
+
+The first step is to give a name to your Shaper Box (Node), by default it is named LibreQoS.
+Then, you can use the arrow keys on your keyboard to go over the different setup sections, as follows:
+
+### Bridge Mode
+<img width="1668" height="397" alt="bridge_mode" src="https://github.com/user-attachments/assets/22bc05cc-f1e5-451a-b4f8-5e75d7b8d64f" />
+
+By default, the Linux Bridge is selected. If you chose the XDP Bridge in previous step, please make the adjustment.
+
+NOTE:  Single Interface mode, as it name implies, its for users that can only use 1 interface, and require special support. For more information regarding Single Interface mode, please vistit our [Zulip Chat].
+
+### Interfaces
+<img width="885" height="352" alt="interfaces" src="https://github.com/user-attachments/assets/4afedfe6-65b8-450c-a675-bea25ef4553c" />
+
+Following the recommended setup diagram mentioned above, the "To Internet" interface should be the one facing the Edge Router (and therefore, the Internet) and the "To Network" interface should be the one facing the Core Router.
+
+### Bandwidth
+<img width="1089" height="350" alt="bandwidth" src="https://github.com/user-attachments/assets/f68185c3-82dc-4fb5-b78a-d812665533fb" />
+
+In the context of bandwidth hired from your upstream provider, ```To Internet``` means the Upload Bandwidth, and ```To Network``` means the download bandwidth.
+
+### IP Range
+<img width="1331" height="481" alt="ip_ranges" src="https://github.com/user-attachments/assets/b846baa7-288e-460c-ab77-ad400384057c" />
+
+In this section, you should specify all the ip ranges utilized by your customers' routers, including ranges for static IPs. By default, we include 4 common IP Ranges, as seen in the image above.
+
+*Tip: In this section, in order to remove an IP range, you have to highlight the IP range with the keyboard arrows, and then click the ```Tab``` key until ```<Remove Selected>``` is highlighted, then click ```Enter```.
+
+### Web Users
+<img width="1664" height="528" alt="web_users" src="https://github.com/user-attachments/assets/8db17e0e-cc3d-4d67-9c59-4751bc4d9b0f" />
+
+In this section, you can create users to access the LibreQoS Web Dashboard, with their respective roles. There's 2 different types of roles: ```Admin``` and ```Read Only```.
+***
+After clicking on save file, you may see the following message on the terminal
+```
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+N: Download is performed unsandboxed as root as file '/home/libreqos/libreqos_1.5-RC2.202510052233-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+```
+This error is benign and does not reflect any issues. Please disregard it.
+
+### Next Steps
+
+Next, you will want to configure your [CRM or NMS integration](integrations.md) using the Web Interface Configuration page. If you do not use a supported CRM/NMS, you will need to create a script or process to produce the needed files for LibreQoS to shape traffic - specifically network.json and ShapedDevices.csv. The format of these files are explained in further detail in later sections of this page.
+
+## Configuration Via Web Interface
+
+Most LibreQoS shaper settings can be modified via the Configuration page on the WebUI (http://your_shaper_ip:9123/config_general.html).
+
+## Configuration via Command Line
+
+You can also modify settings using the command line.
+
+### Main Configuration File
+#### /etc/lqos.conf
 
 The configuration for each LibreQoS shaper box is stored in the file `/etc/lqos.conf`.
 
@@ -25,7 +88,7 @@ Note: If you find that traffic is not being shaped when it should, please make s
 
 After changing any part of `/etc/lqos.conf` it is highly recommended to always restart lqosd, using `sudo systemctl restart lqosd`. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.
 
-### Netflow (optional)
+#### Netflow (optional)
 To enable netflow, add the following `[flows]` section to the `/etc/lqos.conf` configuration file, setting the appropriate `netflow_ip`:
 ```
 [flows]
@@ -37,12 +100,12 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
-### CRM/NMS Integrations
+#### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).
 
-## Network Hierarchy
-### Network.json
+### Network Hierarchy
+#### Network.json
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
@@ -58,7 +121,7 @@ For networks with no Parent Nodes (no strictly defined Access Points or Sites) e
 echo "{}" > network.json
 ```
 
-#### CSV to JSON conversion helper
+##### CSV to JSON conversion helper
 
 You can use
 
@@ -71,7 +134,7 @@ manualNetwork.csv can be copied from the template file, manualNetwork.template.c
 
 Note: The parent node name must match that used for clients in ShapedDevices.csv
 
-## Circuits
+### Circuits
 
 LibreQoS shapes individual devices by their IP addresses, which are grouped into "circuits".
 
@@ -79,7 +142,7 @@ A circuit represents an ISP subscriber's internet service, which may have just o
 
 LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they are contained by, with the ShapedDevices.csv file.
 
-### ShapedDevices.csv
+#### ShapedDevices.csv
 
 The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
 
@@ -100,17 +163,17 @@ Here is an example of an entry in the ShapedDevices.csv file:
 
 If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
 
-#### Multiple IPs per Circuit
+##### Multiple IPs per Circuit
 If you need to list multiple IPv4s in the IPv4 field, or multiple IPv6s in the IPv6 field, add a comma between them. If you are editing with a CSV editor (LibreOffice Calc, Excel), the CSV editor will automatically wrap these comma-seperated items with quotes for you. If you are editing the file manually with a utility like notepad or nano, please add quotes surrounding the comma-seperated entries.
 
 ```
 2794,"6 Littleton Drive, Ringgold, GA 30736",5,Device 5,AP_11,,100.64.0.5,"fdd7:b724:0:500::/56,fdd7:b724:0:600::/56",1,1,105,18,""
 ```
 
-#### Manual Editing by WebUI
+##### Manual Editing by WebUI
 Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > Shaped Devices.
 
-#### Manual Editing by CLI
+##### Manual Editing by CLI
 
 - Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
 - Circuit ID is required. The Circuit ID can be a number or string. This field must NOT include any number symbols (#). Every circuit requires a unique CircuitID - they cannot be reused. Here, circuit essentially refers to a customer's service. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
