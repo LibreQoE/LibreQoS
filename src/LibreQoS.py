@@ -897,6 +897,19 @@ def refreshShapers():
             return newDict
         network = flattenA(network, 1)
 
+        # Prepare planner weights (actual weighting may come from Insight or CSV defaults)
+        weight_by_circuit_id = {}
+        try:
+            weights = get_weights()
+            for w in weights:
+                try:
+                    weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
+                except Exception:
+                    pass
+        except Exception:
+            # If we can't get weights, leave mapping empty; UI will fall back
+            weight_by_circuit_id = {}
+
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
         circuit_min_down_combined_by_parent_node = {}
@@ -1053,6 +1066,13 @@ def refreshShapers():
                                 "classMinor": hex(minorByCPU[queue]),
                                 "comment": circuit['comment']
                             }
+                            # Attach the planner weight if available (real weighting used by the planner)
+                            try:
+                                cid = str(circuit.get('circuitID',''))
+                                if cid in weight_by_circuit_id:
+                                    thisNewCircuitItemForNetwork['planner_weight'] = weight_by_circuit_id[cid]
+                            except Exception:
+                                pass
                             # Preserve optional per-circuit SQM override for downstream bakery call
                             if 'sqm' in circuit and circuit['sqm']:
                                 thisNewCircuitItemForNetwork['sqm'] = circuit['sqm']

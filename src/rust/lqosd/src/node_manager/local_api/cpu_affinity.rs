@@ -9,6 +9,7 @@ pub struct CpuSideSummary {
     pub circuits: usize,
     pub min_sum_mbps: f64,
     pub max_sum_mbps: f64,
+    pub weight_sum: f64,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -27,8 +28,8 @@ pub struct CircuitBrief {
     pub circuit_name: Option<String>,
     pub parent_node: Option<String>,
     pub classid: Option<String>,
-    pub min_mbps: f64,
     pub max_mbps: f64,
+    pub weight: f64,
     pub ip_count: usize,
 }
 
@@ -50,6 +51,7 @@ struct CircuitRecord {
     max_down: f64,
     min_up: f64,
     max_up: f64,
+    planner_weight: f64,
     classid_down: Option<String>,
     classid_up: Option<String>,
     circuit_id: Option<String>,
@@ -152,19 +154,23 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("up_classid") {
             rec.classid_up = Some(s.clone());
         }
-        // bandwidths
-        if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
-            rec.min_down = v;
-        }
-        if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
-            rec.max_down = v;
-        }
-        if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
-            rec.min_up = v;
-        }
-        if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
-            rec.max_up = v;
-        }
+    // bandwidths
+    if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
+        rec.min_down = v;
+    }
+    if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
+        rec.max_down = v;
+    }
+    if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
+        rec.min_up = v;
+    }
+    if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
+        rec.max_up = v;
+    }
+    // planner weight if present
+    if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
+        rec.planner_weight = v;
+    }
         // identity
         if let Some(Value::String(s)) = cm.get("circuitID") {
             if !s.is_empty() { rec.circuit_id = Some(s.clone()); }
@@ -233,21 +239,23 @@ fn load_all_circuits() -> Vec<CircuitRecord> {
 
 pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
     let circuits = load_all_circuits();
-    let mut down: HashMap<u32, (usize, f64, f64)> = HashMap::new();
-    let mut up: HashMap<u32, (usize, f64, f64)> = HashMap::new();
+    let mut down: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
+    let mut up: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
 
     for c in circuits.iter() {
         if let Some(cpu) = c.cpu_down {
-            let entry = down.entry(cpu).or_insert((0, 0.0, 0.0));
+            let entry = down.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
             entry.0 += 1;
             entry.1 += c.min_down;
             entry.2 += c.max_down;
+            entry.3 += c.planner_weight;
         }
         if let Some(cpu) = c.cpu_up {
-            let entry = up.entry(cpu).or_insert((0, 0.0, 0.0));
+            let entry = up.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
             entry.0 += 1;
             entry.1 += c.min_up;
             entry.2 += c.max_up;
+            entry.3 += c.planner_weight;
         }
     }
 
@@ -258,19 +266,21 @@ pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
 
     let mut entries = Vec::with_capacity(cpus.len());
     for cpu in cpus.into_iter() {
-        let d = down.get(&cpu).cloned().unwrap_or((0, 0.0, 0.0));
-        let u = up.get(&cpu).cloned().unwrap_or((0, 0.0, 0.0));
+        let d = down.get(&cpu).cloned().unwrap_or((0, 0.0, 0.0, 0.0));
+        let u = up.get(&cpu).cloned().unwrap_or((0, 0.0, 0.0, 0.0));
         entries.push(CpuAffinitySummaryEntry {
             cpu,
             download: CpuSideSummary {
                 circuits: d.0,
                 min_sum_mbps: d.1,
                 max_sum_mbps: d.2,
+                weight_sum: d.3,
             },
             upload: CpuSideSummary {
                 circuits: u.0,
                 min_sum_mbps: u.1,
                 max_sum_mbps: u.2,
+                weight_sum: u.3,
             },
         });
     }
@@ -317,8 +327,8 @@ pub async fn cpu_affinity_circuits(
             } else {
                 c.classid_down
             },
-            min_mbps: if direction == "up" { c.min_up } else { c.min_down },
             max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            weight: c.planner_weight,
             ip_count: c.ip_count,
         })
         .collect();
@@ -389,8 +399,8 @@ pub async fn cpu_affinity_circuits_all(
             } else {
                 c.classid_down
             },
-            min_mbps: if direction == "up" { c.min_up } else { c.min_down },
             max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            weight: c.planner_weight,
             ip_count: c.ip_count,
         })
         .collect();

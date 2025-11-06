@@ -55,7 +55,7 @@ function renderSummary(data) {
     const thead = document.createElement("thead");
     thead.appendChild(theading("CPU"));
     thead.appendChild(theading("DL Circuits"));
-    thead.appendChild(theading("DL Min (Mbps)"));
+    thead.appendChild(theading("Weight"));
     thead.appendChild(theading("DL Max (Mbps)"));
     thead.appendChild(theading("Actions"));
     table.appendChild(thead);
@@ -68,11 +68,17 @@ function renderSummary(data) {
         return td;
     };
 
+    // simple weight formatter
+    const fmtWeight = (x) => {
+        const n = Number(x || 0);
+        return n > 0 ? n.toLocaleString() : '-';
+    };
+
     data.forEach((row) => {
         const tr = document.createElement("tr");
         tr.appendChild(centerCell(row.cpu));
         tr.appendChild(centerCell(row.download.circuits));
-        tr.appendChild(centerCell(fmtMbps(row.download.min_sum_mbps)));
+        tr.appendChild(centerCell(fmtWeight(row.download && row.download.weight_sum)));
         tr.appendChild(centerCell(fmtMbps(row.download.max_sum_mbps)));
 
         const actions = document.createElement("td");
@@ -115,10 +121,14 @@ function renderSummary(data) {
             dlMaxPie = null;
         }
         dlMaxPie = new DashboardGraph('cpuDlMaxPie');
-        const seriesData = data.map((row) => ({
-            name: `CPU ${row.cpu}`,
-            value: Number(row.download.max_sum_mbps || 0)
-        }));
+        const seriesData = data.map((row) => {
+            const w = Number((row.download && row.download.weight_sum) ? row.download.weight_sum : 0);
+            const v = Number(row.download.max_sum_mbps || 0);
+            return {
+                name: `CPU ${row.cpu}`,
+                value: (w > 0 ? w : v)
+            };
+        });
         dlMaxPie.option = {
             tooltip: { trigger: 'item' },
             legend: { show: false },
@@ -174,7 +184,7 @@ function renderCircuits(page) {
     thead.appendChild(theading("Circuit Name"));
     thead.appendChild(theading("Parent"));
     thead.appendChild(theading("ClassID"));
-    thead.appendChild(theading("Min (Mbps)"));
+    thead.appendChild(theading("Weight"));
     thead.appendChild(theading("Max (Mbps)"));
     thead.appendChild(theading("IPs"));
     table.appendChild(thead);
@@ -195,7 +205,9 @@ function renderCircuits(page) {
         tr.appendChild(simpleRow(c.circuit_name || ""));
         tr.appendChild(simpleRow(c.parent_node || ""));
         tr.appendChild(simpleRow(c.classid || ""));
-        tr.appendChild(simpleRow(fmtMbps(c.min_mbps)));
+        const weightCell = document.createElement('td');
+        weightCell.innerText = (c.weight && c.weight > 0) ? c.weight.toLocaleString() : '-';
+        tr.appendChild(weightCell);
         tr.appendChild(simpleRow(fmtMbps(c.max_mbps)));
         tr.appendChild(simpleRow(String(c.ip_count || 0)));
         tbody.appendChild(tr);
