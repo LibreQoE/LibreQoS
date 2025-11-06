@@ -192,6 +192,9 @@ function renderCircuits(page) {
 
     page.items.forEach((c) => {
         const tr = document.createElement("tr");
+        if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {
+            tr.classList.add('text-muted');
+        }
         const idCell = document.createElement("td");
         if (c.circuit_id) {
             const a = document.createElement("a");
@@ -206,7 +209,11 @@ function renderCircuits(page) {
         tr.appendChild(simpleRow(c.parent_node || ""));
         tr.appendChild(simpleRow(c.classid || ""));
         const weightCell = document.createElement('td');
-        weightCell.innerText = (c.weight && c.weight > 0) ? c.weight.toLocaleString() : '-';
+        if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {
+            weightCell.innerHTML = "<span class='badge bg-secondary'>ignored</span>";
+        } else {
+            weightCell.innerText = (c.weight && c.weight > 0) ? c.weight.toLocaleString() : '-';
+        }
         tr.appendChild(weightCell);
         tr.appendChild(simpleRow(fmtMbps(c.max_mbps)));
         tr.appendChild(simpleRow(String(c.ip_count || 0)));

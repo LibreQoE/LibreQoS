@@ -31,6 +31,7 @@ pub struct CircuitBrief {
     pub max_mbps: f64,
     pub weight: f64,
     pub ip_count: usize,
+    pub ignored: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -52,6 +53,7 @@ struct CircuitRecord {
     min_up: f64,
     max_up: f64,
     planner_weight: f64,
+    has_planner_weight: bool,
     classid_down: Option<String>,
     classid_up: Option<String>,
     circuit_id: Option<String>,
@@ -131,20 +133,20 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("cpuNum") {
             rec.cpu_down = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("classMajor") {
-            if let Some(mut v) = parse_hex_u32(s) { rec.cpu_down = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) { rec.cpu_down = Some(v.saturating_sub(1)); }
         } else if let Some(Value::String(s)) = cm.get("classid") {
             // Fallback: parse major from TC handle like "0x1:0x51"
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(mut v) = parse_hex_u32(maj) { rec.cpu_down = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) { rec.cpu_down = Some(v.saturating_sub(1)); }
             }
         }
         if let Some(Value::String(s)) = cm.get("up_cpuNum") {
             rec.cpu_up = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("up_classMajor") {
-            if let Some(mut v) = parse_hex_u32(s) { rec.cpu_up = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) { rec.cpu_up = Some(v.saturating_sub(1)); }
         } else if let Some(Value::String(s)) = cm.get("up_classid") {
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(mut v) = parse_hex_u32(maj) { rec.cpu_up = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) { rec.cpu_up = Some(v.saturating_sub(1)); }
             }
         }
         // classids
@@ -170,6 +172,7 @@ fn add_circuit_records(
     // planner weight if present
     if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
         rec.planner_weight = v;
+        rec.has_planner_weight = true;
     }
         // identity
         if let Some(Value::String(s)) = cm.get("circuitID") {
@@ -243,19 +246,24 @@ pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
     let mut up: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
 
     for c in circuits.iter() {
+        let ignored = c.has_planner_weight && c.planner_weight <= 0.0;
         if let Some(cpu) = c.cpu_down {
-            let entry = down.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
-            entry.0 += 1;
-            entry.1 += c.min_down;
-            entry.2 += c.max_down;
-            entry.3 += c.planner_weight;
+            if !ignored {
+                let entry = down.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
+                entry.0 += 1;
+                entry.1 += c.min_down;
+                entry.2 += c.max_down;
+                entry.3 += c.planner_weight;
+            }
         }
         if let Some(cpu) = c.cpu_up {
-            let entry = up.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
-            entry.0 += 1;
-            entry.1 += c.min_up;
-            entry.2 += c.max_up;
-            entry.3 += c.planner_weight;
+            if !ignored {
+                let entry = up.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
+                entry.0 += 1;
+                entry.1 += c.min_up;
+                entry.2 += c.max_up;
+                entry.3 += c.planner_weight;
+            }
         }
     }
 
@@ -330,6 +338,7 @@ pub async fn cpu_affinity_circuits(
             max_mbps: if direction == "up" { c.max_up } else { c.max_down },
             weight: c.planner_weight,
             ip_count: c.ip_count,
+            ignored: c.has_planner_weight && c.planner_weight <= 0.0,
         })
         .collect();
 
@@ -402,6 +411,7 @@ pub async fn cpu_affinity_circuits_all(
             max_mbps: if direction == "up" { c.max_up } else { c.max_down },
             weight: c.planner_weight,
             ip_count: c.ip_count,
+            ignored: c.has_planner_weight && c.planner_weight <= 0.0,
         })
         .collect();
 
@@ -457,7 +467,7 @@ pub async fn cpu_affinity_preview_weights(
                 .circuit_id
                 .clone()
                 .or(c.circuit_name.clone())
-                .unwrap_or_else(|| String::new()),
+                .unwrap_or_default(),
             weight: if direction == "up" { c.max_up } else { c.max_down },
         })
         .collect();

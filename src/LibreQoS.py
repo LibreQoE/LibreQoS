@@ -688,6 +688,14 @@ def refreshShapers():
                     # If a specific circuit weight exists, prefer it
                     if 'circuitID' in circuit and str(circuit['circuitID']) in weight_by_circuit_id:
                         w = weight_by_circuit_id[str(circuit['circuitID'])]
+                    # Ignore placeholder default rates for weight purposes
+                    try:
+                        default_rate = float(generated_pn_download_mbps())
+                        max_dl = float(circuit.get('maxDownload', 0))
+                        if abs(max_dl - default_rate) < 1e-6:
+                            w = 0.0
+                    except Exception:
+                        pass
                     items.append({"id": item_id, "weight": float(w)})
 
             # Prepare bins and capacities
@@ -1070,15 +1078,27 @@ def refreshShapers():
                                 "classMinor": hex(minorByCPU[queue]),
                                 "comment": circuit['comment']
                             }
-                            # Attach the planner weight if available (real weighting used by the planner)
+                            # Attach the planner weight used by the planner/UI summary
+                            # Priority: explicit weight -> fallback to maxDownload
                             try:
                                 cid = str(circuit.get('circuitID',''))
+                                w = None
                                 if cid in weight_by_circuit_id:
                                     w = float(weight_by_circuit_id[cid])
-                                    # Treat 1000 as a sentinel default from Insight; use maxDownload instead
-                                    if abs(w - 1000.0) < 1e-6:
-                                        w = float(maxDownload)
-                                    thisNewCircuitItemForNetwork['planner_weight'] = w
+                                if w is None:
+                                    w = float(maxDownload)
+                                # Treat 1000 as a sentinel default from Insight; use maxDownload instead
+                                if abs(w - 1000.0) < 1e-6:
+                                    w = float(maxDownload)
+                                # If the circuit's configured rate equals the generated PN default,
+                                # ignore it for weight purposes.
+                                try:
+                                    default_rate = float(generated_pn_download_mbps())
+                                    if abs(float(maxDownload) - default_rate) < 1e-6:
+                                        w = 0.0
+                                except Exception:
+                                    pass
+                                thisNewCircuitItemForNetwork['planner_weight'] = w
                             except Exception:
                                 pass
                             # Preserve optional per-circuit SQM override for downstream bakery call
