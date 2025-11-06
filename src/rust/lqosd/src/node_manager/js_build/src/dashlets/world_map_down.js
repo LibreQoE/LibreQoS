@@ -77,8 +77,8 @@ export class WorldMap3DGraph extends DashboardGraph {
     }
     update(data){
         this.chart.hideLoading();
-        this.option.series[0].data = data;
-        this.chart.setOption(this.option);
+        // Only update series data to avoid re-rendering geo3D and post effects
+        this.chart.setOption({ series: [{ data }] }, false, false);
     }
     onThemeChange(){
         // Only adjust the environment to maintain appropriate background
