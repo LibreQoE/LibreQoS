@@ -11,12 +11,18 @@ function ensureWorldMap() {
     } catch (_) {}
     if (window._worldMapPromise) return window._worldMapPromise;
     window._worldMapPromise = new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.id = 'echarts_world_js';
-        s.src = 'https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js';
-        s.onload = () => resolve();
-        s.onerror = () => reject();
-        document.head.appendChild(s);
+        // Try local vendor first (ship as static2/vendor/echarts_world.js)
+        const load = (src, onfail) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = () => resolve();
+            s.onerror = () => onfail ? onfail() : reject();
+            document.head.appendChild(s);
+        };
+        load('vendor/echarts_world.js', () => {
+            // Fallback to CDN if local not present
+            load('https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js');
+        });
     });
     return window._worldMapPromise;
 }
