@@ -1,0 +1,50 @@
+<div class="row">
+    <div class="col-12">
+        <div class="row align-items-end mb-3">
+            <div class="col-12 col-lg-8">
+                <h5 class="mb-1"><i class="fa fa-microchip"></i> CPU Affinity</h5>
+                <p class="text-muted mb-0">View current circuit placement per CPU/queue from the active TC plan.</p>
+            </div>
+            <div class="col-12 col-lg-4">
+                <div class="d-flex flex-wrap justify-content-lg-end align-items-end gap-2 mt-2 mt-lg-0">
+                    <div>
+                        <label for="pageSize" class="form-label mb-0">Page Size</label>
+                        <input type="number" id="pageSize" class="form-control form-control-sm" value="50" min="10" max="1000">
+                    </div>
+                    <div class="d-flex align-items-end">
+                        <span id="binpackBadge" class="badge bg-secondary">Binpacking: …</span>
+                    </div>
+                    <div class="ms-auto ms-lg-0">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">
+                            <i class="fa fa-rotate"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="cpuSummary" class="mb-4">
+            <i class="fa fa-spinner fa-spin"></i> Loading CPU summary...
+        </div>
+
+        <hr/>
+
+        <div id="cpuDetails">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                    <strong class="text-secondary">Circuits</strong>
+                    <span id="currentCpuLabel" class="text-muted"></span>
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
+                    <button class="btn btn-outline-secondary" id="btnPrev">Prev</button>
+                    <button class="btn btn-outline-secondary" id="btnNext">Next</button>
+                </div>
+            </div>
+            <div id="circuitsTable">
+                <i class="fa fa-info-circle"></i> <span class="text-secondary">Select a CPU from the table above.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="cpu_weights.js%CACHEBUSTERS%"></script>

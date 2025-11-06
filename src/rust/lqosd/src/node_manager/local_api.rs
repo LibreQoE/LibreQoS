@@ -8,6 +8,7 @@ mod flow_explorer;
 mod flow_map;
 pub mod lts;
 mod network_tree;
+mod cpu_affinity;
 mod packet_analysis;
 mod reload_libreqos;
 mod scheduler;
@@ -66,6 +67,19 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         )
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route("/flowMap", get(flow_map::flow_lat_lon))
+        .route("/cpuAffinity/summary", get(cpu_affinity::cpu_affinity_summary))
+        .route(
+            "/cpuAffinity/circuits/:cpu",
+            get(cpu_affinity::cpu_affinity_circuits),
+        )
+        .route(
+            "/cpuAffinity/circuitsAll",
+            get(cpu_affinity::cpu_affinity_circuits_all),
+        )
+        .route(
+            "/cpuAffinity/previewWeights",
+            get(cpu_affinity::cpu_affinity_preview_weights),
+        )
         .route("/globalWarnings", get(warnings::get_global_warnings))
         .route("/asnList", get(flow_explorer::asn_list))
         .route("/countryList", get(flow_explorer::country_list))
