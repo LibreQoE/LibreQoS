@@ -1070,7 +1070,11 @@ def refreshShapers():
                             try:
                                 cid = str(circuit.get('circuitID',''))
                                 if cid in weight_by_circuit_id:
-                                    thisNewCircuitItemForNetwork['planner_weight'] = weight_by_circuit_id[cid]
+                                    w = float(weight_by_circuit_id[cid])
+                                    # Treat 1000 as a sentinel default from Insight; use maxDownload instead
+                                    if abs(w - 1000.0) < 1e-6:
+                                        w = float(maxDownload)
+                                    thisNewCircuitItemForNetwork['planner_weight'] = w
                             except Exception:
                                 pass
                             # Preserve optional per-circuit SQM override for downstream bakery call
