@@ -21,6 +21,7 @@ pub enum PublishedChannels {
     Cpu,
     Ram,
     TreeSummary,
+    TreeSummaryL2,
     QueueStatsTotal,
     NetworkTree,
     NetworkTreeClients,
