@@ -46,3 +46,39 @@ The Shaper tab shows high-level stats for a particular LibreQoS shaper box.
 - Shaper Memory Utilization: The RAM utilization of the shaper box over time.
 
 #### Children Tab
+
+<img width="3840" height="2160" alt="03 child view" src="https://github.com/user-attachments/assets/1f0a0e3c-672b-4982-b334-60a681248b99" />
+
+- Shaper Child Throughput: The throughput of each top-level child node on the shaper box.
+- Shaper Child TCP Retransmits: This can be used to spot outliers top-level nodes with regard to Retransmits (packet loss).
+- Shaper Child Round Trip Time: This can be used to spot outliers top-level nodes with regard to Round Trip Time.
+
+#### Heatmaps
+
+<img width="3840" height="2160" alt="04 heatmap" src="https://github.com/user-attachments/assets/f3911ca3-8157-43dc-9f57-1402a6cd0204" />
+
+This view shows the Round Trip Time, Retransmit, and Capacity heatmaps for the top-level nodes on this shaper box.
+
+#### Site Rankings
+
+<img width="3840" height="2160" alt="05 health" src="https://github.com/user-attachments/assets/37e69c41-646c-458f-912d-8556acace102" />
+
+This tab shows the health of Sites / Access Points / etc across the network in terms of their Round Trip Time, TCP Retransmits, and Capacity in each direction.
+
+### Node Map
+
+<img width="3840" height="2160" alt="06 map" src="https://github.com/user-attachments/assets/219d75b3-739a-4f41-86e6-5bc270f22afd" />
+
+This view allows you to identify the general topology of the network from LibreQoS Insight's perspective. If you hover over the bands between nodes, it will display the current throughput and TCP retransmits for that leg of the network.
+
+### Libby (AI Assistant)
+<img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
+
+Libby is LibreQoS Insight's AI Chat Assistant. Libby can help with questions you may have about using LibreQoS or LibreQoS Insight. Libby leverages the official LibreQoS documentation to help yu with any questions you may have. Libby can access both live and long-term data - both from synced LibreQoS shaper boxes and from Insight itself. Libby can reply to queries in most major languages with automatic translation.
+
+You may find new ways to use Libby that we had not originally considered. Please feel welcome to share with us ways you have found Libby to help your workflow.
+
+### Site Heatmap
+<img width="3830" height="2160" alt="08 heatmap" src="https://github.com/user-attachments/assets/dfaea245-3221-4cea-874b-fd795ac8da33" />
+
+This view provides RTT, Retransmit, and Capacity heatmaps for every Access Point, OLT, and Site across your network in one view. This allows you to quickly spot trouble points on your network.
