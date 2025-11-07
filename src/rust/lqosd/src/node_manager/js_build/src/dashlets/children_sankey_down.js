@@ -15,19 +15,26 @@ class ChildrenSankeyGraph extends DashboardGraph {
         this.chart.setOption(this.option);
     }
     update(items) {
-        const nodes = [{ name: 'Shaper' }];
-        const links = [];
-        items.forEach(it => {
-            const color = colorByRetransmitPct(it.rxmit ?? 0);
-            nodes.push({ name: it.name, itemStyle: { color } });
-            if (this.direction === 'down') {
-                links.push({ source: it.name, target: 'Shaper', value: it.value });
-            } else {
-                links.push({ source: 'Shaper', target: it.name, value: it.value });
-            }
-        });
-        this.option.series[0].data = nodes;
-        this.option.series[0].links = links;
+        // Backward compatibility: if items is an array of {name,value,rxmit}, draw 1-level
+        if (Array.isArray(items)) {
+            const nodes = [{ name: 'Shaper' }];
+            const links = [];
+            items.forEach(it => {
+                const color = colorByRetransmitPct(it.rxmit ?? 0);
+                nodes.push({ name: it.name, itemStyle: { color } });
+                if (this.direction === 'down') {
+                    links.push({ source: it.name, target: 'Shaper', value: it.value });
+                } else {
+                    links.push({ source: 'Shaper', target: it.name, value: it.value });
+                }
+            });
+            this.option.series[0].data = nodes;
+            this.option.series[0].links = links;
+        } else if (items && items.nodes && items.links) {
+            // New 2-level path: items = { nodes, links }
+            this.option.series[0].data = items.nodes;
+            this.option.series[0].links = items.links;
+        }
         this.chart.hideLoading();
         this.chart.setOption(this.option);
     }
@@ -39,11 +46,13 @@ export class ShaperChildrenDown extends BaseDashlet {
         this.last=null; this._emptyId = this.id + "_empty";
         this._smooth = new Map();
         this._ALPHA = 0.3; this._ALPHA_RX = 0.2; this._DECAY = 0.15; this._LINGER = 3;
+        this._lastSummary = null; // raw TreeSummary
+        this._lastL2 = null;      // TreeSummaryL2
     }
     canBeSlowedDown(){ return true; }
     title(){ return "Shaper Children (Download)"; }
     tooltip(){ return "<h5>Child Throughput</h5><p>Top child nodes by download throughput."; }
-    subscribeTo(){ return ["TreeSummary"]; }
+    subscribeTo(){ return ["TreeSummary", "TreeSummaryL2"]; }
     buildContainer(){ let b = super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
     setup(){ this.graph = new ChildrenSankeyGraph(this.graphDivId(), 'down'); if (this.last) this.graph.update(this.last); }
     _showEmpty(show, msg = "No recent data"){
@@ -87,9 +96,66 @@ export class ShaperChildrenDown extends BaseDashlet {
         out.sort((a,b)=> b.value - a.value);
         return out.slice(0,9);
     }
+    _renderTwoLevel(){
+        if (!this._lastSummary || !this._lastL2) return false;
+        // Build parent map
+        const parentMap = new Map();
+        (this._lastSummary || []).slice(1).forEach(r => parentMap.set(r[0], r[1]));
+
+        const nodes = [{ name: 'Shaper' }];
+        const links = [];
+        let hasData = false;
+
+        for (const [parentId, children] of this._lastL2) {
+            const p = parentMap.get(parentId);
+            if (!p) continue;
+            const pName = p.name || String(parentId);
+            // Parent color by rxmit (download)
+            let pRx = 0;
+            if ((p.current_tcp_packets?.[0]||0) > 0) {
+                pRx = ((p.current_retransmits?.[0]||0) / Math.max(1, p.current_tcp_packets?.[0]||0)) * 100.0;
+            }
+            nodes.push({ name: pName, itemStyle: { color: colorByRetransmitPct(pRx) } });
+
+            let parentSum = 0;
+            for (const [, c] of children) {
+                const v = Number((c.current_throughput?.[0]||0));
+                if (v <= 0) continue;
+                parentSum += v;
+                hasData = hasData || v > 0.5;
+                let cRx = 0;
+                if ((c.current_tcp_packets?.[0]||0) > 0) {
+                    cRx = ((c.current_retransmits?.[0]||0) / Math.max(1, c.current_tcp_packets?.[0]||0)) * 100.0;
+                }
+                nodes.push({ name: c.name, itemStyle: { color: colorByRetransmitPct(cRx) } });
+                links.push({ source: c.name, target: pName, value: v });
+            }
+            if (parentSum > 0) {
+                links.push({ source: pName, target: 'Shaper', value: parentSum });
+            }
+        }
+
+        this._showEmpty(!hasData);
+        if (hasData) {
+            this.graph.update({ nodes, links });
+            return true;
+        }
+        return false;
+    }
+
     onMessage(msg){
+        if (msg.event === "TreeSummary") {
+            this._lastSummary = msg.data;
+        } else if (msg.event === "TreeSummaryL2") {
+            this._lastL2 = msg.data;
+        } else {
+            return;
+        }
+
+        // Prefer 2-level; if unavailable, fallback to 1-level smoothing
+        if (this._renderTwoLevel()) return;
+
         if (msg.event !== "TreeSummary") return;
-        // msg.data: [ [id, metrics], [id, metrics], ... ] - first is root
         let rows = (msg.data || []).slice(1).map(r => {
             const m = r[1] || {};
             const name = m.name || String(r[0]);
