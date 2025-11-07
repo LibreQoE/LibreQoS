@@ -1,6 +1,6 @@
 use crate::MQ_CREATED;
 use crate::queue_math::{
-    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup,
+    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec,
     sqm_tokens_for,
 };
 use allocative::Allocative;
@@ -601,7 +601,7 @@ impl BakeryCommands {
             }
         }
         let do_htb;
-        let mut do_sqm;
+        let do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
             // In builder mode, if we're fully lazy - we don't do anything.
