@@ -82,3 +82,19 @@ You may find new ways to use Libby that we had not originally considered. Please
 <img width="3830" height="2160" alt="08 heatmap" src="https://github.com/user-attachments/assets/dfaea245-3221-4cea-874b-fd795ac8da33" />
 
 This view provides RTT, Retransmit, and Capacity heatmaps for every Access Point, OLT, and Site across your network in one view. This allows you to quickly spot trouble points on your network.
+
+### Tree History
+
+<img width="3840" height="2160" alt="09 tree history" src="https://github.com/user-attachments/assets/ea0d0417-c937-41ee-ac4d-7d84c162c6dd" />
+
+The Tree History is based on the Tree Overview display from the LibreQoS WebUI, and displays the sankey over time to help quickly identify network bottlenecks impacting performance.
+
+### Reports
+<img width="3828" height="2160" alt="10 report" src="https://github.com/user-attachments/assets/37f6bd91-8937-4755-a095-6bc38822f544" />
+
+LibreQoS Insight enables you to trigger AI-generated reports on specific subscriber circuits. These reports draw in from the customer's last 7 days of network activity - including per-ASN performance characteristics, network topology context, and geographic context. The report identifies the User Profile, Key Findings, Critical Issues, Performance Trends, an Upgrade Recommendation, and suggestions for items to manually review.
+
+### Alerts
+<img width="3831" height="2160" alt="11 alerts" src="https://github.com/user-attachments/assets/66f0a465-eb00-4bfb-9cf8-c8302af78ead" />
+
+The Alerts section provides you with automated warnings of out-of-norm performance for nodes across the network (Access Points, OLTs, Sites).
