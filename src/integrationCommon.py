@@ -97,12 +97,14 @@ class NetworkNode:
 	type: NodeType
 	downloadMbps: int
 	uploadMbps: int
+	downloadMinMbps: int
+	uploadMinMbps: int
 	ipv4: List
 	ipv6: List
 	address: str
 	mac: str
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), download_min: int = 1, upload_min: int = 1, ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -113,6 +115,8 @@ class NetworkNode:
 			self.displayName = displayName
 		self.downloadMbps = download
 		self.uploadMbps = upload
+		self.downloadMinMbps = download_min
+		self.uploadMinMbps = upload_min
 		self.ipv4 = ipv4
 		self.ipv6 = ipv6
 		self.address = address
@@ -540,8 +544,8 @@ class NetworkGraph:
 						device["mac"],
 						device["ipv4"],
 						device["ipv6"],
-						int(1),
-						int(1),
+						int(float(circuit["download_min"]) * client_bandwidth_multiplier()),
+						int(float(circuit["upload_min"]) * client_bandwidth_multiplier()),
 						int(float(circuit["download"]) * client_bandwidth_multiplier()),
 						int(float(circuit["upload"]) * client_bandwidth_multiplier()),
 						""
