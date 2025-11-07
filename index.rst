@@ -29,8 +29,9 @@ Welcome to the LibreQoS documentation
 
 .. toctree::
    :maxdepth: 1
-   :caption: Insight Features
+   :caption: Insight
 
+   docs/v2.0/insight
    docs/v2.0/api
 
 .. toctree::
