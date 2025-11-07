@@ -733,7 +733,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             } => {
                 let has_mq_run = MQ_CREATED.load(Relaxed);
                 if !has_mq_run {
-                    warn!("StormGuardAdjustment received before MQ setup, skipping.");
+                    debug!("StormGuardAdjustment received before MQ setup, skipping.");
                     continue;
                 }
                 // Build the HTB command
@@ -751,7 +751,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     format!("{}mbit", new_rate),
                 ];
                 if dry_run {
-                    warn!("DRY RUN: /sbin/tc {}", args.join(" "));
+                    info!("DRY RUN: /sbin/tc {}", args.join(" "));
                 } else {
                     let output = std::process::Command::new("/sbin/tc").args(&args).output();
                     match output {
@@ -765,7 +765,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     String::from_utf8_lossy(&out.stderr)
                                 );
                             } else {
-                                info!(
+                                debug!(
                                     "tc command succeeded: {}",
                                     String::from_utf8_lossy(&out.stdout)
                                 );
@@ -793,7 +793,7 @@ fn handle_commit_batch(
     };
 
     let Some(new_batch) = batch.take() else {
-        warn!("CommitBatch received without a batch to commit.");
+        debug!("CommitBatch received without a batch to commit.");
         return;
     };
 
@@ -854,7 +854,7 @@ fn handle_commit_batch(
                 ..
             } = change
             else {
-                warn!(
+                debug!(
                     "ChangeSiteSpeedLive received a non-site command: {:?}",
                     change
                 );
@@ -911,7 +911,7 @@ fn handle_commit_batch(
                     if let Some(cmd) = commands { execute_in_memory(&cmd, "removing circuit"); }
                     live_circuits.remove(&circuit_hash);
                 } else {
-                    warn!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
+                    debug!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
                 }
             }
         }
@@ -1219,7 +1219,7 @@ fn handle_change_site_speed_live(
             ..
         } = site_arc.as_ref()
         else {
-            warn!(
+            debug!(
                 "ChangeSiteSpeedLive received a non-site command: {:?}",
                 site_arc
             );
@@ -1289,7 +1289,7 @@ fn handle_change_site_speed_live(
         });
         sites.insert(site_hash, new_site);
     } else {
-        warn!(
+        info!(
             "ChangeSiteSpeedLive received for unknown site: {}",
             site_hash
         );
