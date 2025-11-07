@@ -1,6 +1,6 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSource, UrgentSeverity};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
@@ -117,6 +117,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
+    m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -1162,6 +1163,52 @@ fn scheduler_alive(_py: Python) -> PyResult<bool> {
 #[pyfunction]
 fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerError(error)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Submit an urgent issue for prominent display in the Node Manager UI.
+///
+/// Parameters:
+/// - source: one of "Scheduler", "LibreQoS", "API", "System"
+/// - severity: "Error" or "Warning"
+/// - code: short machine-readable code (e.g., "TC_U16_OVERFLOW")
+/// - message: human-readable description
+/// - context: optional JSON string with extra details
+/// - dedupe_key: optional key to deduplicate repeats (e.g., code+cpu)
+#[pyfunction]
+fn submit_urgent_issue(
+    _py: Python,
+    source: String,
+    severity: String,
+    code: String,
+    message: String,
+    context: Option<String>,
+    dedupe_key: Option<String>,
+) -> PyResult<bool> {
+    let src = match source.to_ascii_lowercase().as_str() {
+        "scheduler" => UrgentSource::Scheduler,
+        "libreqos" => UrgentSource::LibreQoS,
+        "api" => UrgentSource::API,
+        _ => UrgentSource::System,
+    };
+    let sev = match severity.to_ascii_lowercase().as_str() {
+        "warning" => UrgentSeverity::Warning,
+        _ => UrgentSeverity::Error,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SubmitUrgentIssue {
+        source: src,
+        severity: sev,
+        code,
+        message,
+        context,
+        dedupe_key,
+    }]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);
