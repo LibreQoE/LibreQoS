@@ -30,6 +30,13 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     fast_queues_fq_codel, \
     Bakery
 
+# Optional: urgent issue submission (available in newer liblqos_python)
+try:
+    from liblqos_python import submit_urgent_issue  # type: ignore
+except Exception:
+    def submit_urgent_issue(*_args, **_kwargs):
+        return False
+
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
@@ -1022,7 +1029,13 @@ def refreshShapers():
                 minorByCPU[queue] = minorByCPU[queue] + 1
                 # Check for overflow - TC uses u16 for minor class ID (max 65535)
                 if minorByCPU[queue] > 0xFFFF:
-                    logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                    msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                    logging.error(msg)
+                    try:
+                        ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                        submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                    except Exception:
+                        pass
                     raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                 # If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
                 if node in circuits_by_parent_node:
@@ -1123,7 +1136,13 @@ def refreshShapers():
                     minorByCPU[queue] = minorByCPU[queue] + 1
                     # Check for overflow - TC uses u16 for minor class ID (max 65535)
                     if minorByCPU[queue] > 0xFFFF:
-                        logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                        msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                        logging.error(msg)
+                        try:
+                            ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                            submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                        except Exception:
+                            pass
                         raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                     minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
                 # If top level node, increment to next queue / cpu core
