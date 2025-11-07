@@ -21,11 +21,11 @@ By clicking the time selector (Last 24 Hours by default) you can set the time ra
 
 You can see which shaper box "perspective" is in use by the listed shpaer box name at the top-left corner next to "Select a destination".
 
-<img width="3828" height="2160" alt="01 dashboard" src="https://github.com/user-attachments/assets/29ee98e3-55c7-4466-a444-de9542cc0940" />
-
 The dashboard for LibreQoS Insight is widget-based, and has multiple tabs - each of which can be edited.
 
 #### Traffic Overview Tab
+
+<img width="3828" height="2160" alt="01 dashboard" src="https://github.com/user-attachments/assets/29ee98e3-55c7-4466-a444-de9542cc0940" />
 
 The default tab is the Traffic Overview tab - which displays both Live traffic levels as well as top-traffic endpoints - both by ASN and by Node.
 
@@ -36,7 +36,7 @@ The default tab is the Traffic Overview tab - which displays both Live traffic l
 The Shaper tab shows high-level stats for a particular LibreQoS shaper box. 
 
 - Active Circuit Count: The number of active customer circuits observed - based on the subscriber's traffic movement.
-- Throughput: Shaper box throuhgput
+- Throughput: Shaper box throughput
 - Shaper Packets: Packet-per-second rate of the Shaper box over time.
 - Shaper TCP Retransmits Percentage: The percentage of TCP packets observed that were retransmitted. Consider this a proxy for packet loss. This value should typically remain below 1 % across the network.
 - Shaper CAKE Activity: How active the CAKE shapers are on the network over time.
@@ -74,7 +74,7 @@ This view allows you to identify the general topology of the network from LibreQ
 ### Libby (AI Assistant)
 <img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
 
-Libby is LibreQoS Insight's AI Chat Assistant. Libby can help with questions you may have about using LibreQoS or LibreQoS Insight. Libby leverages the official LibreQoS documentation to help yu with any questions you may have. Libby can access both live and long-term data - both from synced LibreQoS shaper boxes and from Insight itself. Libby can reply to queries in most major languages with automatic translation.
+Libby is LibreQoS Insight's AI Chat Assistant. Libby can help with questions you may have about using LibreQoS or LibreQoS Insight. Libby leverages the official LibreQoS documentation to help you with any questions you may have. Libby can access both live and long-term data - both from synced LibreQoS shaper boxes and from Insight itself. Libby can reply to queries in most major languages with automatic translation.
 
 You may find new ways to use Libby that we had not originally considered. Please feel welcome to share with us ways you have found Libby to help your workflow.
 
