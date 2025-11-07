@@ -52,10 +52,22 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
             validationErrors.push(`Device ${index + 1}: Parent node '${device.parent_node}' does not exist`);
         }
 
-        // Bandwidth validation
-        if (device.download_min_mbps < 1 || device.upload_min_mbps < 1 ||
-            device.download_max_mbps < 1 || device.upload_max_mbps < 1) {
-            validationErrors.push(`Device ${index + 1}: Bandwidth values must be greater than 0`);
+        // Bandwidth validation (supports fractional Mbps)
+        // Minimums must be >= 0.1 Mbps, maximums must be >= 0.2 Mbps
+        const dmin = parseFloat(device.download_min_mbps);
+        const umin = parseFloat(device.upload_min_mbps);
+        const dmax = parseFloat(device.download_max_mbps);
+        const umax = parseFloat(device.upload_max_mbps);
+
+        if (Number.isNaN(dmin) || Number.isNaN(umin) || Number.isNaN(dmax) || Number.isNaN(umax)) {
+            validationErrors.push(`Device ${index + 1}: One or more bandwidth fields are not valid numbers`);
+        } else {
+            if (dmin < 0.1 || umin < 0.1) {
+                validationErrors.push(`Device ${index + 1}: Min rates must be >= 0.1 Mbps`);
+            }
+            if (dmax < 0.2 || umax < 0.2) {
+                validationErrors.push(`Device ${index + 1}: Max rates must be >= 0.2 Mbps`);
+            }
         }
     });
 
@@ -71,51 +83,26 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
     };
     console.log(submission);
 
-    // Send to server with enhanced error handling
-    /*$.ajax({
+    // Send to server and handle plain-text "Ok" response
+    $.ajax({
         type: "POST",
         url: "/local-api/updateNetworkAndDevices",
         contentType: 'application/json',
         data: JSON.stringify(submission),
-        dataType: 'json', // Expect JSON response
-        success: (response) => {
-            try {
-                if (response && response.success) {
-                    if (onComplete) onComplete(true, "Saved successfully");
-                } else {
-                    const msg = response?.message || "Unknown error occurred";
-                    if (onComplete) onComplete(false, msg);
-                    alert("Failed to save: " + msg);
-                }
-            } catch (e) {
-                console.error("Error parsing response:", e);
-                if (onComplete) onComplete(false, "Invalid server response");
-                alert("Invalid server response format");
-            }
+        success: (data) => {
+            if (onComplete) onComplete(data === "Ok", data);
         },
         error: (xhr) => {
-            let errorMsg = "Request failed";
-            try {
-                if (xhr.responseText) {
-                    const json = JSON.parse(xhr.responseText);
-                    errorMsg = json.message || xhr.responseText;
-                } else if (xhr.statusText) {
-                    errorMsg = xhr.statusText;
-                }
-                console.error("AJAX Error:", {
-                    status: xhr.status,
-                    statusText: xhr.statusText,
-                    response: xhr.responseText
-                });
-            } catch (e) {
-                console.error("Error parsing error response:", e);
-                errorMsg = "Unknown error occurred";
-            }
-            
+            const errorMsg = xhr.responseText || xhr.statusText || "Request failed";
+            console.error("AJAX Error:", {
+                status: xhr.status,
+                statusText: xhr.statusText,
+                response: xhr.responseText
+            });
             if (onComplete) onComplete(false, errorMsg);
             alert("Error saving configuration: " + errorMsg);
         }
-    });*/
+    });
 }
 
 export function validNodeList(network_json) {
@@ -137,16 +124,16 @@ export function validNodeList(network_json) {
 export function renderConfigMenu(currentPage) {
     const menuItems = [
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
-        { href: "config_anon.html", icon: "fa-user-secret", text: "Anonymous Usage Stats", id: "anon" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
         { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
-        { href: "config_lts.html", icon: "fa-line-chart", text: "Long-Term Stats", id: "lts" },
+        { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_spylnx.html", icon: "fa-link", text: "Splynx", id: "spylnx" },
+        { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
         { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
         { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },

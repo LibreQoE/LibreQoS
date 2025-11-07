@@ -14,10 +14,6 @@ const bindings = [
     { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true, min: 1, max: 300 },
     { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true, min: 100, max: 100000 },
 
-    // Anonymous Usage
-    { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
-    { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true, required: true },
-
     // Tuning
     { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
     { field: "bindNetdevBudgetUs", path: ".tuning.netdev_budget_usecs", data: "integer", editable: true },
@@ -72,6 +68,7 @@ const bindings = [
     // Integration Common
     { field: "bindCircuitNameAsAddress", path: ".integration_common.circuit_name_as_address", data: "bool", editable: true },
     { field: "bindOverwriteNetJson", path: ".integration_common.always_overwrite_network_json", data: "bool", editable: true },
+    { field: "bindIntegrationMikrotik", path: ".integration_common.use_mikrotik_ipv6", data: "bool", editable: true },
     { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
 
     // Splynx
@@ -79,6 +76,12 @@ const bindings = [
     { field: "bindSplynxApiKey", path: ".spylnx_integration.api_key", data: "string", editable: true },
     { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
     { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
+
+    // Netzur
+    { field: "bindNetzurEnable", path: ".netzur_integration.enable_netzur", data: "bool", editable: true },
+    { field: "bindNetzurApiKey", path: ".netzur_integration.api_key", data: "string", editable: true },
+    { field: "bindNetzurApiUrl", path: ".netzur_integration.api_url", data: "string", editable: true },
+    { field: "bindNetzurTimeout", path: ".netzur_integration.timeout_secs", data: "integer", editable: true },
 
     // UISP
     { field: "bindUispEnable", path: ".uisp_integration.enable_uisp", data: "bool", editable: true },
@@ -637,7 +640,7 @@ function makeSheetBox(rowId, boxId, value, small=false) {
 }
 
 function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" step=\"any\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
     return html;
 }
 
@@ -1023,56 +1026,56 @@ function validateSd() {
         // Download Min
         controlId = "#" + rowPrefix(i, "download_min_mbps");
         let download_min = $(controlId).val();
-        download_min = parseInt(download_min);
+        download_min = parseFloat(download_min);
         if (isNaN(download_min)) {
             valid = false;
             errors.push("Download min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_min < 1) {
+        } else if (download_min < 0.1) {
             valid = false;
-            errors.push("Download min must be 1 or more");
+            errors.push("Download min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Min
         controlId = "#" + rowPrefix(i, "upload_min_mbps");
         let upload_min = $(controlId).val();
-        upload_min = parseInt(upload_min);
+        upload_min = parseFloat(upload_min);
         if (isNaN(upload_min)) {
             valid = false;
             errors.push("Upload min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_min < 1) {
+        } else if (upload_min < 0.1) {
             valid = false;
-            errors.push("Upload min must be 1 or more");
+            errors.push("Upload min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Download Max
         controlId = "#" + rowPrefix(i, "download_max_mbps");
         let download_max = $(controlId).val();
-        upload_min = parseInt(download_max);
+        download_max = parseFloat(download_max);
         if (isNaN(download_max)) {
             valid = false;
             errors.push("Download Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_max < 1) {
+        } else if (download_max < 0.2) {
             valid = false;
-            errors.push("Download Max must be 1 or more");
+            errors.push("Download Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Max
         controlId = "#" + rowPrefix(i, "upload_max_mbps");
         let upload_max = $(controlId).val();
-        upload_min = parseInt(upload_max);
+        upload_max = parseFloat(upload_max);
         if (isNaN(upload_max)) {
             valid = false;
             errors.push("Upload Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_max < 1) {
+        } else if (upload_max < 0.2) {
             valid = false;
-            errors.push("Upload Max must be 1 or more");
+            errors.push("Upload Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
     }
@@ -1120,10 +1123,10 @@ function saveNetAndDevices() {
         row.mac = $("#" + rowPrefix(i, "mac")).val();
         row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
         row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
-        row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
-        row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
-        row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
-        row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+        row.download_min_mbps = parseFloat($("#" + rowPrefix(i, "download_min_mbps")).val());
+        row.upload_min_mbps = parseFloat($("#" + rowPrefix(i, "upload_min_mbps")).val());
+        row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
+        row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
         row.comment = $("#" + rowPrefix(i, "comment")).val();
     }
 

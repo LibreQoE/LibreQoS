@@ -19,6 +19,8 @@ pub(crate) struct SerializableShapedDevice {
     pub download_max_mbps: f32,
     pub upload_max_mbps: f32,
     pub comment: String,
+    /// Optional per-circuit SQM override: "cake", "fq_codel", or "none". Empty = default
+    pub sqm: String,
 }
 
 impl From<&ShapedDevice> for SerializableShapedDevice {
@@ -37,6 +39,11 @@ impl From<&ShapedDevice> for SerializableShapedDevice {
             download_max_mbps: d.download_max_mbps,
             upload_max_mbps: d.upload_max_mbps,
             comment: d.comment.clone(),
+            sqm: d
+                .sqm_override
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "".to_string()),
         }
     }
 }

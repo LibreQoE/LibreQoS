@@ -6,12 +6,16 @@ use arc_swap::ArcSwap;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
 /// Global queue structure (from `queueingStructure.json`)
 pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
     Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
+/// Set to true when the queue structure changes. This is here rather than in StormGuard
+/// to avoid circular dependencies.
+pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone)]
 pub struct QueueStructure {
@@ -49,18 +53,17 @@ fn update_queue_structure() {
     let new_queue_structure = QueueStructure::new();
     ALL_QUEUE_SUMMARY.clear();
     QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
+    QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Fires up a Linux file system watcher than notifies
 /// when `queuingStructure.json` changes, and triggers a reload.
 fn watch_for_queueing_structure_changing() -> Result<(), QueueWatcherError> {
-    // Obtain the path to watch
-    let watch_path = QueueNetwork::path();
-    if watch_path.is_err() {
+    // Get the path to watch
+    let Ok(watch_path) = QueueNetwork::path() else {
         error!("Could not create path for queuingStructure.json");
         return Err(QueueWatcherError::CannotCreatePath);
-    }
-    let watch_path = watch_path.unwrap();
+    };
 
     // Do the watching
     let mut watcher = FileWatcher::new("queueingStructure.json", watch_path);

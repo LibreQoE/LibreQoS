@@ -1,11 +1,22 @@
 /**
- * Opens a full screen modal that lets the user edit dashboard items.
- * @param {Array} initialElements - Array of objects representing current dashboard items. Each object should have a "name" and a "size" (1–12).
+ * Opens a full screen modal that lets the user edit dashboard items with tab support.
+ * @param {Object} layout - The current dashboard layout object with tabs
  * @param {Array} availableElements - Array of objects representing available elements to add (each with a "name" and default "size").
- * @param {Function} callback - A function that will be called with the new array of dashboard items when the user clicks "Done".
+ * @param {Function} callback - A function that will be called with the new layout when the user clicks "Done".
+ * @param {String} cookieName - The localStorage key for saving the dashboard layout.
  */
-export function openDashboardEditor(initialElements, availableElements, callback) {
-    // Build modal HTML with a fullscreen modal, a grid area and an available panel.
+export function openDashboardEditor(layout, availableElements, callback, cookieName) {
+    // Keep track of current tab and layout state
+    let currentLayout = JSON.parse(JSON.stringify(layout)); // Deep copy
+    let activeTabIndex = currentLayout.activeTab || 0;
+    
+    // Create a lookup map for widget names by tag
+    const widgetNameLookup = {};
+    availableElements.forEach(element => {
+        widgetNameLookup[element.tag] = element.name;
+    });
+    
+    // Build modal HTML with tab support
     var modalHtml = `
   <style>
     .border-dashed {
@@ -14,24 +25,73 @@ export function openDashboardEditor(initialElements, availableElements, callback
     .card.h-100 {
         min-height: 100px;
     }
+    .tab-manager {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    .tab-manager .nav-tabs {
+        flex: 1;
+        margin-bottom: 0;
+    }
+    .dashboard-grid-container {
+        min-height: 400px;
+    }
+    .nav-link:hover .fa-pencil-alt {
+        opacity: 1 !important;
+    }
+    .tab-name:focus + .fa-pencil-alt {
+        display: none;
+    }
+    /* Make drop overlay non-interactive so it doesn't block drags */
+    #dropZone { pointer-events: none; }
   </style>
   <div class="modal fade" id="dashboardEditorModal" tabindex="-1" aria-labelledby="dashboardEditorModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="dashboardEditorModalLabel">Dashboard Editor</h5>
+          <button type="button" class="btn btn-primary btn-sm ms-3" id="downloadLayoutButton" title="Save layout to file">
+            <i class="fas fa-download me-1"></i>Download Layout
+          </button>
+          <button type="button" class="btn btn-success btn-sm ms-2" id="uploadLayoutButton" title="Load layout from file">
+            <i class="fas fa-upload me-1"></i>Upload Layout
+          </button>
+          <input type="file" id="layoutFileInput" accept=".json" style="display: none;">
           <button type="button" class="btn btn-danger btn-sm ms-3" id="clearAllButton">
-            <i class="fas fa-trash me-1"></i>Clear All
+            <i class="fas fa-trash me-1"></i>Clear Current Tab
+          </button>
+          <button type="button" class="btn btn-warning btn-sm ms-2" id="restoreDefaultsButton">
+            <i class="fas fa-undo me-1"></i>Restore Defaults
           </button>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <div id="dropZone" class="d-none position-absolute top-0 start-0 w-100 h-100 
+               bg-primary bg-opacity-10 d-flex align-items-center justify-content-center"
+               style="z-index: 1000;">
+              <div class="text-center">
+                  <i class="fas fa-file-upload fa-4x text-primary mb-3"></i>
+                  <h4>Drop layout file here</h4>
+              </div>
+          </div>
           <div class="container-fluid">
             <div class="row">
               <!-- Main grid area for dashboard items -->
               <div class="col-md-9">
-                <div id="dashboardGrid" class="row gy-3">
-                  <!-- Dashboard items will be injected here -->
+                <div class="tab-manager">
+                  <ul class="nav nav-tabs" id="editorTabs">
+                    <!-- Tabs will be injected here -->
+                  </ul>
+                  <button type="button" class="btn btn-sm btn-primary" id="addTabButton">
+                    <i class="fas fa-plus"></i> Add Tab
+                  </button>
+                </div>
+                <div class="dashboard-grid-container">
+                  <div id="dashboardGrid" class="row gy-3">
+                    <!-- Dashboard items will be injected here -->
+                  </div>
                 </div>
               </div>
               <!-- Panel for available elements -->
@@ -55,13 +115,93 @@ export function openDashboardEditor(initialElements, availableElements, callback
     // Append the modal HTML to the body.
     $('body').append(modalHtml);
 
-    // Render the current dashboard items in the grid.
+    // Helper to show alerts
+    function showAlert(message, type = 'info') {
+        const alert = $(`<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`);
+        $('.modal-body .container-fluid').prepend(alert);
+        setTimeout(() => alert.alert('close'), 4000);
+    }
+
+    // Drag & Drop overlay handlers
+    const dropZone = document.getElementById('dropZone');
+    ['dragenter', 'dragover'].forEach(evtName => {
+        document.addEventListener(evtName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('d-none');
+        });
+    });
+    ;['dragleave', 'drop'].forEach(evtName => {
+        document.addEventListener(evtName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('d-none');
+        });
+    });
+    document.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length) {
+            uploadLayout(dt.files[0]);
+        }
+    });
+
+    function renderTabs() {
+        const $tabs = $('#editorTabs');
+        $tabs.empty();
+        currentLayout.tabs.forEach((tab, index) => {
+            const isActive = index === activeTabIndex ? 'active' : '';
+            const tabId = `tab-${index}`;
+            const tabItem = $(`
+                <li class="nav-item">
+                    <a class="nav-link ${isActive}" href="#" data-index="${index}">
+                        <input class="form-control form-control-sm d-inline-block border-0 tab-name" style="width:auto;display:inline;background:transparent;" value="${tab.name}" />
+                        <i class="fas fa-pencil-alt ms-2 text-muted" style="opacity:0.5;"></i>
+                    </a>
+                </li>
+            `);
+            $tabs.append(tabItem);
+        });
+        // Tab click handling
+        $tabs.find('a.nav-link').on('click', function(e) {
+            e.preventDefault();
+            activeTabIndex = parseInt($(this).data('index'), 10);
+            currentLayout.activeTab = activeTabIndex;
+            renderTabs();
+            renderDashboard();
+        });
+        // Inline tab name editing
+        $tabs.find('.tab-name').on('change', function() {
+            const $link = $(this).closest('a.nav-link');
+            const i = parseInt($link.data('index'), 10);
+            currentLayout.tabs[i].name = $(this).val();
+        });
+        // Add remove button to tabs (except if only one tab remains)
+        if (currentLayout.tabs.length > 1) {
+            $tabs.children().each(function(index) {
+                const $li = $(this);
+                const removeBtn = $('<button class="btn btn-sm btn-outline-danger ms-2">x</button>');
+                removeBtn.on('click', function(e) {
+                    e.preventDefault();
+                    currentLayout.tabs.splice(index, 1);
+                    if (activeTabIndex >= currentLayout.tabs.length) activeTabIndex = currentLayout.tabs.length - 1;
+                    currentLayout.activeTab = activeTabIndex;
+                    renderTabs();
+                    renderDashboard();
+                });
+                $li.find('a.nav-link').append(removeBtn);
+            });
+        }
+    }
+
     function renderDashboard() {
-        var $grid = $('#dashboardGrid');
+        const $grid = $('#dashboardGrid');
         $grid.empty();
+        const elements = currentLayout.tabs[activeTabIndex].dashlets || [];
         
-        // Add placeholder if empty
-        if (initialElements.length === 0) {
+        if (elements.length === 0) {
             $grid.append(`
                 <div class="dashboard-item col-12" data-size="12" data-name="placeholder">
                     <div class="card border-dashed h-100">
@@ -73,47 +213,39 @@ export function openDashboardEditor(initialElements, availableElements, callback
             `);
         }
         
-        // Existing item rendering
-        initialElements.forEach(function(item, index) {
-            var itemHtml = `
-      <div class="dashboard-item col-${item.size}" data-index="${index}" data-size="${item.size}" data-name="${item.name}" data-tag="${item.tag}">
-        <div class="card">
-          <div class="card-body p-2">
-            <div class="d-flex justify-content-between align-items-center">
-              <span>${item.name}</span>
-              <div>
-                <button class="btn btn-sm btn-outline-secondary decrease-width">-</button>
-                <button class="btn btn-sm btn-outline-secondary increase-width">+</button>
-                <button class="btn btn-sm btn-outline-danger delete-item">x</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      `;
-            $grid.append(itemHtml);
+        elements.forEach(function(item) {
+            const name = widgetNameLookup[item.tag] || item.name || item.tag;
+            const html = `
+              <div class="dashboard-item col-${item.size}" data-size="${item.size}" data-name="${name}" data-tag="${item.tag}">
+                <div class="card">
+                  <div class="card-body p-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span>${name}</span>
+                      <div>
+                        <button class="btn btn-sm btn-outline-secondary decrease-width">-</button>
+                        <button class="btn btn-sm btn-outline-secondary increase-width">+</button>
+                        <button class="btn btn-sm btn-outline-danger delete-item">x</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>`;
+            $grid.append(html);
         });
     }
 
-    // Render available elements in the side panel with accordion
     function renderAvailable() {
-        var $available = $('#availableList');
+        const $available = $('#availableList');
         $available.empty();
-
-        // Group elements by category
-        const categories = availableElements.reduce((acc, item) => {
-            const category = item.category || 'Uncategorized';
-            if (!acc[category]) acc[category] = [];
-            acc[category].push(item);
-            return acc;
-        }, {});
-
-        // Build accordion HTML with instructions
+        // Group by category
+        const categories = {};
+        availableElements.forEach(item => {
+            const cat = item.category || 'Uncategorized';
+            if (!categories[cat]) categories[cat] = [];
+            categories[cat].push(item);
+        });
+        // Build accordion groups
         const accordionHTML = `
-            <div class="alert alert-info d-flex align-items-center gap-2 mb-3" role="alert">
-                <i class="bi bi-info-circle"></i>
-                <i class="fa fa-info"></i> Drag new widgets to the dashboard
-            </div>
             <div class="accordion" id="availableAccordion">
                 ${Object.entries(categories).map(([category, items], index) => `
                     <div class="accordion-item">
@@ -150,11 +282,27 @@ export function openDashboardEditor(initialElements, availableElements, callback
         $available.html(accordionHTML);
     }
 
+    renderTabs();
     renderDashboard();
     renderAvailable();
 
+    // Handle add tab button
+    $('#addTabButton').on('click', function() {
+        let newTabName = `Tab ${currentLayout.tabs.length + 1}`;
+        currentLayout.tabs.push({
+            name: newTabName,
+            dashlets: []
+        });
+        activeTabIndex = currentLayout.tabs.length - 1;
+        renderTabs();
+        renderDashboard();
+    });
+
     // Initialize SortableJS for the dashboard grid.
     // This allows rearranging within the grid and also accepting items from the available list.
+    if (typeof Sortable === 'undefined') {
+        console.warn('Dashboard editor: SortableJS is not loaded. Drag/drop will be disabled.');
+    } else {
     var dashboardSortable = new Sortable(document.getElementById('dashboardGrid'), {
         animation: 150,
         group: {
@@ -162,10 +310,11 @@ export function openDashboardEditor(initialElements, availableElements, callback
             pull: true,
             put: true
         },
+        onEnd: function (evt) {
+            // Update the order in our data model
+            updateDashletOrder();
+        },
         onAdd: function (evt) {
-            // Remove any placeholder before adding new content
-            $('#dashboardGrid .dashboard-item[data-name="placeholder"]').remove();
-            
             // When an item is dropped into the grid (from the available list),
             // replace it with a fully rendered dashboard item.
             var $item = $(evt.item);
@@ -188,11 +337,16 @@ export function openDashboardEditor(initialElements, availableElements, callback
           </div>
         </div>
       `);
+            updateDashletOrder();
         }
     });
+    }
 
     // Initialize SortableJS for all available elements lists in the accordion
     document.querySelectorAll('.accordion-body .list-group').forEach(list => {
+        if (typeof Sortable === 'undefined') {
+            return;
+        }
         new Sortable(list, {
             animation: 150,
             group: {
@@ -204,27 +358,26 @@ export function openDashboardEditor(initialElements, availableElements, callback
         });
     });
 
+    // Update the dashlet order in our data model based on DOM
+    function updateDashletOrder() {
+        let newDashlets = [];
+        $('#dashboardGrid .dashboard-item').each(function() {
+            let $el = $(this);
+            if ($el.data('name') !== 'placeholder') {
+                // Only store tag and size - name will be looked up from available elements
+                newDashlets.push({
+                    size: parseInt($el.data('size'), 10),
+                    tag: $el.data('tag'),
+                });
+            }
+        });
+        currentLayout.tabs[activeTabIndex].dashlets = newDashlets;
+    }
+
     // Handle delete action for dashboard items.
     $('#dashboardGrid').on('click', '.delete-item', function() {
         $(this).closest('.dashboard-item').remove();
-        // If we removed the last item, add a placeholder
-        if ($('#dashboardGrid .dashboard-item').length === 0) {
-            $('#dashboardGrid').append(`
-                <div class="dashboard-item col-12" data-size="12" data-name="placeholder">
-                    <div class="card border-dashed h-100">
-                        <div class="card-body d-flex justify-content-center align-items-center">
-                            <span class="text-muted">Drag widgets here to start building your dashboard</span>
-                        </div>
-                    </div>
-                </div>
-            `);
-        }
-    });
-
-    // Handle clear all action
-    $('#clearAllButton').on('click', function() {
-        initialElements = [];
-        renderDashboard();
+        updateDashletOrder();
     });
 
     // Allow increasing the width of an item (up to 12).
@@ -238,6 +391,7 @@ export function openDashboardEditor(initialElements, availableElements, callback
             $item.removeClass(function(index, className) {
                 return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
             }).addClass('col-' + size);
+            updateDashletOrder();
         }
     });
 
@@ -251,24 +405,182 @@ export function openDashboardEditor(initialElements, availableElements, callback
             $item.removeClass(function(index, className) {
                 return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
             }).addClass('col-' + size);
+            updateDashletOrder();
+        }
+    });
+
+    // Clear current tab
+    $('#clearAllButton').on('click', function() {
+        if (!confirm('Clear all widgets from this tab?')) return;
+        currentLayout.tabs[activeTabIndex].dashlets = [];
+        renderDashboard();
+    });
+
+    // Restore defaults
+    $('#restoreDefaultsButton').on('click', function() {
+        if (!confirm('Restore default dashboard layout? This replaces your current layout.')) return;
+        // Remove the saved layout for this cookieName and reload page
+        localStorage.removeItem(cookieName);
+        window.location.reload();
+    });
+
+    // Download layout function
+    function downloadLayout() {
+        const layoutData = {
+            version: currentLayout.version || 2,
+            tabs: currentLayout.tabs,
+            activeTab: activeTabIndex,
+            exportedAt: new Date().toISOString(),
+            dashboardType: cookieName
+        };
+        
+        const json = JSON.stringify(layoutData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dashboard-layout-${cookieName}-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        URL.revokeObjectURL(url);
+        showAlert('Layout downloaded successfully!', 'success');
+    }
+
+    // Validate uploaded layout
+    function validateLayout(layout) {
+        // Check basic structure
+        if (!layout.tabs || !Array.isArray(layout.tabs)) {
+            return false;
+        }
+        
+        // Create lookup of valid tags
+        const validTags = new Set(availableElements.map(e => e.tag));
+        
+        // Validate each tab
+        for (const tab of layout.tabs) {
+            if (!tab.name || !Array.isArray(tab.dashlets)) {
+                return false;
+            }
+            
+            // Validate each dashlet
+            for (const dashlet of tab.dashlets) {
+                if (!dashlet.tag || !dashlet.size) {
+                    return false;
+                }
+                
+                // Warn about unknown tags but don't reject
+                if (!validTags.has(dashlet.tag)) {
+                    console.warn(`Unknown widget tag: ${dashlet.tag}`);
+                }
+            }
+        }
+        
+        return true;
+    }
+
+    // Upload layout function
+    function uploadLayout(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                
+                // Validate structure
+                if (!validateLayout(imported)) {
+                    showAlert('Invalid layout file format', 'danger');
+                    return;
+                }
+                
+                // Warn if different dashboard type
+                if (imported.dashboardType && imported.dashboardType !== cookieName) {
+                    if (!confirm(`This layout is from a different dashboard type (${imported.dashboardType}). Continue anyway?`)) {
+                        return;
+                    }
+                }
+                
+                // Apply the layout
+                currentLayout = {
+                    version: imported.version || 2,
+                    tabs: imported.tabs,
+                    activeTab: imported.activeTab || 0
+                };
+                
+                // Re-render
+                activeTabIndex = currentLayout.activeTab;
+                renderTabs();
+                renderDashboard();
+                
+                showAlert('Layout imported successfully!', 'success');
+                
+            } catch (err) {
+                showAlert('Failed to parse layout file: ' + err.message, 'danger');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // Handle download button click
+    $('#downloadLayoutButton').on('click', function() {
+        downloadLayout();
+    });
+
+    // Handle upload button click
+    $('#uploadLayoutButton').on('click', function() {
+        $('#layoutFileInput').click();
+    });
+
+    // Handle file selection
+    $('#layoutFileInput').on('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            uploadLayout(file);
+            // Clear the input so the same file can be selected again
+            $(this).val('');
+        }
+    });
+
+    // Allow increasing the width of an item (up to 12).
+    $('#dashboardGrid').on('click', '.increase-width', function() {
+        var $item = $(this).closest('.dashboard-item');
+        var size = parseInt($item.data('size'), 10);
+        if (size < 12) {
+            size++;
+            $item.data('size', size);
+            // Remove previous col-* class and add the new one.
+            $item.removeClass(function(index, className) {
+                return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
+            }).addClass('col-' + size);
+            updateDashletOrder();
+        }
+    });
+
+    // Allow decreasing the width of an item (minimum 1).
+    $('#dashboardGrid').on('click', '.decrease-width', function() {
+        var $item = $(this).closest('.dashboard-item');
+        var size = parseInt($item.data('size'), 10);
+        if (size > 1) {
+            size--;
+            $item.data('size', size);
+            $item.removeClass(function(index, className) {
+                return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
+            }).addClass('col-' + size);
+            updateDashletOrder();
         }
     });
 
     // When the "Done" button is clicked, collect the new layout and call the callback.
     $('#dashboardDone').on('click', function() {
-        var newElements = [];
-        $('#dashboardGrid .dashboard-item').each(function() {
-            var $el = $(this);
-            newElements.push({
-                name: $el.data('name'),
-                size: parseInt($el.data('size'), 10),
-                tag: $el.data('tag'),
-            });
-        });
         // Hide and remove the modal.
         $('#dashboardEditorModal').modal('hide').remove();
-        // Pass the new array back to the caller.
-        callback(newElements);
+        // Pass the new layout back to the caller.
+        callback({
+            version: currentLayout.version || 2,
+            tabs: currentLayout.tabs,
+            activeTab: activeTabIndex
+        });
     });
 
     // Show the modal using Bootstrap's modal API.
@@ -284,3 +596,4 @@ export function openDashboardEditor(initialElements, availableElements, callback
         $(this).remove();
     });
 }
+

@@ -5,6 +5,7 @@ use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::time::Duration;
 use tracing::warn;
 
@@ -23,10 +24,18 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
         warn!("Failed to load config");
         return vec![];
     };
-    let allowed_ips = config.ip_ranges.allowed_network_table();
-    let ignored_ips = config.ip_ranges.ignored_network_table();
+    let Ok(allowed_ips) = config.ip_ranges.allowed_network_table() else {
+        warn!("Unable to load allowed network table");
+        return vec![];
+    };
+    let Ok(ignored_ips) = config.ip_ranges.ignored_network_table() else {
+        warn!("Unable to load ignored network table");
+        return vec![];
+    };
 
-    let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
+    let now = time_since_boot()
+        .map(|ts| Duration::from(ts).as_nanos() as u64)
+        .unwrap_or(0);
     let sd_reader = SHAPED_DEVICES.load();
     THROUGHPUT_TRACKER
         .raw_data
@@ -84,4 +93,83 @@ pub async fn unknown_ips_csv() -> String {
     }
 
     csv
+}
+
+#[derive(Serialize)]
+pub struct ClearUnknownIpsResponse {
+    cleared: usize,
+}
+
+pub async fn clear_unknown_ips() -> axum::Json<ClearUnknownIpsResponse> {
+    // Load config and shaped devices to mirror the same filtering logic used for display
+    let Ok(config) = load_config() else {
+        warn!("Failed to load config");
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
+    let Ok(allowed_ips) = config.ip_ranges.allowed_network_table() else {
+        warn!("Could not load allowed IP table");
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
+    let Ok(ignored_ips) = config.ip_ranges.ignored_network_table() else {
+        warn!("Could not load ignored IP table");
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
+
+    let sd_reader = SHAPED_DEVICES.load();
+
+    // Now time for last_seen comparison (match the 5 minute window used in get_unknown_ips)
+    // If the system clock isn't ready yet (very early after boot), do nothing to avoid mass deletion.
+    let Ok(ts) = time_since_boot() else {
+        return axum::Json(ClearUnknownIpsResponse { cleared: 0 });
+    };
+    let now = Duration::from(ts).as_nanos() as u64;
+    const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
+
+    // Determine the set of keys to remove
+    let to_remove: Vec<lqos_utils::XdpIpAddress> = {
+        let raw = THROUGHPUT_TRACKER.raw_data.lock();
+        raw.iter()
+            // Remove all loopback devices
+            .filter(|(k, _v)| !k.as_ip().is_loopback())
+            // Only those with tc_handle == 0 (unknown/unshaped)
+            .filter(|(_k, d)| d.tc_handle.as_u32() == 0)
+            // Honor ignored list (if enabled)
+            .filter(|(k, _d)| {
+                let ip = k.as_ip();
+                !(config.ip_ranges.unknown_ip_honors_ignore.unwrap_or(true)
+                    && ignored_ips.longest_match(ip).is_some())
+            })
+            // Honor allowed list (if enabled)
+            .filter(|(k, _d)| {
+                let ip = k.as_ip();
+                !(config.ip_ranges.unknown_ip_honors_allow.unwrap_or(true)
+                    && allowed_ips.longest_match(ip).is_none())
+            })
+            // Only those not in shaped devices
+            .filter(|(k, _d)| sd_reader.trie.longest_match(k.as_ip()).is_none())
+            // Only those seen within the last 5 minutes (matches display)
+            .filter(|(_k, d)| now.saturating_sub(d.last_seen) < FIVE_MINUTES_IN_NANOS)
+            .map(|(k, _)| *k)
+            .collect()
+    };
+
+    let to_remove_set: HashSet<_> = to_remove.iter().cloned().collect();
+    let cleared = to_remove_set.len();
+
+    // Hard clear: remove from in-memory tracker and expire from kernel map
+    // Minimize lock time: remove only targeted keys; avoid full scan and shrink.
+    {
+        let mut raw = THROUGHPUT_TRACKER.raw_data.lock();
+        for k in to_remove_set.iter() {
+            raw.remove(k);
+        }
+    }
+
+    if cleared > 0 {
+        if let Err(e) = lqos_sys::expire_throughput(to_remove) {
+            warn!("Failed to expire throughput entries during clear: {:?}", e);
+        }
+    }
+
+    axum::Json(ClearUnknownIpsResponse { cleared })
 }

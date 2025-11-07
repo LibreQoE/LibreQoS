@@ -128,7 +128,10 @@ src/bin/dashboards
 /src/geo2.bin
 src/bin/static2
 src/bin/static2/flags
+src/bin/lqos_api
 
+/src/graph.dot
+/src/graph.png
 /src/rust/uisp_integration/graph.dot
 /src/rust/uisp_integration/graph.png
 /src/bin/lqos_support_tool
@@ -138,3 +141,4 @@ src/bin/static2/flags
 /src/linux_tc_rust.txt
 /src/linux_tc_rust_live.txt
 /src/linux_tc_rust_prune.txt
+/src/planner_state.json

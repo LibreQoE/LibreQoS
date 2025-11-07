@@ -36,7 +36,8 @@ function updateConfig() {
         enable_spylnx: document.getElementById("enableSplynx").checked,
         api_key: document.getElementById("apiKey").value.trim(),
         api_secret: document.getElementById("apiSecret").value.trim(),
-        url: document.getElementById("spylnxUrl").value.trim()
+        url: document.getElementById("spylnxUrl").value.trim(),
+        strategy: document.getElementById("topologyStrategy").value
     };
 }
 
@@ -60,6 +61,8 @@ loadConfig(() => {
             spylnx.api_secret ?? "";
         document.getElementById("spylnxUrl").value = 
             spylnx.url ?? "";
+        document.getElementById("topologyStrategy").value = 
+            spylnx.strategy ?? "ap_only";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

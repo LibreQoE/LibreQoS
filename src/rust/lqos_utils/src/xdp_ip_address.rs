@@ -132,7 +132,7 @@ mod test {
 
     #[test]
     fn test_from_ipv4() {
-        let ip = XdpIpAddress::from_ip("1.2.3.4".parse().unwrap());
+        let ip = XdpIpAddress::from_ip("1.2.3.4".parse().expect("IP parsing is broken"));
         for n in 0..12 {
             assert_eq!(ip.0[n], 0xFF);
         }
@@ -148,13 +148,13 @@ mod test {
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4,
         ]);
         let ip = raw_ip.as_ip();
-        let intended_ip: IpAddr = "1.2.3.4".parse().unwrap();
+        let intended_ip: IpAddr = "1.2.3.4".parse().expect("IP parsing is broken");
         assert_eq!(ip, intended_ip);
     }
 
     #[test]
     fn test_ipv6_round_trip() {
-        let ipv6 = IpAddr::V6("2001:db8:85a3::8a2e:370:7334".parse().unwrap());
+        let ipv6 = IpAddr::V6("2001:db8:85a3::8a2e:370:7334".parse().expect("IP parsing is broken"));
         let xip = XdpIpAddress::from_ip(ipv6);
         let test = xip.as_ip();
         assert_eq!(ipv6, test);

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use crate::TcHandle;
 use allocative::Allocative;
 use lqos_config::Tunables;
@@ -165,9 +168,6 @@ pub enum BusRequest {
     /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
     GetPcapDump(usize),
 
-    /// Request data from the long-term stats system
-    GetLongTermStats(StatsRequest),
-
     /// If running on Equinix (the `equinix_test` feature is enabled),
     /// display a "run bandwidht test" link.
     #[cfg(feature = "equinix_tests")]
@@ -230,7 +230,6 @@ pub enum BusRequest {
     BlackboardFinish,
 
     // lqos_bakery requests
-
     /// Start a bakery session
     BakeryStart,
     /// Request a bakery commit
@@ -240,7 +239,7 @@ pub enum BusRequest {
         /// The number of queues available
         queues_available: usize,
         /// The "stick offset" calculated in LibreQoS.py
-        stick_offset: usize
+        stick_offset: usize,
     },
     /// Add a site to the bakery
     BakeryAddSite {
@@ -285,13 +284,30 @@ pub enum BusRequest {
         up_class_major: u16,
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
+        /// Optional per-circuit SQM override: "cake" or "fq_codel"
+        sqm_override: Option<String>,
     },
-    
+
     /// Get current Stormguard statistics
     GetStormguardStats,
-    
+
     /// Get current Bakery statistics
     GetBakeryStats,
+
+    /// Announce that the API is ready
+    ApiReady,
+
+    /// Announce that the chatbot is ready
+    ChatbotReady,
+
+    /// Announce that the scheduler is ready
+    SchedulerReady,
+
+    /// Announce a scheduler error
+    SchedulerError(String),
+
+    /// Check the scheduler status
+    CheckSchedulerStatus,
 }
 
 /// Defines the parts of the blackboard
@@ -320,15 +336,4 @@ pub enum TopFlowType {
     Drops,
     /// Top flows by round-trip time estimate
     RoundTripTime,
-}
-
-/// Specific requests from the long-term stats system
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
-pub enum StatsRequest {
-    /// Retrieve the current totals for all hosts
-    CurrentTotals,
-    /// Retrieve the values for all hosts
-    AllHosts,
-    /// Get the network tree
-    Tree,
 }

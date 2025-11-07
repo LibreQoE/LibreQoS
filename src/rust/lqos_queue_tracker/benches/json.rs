@@ -4,7 +4,8 @@
 //! On abort, or completion, it does not presently remove that
 //! dummy interface. FIXME.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use lqos_queue_tracker::*;
 use std::process::{Command, id};
 

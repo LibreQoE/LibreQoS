@@ -14,6 +14,10 @@ pub struct IntegrationConfig {
     /// Queue refresh interval in minutes
     pub queue_refresh_interval_mins: u32,
 
+    /// Enable Mikrotik IPv6 enrichment for non-UISP integrations
+    #[serde(default)]
+    pub use_mikrotik_ipv6: bool,
+
     /// Root node promotion
     pub promote_to_root: Option<Vec<String>>,
 
@@ -27,6 +31,7 @@ impl Default for IntegrationConfig {
             circuit_name_as_address: false,
             always_overwrite_network_json: false,
             queue_refresh_interval_mins: 30,
+            use_mikrotik_ipv6: false,
             promote_to_root: None,
             client_bandwidth_multiplier: None,
         }

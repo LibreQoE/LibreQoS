@@ -1,8 +1,11 @@
-mod anonymous_usage;
+//! `lqosd` is the core of LibreQoS. It runs as a daemon, loads the XDP,
+//! manages TC creation, and provides the web interface.
+
+#![deny(clippy::unwrap_used)]
+
 mod blackboard;
 mod file_lock;
 mod ip_mapping;
-mod long_term_stats;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
 pub mod lts2_sys;
@@ -10,14 +13,15 @@ mod node_manager;
 mod preflight_checks;
 mod program_control;
 mod remote_commands;
+mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
 mod system_stats;
 mod throughput_tracker;
+mod tool_status;
 mod tuning;
 mod validation;
 mod version_checks;
-mod scheduler_control;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -32,18 +36,18 @@ use crate::{
 #[cfg(feature = "flamegraphs")]
 use allocative::Allocative;
 use anyhow::Result;
-use lqos_bus::{BusRequest, BusResponse, StatsRequest, UnixSocketServer};
+use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
-use lts_client::collector::start_long_term_stats;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
 };
 use stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use std::{thread, time::Duration};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
 
@@ -60,8 +64,8 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use tracing::level_filters::LevelFilter;
 use lqos_stormguard::STORMGUARD_STATS;
+use tracing::level_filters::LevelFilter;
 
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -107,6 +111,16 @@ pub fn set_console_logging() -> anyhow::Result<()> {
 fn main() -> Result<()> {
     // Set up logging
     set_console_logging()?;
+
+    // Configure glibc resolver defaults so DNS lookups bound quickly.
+    // If the user hasn't set RES_OPTIONS, set a conservative timeout/attempts.
+    if std::env::var_os("RES_OPTIONS").is_none() {
+        // 2s per attempt, 1 attempt keeps worst-case DNS stalls short
+        // Safety: Environment variable is unsafe because it modifies global state.
+        unsafe {
+            std::env::set_var("RES_OPTIONS", "timeout:2 attempts:1");
+        }
+    }
 
     // Check that the file lock is available. Bail out if it isn't.
     let file_lock = FileLock::new().inspect_err(|e| {
@@ -155,13 +169,18 @@ fn main() -> Result<()> {
     };
 
     // Spawn tracking sub-systems
-    if let Err(e) = lts2_sys::start_lts2() {
+    let Ok(control_channel) = lts2_sys::control_channel::init_control_channel() else {
+        error!("Failed to initialize Insight control channel, exiting.");
+        std::process::exit(1);
+    };
+    let control_tx_for_lts = control_channel.tx.clone();
+    let control_tx_for_web = control_channel.tx.clone();
+    if let Err(e) = lts2_sys::start_lts2(control_tx_for_lts) {
         error!("Failed to start Insight: {:?}", e);
     } else {
         info!("Insight client started successfully");
     }
     let _blackboard_tx = blackboard::start_blackboard();
-    let long_term_stats_tx = start_long_term_stats();
     start_remote_commands();
     let flow_tx = setup_netflow_tracker()?;
     let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -169,10 +188,8 @@ fn main() -> Result<()> {
     spawn_queue_structure_monitor()?;
     shaped_devices_tracker::shaped_devices_watcher()?;
     shaped_devices_tracker::network_json_watcher()?;
-    anonymous_usage::start_anonymous_usage();
     let system_usage_tx = system_stats::start_system_stats()?;
     throughput_tracker::spawn_throughput_monitor(
-        long_term_stats_tx.clone(),
         flow_tx,
         system_usage_tx.clone(),
         bakery_sender.clone(),
@@ -196,13 +213,9 @@ fn main() -> Result<()> {
                                 warn!("This should never happen - terminating on unknown signal")
                             }
                         }
-                        let _ =
-                            tokio::runtime::Runtime::new()
-                                .unwrap()
-                                .block_on(long_term_stats_tx.send(
-                                lts_client::collector::stats_availability::StatsUpdateMessage::Quit,
-                            ));
                         std::mem::drop(kernels);
+                        // Give kernel/driver a moment to finalize detach
+                        thread::sleep(Duration::from_millis(50));
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);
@@ -226,16 +239,44 @@ fn main() -> Result<()> {
     memory_debug();
 
     let bakery_sender_for_async = bakery_sender.clone();
+    let control_tx_for_webserver = control_tx_for_web.clone();
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
+            let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async {
+                .build() else {
+                error!("Unable to start Tokio runtime. Not much is going to work");
+                return;
+            };
+            tokio_runtime.block_on(async {
+                    // Notify bakery when the bus socket becomes available
                     tokio::spawn(async move {
-                        let _ = lqos_stormguard::start_stormguard(bakery_sender_for_async).await;
+                        use tokio::time::{sleep, Duration};
+                        // Wait up to ~5 seconds for the socket to appear
+                        for _ in 0..100u32 {
+                            if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                                break;
+                            }
+                            sleep(Duration::from_millis(50)).await;
+                        }
+                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                            let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
+                        }
+                    });
+
+                    tokio::spawn(async move {
+                        match lts2_sys::control_channel::start_control_channel(control_channel)
+                            .await
+                        {
+                            Ok(_) => info!("Insight control channel started successfully"),
+                            Err(e) => error!("Insight control channel failed to start: {:#}", e),
+                        }
+
+                        match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                            Ok(_) => info!("StormGuard started successfully"),
+                            Err(e) => error!("StormGuard failed to start: {:#}", e),
+                        }
                     });
 
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
@@ -246,9 +287,14 @@ fn main() -> Result<()> {
                     // Webserver starting point
                     let webserver_disabled = config.disable_webserver.unwrap_or(false);
                     if !webserver_disabled {
-                        tokio::spawn(async {
-                            if let Err(e) =
-                                node_manager::spawn_webserver(bus_tx, system_usage_tx).await
+                        let control_tx_for_webserver = control_tx_for_webserver.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = node_manager::spawn_webserver(
+                                bus_tx,
+                                system_usage_tx,
+                                control_tx_for_webserver,
+                            )
+                            .await
                             {
                                 error!("Node Manager Failed: {e:?}");
                             }
@@ -258,7 +304,9 @@ fn main() -> Result<()> {
                     }
 
                     // Main bus listen loop
-                    server.listen(handle_bus_requests, bus_rx).await.unwrap();
+                    if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
+                        error!("Bus stopped: {e:?}");
+                    }
                 });
         })?;
     let _ = handle.join();
@@ -277,17 +325,17 @@ fn memory_debug() {
             std::thread::sleep(std::time::Duration::from_secs(60));
             let mut fb = allocative::FlameGraphBuilder::default();
             fb.visit_global_roots();
-            fb.visit_root(&*THROUGHPUT_TRACKER);
-            fb.visit_root(&*ALL_FLOWS);
-            fb.visit_root(&*RECENT_FLOWS);
-            fb.visit_root(&*NETWORK_JSON);
+            // fb.visit_root(&*THROUGHPUT_TRACKER);
+            // fb.visit_root(&*ALL_FLOWS);
+            // fb.visit_root(&*RECENT_FLOWS);
+            //fb.visit_root(&*NETWORK_JSON);
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
             let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
                 error!("Unable to write flamegraph.");
                 continue;
             };
-            file.write_all(flamegraph_src.write().as_bytes()).unwrap();
+            let _ = file.write_all(flamegraph_src.write().as_bytes());
             info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
         }
     });
@@ -296,10 +344,7 @@ fn memory_debug() {
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
 
-fn handle_bus_requests(
-    requests: &[BusRequest],
-    responses: &mut Vec<BusResponse>,
-) {
+fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
         BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -320,10 +365,42 @@ fn handle_bus_requests(
                 tc_handle,
                 cpu,
                 upload,
-            } => map_ip_to_flow(ip_address, tc_handle, *cpu, *upload),
-            BusRequest::ClearHotCache => clear_hot_cache(),
-            BusRequest::DelIpFlow { ip_address, upload } => del_ip_flow(ip_address, *upload),
-            BusRequest::ClearIpFlow => clear_ip_flows(),
+            } => {
+                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
+                        ip_address: ip_address.clone(),
+                        tc_handle: *tc_handle,
+                        cpu: *cpu,
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearHotCache => {
+                // Let the bakery finalize staged mapping changes, then clear hot cache.
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitMappings);
+                }
+                clear_hot_cache()
+            }
+            BusRequest::DelIpFlow { ip_address, upload } => {
+                let resp = del_ip_flow(ip_address, *upload);
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
+                        ip_address: ip_address.clone(),
+                        upload: *upload,
+                    });
+                }
+                resp
+            }
+            BusRequest::ClearIpFlow => {
+                let resp = clear_ip_flows();
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let _ = sender.send(lqos_bakery::BakeryCommands::ClearIpAll);
+                }
+                resp
+            }
             BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
@@ -384,13 +461,6 @@ fn handle_bus_requests(
                     BusResponse::Fail("Invalid IP".to_string())
                 }
             }
-            BusRequest::GetLongTermStats(StatsRequest::CurrentTotals) => {
-                long_term_stats::get_stats_totals()
-            }
-            BusRequest::GetLongTermStats(StatsRequest::AllHosts) => {
-                long_term_stats::get_stats_host()
-            }
-            BusRequest::GetLongTermStats(StatsRequest::Tree) => long_term_stats::get_stats_tree(),
             BusRequest::DumpActiveFlows => throughput_tracker::dump_active_flows(),
             BusRequest::CountActiveFlows => throughput_tracker::count_active_flows(),
             BusRequest::TopFlows { n, flow_type } => throughput_tracker::top_flows(*n, *flow_type),
@@ -450,12 +520,15 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryMqSetup { queues_available, stick_offset } => {
+            BusRequest::BakeryMqSetup {
+                queues_available,
+                stick_offset,
+            } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::MqSetup {
                         queues_available: *queues_available,
-                        stick_offset: *stick_offset
+                        stick_offset: *stick_offset,
                     });
                     BusResponse::Ack
                 } else {
@@ -489,7 +562,31 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses} => {
+            BusRequest::BakeryAddCircuit {
+                circuit_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                class_major,
+                up_class_major,
+                ip_addresses,
+                sqm_override,
+            } => {
+                if let Some(s) = sqm_override.as_ref() {
+                    if s.eq_ignore_ascii_case("fq_codel") {
+                        tracing::info!(
+                            "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
+                            circuit_hash,
+                            parent_class_id.as_tc_string(),
+                            up_parent_class_id.as_tc_string(),
+                            class_minor
+                        );
+                    }
+                }
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -504,7 +601,8 @@ fn handle_bus_requests(
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
                         ip_addresses: ip_addresses.clone(),
-                   });
+                        sqm_override: sqm_override.clone(),
+                    });
                     BusResponse::Ack
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())
@@ -517,8 +615,29 @@ fn handle_bus_requests(
                 };
                 BusResponse::StormguardStats(cloned)
             }
-            BusRequest::GetBakeryStats => {
-                BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
+            BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
+                lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            BusRequest::ApiReady => {
+                tool_status::api_seen();
+                BusResponse::Ack
+            }
+            BusRequest::ChatbotReady => {
+                tool_status::chatbot_seen();
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerReady => {
+                tool_status::scheduler_seen();
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerError(error) => {
+                tool_status::scheduler_error(Some(error.clone()));
+                BusResponse::Ack
+            }
+            BusRequest::CheckSchedulerStatus => {
+                let running = tool_status::is_scheduler_available();
+                let error = tool_status::scheduler_error_message();
+                BusResponse::SchedulerStatus { running, error }
             }
         });
     }

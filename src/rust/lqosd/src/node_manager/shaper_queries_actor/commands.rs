@@ -1,5 +1,5 @@
 use crate::node_manager::local_api::lts::{
-    AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
+    AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
     ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,
 };
 
@@ -42,5 +42,9 @@ pub enum ShaperQueryCommand {
     },
     ShaperRecentMedian {
         reply: tokio::sync::oneshot::Sender<Vec<RecentMedians>>,
+    },
+    CakeTotals {
+        seconds: i32,
+        reply: tokio::sync::oneshot::Sender<Vec<CakeData>>,
     },
 }

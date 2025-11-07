@@ -1,9 +1,16 @@
 # CRM/NMS Integrations
 
   * [Splynx Integration](#splynx-integration)
+    + [Topology Strategies](#topology-strategies)
+    + [Promote to Root Nodes (Performance Optimization)](#promote-to-root-nodes-performance-optimization)
     + [Splynx API Access](#splynx-api-access)
     + [Splynx Overrides](#splynx-overrides)
+  * [Netzur Integration](#netzur-integration)
   * [UISP Integration](#uisp-integration)
+    + [Topology Strategies](#topology-strategies-1)
+    + [Suspension Handling Strategies](#suspension-handling-strategies)
+    + [Burst](#burst)
+    + [Configuration Example](#configuration-example)
     + [UISP Overrides](#uisp-overrides)
       - [UISP Route Overrides](#uisp-route-overrides)
   * [WISPGate Integration](#wispgate-integration)
@@ -12,7 +19,59 @@
 
 ## Splynx Integration
 
+> **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. Starting with v1.5-RC-2, the default strategy is `ap_only` for improved CPU performance. If you require the previous behavior, explicitly set `strategy = "full"` in your Splynx configuration section.
+
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
+
+### Topology Strategies
+
+LibreQoS supports multiple topology strategies for Splynx integration to balance CPU performance with network hierarchy needs:
+
+| Strategy | Description | CPU Impact | Use Case |
+|----------|-------------|------------|----------|
+| `flat` | Only shapes subscribers, no hierarchy | Lowest | Maximum performance, simple subscriber-only shaping |
+| `ap_only` | Single layer: AP → Clients | Low | **Default**. Best balance of performance and structure |
+| `ap_site` | Two layers: Site → AP → Clients | Medium | Site-level aggregation with moderate complexity |
+| `full` | Complete topology mapping | Highest | Full network hierarchy representation |
+
+Configure the strategy in `/etc/lqos.conf` under the `[splynx]` section:
+
+```ini
+[splynx]
+# ... other splynx settings ...
+strategy = "ap_only"
+```
+
+**Performance Considerations:**
+- `flat` and `ap_only` strategies significantly reduce CPU load by limiting network depth
+- Choose `ap_only` for most deployments unless you need site-level traffic aggregation
+- Only use `full` if you require complete network topology representation and have adequate CPU resources
+
+### Promote to Root Nodes (Performance Optimization)
+
+When using `full` topology strategy, you may encounter CPU performance bottlenecks where all traffic flows through a single root site, limiting throughput to what one CPU core can handle.
+
+The **promote_to_root** feature solves this by promoting specific sites to root-level nodes, distributing traffic shaping across multiple CPU cores.
+
+**Configuration:**
+1. Navigate to Integration → Common in the WebUI
+2. In the "Promote to Root Nodes" field, enter one site name per line:
+```
+Remote_Site_Alpha
+Remote_Site_Beta
+Datacenter_West
+```
+
+**Benefits:**
+- Eliminates single-CPU bottleneck for networks with remote sites
+- Distributes traffic shaping across multiple CPU cores
+- Improves overall network performance for large topologies
+- Works with both Splynx and UISP integrations
+
+**When to Use:**
+- Networks with multiple high-capacity remote sites
+- When using `full` topology strategy and experiencing CPU limitations
+- Large networks where root site traffic exceeds single-core capacity
 
 ### Splynx API Access
 
@@ -68,60 +127,126 @@ sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
 
+## Netzur Integration
+
+Netzur deployments expose subscriber and zone inventories via a REST endpoint secured with a Bearer token. Configure `/etc/lqos.conf` as follows:
+
+```ini
+[netzur_integration]
+enable_netzur = true
+api_key = "your-netzur-token"
+api_url = "https://netzur.example.com/api/libreqos"
+timeout_secs = 60
+use_mikrotik_ipv6 = false
+```
+
+- `enable_netzur` toggles automatic imports by `lqos_scheduler`.
+- `api_key` is the Bearer token generated inside Netzur.
+- `api_url` must return JSON containing `zones` (mapped to sites) and `customers` (mapped to client circuits and devices).
+- `timeout_secs` overrides the default HTTP timeout (60 seconds) when the API is slow.
+- `use_mikrotik_ipv6` enriches subscriber devices with IPv6 prefixes discovered via `mikrotikDHCPRouterList.csv`.
+
+Run a manual import with:
+
+```bash
+python3 integrationNetzur.py
+```
+
+The integration regenerates `ShapedDevices.csv` and, unless `always_overwrite_network_json` is disabled, updates `network.json`. Adjust the Integration → Common settings if you need to preserve an existing network map between Netzur syncs.
+
 ## UISP Integration
 
-First, set the relevant parameters for UISP (token, url, automatic_import_uisp, etc.) in `/etc/lqos.conf`.
-```
-# Whether to run the UISP integration automatically in the lqos_scheduler service
+First, set the relevant parameters for UISP in `/etc/lqos.conf`.
+
+### Topology Strategies
+
+LibreQoS supports multiple topology strategies for UISP integration to balance CPU performance with network hierarchy needs:
+
+| Strategy | Description | CPU Impact | Use Case |
+|----------|-------------|------------|----------|
+| `flat` | Only shapes subscribers by service plan speed | Lowest | Maximum performance, simple subscriber-only shaping |
+| `ap_only` | Shapes by service plan and Access Point | Low | Good balance of performance and AP-level control |
+| `ap_site` | Shapes by service plan, Access Point, and Site | Medium | Site-level aggregation with moderate complexity |
+| `full` | Shapes entire network including backhauls, Sites, APs, and clients | Highest | **Recommended for most deployments**. Complete network hierarchy with backhaul awareness |
+
+**Choosing the Right Strategy:**
+- Use `full` for most deployments to get complete network topology awareness including backhaul links
+- Use `ap_site` if you need site-level control but don't need backhaul shaping
+- Use `ap_only` for better performance when site aggregation isn't needed
+- Use `flat` only when maximum performance is critical and you don't need any hierarchy
+
+**Performance Note:** When using `full` strategy with large networks, consider using the **promote_to_root** feature (see [Promote to Root Nodes](#promote-to-root-nodes-performance-optimization) above) to distribute CPU load across multiple cores.
+
+### Suspension Handling Strategies
+
+Configure how LibreQoS handles suspended customer accounts:
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `none` | Do not handle suspensions | When suspension handling is managed elsewhere |
+| `ignore` | Do not add suspended customers to network map | Reduces queue count and improves performance for networks with many suspended accounts |
+| `slow` | Limit suspended customers to 0.1 Mbps | Maintains minimal connectivity for suspended accounts (e.g., payment portals) |
+
+**Choosing a Suspension Strategy:**
+- Use `none` if your edge router or another system handles suspensions
+- Use `ignore` to reduce system load by not creating queues for suspended customers
+- Use `slow` to maintain minimal connectivity (useful for payment portals or service messages)
+
+### Burst
+
+- In UISP, Download Speed and Upload Speed are configured in Mbps (for example, 100 Mbps).
+- In UISP, Download Burst and Upload Burst are configured in kilobytes per second (kB/s).
+- Conversion and shaping:
+  - burst_mbps = kB/s × 8 / 1000
+  - Download Min = Download Speed (Mbps) × commit_bandwidth_multiplier
+  - Download Max = (Download Speed (Mbps) + burst_mbps) × bandwidth_overhead_factor
+  - Upload Min/Max are computed the same way from Upload Speed (Mbps) and Upload Burst (kB/s)
+- Example:
+  - UISP values: Download Speed = 100 Mbps, Download Burst = 12,500 kB/s
+  - Burst adds 12,500 × 8 / 1000 = 100 Mbps
+  - Download Min = 100 × commit_bandwidth_multiplier
+  - Download Max = (100 + 100) × bandwidth_overhead_factor
+- Quick reference (burst kB/s → added Mbps):
+  - 6,250 kB/s → +50 Mbps
+  - 12,500 kB/s → +100 Mbps
+  - 25,000 kB/s → +200 Mbps
+- Notes:
+  - Leave burst empty/null in UISP to disable burst.
+  - If suspended_strategy is set to slow, both Min and Max are set to 0.1 Mbps.
+
+### Configuration Example
+
+```ini
+[uisp_integration]
+# Core Settings
 enable_uisp = true
-
-# Your UISP API Access Token
-token = ""
-
-# Your UISP URL (include https://, but omit anything past .com, .net, etc)
+token = "your-api-token-here"
 url = "https://uisp.your_domain.com"
+site = "Root_Site_Name"  # Root site for topology perspective
 
-# The site here refers to the Root site you want UISP to base its topology "perspective" from.
-# Default value is a blank string.
-site = "Site_name"
+# Topology Strategy (see table above)
+strategy = "full"  # Recommended for most deployments
 
-# Strategy type. "full" is recommended. "flat" can be used if only client shaping is desired.
-strategy = "full"
-
-# Suspension strategy:
-# * "none" - do not handle suspensions
-# * "ignore" - do not add suspended customers to the network map
-# * "slow" - limit suspended customers to 1mbps
+# Suspension Handling (see table above)
 suspended_strategy = "none"
 
-# UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
-# to 65% of what UISP claims an AP's capacity is, by default. This is adjustable.
-airmax_capacity = 0.65
+# Capacity Adjustments
+# UISP's reported AP capacities can be optimistic
+airmax_capacity = 0.65  # Use 65% of reported AirMax capacity
+ltu_capacity = 0.95     # Use 95% of reported LTU capacity
 
-# UISP's reported AP capacities for LTU are more accurate, but to be safe we adjust to 95%
-# of those capacities. This is adjustable.
-ltu_capacity = 0.95
+# Site Management
+exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
+use_ptmp_as_parent = true  # For sites branched off PtMP Access Points
 
-# If you want to exclude sites in UISP from appearing in your LibreQoS network.json, simply
-# include them here. For example, exclude_sites = ["Site_1", "Site_2"]
-exclude_sites = []
+# Bandwidth Adjustments
+bandwidth_overhead_factor = 1.15  # Give customers 15% above plan speed
+commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 
-# If you use DHCPv6, and want to pull in IPv6 CIDRs corresponding to each customer's IPv4
-# address, you can do so with this. If enabled, be sure to fill out mikrotikDHCPRouterList.csv
-# and run `python3 mikrotikFindIPv6.py` to test its functionality.
-ipv6_with_mikrotik = false
-
-# If you want customers to recieve a bit more of less than their allocated speed plan, set
-# it here. For example, 1.15 is 15% above their alloted speed plan.
-bandwidth_overhead_factor = 1.15
-
-# By default, the customer "minimum" is set to 98% of the maximuum (CIR).
-commit_bandwidth_multiplier = 0.98
-exception_cpes = []
-
-# If you have some sites branched off PtMP Access Points, set `true`
-use_ptmp_as_parent = true
-uisp_use_burst = true
+# Advanced Options
+ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
+always_overwrite_network_json = false  # Set true to rebuild topology each run
+exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 ```
 
 To test the UISP Integration, use

@@ -18,11 +18,17 @@ pub async fn tree_summary(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetNetworkMap { parent: 0 };
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("TreeSummary: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("TreeSummary: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::NetworkMap(nodes) = reply {
             let message = json!(

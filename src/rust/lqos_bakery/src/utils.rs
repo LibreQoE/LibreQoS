@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use parking_lot::Mutex;
 use tracing::{error, info};
 
 /// Get the current Unix timestamp in seconds
@@ -16,7 +16,10 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
     let lock = FILE_LOCK.lock();
-    info!("Bakery: Executing in-memory commands: {} lines, for {purpose}", command_buffer.len());
+    info!(
+        "Bakery: Executing in-memory commands: {} lines, for {purpose}",
+        command_buffer.len()
+    );
 
     let path = Path::new("/tmp/lqos_bakery_commands.txt");
     let Some(lines) = write_command_file(path, command_buffer) else {
@@ -25,8 +28,8 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     };
 
     let Ok(output) = std::process::Command::new("/sbin/tc")
-            .args(&["-f", "-batch", path.to_str().unwrap()])
-            .output()
+        .args(["-f", "-batch", path.to_str().unwrap_or_default()])
+        .output()
     else {
         let message = format!("Failed to execute tc batch command for {purpose}.");
         error!(message);
@@ -41,7 +44,10 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
 
     let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
-        let message = format!("Command error for ({purpose}): {:?}.Error: {error_str}\n{lines}", error_str.trim());
+        let message = format!(
+            "Command error for ({purpose}): {:?}.Error: {error_str}\n{lines}",
+            error_str.trim()
+        );
         error!(message);
     }
 

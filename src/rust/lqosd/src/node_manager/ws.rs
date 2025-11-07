@@ -47,6 +47,7 @@ mod ticker;
 pub fn websocket_router(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+    control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
 ) -> Router {
     let channels = PubSub::new();
     tokio::spawn(channel_ticker(
@@ -63,6 +64,7 @@ pub fn websocket_router(
         .route_layer(axum::middleware::from_fn(auth_layer))
         .layer(Extension(channels))
         .layer(Extension(bus_tx.clone()))
+        .layer(Extension(control_tx.clone()))
 }
 
 async fn ws_handler(

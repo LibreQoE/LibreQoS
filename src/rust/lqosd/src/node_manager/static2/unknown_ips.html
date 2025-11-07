@@ -2,9 +2,14 @@
     <div class="col-12">
         <h5><i class="fa fa-question"></i> Unrecognized IP Addresses</h5>
         <p>These are the IP addresses that have been seen on the network, but have not been assigned to a device.</p>
-        <button class="btn btn-primary" type="button" id="btnCsv">
-            <i class="fa fa-table"></i> Download as CSV
-        </button>
+        <div class="mb-2">
+            <button class="btn btn-primary" type="button" id="btnCsv">
+                <i class="fa fa-table"></i> Download as CSV
+            </button>
+            <button class="btn btn-outline-danger ms-2" type="button" id="btnClear">
+                <i class="fa fa-trash"></i> Clear Unknowns
+            </button>
+        </div>
         <div id="unknown">
             <i class="fa fa-spinner fa-spin"></i> Loading, Please Wait...
         </div>

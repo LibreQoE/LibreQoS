@@ -74,10 +74,22 @@ pub fn get_interfaces_from_ip_link() -> Result<Vec<IpLinkInterface>> {
     let output_json = serde_json::from_str::<serde_json::Value>(&output)?;
 
     let mut interfaces = Vec::new();
-    for interface in output_json.as_array().unwrap() {
-        let name = interface["ifname"].as_str().unwrap().to_string();
-        let operstate = interface["operstate"].as_str().unwrap().to_string();
-        let link_type = interface["link_type"].as_str().unwrap().to_string();
+    let arr = output_json
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("ip -j link did not return a JSON array"))?;
+    for interface in arr {
+        let name = interface["ifname"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("ip link entry missing 'ifname'"))?
+            .to_string();
+        let operstate = interface["operstate"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("ip link entry missing 'operstate'"))?
+            .to_string();
+        let link_type = interface["link_type"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("ip link entry missing 'link_type'"))?
+            .to_string();
         let master = interface["master"].as_str().map(|s| s.to_string());
 
         interfaces.push(IpLinkInterface {

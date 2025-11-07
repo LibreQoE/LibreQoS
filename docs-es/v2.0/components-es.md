@@ -9,7 +9,7 @@
 
 ### lqos_scheduler
 
-- lqos_scheduler realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx).
+- lqos_scheduler realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx, Netzur).
 - Acciones realizadas:
   - Al iniciar: Realiza una configuración completa de las filas.
   - Cada X minutos: Actualiza las colas, obteniendo nueva configuración desde la integración CRM, si está habilitada.
@@ -34,7 +34,7 @@ Lqosd indicará las razones específicas por las cuales falló, como una interfa
 
 En segundo plano, lqos_scheduler ejecuta el script de Python scheduler.py, el cual a su vez ejecuta el script de Python LibreQoS.py
 
-- scheduler.py: realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx).
+- scheduler.py: realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx, Netzur).
 - LibreQoS.py: se encarga de crear y actualizar las filas y el regulamiento de tráfico de los dispositivos.
 
 Ejecuciones puntuales de estos componentes individuales pueden ser de gran ayuda para depurar y asegurar que todo esté correctamente configurado.

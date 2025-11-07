@@ -8,8 +8,8 @@ use arc_swap::ArcSwap;
 pub use etclqos_migration::*;
 use once_cell::sync::Lazy;
 use std::path::Path;
-use std::sync::Once;
 use std::sync::Arc;
+use std::sync::Once;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
@@ -18,7 +18,7 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::{BridgeConfig, Tunables, SingleInterfaceConfig, LazyQueueMode};
+pub use v15::{BridgeConfig, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, Tunables};
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
 static INIT_ONCE: Once = Once::new();
@@ -26,19 +26,18 @@ static INIT_ONCE: Once = Once::new();
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     // Ensure first load happens only once
-    INIT_ONCE.call_once(|| {
-        match actually_load_from_disk() {
-            Ok(config) => {
-                CONFIG.store(Some(config).into());
-            }
-            Err(e) => {
-                error!("Initial config load failed: {:?}", e);
-            }
+    INIT_ONCE.call_once(|| match actually_load_from_disk() {
+        Ok(config) => {
+            CONFIG.store(Some(config).into());
+        }
+        Err(e) => {
+            error!("Initial config load failed: {:?}", e);
         }
     });
-    
+
     // Fast path - just load the Arc
-    CONFIG.load()
+    CONFIG
+        .load()
         .as_ref()
         .as_ref()
         .cloned()
@@ -60,22 +59,24 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     })?;
 
     let file_result = std::fs::read_to_string(&config_location);
-    if file_result.is_err() {
-        error!("Unable to open {config_location}");
+    let Ok(raw) = file_result else {
+        if file_result.is_err() {
+            error!("Unable to open {config_location}");
+        }
         return Err(LibreQoSConfigError::FileNotFound);
-    }
-    let raw = file_result.unwrap();
+    };
 
     let config_result = Config::load_from_string(&raw);
-    if config_result.is_err() {
-        error!("Unable to parse /etc/lqos.conf");
-        error!("Error: {:?}", config_result);
+    let Ok(mut final_config) = config_result else {
+        if config_result.is_err() {
+            error!("Unable to parse /etc/lqos.conf");
+            error!("Error: {:?}", config_result);
+        }
         return Err(LibreQoSConfigError::ParseError(format!(
             "{:?}",
             config_result
         )));
-    }
-    let mut final_config = config_result.unwrap(); // We know it's good at this point
+    };
 
     // Check for environment variable overrides
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {

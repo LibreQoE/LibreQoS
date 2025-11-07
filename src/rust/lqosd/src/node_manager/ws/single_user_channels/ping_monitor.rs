@@ -38,14 +38,12 @@ pub(super) async fn ping_monitor(
     loop {
         ticker.tick().await;
 
-        let client_v4 = Client::new(&Config::default());
-        let client_v6 = Client::new(&Config::builder().kind(ICMP::V6).build());
-        if client_v4.is_err() || client_v6.is_err() {
-            info!("Failed to create ping clients");
+        let Ok(client_v4) = Client::new(&Config::default()) else {
             break;
-        }
-        let client_v4 = client_v4.unwrap();
-        let client_v6 = client_v6.unwrap();
+        };
+        let Ok(client_v6) = Client::new(&Config::builder().kind(ICMP::V6).build()) else {
+            break;
+        };
 
         let mut tasks = Vec::new();
         for (ip, label) in ip_addresses.iter() {

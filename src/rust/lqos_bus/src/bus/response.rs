@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use super::QueueStoreTransit;
 use crate::{
     Circuit, IpMapping, IpStats, XdpPpingResult,
@@ -5,7 +8,6 @@ use crate::{
 };
 use allocative::Allocative;
 use lqos_utils::units::DownUpOrder;
-use lts_client::transport_data::{StatsHost, StatsTotals, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -132,15 +134,6 @@ pub enum BusResponse {
     /// Pcap format dump
     PcapDump(Option<String>),
 
-    /// Long-term stats top-level totals
-    LongTermTotals(StatsTotals),
-
-    /// Long-term stats host totals
-    LongTermHosts(Vec<StatsHost>),
-
-    /// Long-term stats tree
-    LongTermTree(Vec<StatsTreeNode>),
-
     /// All Active Flows (Not Recommended - Debug Use)
     AllActiveFlows(Vec<FlowbeeSummaryData>),
 
@@ -180,10 +173,18 @@ pub enum BusResponse {
 
     /// Summary of IP Protocols
     IpProtocols(Vec<(String, DownUpOrder<u64>)>),
-    
+
     /// Stormguard statistics
     StormguardStats(Vec<(String, u64, u64)>),
-    
+
     /// Bakery statistics
     BakeryActiveCircuits(usize),
+
+    /// Scheduler status
+    SchedulerStatus {
+        /// Is the scheduler running
+        running: bool,
+        /// Any error message from integrations
+        error: Option<String>,
+    },
 }

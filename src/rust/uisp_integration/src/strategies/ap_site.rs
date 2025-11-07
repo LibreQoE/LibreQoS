@@ -80,6 +80,8 @@ pub(crate) fn write_shaped_devices(
     shaped_devices: &mut Vec<ShapedDevice>,
 ) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+    let mut seen_pairs = HashSet::new();
+    shaped_devices.retain(|sd| seen_pairs.insert((sd.circuit_id.clone(), sd.device_id.clone())));
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
         .from_path(file_path)
@@ -225,6 +227,66 @@ impl Layer {
                             .filter(|d| d.site_id == *client_id)
                             .collect::<Vec<_>>();
                         for device in devices.iter().filter(|d| d.has_address()) {
+                            // Compute subscriber rates: prefer UISP QoS + burst
+                            let (
+                                mut download_min,
+                                mut download_max,
+                                mut upload_min,
+                                mut upload_max,
+                            ) = if let Some(site) =
+                                uisp_data.sites.iter().find(|s| s.id == *client_id)
+                            {
+                                if let Some((dl_min, dl_max, ul_min, ul_max)) =
+                                    site.burst_rates(&config)
+                                {
+                                    (
+                                        f32::max(0.1, dl_min),
+                                        f32::max(0.1, dl_max),
+                                        f32::max(0.1, ul_min),
+                                        f32::max(0.1, ul_max),
+                                    )
+                                } else if site.suspended
+                                    && config.uisp_integration.suspended_strategy == "slow"
+                                {
+                                    (0.1, 0.1, 0.1, 0.1)
+                                } else {
+                                    (
+                                        f32::max(
+                                            0.1,
+                                            site.max_down_mbps as f32
+                                                * config
+                                                    .uisp_integration
+                                                    .commit_bandwidth_multiplier,
+                                        ),
+                                        f32::max(
+                                            0.1,
+                                            site.max_down_mbps as f32
+                                                * config.uisp_integration.bandwidth_overhead_factor,
+                                        ),
+                                        f32::max(
+                                            0.1,
+                                            site.max_up_mbps as f32
+                                                * config
+                                                    .uisp_integration
+                                                    .commit_bandwidth_multiplier,
+                                        ),
+                                        f32::max(
+                                            0.1,
+                                            site.max_up_mbps as f32
+                                                * config.uisp_integration.bandwidth_overhead_factor,
+                                        ),
+                                    )
+                                }
+                            } else {
+                                (0.1, 0.1, 0.1, 0.1)
+                            };
+                            if download_max < download_min {
+                                download_max = download_min;
+                            }
+                            if upload_max < upload_min {
+                                upload_max = upload_min;
+                            }
+
                             let sd = ShapedDevice {
                                 circuit_id: site.id.clone(),
                                 circuit_name: site.name.clone(),
@@ -234,14 +296,10 @@ impl Layer {
                                 mac: device.mac.clone(),
                                 ipv4: device.ipv4_list(),
                                 ipv6: device.ipv6_list(),
-                                download_min: f32::max(0.1, site.max_down_mbps as f32
-                                    * config.uisp_integration.commit_bandwidth_multiplier),
-                                upload_min: f32::max(0.1, site.max_up_mbps as f32
-                                    * config.uisp_integration.commit_bandwidth_multiplier),
-                                download_max: f32::max(0.1, site.max_down_mbps as f32
-                                    * config.uisp_integration.bandwidth_overhead_factor),
-                                upload_max: f32::max(0.1, site.max_up_mbps as f32
-                                    * config.uisp_integration.bandwidth_overhead_factor),
+                                download_min,
+                                upload_min,
+                                download_max,
+                                upload_max,
                                 comment: "".to_string(),
                             };
                             shaped_devices.push(sd);
@@ -279,7 +337,11 @@ pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<Tr
     let client_of_clients = find_clients_linked_from_other_clients(data)?;
 
     let _ = blackboard_blob("uisp-trouble-multi-entry", vec![multi_entry_points.clone()]).await;
-    let _ = blackboard_blob("uisp-trouble-client-of-client", vec![client_of_clients.clone()]).await;
+    let _ = blackboard_blob(
+        "uisp-trouble-client-of-client",
+        vec![client_of_clients.clone()],
+    )
+    .await;
 
     Ok(TroublesomeClients {
         multi_entry_points,

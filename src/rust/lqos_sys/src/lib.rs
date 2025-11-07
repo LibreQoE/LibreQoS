@@ -6,6 +6,8 @@
 //! The `build.rs` script compiles the C code found in `src/bpf`
 //! and statically embeds the result in this crate.
 
+#![deny(clippy::unwrap_used)]
+#![warn(missing_docs)]
 mod bifrost_maps;
 mod bpf_iterator;
 /// Provides direct access to LibBPF functionality, as exposed by the
@@ -32,4 +34,5 @@ pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::interface_name_to_index;
 pub use lqos_kernel::max_tracked_ips;
+pub use lqos_kernel::unload_xdp_from_interface;
 pub use throughput::{HostCounter, throughput_for_each};

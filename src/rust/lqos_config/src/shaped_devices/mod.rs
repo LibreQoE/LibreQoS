@@ -7,7 +7,6 @@ use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use encoding_rs;
 use thiserror::Error;
 use tracing::{debug, error};
 
@@ -63,7 +62,7 @@ impl ConfigShapedDevices {
 
     fn handle_encodings(bytes: &[u8]) -> Vec<u8> {
         // First, handle BOM if present
-        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(&bytes) {
+        if let Some((encoding, bom_length)) = encoding_rs::Encoding::for_bom(bytes) {
             let mut result = Vec::new();
             let (decoded, _, _) = encoding.decode(&bytes[bom_length..]);
             result.extend_from_slice(decoded.as_bytes());
@@ -78,32 +77,30 @@ impl ConfigShapedDevices {
         // Comprehensive European + Latin American encoding list
         let encoding_labels = [
             // Most common modern encodings
-            "windows-1252",    // Western Europe (English, French, German, Spanish, etc.)
-            "windows-1250",    // Central/Eastern Europe (Polish, Czech, Hungarian, etc.)
-            "windows-1251",    // Cyrillic (Russian, Bulgarian, Serbian, etc.)
-            "windows-1253",    // Greek
-            "windows-1254",    // Turkish
-            "windows-1257",    // Baltic (Lithuanian, Latvian, Estonian)
-
+            "windows-1252", // Western Europe (English, French, German, Spanish, etc.)
+            "windows-1250", // Central/Eastern Europe (Polish, Czech, Hungarian, etc.)
+            "windows-1251", // Cyrillic (Russian, Bulgarian, Serbian, etc.)
+            "windows-1253", // Greek
+            "windows-1254", // Turkish
+            "windows-1257", // Baltic (Lithuanian, Latvian, Estonian)
             // ISO Latin series
-            "iso-8859-1",      // Latin-1: Western Europe
-            "iso-8859-2",      // Latin-2: Central/Eastern Europe
-            "iso-8859-3",      // Latin-3: Southern Europe (Turkish, Maltese)
-            "iso-8859-4",      // Latin-4: Northern Europe (Baltic)
-            "iso-8859-5",      // Cyrillic
-            "iso-8859-7",      // Greek
-            "iso-8859-9",      // Latin-5: Turkish
-            "iso-8859-13",     // Latin-7: Baltic
-            "iso-8859-15",     // Latin-9: Western Europe with Euro symbol
-            "iso-8859-16",     // Latin-10: Romanian
-
+            "iso-8859-1",  // Latin-1: Western Europe
+            "iso-8859-2",  // Latin-2: Central/Eastern Europe
+            "iso-8859-3",  // Latin-3: Southern Europe (Turkish, Maltese)
+            "iso-8859-4",  // Latin-4: Northern Europe (Baltic)
+            "iso-8859-5",  // Cyrillic
+            "iso-8859-7",  // Greek
+            "iso-8859-9",  // Latin-5: Turkish
+            "iso-8859-13", // Latin-7: Baltic
+            "iso-8859-15", // Latin-9: Western Europe with Euro symbol
+            "iso-8859-16", // Latin-10: Romanian
             // Legacy but still encountered
-            "koi8-r",          // Russian Cyrillic
-            "koi8-u",          // Ukrainian Cyrillic
-            "cp437",           // Original DOS encoding
-            "cp850",           // DOS Latin-1
-            "cp852",           // DOS Latin-2
-            "cp866",           // DOS Cyrillic
+            "koi8-r", // Russian Cyrillic
+            "koi8-u", // Ukrainian Cyrillic
+            "cp437",  // Original DOS encoding
+            "cp850",  // DOS Latin-1
+            "cp852",  // DOS Latin-2
+            "cp866",  // DOS Cyrillic
         ];
 
         for label in &encoding_labels {
@@ -130,13 +127,15 @@ impl ConfigShapedDevices {
             return Err(ShapedDevicesError::OpenFail);
         }
         debug!("Loading ShapedDevices.csv from {:?}", final_path);
-        let raw_bytes = std::fs::read(&final_path)
-            .map_err(|_| ShapedDevicesError::OpenFail)?;
+        let raw_bytes = std::fs::read(&final_path).map_err(|_| ShapedDevicesError::OpenFail)?;
         let utf8_bytes = ConfigShapedDevices::handle_encodings(&raw_bytes);
 
         let mut reader = ReaderBuilder::new()
             .comment(Some(b'#'))
             .trim(csv::Trim::All)
+            // Allow optional trailing fields like per-circuit SQM override
+            // without forcing all rows to match header length.
+            .flexible(true)
             .from_reader(utf8_bytes.as_slice());
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
@@ -155,11 +154,15 @@ impl ConfigShapedDevices {
                 }
             } else {
                 error!("Error reading CSV record: {:?}", result);
-                
+
                 // Safely extract error details if available
                 if let Err(ref csv_err) = result {
                     match csv_err.kind() {
-                        csv::ErrorKind::UnequalLengths { pos, expected_len, len } => {
+                        csv::ErrorKind::UnequalLengths {
+                            pos,
+                            expected_len,
+                            len,
+                        } => {
                             let msg = if let Some(pos) = pos {
                                 format!(
                                     "At line {}, position {}. Expected {} fields, found {}",
@@ -169,7 +172,9 @@ impl ConfigShapedDevices {
                                     len
                                 )
                             } else {
-                                format!("Unknown position. Expected {expected_len} fields, found {len}")
+                                format!(
+                                    "Unknown position. Expected {expected_len} fields, found {len}"
+                                )
                             };
                             error!("CSV decode error: {msg}");
                             return Err(ShapedDevicesError::UnequalLengths(msg));
@@ -184,7 +189,7 @@ impl ConfigShapedDevices {
                 } else {
                     // This shouldn't happen, but handle it gracefully
                     return Err(ShapedDevicesError::GenericCsvError(
-                        "Unknown CSV error".to_string()
+                        "Unknown CSV error".to_string(),
                     ));
                 }
             }
@@ -318,16 +323,16 @@ mod test {
 
     #[test]
     fn test_simple_ipv4_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4").expect("IP Parse Error");
         assert_eq!(cidr, 32);
-        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().unwrap(), ip);
+        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().expect("IP parse error"), ip);
     }
 
     #[test]
     fn test_cidr_ipv4_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4/24").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v4("1.2.3.4/24").expect("IP Parse Error");
         assert_eq!(cidr, 24);
-        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().unwrap(), ip);
+        assert_eq!("1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse"), ip);
     }
 
     #[test]
@@ -346,7 +351,7 @@ mod test {
     fn test_single_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 32);
     }
 
@@ -354,24 +359,24 @@ mod test {
     fn test_two_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4, 1.2.3.4/24");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 32);
-        assert_eq!(r[1].0, "1.2.3.4".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(r[1].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
         assert_eq!(r[1].1, 24);
     }
 
     #[test]
     fn test_simple_ipv6_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5").expect("IP Parse Error");
         assert_eq!(cidr, 128);
-        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().unwrap(), ip);
+        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"), ip);
     }
 
     #[test]
     fn test_cidr_ipv6_parse() {
-        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5/64").unwrap();
+        let (ip, cidr) = ShapedDevice::parse_cidr_v6("fd77::1:5/64").expect("IP Parse Error");
         assert_eq!(cidr, 64);
-        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().unwrap(), ip);
+        assert_eq!("fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"), ip);
     }
 
     #[test]
@@ -390,7 +395,7 @@ mod test {
     fn test_single_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 128);
     }
 
@@ -398,9 +403,9 @@ mod test {
     fn test_two_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5, fd77::1:5/64");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[0].1, 128);
-        assert_eq!(r[1].0, "fd77::1:5".parse::<Ipv6Addr>().unwrap());
+        assert_eq!(r[1].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
         assert_eq!(r[1].1, 64);
     }
 
@@ -421,15 +426,15 @@ mod test {
         let trie = ConfigShapedDevices::make_trie(&devices);
         assert_eq!(trie.len(), (0, 2));
         assert!(
-            trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").unwrap().0)
+            trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").expect("IP Parse Error").0)
                 .is_none()
         );
 
-        let addr: Ipv4Addr = "192.168.1.2".parse().unwrap();
+        let addr: Ipv4Addr = "192.168.1.2".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
 
-        let addr: Ipv4Addr = "1.2.3.4".parse().unwrap();
+        let addr: Ipv4Addr = "1.2.3.4".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
     }
@@ -440,7 +445,10 @@ mod test {
         let input = "Hello, World! 你好世界 Привет мир".as_bytes();
         let result = ConfigShapedDevices::handle_encodings(input);
         assert_eq!(result, input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Hello, World! 你好世界 Привет мир");
+        assert_eq!(
+            String::from_utf8(result).expect("Unicode error"),
+            "Hello, World! 你好世界 Привет мир"
+        );
     }
 
     #[test]
@@ -448,9 +456,9 @@ mod test {
         // UTF-8 BOM: EF BB BF
         let mut input = vec![0xEF, 0xBB, 0xBF];
         input.extend_from_slice("Hello UTF-8 with BOM".as_bytes());
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Hello UTF-8 with BOM");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Hello UTF-8 with BOM");
     }
 
     #[test]
@@ -464,18 +472,20 @@ mod test {
             0x6C, 0x00, // l
             0x6F, 0x00, // o
         ];
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Hello");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Hello");
     }
 
     #[test]
     fn test_handle_encodings_windows_1252() {
         // "Café" in Windows-1252: C=0x43, a=0x61, f=0x66, é=0xE9
-        let input = vec![0x43, 0x61, 0x66, 0xE9, 0x20, 0x2D, 0x20, 0xA9, 0x20, 0x32, 0x30, 0x32, 0x34]; // "Café - © 2024"
-        
+        let input = vec![
+            0x43, 0x61, 0x66, 0xE9, 0x20, 0x2D, 0x20, 0xA9, 0x20, 0x32, 0x30, 0x32, 0x34,
+        ]; // "Café - © 2024"
+
         let result = ConfigShapedDevices::handle_encodings(&input);
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         assert!(result_str.contains("Café"));
         assert!(result_str.contains("©"));
     }
@@ -484,9 +494,9 @@ mod test {
     fn test_handle_encodings_iso_8859_1() {
         // "Größe" in ISO-8859-1: G=0x47, r=0x72, ö=0xF6, ß=0xDF, e=0x65
         let input = vec![0x47, 0x72, 0xF6, 0xDF, 0x65];
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).unwrap(), "Größe");
+        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Größe");
     }
 
     #[test]
@@ -494,10 +504,10 @@ mod test {
         // "Привет" (Hello in Russian) in Windows-1251
         // П=0xCF, р=0xF0, и=0xE8, в=0xE2, е=0xE5, т=0xF2
         let input = vec![0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2];
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
         // Since encoding_rs might not perfectly decode this, let's check it's valid UTF-8
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         // The exact output depends on encoding_rs implementation
         assert!(!result_str.is_empty());
     }
@@ -507,10 +517,10 @@ mod test {
         // "Мир" (World in Russian) in KOI8-R
         // М=0xED, и=0xC9, р=0xD2
         let input = vec![0xED, 0xC9, 0xD2];
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
         // Since encoding_rs might not perfectly decode this, let's check it's valid UTF-8
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         // The exact output depends on encoding_rs implementation
         assert!(!result_str.is_empty());
     }
@@ -519,12 +529,12 @@ mod test {
     fn test_handle_encodings_mixed_content() {
         // Test Windows-1252 with special characters: "naïve résumé"
         let input = vec![
-            0x6E, 0x61, 0xEF, 0x76, 0x65, 0x20, // naïve 
-            0x72, 0xE9, 0x73, 0x75, 0x6D, 0xE9  // résumé
+            0x6E, 0x61, 0xEF, 0x76, 0x65, 0x20, // naïve
+            0x72, 0xE9, 0x73, 0x75, 0x6D, 0xE9, // résumé
         ];
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
-        let result_str = String::from_utf8(result).unwrap();
+        let result_str = String::from_utf8(result).expect("Unicode error");
         assert!(result_str.contains("naïve"));
         assert!(result_str.contains("résumé"));
     }
@@ -533,7 +543,7 @@ mod test {
     fn test_handle_encodings_fallback() {
         // Invalid/mixed encoding - should use lossy conversion
         let input = vec![0xFF, 0xFE, 0xFD, 0xFC]; // Invalid UTF-8
-        
+
         let result = ConfigShapedDevices::handle_encodings(&input);
         // Should not panic and should return valid UTF-8
         assert!(String::from_utf8(result).is_ok());

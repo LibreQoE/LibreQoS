@@ -13,17 +13,20 @@ use tracing::error;
 pub enum PythonMigrationError {
     #[error("The ispConfig.py file does not exist.")]
     ConfigFileNotFound,
+    #[error("String not readable UTF-8")]
+    BadString,
+    #[error("Serialization Error: {e:?}")]
+    Serialize{ e: Box<dyn std::error::Error> }
 }
 
 fn isp_config_py_path(cfg: &EtcLqos) -> PathBuf {
     let base_path = Path::new(&cfg.lqos_directory);
-    let final_path = base_path.join("ispConfig.py");
-    final_path
+    base_path.join("ispConfig.py")
 }
 
 /// Does thie ispConfig.py file exist?
 fn config_exists(cfg: &EtcLqos) -> bool {
-    isp_config_py_path(&cfg).exists()
+    isp_config_py_path(cfg).exists()
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -89,6 +92,12 @@ pub struct PythonMigration {
     pub splynx_api_key: String,
     pub splynx_api_secret: String,
     pub splynx_api_url: String,
+    #[serde(rename = "automaticImportNetzur")]
+    pub automatic_import_netzur: bool,
+    pub netzur_api_key: String,
+    pub netzur_api_url: String,
+    #[serde(rename = "netzur_api_timeout")]
+    pub netzur_api_timeout: i64,
     #[serde(rename = "automaticImportUISP")]
     pub automatic_import_uisp: bool,
     #[serde(rename = "uispAuthToken")]
@@ -154,11 +163,11 @@ impl PythonMigration {
                 error!("Error running Python migrator: {:?}", output);
                 return Err(PythonMigrationError::ConfigFileNotFound);
             }
-            let json = String::from_utf8(output.stdout).unwrap();
-            let json: Self = serde_json::from_str(&json).unwrap();
-            return Ok(json);
+            let json = String::from_utf8(output.stdout).map_err(|_| PythonMigrationError::BadString)?;
+            let json: Self = serde_json::from_str(&json).map_err(|e| PythonMigrationError::Serialize { e: Box::new(e) })?;
+            Ok(json)
         } else {
-            return Err(PythonMigrationError::ConfigFileNotFound);
+            Err(PythonMigrationError::ConfigFileNotFound)
         }
     }
 }

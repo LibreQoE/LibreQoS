@@ -1,13 +1,15 @@
-use allocative::Allocative;
-use tracing::{debug, info};
 use crate::config::WatchingSite;
 use crate::site_state::analysis::{RetransmitState, RttState, SaturationLevel};
-use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
+use crate::site_state::recommendation::{
+    Recommendation, RecommendationAction, RecommendationDirection,
+};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::stormguard_state::StormguardState;
+use allocative::Allocative;
+use tracing::{debug, info};
 
-pub struct SiteState<'a> {
-    pub config: &'a WatchingSite,
+pub struct SiteState {
+    pub config: WatchingSite,
     pub download_state: StormguardState,
     pub upload_state: StormguardState,
 
@@ -48,12 +50,20 @@ struct RecommendationParams {
 
 impl RecommendationParams {
     fn summary_string(&self) -> String {
-        format!("{},{:?},{:?},{},{},{},{}",
-                self.direction,self.can_increase, self.can_decrease, self.saturation_max, self.saturation_current, self.retransmit_state, self.rtt_state)
+        format!(
+            "{},{:?},{:?},{},{},{},{}",
+            self.direction,
+            self.can_increase,
+            self.can_decrease,
+            self.saturation_max,
+            self.saturation_current,
+            self.retransmit_state,
+            self.rtt_state
+        )
     }
 }
 
-impl<'a> SiteState<'a> {
+impl SiteState {
     pub fn check_state(&mut self) {
         match self.download_state {
             StormguardState::Warmup => {
@@ -68,7 +78,10 @@ impl<'a> SiteState<'a> {
             StormguardState::Running => {
                 self.moving_averages_down();
             }
-            StormguardState::Cooldown{ start, duration_secs } => {
+            StormguardState::Cooldown {
+                start,
+                duration_secs,
+            } => {
                 self.moving_averages_down();
 
                 // Check if cooldown period is over
@@ -94,7 +107,10 @@ impl<'a> SiteState<'a> {
             StormguardState::Running => {
                 self.moving_averages_up();
             }
-            StormguardState::Cooldown{ start, duration_secs } => {
+            StormguardState::Cooldown {
+                start,
+                duration_secs,
+            } => {
                 self.moving_averages_up();
 
                 // Check if cooldown period is over
@@ -154,25 +170,17 @@ impl<'a> SiteState<'a> {
         let score_base = score_bias;
 
         let score_rtt = match &params.rtt_state {
-            RttState::Rising  { magnitude } =>  magnitude.abs() * rtt_weight,  // punish
-            RttState::Flat                       => 0.0,
-            RttState::Falling { magnitude } => -magnitude.abs() * rtt_weight,  // reward
+            RttState::Rising { magnitude } => magnitude.abs() * rtt_weight, // punish
+            RttState::Flat => 0.0,
+            RttState::Falling { magnitude } => -magnitude.abs() * rtt_weight, // reward
         };
 
         let score_retransmit = match &params.retransmit_state {
-            RetransmitState::RisingFast => {
-                1.5 * retransmit_weight
-            }
-            RetransmitState::Rising => {
-                1.0 * retransmit_weight
-            }
+            RetransmitState::RisingFast => 1.5 * retransmit_weight,
+            RetransmitState::Rising => 1.0 * retransmit_weight,
             RetransmitState::Stable => 0.0, // No change
-            RetransmitState::Falling => {
-                -1.0 * retransmit_weight
-            }
-            RetransmitState::FallingFast => {
-                -1.5 * retransmit_weight
-            }
+            RetransmitState::Falling => -1.0 * retransmit_weight,
+            RetransmitState::FallingFast => -1.5 * retransmit_weight,
         };
 
         // Tick Bias
@@ -187,24 +195,34 @@ impl<'a> SiteState<'a> {
         };*/
         let score_tick = 0.0; // Removed for now
 
-        let score_stability_bonus = if matches!(params.rtt_state, RttState::Flat | RttState::Falling { .. })
-            && matches!(params.retransmit_state, RetransmitState::Stable | RetransmitState::Falling | RetransmitState::FallingFast)
-            && params.saturation_current == SaturationLevel::Low
-        {
-            -1.5  // Stronger bonus for stable operation
-        } else { 0.0 };
-
+        let score_stability_bonus =
+            if matches!(params.rtt_state, RttState::Flat | RttState::Falling { .. })
+                && matches!(
+                    params.retransmit_state,
+                    RetransmitState::Stable
+                        | RetransmitState::Falling
+                        | RetransmitState::FallingFast
+                )
+                && params.saturation_current == SaturationLevel::Low
+            {
+                -1.5 // Stronger bonus for stable operation
+            } else {
+                0.0
+            };
 
         let score = score_base + score_rtt + score_retransmit + score_stability_bonus + score_tick;
         debug!("{} : {}", params.direction, params.summary_string());
-        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick) = {score:.1}", params.direction);
+        debug!(
+            "Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick) = {score:.1}",
+            params.direction
+        );
 
         // Determine the recommendation action
         let action = match score {
-            score if score < -1.0 => Some(RecommendationAction::IncreaseFast),  // Easier to increase
-            score if score > 3.0 => Some(RecommendationAction::DecreaseFast), // Harder to decrease
-            score if score < 0.0 => Some(RecommendationAction::Increase),     // Wider increase band
-            score if score > 2.0 => Some(RecommendationAction::Decrease),     // Narrower decrease band
+            score if score < -1.0 => Some(RecommendationAction::IncreaseFast), // Easier to increase
+            score if score > 3.0 => Some(RecommendationAction::DecreaseFast),  // Harder to decrease
+            score if score < 0.0 => Some(RecommendationAction::Increase), // Wider increase band
+            score if score > 2.0 => Some(RecommendationAction::Decrease), // Narrower decrease band
             _ => None,
         };
         //println!("Score: {score}, recommendation: {:?}", action);
@@ -213,20 +231,26 @@ impl<'a> SiteState<'a> {
             match action {
                 RecommendationAction::IncreaseFast | RecommendationAction::Increase => {
                     if params.can_increase {
-                        recommendations.push((Recommendation {
-                            site: self.config.name.to_owned(),
-                            action,
-                            direction: params.direction,
-                        }, params.summary_string()));
+                        recommendations.push((
+                            Recommendation {
+                                site: self.config.name.to_owned(),
+                                action,
+                                direction: params.direction,
+                            },
+                            params.summary_string(),
+                        ));
                     }
                 }
                 RecommendationAction::DecreaseFast | RecommendationAction::Decrease => {
                     if params.can_decrease {
-                        recommendations.push((Recommendation {
-                            site: self.config.name.to_owned(),
-                            action,
-                            direction: params.direction,
-                        }, params.summary_string()));
+                        recommendations.push((
+                            Recommendation {
+                                site: self.config.name.to_owned(),
+                                action,
+                                direction: params.direction,
+                            },
+                            params.summary_string(),
+                        ));
                     }
                 }
             }
@@ -246,10 +270,7 @@ impl<'a> SiteState<'a> {
             &self.retransmits_down_moving_average,
             &self.retransmits_down,
         );
-        let rtt_state = RttState::new(
-            &self.round_trip_time_moving_average,
-            &self.round_trip_time,
-        );
+        let rtt_state = RttState::new(&self.round_trip_time_moving_average, &self.round_trip_time);
 
         let params = RecommendationParams {
             direction: RecommendationDirection::Download,
@@ -261,10 +282,7 @@ impl<'a> SiteState<'a> {
             rtt_state,
         };
 
-        self.recommendation_matrix(
-            recommendations,
-            &params,
-        );
+        self.recommendation_matrix(recommendations, &params);
     }
 
     fn recommendations_upload(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
@@ -276,14 +294,9 @@ impl<'a> SiteState<'a> {
             self.current_throughput.1,
             self.queue_upload_mbps as f64,
         );
-        let retransmit_state = RetransmitState::new(
-            &self.retransmits_up_moving_average,
-            &self.retransmits_up,
-        );
-        let rtt_state = RttState::new(
-            &self.round_trip_time_moving_average,
-            &self.round_trip_time,
-        );
+        let retransmit_state =
+            RetransmitState::new(&self.retransmits_up_moving_average, &self.retransmits_up);
+        let rtt_state = RttState::new(&self.round_trip_time_moving_average, &self.round_trip_time);
 
         let params = RecommendationParams {
             direction: RecommendationDirection::Upload,
@@ -295,17 +308,15 @@ impl<'a> SiteState<'a> {
             rtt_state,
         };
 
-        self.recommendation_matrix(
-            recommendations,
-            &params,
-        );
+        self.recommendation_matrix(recommendations, &params);
     }
 
     pub fn recommendations(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
         if self.download_state == StormguardState::Running {
             self.recommendations_download(recommendations);
             self.ticks_since_last_probe_download += 1;
-            self.ticks_since_last_probe_download = u32::min(20, self.ticks_since_last_probe_download);
+            self.ticks_since_last_probe_download =
+                u32::min(20, self.ticks_since_last_probe_download);
         }
         if self.upload_state == StormguardState::Running {
             self.recommendations_upload(recommendations);

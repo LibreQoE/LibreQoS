@@ -1,29 +1,26 @@
-use crate::long_term_stats::get_network_tree;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES};
+use crate::lts2_sys::get_lts_license_status;
+use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatus};
+use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::ALL_FLOWS;
 use crate::throughput_tracker::{
     Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
     min_max_median_tcp_retransmits,
 };
+use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::{load_config, ShapedDevice};
+use lqos_config::{ShapedDevice, load_config};
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
-use lts_client::collector::stats_availability::StatsUpdateMessage;
-use lts_client::collector::{HostSummary, ThroughputSummary};
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::sync::atomic::AtomicI64;
-use csv::ReaderBuilder;
-use tokio::sync::mpsc::Sender;
-use tokio::time::Instant;
 use tracing::debug;
 use tracing::log::warn;
+use uuid::Uuid;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
@@ -33,68 +30,47 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
 /// TODO: Remove when LTS/Insight support fractional rates
 fn rate_for_submission(rate_mbps: f32) -> u32 {
     if rate_mbps < 1.0 {
-        1  // Round up small fractional rates to 1 Mbps for now
+        1 // Round up small fractional rates to 1 Mbps for now
     } else {
-        rate_mbps.round() as u32  // Round to nearest integer
-    }
-}
-
-#[derive(Debug)]
-struct LtsSubmitMetrics {
-    start: Instant,
-    shaped_devices: f64,
-    total_throughput: f64,
-    hosts: f64,
-    summary: f64,
-    send: f64,
-}
-
-impl LtsSubmitMetrics {
-    fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            shaped_devices: 0.0,
-            total_throughput: 0.0,
-            hosts: 0.0,
-            summary: 0.0,
-            send: 0.0,
-        }
+        rate_mbps.round() as u32 // Round to nearest integer
     }
 }
 
 pub(crate) fn submit_throughput_stats(
-    long_term_stats_tx: Sender<StatsUpdateMessage>,
     scale: f64,
     counter: u8,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
-    let config = load_config();
-    if config.is_err() {
+    // Load the config
+    let Ok(config) = load_config() else {
         return;
-    }
-    let config = config.unwrap();
+    };
+
+    // Bail out if we don't have gather stats or a license key
     if config.long_term_stats.gather_stats == false {
         return;
     }
-    if config.long_term_stats.license_key.is_none() {
+    if let Some(license_key) = &config.long_term_stats.license_key {
+        if license_key.trim().is_empty() {
+            // There's a license key but it's empty
+            return;
+        }
+        if license_key.trim().replace("-", "").parse::<Uuid>().is_err() {
+            return; // Invalid license key format
+        }
+    } else {
         return;
     }
 
-    let mut metrics = LtsSubmitMetrics::new();
-    // If ShapedDevices has changed, notify the stats thread
-    if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
-        true,
-        false,
-        std::sync::atomic::Ordering::Relaxed,
-        std::sync::atomic::Ordering::Relaxed,
-    ) {
-        if changed {
-            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
-            let _ = long_term_stats_tx
-                .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
-        }
+    // Bail out if the license doesn't indicate that we're allowed to submit stats
+    let (license_status, _days_remaining) = get_lts_license_status();
+    let can_submit = match license_status {
+        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid => false,
+        _ => true,
+    };
+    if !can_submit {
+        return;
     }
-    metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
 
     // Gather Global Stats
     let packets_per_second = (
@@ -114,9 +90,8 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_up(),
     );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
-    let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
-    metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
 
+    // Check that the stats haven't gone wonky and don't submit obviously bad data.
     if let Ok(config) = load_config() {
         if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
@@ -128,83 +103,32 @@ pub(crate) fn submit_throughput_stats(
         }
     }
 
-    let hosts = THROUGHPUT_TRACKER
-        .raw_data
-        .lock()
-        .iter()
-        //.filter(|host| host.median_latency().is_some())
-        .map(|(k, host)| HostSummary {
-            ip: k.as_ip(),
-            circuit_id: host.circuit_id.clone(),
-            bits_per_second: (
-                scale_u64_by_f64(host.bytes_per_second.down * 8, scale),
-                scale_u64_by_f64(host.bytes_per_second.up * 8, scale),
-            ),
-            median_rtt: host.median_latency().unwrap_or(0.0),
-        })
-        .collect();
-    metrics.hosts = metrics.start.elapsed().as_secs_f64();
-
-    let summary = Box::new((
-        ThroughputSummary {
-            bits_per_second: (
-                scale_u64_by_f64(bits_per_second.down, scale),
-                scale_u64_by_f64(bits_per_second.up, scale),
-            ),
-            shaped_bits_per_second: (
-                scale_u64_by_f64(shaped_bits_per_second.down, scale),
-                scale_u64_by_f64(shaped_bits_per_second.up, scale),
-            ),
-            packets_per_second,
-            hosts,
-        },
-        get_network_tree(),
-    ));
-    metrics.summary = metrics.start.elapsed().as_secs_f64();
-
-    // Send the stats
-    let result = long_term_stats_tx.blocking_send(StatsUpdateMessage::ThroughputReady(summary));
-    if let Err(e) = result {
-        warn!("Error sending message to stats collection system. {e:?}");
-    }
-    metrics.send = metrics.start.elapsed().as_secs_f64();
-
-    if metrics.start.elapsed().as_secs_f64() > 1.0 {
-        warn!("{:?}", metrics);
-    }
-
     /////////////////////////////////////////////////////////////////
     // Insight Block
-    let Ok(config) = load_config() else {
-        return;
-    };
-
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices() {
             tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
-                if let Ok(config) = load_config() {
-                    let filename = Path::new(&config.lqos_directory).join("network.json");
-                    if let Ok(raw_string) = read_to_string(filename) {
-                        match serde_json::from_str::<RawNetJs>(&raw_string) {
-                            Err(e) => {
-                                warn!("Unable to parse network.json. {e:?}");
-                            }
-                            Ok(json) => {
-                                let lts2_format: Vec<_> =
-                                    json.iter().map(|(k, v)| v.to_lts2(&k)).collect();
-                                if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
-                                    if let Err(e) = crate::lts2_sys::network_tree(now, &bytes) {
-                                        warn!("Error sending message to Insight. {e:?}");
-                                    }
+                let filename = Path::new(&config.lqos_directory).join("network.json");
+                if let Ok(raw_string) = read_to_string(filename) {
+                    match serde_json::from_str::<RawNetJs>(&raw_string) {
+                        Err(e) => {
+                            warn!("Unable to parse network.json. {e:?}");
+                        }
+                        Ok(json) => {
+                            let lts2_format: Vec<_> =
+                                json.iter().map(|(k, v)| v.to_lts2(&k)).collect();
+                            if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
+                                if let Err(e) = crate::lts2_sys::network_tree(now, &bytes) {
+                                    warn!("Error sending message to Insight. {e:?}");
                                 }
                             }
                         }
-                    } else {
-                        warn!("Unable to read network.json");
                     }
+                } else {
+                    warn!("Unable to read network.json");
                 }
             }
 
@@ -262,7 +186,7 @@ pub(crate) fn submit_throughput_stats(
                 }
             }
 
-            // TODO: Send permitted IP ranges at the same time
+            // Send permitted IP ranges at the same time
             if let Ok(config) = lqos_config::load_config() {
                 if let Err(e) = crate::lts2_sys::ip_policies(
                     &config.ip_ranges.allow_subnets,
@@ -313,9 +237,7 @@ pub(crate) fn submit_throughput_stats(
         {
             warn!("Error sending message to LTS2.");
         }
-        if let Err(e) =
-            crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64)
-        {
+        if let Err(e) = crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64) {
             debug!("Error sending message to LTS2. {e:?}");
         }
 
@@ -360,10 +282,10 @@ pub(crate) fn submit_throughput_stats(
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
                     if h.bytes_per_second.down > *dl {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     } else if h.bytes_per_second.up > *ul {
-                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
                         crazy = true;
                     }
                 }
@@ -371,7 +293,7 @@ pub(crate) fn submit_throughput_stats(
                 if crazy {
                     return;
                 }
-                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     c.bytes += h.bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
@@ -379,7 +301,7 @@ pub(crate) fn submit_throughput_stats(
                     c.icmp_packets += h.icmp_packets;
                 } else {
                     circuit_throughput.insert(
-                        h.circuit_hash.unwrap(),
+                        h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
                             bytes: h.bytes_per_second,
                             packets: h.packets_per_second,
@@ -401,10 +323,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
+                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_hash.unwrap(), h.tcp_retransmits);
+                    circuit_retransmits.insert(h.circuit_hash.unwrap_or(0), h.tcp_retransmits);
                 }
             });
 
@@ -418,10 +340,10 @@ pub(crate) fn submit_throughput_stats(
                     && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
             })
             .for_each(|(_k, h)| {
-                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
-                    c.push(h.median_latency().unwrap());
+                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap_or(0)) {
+                    c.push(h.median_latency().unwrap_or(0.0));
                 } else {
-                    circuit_rtt.insert(h.circuit_hash.unwrap(), vec![h.median_latency().unwrap()]);
+                    circuit_rtt.insert(h.circuit_hash.unwrap_or(0), vec![h.median_latency().unwrap_or(0.0)]);
                 }
             });
 
@@ -506,7 +428,7 @@ pub(crate) fn submit_throughput_stats(
 
         // Network tree stats
         let tree = {
-            let reader = NETWORK_JSON.read().unwrap();
+            let reader = NETWORK_JSON.read();
             reader.get_nodes_when_ready().clone()
         };
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();

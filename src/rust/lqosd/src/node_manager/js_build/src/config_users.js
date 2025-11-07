@@ -1,4 +1,9 @@
+import {renderConfigMenu} from "./config/config_helper";
+
 $(document).ready(() => {
+    // Render the configuration menu
+    renderConfigMenu('users');
+    
     loadUsers();
     
     // Handle add user form submission

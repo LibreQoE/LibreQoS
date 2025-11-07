@@ -46,7 +46,7 @@ Más información sobre [configuración de integraciones aquí.](integrations-es
 
 Network.json permite a los operadores de internet (ISP) definir una topología de red jerárquica o plana.
 
-Si planea usar las integraciones ya incluidas en LibreQoS de UISP o Splynx, no necesita todavía crear un archivo network.json.
+Si planea usar las integraciones ya incluidas en LibreQoS de UISP, Splynx o Netzur, no necesita todavía crear un archivo network.json.
 Si planea usar la integración ya incluida de UISP, el archivo network.json se creará en automático durante la primera ejecución (siempre y cuando network.json no exista previamente).
 
 Si no planea usar una integración, puede definir manualmente el archivo network.json siguiendo el archivo de plantilla - [network.example.json](https://github.com/LibreQoE/LibreQoS/blob/develop/src/network.example.json). A continuación se muestra una ilustración en tabla del network.example.json. 
@@ -126,4 +126,4 @@ Navegue a la interfaz Web de LibreQoS (http://a.b.c.d:9123) y seleccione Configu
 
 Nota sobre SLAs: Para clientes con contratos SLA, donde garantizan un ancho de banda mínimo, puede configurar el plan contratado como el ancho de banda mínimo. De esta manera, cuando un AP se acerque a su límite, los clientes con SLA siempre tendrán esa velocidad disponible. Asegúrese de que la suma de los anchos de banda mínimos de los circuitos conectados a un nodo padre no supere la capacidad total de ese nodo padre. Si esto ocurre, LibreQoS tiene un mecanismo de seguridad que [reduce los mínimos a 1/1](https://github.com/LibreQoE/LibreQoS/pull/643) para todos los circuitos afectados. 
 
-Una vez que su configuración esté completa, estará listo para ejecutar la aplicación e iniciar los servicios systemd.
+Una vez que su configuración esté completa, estará listo para ejecutar la aplicación e iniciar los [servicios systemd](./components-es.md#servicios-de-systemd)

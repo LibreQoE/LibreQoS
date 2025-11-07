@@ -15,43 +15,23 @@ mod remote_commands;
 use crate::lts2_sys::shared_types;
 use crate::lts2_sys::shared_types::{CircuitRetransmits, FreeTrialDetails};
 use client_commands::LtsClientCommand;
+pub(crate) use license_check::{LicenseStatus, get_license_status, set_license_status};
 use lqos_config::load_config;
+pub(crate) use remote_commands::enqueue;
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::sync::mpsc;
-use parking_lot::Mutex;
 use tokio::sync::oneshot;
 use tracing::{error, warn};
 
-pub fn spawn_lts2() -> anyhow::Result<()> {
-    // Convert the certificate into shared data for async land
-
-    // Set up the license shared data
-    let license_status = Arc::new(Mutex::new(license_check::LicenseStatus::default()));
-
+pub fn spawn_lts2(
+    control_tx: tokio::sync::mpsc::Sender<super::control_channel::ControlChannelCommand>,
+) -> anyhow::Result<()> {
     // Channel construction
     let (tx, rx) = mpsc::channel::<LtsClientCommand>();
     client_commands::set_command_channel(tx)?;
 
-    // Spawn the license check loop
-    let my_license_status = license_status.clone();
-    if let Err(e) = std::thread::Builder::new()
-        .name("License Check".to_string())
-        .spawn(move || {
-            license_check::license_check_loop(my_license_status);
-        })
-    {
-        error!("Failed to spawn license check thread: {:?}", e);
-        return Err(anyhow::anyhow!("Failed to spawn license check thread"));
-    }
-
     // Launch the ingestor thread
     let ingestor = ingestor::start_ingestor();
-
-    // Launch the submit permission checker
-    std::thread::spawn(move || {
-        ingestor::check_submit_permission();
-    });
 
     // Message Pump
     std::thread::spawn(move || {
@@ -66,15 +46,19 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                     }
                 }
                 LtsClientCommand::LicenseStatus(channel) => {
-                    let status = license_status.lock();
+                    let status = get_license_status();
                     let _ = channel.send(status.license_type);
                 }
                 LtsClientCommand::TrialDaysRemaining(channel) => {
-                    let status = license_status.lock();
+                    let status = get_license_status();
                     let _ = channel.send(status.trial_expires);
                 }
                 LtsClientCommand::IngestBatchComplete => {
-                    // TODO
+                    // Submit to the unified channel system
+                    let _ =
+                        ingestor.send(ingestor::commands::IngestorCommand::IngestBatchComplete {
+                            submit: control_tx.clone(),
+                        });
                 }
             }
         }
@@ -689,7 +673,10 @@ pub fn get_commands(callback: fn(Vec<u8>)) {
     let commands_to_send = remote_commands::get();
 
     // Serialize the commands to CBOR
-    let cbor = serde_cbor::to_vec(&commands_to_send).unwrap();
+    let Ok(cbor) = serde_cbor::to_vec(&commands_to_send) else {
+        warn!("Unable to deserialize remote commands.");
+        return;
+    };
 
     // Submit via the callback
     callback(cbor);

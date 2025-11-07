@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +15,10 @@ pub struct QueueStoreTransit {
     //pub prev_upload: Option<CakeTransit>,
     pub current_download: CakeTransit,
     pub current_upload: CakeTransit,
+    /// Queue kind for downlink (e.g., "cake" or "fq_codel")
+    pub kind_down: String,
+    /// Queue kind for uplink (e.g., "cake" or "fq_codel")
+    pub kind_up: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]

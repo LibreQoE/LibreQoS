@@ -6,8 +6,32 @@ button.onclick = () => {
    window.location.href = "/local-api/unknownIpsCsv";
 };
 
+let clearButton = document.getElementById("btnClear");
+if (clearButton) {
+   clearButton.onclick = async () => {
+      try {
+         await fetch("/local-api/unknownIps/clear", { method: "POST" });
+      } catch (e) {
+         console.error("Failed to clear unknown IPs", e);
+      } finally {
+         // Reload to refresh the list
+         window.location.reload();
+      }
+   };
+}
+
 $.get("/local-api/unknownIps", (data) => {
    let target = document.getElementById("unknown");
+   clearDiv(target);
+
+   if (!data || data.length === 0) {
+      const p = document.createElement('p');
+      p.classList.add('text-muted');
+      p.textContent = 'No unknown IPs seen in the last 5 minutes.';
+      target.appendChild(p);
+      return;
+   }
+
    let table = document.createElement("table");
    table.classList.add("table", "table-striped");
    let thead = document.createElement("thead");
@@ -27,8 +51,5 @@ $.get("/local-api/unknownIps", (data) => {
    });
 
    table.appendChild(tbody);
-   clearDiv(target);
    target.appendChild(table);
-
-   //console.log(data);
 });

@@ -30,8 +30,7 @@ fn throughput_garbage_collect() {
         error!("Failed to load configuration for garbage collector");
         return;
     };
-    let expiry_time_seconds = config.queues.lazy_expire_seconds
-        .unwrap_or(60 * 15); // Default to 15 minutes if not set
+    let expiry_time_seconds = config.queues.lazy_expire_seconds.unwrap_or(60 * 15); // Default to 15 minutes if not set
 
     let Ok(now) = time_since_boot() else { return };
     let now = Duration::from(now).as_nanos() as u64;

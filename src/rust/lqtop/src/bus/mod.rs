@@ -2,7 +2,7 @@
 
 use crate::ui_base::SHOULD_EXIT;
 use anyhow::Result;
-use lqos_bus::{LibreqosBusClient, BusRequest, BusResponse};
+use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient};
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc::Receiver;
 pub mod cpu_ram;

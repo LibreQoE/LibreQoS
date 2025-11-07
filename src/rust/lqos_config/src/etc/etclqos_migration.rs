@@ -17,9 +17,7 @@ pub struct EtcLqos {
     /// In ms.
     pub queue_check_period_ms: u64,
 
-    /// If present, provides a unique ID for the node. Used for
-    /// anonymous stats (to identify nodes without providing an actual
-    /// identity), and long-term stas.
+    /// If present, provides a unique ID for the node. Used for Insight.
     pub node_id: Option<String>,
 
     /// If present, provide a name for the node.
@@ -31,9 +29,6 @@ pub struct EtcLqos {
     /// If present, defines the values for various `sysctl` and `ethtool`
     /// tweaks.
     pub tuning: Option<Tunables>,
-
-    /// If present, defined anonymous usage stat sending
-    pub usage_stats: Option<UsageStats>,
 
     /// Defines for how many seconds a libpcap compatible capture should
     /// run. Short times are good, there's a real performance penalty to
@@ -123,16 +118,6 @@ pub struct BridgeVlan {
 
     /// The destination VLAN tag number if matched.
     pub redirect_to: u32,
-}
-
-/// Definitions for anonymous usage submission
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct UsageStats {
-    /// Are we allowed to send stats at all?
-    pub send_anonymous: bool,
-
-    /// Where do we send them?
-    pub anonymous_server: String,
 }
 
 /// Long Term Data Retention
@@ -243,16 +228,16 @@ fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
     use sha2::Digest;
     use sha2::digest::Update;
 
-    if cfg.node_id.is_none() {
-        if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
-            let hash = sha2::Sha256::new().chain(machine_id).finalize();
-            cfg.node_id = Some(format!("{:x}", hash));
-            cfg_doc["node_id"] = value(format!("{:x}", hash));
-            println!("Updating");
-            if let Err(e) = cfg.save(cfg_doc) {
-                error!("Unable to save /etc/lqos.conf");
-                error!("{e:?}");
-            }
+    if cfg.node_id.is_none()
+        && let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id")
+    {
+        let hash = sha2::Sha256::new().chain(machine_id).finalize();
+        cfg.node_id = Some(format!("{:x}", hash));
+        cfg_doc["node_id"] = value(format!("{:x}", hash));
+        println!("Updating");
+        if let Err(e) = cfg.save(cfg_doc) {
+            error!("Unable to save /etc/lqos.conf");
+            error!("{e:?}");
         }
     }
 }
@@ -277,14 +262,14 @@ mod test {
 
     #[test]
     fn round_trip_toml() {
-        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         let reserialized = doc.to_string();
         assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
     }
 
     #[test]
     fn add_node_id() {
-        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().unwrap();
+        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
         doc["node_id"] = toml_edit::value("test");
         let reserialized = doc.to_string();
         assert!(reserialized.contains("node_id = \"test\""));

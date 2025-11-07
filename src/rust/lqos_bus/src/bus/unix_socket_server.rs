@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use crate::{
     BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession,
     bus::client::{MAGIC_NUMBER, MAGIC_RESPONSE},
@@ -16,7 +19,8 @@ use super::BUS_SOCKET_DIRECTORY;
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
 
-static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> = tokio::sync::OnceCell::const_new();
+static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> =
+    tokio::sync::OnceCell::const_new();
 const RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 512; // 512 MiB
 
 impl UnixSocketServer {
@@ -53,11 +57,12 @@ impl UnixSocketServer {
 
     fn path_permissions() -> Result<(), UnixSocketServerError> {
         let unix_path = CString::new(BUS_SOCKET_DIRECTORY);
-        if unix_path.is_err() {
-            error!("Unable to create C-compatible path string. This should never happen.");
+        let Ok(unix_path) = unix_path else {
+            if unix_path.is_err() {
+                error!("Unable to create C-compatible path string. This should never happen.");
+            }
             return Err(UnixSocketServerError::CString);
-        }
-        let unix_path = unix_path.unwrap();
+        };
         unsafe {
             nix::libc::chmod(unix_path.as_ptr(), 777);
         }
@@ -97,12 +102,13 @@ impl UnixSocketServer {
 
         // Set up the listener and grant permissions to it
         let listener = UnixListener::bind(BUS_SOCKET_PATH);
-        if listener.is_err() {
-            error!("Unable to bind to {BUS_SOCKET_PATH}");
-            error!("{:?}", listener);
+        let Ok(listener) = listener else {
+            if listener.is_err() {
+                error!("Unable to bind to {BUS_SOCKET_PATH}");
+                error!("{:?}", listener);
+            }
             return Err(UnixSocketServerError::BindFail);
-        }
-        let listener = listener.unwrap();
+        };
         Self::make_socket_public()?;
         info!("Listening on: {}", BUS_SOCKET_PATH);
         loop {
@@ -119,12 +125,13 @@ impl UnixSocketServer {
               },
               ret = listener.accept() => {
                 // We received a UNIX socket message
-                if ret.is_err() {
-                  error!("Unable to listen for requests on bound {BUS_SOCKET_PATH}");
-                  error!("{:?}", ret);
-                  return Err(UnixSocketServerError::ListenFail);
-                }
-                let (mut socket, _) = ret.unwrap();
+                let Ok((mut socket, _)) = ret else {
+                    if ret.is_err() {
+                      error!("Unable to listen for requests on bound {BUS_SOCKET_PATH}");
+                      error!("{:?}", ret);
+                    }
+                    return Err(UnixSocketServerError::ListenFail);
+                };
                 tokio::spawn(async move {
                     // Listen for the magic number
                     let mut magic_buf = [0; 4];
@@ -159,8 +166,17 @@ impl UnixSocketServer {
                             debug!("{:?}", bytes_read);
                             break; // Escape out of the thread
                         }
-                        let request_id = u64::from_le_bytes(id_buf[0..8].try_into().unwrap());
-                        let request_size = u64::from_le_bytes(id_buf[8..16].try_into().unwrap());
+                        let Ok(id_bytes): Result<[u8; 8], _> = id_buf[0..8].try_into() else {
+                            warn!("Invalid request header for ID; closing client socket.");
+                            break; // Escape out of the thread
+                        };
+                        let request_id = u64::from_le_bytes(id_bytes);
+
+                        let Ok(size_bytes): Result<[u8; 8], _> = id_buf[8..16].try_into() else {
+                            warn!("Invalid request header for size; closing client socket.");
+                            break; // Escape out of the thread
+                        };
+                        let request_size = u64::from_le_bytes(size_bytes);
                         debug!("Received request ID: {request_id}, Size: {request_size}");
                         if request_size > RECEIVE_BUFFER_SIZE as u64 {
                             warn!("Received request size ({request_size}) exceeds buffer size ({RECEIVE_BUFFER_SIZE}).");
@@ -169,7 +185,11 @@ impl UnixSocketServer {
 
                         // Read the request data
                         //let mut buf = vec![0; request_size as usize];
-                        let mut buf = RECEIVE_BUFFER.get().unwrap().lock().await;
+                        let Some(buf_cell) = RECEIVE_BUFFER.get() else {
+                            error!("Receive buffer not initialized; closing client socket.");
+                            break; // Escape out of the thread
+                        };
+                        let mut buf = buf_cell.lock().await;
 
                         let bytes_read = socket.read_exact(&mut buf[0 .. request_size as usize]).await;
                         if bytes_read.is_err() {
@@ -212,7 +232,7 @@ impl UnixSocketServer {
                         }
                         debug!("Response sent for request ID: {request_id}");
 
-                    } // End of request handling loop
+                    } // End of the request handling loop
                 });
               },
             );

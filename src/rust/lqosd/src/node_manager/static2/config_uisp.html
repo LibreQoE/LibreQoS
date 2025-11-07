@@ -28,14 +28,23 @@
 
             <div class="mb-3">
                 <label for="uispStrategy" class="form-label">Strategy</label>
-                <input type="text" class="form-control" id="uispStrategy">
-                <div class="form-text">Strategy for handling devices</div>
+                <select class="form-select" id="uispStrategy">
+                    <option value="flat">Flat - Only shapes subscribers by service plan speed</option>
+                    <option value="ap_only">AP Only - Shapes by service plan and Access Point</option>
+                    <option value="ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
+                    <option value="full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
+                </select>
+                <div class="form-text">Select the topology strategy for network hierarchy</div>
             </div>
 
             <div class="mb-3">
                 <label for="uispSuspendedStrategy" class="form-label">Suspended Strategy</label>
-                <input type="text" class="form-control" id="uispSuspendedStrategy">
-                <div class="form-text">Strategy for handling suspended devices</div>
+                <select class="form-select" id="uispSuspendedStrategy">
+                    <option value="none">None - Do not handle suspensions</option>
+                    <option value="ignore">Ignore - Do not add suspended customers to network map</option>
+                    <option value="slow">Slow - Limit suspended customers to 1mbps</option>
+                </select>
+                <div class="form-text">Select how to handle suspended customer accounts</div>
             </div>
 
             <div class="mb-3">
@@ -102,6 +111,18 @@
                 <label for="uispExceptionCpes" class="form-label">Exception CPEs</label>
                 <input type="text" class="form-control" id="uispExceptionCpes">
                 <div class="form-text">Comma-separated list of CPE exceptions in "cpe:parent" format</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispEnableSquashing">
+                <label class="form-check-label" for="uispEnableSquashing">Enable Squashing</label>
+                <div class="form-text">Enable site squashing functionality</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
+                <input type="text" class="form-control" id="uispDoNotSquashSites">
+                <div class="form-text">Comma-separated list of site IDs that should not be squashed</div>
             </div>
 
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 use allocative_derive::Allocative;
 use lqos_utils::hex_string::read_hex_string;
 use serde::{Deserialize, Serialize};
@@ -79,10 +82,10 @@ impl TcHandle {
     }
 }
 
-impl ToString for TcHandle {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for TcHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (major, minor) = self.get_major_minor();
-        format!("{major:x}:{minor:x}")
+        write!(f, "{major:x}:{minor:x}")
     }
 }
 
@@ -100,13 +103,13 @@ mod test {
 
     #[test]
     fn make_root() {
-        let tc = TcHandle::from_string("root").unwrap();
+        let tc = TcHandle::from_string("root").expect("Parse Fail for root");
         assert_eq!(tc.0, TC_H_ROOT);
     }
 
     #[test]
     fn make_unspecified() {
-        let tc = TcHandle::from_string("none").unwrap();
+        let tc = TcHandle::from_string("none").expect("Parse fail for none");
         assert_eq!(tc.0, TC_H_UNSPEC);
     }
 
@@ -130,19 +133,19 @@ mod test {
 
     #[test]
     fn zero() {
-        let tc = TcHandle::from_string("0:0").unwrap();
+        let tc = TcHandle::from_string("0:0").expect("Parse fail for 0:0");
         assert_eq!(tc.0, 0);
     }
 
     #[test]
     fn roundtrip() {
-        let tc = TcHandle::from_string("1:2").unwrap();
+        let tc = TcHandle::from_string("1:2").expect("Parse fail for 1:2");
         assert_eq!(tc.to_string(), "1:2");
     }
 
     #[test]
     fn hex() {
-        let tc = TcHandle::from_string("7FFF:2").unwrap();
+        let tc = TcHandle::from_string("7FFF:2").expect("Parse fail for 7FFF:2");
         assert_eq!(tc.to_string().to_uppercase(), "7FFF:2");
     }
 
@@ -151,7 +154,7 @@ mod test {
         for major in 0..2000 {
             for minor in 0..2000 {
                 let handle = format!("{major:x}:{minor:x}");
-                let tc = TcHandle::from_string(&handle).unwrap();
+                let tc = TcHandle::from_string(&handle).expect("Parse fail");
                 assert_eq!(tc.to_string(), handle);
             }
         }
@@ -159,7 +162,7 @@ mod test {
 
     #[test]
     fn blank_minor() {
-        let tc = TcHandle::from_string("7FFF:").unwrap();
+        let tc = TcHandle::from_string("7FFF:").expect("Parse fail for 7FFF:");
         assert_eq!(tc.to_string().to_uppercase(), "7FFF:0");
     }
 }

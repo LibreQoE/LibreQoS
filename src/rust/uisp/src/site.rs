@@ -149,6 +149,10 @@ pub struct Qos {
     pub enabled: bool,
     pub downloadSpeed: Option<u64>,
     pub uploadSpeed: Option<u64>,
+    // Optional burst sizes reported by UISP in kilobytes per second (kB/s).
+    // Example: 12500 kB/s represents 100 Mbps burst.
+    pub downloadBurstSize: Option<u64>,
+    pub uploadBurstSize: Option<u64>,
 }
 
 #[allow(non_snake_case)]

@@ -3,6 +3,49 @@ import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
 
+function escapeAttr(text) {
+    if (text === undefined || text === null) return "";
+    return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
+
+function loadSchedulerStatus() {
+    const container = document.getElementById('schedulerStatus');
+    if (!container) return;
+    $.get('/local-api/scheduler/status', (data) => {
+        const color = data.available ? 'text-success' : 'text-danger';
+        const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
+        container.innerHTML = `
+            <a class="nav-link ${color}" href="#" id="schedulerStatusLink">
+                <i class="fa fa-fw fa-centerline ${icon}"></i> Scheduler
+            </a>`;
+
+        // Click opens details modal only; no tooltip
+        $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
+            e.preventDefault();
+            openSchedulerModal();
+        });
+    });
+}
+
+function openSchedulerModal() {
+    const modalEl = document.getElementById('schedulerModal');
+    if (!modalEl) return;
+    const myModal = new bootstrap.Modal(modalEl, { focus: true });
+    myModal.show();
+    $("#schedulerDetailsBody").html("<i class='fa fa-spinner fa-spin'></i> Loading scheduler status...");
+    $.ajax({
+        url: '/local-api/scheduler/details',
+        method: 'GET',
+        success: (text) => { $("#schedulerDetailsBody").text(text); },
+        error: () => { $("#schedulerDetailsBody").text('Failed to load scheduler details'); }
+    });
+}
+
 function getDeviceCounts() {
     $.get("/local-api/deviceCount", (data) => {
         //console.log(data);
@@ -35,6 +78,22 @@ function doSearch(search) {
             contentType: 'application/json',
             success: (data) => {
                 let searchResults = document.getElementById("searchResults");
+                // Position panel near the search input for consistent placement
+                const inp = document.getElementById("txtSearch");
+                if (inp && searchResults) {
+                    const rect = inp.getBoundingClientRect();
+                    // Use fixed positioning relative to viewport
+                    searchResults.style.position = 'fixed';
+                    searchResults.style.top = (rect.bottom + 8) + 'px';
+                    searchResults.style.left = rect.left + 'px';
+                    const widthPx = Math.max(320, rect.width + 200);
+                    searchResults.style.minWidth = widthPx + 'px';
+                    searchResults.style.width = widthPx + 'px';
+                    // Ensure it's not shifted or hidden by existing CSS
+                    searchResults.style.transform = 'none';
+                    searchResults.style.zIndex = '2000';
+                    searchResults.style.padding = '6px';
+                }
                 searchResults.style.visibility = "visible";
                 let list = document.createElement("table");
                 list.classList.add("table", "table-striped");
@@ -68,23 +127,85 @@ function doSearch(search) {
     }
 }
 
+// Simple debounce helper
+function debounce(fn, delay) {
+    let timer = null;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+    }
+}
+
 function setupSearch() {
+    const hideResults = () => {
+        const panel = document.getElementById("searchResults");
+        if (panel) panel.style.visibility = "hidden";
+    };
+    const showResults = () => {
+        const panel = document.getElementById("searchResults");
+        if (panel) panel.style.visibility = "visible";
+    };
+
     $("#btnSearch").on('click', () => {
         const search = $("#txtSearch").val();
         doSearch(search);
     });
-    $("#txtSearch").on('keyup', () => {
+    const debouncedSearch = debounce(() => {
         const search = $("#txtSearch").val();
         doSearch(search);
+    }, 300);
+    $("#txtSearch").on('keyup', debouncedSearch);
+
+    // Reposition results on resize/scroll to keep anchored under input on index
+    const repositionResults = () => {
+        const inp = document.getElementById('txtSearch');
+        const panel = document.getElementById('searchResults');
+        if (!inp || !panel || panel.style.visibility !== 'visible') return;
+        const rect = inp.getBoundingClientRect();
+        const widthPx = Math.max(320, rect.width + 200);
+        panel.style.position = 'fixed';
+        panel.style.top = (rect.bottom + 8) + 'px';
+        panel.style.left = rect.left + 'px';
+        panel.style.width = widthPx + 'px';
+        panel.style.minWidth = widthPx + 'px';
+        panel.style.transform = 'none';
+        panel.style.zIndex = '2000';
+        panel.style.padding = '6px';
+    };
+    window.addEventListener('resize', repositionResults);
+    window.addEventListener('scroll', repositionResults, true);
+
+    // Focus shows results if available
+    $("#txtSearch").on('focus', () => {
+        if ($("#txtSearch").val().length > 2) showResults();
     });
-    
+    // Blur hides results after short delay to allow clicking results
+    $("#txtSearch").on('blur', () => {
+        setTimeout(hideResults, 150);
+    });
+
     // Add this new key handler for '/' to focus search
     $(document).on('keydown', (e) => {
         if (e.key === '/' && !$(e.target).is('input, textarea, select')) {
             e.preventDefault();
             $('#txtSearch').focus();
+            showResults();
+        } else if (e.key === 'Escape') {
+            hideResults();
+            if ($(e.target).is('#txtSearch')) {
+                $('#txtSearch').blur();
+            }
         }
     });
+
+    // Click-away to close results
+    $(document).on('click', (e) => {
+        if ($(e.target).closest('#searchResults, #txtSearch, #btnSearch').length === 0) {
+            hideResults();
+        }
+    });
+    // Prevent clicks inside the results from bubbling
+    $("#searchResults").on('click', (e) => { e.stopPropagation(); });
 }
 
 function setupReload() {
@@ -99,6 +220,57 @@ function setupReload() {
     }
 }
 
+function setupDynamicUrls() {
+    // Get the current host and protocol from the browser
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // Construct API URL (port 9122)
+    // The Swagger UI lives at /api-docs/ (dash, trailing slash)
+    const apiUrl = `${currentProtocol}//${currentHost}:9122/api-docs/`;
+    
+    // Construct Chat URL (port 9121)
+    const chatUrl = `${currentProtocol}//${currentHost}:9121/`;
+    
+    // Update API link only if it has the placeholder
+    const apiLink = document.getElementById('apiLink');
+    if (apiLink) {
+        const hrefAttr = apiLink.getAttribute('href');
+        if (hrefAttr === '%%API_URL%%') {
+            apiLink.href = apiUrl;
+        }
+    }
+    
+    // Update Chat link if it exists (only created when chatbot is available)
+    const chatLink = document.getElementById('chatLink');
+    if (chatLink) {
+        // If server rendered a disabled span, swap it for an active link.
+        if (chatLink.tagName && chatLink.tagName.toLowerCase() !== 'a') {
+            const parentLi = chatLink.closest('li');
+            const a = document.createElement('a');
+            a.className = 'nav-link';
+            a.id = 'chatLink';
+            a.href = 'chatbot.html';
+            a.innerHTML = '<i class="fa fa-fw fa-centerline fa-comments nav-icon"></i> Ask Libby';
+            if (parentLi) parentLi.replaceChild(a, chatLink); else chatLink.replaceWith(a);
+        } else {
+            const hrefAttr = chatLink.getAttribute('href');
+            if (hrefAttr === '%%CHAT_URL%%' || !hrefAttr) {
+                // Prefer embedded chatbot page
+                chatLink.href = 'chatbot.html';
+            }
+        }
+    }
+}
+
+function initSchedulerTooltips() {
+    // Initialize Bootstrap tooltips for scheduler status elements
+    const schedulerElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    schedulerElements.forEach(element => {
+        new bootstrap.Tooltip(element);
+    });
+}
+
 initLogout();
 initDayNightMode();
 initRedact();
@@ -106,3 +278,6 @@ initColorBlind();
 getDeviceCounts();
 setupSearch();
 setupReload();
+setupDynamicUrls();
+initSchedulerTooltips();
+loadSchedulerStatus();

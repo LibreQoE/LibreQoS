@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 //! The `lqos_bus` crate provides the data-transfer back-end for communication
 //! between the various parts of LibreQoS. `lqosd` listens on `localhost`
 //! for requests. Any tool may use the daemon services locally for interaction
@@ -9,6 +12,7 @@
 //! object, containing one or more `BusResponse` detail objects.
 //! The session then terminates.
 
+#![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 mod bus;
 mod ip_stats;
@@ -17,16 +21,13 @@ pub use ip_stats::{
     tos_parser,
 };
 mod tc_handle;
+pub use bus::response::BakeryStatsSnapshot;
 pub use bus::{
     BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,
-    CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit, StatsRequest, TopFlowType,
-    UnixSocketServer, bus_request, LibreqosBusClient,
+    CakeDiffTinTransit, CakeDiffTransit, CakeTransit, LibreqosBusClient, QueueStoreTransit,
+    TopFlowType, UnixSocketServer, bus_request,
 };
-pub use bus::response::BakeryStatsSnapshot;
 pub use tc_handle::TcHandle;
-
-/// Anonymous Usage Statistics Data Types
-pub mod anonymous;
 
 /// Re-export bincode
 pub mod bincode {

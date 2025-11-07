@@ -26,6 +26,17 @@
                 <div class="form-text">Base URL for Splynx API (e.g. https://your-splynx.com)</div>
             </div>
 
+            <div class="mb-3">
+                <label for="topologyStrategy" class="form-label">Topology Strategy</label>
+                <select class="form-select" id="topologyStrategy">
+                    <option value="flat">Flat - Only shapes subscribers, no hierarchy (Lowest CPU)</option>
+                    <option value="ap_only">AP Only - Single layer: AP → Clients (Default, Low CPU)</option>
+                    <option value="ap_site">AP Site - Two layers: Site → AP → Clients (Medium CPU)</option>
+                    <option value="full">Full - Complete topology mapping (Highest CPU)</option>
+                </select>
+                <div class="form-text">Select the topology strategy for network hierarchy. AP Only provides the best balance of performance and structure.</div>
+            </div>
+
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </form>
     </div>

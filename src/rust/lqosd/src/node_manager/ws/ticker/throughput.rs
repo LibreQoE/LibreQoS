@@ -20,11 +20,17 @@ pub async fn throughput(
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetCurrentThroughput;
-    bus_tx
-        .send((tx, request))
-        .await
-        .expect("Failed to send request to bus");
-    let replies = rx.await.expect("Failed to receive throughput from bus");
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("Throughput: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("Throughput: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentThroughput {
             bits_per_second,

@@ -5,7 +5,7 @@ use crate::{
 use lqos_utils::fdtimer::periodic;
 use std::time::{Duration, Instant};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 mod all_queue_data;
 mod reader;
 mod watched_queues;
@@ -23,12 +23,9 @@ fn track_queues() {
         //info!("No queues marked for read.");
         return; // There's nothing to do - bail out fast
     }
-    let config = lqos_config::load_config();
-    if config.is_err() {
-        //warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
+    let Ok(config) = lqos_config::load_config() else {
         return;
-    }
-    let config = config.unwrap();
+    };
     WATCHED_QUEUES.iter_mut().for_each(|q| {
         let (circuit_id, download_class, upload_class) = q.get();
 
@@ -219,7 +216,10 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
         .name("All Queue Monitor".to_string())
         .spawn(|| {
             let mut interval_seconds = 2;
-            let mut tfd = TimerFd::new().unwrap();
+            let Ok(mut tfd) = TimerFd::new() else {
+                error!("Unable to start timer file descriptor. All queue monitor cannot run.");
+                return;
+            };
             assert_eq!(tfd.get_state(), TimerState::Disarmed);
             tfd.set_state(
                 TimerState::Periodic {

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
+
 mod client;
 mod queue_data;
 mod reply;
@@ -5,10 +8,10 @@ mod request;
 pub mod response;
 mod session;
 mod unix_socket_server;
-pub use client::{bus_request, LibreqosBusClient};
+pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
-pub use request::{BlackboardSystem, BusRequest, StatsRequest, TopFlowType};
+pub use request::{BlackboardSystem, BusRequest, TopFlowType};
 pub use response::BusResponse;
 pub use session::BusSession;
 use thiserror::Error;
@@ -40,4 +43,3 @@ pub enum BusClientError {
     #[error("Stream is no longer connected")]
     StreamNotConnected,
 }
-

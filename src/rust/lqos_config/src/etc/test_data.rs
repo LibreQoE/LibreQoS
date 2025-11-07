@@ -136,6 +136,12 @@ splynx_api_secret = ''
 # Everything before /api/2.0/ on your Splynx instance
 splynx_api_url = 'https://YOUR_URL.splynx.app'
 
+# Netzur Integration
+automaticImportNetzur = False
+netzur_api_key = ''
+netzur_api_url = 'https://api.netzur.example.com'
+netzur_api_timeout = 60
+
 # UISP integration
 automaticImportUISP = False
 uispAuthToken = ''

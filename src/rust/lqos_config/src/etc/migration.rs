@@ -12,6 +12,8 @@ use tracing::{debug, error, info};
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
+    #[error("Invalid Config File Version")]
+    InvalidVersion,
     #[error("Failed to read configuration file: {0}")]
     ReadError(#[from] std::io::Error),
     #[error("Failed to parse configuration file: {0}")]
@@ -22,49 +24,53 @@ pub enum MigrationError {
     LoadError(#[from] EtcLqosError),
     #[error("Unable to load python version: {0}")]
     PythonLoadError(#[from] PythonMigrationError),
+    #[error("Unable to serialize TOML")]
+    SerializeError,
+    #[error("Should never happen")]
+    ImpossibleError,
 }
 
 pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     debug!("Checking config file version");
     let raw =
-        std::fs::read_to_string(&config_location).map_err(|e| MigrationError::ReadError(e))?;
+        std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
 
     let doc = raw
         .parse::<DocumentMut>()
-        .map_err(|e| MigrationError::ParseError(e))?;
+        .map_err(MigrationError::ParseError)?;
     if let Some((_key, version)) = doc.get_key_value("version") {
         debug!(
             "Configuration file is at version {}",
-            version.as_str().unwrap()
+            version.as_str().ok_or(MigrationError::InvalidVersion)?
         );
-        if version.as_str().unwrap().trim() == "1.5" {
+        if version.as_str().ok_or(MigrationError::InvalidVersion)?.trim() == "1.5" {
             debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
             error!(
                 "Configuration file is at version {}, but this version of lqos only supports version 1.5",
-                version.as_str().unwrap()
+                version.as_str().ok_or(MigrationError::InvalidVersion)?
             );
             return Err(MigrationError::UnknownVersion(
-                version.as_str().unwrap().to_string(),
+                version.as_str().ok_or(MigrationError::InvalidVersion)?.to_string(),
             ));
         }
     } else {
         info!("No version found in configuration file, assuming 1.4x and migration is needed");
         let new_config = migrate_14_to_15()?;
-        // Backup the old configuration
+        // Back up the old configuration
         std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
-            .map_err(|e| MigrationError::ReadError(e))?;
+            .map_err(MigrationError::ReadError)?;
 
         // Rename the old Python configuration
         let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
         let to = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py.backup14");
 
-        std::fs::rename(from, to).map_err(|e| MigrationError::ReadError(e))?;
+        std::fs::rename(from, to).map_err(MigrationError::ReadError)?;
 
         // Save the configuration
-        let raw = toml::to_string_pretty(&new_config).unwrap();
-        std::fs::write("/etc/lqos.conf", raw).map_err(|e| MigrationError::ReadError(e))?;
+        let raw = toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
+        std::fs::write("/etc/lqos.conf", raw).map_err(MigrationError::ReadError)?;
     }
 
     Ok(())
@@ -72,8 +78,8 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
 
 fn migrate_14_to_15() -> Result<Config, MigrationError> {
     // Load the 1.4 config file
-    let old_config = EtcLqos::load().map_err(|e| MigrationError::LoadError(e))?;
-    let python_config = PythonMigration::load().map_err(|e| MigrationError::PythonLoadError(e))?;
+    let old_config = EtcLqos::load().map_err(MigrationError::LoadError)?;
+    let python_config = PythonMigration::load().map_err(MigrationError::PythonLoadError)?;
     let new_config = do_migration_14_to_15(&old_config, &python_config)?;
     Ok(new_config)
 }
@@ -86,9 +92,8 @@ fn do_migration_14_to_15(
     let mut new_config = Config::default();
 
     migrate_top_level(old_config, &mut new_config)?;
-    migrate_usage_stats(old_config, &mut new_config)?;
     migrate_tunables(old_config, &mut new_config)?;
-    migrate_bridge(old_config, &python_config, &mut new_config)?;
+    migrate_bridge(old_config, python_config, &mut new_config)?;
     migrate_lts(old_config, &mut new_config)?;
     migrate_ip_ranges(python_config, &mut new_config)?;
     migrate_integration_common(python_config, &mut new_config)?;
@@ -99,7 +104,7 @@ fn do_migration_14_to_15(
     migrate_queues(python_config, &mut new_config)?;
     migrate_influx(python_config, &mut new_config)?;
 
-    new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
+    new_config.validate().map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
     Ok(new_config)
 }
 
@@ -116,19 +121,6 @@ fn migrate_top_level(old_config: &EtcLqos, new_config: &mut Config) -> Result<()
         new_config.node_name = node_name.clone();
     } else {
         new_config.node_name = "Set my name in /etc/lqos.conf".to_string();
-    }
-    Ok(())
-}
-
-fn migrate_usage_stats(
-    old_config: &EtcLqos,
-    new_config: &mut Config,
-) -> Result<(), MigrationError> {
-    if let Some(usage_stats) = &old_config.usage_stats {
-        new_config.usage_stats.send_anonymous = usage_stats.send_anonymous;
-        new_config.usage_stats.anonymous_server = usage_stats.anonymous_server.clone();
-    } else {
-        new_config.usage_stats = Default::default();
     }
     Ok(())
 }
@@ -164,7 +156,7 @@ fn migrate_bridge(
     } else {
         new_config.single_interface = None;
         new_config.bridge = Some(BridgeConfig {
-            use_xdp_bridge: old_config.bridge.as_ref().unwrap().use_xdp_bridge,
+            use_xdp_bridge: old_config.bridge.as_ref().ok_or(MigrationError::SerializeError)?.use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
         });
@@ -227,6 +219,7 @@ fn migrate_integration_common(
         python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
         python_config.queue_refresh_interval_mins as u32;
+    new_config.integration_common.use_mikrotik_ipv6 = python_config.find_ipv6using_mikrotik_api;
     Ok(())
 }
 
@@ -289,12 +282,13 @@ fn migrate_influx(
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
     if python_config.influx_enabled {
-        let mut cfg = InfluxDbConfig::default();
-        cfg.enable_influxdb = python_config.influx_enabled;
-        cfg.url = python_config.influx_dburl.clone();
-        cfg.bucket = python_config.influx_dbbucket.clone();
-        cfg.org = python_config.influx_dborg.clone();
-        cfg.token = python_config.influx_dbtoken.clone();
+        let cfg = InfluxDbConfig {
+            enable_influxdb: python_config.influx_enabled,
+            url: python_config.influx_dburl.clone(),
+            bucket: python_config.influx_dbbucket.clone(),
+            org: python_config.influx_dborg.clone(),
+            token: python_config.influx_dbtoken.clone(),
+        };
         new_config.influxdb = Some(cfg);
     }
     Ok(())

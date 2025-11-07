@@ -16,8 +16,6 @@ use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 
-const URL: &str = "https:/stats.libreqos.io/api/device_weights";
-
 /// This struct is used to send a request to the Long Term Stats API
 #[derive(Serialize, Deserialize)]
 pub struct DeviceWeightRequest {
@@ -55,9 +53,18 @@ fn get_weights_from_lts(
         percentile,
     };
 
+    // Build the URL
+    let config = load_config()?;
+    let base_url = config
+        .long_term_stats
+        .lts_url
+        .clone()
+        .unwrap_or("insight.libreqos.com".to_string());
+    let url = format!("https://{}/shaper_api/deviceWeights", base_url);
+
     // Make a BLOCKING reqwest call (we're not in an async context)
     let response = reqwest::blocking::Client::new()
-        .post(URL)
+        .post(url)
         .json(&request)
         .send()?
         .json::<Vec<DeviceWeightResponse>>()?;

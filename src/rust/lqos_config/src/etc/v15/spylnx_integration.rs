@@ -7,6 +7,12 @@ pub struct SplynxIntegration {
     pub api_key: String,
     pub api_secret: String,
     pub url: String,
+    #[serde(default = "default_strategy")]
+    pub strategy: String,
+}
+
+fn default_strategy() -> String {
+    "ap_only".to_string()
 }
 
 impl Default for SplynxIntegration {
@@ -16,6 +22,7 @@ impl Default for SplynxIntegration {
             api_key: "".to_string(),
             api_secret: "".to_string(),
             url: "".to_string(),
+            strategy: "ap_only".to_string(),
         }
     }
 }

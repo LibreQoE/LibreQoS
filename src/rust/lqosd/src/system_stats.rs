@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize};
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::debug;
+use tracing::{debug, error};
 
 const MAX_CPUS_COUNTED: usize = 128;
 
@@ -38,7 +38,10 @@ pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sende
             let mut sys = System::new();
 
             // Timer
-            let mut tfd = TimerFd::new().unwrap();
+            let Ok(mut tfd) = TimerFd::new() else {
+                error!("Unable to start timer fd, sysinfo will not be checked");
+                return;
+            };
             assert_eq!(tfd.get_state(), TimerState::Disarmed);
             tfd.set_state(
                 TimerState::Periodic {
