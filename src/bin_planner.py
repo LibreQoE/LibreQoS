@@ -54,6 +54,7 @@ def plan_assignments(
     last_change_ts = params.get("last_change_ts_by_item", {}) or {}
     penalty_k = float(params.get("movement_penalty_k", 0.0))
     penalty_tau = float(params.get("penalty_tau_seconds", 3600.0))
+    freeze_moves = bool(params.get("freeze_moves", False))
 
     bin_ids: List[str] = [b["id"] for b in bins]
     cap = {bid: float(capacities.get(bid, 1.0)) for bid in bin_ids}
@@ -133,6 +134,15 @@ def plan_assignments(
         # Ensure current bin is considered
         if cur and cur not in candidates:
             candidates.append(cur)
+        # Hard stickiness option: only move off an overloaded bin
+        if freeze_moves:
+            if not cur:
+                # Nothing to freeze; should not happen here because cold-start assigns above
+                continue
+            denom_cur = cap[cur] * max(1.0 - headroom, 1e-6)
+            if (load[cur] / denom_cur) <= 1.0:
+                # Current bin is not overloaded relative to headroom; skip any move
+                continue
         best_gain = 0.0
         best_tgt = cur
         for tgt in candidates:

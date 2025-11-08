@@ -35,7 +35,7 @@ use utils::current_timestamp;
 pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 use crate::commands::ExecutionMode;
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
-use crate::queue_math::format_rate_for_tc_f32;
+use crate::queue_math::{format_rate_for_tc_f32, quantum, r2q};
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
@@ -1260,6 +1260,11 @@ fn handle_change_site_speed_live(
                 format_rate_for_tc_f32(upload_bandwidth_min),
                 "ceil".to_string(),
                 format_rate_for_tc_f32(upload_bandwidth_max),
+                "quantum".to_string(),
+                quantum(
+                    upload_bandwidth_max as u64,
+                    r2q(config.queues.uplink_bandwidth_mbps),
+                ),
             ],
             vec![
                 "class".to_string(),
@@ -1273,6 +1278,11 @@ fn handle_change_site_speed_live(
                 format_rate_for_tc_f32(download_bandwidth_min),
                 "ceil".to_string(),
                 format_rate_for_tc_f32(download_bandwidth_max),
+                "quantum".to_string(),
+                quantum(
+                    download_bandwidth_max as u64,
+                    r2q(config.queues.downlink_bandwidth_mbps),
+                ),
             ],
         ];
         execute_in_memory(&commands, "changing site speed live");
