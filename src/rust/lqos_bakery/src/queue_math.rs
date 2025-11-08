@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tracing::warn;
+use tracing::debug;
 
 pub(crate) fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
     config
@@ -38,19 +38,19 @@ pub(crate) fn format_rate_for_tc_f32(rate: f32) -> String {
 
     // Handle NaN/Inf
     if !r.is_finite() {
-        warn!("format_rate_for_tc_f32: non-finite rate detected ({:?}); clamping to {} Mbps", rate, MIN_RATE_MBPS);
+        debug!("format_rate_for_tc_f32: non-finite rate detected ({:?}); clamping to {} Mbps", rate, MIN_RATE_MBPS);
         r = MIN_RATE_MBPS;
     }
 
     // Clamp to bounds
     if r < MIN_RATE_MBPS {
-        warn!(
+        debug!(
             "format_rate_for_tc_f32: rate below minimum ({:?}); clamping to {} Mbps",
             r, MIN_RATE_MBPS
         );
         r = MIN_RATE_MBPS;
     } else if r > MAX_RATE_MBPS {
-        warn!(
+        debug!(
             "format_rate_for_tc_f32: rate above maximum ({:?}); clamping to {} Mbps",
             r, MAX_RATE_MBPS
         );

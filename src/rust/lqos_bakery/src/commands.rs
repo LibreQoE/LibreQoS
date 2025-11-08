@@ -1,6 +1,6 @@
 use crate::MQ_CREATED;
 use crate::queue_math::{
-    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup,
+    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec,
     sqm_tokens_for,
 };
 use allocative::Allocative;
@@ -8,7 +8,7 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -256,7 +256,7 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        warn!("Clearing prior settings");
+        info!("Clearing prior settings");
         if config.on_a_stick_mode() {
             // Clear just the MQ on the ISP-facing interface
             result.push(vec![
@@ -601,7 +601,7 @@ impl BakeryCommands {
             }
         }
         let do_htb;
-        let mut do_sqm;
+        let do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
             // In builder mode, if we're fully lazy - we don't do anything.
@@ -620,7 +620,7 @@ impl BakeryCommands {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
                 None | Some(LazyQueueMode::No) => {
-                    warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                    debug!("Builder should not encounter lazy updates when lazy is disabled!");
                     // Set both modes to false, avoiding clashes
                     do_htb = false;
                     do_sqm = false;
@@ -802,7 +802,7 @@ impl BakeryCommands {
             ..
         } = self
         else {
-            warn!("to_prune called on non-circuit command!");
+            debug!("to_prune called on non-circuit command!");
             return None;
         };
 
@@ -816,7 +816,7 @@ impl BakeryCommands {
         } else {
             match config.queues.lazy_queues.as_ref() {
                 None | Some(LazyQueueMode::No) => {
-                    warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                    debug!("Builder should not encounter lazy updates when lazy is disabled!");
                     // Set both modes to false, avoiding clashes
                     return None;
                 }
