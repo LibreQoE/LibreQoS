@@ -30,6 +30,8 @@ import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
 import {StormguardStatusDashlet} from "./stormguard_status";
 import {BakeryStatusDashlet} from "./bakery_status";
+import {Top10UploadersVisual} from "./top10_uploads_graphic";
+import {Top10Uploaders} from "./top10_uploaders";
 // New Traffic Overview dashlets
 import {ShaperTopAsnDownload} from "./top_asn_download";
 import {ShaperTopAsnUpload} from "./top_asn_upload";
@@ -47,6 +49,8 @@ export const DashletMenu = [
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6, category: "RTT" },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6, category: "Top 10" },
     { name: "Top 10 Downloaders (Visual)", tag: "top10downloadersV", size: 6, category: "Top 10" },
+    { name: "Top 10 Uploaders", tag: "top10uploaders", size: 6, category: "Top 10" },
+    { name: "Top 10 Uploaders (Visual)", tag: "top10uploadersV", size: 6, category: "Top 10" },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6, category: "Top 10" },
     { name: "Worst 10 Round-Trip Time (Visual)", tag: "worst10downloadersV", size: 6, category: "Top 10" },
     { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6, category: "Top 10" },
@@ -92,6 +96,8 @@ export function widgetFactory(widgetName, count) {
         case "rttHistogram3D":    widget = new RttHisto3dDash(count); break;
         case "top10downloaders":widget = new Top10Downloaders(count); break;
         case "top10downloadersV":widget = new Top10DownloadersVisual(count); break;
+        case "top10uploaders":widget = new Top10Uploaders(count); break;
+        case "top10uploadersV":widget = new Top10UploadersVisual(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
         case "worst10downloadersV":widget = new Worst10DownloadersVisual(count); break;
         case "worst10retransmits":widget = new Worst10Retransmits(count); break;

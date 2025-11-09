@@ -81,6 +81,9 @@ pub enum BusResponse {
     /// Provides the Top N downloaders IP stats.
     TopDownloaders(Vec<IpStats>),
 
+    /// Provides the Top N uploaders IP stats.
+    TopUploaders(Vec<IpStats>),
+
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),
 

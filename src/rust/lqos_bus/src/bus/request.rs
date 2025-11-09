@@ -48,6 +48,14 @@ pub enum BusRequest {
         end: u32,
     },
 
+    /// Retrieve the top N uploads by bandwidth use.
+    GetTopNUploaders {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)
