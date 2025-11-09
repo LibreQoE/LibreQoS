@@ -6,6 +6,28 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Source system for an urgent issue
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
+pub enum UrgentSource {
+    /// Raised by the scheduler process
+    Scheduler,
+    /// Raised by the LibreQoS Python orchestrator
+    LibreQoS,
+    /// Raised by the local API server
+    API,
+    /// Raised by lqosd or other components
+    System,
+}
+
+/// Severity of an urgent issue
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
+pub enum UrgentSeverity {
+    /// Error requires attention
+    Error,
+    /// Warning is informative/high-visibility
+    Warning,
+}
+
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
@@ -20,6 +42,14 @@ pub enum BusRequest {
 
     /// Retrieve the top N downloads by bandwidth use.
     GetTopNDownloaders {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
+
+    /// Retrieve the top N uploads by bandwidth use.
+    GetTopNUploaders {
         /// First row to retrieve (usually 0 unless you are paging)
         start: u32,
         /// Last row to retrieve (10 for top-10 starting at 0)
@@ -308,6 +338,28 @@ pub enum BusRequest {
 
     /// Check the scheduler status
     CheckSchedulerStatus,
+
+    /// Submit an urgent issue for high-priority operator visibility
+    SubmitUrgentIssue {
+        /// Source of the issue
+        source: UrgentSource,
+        /// Severity of the issue
+        severity: UrgentSeverity,
+        /// Machine-readable code for the issue (e.g. TC_U16_OVERFLOW)
+        code: String,
+        /// Human-readable message for display
+        message: String,
+        /// Optional JSON context payload
+        context: Option<String>,
+        /// Optional key to deduplicate repeated submissions
+        dedupe_key: Option<String>,
+    },
+
+    /// Retrieve current urgent issues
+    GetUrgentIssues,
+
+    /// Clear a specific urgent issue by ID
+    ClearUrgentIssue(u64),
 }
 
 /// Defines the parts of the blackboard

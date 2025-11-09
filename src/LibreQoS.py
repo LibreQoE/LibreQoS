@@ -18,7 +18,7 @@ import psutil
 import argparse
 import logging
 import shutil
-import binpacking
+import time
 from deepdiff import DeepDiff
 
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
@@ -29,6 +29,13 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     fast_queues_fq_codel, \
     Bakery
+
+# Optional: urgent issue submission (available in newer liblqos_python)
+try:
+    from liblqos_python import submit_urgent_issue  # type: ignore
+except Exception:
+    def submit_urgent_issue(*_args, **_kwargs):
+        return False
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -665,29 +672,122 @@ def refreshShapers():
                                     }
             generatedPNs.append(genPNname)
         if use_bin_packing_to_balance_cpu():
-            print("Using binpacking module to sort circuits by CPU core")
-            weights = get_weights()
-            if weights is not None and dictForCircuitsWithoutParentNodes is not None:
-                for circuitId in dictForCircuitsWithoutParentNodes:
-                    for circuit in subscriberCircuits:
-                        if 'idForCircuitsWithoutParentNodes' in circuit and circuit['idForCircuitsWithoutParentNodes'] == circuitId:
-                            for w in weights:
-                                if w.circuit_id == circuit['circuitID']:
-                                    dictForCircuitsWithoutParentNodes[circuitId] = w.weight
-            bins = binpacking.to_constant_bin_number(dictForCircuitsWithoutParentNodes, numberOfGeneratedPNs)
-            genPNcounter = 0
-            for binItem in bins:
-                sumItem = 0
-                logging.info(generatedPNs[genPNcounter] + " will contain " + str(len(binItem)) + " circuits")
-                for key in binItem.keys():
-                    for circuit in subscriberCircuits:
-                        if circuit['ParentNode'] == 'none':
-                            if circuit['idForCircuitsWithoutParentNodes'] == key:
-                                circuit['ParentNode'] = generatedPNs[genPNcounter]
-                genPNcounter += 1
-                if genPNcounter >= queuesAvailable:
-                    genPNcounter = 0
-            print("Finished binpacking")
+            print("Using internal planner to sort circuits by CPU core")
+            # Build item list with weights for circuits lacking a ParentNode
+            items = []
+            try:
+                weights = get_weights()
+            except Exception as e:
+                warnings.warn("get_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
+                weights = None
+            weight_by_circuit_id = {}
+            if weights is not None:
+                try:
+                    for w in weights:
+                        weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
+                except Exception:
+                    pass
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                    item_id = circuit['idForCircuitsWithoutParentNodes']
+                    # Prefer provided weights; default to 1.0
+                    w = dictForCircuitsWithoutParentNodes.get(item_id, 1.0)
+                    # If a specific circuit weight exists, prefer it
+                    if 'circuitID' in circuit and str(circuit['circuitID']) in weight_by_circuit_id:
+                        w = weight_by_circuit_id[str(circuit['circuitID'])]
+                    # Ignore placeholder default rates for weight purposes
+                    try:
+                        default_rate = float(generated_pn_download_mbps())
+                        max_dl = float(circuit.get('maxDownload', 0))
+                        if abs(max_dl - default_rate) < 1e-6:
+                            w = 0.0
+                    except Exception:
+                        pass
+                    items.append({"id": item_id, "weight": float(w)})
+
+            # Prepare bins and capacities
+            bins_list = [{"id": pn} for pn in generatedPNs]
+            capacities = {pn: 1.0 for pn in generatedPNs}
+
+            # Load planner state
+            try:
+                import bin_planner
+            except ImportError:
+                bin_planner = None
+            # Store planner state directly in lqos_directory (no hidden subdirs)
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state = {}
+            if bin_planner is not None:
+                state = bin_planner.load_state(state_path)
+            now_ts = time.time()
+            prev_assign = {}
+            last_change_ts = {}
+            if isinstance(state, dict):
+                prev_assign = state.get("assignments", {}) or {}
+                last_change_ts = state.get("last_change_ts", {}) or {}
+            # Filter previous assignments to only items/bins in this context
+            item_ids = {str(it["id"]) for it in items}
+            valid_bins = set(capacities.keys())
+            prev_assign = {iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins}
+            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+
+            # Planner parameters
+            params = {
+                "candidate_set_size": 4,
+                "headroom": 0.05,
+                "alpha": 0.1,
+                "hysteresis_threshold": 0.03,
+                "cooldown_seconds": 3600,
+                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
+                "last_change_ts_by_item": last_change_ts,
+            }
+            if monitor_mode_only() == True:
+                params["move_budget_per_run"] = 0
+
+            if bin_planner is not None:
+                assignments, changed = bin_planner.plan_assignments(
+                    items, bins_list, capacities, prev_assign, now_ts, params
+                )
+            else:
+                # Fallback to simple greedy if planner unavailable
+                bin_loads = {pn: 0.0 for pn in generatedPNs}
+                pairs = [(str(it["id"]), float(it["weight"])) for it in items]
+                pairs.sort(key=lambda iw: (-iw[1], str(iw[0])))
+                assignments = {}
+                for item_id, w in pairs:
+                    target_pn = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    assignments[item_id] = target_pn
+                    bin_loads[target_pn] += w
+                changed = list(assignments.keys())
+
+            # Apply assignments to circuits
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                    item_id = circuit['idForCircuitsWithoutParentNodes']
+                    if item_id in assignments:
+                        circuit['ParentNode'] = assignments[item_id]
+
+            # Update and save state
+            if bin_planner is not None and isinstance(state, dict):
+                if state.get("salt") is None:
+                    state["salt"] = "default_salt"
+                if "assignments" not in state or not isinstance(state["assignments"], dict):
+                    state["assignments"] = {}
+                if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
+                    state["last_change_ts"] = {}
+                for iid, b in assignments.items():
+                    # record last change time if changed
+                    if iid in changed:
+                        state["last_change_ts"][iid] = now_ts
+                    state["assignments"][iid] = b
+                try:
+                    print(f"Saving planner state to {state_path} (generated PNs)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
+
+            print("Finished planning generated parent nodes")
         else:
             genPNcounter = 0
             for circuit in subscriberCircuits:
@@ -816,6 +916,19 @@ def refreshShapers():
             return newDict
         network = flattenA(network, 1)
 
+        # Prepare planner weights (actual weighting may come from Insight or CSV defaults)
+        weight_by_circuit_id = {}
+        try:
+            weights = get_weights()
+            for w in weights:
+                try:
+                    weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
+                except Exception:
+                    pass
+        except Exception:
+            # If we can't get weights, leave mapping empty; UI will fall back
+            weight_by_circuit_id = {}
+
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
         circuit_min_down_combined_by_parent_node = {}
@@ -916,7 +1029,13 @@ def refreshShapers():
                 minorByCPU[queue] = minorByCPU[queue] + 1
                 # Check for overflow - TC uses u16 for minor class ID (max 65535)
                 if minorByCPU[queue] > 0xFFFF:
-                    logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                    msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                    logging.error(msg)
+                    try:
+                        ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                        submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                    except Exception:
+                        pass
                     raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                 # If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
                 if node in circuits_by_parent_node:
@@ -972,6 +1091,29 @@ def refreshShapers():
                                 "classMinor": hex(minorByCPU[queue]),
                                 "comment": circuit['comment']
                             }
+                            # Attach the planner weight used by the planner/UI summary
+                            # Priority: explicit weight -> fallback to maxDownload
+                            try:
+                                cid = str(circuit.get('circuitID',''))
+                                w = None
+                                if cid in weight_by_circuit_id:
+                                    w = float(weight_by_circuit_id[cid])
+                                if w is None:
+                                    w = float(maxDownload)
+                                # Treat 1000 as a sentinel default from Insight; use maxDownload instead
+                                if abs(w - 1000.0) < 1e-6:
+                                    w = float(maxDownload)
+                                # If the circuit's configured rate equals the generated PN default,
+                                # ignore it for weight purposes.
+                                try:
+                                    default_rate = float(generated_pn_download_mbps())
+                                    if abs(float(maxDownload) - default_rate) < 1e-6:
+                                        w = 0.0
+                                except Exception:
+                                    pass
+                                thisNewCircuitItemForNetwork['planner_weight'] = w
+                            except Exception:
+                                pass
                             # Preserve optional per-circuit SQM override for downstream bakery call
                             if 'sqm' in circuit and circuit['sqm']:
                                 thisNewCircuitItemForNetwork['sqm'] = circuit['sqm']
@@ -994,7 +1136,13 @@ def refreshShapers():
                     minorByCPU[queue] = minorByCPU[queue] + 1
                     # Check for overflow - TC uses u16 for minor class ID (max 65535)
                     if minorByCPU[queue] > 0xFFFF:
-                        logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                        msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                        logging.error(msg)
+                        try:
+                            ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                            submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                        except Exception:
+                            pass
                         raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                     minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
                 # If top level node, increment to next queue / cpu core
@@ -1008,21 +1156,87 @@ def refreshShapers():
             return minorByCPU
 
         # If we're in binpacking mode, we need to sort the network structure a bit
-        bins = []
         if use_bin_packing_to_balance_cpu() and not is_network_flat():
-            print("BinPacking is enabled, so we're going to sort your network.")
-            cpuBin = {}
-            weights = get_tree_weights()
-            # Stable tie-breaking: sort by (-weight, name) so equal weights have deterministic order
+            print("Planner is enabled, so we're going to sort your network across CPU queues.")
+            # Build items from top-level nodes with weights
+            items = []
             try:
-                weights = sorted(weights, key=lambda w: (-int(w.weight), str(w.name)))
-            except Exception:
-                pass
-            for w in weights:
-                cpuBin[w.name] = w.weight
-            bins = binpacking.to_constant_bin_number(cpuBin, queuesAvailable)
+                weights = get_tree_weights()
+            except Exception as e:
+                warnings.warn("get_tree_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
+                weights = None
+            weight_by_name = {}
+            if weights is not None:
+                try:
+                    for w in weights:
+                        weight_by_name[str(w.name)] = float(w.weight)
+                except Exception:
+                    pass
+            for node in network:
+                w = weight_by_name.get(str(node), 1.0)
+                items.append({"id": str(node), "weight": float(w)})
+
+            # Prepare bins and capacities
+            cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
+            bins_list = [{"id": key} for key in cpu_keys]
+            capacities = {key: 1.0 for key in cpu_keys}
+
+            # Load planner state
+            try:
+                import bin_planner
+            except ImportError:
+                bin_planner = None
+            # Store planner state directly in lqos_directory (no hidden subdirs)
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state = {}
+            if bin_planner is not None:
+                state = bin_planner.load_state(state_path)
+            now_ts = time.time()
+            prev_assign = {}
+            last_change_ts = {}
+            if isinstance(state, dict):
+                prev_assign = state.get("assignments", {}) or {}
+                last_change_ts = state.get("last_change_ts", {}) or {}
+            item_ids = {str(it["id"]) for it in items}
+            valid_bins = set(capacities.keys())
+            prev_assign = {iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins}
+            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+
+            params = {
+                "candidate_set_size": 4,
+                "headroom": 0.05,
+                "alpha": 0.1,
+                "hysteresis_threshold": 0.03,
+                "cooldown_seconds": 3600,
+                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
+                "last_change_ts_by_item": last_change_ts,
+            }
+            if monitor_mode_only() == True:
+                params["move_budget_per_run"] = 0
+
+            if bin_planner is not None:
+                assignment, changed = bin_planner.plan_assignments(
+                    items, bins_list, capacities, prev_assign, now_ts, params
+                )
+            else:
+                # Fallback to simple greedy if planner unavailable
+                bin_loads = {key: 0.0 for key in cpu_keys}
+                pairs = [(str(it["id"]), float(it["weight"])) for it in items]
+                pairs.sort(key=lambda nw: (-nw[1], nw[0]))
+                assignment = {}
+                for name, w in pairs:
+                    target = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    assignment[name] = target
+                    bin_loads[target] += w
+                changed = list(assignment.keys())
+
             for x in range(queuesAvailable):
-                print("Bin " + str(x) + " = ", bins[x])
+                key = "CpueQueue" + str(x)
+                assigned = [name for name, tgt in assignment.items() if tgt == key]
+                print("Bin " + str(x) + " = ", assigned)
+
+            # Build the binned network structure
             binnedNetwork = {}
             for cpu in range(queuesAvailable):
                 cpuKey = "CpueQueue" + str(cpu)
@@ -1036,15 +1250,29 @@ def refreshShapers():
                     'name': cpuKey
                 }
             for node in network:
-                found = False
-                for bin in range(queuesAvailable):
-                    if node in bins[bin]:
-                        binnedNetwork["CpueQueue" + str(bin)]['children'][node] = network[node]
-                        found = True
-                if found == False:
-                    newQueueId = queuesAvailable-1
-                    binnedNetwork["CpueQueue" + str(newQueueId)]['children'][node] = network[node]
+                tgt = assignment.get(node)
+                if tgt is None:
+                    tgt = "CpueQueue" + str(queuesAvailable - 1)
+                binnedNetwork[tgt]['children'][node] = network[node]
             network = binnedNetwork
+
+            # Update and save state
+            if bin_planner is not None and isinstance(state, dict):
+                if state.get("salt") is None:
+                    state["salt"] = "default_salt"
+                if "assignments" not in state or not isinstance(state["assignments"], dict):
+                    state["assignments"] = {}
+                if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
+                    state["last_change_ts"] = {}
+                for iid, b in assignment.items():
+                    if iid in changed:
+                        state["last_change_ts"][iid] = now_ts
+                    state["assignments"][iid] = b
+                try:
+                    print(f"Saving planner state to {state_path} (top-level CPU binning)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
         # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
         minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
@@ -1535,8 +1763,22 @@ if __name__ == '__main__':
         help="Clear ip filters, qdiscs, and xdp setup if any",
         action=argparse.BooleanOptionalAction,
     )
+    parser.add_argument(
+        '--planner-reset',
+        help="Delete planner state file before running",
+        action=argparse.BooleanOptionalAction,
+    )
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
+
+    if getattr(args, 'planner_reset', False):
+        try:
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            if os.path.exists(state_path):
+                os.remove(state_path)
+                print(f"Removed planner state: {state_path}")
+        except Exception as e:
+            print(f"Warning: could not remove planner state: {e}")
 
     if args.validate:
         status = validateNetworkAndDevices()

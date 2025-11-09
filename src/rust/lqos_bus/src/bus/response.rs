@@ -11,6 +11,26 @@ use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
+/// An urgent issue to be displayed prominently in the UI
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct UrgentIssue {
+    /// Unique identifier
+    pub id: u64,
+    /// Unix timestamp (seconds)
+    pub ts: u64,
+    /// Source component
+    pub source: crate::bus::request::UrgentSource,
+    /// Severity level
+    pub severity: crate::bus::request::UrgentSeverity,
+    /// Machine-readable code (e.g., TC_U16_OVERFLOW)
+    pub code: String,
+    /// Human-readable message
+    pub message: String,
+    /// Optional JSON context
+    pub context: Option<String>,
+    /// Optional dedupe key
+    pub dedupe_key: Option<String>,
+}
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
@@ -60,6 +80,9 @@ pub enum BusResponse {
 
     /// Provides the Top N downloaders IP stats.
     TopDownloaders(Vec<IpStats>),
+
+    /// Provides the Top N uploaders IP stats.
+    TopUploaders(Vec<IpStats>),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),
@@ -187,4 +210,7 @@ pub enum BusResponse {
         /// Any error message from integrations
         error: Option<String>,
     },
+
+    /// List of urgent issues
+    UrgentIssues(Vec<UrgentIssue>),
 }

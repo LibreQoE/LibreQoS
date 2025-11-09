@@ -24,6 +24,7 @@ mod top_flows;
 mod asn_top;
 mod tree_capacity;
 mod tree_summary;
+mod tree_summary_l2;
 
 use crate::system_stats::SystemStats;
 pub use network_tree::all_circuits;
@@ -54,6 +55,7 @@ async fn one_second_cadence(
             rtt_histogram::rtt_histo(channels.clone(), bus_tx.clone()),
             flow_counter::flow_count(channels.clone(), bus_tx.clone()),
             top_10::top_10_downloaders(channels.clone(), bus_tx.clone()),
+            top_10::top_10_uploaders(channels.clone(), bus_tx.clone()),
             top_10::worst_10_downloaders(channels.clone(), bus_tx.clone()),
             top_10::worst_10_retransmit(channels.clone(), bus_tx.clone()),
             top_flows::top_flows_bytes(channels.clone(), bus_tx.clone()),
@@ -65,6 +67,7 @@ async fn one_second_cadence(
             flow_endpoints::flow_duration(channels.clone(), bus_tx.clone()),
             endpoint_latlon::endpoint_latlon(channels.clone(), bus_tx.clone()),
             tree_summary::tree_summary(channels.clone(), bus_tx.clone()),
+            tree_summary_l2::tree_summary_l2(channels.clone()),
             network_tree::all_subscribers(channels.clone(), bus_tx.clone()),
             queue_stats_total::queue_stats_totals(channels.clone()),
             network_tree::network_tree(channels.clone(), bus_tx.clone()),

@@ -19,6 +19,7 @@ mod stats;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
+mod urgent;
 mod tuning;
 mod validation;
 mod version_checks;
@@ -355,6 +356,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetTopNDownloaders { start, end } => {
                 throughput_tracker::top_n(*start, *end)
             }
+            BusRequest::GetTopNUploaders { start, end } => {
+                throughput_tracker::top_n_up(*start, *end)
+            }
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)
@@ -638,6 +642,18 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let running = tool_status::is_scheduler_available();
                 let error = tool_status::scheduler_error_message();
                 BusResponse::SchedulerStatus { running, error }
+            }
+            BusRequest::SubmitUrgentIssue { source, severity, code, message, context, dedupe_key } => {
+                urgent::submit(*source, *severity, code.clone(), message.clone(), context.clone(), dedupe_key.clone());
+                BusResponse::Ack
+            }
+            BusRequest::GetUrgentIssues => {
+                let list = urgent::list();
+                BusResponse::UrgentIssues(list)
+            }
+            BusRequest::ClearUrgentIssue(id) => {
+                urgent::clear(*id);
+                BusResponse::Ack
             }
         });
     }
