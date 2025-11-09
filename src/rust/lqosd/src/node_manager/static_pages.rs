@@ -63,6 +63,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_wispgate.html",
         "config_stormguard.html",
         "api.html",
+        "cpu_weights.html",
     ];
 
     // Iterate through pages and construct the router

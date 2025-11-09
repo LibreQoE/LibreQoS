@@ -167,6 +167,17 @@ pub async fn apply_templates(
 "##;
         let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
 
+        // Placeholder for urgent issues indicator
+        let urgent_placeholder = r##"
+<li class="nav-item" id="urgentStatus">
+    <a class="nav-link text-secondary" href="#" id="urgentStatusLink">
+        <i class="fa fa-fw fa-centerline fa-bell-slash"></i> Urgent Issues
+        <span id="urgentBadge" class="badge bg-danger d-none">0</span>
+    </a>
+</li>
+"##;
+        let byte_string = byte_string.replace("%%URGENT_STATUS%%", urgent_placeholder);
+
         let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());

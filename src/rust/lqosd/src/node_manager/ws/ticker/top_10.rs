@@ -48,6 +48,48 @@ pub async fn top_10_downloaders(
     }
 }
 
+pub async fn top_10_uploaders(
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
+) {
+    if !channels
+        .is_channel_alive(PublishedChannels::TopUploads)
+        .await
+    {
+        return;
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
+    let request = BusRequest::GetTopNUploaders { start: 0, end: 10 };
+    if let Err(e) = bus_tx.send((tx, request)).await {
+        tracing::warn!("TopUploads: failed to send request to bus: {:?}", e);
+        return;
+    }
+    let replies = match rx.await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("TopUploads: failed to receive throughput from bus: {:?}", e);
+            return;
+        }
+    };
+    for reply in replies.responses.into_iter() {
+        if let BusResponse::TopUploaders(top) = reply {
+            let result: Vec<IpStatsWithPlan> = top.iter().map(|stat| stat.into()).collect();
+
+            let message = json!(
+                {
+                    "event": PublishedChannels::TopUploads.to_string(),
+                    "data": result
+                }
+            )
+                .to_string();
+            channels
+                .send(PublishedChannels::TopUploads, message)
+                .await;
+        }
+    }
+}
+
 pub async fn worst_10_downloaders(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,

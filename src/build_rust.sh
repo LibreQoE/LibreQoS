@@ -98,6 +98,14 @@ popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
 
+# Ensure the internal planner module is present for LibreQoS.py
+if [ ! -f "bin_planner.py" ]; then
+    echo "Warning: bin_planner.py not found in $(pwd). The planner will be unavailable to LibreQoS.py."
+    echo "If you are updating a running system, make sure bin_planner.py is deployed alongside LibreQoS.py."
+else
+    echo "bin_planner.py present."
+fi
+
 # Update the lqos_api binary
 echo "Updating lqos_api binary..."
 bash ./update_api.sh || echo "Warning: Failed to update lqos_api (continuing)."
