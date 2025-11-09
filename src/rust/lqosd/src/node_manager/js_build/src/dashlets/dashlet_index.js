@@ -32,6 +32,13 @@ import {StormguardStatusDashlet} from "./stormguard_status";
 import {BakeryStatusDashlet} from "./bakery_status";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
+// New Traffic Overview dashlets
+import {ShaperTopAsnDownload} from "./top_asn_download";
+import {ShaperTopAsnUpload} from "./top_asn_upload";
+import {ShaperChildrenDown} from "./children_sankey_down";
+import {ShaperChildrenUp} from "./children_sankey_up";
+import {ShaperWorldMapDown} from "./world_map_down";
+import {ShaperWorldMapUp} from "./world_map_up";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
@@ -68,6 +75,13 @@ export const DashletMenu = [
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
     { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
+    // Traffic Overview (Insight-like)
+    { name: "Shaper Top ASN (Download)", tag: "shaperTopAsnDown", size: 6, category: "Traffic" },
+    { name: "Shaper Top ASN (Upload)", tag: "shaperTopAsnUp", size: 6, category: "Traffic" },
+    { name: "Shaper Children (Download)", tag: "shaperChildrenDown", size: 6, category: "Traffic" },
+    { name: "Shaper Children (Upload)", tag: "shaperChildrenUp", size: 6, category: "Traffic" },
+    { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
+    { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -107,6 +121,13 @@ export function widgetFactory(widgetName, count) {
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
+        // Traffic Overview
+        case "shaperTopAsnDown"  : widget = new ShaperTopAsnDownload(count); break;
+        case "shaperTopAsnUp"    : widget = new ShaperTopAsnUpload(count); break;
+        case "shaperChildrenDown": widget = new ShaperChildrenDown(count); break;
+        case "shaperChildrenUp"  : widget = new ShaperChildrenUp(count); break;
+        case "shaperWorldMapDown": widget = new ShaperWorldMapDown(count); break;
+        case "shaperWorldMapUp"  : widget = new ShaperWorldMapUp(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

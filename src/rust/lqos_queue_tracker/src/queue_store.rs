@@ -59,6 +59,17 @@ impl QueueStore {
 #[allow(clippy::from_over_into)]
 impl Into<QueueStoreTransit> for QueueStore {
     fn into(self) -> QueueStoreTransit {
+        // Determine queue kinds for display
+        let kind_down = match &self.current_download {
+            QueueType::Cake(_) => "cake",
+            QueueType::FqCodel(_) => "fq_codel",
+            _ => "none",
+        };
+        let kind_up = match &self.current_upload {
+            QueueType::Cake(_) => "cake",
+            QueueType::FqCodel(_) => "fq_codel",
+            _ => "none",
+        };
         QueueStoreTransit {
             history: self
                 .history
@@ -71,6 +82,8 @@ impl Into<QueueStoreTransit> for QueueStore {
             //prev_upload: self.prev_upload.map(|u| u.into()),
             current_download: self.current_download.into(),
             current_upload: self.current_upload.into(),
+            kind_down: kind_down.to_string(),
+            kind_up: kind_up.to_string(),
         }
     }
 }
@@ -78,15 +91,31 @@ impl Into<QueueStoreTransit> for QueueStore {
 #[allow(clippy::from_over_into)]
 impl Into<CakeDiffTransit> for QueueDiff {
     fn into(self) -> CakeDiffTransit {
-        if let QueueDiff::Cake(c) = &self {
-            CakeDiffTransit {
+        match &self {
+            QueueDiff::Cake(c) => CakeDiffTransit {
                 bytes: c.bytes,
                 packets: c.packets,
                 qlen: c.qlen,
                 tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
+            },
+            QueueDiff::FqCodel(c) => {
+                // Map fq_codel stats into a Cake-like transit so the UI can render.
+                // Pad to 4 tins to match typical diffserv4 rendering assumptions in the UI.
+                let mut tins = Vec::with_capacity(4);
+                tins.push(CakeDiffTinTransit {
+                    sent_bytes: c.bytes,
+                    backlog_bytes: c.backlog,
+                    drops: c.ddrops,
+                    marks: 0,
+                    base_delay_us: 0,
+                });
+                // Add three zeroed tins for UI expectations
+                for _ in 0..3 {
+                    tins.push(CakeDiffTinTransit::default());
+                }
+                CakeDiffTransit { bytes: c.bytes, packets: c.packets, qlen: c.backlog, tins }
             }
-        } else {
-            CakeDiffTransit::default()
+            _ => CakeDiffTransit::default(),
         }
     }
 }

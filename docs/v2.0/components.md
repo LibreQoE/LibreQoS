@@ -68,3 +68,6 @@ Once you have any errors eliminated, restart lqos_scheduler with
 ```shell
 sudo systemctl start lqos_scheduler
 ```
+
+### Troubleshooting Service Components
+Please see [Troubleshooting](troubleshooting.md).

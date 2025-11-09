@@ -22,6 +22,7 @@ pub enum PublishedChannels {
     Cpu,
     Ram,
     TreeSummary,
+    TreeSummaryL2,
     QueueStatsTotal,
     NetworkTree,
     NetworkTreeClients,
@@ -29,4 +30,7 @@ pub enum PublishedChannels {
     TreeCapacity,
     StormguardStatus,
     BakeryStatus,
+    EndpointLatLon,
+    AsnTopDownload,
+    AsnTopUpload,
 }

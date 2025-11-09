@@ -1894,8 +1894,10 @@ dependencies = [
  "crossbeam-channel",
  "lqos_bus",
  "lqos_config",
+ "lqos_sys",
  "once_cell",
  "parking_lot",
+ "tokio",
  "tracing",
 ]
 

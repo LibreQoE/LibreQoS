@@ -737,7 +737,7 @@ function subscribeToCake() {
     function showNoQueueMessage() {
         const cakeTab = document.getElementById("cake");
         if (cakeTab && !hasReceivedData) {
-            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The CAKE queue for this circuit has not been created yet.</p></div></div>';
+            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>';
         }
     }
     
@@ -760,6 +760,30 @@ function subscribeToCake() {
         // If this is the first data received, restore the original HTML structure
         if (!hasReceivedData) {
             hasReceivedData = true;
+            // Update the tab heading based on queue kind
+            try {
+                const kindDown = (msg.kind_down || '').toLowerCase();
+                const kindUp = (msg.kind_up || '').toLowerCase();
+                const tabBtn = document.getElementById('cake-tab');
+                const tabLi = tabBtn ? tabBtn.parentElement : null;
+                if (kindDown === 'none' && kindUp === 'none') {
+                    // Hide the shaper overview tab entirely for SQM=none
+                    if (tabLi) tabLi.style.display = 'none';
+                    const tabContent = document.getElementById('cake');
+                    if (tabContent) tabContent.style.display = 'none';
+                    return; // Skip building graphs
+                } else {
+                    let displayKind = 'Shaper Overview';
+                    if (kindDown === 'cake' || kindUp === 'cake') {
+                        displayKind = 'CAKE Shaper Overview';
+                    } else if (kindDown === 'fq_codel' || kindUp === 'fq_codel') {
+                        displayKind = 'fq_codel Shaper Overview';
+                    }
+                    if (tabBtn) {
+                        tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+                    }
+                }
+            } catch (e) { /* ignore */ }
             const cakeTab = document.getElementById("cake");
             if (cakeTab) {
                 cakeTab.innerHTML = `

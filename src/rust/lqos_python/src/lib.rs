@@ -1,6 +1,6 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSource, UrgentSeverity};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
@@ -38,6 +38,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
+    m.add_function(wrap_pyfunction!(fast_queues_fq_codel, m)?)?;
     m.add_function(wrap_pyfunction!(
         upstream_bandwidth_capacity_download_mbps,
         m
@@ -116,6 +117,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
+    m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -362,6 +364,18 @@ fn check_config() -> PyResult<bool> {
 fn sqm() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.queues.default_sqm.clone())
+}
+
+/// Returns the Mbps threshold at or above which (if no per-circuit override is set)
+/// fq_codel should be preferred to reduce overhead on very fast circuits.
+/// Defaults to 1000.0 Mbps if not configured.
+#[pyfunction]
+fn fast_queues_fq_codel() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .queues
+        .fast_queues_fq_codel
+        .unwrap_or(1000.0) as f32)
 }
 
 #[pyfunction]
@@ -944,6 +958,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     },
 }
 
@@ -1028,6 +1043,7 @@ impl Bakery {
                                     class_major,
                                     up_class_major,
                                     ip_addresses,
+                                    sqm_override,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
@@ -1041,6 +1057,7 @@ impl Bakery {
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
                                         ip_addresses: ip_addresses.clone(),
+                                        sqm_override: sqm_override.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -1107,6 +1124,7 @@ impl Bakery {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1122,6 +1140,7 @@ impl Bakery {
             class_major,
             up_class_major,
             ip_addresses,
+            sqm_override,
         };
         self.queue.push(command);
         Ok(())
@@ -1144,6 +1163,52 @@ fn scheduler_alive(_py: Python) -> PyResult<bool> {
 #[pyfunction]
 fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerError(error)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Submit an urgent issue for prominent display in the Node Manager UI.
+///
+/// Parameters:
+/// - source: one of "Scheduler", "LibreQoS", "API", "System"
+/// - severity: "Error" or "Warning"
+/// - code: short machine-readable code (e.g., "TC_U16_OVERFLOW")
+/// - message: human-readable description
+/// - context: optional JSON string with extra details
+/// - dedupe_key: optional key to deduplicate repeats (e.g., code+cpu)
+#[pyfunction]
+fn submit_urgent_issue(
+    _py: Python,
+    source: String,
+    severity: String,
+    code: String,
+    message: String,
+    context: Option<String>,
+    dedupe_key: Option<String>,
+) -> PyResult<bool> {
+    let src = match source.to_ascii_lowercase().as_str() {
+        "scheduler" => UrgentSource::Scheduler,
+        "libreqos" => UrgentSource::LibreQoS,
+        "api" => UrgentSource::API,
+        _ => UrgentSource::System,
+    };
+    let sev = match severity.to_ascii_lowercase().as_str() {
+        "warning" => UrgentSeverity::Warning,
+        _ => UrgentSeverity::Error,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SubmitUrgentIssue {
+        source: src,
+        severity: sev,
+        code,
+        message,
+        context,
+        dedupe_key,
+    }]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);
