@@ -11,10 +11,9 @@
 
 - lqos_scheduler realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx, Netzur).
 - Acciones realizadas:
-  - Al iniciar: Realiza una configuración completa de las filas.
-  - Cada X minutos: Actualiza las colas, obteniendo nueva configuración desde la integración CRM, si está habilitada.
-    - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
-    - El intervalo de minutos por defecto es de 30, por lo tanto, la actualización se realiza cada 30 minutos.
+  - Al iniciar: realiza una configuración completa de las colas.
+  - Cada X minutos: actualiza las colas, obteniendo nueva configuración desde la integración CRM si está habilitada.
+    - El intervalo por defecto es de 30 minutos, por lo que la actualización ocurre cada 30 minutos.
     - El intervalo de minutos puede ajustarse mediante el parámetro `queue_refresh_interval_mins` ubicado en `/etc/lqos.conf`.
 
 ### Verificar el estado de los servicios
@@ -68,3 +67,6 @@ Una vez que se hayan corregido los errores, reinicie el servicio lqos_scheduler 
 ```shell
 sudo systemctl start lqos_scheduler
 ```
+
+### Solución de problemas de los servicios
+Consulta la sección de [Solución de Problemas](troubleshooting-es.md).
