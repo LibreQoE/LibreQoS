@@ -1644,6 +1644,12 @@ def refreshShapers():
                             site_name = name_hash_to_name.get(int(site_hash))
                             if site_name is None:
                                 continue
+                            # Skip synthetic default PN containers in site binning
+                            try:
+                                if str(site_name).startswith('Generated_PN_'):
+                                    continue
+                            except Exception:
+                                pass
                             node_obj = all_nodes.get(site_name)
                             if node_obj is None:
                                 continue
@@ -1658,6 +1664,22 @@ def refreshShapers():
                             except Exception:
                                 pass
                             binnedNetwork[cpuKey]['children'][site_name] = node_obj
+                    # After placing real sites, guarantee one Generated_PN per CPU
+                    try:
+                        for idx, pn in enumerate(generatedPNs):
+                            cpuKey = "CpueQueue" + str(idx if idx < queuesAvailable else queuesAvailable-1)
+                            node_obj = network.get(pn) if isinstance(network, dict) else None
+                            if node_obj is None:
+                                node_obj = {
+                                    'downloadBandwidthMbps': generated_pn_download_mbps(),
+                                    'uploadBandwidthMbps': generated_pn_upload_mbps(),
+                                    'type': 'site',
+                                    'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
+                                    'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
+                                }
+                            binnedNetwork[cpuKey]['children'][pn] = node_obj
+                    except Exception:
+                        pass
                     network = binnedNetwork
                 else:
                     print("Using greedy binpacking to distribute sites across CPU queues.")
@@ -1676,6 +1698,12 @@ def refreshShapers():
                         except Exception:
                             pass
                     for node in network:
+                        # Exclude Generated_PN_* from site binpacking entirely
+                        try:
+                            if str(node).startswith('Generated_PN_'):
+                                continue
+                        except Exception:
+                            pass
                         w = weight_by_name.get(str(node), 1.0)
                         items.append({"id": str(node), "weight": float(w)})
 
@@ -1704,10 +1732,31 @@ def refreshShapers():
                             'name': cpuKey
                         }
                     for node in network:
+                        try:
+                            if str(node).startswith('Generated_PN_'):
+                                continue
+                        except Exception:
+                            pass
                         tgt = assignment.get(node)
                         if tgt is None:
                             tgt = "CpueQueue" + str(queuesAvailable - 1)
                         binnedNetwork[tgt]['children'][node] = network[node]
+                    # After placing real sites, guarantee one Generated_PN per CPU
+                    try:
+                        for idx, pn in enumerate(generatedPNs):
+                            cpuKey = "CpueQueue" + str(idx if idx < queuesAvailable else queuesAvailable-1)
+                            node_obj = network.get(pn) if isinstance(network, dict) else None
+                            if node_obj is None:
+                                node_obj = {
+                                    'downloadBandwidthMbps': generated_pn_download_mbps(),
+                                    'uploadBandwidthMbps': generated_pn_upload_mbps(),
+                                    'type': 'site',
+                                    'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
+                                    'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
+                                }
+                            binnedNetwork[cpuKey]['children'][pn] = node_obj
+                    except Exception:
+                        pass
                     network = binnedNetwork
 
         # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
