@@ -2062,10 +2062,12 @@ def refreshShapers():
         def emit_sites(data):
             for node in sorted(data.keys()):
                 site_name = data[node]['name'] if 'name' in data[node] else node
-                # Avoid creating Bakery sites for Generated_PN_* or CpueQueue* when not in flat mode
+                # Avoid creating Bakery sites for CpueQueue* (CPU bin containers) when not in flat mode.
+                # Generated_PN_* must be real HTB parents (one per CPU) so circuits under them have valid parents;
+                # therefore, do NOT skip Generated_PN_* here.
                 try:
                     name_s = str(site_name)
-                    if (not is_network_flat()) and (name_s.startswith('Generated_PN_') or name_s.startswith('CpueQueue')):
+                    if (not is_network_flat()) and (name_s.startswith('CpueQueue')):
                         # Recurse into children to ensure real sites are still emitted
                         if 'children' in data[node]:
                             sorted_children = dict(sorted(data[node]['children'].items()))
