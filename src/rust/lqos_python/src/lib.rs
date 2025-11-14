@@ -319,8 +319,10 @@ fn fetch_planner_remote(
     // Allow invalid certs for self-hosted Insight instances (non-default URL)
     let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
     let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .connect_timeout(Duration::from_secs(3))
+        // Use a generous timeout similar to deviceWeights to tolerate
+        // slow or distant Insight instances when fetching planner state.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
         .danger_accept_invalid_certs(allow_insecure)
         .build() {
         Ok(c) => c,
@@ -464,8 +466,9 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // Allow invalid certs for self-hosted Insight instances (non-default URL)
     let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
     let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .connect_timeout(Duration::from_secs(3))
+        // Match the extended planner fetch timeout for symmetry.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
         .danger_accept_invalid_certs(allow_insecure)
         .build() {
         Ok(c) => c,

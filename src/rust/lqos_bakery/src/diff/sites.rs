@@ -49,19 +49,20 @@ pub(crate) fn diff_sites(
                     "Structural difference detected for site hash: {}",
                     site_hash
                 );
-                // Log a concise before/after for diagnostics
-                // Extract relevant fields
-                // old
+                // Log a concise before/after for diagnostics at warn! level so operators
+                // can see why the site is considered structurally different.
                 let (ocpu, opar, oup, omin) = match old_cmd.as_ref() {
                     crate::BakeryCommands::AddSite { parent_class_id, up_parent_class_id, class_minor, .. } => (0i32, parent_class_id.as_tc_string(), up_parent_class_id.as_tc_string(), *class_minor),
                     _ => (0, String::new(), String::new(), 0),
                 };
-                // new
                 let (ncpu, npar, nup, nmin) = match new_cmd.as_ref() {
                     crate::BakeryCommands::AddSite { parent_class_id, up_parent_class_id, class_minor, .. } => (0i32, parent_class_id.as_tc_string(), up_parent_class_id.as_tc_string(), *class_minor),
                     _ => (0, String::new(), String::new(), 0),
                 };
-                debug!("Site hash {} change: parent={}→{}, up_parent={}→{}, minor=0x{:x}→0x{:x}", site_hash, opar, npar, oup, nup, omin, nmin);
+                warn!(
+                    "Site hash {} change detail: parent={}→{}, up_parent={}→{}, minor=0x{:x}→0x{:x}",
+                    site_hash, opar, npar, oup, nup, omin, nmin
+                );
                 return SiteDiffResult::RebuildRequired;
             }
             // If the speeds have changed, we need to store the change.

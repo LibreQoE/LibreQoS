@@ -79,16 +79,28 @@ class Planner:
 
         self._is_default = False
         if loaded is None:
-            # Missing/invalid state: default
+            # Missing/invalid planner state: build a fresh default and record why.
+            try:
+                if is_insight_enabled():
+                    logging.warning("Planner: no existing plan available from Insight/local store; using default plan.")
+                else:
+                    logging.warning("Planner: no existing plan available (Insight disabled); using default plan.")
+            except Exception:
+                pass
             self.state = self._default_state(normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts)
             self._is_default = True
             return
 
         # Validate loaded state and decide if we should rebuild
-        should_rebuild, _reason = self._should_rebuild(
+        should_rebuild, reason = self._should_rebuild(
             loaded, normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts
         )
         if should_rebuild:
+            # Existing planner state is not compatible with the current configuration.
+            try:
+                logging.warning(f"Planner: discarding existing plan; reason={reason}. Falling back to default plan.")
+            except Exception:
+                pass
             self.state = self._default_state(normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts)
             self._is_default = True
         else:
@@ -153,9 +165,9 @@ class Planner:
     def persist(self):
         """Persist planner state.
 
-        - When Insight is enabled, persists remotely via `store_planner_remote`.
-        - Otherwise, writes a local compressed CBOR file at `planner.cbor`.
-        - Ephemeral fields such as `free_minors` are never persisted.
+        Insight-only feature: when Insight is enabled, planner state is
+        persisted remotely via `store_planner_remote`. Ephemeral fields such
+        as `free_minors` are never persisted.
         """
         try:
             to_save = dict(self.state)
@@ -164,7 +176,8 @@ class Planner:
                     to_save.pop('free_minors')
                 except Exception:
                     pass
-            # Prefer Insight when enabled; otherwise persist to local CBOR for stability
+            # Insight-only feature: when Insight is disabled, skip persistence
+            # entirely so planner reuse remains an Insight capability.
             use_remote = False
             try:
                 use_remote = bool(is_insight_enabled())
@@ -173,11 +186,9 @@ class Planner:
             if use_remote:
                 store_planner_remote(to_save)
             else:
-                # Best-effort local persistence to planner.cbor
-                try:
-                    write_planner_cbor(self.path, to_save)
-                except Exception as e:
-                    warnings.warn(f"Failed to write planner.cbor locally: {e}", stacklevel=2)
+                # No local fallback; skip persistence entirely when Insight is
+                # not enabled so that planner reuse remains an Insight feature.
+                pass
         except Exception as e:
             warnings.warn(f"Failed to write planner.cbor: {e}", stacklevel=2)
 
@@ -214,12 +225,15 @@ class Planner:
     def _load_state(self, queues_available, on_a_stick_flag, site_count):
         """Load planner state.
 
-        - If Insight is enabled, fetch from remote; otherwise load local CBOR.
+        Insight-only feature: if Insight is enabled, fetch planner state from
+        the remote API. When Insight is disabled, no planner state is used.
+
         - Validates that minimum required keys exist.
-        - Normalizes `updated_at` when remote to avoid needless rebuilds based on age alone.
+        - Normalizes `updated_at` when remote to avoid needless rebuilds based
+          on age alone.
         """
         try:
-            # Try Insight first if enabled; otherwise fall back to local CBOR
+            # Try Insight first if enabled; otherwise treat as no state
             use_remote = False
             try:
                 use_remote = bool(is_insight_enabled())
@@ -242,15 +256,7 @@ class Planner:
                     pass
                 return None
             else:
-                try:
-                    data = read_planner_cbor(self.path)
-                    if isinstance(data, dict):
-                        for k in ['queuesAvailable', 'site_count', 'site_names']:
-                            if k not in data:
-                                return None
-                        return data
-                except Exception:
-                    pass
+                # Insight is disabled or unavailable: no planner state is used.
                 return None
         except Exception:
             return None
