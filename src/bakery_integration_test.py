@@ -488,12 +488,28 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
     rc, out, err = _tc(["class", "show", "dev", iface])
     if rc != 0:
         return None
-    # Match the exact class line for major:minor in decimal
-    cls_pat = re.compile(rf"^class\s+htb\s+{major}:{minor}\b.*$", re.MULTILINE)
-    m = cls_pat.search(out)
-    if not m:
+    # Match the class line for this major/minor, accepting decimal or hex forms.
+    cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+
+    def _to_int(tok: str) -> Optional[int]:
+        try:
+            s = tok.strip()
+            if s.lower().startswith("0x"):
+                return int(s, 16)
+            return int(s)
+        except Exception:
+            return None
+
+    line = None
+    for m in cls_pat.finditer(out):
+        mj_tok, mn_tok = m.group(1), m.group(2)
+        mj = _to_int(mj_tok)
+        mn = _to_int(mn_tok)
+        if mj == major and mn == minor:
+            line = m.group(0)
+            break
+    if line is None:
         return None
-    line = m.group(0)
     # Extract rate and ceil tokens
     rpat = re.compile(r"rate\s+([0-9]+(?:\.[0-9]+)?)([GMK])?bit.*?ceil\s+([0-9]+(?:\.[0-9]+)?)([GMK])?bit")
     mm = rpat.search(line)
@@ -787,16 +803,9 @@ def _class_has_parent(iface: str, maj: int, mnr: int, pmaj: int, pmnr: int) -> T
     rc, out, err = _tc(["class", "show", "dev", iface])
     if rc != 0:
         return False, f"tc error: {err.strip()}"
-    # Find the specific class line first
-    cls_pat = re.compile(rf"^class\s+htb\s+{maj}:{mnr}\b.*$", re.MULTILINE)
-    m = cls_pat.search(out)
-    if not m:
-        return False, None
-    line = m.group(0)
-    # Extract parent handle (supports hex or decimal)
-    p = re.search(r"parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b", line)
-    if not p:
-        return False, line
+    # Find the specific class line first (accept decimal or hex handles)
+    cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+
     def _to_int(tok: str) -> Optional[int]:
         try:
             s = tok.strip()
@@ -805,6 +814,21 @@ def _class_has_parent(iface: str, maj: int, mnr: int, pmaj: int, pmnr: int) -> T
             return int(s)
         except Exception:
             return None
+
+    line = None
+    for m in cls_pat.finditer(out):
+        mj_tok, mn_tok = m.group(1), m.group(2)
+        mj = _to_int(mj_tok)
+        mn = _to_int(mn_tok)
+        if mj == maj and mn == mnr:
+            line = m.group(0)
+            break
+    if line is None:
+        return False, None
+    # Extract parent handle (supports hex or decimal)
+    p = re.search(r"parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b", line)
+    if not p:
+        return False, line
     pmj = _to_int(p.group(1))
     pmn = _to_int(p.group(2))
     if pmj is None or pmn is None:
@@ -1281,10 +1305,26 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
             msgs.append(f"low-rate rtt: 'tc qdisc show dev {ifa}' failed: {err.strip()}")
             ok_local = False
         else:
-            pat = re.compile(rf"^qdisc\s+\S+\s+\S+:\s+parent\s+{maj}:{mnr}\b.*$", re.MULTILINE)
-            m = pat.search(out)
-            if m:
-                line = m.group(0)
+            pat = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+
+            def _to_int(tok: str) -> Optional[int]:
+                try:
+                    s = tok.strip()
+                    if s.lower().startswith("0x"):
+                        return int(s, 16)
+                    return int(s)
+                except Exception:
+                    return None
+
+            line = None
+            for m in pat.finditer(out):
+                mj_tok, mn_tok = m.group(1), m.group(2)
+                mj = _to_int(mj_tok)
+                mn = _to_int(mn_tok)
+                if mj == maj and mn == mnr:
+                    line = m.group(0)
+                    break
+            if line is not None:
                 if "cake" in line.lower():
                     if re.search(r"\brtt\s+\d+\s*ms\b", line, re.IGNORECASE):
                         msgs.append(f"low-rate rtt: down {ifa} OK | {line}")
@@ -1303,10 +1343,26 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
                 msgs.append(f"low-rate rtt: 'tc qdisc show dev {ifb}' failed: {err2.strip()}")
                 ok_local = False
             else:
-                pat2 = re.compile(rf"^qdisc\s+\S+\s+\S+:\s+parent\s+{upm}:{mnr}\b.*$", re.MULTILINE)
-                m2 = pat2.search(out2)
-                if m2:
-                    line2 = m2.group(0)
+                pat2 = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+
+                def _to_int2(tok: str) -> Optional[int]:
+                    try:
+                        s = tok.strip()
+                        if s.lower().startswith("0x"):
+                            return int(s, 16)
+                        return int(s)
+                    except Exception:
+                        return None
+
+                line2 = None
+                for m2 in pat2.finditer(out2):
+                    mj_tok, mn_tok = m2.group(1), m2.group(2)
+                    mj = _to_int2(mj_tok)
+                    mn = _to_int2(mn_tok)
+                    if mj == upm and mn == mnr:
+                        line2 = m2.group(0)
+                        break
+                if line2 is not None:
                     if "cake" in line2.lower():
                         if re.search(r"\brtt\s+\d+\s*ms\b", line2, re.IGNORECASE):
                             msgs.append(f"low-rate rtt: up {ifb} OK | {line2}")

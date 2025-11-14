@@ -529,6 +529,10 @@ impl BakeryCommands {
         params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
+        // Derive major IDs from parent handles so classids are fully qualified
+        // and consistent with queuingStructure.json (classMajor/classMinor).
+        let (down_major, _) = params.parent_class_id.get_major_minor();
+        let (up_major, _) = params.up_parent_class_id.get_major_minor();
 
         /*
         bakery.add_site(data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
@@ -549,7 +553,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}", params.class_minor),
+            format!("0x{:x}:0x{:x}", down_major, params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -571,7 +575,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.up_parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}", params.class_minor),
+            format!("0x{:x}:0x{:x}", up_major, params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -696,7 +700,7 @@ impl BakeryCommands {
                 "parent".to_string(),
                 params.parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}", params.class_minor),
+                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -741,7 +745,7 @@ impl BakeryCommands {
                 "parent".to_string(),
                 params.up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}", params.class_minor),
+                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -896,7 +900,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!(
+                    "0x{:x}:0x{:x}",
+                    parent_class_id.get_major_minor().0,
+                    class_minor
+                ),
             ]);
             result.push(vec![
                 "class".to_string(),
@@ -906,7 +914,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!(
+                    "0x{:x}:0x{:x}",
+                    up_parent_class_id.get_major_minor().0,
+                    class_minor
+                ),
             ]);
         }
 

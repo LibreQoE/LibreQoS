@@ -28,7 +28,6 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     fast_queues_fq_codel, hash_to_i64, fetch_planner_remote, store_planner_remote, \
-    read_planner_cbor, write_planner_cbor, \
     Bakery
 
 # Optional: urgent issue submission (available in newer liblqos_python)
@@ -51,14 +50,13 @@ class Planner:
 
     PUBLIC methods:
     - getState(): dict — current planner state (default or loaded)
-    - persist(): None — save the planner state to planner.cbor
+    - persist(): None — persist planner state via Insight when enabled
     """
 
     # Print the Insight planning banner only once per process
     _insight_banner_printed = False
 
     def __init__(self, queuesAvailable: int, onAStick: bool, siteNamesSet, siteCount: int):
-        self.path = os.path.join(get_libreqos_directory(), 'planner.cbor')
         now_ts = time.time()
 
         # Informational banner when Insight-enhanced planning is in use
@@ -82,7 +80,7 @@ class Planner:
             # Missing/invalid planner state: build a fresh default and record why.
             try:
                 if is_insight_enabled():
-                    logging.warning("Planner: no existing plan available from Insight/local store; using default plan.")
+                    logging.warning("Planner: no existing plan available from Insight; using default plan.")
                 else:
                     logging.warning("Planner: no existing plan available (Insight disabled); using default plan.")
             except Exception:
@@ -167,7 +165,7 @@ class Planner:
 
         Insight-only feature: when Insight is enabled, planner state is
         persisted remotely via `store_planner_remote`. Ephemeral fields such
-        as `free_minors` are never persisted.
+        as `free_minors` are never persisted, and no local CBOR files are used.
         """
         try:
             to_save = dict(self.state)
@@ -190,23 +188,23 @@ class Planner:
                 # not enabled so that planner reuse remains an Insight feature.
                 pass
         except Exception as e:
-            warnings.warn(f"Failed to write planner.cbor: {e}", stacklevel=2)
+            warnings.warn(f"Failed to persist planner state to Insight: {e}", stacklevel=2)
 
     def _default_state(self, site_names_sorted, site_count, queues_available, on_a_stick_flag, now_ts):
         """Build a default planner state.
 
         Notes
         - Minor IDs 1..3 are globally reserved:
-          1 = root qdisc, 2 = default class, 3 = site classes
-        - Circuits and any ephemeral classes use 4+.
+          1 = root qdisc, 2 = default class, 3 = per-CPU Generated_PN_* site classes
+        - All other sites, circuits, and any ephemeral classes use 4+.
         - `free_minors` is per-CPU and rebuilt on load; it is not persisted.
         """
         try:
             # Reserve minors 1..3 globally:
             #  - 1 is used by root qdisc
             #  - 2 is used by the default class under root
-            #  - 3 is used for site classes
-            # Circuits and any ephemeral classes must use 4+
+            #  - 3 is used for per-CPU Generated_PN_* site classes
+            # All other site and circuit classes must use 4+
             free_minors = [list(range(4, 0x10000)) for _ in range(int(queues_available))]
         except Exception:
             free_minors = []
@@ -280,7 +278,7 @@ class Planner:
                 try:
                     cpu = int(entry.get('cpu', -1))
                     minor = int(entry.get('minor', -1))
-                    if 0 <= cpu < q and 3 <= minor <= 0xFFFF:
+                    if 0 <= cpu < q and 4 <= minor <= 0xFFFF:
                         if minor in free[cpu]:
                             free[cpu].discard(minor)
                 except Exception:
@@ -293,7 +291,7 @@ class Planner:
                 try:
                     cpu = int(entry.get('cpu', -1))
                     minor = int(entry.get('minor', -1))
-                    if 0 <= cpu < q and 3 <= minor <= 0xFFFF:
+                    if 0 <= cpu < q and 4 <= minor <= 0xFFFF:
                         if minor in free[cpu]:
                             free[cpu].discard(minor)
                 except Exception:
@@ -1348,11 +1346,12 @@ def refreshShapers():
         knownClassIDs = []
         nodes_requiring_min_squashing = {}
         # Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
-        # Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
+        # Minor numbers start at 4 to reserve:
+        #   1 = root qdisc, 2 = default class, 3 = per-CPU Generated_PN_* sites
         # With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
         # without disrupting existing ClassID assignments. This maintains stability across reloads.
         for x in range(queuesAvailable):
-            minorByCPUpreloaded[x+1] = 3
+            minorByCPUpreloaded[x+1] = 4
         def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
             nonlocal site_insert_counter
             # ClassID Assignment Strategy:
@@ -1385,49 +1384,64 @@ def refreshShapers():
                 #	data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
                 #	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
                 #	continue
-                # Prefer reusing previously-assigned site minor from planner.site_map (keyed by hashed site name);
-                # else try planner free_minors for this CPU; else fallback to sequential counter
-                chosen_minor = None
+                # Prefer fixed, low minors for Generated_PN_* per CPU so they are
+                # visually obvious and stable. For all other nodes, prefer reusing
+                # previously-assigned site minors from planner.site_map; else try
+                # planner free_minors for this CPU; else fallback to sequential
+                # counter starting at 4.
+                name_s = str(node)
+                is_generated_pn = False
                 try:
-                    if ('planner' in locals() or 'planner' in globals()) and isinstance(planner, Planner) and (not getattr(planner, '_is_default', False)):
-                        st = planner.getState()
-                        cpu_index = int(queue - 1)
-                        # 1) Attempt reuse from site_map when CPU/major match
-                        try:
-                            site_map = st.get('site_map') if isinstance(st, dict) else None
-                            if isinstance(site_map, dict):
-                                key_hash = int(hash_to_i64(str(node)))
-                                entry = site_map.get(key_hash)
-                                if isinstance(entry, dict):
-                                    saved_cpu = int(entry.get('cpu', -1))
-                                    saved_major = int(entry.get('major', -1))
-                                    saved_minor = int(entry.get('minor', -1))
-                                    if saved_cpu == cpu_index and saved_major == int(major) and saved_minor >= 3:
-                                        chosen_minor = saved_minor
-                                        # Remove from free list if present
-                                        try:
-                                            fm = st.get('free_minors')
-                                            if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and saved_minor in fm[cpu_index]:
-                                                fm[cpu_index].remove(saved_minor)
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
-                        # 2) If no reuse, allocate from free list for this CPU (depth >= 1 only)
-                        if chosen_minor is None and depth >= 1:
-                            try:
-                                fm = st.get('free_minors') if isinstance(st, dict) else None
-                                if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and len(fm[cpu_index]) > 0:
-                                    chosen_minor = int(fm[cpu_index].pop(0))
-                            except Exception:
-                                chosen_minor = None
+                    is_generated_pn = name_s.startswith('Generated_PN_')
                 except Exception:
-                    chosen_minor = None
-                if chosen_minor is None:
+                    is_generated_pn = False
+
+                chosen_minor = None
+                # Fixed minor for Generated_PN_*: always 3 per CPU, independent of
+                # planner state and traversal order.
+                if is_generated_pn:
+                    chosen_minor = 3
+                else:
                     try:
-                        chosen_minor = int(minorByCPU[queue])
+                        if ('planner' in locals() or 'planner' in globals()) and isinstance(planner, Planner) and (not getattr(planner, '_is_default', False)):
+                            st = planner.getState()
+                            cpu_index = int(queue - 1)
+                            # 1) Attempt reuse from site_map when CPU/major match
+                            try:
+                                site_map = st.get('site_map') if isinstance(st, dict) else None
+                                if isinstance(site_map, dict):
+                                    key_hash = int(hash_to_i64(str(node)))
+                                    entry = site_map.get(key_hash)
+                                    if isinstance(entry, dict):
+                                        saved_cpu = int(entry.get('cpu', -1))
+                                        saved_major = int(entry.get('major', -1))
+                                        saved_minor = int(entry.get('minor', -1))
+                                        if saved_cpu == cpu_index and saved_major == int(major) and saved_minor >= 4:
+                                            chosen_minor = saved_minor
+                                            # Remove from free list if present
+                                            try:
+                                                fm = st.get('free_minors')
+                                                if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and saved_minor in fm[cpu_index]:
+                                                    fm[cpu_index].remove(saved_minor)
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                pass
+                            # 2) If no reuse, allocate from free list for this CPU (depth >= 1 only)
+                            if chosen_minor is None and depth >= 1:
+                                try:
+                                    fm = st.get('free_minors') if isinstance(st, dict) else None
+                                    if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and len(fm[cpu_index]) > 0:
+                                        chosen_minor = int(fm[cpu_index].pop(0))
+                                except Exception:
+                                    chosen_minor = None
                     except Exception:
-                        chosen_minor = 3
+                        chosen_minor = None
+                    if chosen_minor is None:
+                        try:
+                            chosen_minor = int(minorByCPU[queue])
+                        except Exception:
+                            chosen_minor = 4
 
                 nodeClassID = hex(major) + ':' + hex(chosen_minor)
                 upNodeClassID = hex(major+stickOffset) + ':' + hex(chosen_minor)
@@ -2019,7 +2033,8 @@ def refreshShapers():
                                 cpu = int(entry.get('cpu', 0))
                                 minor = int(entry.get('minor', -1))
                                 if isinstance(fm, list) and 0 <= cpu < len(fm) and isinstance(fm[cpu], list):
-                                    if minor >= 3 and minor <= 0xFFFF and (minor not in fm[cpu]):
+                                    # Reserve 1..3 globally; only return minors >=4 to the free list
+                                    if minor >= 4 and minor <= 0xFFFF and (minor not in fm[cpu]):
                                         fm[cpu].append(minor)
                                 # Remove from circuit_map
                                 try:
