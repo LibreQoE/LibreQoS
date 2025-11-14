@@ -87,6 +87,10 @@ try:
     except Exception:
         generated_pn_download_mbps = None  # type: ignore
         generated_pn_upload_mbps = None  # type: ignore
+    try:
+        from liblqos_python import on_a_stick  # type: ignore
+    except Exception:
+        on_a_stick = None  # type: ignore
 except Exception:
     # Provide a soft fallback if binding is unavailable
     def is_lqosd_alive() -> bool:
@@ -501,6 +505,136 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
 
 def _qdisc_show(iface: str) -> Tuple[int, str, str]:
     return _tc(["qdisc", "show", "dev", iface])
+
+
+# -----------------------
+# IP mapping checks
+# -----------------------
+
+def _list_ip_mappings() -> Tuple[bool, str, List[Tuple[str, int, str]]]:
+    """Return (ok, message, entries) where entries are (ip, cpu, tc) from the mapper.
+    Uses ./bin/xdp_iphash_to_cpu_cmdline list. When unavailable, returns ok=False with reason.
+    """
+    tool = os.path.join(".", "bin", "xdp_iphash_to_cpu_cmdline")
+    if not os.path.exists(tool):
+        return False, "ipmap check: mapping tool not found", []
+    try:
+        proc = subprocess.run([tool, "list"], capture_output=True, text=True, check=False)
+    except Exception as e:
+        return False, f"ipmap check: failed to run mapping tool: {e}", []
+    out = (proc.stdout or "")
+    err = (proc.stderr or "").strip()
+    if "Socket" in out or "Socket" in err:
+        return False, "ipmap check: lqosd bus socket not found; skipping", []
+    entries: List[Tuple[str, int, str]] = []
+    # Lines look like: "<ip/prefix>    CPU: <cpu>  TC: <a:b>"
+    pat = re.compile(r"^\s*([0-9A-Fa-f:.]+)/\d+\s+CPU:\s+(\d+)\s+TC:\s+([0-9A-Fa-f]+:[0-9A-Fa-f]+)\s*$")
+    for line in out.splitlines():
+        m = pat.match(line)
+        if m:
+            ip = m.group(1)
+            cpu = int(m.group(2))
+            tc = m.group(3).lower()
+            entries.append((ip, cpu, tc))
+    return True, "", entries
+
+
+def _expect_handles_for_circuit(parent_node: dict, circuit: dict) -> Tuple[str, Optional[str], Optional[int]]:
+    """Compute expected down/up tc handle strings (hex without 0x) and CPU from structure."""
+    def hx(v):
+        try:
+            return int(str(v), 16)
+        except Exception:
+            return None
+    maj = hx(circuit.get("classMajor"))
+    mnr = hx(circuit.get("classMinor"))
+    upm = hx(circuit.get("up_classMajor"))
+    cpu = hx(parent_node.get("cpuNum"))
+    down_tc = f"{maj:x}:{mnr:x}" if maj is not None and mnr is not None else ""
+    up_tc = f"{upm:x}:{mnr:x}" if upm is not None and mnr is not None else None
+    return down_tc, up_tc, cpu
+
+
+def _find_parent_node(net: Dict[str, dict], name: str) -> Optional[dict]:
+    for k, v in net.items():
+        if k == name and isinstance(v, dict):
+            return v
+        ch = v.get("children") if isinstance(v, dict) else None
+        if isinstance(ch, dict):
+            got = _find_parent_node(ch, name)
+            if got is not None:
+                return got
+    return None
+
+
+def check_ip_mappings_for_circuit(circuit_id: str) -> Tuple[bool, List[str]]:
+    """Ensure that all IPv4s for this circuit are mapped to the correct down (and up if on-a-stick) tc handles."""
+    ok_tool, msg, entries = _list_ip_mappings()
+    msgs: List[str] = []
+    if not ok_tool:
+        return True, [msg]  # soft-skip
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["ipmap check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["ipmap check: queuingStructure has no 'Network'"]
+    found = _walk_nodes_for_circuit(net, circuit_id)
+    if not found:
+        return False, [f"ipmap check: circuit {circuit_id} not found in structure"]
+    parent_name, circuit = found
+    parent_node = _find_parent_node(net, parent_name)
+    if not isinstance(parent_node, dict):
+        return False, [f"ipmap check: parent node '{parent_name}' not found"]
+    down_tc, up_tc, cpu = _expect_handles_for_circuit(parent_node, circuit)
+    # Collect expected IPv4s
+    ips: List[str] = []
+    for dev in circuit.get("devices", []):
+        try:
+            for ip in dev.get("ipv4s", []):
+                ips.append(str(ip))
+        except Exception:
+            pass
+    if not ips:
+        return True, [f"ipmap check: circuit {circuit_id} has no IPv4s; skipping"]
+    # Evaluate mappings
+    ok = True
+    on_stick = False
+    try:
+        on_stick = bool(on_a_stick()) if callable(on_a_stick) else False  # type: ignore[misc]
+    except Exception:
+        on_stick = False
+    for ip in ips:
+        # Find all entries matching this IP
+        ents = [(i, c, t) for (i, c, t) in entries if i == ip]
+        if not ents:
+            msgs.append(f"ipmap check: missing mapping for {ip}")
+            ok = False
+            continue
+        # Down must exist
+        if any(t == down_tc for (_i, _c, t) in ents):
+            msgs.append(f"ipmap check: {ip} -> {down_tc} present")
+        else:
+            msgs.append(f"ipmap check: {ip} missing down tc {down_tc}")
+            ok = False
+        # Up mapping (only if on-a-stick)
+        if on_stick and up_tc:
+            if any(t == up_tc for (_i, _c, t) in ents):
+                msgs.append(f"ipmap check: {ip} -> {up_tc} present (upload)")
+            else:
+                msgs.append(f"ipmap check: {ip} missing up tc {up_tc}")
+                ok = False
+    return ok, msgs
+
+
+def check_ip_mapping_absent(ip: str) -> Tuple[bool, List[str]]:
+    ok_tool, msg, entries = _list_ip_mappings()
+    if not ok_tool:
+        return True, [msg]  # soft-skip
+    present = any(i == ip for (i, _c, _t) in entries)
+    if present:
+        return False, [f"ipmap check: unexpected mapping remains for {ip}"]
+    return True, [f"ipmap check: {ip} successfully absent"]
 
 
 def check_generated_pn_tc_bandwidths() -> Tuple[bool, List[str]]:
@@ -974,6 +1108,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed3, msgs3 = test_orphan_circuit_assignment(rows)
     results.extend(msgs3)
     ok &= passed3
+    # Mapping for orphan circuit
+    _mark_step("sanity: orphan circuit ip mappings")
+    passed3b, msgs3b = check_ip_mappings_for_circuit("99901")
+    results.extend(msgs3b)
+    ok &= passed3b
 
     _mark_step("sanity: PN HTB rates match PN defaults")
     passed4, msgs4 = check_generated_pn_tc_bandwidths()
@@ -1001,6 +1140,31 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed_dir, msgs_dir = check_circuit_direction_ceil("1")
     results.extend(msgs_dir)
     ok &= passed_dir
+    # IP mappings persist for circuit 1
+    _mark_step("sanity: circuit ip mappings (no change)")
+    passed_map1, msgs_map1 = check_ip_mappings_for_circuit("1")
+    results.extend(msgs_map1)
+    ok &= passed_map1
+
+    # Circuit IP change (should not trigger full reload); verify mapping moves
+    _mark_step("tiered: circuit IP change (no full reload)")
+    rows_ip = json.loads(json.dumps(rows2))
+    old_ip = rows_ip[0]["IPv4"]
+    rows_ip[0]["IPv4"] = "100.64.0.11"
+    new_ip = rows_ip[0]["IPv4"]
+    write_circuits(rows_ip)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("tiered: circuit IP change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+    # Verify mapping updated
+    passed_map_new, msgs_map_new = check_ip_mappings_for_circuit("1")
+    results.extend(msgs_map_new)
+    ok &= passed_map_new
+    passed_map_old, msgs_map_old = check_ip_mapping_absent(str(old_ip))
+    results.extend(msgs_map_old)
+    ok &= passed_map_old
 
     # Add a low-rate circuit to trigger cake RTT tokens and verify units (e.g., 180ms)
     _mark_step("sanity: add low-rate circuit for RTT check")
@@ -1144,6 +1308,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed, msg = assert_no_full_reload("tiered: add circuit", res, step_t0)
     results.append(msg)
     ok &= passed
+    # Mapping for added circuit C3
+    _mark_step("sanity: added circuit ip mappings")
+    passed_map_add, msgs_map_add = check_ip_mappings_for_circuit("3")
+    results.extend(msgs_map_add)
+    ok &= passed_map_add
 
     # Remove circuit
     _mark_step("flat: remove circuit")
@@ -1155,6 +1324,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed, msg = assert_no_full_reload("tiered: remove circuit", res, step_t0)
     results.append(msg)
     ok &= passed
+    # Mapping removed
+    _mark_step("sanity: removed circuit ip unmapped")
+    passed_unmap, msgs_unmap = check_ip_mapping_absent("100.64.0.3")
+    results.extend(msgs_unmap)
+    ok &= passed_unmap
 
     # Add site (should trigger full reload)
     _mark_step("tiered: add site")
