@@ -1480,14 +1480,17 @@ def refreshShapers():
                                 'insertion_order': int(site_insert_counter),
                             }
                             site_insert_counter += 1
-                            # Remove the site's minor from the planner's free list for this CPU
-                            try:
-                                fm = st.get('free_minors')
-                                if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list):
-                                    if int(minor_int) in fm[cpu_int]:
-                                        fm[cpu_int].remove(int(minor_int))
-                            except Exception:
-                                pass
+                        # Always reserve the site's minor in the free list, even for synthetic nodes
+                        try:
+                            st = planner.getState()
+                            fm = st.get('free_minors')
+                            cpu_int = int(queue - 1)
+                            minor_int = int(chosen_minor)
+                            if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list):
+                                if int(minor_int) in fm[cpu_int]:
+                                    fm[cpu_int].remove(int(minor_int))
+                        except Exception:
+                            pass
                 except Exception:
                     # Planner is optional; ignore errors during capture
                     pass
@@ -1889,6 +1892,25 @@ def refreshShapers():
                 if chosen_minor is None:
                     # Fallback to reserved sequential range; ensure we never collide with the site's minor (<3 reserved)
                     chosen_minor = max(4, int(current_minor))
+                    # Guard against collision with the parent site's own minor (e.g., 0xd)
+                    try:
+                        site_minor = int(node.get('classMinor', '0x0'), 16)
+                    except Exception:
+                        site_minor = -1
+                    if chosen_minor == site_minor:
+                        chosen_minor += 1
+                    # Also guard against collisions within this node's already-assigned circuits
+                    try:
+                        used_minors = set()
+                        for c in circuits_for_node:
+                            try:
+                                used_minors.add(int(str(c.get('classMinor', '0x0')), 16))
+                            except Exception:
+                                pass
+                        while chosen_minor in used_minors:
+                            chosen_minor += 1
+                    except Exception:
+                        pass
                     current_minor = chosen_minor + 1
                 flowIDstring = hex(major_int) + ':' + hex(chosen_minor)
                 upFlowIDstring = hex(major_int + stickOffset) + ':' + hex(chosen_minor)

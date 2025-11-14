@@ -507,6 +507,55 @@ def _qdisc_show(iface: str) -> Tuple[int, str, str]:
     return _tc(["qdisc", "show", "dev", iface])
 
 
+def check_no_site_circuit_minor_collisions() -> Tuple[bool, List[str]]:
+    """Verify that no circuit under any node shares the same classMinor as its parent node.
+
+    This guards against regressions where a circuit could be assigned the site/PN's minor,
+    causing qdiscs to attach at the site handle instead of the circuit handle.
+    """
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["minor collision check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["minor collision check: queuingStructure has no 'Network'"]
+
+    def hx(v) -> Optional[int]:
+        try:
+            s = str(v)
+            return int(s, 16) if s.startswith("0x") else int(s)
+        except Exception:
+            return None
+
+    ok = True
+
+    def walk(node_map: Dict[str, dict]):
+        nonlocal ok
+        for name, node in node_map.items():
+            if not isinstance(node, dict):
+                continue
+            site_minor = hx(node.get("classMinor"))
+            if isinstance(node.get("circuits"), list) and site_minor is not None:
+                for c in node.get("circuits", []):
+                    try:
+                        cmin = hx(c.get("classMinor"))
+                        cid = str(c.get("circuitID", ""))
+                        if cmin is not None and cmin == site_minor:
+                            msgs.append(f"minor collision check: circuit {cid} under '{name}' shares site minor 0x{site_minor:x}")
+                            ok = False
+                    except Exception:
+                        pass
+            ch = node.get("children")
+            if isinstance(ch, dict):
+                walk(ch)
+
+    walk(net)
+    if ok:
+        msgs.append("minor collision check: no site/circuit minor collisions detected")
+    return ok, msgs
+
+
 # -----------------------
 # IP mapping checks
 # -----------------------
@@ -1104,6 +1153,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     results.extend(msgs)
     ok &= passed2
 
+    _mark_step("sanity: no site/circuit minor collisions")
+    passed2b, msgs2b = check_no_site_circuit_minor_collisions()
+    results.extend(msgs2b)
+    ok &= passed2b
+
     _mark_step("sanity: orphan circuit assigned under Generated_PN with original speeds")
     passed3, msgs3 = test_orphan_circuit_assignment(rows)
     results.extend(msgs3)
@@ -1118,6 +1172,10 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed4, msgs4 = check_generated_pn_tc_bandwidths()
     results.extend(msgs4)
     ok &= passed4
+    _mark_step("sanity: no site/circuit minor collisions (post-orphan)")
+    passed4b, msgs4b = check_no_site_circuit_minor_collisions()
+    results.extend(msgs4b)
+    ok &= passed4b
     _mark_step("sanity: orphan circuit HTB attached to PN parent in tc")
     passed5, msgs5 = check_orphan_tc_attachment("99901")
     results.extend(msgs5)
