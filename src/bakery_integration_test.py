@@ -716,6 +716,80 @@ def check_orphan_tc_attachment(orphan_id: str = "99901") -> Tuple[bool, List[str
     return True, msgs
 
 
+def check_circuit_direction_ceil(circuit_id: str) -> Tuple[bool, List[str]]:
+    """Verify that the circuit's ceil values are applied to the correct interfaces:
+    - interface_a (downlink): ceil == maxDownload
+    - interface_b (uplink): ceil == maxUpload
+    Tolerance of 0.6 Mbps to account for rounding.
+    """
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["direction check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["direction check: queuingStructure has no 'Network'"]
+    found = _walk_nodes_for_circuit(net, circuit_id)
+    if not found:
+        return False, [f"direction check: circuit {circuit_id} not found in structure"]
+    parent_name, circuit = found
+    # Interfaces
+    if not interface_a or not callable(interface_a):
+        return False, ["direction check: interface_a() binding unavailable"]
+    try:
+        ifa = interface_a()
+    except Exception as e:
+        return False, [f"direction check: failed to get interface_a(): {e}"]
+    ifb = None
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+        except Exception:
+            ifb = None
+    # IDs
+    maj_hex = circuit.get("classMajor")
+    mnr_hex = circuit.get("classMinor")
+    upm_hex = circuit.get("up_classMajor")
+    maj = _hex_to_int(maj_hex if isinstance(maj_hex, str) else str(maj_hex))
+    mnr = _hex_to_int(mnr_hex if isinstance(mnr_hex, str) else str(mnr_hex))
+    upm = _hex_to_int(upm_hex if isinstance(upm_hex, str) else str(upm_hex))
+    if None in (maj, mnr):
+        return False, [f"direction check: circuit {circuit_id} missing down IDs"]
+    # Expectations
+    try:
+        max_dl = float(circuit.get("maxDownload", -1))
+        max_ul = float(circuit.get("maxUpload", -1))
+    except Exception:
+        return False, ["direction check: circuit missing maxDownload/maxUpload"]
+    # Read downlink
+    ok = True
+    res_dl = _read_htb_rate_ceil_mbps(ifa, maj, mnr)
+    if not res_dl:
+        msgs.append(f"direction check: {ifa} class {maj}:{mnr} not found for circuit {circuit_id}")
+        ok = False
+    else:
+        rate_mbps, ceil_mbps, line = res_dl
+        msgs.append(
+            f"direction check: {circuit_id} down {ifa} ceil={ceil_mbps:.1f} expect={max_dl:.1f} | {line}"
+        )
+        if abs(ceil_mbps - max_dl) > 0.6:
+            ok = False
+    # Read uplink
+    if ifb and upm is not None:
+        res_ul = _read_htb_rate_ceil_mbps(ifb, upm, mnr)
+        if not res_ul:
+            msgs.append(f"direction check: {ifb} class {upm}:{mnr} not found for circuit {circuit_id}")
+            ok = False
+        else:
+            rate_mbps, ceil_mbps, line = res_ul
+            msgs.append(
+                f"direction check: {circuit_id} up {ifb} ceil={ceil_mbps:.1f} expect={max_ul:.1f} | {line}"
+            )
+            if abs(ceil_mbps - max_ul) > 0.6:
+                ok = False
+    return ok, msgs
+
+
 def _walk_nodes_for_circuit(node_map: Dict[str, dict], circuit_id: str) -> Optional[Tuple[str, dict]]:
     for name, node in node_map.items():
         if not isinstance(node, dict):
@@ -748,9 +822,10 @@ def test_orphan_circuit_assignment(csv_rows: List[Dict[str, object]]) -> Tuple[b
         pn_ul = int(generated_pn_upload_mbps())    # type: ignore[misc]
     except Exception as e:
         return False, [f"Failed to read PN defaults: {e}"]
-    # Choose conservative orphan speeds strictly below PN defaults
-    orphan_dl = max(1, min(25, pn_dl - 1))
-    orphan_ul = max(1, min(25, pn_ul - 1))
+    # Choose asymmetric orphan speeds strictly below PN defaults to verify direction mapping clearly.
+    # Target 50/20 Mbps, but cap to PN defaults minus 1 to stay valid on smaller configs.
+    orphan_dl = max(1, min(50, pn_dl - 1))
+    orphan_ul = max(1, min(20, pn_ul - 1))
     orphan_id = "99901"
     orphan_row: Dict[str, object] = {
         "Circuit ID": orphan_id,
@@ -918,6 +993,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed, msg = assert_no_full_reload("tiered: circuit speed change", res, step_t0)
     results.append(msg)
     ok &= passed
+    # Verify direction mapping for Circuit ID 1 (max DL=20, UL=15)
+    _mark_step("sanity: circuit direction mapping (ceil)")
+    passed_dir, msgs_dir = check_circuit_direction_ceil("1")
+    results.extend(msgs_dir)
+    ok &= passed_dir
 
     # Circuit SQM change
     _mark_step("flat: circuit SQM change")
