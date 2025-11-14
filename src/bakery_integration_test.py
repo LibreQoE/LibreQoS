@@ -499,6 +499,9 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
     ceil_mbps = _parse_tc_rate_to_mbps(mm.group(3), mm.group(4))
     return rate_mbps, ceil_mbps, line
 
+def _qdisc_show(iface: str) -> Tuple[int, str, str]:
+    return _tc(["qdisc", "show", "dev", iface])
+
 
 def check_generated_pn_tc_bandwidths() -> Tuple[bool, List[str]]:
     msgs: List[str] = []
@@ -998,6 +1001,110 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed_dir, msgs_dir = check_circuit_direction_ceil("1")
     results.extend(msgs_dir)
     ok &= passed_dir
+
+    # Add a low-rate circuit to trigger cake RTT tokens and verify units (e.g., 180ms)
+    _mark_step("sanity: add low-rate circuit for RTT check")
+    low_id = "99"
+    rows_lr = json.loads(json.dumps(rows2))
+    rows_lr.append({
+        "Circuit ID": low_id,
+        "Circuit Name": "LOWRATE",
+        "Device ID": "99",
+        "Device Name": "LD1",
+        "Parent Node": "AP_A",
+        "MAC": "",
+        "IPv4": "100.64.0.99",
+        "IPv6": "",
+        "Download Min Mbps": 1,
+        "Upload Min Mbps": 1,
+        "Download Max Mbps": 2,
+        "Upload Max Mbps": 2,
+        "Comment": "",
+        "sqm": "",
+    })
+    write_circuits(rows_lr)
+    _ = run_refresh_and_wait(log, timeout_s)
+    # Check RTT tokens on cake qdisc for low-rate circuit
+    def _check_lowrate_rtt(cid: str) -> Tuple[bool, List[str]]:
+        msgs: List[str] = []
+        qs = _load_queuing_structure()
+        if not isinstance(qs, dict):
+            return False, ["low-rate rtt: queuingStructure.json not found"]
+        net = qs.get("Network")
+        if not isinstance(net, dict):
+            return False, ["low-rate rtt: queuingStructure has no 'Network'"]
+        found = _walk_nodes_for_circuit(net, cid)
+        if not found:
+            return False, ["low-rate rtt: circuit not found in structure"]
+        parent_name, circuit = found
+        # Resolve interfaces
+        try:
+            ifa = interface_a()
+        except Exception as e:
+            return False, [f"low-rate rtt: failed to get interface_a(): {e}"]
+        ifb = None
+        if interface_b and callable(interface_b):
+            try:
+                ifb = interface_b()
+            except Exception:
+                ifb = None
+        # IDs
+        maj = _hex_to_int(str(circuit.get("classMajor")))
+        mnr = _hex_to_int(str(circuit.get("classMinor")))
+        upm = _hex_to_int(str(circuit.get("up_classMajor")))
+        ok_local = True
+        # Downlink
+        rc, out, err = _qdisc_show(ifa)
+        if rc != 0:
+            msgs.append(f"low-rate rtt: 'tc qdisc show dev {ifa}' failed: {err.strip()}")
+            ok_local = False
+        else:
+            pat = re.compile(rf"^qdisc\s+\S+\s+\S+:\s+parent\s+{maj}:{mnr}\b.*$", re.MULTILINE)
+            m = pat.search(out)
+            if m:
+                line = m.group(0)
+                if "cake" in line.lower():
+                    if re.search(r"\brtt\s+\d+\s*ms\b", line, re.IGNORECASE):
+                        msgs.append(f"low-rate rtt: down {ifa} OK | {line}")
+                    else:
+                        msgs.append(f"low-rate rtt: down {ifa} missing 'rtt <n>ms' in cake line | {line}")
+                        ok_local = False
+                else:
+                    msgs.append(f"low-rate rtt: down {ifa} non-cake qdisc (RTT N/A) | {line}")
+            else:
+                msgs.append(f"low-rate rtt: {ifa} no qdisc for parent {maj}:{mnr}")
+                ok_local = False
+        # Uplink
+        if ifb and upm is not None:
+            rc2, out2, err2 = _qdisc_show(ifb)
+            if rc2 != 0:
+                msgs.append(f"low-rate rtt: 'tc qdisc show dev {ifb}' failed: {err2.strip()}")
+                ok_local = False
+            else:
+                pat2 = re.compile(rf"^qdisc\s+\S+\s+\S+:\s+parent\s+{upm}:{mnr}\b.*$", re.MULTILINE)
+                m2 = pat2.search(out2)
+                if m2:
+                    line2 = m2.group(0)
+                    if "cake" in line2.lower():
+                        if re.search(r"\brtt\s+\d+\s*ms\b", line2, re.IGNORECASE):
+                            msgs.append(f"low-rate rtt: up {ifb} OK | {line2}")
+                        else:
+                            msgs.append(f"low-rate rtt: up {ifb} missing 'rtt <n>ms' in cake line | {line2}")
+                            ok_local = False
+                    else:
+                        msgs.append(f"low-rate rtt: up {ifb} non-cake qdisc (RTT N/A) | {line2}")
+                else:
+                    msgs.append(f"low-rate rtt: {ifb} no qdisc for parent {upm}:{mnr}")
+                    ok_local = False
+        return ok_local, msgs
+
+    passed_lr, msgs_lr = _check_lowrate_rtt(low_id)
+    results.extend(msgs_lr)
+    ok &= passed_lr
+    # Remove the low-rate circuit
+    rows3 = [r for r in rows_lr if r["Circuit ID"] != low_id]
+    write_circuits(rows3)
+    _ = run_refresh_and_wait(log, timeout_s)
 
     # Circuit SQM change
     _mark_step("flat: circuit SQM change")

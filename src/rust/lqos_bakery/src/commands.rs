@@ -540,11 +540,10 @@ impl BakeryCommands {
         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
                  */
 
-        // In builder mode, these site classes are being created for the first time.
-        // Use 'add' rather than 'replace' to avoid failures on fresh builds.
+        // Use 'replace' for idempotency: it adds when absent and updates when present.
         result.push(vec![
             "class".to_string(),
-            "add".to_string(),
+            "replace".to_string(),
             "dev".to_string(),
             config.isp_interface(),
             "parent".to_string(),
@@ -566,7 +565,7 @@ impl BakeryCommands {
         ]);
         result.push(vec![
             "class".to_string(),
-            "add".to_string(),
+            "replace".to_string(),
             "dev".to_string(),
             config.internet_interface(),
             "parent".to_string(),
@@ -687,7 +686,8 @@ impl BakeryCommands {
             pass
          */
         if do_htb {
-            let verb = if execution_mode == ExecutionMode::Builder { "add" } else { "replace" };
+            // Use 'replace' for idempotency across repeated batches
+            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
                 verb.to_string(),
@@ -731,7 +731,8 @@ impl BakeryCommands {
         }
 
         if do_htb {
-            let verb = if execution_mode == ExecutionMode::Builder { "add" } else { "replace" };
+            // Use 'replace' for idempotency across repeated batches
+            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
                 verb.to_string(),
