@@ -44,9 +44,17 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
 
     let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
+        // Add line numbers to aid debugging with tc -batch's reported line numbers
+        let mut numbered = String::new();
+        for (i, line) in lines.lines().enumerate() {
+            // tc -batch reports 1-based line numbers
+            numbered.push_str(&format!("{:>4}: {}\n", i + 1, line));
+        }
         let message = format!(
-            "Command error for ({purpose}): {:?}.Error: {error_str}\n{lines}",
-            error_str.trim()
+            "Command error for ({purpose}): {:?}. Error: {}\nCommands with line numbers:\n{}",
+            error_str.trim(),
+            error_str.trim(),
+            numbered
         );
         error!(message);
     }

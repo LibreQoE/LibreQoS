@@ -4,6 +4,6 @@
 
 See [wiki here](https://github.com/LibreQoE/LibreQoS/wiki/v1.4)
 
-## Planner (binpacking replacement)
+## Binpacking
 
-LibreQoS now uses an internal planner for assigning circuits and nodes to CPU queues and generated parent nodes. The planner favors stable, stateful assignments to minimize churn and reduce rebuilds, replacing the previous external binpacking dependency.
+LibreQoS assigns circuits and sites to CPU queues using a simple, deterministic greedy binpacking approach. We continue to use Insight (lts) to provide weights when available, but assignments themselves are computed on each run without keeping long‑term state.
