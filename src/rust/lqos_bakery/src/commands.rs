@@ -350,11 +350,12 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                // On ISP-facing (downlink) side, use downlink capacity
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -370,7 +371,8 @@ impl BakeryCommands {
 
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
-            let mbps = config.queues.uplink_bandwidth_mbps as f64;
+            // Default class parameters should also reflect downlink capacity on ISP-facing side
+            let mbps = config.queues.downlink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -390,7 +392,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -462,11 +464,12 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + stick_offset + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                // Internet-facing (uplink) side should use uplink capacity
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -481,7 +484,8 @@ impl BakeryCommands {
             result.push(class);
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
-            let mbps = config.queues.downlink_bandwidth_mbps as f64;
+            // Default class parameters should reflect uplink capacity on Internet-facing side
+            let mbps = config.queues.uplink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -501,7 +505,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
             let mut default_class = vec![

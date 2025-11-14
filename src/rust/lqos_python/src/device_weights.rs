@@ -68,8 +68,8 @@ fn get_weights_from_lts(
     // Allow invalid certs for self-hosted Insight instances (non-default URL)
     let allow_insecure = !url.starts_with("https://insight.libreqos.com");
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
         .danger_accept_invalid_certs(allow_insecure)
         .build()?;
 
