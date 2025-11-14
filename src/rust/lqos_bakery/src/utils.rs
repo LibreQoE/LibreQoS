@@ -50,13 +50,30 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
             // tc -batch reports 1-based line numbers
             numbered.push_str(&format!("{:>4}: {}\n", i + 1, line));
         }
-        let message = format!(
-            "Command error for ({purpose}): {:?}. Error: {}\nCommands with line numbers:\n{}",
-            error_str.trim(),
+        let detailed = format!(
+            "Command error for ({purpose}): {}\nCommands with line numbers:\n{}",
             error_str.trim(),
             numbered
         );
-        error!(message);
+        // Log to console
+        error!(detailed);
+
+        // Also persist to /tmp for easier debugging of large batches
+        let ts = current_timestamp();
+        let path_ts = Path::new("/tmp").join(format!("lqos_bakery_failed_{}.txt", ts));
+        if let Ok(mut f) = File::create(&path_ts) {
+            let _ = f.write_all(detailed.as_bytes());
+            let _ = f.flush();
+            error!("Bakery wrote numbered command failure to {}", path_ts.display());
+        } else {
+            error!("Bakery failed to write numbered command failure file: {}", path_ts.display());
+        }
+        // Convenience: keep a rolling 'last error' file
+        let path_last = Path::new("/tmp/lqos_bakery_last_error.txt");
+        if let Ok(mut f) = File::create(&path_last) {
+            let _ = f.write_all(detailed.as_bytes());
+            let _ = f.flush();
+        }
     }
 
     drop(lock); // Explicitly drop the lock to release it. This happens automatically at the end of the scope, but it's good to be explicit.

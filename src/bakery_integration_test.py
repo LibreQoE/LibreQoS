@@ -373,6 +373,24 @@ def check_default_classes_present_on_iface() -> Tuple[bool, str]:
     return False, f"tc check: default class not found on {iface}"
 
 
+def check_default_classes_present_on_iface_b() -> Tuple[bool, str]:
+    """Same as above but for interface_b when available."""
+    if not interface_b or not callable(interface_b):  # type: ignore[name-defined]
+        return True, "tc check: interface_b() unavailable; skipping"
+    try:
+        iface = interface_b()  # type: ignore[misc]
+    except Exception as e:
+        return False, f"tc check: failed to get interface_b(): {e}"
+    rc, out, err = _tc(["class", "show", "dev", iface])
+    if rc != 0:
+        return False, f"tc check: 'tc class show dev {iface}' failed: {err.strip()}"
+    # Match: class htb <maj>:2 parent <maj>:1
+    pat = re.compile(r"^class\s+htb\s+(\w+):2\s+parent\s+\1:1\b", re.MULTILINE)
+    if pat.search(out):
+        return True, f"tc check: default class present on {iface}"
+    return False, f"tc check: default class not found on {iface}"
+
+
 def _load_queuing_structure() -> Optional[dict]:
     try:
         with open("queuingStructure.json", "r") as f:
@@ -574,6 +592,130 @@ def check_generated_pn_tc_bandwidths() -> Tuple[bool, List[str]]:
     return ok_all, msgs
 
 
+def _class_has_parent(iface: str, maj: int, mnr: int, pmaj: int, pmnr: int) -> Tuple[bool, Optional[str]]:
+    """Robustly verify that class maj:mnr has parent pmaj:pmnr on iface.
+
+    Accepts both decimal and 0x-prefixed hex forms as printed by tc.
+    Returns (True, line) when parent matches, else (False, line or None).
+    """
+    rc, out, err = _tc(["class", "show", "dev", iface])
+    if rc != 0:
+        return False, f"tc error: {err.strip()}"
+    # Find the specific class line first
+    cls_pat = re.compile(rf"^class\s+htb\s+{maj}:{mnr}\b.*$", re.MULTILINE)
+    m = cls_pat.search(out)
+    if not m:
+        return False, None
+    line = m.group(0)
+    # Extract parent handle (supports hex or decimal)
+    p = re.search(r"parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b", line)
+    if not p:
+        return False, line
+    def _to_int(tok: str) -> Optional[int]:
+        try:
+            s = tok.strip()
+            if s.lower().startswith("0x"):
+                return int(s, 16)
+            return int(s)
+        except Exception:
+            return None
+    pmj = _to_int(p.group(1))
+    pmn = _to_int(p.group(2))
+    if pmj is None or pmn is None:
+        return False, line
+    return (pmj == pmaj and pmn == pmnr), line
+
+
+def check_orphan_tc_attachment(orphan_id: str = "99901") -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["orphan tc check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["orphan tc check: missing 'Network'"]
+    found = _walk_nodes_for_circuit(net, orphan_id)
+    if not found:
+        return False, ["orphan tc check: orphan circuit not found in structure"]
+    parent_name, circuit = found
+    # Locate PN node object
+    def _find_node(node_map: Dict[str, dict], name: str) -> Optional[dict]:
+        for k, v in node_map.items():
+            if k == name and isinstance(v, dict):
+                return v
+            ch = v.get("children") if isinstance(v, dict) else None
+            if isinstance(ch, dict):
+                got = _find_node(ch, name)
+                if got is not None:
+                    return got
+        return None
+    pn_node = _find_node(net, parent_name)
+    if not isinstance(pn_node, dict):
+        return False, [f"orphan tc check: PN node '{parent_name}' not found"]
+    # Downlink
+    if not interface_a or not callable(interface_a):
+        return False, ["orphan tc check: interface_a() unavailable"]
+    try:
+        ifa = interface_a()
+    except Exception as e:
+        return False, [f"orphan tc check: failed to get interface_a(): {e}"]
+    maj_hex = circuit.get("classMajor")
+    cmin_hex = circuit.get("classMinor")
+    pmaj_hex = pn_node.get("classMajor")
+    pmin_hex = pn_node.get("classMinor")
+    maj = _hex_to_int(maj_hex if isinstance(maj_hex, str) else str(maj_hex))
+    cmin = _hex_to_int(cmin_hex if isinstance(cmin_hex, str) else str(cmin_hex))
+    pmaj = _hex_to_int(pmaj_hex if isinstance(pmaj_hex, str) else str(pmaj_hex))
+    pmin = _hex_to_int(pmin_hex if isinstance(pmin_hex, str) else str(pmin_hex))
+    if None in (maj, cmin, pmaj, pmin):
+        return False, ["orphan tc check: missing classMajor/classMinor for PN or circuit (downlink)"]
+    ok_dl, line_dl = _class_has_parent(ifa, maj, cmin, pmaj, pmin)
+    if not ok_dl:
+        # Diagnostic hook: show the actual class line if present
+        diag = _read_htb_rate_ceil_mbps(ifa, maj, cmin)
+        if diag:
+            _, _, raw = diag
+            msgs.append(
+                f"orphan tc check: downlink class {maj}:{cmin} not attached to parent {pmaj}:{pmin} on {ifa} | {raw}"
+            )
+        else:
+            msgs.append(
+                f"orphan tc check: downlink class {maj}:{cmin} not attached to parent {pmaj}:{pmin} on {ifa} (class not found)"
+            )
+        return False, msgs
+    msgs.append(f"orphan tc check: {ifa} class {maj}:{cmin} parent {pmaj}:{pmin} | {line_dl}")
+    # Uplink (optional)
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+            upm_hex = circuit.get("up_classMajor")
+            upmaj = _hex_to_int(upm_hex if isinstance(upm_hex, str) else str(upm_hex))
+            # Circuit minor is same
+            up_pmaj_hex = pn_node.get("up_classMajor")
+            up_pmaj = _hex_to_int(up_pmaj_hex if isinstance(up_pmaj_hex, str) else str(up_pmaj_hex))
+            if None not in (upmaj, cmin, up_pmaj, pmin):
+                ok_ul, line_ul = _class_has_parent(ifb, upmaj, cmin, up_pmaj, pmin)
+                if ok_ul:
+                    msgs.append(f"orphan tc check: {ifb} class {upmaj}:{cmin} parent {up_pmaj}:{pmin} | {line_ul}")
+                else:
+                    # Diagnostic hook: show the actual class line if present
+                    diag_ul = _read_htb_rate_ceil_mbps(ifb, upmaj, cmin)
+                    if diag_ul:
+                        _, _, raw_ul = diag_ul
+                        msgs.append(
+                            f"orphan tc check: uplink class {upmaj}:{cmin} not attached to parent {up_pmaj}:{pmin} on {ifb} | {raw_ul}"
+                        )
+                    else:
+                        msgs.append(
+                            f"orphan tc check: uplink class {upmaj}:{cmin} not attached to parent {up_pmaj}:{pmin} on {ifb} (class not found)"
+                        )
+            else:
+                msgs.append("orphan tc check: uplink IDs missing; skipping uplink parent check")
+        except Exception:
+            msgs.append("orphan tc check: interface_b() failed; skipping uplink parent check")
+    return True, msgs
+
+
 def _walk_nodes_for_circuit(node_map: Dict[str, dict], circuit_id: str) -> Optional[Tuple[str, dict]]:
     for name, node in node_map.items():
         if not isinstance(node, dict):
@@ -740,6 +882,10 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed, msg = check_default_classes_present_on_iface()
     results.append(msg)
     ok &= passed
+    # Also validate interface_b when available
+    passed_b, msg_b = check_default_classes_present_on_iface_b()
+    results.append(msg_b)
+    ok &= passed_b
 
     _mark_step("sanity: generated PN items present")
     passed2, msgs = assert_generated_pns_present()
@@ -755,6 +901,10 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed4, msgs4 = check_generated_pn_tc_bandwidths()
     results.extend(msgs4)
     ok &= passed4
+    _mark_step("sanity: orphan circuit HTB attached to PN parent in tc")
+    passed5, msgs5 = check_orphan_tc_attachment("99901")
+    results.extend(msgs5)
+    ok &= passed5
 
     # Circuit speed change
     _mark_step("flat: circuit speed change")
