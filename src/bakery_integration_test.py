@@ -56,6 +56,7 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+import subprocess
 
 
 # Import LibreQoS and lqosd helpers without invoking the __main__ block
@@ -72,6 +73,20 @@ try:
         from liblqos_python import log_info  # type: ignore
     except Exception:
         log_info = None  # type: ignore
+    # Optional helpers for interface name and PN speeds
+    try:
+        from liblqos_python import interface_a  # type: ignore
+    except Exception:
+        interface_a = None  # type: ignore
+    try:
+        from liblqos_python import interface_b  # type: ignore
+    except Exception:
+        interface_b = None  # type: ignore
+    try:
+        from liblqos_python import generated_pn_download_mbps, generated_pn_upload_mbps  # type: ignore
+    except Exception:
+        generated_pn_download_mbps = None  # type: ignore
+        generated_pn_upload_mbps = None  # type: ignore
 except Exception:
     # Provide a soft fallback if binding is unavailable
     def is_lqosd_alive() -> bool:
@@ -325,6 +340,321 @@ def run_refresh_and_wait(log: LogReader, timeout_s: float) -> LogResult:
     return log.wait_for_events(offset, timeout_s=timeout_s)
 
 
+# -----------------------
+# TC and structure checks
+# -----------------------
+
+def _tc(args: List[str]) -> Tuple[int, str, str]:
+    try:
+        proc = subprocess.run(["/sbin/tc"] + args, capture_output=True, text=True, check=False)
+        return proc.returncode, proc.stdout, proc.stderr
+    except Exception as e:
+        return 127, "", str(e)
+
+
+def check_default_classes_present_on_iface() -> Tuple[bool, str]:
+    """Verify that on the first interface, default classes exist: class <maj>:2 parent <maj>:1.
+
+    Returns (passed, message).
+    """
+    if not interface_a or not callable(interface_a):  # type: ignore[name-defined]
+        return False, "tc check: interface_a() binding unavailable"
+    try:
+        iface = interface_a()  # type: ignore[misc]
+    except Exception as e:
+        return False, f"tc check: failed to get interface_a(): {e}"
+    rc, out, err = _tc(["class", "show", "dev", iface])
+    if rc != 0:
+        return False, f"tc check: 'tc class show dev {iface}' failed: {err.strip()}"
+    # Look for any line where child is :2 and parent is same major :1
+    pat = re.compile(r"^class\s+htb\s+(\w+):2\s+parent\s+\1:1\b", re.MULTILINE)
+    if pat.search(out):
+        return True, f"tc check: default class present on {iface}"
+    return False, f"tc check: default class not found on {iface}"
+
+
+def _load_queuing_structure() -> Optional[dict]:
+    try:
+        with open("queuingStructure.json", "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def assert_generated_pns_present() -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["queuingStructure.json not found or unreadable"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["queuingStructure.json has no 'Network' dict"]
+    gpns = qs.get("generatedPNs")
+    if not isinstance(gpns, list) or not gpns:
+        return False, ["No generatedPNs listed in queuingStructure.json"]
+    # Two shapes are valid:
+    # 1) Binpacked: Generated_PN_* appear under CpueQueue* children.
+    # 2) Non-binpacked: Generated_PN_* appear at top-level of Network.
+    cpu_bins = [(k, v) for k, v in net.items() if isinstance(k, str) and k.startswith("CpueQueue")]
+    if cpu_bins:
+        found_under_cpu = 0
+        for k, v in cpu_bins:
+            ch = v.get("children") if isinstance(v, dict) else None
+            if isinstance(ch, dict) and any(isinstance(nm, str) and nm.startswith("Generated_PN_") for nm in ch.keys()):
+                found_under_cpu += 1
+        if found_under_cpu == 0:
+            return False, ["No Generated_PN_* found under any CpueQueue* in queuingStructure.json"]
+        msgs.append(f"generated PN presence: found under {found_under_cpu} CPU bins")
+        return True, msgs
+    # Top-level fallback
+    top_level_pn = [k for k in net.keys() if isinstance(k, str) and k.startswith("Generated_PN_")]
+    if not top_level_pn:
+        return False, ["No Generated_PN_* found at top-level of queuingStructure.json"]
+    msgs.append(f"generated PN presence: found {len(top_level_pn)} at top-level")
+    return True, msgs
+
+
+def _find_pn_nodes(net: Dict[str, dict]) -> List[Tuple[str, dict]]:
+    result: List[Tuple[str, dict]] = []
+    def walk(node_map: Dict[str, dict]):
+        for k, v in node_map.items():
+            if not isinstance(v, dict):
+                continue
+            if isinstance(k, str) and k.startswith("Generated_PN_"):
+                result.append((k, v))
+            ch = v.get("children") if isinstance(v, dict) else None
+            if isinstance(ch, dict):
+                walk(ch)
+    walk(net)
+    return result
+
+
+def _hex_to_int(s: str) -> Optional[int]:
+    try:
+        if isinstance(s, str):
+            return int(s, 16) if s.startswith("0x") else int(s)
+        if isinstance(s, int):
+            return int(s)
+    except Exception:
+        return None
+    return None
+
+
+def _parse_tc_rate_to_mbps(token: str, unit: Optional[str]) -> float:
+    try:
+        val = float(token)
+    except Exception:
+        return -1.0
+    mult = 1.0
+    if unit is None or unit == "":
+        # tc typically prints explicit units; be conservative and treat as mbit
+        mult = 1.0
+    else:
+        u = unit.upper()
+        if u == 'G':
+            mult = 1000.0
+        elif u == 'M':
+            mult = 1.0
+        elif u == 'K':
+            mult = 0.001
+        else:
+            mult = 1.0
+    return val * mult
+
+
+def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tuple[float, float, str]]:
+    rc, out, err = _tc(["class", "show", "dev", iface])
+    if rc != 0:
+        return None
+    # Match the exact class line for major:minor in decimal
+    cls_pat = re.compile(rf"^class\s+htb\s+{major}:{minor}\b.*$", re.MULTILINE)
+    m = cls_pat.search(out)
+    if not m:
+        return None
+    line = m.group(0)
+    # Extract rate and ceil tokens
+    rpat = re.compile(r"rate\s+([0-9]+(?:\.[0-9]+)?)([GMK])?bit.*?ceil\s+([0-9]+(?:\.[0-9]+)?)([GMK])?bit")
+    mm = rpat.search(line)
+    if not mm:
+        return None
+    rate_mbps = _parse_tc_rate_to_mbps(mm.group(1), mm.group(2))
+    ceil_mbps = _parse_tc_rate_to_mbps(mm.group(3), mm.group(4))
+    return rate_mbps, ceil_mbps, line
+
+
+def check_generated_pn_tc_bandwidths() -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["PN tc check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["PN tc check: queuingStructure has no 'Network'"]
+    # Resolve PN config
+    if not generated_pn_download_mbps or not generated_pn_upload_mbps:
+        return False, ["PN tc check: PN defaults not available via bindings"]
+    try:
+        expect_dl = float(generated_pn_download_mbps())
+        expect_ul = float(generated_pn_upload_mbps())
+    except Exception as e:
+        return False, [f"PN tc check: failed reading PN defaults: {e}"]
+    # Enumerate PN nodes
+    pn_nodes = _find_pn_nodes(net)
+    if not pn_nodes:
+        return False, ["PN tc check: no Generated_PN_* nodes found in structure"]
+    # Interfaces
+    if not interface_a or not callable(interface_a):
+        return False, ["PN tc check: interface_a() binding unavailable"]
+    try:
+        ifa = interface_a()
+    except Exception as e:
+        return False, [f"PN tc check: failed to read interface_a(): {e}"]
+    ifb = None
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+        except Exception:
+            ifb = None
+    # Check each PN on downlink side (interface_a)
+    ok_all = True
+    for name, node in pn_nodes:
+        maj_hex = node.get("classMajor")
+        min_hex = node.get("classMinor")
+        # Fallback to parse from classid if needed
+        if (maj_hex is None or min_hex is None) and isinstance(node.get("classid"), str):
+            try:
+                maj_s, min_s = str(node["classid"]).split(":", 1)
+                maj_hex = maj_hex or maj_s
+                min_hex = min_hex or min_s
+            except Exception:
+                pass
+        maj = _hex_to_int(maj_hex) if isinstance(maj_hex, str) else _hex_to_int(str(maj_hex))
+        mnr = _hex_to_int(min_hex) if isinstance(min_hex, str) else _hex_to_int(str(min_hex))
+        if maj is None or mnr is None:
+            msgs.append(f"PN tc check: {name} missing classMajor/classMinor")
+            ok_all = False
+            continue
+        res = _read_htb_rate_ceil_mbps(ifa, maj, mnr)
+        if not res:
+            msgs.append(f"PN tc check: {name} class {maj}:{mnr} not found on {ifa}")
+            ok_all = False
+            continue
+        rate_mbps, ceil_mbps, line = res
+        msgs.append(f"PN {name} {ifa} class {maj}:{mnr} rate={rate_mbps:.1f} ceil={ceil_mbps:.1f} (expected {expect_dl:.1f}) | {line.strip()}")
+        # Allow small tolerance due to rounding
+        if abs(rate_mbps - expect_dl) > 1.0 or abs(ceil_mbps - expect_dl) > 1.0:
+            ok_all = False
+    # Check uplink side if available
+    if ifb:
+        for name, node in pn_nodes:
+            up_maj_hex = node.get("up_classMajor")
+            min_hex = node.get("classMinor")
+            if (up_maj_hex is None or min_hex is None) and isinstance(node.get("up_classid"), str):
+                try:
+                    upm_s, mins = str(node["up_classid"]).split(":", 1)
+                    up_maj_hex = up_maj_hex or upm_s
+                    min_hex = min_hex or mins
+                except Exception:
+                    pass
+            upmaj = _hex_to_int(up_maj_hex) if isinstance(up_maj_hex, str) else _hex_to_int(str(up_maj_hex))
+            mnr = _hex_to_int(min_hex) if isinstance(min_hex, str) else _hex_to_int(str(min_hex))
+            if upmaj is None or mnr is None:
+                msgs.append(f"PN tc check: {name} missing up_classMajor/classMinor")
+                ok_all = False
+                continue
+            res = _read_htb_rate_ceil_mbps(ifb, upmaj, mnr)
+            if not res:
+                msgs.append(f"PN tc check: {name} class {upmaj}:{mnr} not found on {ifb}")
+                ok_all = False
+                continue
+            rate_mbps, ceil_mbps, line = res
+            msgs.append(f"PN {name} {ifb} class {upmaj}:{mnr} rate={rate_mbps:.1f} ceil={ceil_mbps:.1f} (expected {expect_ul:.1f}) | {line.strip()}")
+            if abs(rate_mbps - expect_ul) > 1.0 or abs(ceil_mbps - expect_ul) > 1.0:
+                ok_all = False
+    return ok_all, msgs
+
+
+def _walk_nodes_for_circuit(node_map: Dict[str, dict], circuit_id: str) -> Optional[Tuple[str, dict]]:
+    for name, node in node_map.items():
+        if not isinstance(node, dict):
+            continue
+        if "circuits" in node and isinstance(node["circuits"], list):
+            for c in node["circuits"]:
+                try:
+                    if str(c.get("circuitID", "")) == str(circuit_id):
+                        return name, c
+                except Exception:
+                    pass
+        ch = node.get("children") if isinstance(node, dict) else None
+        if isinstance(ch, dict):
+            found = _walk_nodes_for_circuit(ch, circuit_id)
+            if found:
+                return found
+    return None
+
+
+def test_orphan_circuit_assignment(csv_rows: List[Dict[str, object]]) -> Tuple[bool, List[str]]:
+    """Append an orphan circuit (ParentNode=none) with max speeds below PN defaults,
+    refresh, and assert it landed under a Generated_PN_* with its original max speeds.
+    """
+    msgs: List[str] = []
+    # Determine PN defaults; require the bindings
+    if not generated_pn_download_mbps or not generated_pn_upload_mbps:  # type: ignore[name-defined]
+        return False, ["PN default speeds unavailable via bindings"]
+    try:
+        pn_dl = int(generated_pn_download_mbps())  # type: ignore[misc]
+        pn_ul = int(generated_pn_upload_mbps())    # type: ignore[misc]
+    except Exception as e:
+        return False, [f"Failed to read PN defaults: {e}"]
+    # Choose conservative orphan speeds strictly below PN defaults
+    orphan_dl = max(1, min(25, pn_dl - 1))
+    orphan_ul = max(1, min(25, pn_ul - 1))
+    orphan_id = "99901"
+    orphan_row: Dict[str, object] = {
+        "Circuit ID": orphan_id,
+        "Circuit Name": "ORPHAN_TEST",
+        "Device ID": "99901",
+        "Device Name": "OD1",
+        "Parent Node": "none",
+        "MAC": "",
+        "IPv4": "100.64.250.1",
+        "IPv6": "",
+        "Download Min Mbps": 1,
+        "Upload Min Mbps": 1,
+        "Download Max Mbps": orphan_dl,
+        "Upload Max Mbps": orphan_ul,
+        "Comment": "",
+        "sqm": "",
+    }
+    rows2 = list(csv_rows) + [orphan_row]
+    write_circuits(rows2)
+    # Trigger refresh
+    LibreQoS.refreshShapers()
+    time.sleep(0.5)
+    # Load structure
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["queuingStructure.json not found after orphan test"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["queuingStructure.json missing 'Network' after orphan test"]
+    found = _walk_nodes_for_circuit(net, orphan_id)
+    if not found:
+        return False, ["Orphan circuit not found in queuing structure"]
+    parent_name, circuit = found
+    if not str(parent_name).startswith("Generated_PN_"):
+        return False, [f"Orphan circuit parent is not a Generated_PN_*: {parent_name}"]
+    try:
+        md = float(circuit.get("maxDownload", -1))
+        mu = float(circuit.get("maxUpload", -1))
+    except Exception:
+        return False, ["Orphan circuit missing maxDownload/maxUpload in structure"]
+    if int(md) != orphan_dl or int(mu) != orphan_ul:
+        return False, [f"Orphan circuit speeds mismatch (got {md}/{mu}, expected {orphan_dl}/{orphan_ul})"]
+    msgs.append(f"orphan circuit assigned to {parent_name} with speeds {orphan_dl}/{orphan_ul} Mbps")
+    return True, msgs
+
+
 def assert_no_full_reload(tag: str, res: LogResult, step_started_at: Optional[float] = None) -> Tuple[bool, str]:
     if res.full_reload and not res.mq_init:
         ts = (
@@ -404,6 +734,27 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     passed, msg = assert_no_full_reload("tiered: site speed change", res, step_t0)
     results.append(msg)
     ok &= passed
+
+    # Sanity: verify defaults, PN presence, and orphan assignment behavior on tiered setup
+    _mark_step("sanity: default classes present on interface_a")
+    passed, msg = check_default_classes_present_on_iface()
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("sanity: generated PN items present")
+    passed2, msgs = assert_generated_pns_present()
+    results.extend(msgs)
+    ok &= passed2
+
+    _mark_step("sanity: orphan circuit assigned under Generated_PN with original speeds")
+    passed3, msgs3 = test_orphan_circuit_assignment(rows)
+    results.extend(msgs3)
+    ok &= passed3
+
+    _mark_step("sanity: PN HTB rates match PN defaults")
+    passed4, msgs4 = check_generated_pn_tc_bandwidths()
+    results.extend(msgs4)
+    ok &= passed4
 
     # Circuit speed change
     _mark_step("flat: circuit speed change")
