@@ -329,6 +329,190 @@ def flat_circuits_base() -> List[Dict[str, str | int | float]]:
     ]
 
 
+REALISTIC_TIERED_NETWORK = {
+    "NET1": {
+        "downloadBandwidthMbps": 900,
+        "uploadBandwidthMbps": 600,
+        "type": "Site",
+        "children": {
+            "NET1-1": {
+                "downloadBandwidthMbps": 400,
+                "uploadBandwidthMbps": 250,
+                "type": "Site",
+                "children": {
+                    "NET1-1-1": {
+                        "downloadBandwidthMbps": 180,
+                        "uploadBandwidthMbps": 90,
+                        "type": "AP",
+                    },
+                    "NET1-1-2": {
+                        "downloadBandwidthMbps": 160,
+                        "uploadBandwidthMbps": 80,
+                        "type": "AP",
+                    },
+                },
+            },
+            "NET1-2": {
+                "downloadBandwidthMbps": 350,
+                "uploadBandwidthMbps": 210,
+                "type": "AP",
+            },
+        },
+    },
+    "NET2": {
+        "downloadBandwidthMbps": 800,
+        "uploadBandwidthMbps": 500,
+        "type": "Site",
+        "children": {
+            "NET2-1": {
+                "downloadBandwidthMbps": 300,
+                "uploadBandwidthMbps": 200,
+                "type": "Site",
+                "children": {
+                    "NET2-1-1": {
+                        "downloadBandwidthMbps": 150,
+                        "uploadBandwidthMbps": 75,
+                        "type": "AP",
+                    },
+                },
+            },
+            "NET2-2": {
+                "downloadBandwidthMbps": 220,
+                "uploadBandwidthMbps": 110,
+                "type": "AP",
+            },
+        },
+    },
+    "NET3": {
+        "downloadBandwidthMbps": 700,
+        "uploadBandwidthMbps": 450,
+        "type": "Site",
+        "children": {
+            "NET3-1": {
+                "downloadBandwidthMbps": 260,
+                "uploadBandwidthMbps": 150,
+                "type": "AP",
+            },
+            "NET3-2": {
+                "downloadBandwidthMbps": 240,
+                "uploadBandwidthMbps": 130,
+                "type": "AP",
+            },
+        },
+    },
+}
+
+
+def _collect_nodes_from_network(net: Dict[str, dict]) -> List[Tuple[str, int, int]]:
+    """Flatten a nested network dict into (name, dl, ul) tuples."""
+    nodes: List[Tuple[str, int, int]] = []
+
+    def walk(node_map: Dict[str, dict]) -> None:
+        for name, node in node_map.items():
+            if not isinstance(node, dict):
+                continue
+            dl = node.get("downloadBandwidthMbps")
+            ul = node.get("uploadBandwidthMbps")
+            try:
+                dl_int = int(dl) if dl is not None else 0
+            except Exception:
+                dl_int = 0
+            try:
+                ul_int = int(ul) if ul is not None else 0
+            except Exception:
+                ul_int = 0
+            nodes.append((name, dl_int, ul_int))
+            ch = node.get("children")
+            if isinstance(ch, dict):
+                walk(ch)
+
+    walk(net)
+    return nodes
+
+
+def realistic_tiered_circuits_base() -> List[Dict[str, str | int | float]]:
+    """Return asymmetric circuits for a realistic multi-site tree.
+
+    At least two circuits are attached to each node, plus a pool of
+    orphan circuits that will be assigned to generated PNs.
+    """
+    rows: List[Dict[str, str | int | float]] = []
+    nodes = _collect_nodes_from_network(REALISTIC_TIERED_NETWORK)
+    circuit_id = 2001
+    base_third_octet = 10
+
+    # Two circuits per node in the tree
+    for idx, (parent_name, dl, ul) in enumerate(nodes):
+        third = base_third_octet + idx
+        for j in range(2):
+            # Keep circuit rates comfortably below the parent and asymmetric
+            if dl > 0:
+                max_dl = int(max(5, dl * (0.4 - 0.03 * j)))
+            else:
+                max_dl = 10
+            if ul > 0:
+                max_ul = int(max(2, ul * (0.3 - 0.03 * j)))
+            else:
+                max_ul = 5
+            if max_ul >= max_dl:
+                max_ul = max(1, max_dl - 1)
+
+            ip_addr = f"100.64.{third}.{j + 1}"
+            row: Dict[str, str | int | float] = {
+                "Circuit ID": str(circuit_id),
+                "Circuit Name": f"CIRCUIT_{circuit_id:04d}",
+                "Device ID": str(circuit_id),
+                "Device Name": f"DEV_{circuit_id:04d}",
+                "Parent Node": parent_name,
+                "MAC": "",
+                "IPv4": ip_addr,
+                "IPv6": "",
+                "Download Min Mbps": 1,
+                "Upload Min Mbps": 1,
+                "Download Max Mbps": max_dl,
+                "Upload Max Mbps": max_ul,
+                "Comment": "",
+                "sqm": "",
+            }
+            rows.append(row)
+            circuit_id += 1
+
+    # Add a pool of orphan circuits that will be placed under generated PNs
+    pn_dl_default = 100
+    pn_ul_default = 50
+    if generated_pn_download_mbps and generated_pn_upload_mbps:  # type: ignore[name-defined]
+        try:
+            pn_dl_default = int(generated_pn_download_mbps())  # type: ignore[misc]
+            pn_ul_default = int(generated_pn_upload_mbps())  # type: ignore[misc]
+        except Exception:
+            pass
+    orphan_dl = max(5, min(80, pn_dl_default - 5))
+    orphan_ul = max(2, min(30, pn_ul_default - 5, orphan_dl - 1))
+
+    for k in range(10):
+        ip_addr = f"100.64.250.{k + 1}"
+        row = {
+            "Circuit ID": str(circuit_id),
+            "Circuit Name": f"ORPHAN_{circuit_id:04d}",
+            "Device ID": str(circuit_id),
+            "Device Name": f"DEV_ORPHAN_{circuit_id:04d}",
+            "Parent Node": "none",
+            "MAC": "",
+            "IPv4": ip_addr,
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": orphan_dl,
+            "Upload Max Mbps": orphan_ul,
+            "Comment": "",
+            "sqm": "",
+        }
+        rows.append(row)
+        circuit_id += 1
+
+    return rows
+
+
 # -----------------------
 # Test runner utilities
 # -----------------------
@@ -934,6 +1118,95 @@ def check_orphan_tc_attachment(orphan_id: str = "99901") -> Tuple[bool, List[str
     return True, msgs
 
 
+def check_site_direction_ceil(node_name: str, expected_dl: Optional[float] = None, expected_ul: Optional[float] = None) -> Tuple[bool, List[str]]:
+    """Verify that a site's HTB ceilings match its configured asymmetric bandwidths.
+
+    - interface_a (downlink): ceil == downloadBandwidthMbps
+    - interface_b (uplink): ceil == uploadBandwidthMbps
+    """
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["site direction check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["site direction check: queuingStructure has no 'Network'"]
+    node = _find_parent_node(net, node_name)
+    if not isinstance(node, dict):
+        return False, [f"site direction check: node '{node_name}' not found in structure"]
+
+    # Determine expected rates
+    try:
+        node_dl = float(node.get("downloadBandwidthMbps", -1))
+        node_ul = float(node.get("uploadBandwidthMbps", -1))
+    except Exception:
+        return False, [f"site direction check: node '{node_name}' missing downloadBandwidthMbps/uploadBandwidthMbps"]
+    if expected_dl is None:
+        expected_dl = node_dl
+    if expected_ul is None:
+        expected_ul = node_ul
+
+    ok = True
+    if abs(node_dl - expected_dl) > 0.1 or abs(node_ul - expected_ul) > 0.1:
+        msgs.append(
+            f"site direction check: node '{node_name}' bandwidths {node_dl}/{node_ul} Mbps do not match expected {expected_dl}/{expected_ul} Mbps"
+        )
+        ok = False
+
+    # Interfaces
+    if not interface_a or not callable(interface_a):
+        return False, ["site direction check: interface_a() binding unavailable"]
+    try:
+        ifa = interface_a()
+    except Exception as e:
+        return False, [f"site direction check: failed to get interface_a(): {e}"]
+    ifb = None
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+        except Exception:
+            ifb = None
+
+    # IDs
+    maj_hex = node.get("classMajor")
+    mnr_hex = node.get("classMinor")
+    upm_hex = node.get("up_classMajor")
+    maj = _hex_to_int(maj_hex if isinstance(maj_hex, str) else str(maj_hex))
+    mnr = _hex_to_int(mnr_hex if isinstance(mnr_hex, str) else str(mnr_hex))
+    upm = _hex_to_int(upm_hex if isinstance(upm_hex, str) else str(upm_hex))
+    if None in (maj, mnr):
+        return False, [f"site direction check: node '{node_name}' missing down IDs"]
+
+    # Downlink
+    res_dl = _read_htb_rate_ceil_mbps(ifa, maj, mnr)
+    if not res_dl:
+        msgs.append(f"site direction check: {ifa} class {maj}:{mnr} not found for node '{node_name}'")
+        ok = False
+    else:
+        rate_mbps, ceil_mbps, line = res_dl
+        msgs.append(
+            f"site direction check: {node_name} down {ifa} ceil={ceil_mbps:.1f} expect={expected_dl:.1f} | {line}"
+        )
+        if abs(ceil_mbps - expected_dl) > 0.6:
+            ok = False
+
+    # Uplink
+    if ifb and upm is not None:
+        res_ul = _read_htb_rate_ceil_mbps(ifb, upm, mnr)
+        if not res_ul:
+            msgs.append(f"site direction check: {ifb} class {upm}:{mnr} not found for node '{node_name}'")
+            ok = False
+        else:
+            rate_mbps, ceil_mbps, line = res_ul
+            msgs.append(
+                f"site direction check: {node_name} up {ifb} ceil={ceil_mbps:.1f} expect={expected_ul:.1f} | {line}"
+            )
+            if abs(ceil_mbps - expected_ul) > 0.6:
+                ok = False
+
+    return ok, msgs
+
+
 def check_circuit_direction_ceil(circuit_id: str) -> Tuple[bool, List[str]]:
     """Verify that the circuit's ceil values are applied to the correct interfaces:
     - interface_a (downlink): ceil == maxDownload
@@ -1490,6 +1763,157 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     return ok
 
 
+def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+    ok = True
+
+    # Baseline: write realistic network and circuits (including orphans)
+    _mark_step("realistic: baseline")
+    write_network_json(REALISTIC_TIERED_NETWORK)
+    rows = realistic_tiered_circuits_base()
+    write_circuits(rows)
+    res = run_refresh_and_wait(log, timeout_s)
+    # First run may include MQ init/full reload; do not assert here
+    results.append("realistic: baseline: ok (initial run)")
+
+    # Sanity: generated PNs and orphan behavior
+    _mark_step("realistic: generated PN items present")
+    passed_gpns, msgs_gpns = assert_generated_pns_present()
+    results.extend(msgs_gpns)
+    ok &= passed_gpns
+
+    # Use one orphan circuit from the base set (last 10 entries)
+    orphan_candidate: Optional[str] = None
+    for r in reversed(rows):
+        if str(r.get("Parent Node")) == "none":
+            orphan_candidate = str(r.get("Circuit ID"))
+            break
+    if orphan_candidate is not None:
+        _mark_step("realistic: orphan circuit HTB attached to PN parent")
+        passed_orphan_tc, msgs_orphan_tc = check_orphan_tc_attachment(orphan_candidate)
+        results.extend(msgs_orphan_tc)
+        ok &= passed_orphan_tc
+
+        _mark_step("realistic: orphan circuit ip mappings")
+        passed_orphan_map, msgs_orphan_map = check_ip_mappings_for_circuit(orphan_candidate)
+        results.extend(msgs_orphan_map)
+        ok &= passed_orphan_map
+
+    _mark_step("realistic: no site/circuit minor collisions")
+    passed_coll, msgs_coll = check_no_site_circuit_minor_collisions()
+    results.extend(msgs_coll)
+    ok &= passed_coll
+
+    # Site speed change on a mid-tree site (NET2-1)
+    _mark_step("realistic: site speed change")
+    net2 = json.loads(json.dumps(REALISTIC_TIERED_NETWORK))
+    try:
+        net2["NET2"]["children"]["NET2-1"]["downloadBandwidthMbps"] = 360
+        net2["NET2"]["children"]["NET2-1"]["uploadBandwidthMbps"] = 240
+    except Exception:
+        results.append("realistic: site speed change: failed to modify NET2-1 speeds in fixture")
+        return False
+    write_network_json(net2)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: site speed change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("realistic: site direction mapping (NET2-1)")
+    passed_site, msgs_site = check_site_direction_ceil("NET2-1", expected_dl=360.0, expected_ul=240.0)
+    results.extend(msgs_site)
+    ok &= passed_site
+
+    # Circuit speed change for a deep leaf circuit (under NET1-1-1)
+    _mark_step("realistic: circuit speed change")
+    rows2 = json.loads(json.dumps(rows))
+    target_idx: Optional[int] = None
+    for idx, r in enumerate(rows2):
+        if r.get("Parent Node") == "NET1-1-1":
+            target_idx = idx
+            break
+    if target_idx is None:
+        results.append("realistic: circuit speed change: no circuit found under NET1-1-1")
+        return False
+    target_id = str(rows2[target_idx]["Circuit ID"])
+    try:
+        old_dl = float(rows2[target_idx]["Download Max Mbps"])
+        old_ul = float(rows2[target_idx]["Upload Max Mbps"])
+    except Exception:
+        old_dl = 10.0
+        old_ul = 5.0
+    rows2[target_idx]["Download Max Mbps"] = old_dl + 30.0
+    rows2[target_idx]["Upload Max Mbps"] = old_ul + 10.0
+    write_circuits(rows2)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: circuit speed change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("realistic: circuit direction mapping (ceil)")
+    passed_dir, msgs_dir = check_circuit_direction_ceil(target_id)
+    results.extend(msgs_dir)
+    ok &= passed_dir
+
+    _mark_step("realistic: circuit ip mappings (no change)")
+    passed_map, msgs_map = check_ip_mappings_for_circuit(target_id)
+    results.extend(msgs_map)
+    ok &= passed_map
+
+    # Add circuit under a different leaf (NET3-2)
+    _mark_step("realistic: add circuit")
+    rows3 = json.loads(json.dumps(rows2))
+    new_circuit_id = "99901"
+    new_circuit_ip = "100.64.200.1"
+    rows3.append({
+        "Circuit ID": new_circuit_id,
+        "Circuit Name": "CIRCUIT_ADDED_99901",
+        "Device ID": new_circuit_id,
+        "Device Name": "DEV_ADDED_99901",
+        "Parent Node": "NET3-2",
+        "MAC": "",
+        "IPv4": new_circuit_ip,
+        "IPv6": "",
+        "Download Min Mbps": 1,
+        "Upload Min Mbps": 1,
+        "Download Max Mbps": 90,
+        "Upload Max Mbps": 30,
+        "Comment": "",
+        "sqm": "",
+    })
+    write_circuits(rows3)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    if res.full_reload and not res.mq_init:
+        results.append("realistic: add circuit: full reload (allowed for larger tree)")
+    else:
+        results.append("realistic: add circuit: OK (no full reload)")
+
+    _mark_step("realistic: added circuit ip mappings")
+    passed_add_map, msgs_add_map = check_ip_mappings_for_circuit(new_circuit_id)
+    results.extend(msgs_add_map)
+    ok &= passed_add_map
+
+    # Remove the added circuit
+    _mark_step("realistic: remove circuit")
+    rows4 = [r for r in rows3 if str(r.get("Circuit ID")) != new_circuit_id]
+    write_circuits(rows4)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    if res.full_reload and not res.mq_init:
+        results.append("realistic: remove circuit: full reload (allowed for larger tree)")
+    else:
+        results.append("realistic: remove circuit: OK (no full reload)")
+
+    _mark_step("realistic: removed circuit ip unmapped")
+    passed_unmap, msgs_unmap = check_ip_mapping_absent(new_circuit_ip)
+    results.extend(msgs_unmap)
+    ok &= passed_unmap
+
+    return ok
+
+
 def run_flat_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
@@ -1570,6 +1994,7 @@ def main() -> int:
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--tiered-only", action="store_true", help="Run tiered cases only")
     g.add_argument("--flat-only", action="store_true", help="Run flat cases only")
+    g.add_argument("--realistic-only", action="store_true", help="Run realistic tiered cases only")
     ap.add_argument("--no-restore", action="store_true", help="Do not restore original files (debugging)")
 
     args = ap.parse_args()
@@ -1594,14 +2019,23 @@ def main() -> int:
         ctx = with_backups(files)
 
     with ctx:
-        # Run tiered suite
-        if not args.flat_only:
+        if args.tiered_only:
+            ok = run_tiered_suite(log, args.timeout, results)
+            overall_ok &= ok
+        elif args.flat_only:
+            ok = run_flat_suite(log, args.timeout, results)
+            overall_ok &= ok
+        elif args.realistic_only:
+            ok = run_realistic_tiered_suite(log, args.timeout, results)
+            overall_ok &= ok
+        else:
             ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
 
-        # Run flat suite
-        if not args.tiered_only:
             ok = run_flat_suite(log, args.timeout, results)
+            overall_ok &= ok
+
+            ok = run_realistic_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
 
     print("Results:")
