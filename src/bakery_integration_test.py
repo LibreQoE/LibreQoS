@@ -492,11 +492,15 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
     cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
     def _to_int(tok: str) -> Optional[int]:
+        s = tok.strip()
+        # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
         try:
-            s = tok.strip()
             if s.lower().startswith("0x"):
                 return int(s, 16)
-            return int(s)
+            try:
+                return int(s)  # decimal
+            except Exception:
+                return int(s, 16)  # bare hex
         except Exception:
             return None
 
@@ -807,11 +811,15 @@ def _class_has_parent(iface: str, maj: int, mnr: int, pmaj: int, pmnr: int) -> T
     cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
     def _to_int(tok: str) -> Optional[int]:
+        s = tok.strip()
+        # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
         try:
-            s = tok.strip()
             if s.lower().startswith("0x"):
                 return int(s, 16)
-            return int(s)
+            try:
+                return int(s)  # decimal
+            except Exception:
+                return int(s, 16)  # bare hex
         except Exception:
             return None
 
@@ -1308,11 +1316,15 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
             pat = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
             def _to_int(tok: str) -> Optional[int]:
+                s = tok.strip()
+                # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
                 try:
-                    s = tok.strip()
                     if s.lower().startswith("0x"):
                         return int(s, 16)
-                    return int(s)
+                    try:
+                        return int(s)  # decimal
+                    except Exception:
+                        return int(s, 16)  # bare hex
                 except Exception:
                     return None
 
@@ -1346,11 +1358,15 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
                 pat2 = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
                 def _to_int2(tok: str) -> Optional[int]:
+                    s = tok.strip()
+                    # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
                     try:
-                        s = tok.strip()
                         if s.lower().startswith("0x"):
                             return int(s, 16)
-                        return int(s)
+                        try:
+                            return int(s)  # decimal
+                        except Exception:
+                            return int(s, 16)  # bare hex
                     except Exception:
                         return None
 

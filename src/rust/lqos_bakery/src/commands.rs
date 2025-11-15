@@ -613,18 +613,11 @@ impl BakeryCommands {
         let mut do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
-            // In builder mode, if we're fully lazy - we don't do anything.
-            match config.queues.lazy_queues.as_ref() {
-                None | Some(LazyQueueMode::No) => {
-                    do_htb = true;
-                    do_sqm = true;
-                }
-                Some(LazyQueueMode::Full) => return None,
-                Some(LazyQueueMode::Htb) => {
-                    do_htb = true;
-                    do_sqm = false; // Only HTB, no SQM
-                }
-            }
+            // Initial tree build: always create HTB + SQM classes for circuits,
+            // regardless of lazy queue mode. Laziness applies to live updates
+            // (ExecutionMode::LiveUpdate) and pruning, not the first full build.
+            do_htb = true;
+            do_sqm = true;
         } else {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
