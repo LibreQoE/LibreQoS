@@ -1,6 +1,175 @@
 import {createBootstrapToast} from "../lq_js_common/helpers/toasts";
+import {PLACEHOLDER_TEASERS} from "../lts_teasers_shared";
+
+let insightModalShown = false;
+
+let modalTeasers = [];
+let modalTeasersLoaded = false;
+let modalLtsBaseUrl = "https://insight.libreqos.com/";
+
+function getModalLtsUrl(endpoint) {
+    let baseUrl = modalLtsBaseUrl;
+    if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = "https://" + baseUrl;
+    }
+    let base = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+    base += base.endsWith("signup-api/") ? "" : "signup-api/";
+    endpoint = endpoint.replace(/^\/+/, "");
+    return base + endpoint;
+}
+
+async function loadModalTeasers() {
+    if (modalTeasersLoaded) {
+        renderModalTeasers();
+        return;
+    }
+
+    try {
+        // Try to respect configured LTS URL if available
+        const config = await $.get("/local-api/getConfig");
+        if (
+            config.long_term_stats &&
+            config.long_term_stats.lts_url &&
+            typeof config.long_term_stats.lts_url === "string"
+        ) {
+            modalLtsBaseUrl = config.long_term_stats.lts_url;
+        }
+    } catch (e) {
+        // If this fails, we just fall back to the default base URL.
+        console.error("Failed to fetch LTS base URL for modal teasers:", e);
+    }
+
+    try {
+        const response = await $.get(getModalLtsUrl("teasers"));
+        if (response && Array.isArray(response.teasers) && response.teasers.length > 0) {
+            modalTeasers = response.teasers.map((teaser) => {
+                const copy = { ...teaser };
+                if (copy.image) {
+                    const img = typeof copy.image === "string" ? copy.image : "";
+                    const cleaned = img.replace(/^signup-api\//, "");
+                    copy.image = getModalLtsUrl(cleaned);
+                }
+                return copy;
+            });
+        } else {
+            modalTeasers = PLACEHOLDER_TEASERS.slice();
+        }
+    } catch (e) {
+        console.error("Failed to load Insight teasers for modal:", e);
+        modalTeasers = PLACEHOLDER_TEASERS.slice();
+    }
+
+    modalTeasersLoaded = true;
+    renderModalTeasers();
+}
+
+function renderModalTeasers() {
+    const container = document.getElementById("insightTeaserRow");
+    if (!container) {
+        return;
+    }
+
+    const teasers = (modalTeasers.length ? modalTeasers : PLACEHOLDER_TEASERS).slice();
+    teasers.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    const cardsHtml = teasers
+        .map((teaser) => {
+            const imageSrc = teaser.image || teaser.imageUrl || "";
+            const title = teaser.title || "";
+            const description = teaser.description || "";
+            return `
+                <div class="col-md-4 mb-3">
+                    <div class="card h-100 bg-dark border-secondary text-secondary">
+                        ${
+                            imageSrc
+                                ? `<img src="${imageSrc}" class="card-img-top" alt="${title}" style="height: 180px; object-fit: contain; background-color: #1b1e21;">`
+                                : ""
+                        }
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title text-secondary">${title}</h5>
+                            <p class="card-text text-secondary">${description}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        })
+        .join("");
+
+    container.innerHTML = cardsHtml;
+}
+
+function showInsightTrialModal() {
+    if (insightModalShown) {
+        return;
+    }
+    insightModalShown = true;
+
+    if (!window.bootstrap) {
+        return;
+    }
+
+    if (!document.getElementById("insightTrialModal")) {
+        const modalHtml = `
+            <div class="modal fade" id="insightTrialModal" tabindex="-1" aria-labelledby="insightTrialModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-fullscreen">
+                    <div class="modal-content bg-dark text-secondary">
+                        <div class="modal-header border-secondary">
+                            <h2 class="modal-title text-secondary" id="insightTrialModalLabel">
+                                <i class="fa fa-line-chart nav-icon"></i>
+                                Get The Most Out of LibreQoS with <strong>LibreQoS Insight</strong>
+                            </h2>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body text-secondary">
+                            <div class="alert alert-primary text-secondary" role="alert">
+                                <p class="mb-0">
+                                    You have <strong>{{window.smn}}</strong> shaped devices.
+                                    LibreQoS is helping your network; Insight can make it amazing.
+                                </p>
+                            </div>
+                            <p class="mt-3">
+                                With Insight, you can:
+                            </p>
+                            <ul>
+                                <li>Ask Libby about your network in natural language.</li>
+                                <li>Use CPU load balancing and mitigation features like binpacking and reload reduction.</li>
+                                <li>Explore accurate statistics, analytics, and long-term network insights.</li>
+                            </ul>
+                            <!-- From the Insight Trial -->
+                            <div class="mt-4">
+                                <div class="row g-3" id="insightTeaserRow"></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-secondary">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Maybe Later</button>
+                            <a href="lts_trial.html" class="btn btn-primary">Start Insight Trial</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML(
+            "beforeend",
+            modalHtml.replace("{{window.smn}}", window.smn || "?"),
+        );
+    }
+
+    const modalEl = document.getElementById("insightTrialModal");
+    if (!modalEl) {
+        return;
+    }
+
+    // Load and render teaser cards inside the modal
+    loadModalTeasers();
+
+    const modal = new bootstrap.Modal(modalEl, { focus: true });
+    modal.show();
+}
 
 export function globalWarningToasts() {
+    if (window.sm) {
+        showInsightTrialModal();
+    }
     $.get("/local-api/globalWarnings", (warnings) => {
         let parent = document.getElementById("toasts");
         let i = 0;
