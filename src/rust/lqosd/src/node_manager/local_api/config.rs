@@ -128,7 +128,7 @@ pub async fn update_network_and_devices(
 #[derive(Serialize, Deserialize)]
 pub struct UserRequest {
     pub username: String,
-    pub password: String,
+    pub password: Option<String>,
     pub role: String,
 }
 
@@ -149,12 +149,16 @@ pub async fn add_user(
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    if data.username.is_empty() {
+    if data.username.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let password = match data.password.as_deref() {
+        Some(p) if !p.is_empty() => p,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     users
-        .add_or_update_user(&data.username.trim(), &data.password, data.role.into())
+        .add_or_update_user(&data.username.trim(), password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(format!("User '{}' added", data.username))
 }
@@ -167,8 +171,9 @@ pub async fn update_user(
         return Err(StatusCode::FORBIDDEN);
     }
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let password = data.password.as_deref().filter(|p| !p.is_empty());
     users
-        .add_or_update_user(&data.username, &data.password, data.role.into())
+        .update_user_with_optional_password(&data.username, password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok("User updated".to_string())
 }
