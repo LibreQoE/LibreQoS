@@ -67,6 +67,14 @@ sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd
 ```
 which runs lqosd in debug mode, and will provide specifics regarding why it failed to start.
 
+### Service lqos_scheduler shows errors
+
+If `sudo systemctl status lqosd lqos_scheduler` reveals that the lqos_scheduler service has issues, you can export a comprehensive log of the errors to a file:
+```
+sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_log.txt
+```
+This exports a log file to lqos_sched_log.txt. You can review this file to see what caused the scheduler to error out.
+
 ### RTNETLINK answers: Invalid argument
 
 This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](requirements.md).
