@@ -1,7 +1,7 @@
 use crate::BakeryCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{warn, info, debug};
 
 pub(crate) enum SiteDiffResult {
     RebuildRequired,
@@ -27,11 +27,15 @@ pub(crate) fn diff_sites(
     if old_sites.len() != new_sites.len() {
         // There is a difference in the number of sites.
         // Therefore, we must rebuild the entire site configuration.
+        let old_keys: Vec<i64> = old_sites.keys().cloned().collect();
+        let new_keys: Vec<i64> = new_sites.keys().copied().collect();
         warn!(
             "Site count mismatch: old {} vs new {}",
             old_sites.len(),
             new_sites.len()
         );
+        debug!("Old site hashes: {:?}", old_keys);
+        debug!("New site hashes: {:?}", new_keys);
         return SiteDiffResult::RebuildRequired;
     }
 
@@ -44,6 +48,20 @@ pub(crate) fn diff_sites(
                 warn!(
                     "Structural difference detected for site hash: {}",
                     site_hash
+                );
+                // Log a concise before/after for diagnostics at warn! level so operators
+                // can see why the site is considered structurally different.
+                let (ocpu, opar, oup, omin) = match old_cmd.as_ref() {
+                    crate::BakeryCommands::AddSite { parent_class_id, up_parent_class_id, class_minor, .. } => (0i32, parent_class_id.as_tc_string(), up_parent_class_id.as_tc_string(), *class_minor),
+                    _ => (0, String::new(), String::new(), 0),
+                };
+                let (ncpu, npar, nup, nmin) = match new_cmd.as_ref() {
+                    crate::BakeryCommands::AddSite { parent_class_id, up_parent_class_id, class_minor, .. } => (0i32, parent_class_id.as_tc_string(), up_parent_class_id.as_tc_string(), *class_minor),
+                    _ => (0, String::new(), String::new(), 0),
+                };
+                warn!(
+                    "Site hash {} change detail: parent={}→{}, up_parent={}→{}, minor=0x{:x}→0x{:x}",
+                    site_hash, opar, npar, oup, nup, omin, nmin
                 );
                 return SiteDiffResult::RebuildRequired;
             }
