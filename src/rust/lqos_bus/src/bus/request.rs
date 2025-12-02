@@ -336,6 +336,9 @@ pub enum BusRequest {
     /// Announce a scheduler error
     SchedulerError(String),
 
+    /// Write an informational message to the lqosd logs
+    LogInfo(String),
+
     /// Check the scheduler status
     CheckSchedulerStatus,
 
@@ -360,6 +363,9 @@ pub enum BusRequest {
 
     /// Clear a specific urgent issue by ID
     ClearUrgentIssue(u64),
+
+    /// Is Insight Enabled?
+    CheckInsight,
 }
 
 /// Defines the parts of the blackboard
