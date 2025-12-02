@@ -140,40 +140,9 @@ pub fn site_cake_marks(data: &[shared_types::SiteCakeMarks]) -> Result<()> {
 }
 
 pub fn get_lts_license_status() -> (LtsStatus, i32) {
-    // Use async path under the hood to avoid blocking inside a Tokio runtime.
-    // If we're already inside a runtime, switch to a blocking section and run a tiny
-    // current-thread runtime there; otherwise, build a small runtime and block_on.
-    if tokio::runtime::Handle::try_current().is_ok() {
-        tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build temporary Tokio runtime");
-            rt.block_on(async {
-                let remaining = lts2_client::get_lts_license_trial_remaining_async()
-                    .await
-                    .unwrap_or(0);
-                let status = lts2_client::get_lts_license_status_async()
-                    .await
-                    .unwrap_or(-1);
-                (LtsStatus::from_i32(status), remaining)
-            })
-        })
-    } else {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build temporary Tokio runtime");
-        rt.block_on(async {
-            let remaining = lts2_client::get_lts_license_trial_remaining_async()
-                .await
-                .unwrap_or(0);
-            let status = lts2_client::get_lts_license_status_async()
-                .await
-                .unwrap_or(-1);
-            (LtsStatus::from_i32(status), remaining)
-        })
-    }
+    let remaining = lts2_client::get_lts_license_trial_remaining().unwrap_or(0);
+    let status = lts2_client::get_lts_license_status().unwrap_or(-1);
+    (LtsStatus::from_i32(status), remaining)
 }
 
 pub async fn get_lts_license_status_async() -> (LtsStatus, i32) {

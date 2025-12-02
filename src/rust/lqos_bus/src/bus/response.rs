@@ -213,7 +213,4 @@ pub enum BusResponse {
 
     /// List of urgent issues
     UrgentIssues(Vec<UrgentIssue>),
-
-    /// Is Insight Enabled?
-    InsightStatus(bool),
 }

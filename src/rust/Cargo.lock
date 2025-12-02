@@ -1969,17 +1969,14 @@ name = "lqos_python"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
  "chrono",
  "lqos_bus",
  "lqos_config",
  "lqos_utils",
- "miniz_oxide",
  "nix",
  "pyo3",
  "reqwest",
  "serde",
- "serde_cbor",
  "sysinfo",
  "tempfile",
  "tokio",

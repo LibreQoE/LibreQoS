@@ -13,10 +13,8 @@
 
 use anyhow::Result;
 use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
-use lqos_bus::{BusRequest, BusResponse};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// This struct is used to send a request to the Long Term Stats API
 #[derive(Serialize, Deserialize)]
@@ -65,15 +63,7 @@ fn get_weights_from_lts(
     let url = format!("https://{}/shaper_api/deviceWeights", base_url);
 
     // Make a BLOCKING reqwest call (we're not in an async context)
-    // Allow invalid certs for self-hosted Insight instances (non-default URL)
-    let allow_insecure = !url.starts_with("https://insight.libreqos.com");
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .connect_timeout(Duration::from_secs(6))
-        .danger_accept_invalid_certs(allow_insecure)
-        .build()?;
-
-    let response = client
+    let response = reqwest::blocking::Client::new()
         .post(url)
         .json(&request)
         .send()?
@@ -107,20 +97,8 @@ fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
 
 /// This function is used to determine if we should use the Long Term Stats API to get the weights
 fn use_lts_weights() -> bool {
-    // Basic config gates first
-    let Ok(config) = load_config() else { return false };
-    if !(config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some()) {
-        return false;
-    }
-    // Ask lqosd (via bus) whether Insight is actually enabled/licensed
-    if let Ok(responses) = crate::blocking::run_query(vec![BusRequest::CheckInsight]) {
-        for resp in responses.into_iter() {
-            if let BusResponse::InsightStatus(enabled) = resp {
-                return enabled;
-            }
-        }
-    }
-    false
+    let config = load_config().unwrap();
+    config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some()
 }
 
 /// This function is used to get the device weights from the Long Term Stats API and the ShapedDevices.csv file
@@ -161,6 +139,8 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
         } else {
             eprintln!("Failed to get weights from LTS: {:?}", weights);
         }
+    } else {
+        eprintln!("Not using LTS weights. Using weights from ShapedDevices.csv");
     }
 
     Ok(shaped_devices_weights)

@@ -41,9 +41,6 @@ impl UispDevice {
             Ok(p) => p,
             Err(_) => return false,
         };
-        if prefix_len > 32 {
-            return false; // invalid prefix for IPv4
-        }
 
         // Parse the IP address
         let ip: Ipv4Addr = match ip_str.parse() {
@@ -61,12 +58,7 @@ impl UispDevice {
             return false;
         }
 
-        // Build a host mask safely; shifting by 32 would overflow, so special-case /0
-        let host_mask = if host_bits >= 32 {
-            u32::MAX
-        } else {
-            (1u32 << host_bits) - 1
-        };
+        let host_mask = (1u32 << host_bits) - 1;
 
         // Check if all host bits are zero
         (ip_bits & host_mask) == 0
@@ -280,7 +272,6 @@ mod tests {
         assert!(UispDevice::is_network_address("5.5.6.0/24"));
         assert!(UispDevice::is_network_address("192.168.0.0/23"));
         assert!(UispDevice::is_network_address("10.10.10.128/25")); // 128 = 10000000, network for /25
-        assert!(UispDevice::is_network_address("0.0.0.0/0")); // Only 0.0.0.0/0 is a network address for /0
 
         // Host addresses (should return false)
         assert!(!UispDevice::is_network_address("192.168.1.1/24"));
@@ -291,7 +282,6 @@ mod tests {
         assert!(!UispDevice::is_network_address("5.5.6.1/24"));
         assert!(!UispDevice::is_network_address("192.168.0.1/23"));
         assert!(!UispDevice::is_network_address("10.10.10.129/25")); // 129 = 10000001, host in /25
-        assert!(!UispDevice::is_network_address("1.2.3.4/0")); // /0 but not all host bits zero
 
         // Special cases
         assert!(!UispDevice::is_network_address("192.168.1.1/32")); // /32 is always a host
@@ -300,6 +290,5 @@ mod tests {
         assert!(!UispDevice::is_network_address("")); // Empty string
         assert!(!UispDevice::is_network_address("not-an-ip/24")); // Invalid IP
         assert!(!UispDevice::is_network_address("192.168.1.0/invalid")); // Invalid prefix
-        assert!(!UispDevice::is_network_address("192.168.1.0/33")); // Invalid IPv4 prefix length
     }
 }
