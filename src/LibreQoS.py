@@ -27,7 +27,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
-    fast_queues_fq_codel, hash_to_i64, fetch_planner_remote, store_planner_remote, \
+    fast_queues_fq_codel, \
     Bakery
 
 # Optional: urgent issue submission (available in newer liblqos_python)
@@ -36,343 +36,6 @@ try:
 except Exception:
     def submit_urgent_issue(*_args, **_kwargs):
         return False
-
-# Optional: check if Insight is enabled (available in newer liblqos_python)
-try:
-    from liblqos_python import is_insight_enabled  # type: ignore
-except Exception:
-    def is_insight_enabled(*_args, **_kwargs):
-        return False
-
-class Planner:
-    """
-    Planner: lightweight state manager to reduce churn between runs.
-
-    PUBLIC methods:
-    - getState(): dict — current planner state (default or loaded)
-    - persist(): None — persist planner state via Insight when enabled
-    """
-
-    # Print the Insight planning banner only once per process
-    _insight_banner_printed = False
-
-    def __init__(self, queuesAvailable: int, onAStick: bool, siteNamesSet, siteCount: int):
-        now_ts = time.time()
-
-        # Informational banner when Insight-enhanced planning is in use
-        try:
-            if is_insight_enabled() and not Planner._insight_banner_printed:
-                logging.info("Using Insight enhanced planning (remote planner state enabled).")
-                Planner._insight_banner_printed = True
-        except Exception:
-            pass
-
-        loaded = self._load_state(queuesAvailable, onAStick, siteCount)
-        # Normalize site names by hashing to i64 for storage (no strings retained)
-        normalized_site_names = []
-        try:
-            normalized_site_names = sorted([int(hash_to_i64(str(x))) for x in list(siteNamesSet)])
-        except Exception:
-            normalized_site_names = []
-
-        self._is_default = False
-        if loaded is None:
-            # Missing/invalid planner state: build a fresh default and record why.
-            try:
-                if is_insight_enabled():
-                    logging.warning("Planner: no existing plan available from Insight; using default plan.")
-                else:
-                    logging.warning("Planner: no existing plan available (Insight disabled); using default plan.")
-            except Exception:
-                pass
-            self.state = self._default_state(normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts)
-            self._is_default = True
-            return
-
-        # Validate loaded state and decide if we should rebuild
-        should_rebuild, reason = self._should_rebuild(
-            loaded, normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts
-        )
-        if should_rebuild:
-            # Existing planner state is not compatible with the current configuration.
-            try:
-                logging.warning(f"Planner: discarding existing plan; reason={reason}. Falling back to default plan.")
-            except Exception:
-                pass
-            self.state = self._default_state(normalized_site_names, siteCount, queuesAvailable, onAStick, now_ts)
-            self._is_default = True
-        else:
-            # Accept loaded state, convert legacy string keys to hashed if needed, rebuild ephemeral fields, and update dynamic fields
-            st = dict(loaded)
-            st['updated_at'] = now_ts
-            # Convert site_names (list) to hashed ints if necessary
-            try:
-                raw_names = st.get('site_names', [])
-                hashed = []
-                for x in raw_names:
-                    try:
-                        hashed.append(int(x))
-                    except Exception:
-                        hashed.append(int(hash_to_i64(str(x))))
-                st['site_names'] = sorted(list(set(hashed)))
-            except Exception:
-                st['site_names'] = []
-            # Convert site_map keys to ints (hash) when possible
-            try:
-                sm0 = st.get('site_map') if isinstance(st, dict) else None
-                sm: dict = {}
-                if isinstance(sm0, dict):
-                    for k, v in sm0.items():
-                        try:
-                            key_int = int(k)
-                        except Exception:
-                            key_int = int(hash_to_i64(str(k)))
-                        sm[key_int] = v
-                st['site_map'] = sm
-            except Exception:
-                st['site_map'] = {}
-            # Convert circuit_map keys to ints (hash) when possible
-            try:
-                cm0 = st.get('circuit_map') if isinstance(st, dict) else None
-                cm: dict = {}
-                if isinstance(cm0, dict):
-                    for k, v in cm0.items():
-                        try:
-                            key_int = int(k)
-                        except Exception:
-                            key_int = int(hash_to_i64(str(k)))
-                        cm[key_int] = v
-                st['circuit_map'] = cm
-            except Exception:
-                st['circuit_map'] = {}
-            # Rebuild free_minors from hashed maps
-            try:
-                q = int(st.get('queuesAvailable', 0))
-                sm = st.get('site_map') if isinstance(st, dict) else None
-                cm = st.get('circuit_map') if isinstance(st, dict) else None
-                st['free_minors'] = self._rebuild_free_minors(q, sm if isinstance(sm, dict) else {}, cm if isinstance(cm, dict) else {})
-            except Exception:
-                st['free_minors'] = [[] for _ in range(int(st.get('queuesAvailable', 0)))]
-            self.state = st
-            self._is_default = False
-            
-
-    def getState(self):
-        return self.state
-
-    def persist(self):
-        """Persist planner state.
-
-        Insight-only feature: when Insight is enabled, planner state is
-        persisted remotely via `store_planner_remote`. Ephemeral fields such
-        as `free_minors` are never persisted, and no local CBOR files are used.
-        """
-        try:
-            to_save = dict(self.state)
-            if 'free_minors' in to_save:
-                try:
-                    to_save.pop('free_minors')
-                except Exception:
-                    pass
-            # Insight-only feature: when Insight is disabled, skip persistence
-            # entirely so planner reuse remains an Insight capability.
-            use_remote = False
-            try:
-                use_remote = bool(is_insight_enabled())
-            except Exception:
-                use_remote = False
-            if use_remote:
-                store_planner_remote(to_save)
-            else:
-                # No local fallback; skip persistence entirely when Insight is
-                # not enabled so that planner reuse remains an Insight feature.
-                pass
-        except Exception as e:
-            warnings.warn(f"Failed to persist planner state to Insight: {e}", stacklevel=2)
-
-    def _default_state(self, site_names_sorted, site_count, queues_available, on_a_stick_flag, now_ts):
-        """Build a default planner state.
-
-        Notes
-        - Minor IDs 1..3 are globally reserved:
-          1 = root qdisc, 2 = default class, 3 = per-CPU Generated_PN_* site classes
-        - All other sites, circuits, and any ephemeral classes use 4+.
-        - `free_minors` is per-CPU and rebuilt on load; it is not persisted.
-        """
-        try:
-            # Reserve minors 1..3 globally:
-            #  - 1 is used by root qdisc
-            #  - 2 is used by the default class under root
-            #  - 3 is used for per-CPU Generated_PN_* site classes
-            # All other site and circuit classes must use 4+
-            free_minors = [list(range(4, 0x10000)) for _ in range(int(queues_available))]
-        except Exception:
-            free_minors = []
-        return {
-            'algo_version': 'v1',
-            'updated_at': float(now_ts),
-            'queuesAvailable': int(queues_available),
-            'on_a_stick': bool(on_a_stick_flag),
-            'site_count': int(site_count),
-            'site_names': list(site_names_sorted),  # list of i64 hashes
-            'site_map': {},            # site_hash(i64) -> { cpu:int, major:int, minor:int }
-            'circuit_map': {},         # circuit_hash(i64) -> { cpu:int, minor:int }
-            'free_minors': free_minors,  # ephemeral: rebuilt on load; not persisted to disk
-        }
-
-    def _load_state(self, queues_available, on_a_stick_flag, site_count):
-        """Load planner state.
-
-        Insight-only feature: if Insight is enabled, fetch planner state from
-        the remote API. When Insight is disabled, no planner state is used.
-
-        - Validates that minimum required keys exist.
-        - Normalizes `updated_at` when remote to avoid needless rebuilds based
-          on age alone.
-        """
-        try:
-            # Try Insight first if enabled; otherwise treat as no state
-            use_remote = False
-            try:
-                use_remote = bool(is_insight_enabled())
-            except Exception:
-                use_remote = False
-            if use_remote:
-                try:
-                    data = fetch_planner_remote(int(queues_available), bool(on_a_stick_flag), int(site_count))
-                    if isinstance(data, dict):
-                        for k in ['queuesAvailable', 'site_count', 'site_names']:
-                            if k not in data:
-                                return None
-                        # Normalize dynamic fields for rebuild check
-                        try:
-                            data['updated_at'] = float(time.time())
-                        except Exception:
-                            pass
-                        return data
-                except Exception:
-                    pass
-                return None
-            else:
-                # Insight is disabled or unavailable: no planner state is used.
-                return None
-        except Exception:
-            return None
-
-    def _rebuild_free_minors(self, queues_available, site_map, circuit_map):
-        """
-        Recompute free_minors per CPU from persisted mappings.
-        - Start with full range [4..0xFFFF] for each CPU (1..3 reserved)
-        - Remove any minors referenced by site_map or circuit_map on the corresponding CPU
-        Returns: list[list[int]] sized by queues_available
-        """
-        try:
-            q = max(0, int(queues_available))
-        except Exception:
-            q = 0
-        # See rationale above; reserve minors 1..3.
-        free = [set(range(4, 0x10000)) for _ in range(q)]
-        # Remove site minors
-        try:
-            for name, entry in site_map.items():
-                try:
-                    cpu = int(entry.get('cpu', -1))
-                    minor = int(entry.get('minor', -1))
-                    if 0 <= cpu < q and 4 <= minor <= 0xFFFF:
-                        if minor in free[cpu]:
-                            free[cpu].discard(minor)
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        # Remove circuit minors
-        try:
-            for cid, entry in circuit_map.items():
-                try:
-                    cpu = int(entry.get('cpu', -1))
-                    minor = int(entry.get('minor', -1))
-                    if 0 <= cpu < q and 4 <= minor <= 0xFFFF:
-                        if minor in free[cpu]:
-                            free[cpu].discard(minor)
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        # Convert to sorted lists
-        return [sorted(list(s)) for s in free]
-
-    def _should_rebuild(self, loaded, site_names_sorted, site_count, queues_available, on_a_stick_flag, now_ts):
-        # Age check
-        try:
-            updated_at = float(loaded.get('updated_at', 0.0))
-        except Exception:
-            updated_at = 0.0
-        # Consider planner state stale only after 7 days to avoid churn when
-        # remote planner objects are otherwise valid but old.
-        if (float(now_ts) - updated_at) > (7 * 24 * 3600):
-            return True, 'stale_planner_state'
-
-        # queuesAvailable change
-        try:
-            if int(loaded.get('queuesAvailable', -1)) != int(queues_available):
-                return True, 'queues_available_changed'
-        except Exception:
-            return True, 'queues_available_invalid'
-
-        # on-a-stick changed
-        try:
-            if bool(loaded.get('on_a_stick', False)) != bool(on_a_stick_flag):
-                return True, 'on_a_stick_changed'
-        except Exception:
-            return True, 'on_a_stick_invalid'
-
-        # Site count changed
-        try:
-            if int(loaded.get('site_count', -1)) != int(site_count):
-                return True, 'site_count_changed'
-        except Exception:
-            return True, 'site_count_invalid'
-
-        # Site set changed (order ignored). Compare hashed ints
-        try:
-            raw_loaded = loaded.get('site_names', [])
-            loaded_sites = set()
-            for x in raw_loaded:
-                try:
-                    loaded_sites.add(int(x))
-                except Exception:
-                    loaded_sites.add(int(hash_to_i64(str(x))))
-            current_sites = set([int(x) for x in site_names_sorted])
-            if loaded_sites != current_sites:
-                return True, 'site_names_changed'
-        except Exception:
-            return True, 'site_names_invalid'
-
-        return False, None
-
-def _greedy_binpack(items, bin_ids, capacities):
-    """
-    Simple greedy binpacking without state:
-    - items: list of dicts with keys 'id' and 'weight'
-    - bin_ids: list of bin identifiers
-    - capacities: dict mapping bin_id -> capacity (float)
-    Returns: dict mapping item_id -> bin_id
-    """
-    # Normalize inputs
-    cap = {str(b): float(capacities.get(b, 1.0)) for b in bin_ids}
-    loads = {str(b): 0.0 for b in bin_ids}
-    # Sort items: heavier first, deterministic by id
-    sorted_items = sorted(
-        [(str(it.get('id')), float(it.get('weight', 1.0))) for it in items],
-        key=lambda t: (-t[1], t[0])
-    )
-    assignment = {}
-    for it_id, w in sorted_items:
-        # Choose the bin with lowest load/cap ratio; tie-breaker: lexicographic bin id
-        best_bin = min(bin_ids, key=lambda b: (loads[str(b)]/max(cap[str(b)], 1e-9), str(b)))
-        assignment[it_id] = str(best_bin)
-        loads[str(best_bin)] += w
-    return assignment
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -727,12 +390,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
     knownCircuitIDs = []
     counterForCircuitsWithoutParentNodes = 0
     dictForCircuitsWithoutParentNodes = {}
-    # If the network is flat, treat any explicit parent_site in CSV as 'none'
-    # so circuits are assigned to Generated_PN_* bins automatically when switching to flat.
-    try:
-        flat_mode_csv = bool(is_network_flat())
-    except Exception:
-        flat_mode_csv = False
     with open(shapedDevicesFile) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         # Remove comments if any
@@ -756,18 +413,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     token = left + '/' + right
                 sqm_override_token = token
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
-            # In flat mode, override any non-empty, non-Generated_PN_* ParentNode to 'none'
-            try:
-                if flat_mode_csv:
-                    pn = (ParentNode or '').strip()
-                    pn_lower = pn.lower()
-                    if (pn != ''
-                        and pn_lower != 'none'
-                        and not pn.startswith('Generated_PN_')
-                        and not pn_lower.startswith('generated_pn_')):
-                        ParentNode = 'none'
-            except Exception:
-                pass
             # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
             if monitor_mode_only() == True:
                 downloadMin = 10000
@@ -985,12 +630,6 @@ def refreshShapers():
             upstream_bandwidth_capacity_upload_mbps(),
         )
 
-        # Detect flat mode once for reuse in traversal (network.json contains only implicit Root)
-        try:
-            flat_mode = bool(is_network_flat())
-        except Exception:
-            flat_mode = False
-
 
         # Pull rx/tx queues / CPU cores available
         # Handling the case when the number of queues for interfaces are different
@@ -1014,46 +653,6 @@ def refreshShapers():
                     data[elem]['uploadBandwidthMbpsMin'] = 100000
             overrideNetworkBandwidths(network)
 
-        # Initialize planner (state is read/validated here; behavior not yet changed)
-        try:
-            # Use the same notion of "sites" that Planner persists to site_map:
-            # - For tiered networks, these are depth-1 nodes (children of top-level nodes)
-            # - For flat networks, fallback to top-level keys (Generated_PN_* are created later)
-            def collect_site_names_tiered(n):
-                """Collect depth-1 site names for tiered networks.
-
-                Falls back to top-level keys when no children are present.
-                Returns a set of string site names.
-                """
-                names = set()
-                try:
-                    for k, v in n.items():
-                        if not isinstance(v, dict):
-                            continue
-                        ch = v.get('children')
-                        if isinstance(ch, dict):
-                            names.update(str(ck) for ck in ch.keys())
-                except Exception:
-                    names = set()
-                if not names:
-                    try:
-                        names = {str(k) for k, v in n.items() if isinstance(v, dict)}
-                    except Exception:
-                        names = set()
-                return names
-
-            current_site_names = set()
-            try:
-                if isinstance(network, dict):
-                    current_site_names = collect_site_names_tiered(network) if not flat_mode else set(
-                        [str(k) for k, v in network.items() if isinstance(v, dict)]
-                    )
-            except Exception:
-                current_site_names = set()
-            planner = Planner(queuesAvailable, on_a_stick(), current_site_names, len(current_site_names))
-        except Exception as e:
-            warnings.warn(f"Planner initialization failed: {e}", stacklevel=2)
-
         # Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
         print("Generating parent nodes")
         generatedPNs = []
@@ -1073,98 +672,131 @@ def refreshShapers():
                                     }
             generatedPNs.append(genPNname)
         if use_bin_packing_to_balance_cpu():
-            if is_insight_enabled():
-                print("Using greedy binpacking to sort circuits by CPU core")
-                # Build item list with weights for circuits lacking a ParentNode
-                items = []
+            print("Using internal planner to sort circuits by CPU core")
+            # Build item list with weights for circuits lacking a ParentNode
+            items = []
+            try:
+                weights = get_weights()
+            except Exception as e:
+                warnings.warn("get_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
+                weights = None
+            weight_by_circuit_id = {}
+            if weights is not None:
                 try:
-                    weights = get_weights()
-                except Exception as e:
-                    warnings.warn("get_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
-                    weights = None
-                weight_by_circuit_id = {}
-                if weights is not None:
-                    try:
-                        for w in weights:
-                            weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
-                    except Exception:
-                        pass
-                for circuit in subscriberCircuits:
-                    # Treat blank or 'none' (any case) as unassigned parent in flat mode handling
-                    pn_val = str(circuit.get('ParentNode', '')).strip().lower()
-                    if (pn_val in ('', 'none')) and ('idForCircuitsWithoutParentNodes' in circuit):
-                        item_id = circuit['idForCircuitsWithoutParentNodes']
-                        # Prefer provided weights; default to 1.0
-                        w = dictForCircuitsWithoutParentNodes.get(item_id, 1.0)
-                        # If a specific circuit weight exists, prefer it
-                        if 'circuitID' in circuit and str(circuit['circuitID']) in weight_by_circuit_id:
-                            w = weight_by_circuit_id[str(circuit['circuitID'])]
-                        # Ignore placeholder default rates for weight purposes
-                        try:
-                            default_rate = float(generated_pn_download_mbps())
-                            max_dl = float(circuit.get('maxDownload', 0))
-                            if abs(max_dl - default_rate) < 1e-6:
-                                w = 0.0
-                        except Exception:
-                            pass
-                        items.append({"id": item_id, "weight": float(w)})
-
-                # Prepare capacities (equal split by default)
-                capacities = {pn: 1.0 for pn in generatedPNs}
-
-                # Compute greedy assignments and apply
-                assignments = _greedy_binpack(items, generatedPNs, capacities)
-                for circuit in subscriberCircuits:
-                    pn_val = str(circuit.get('ParentNode', '')).strip().lower()
-                    if (pn_val in ('', 'none')) and ('idForCircuitsWithoutParentNodes' in circuit):
-                        item_id = circuit['idForCircuitsWithoutParentNodes']
-                        if item_id in assignments:
-                            circuit['ParentNode'] = assignments[item_id]
-
-                print("Finished binpacking generated parent nodes")
-            else:
-                warn_msg = "Binpacking is enabled, but requires an Insight subscription."
-                print("Warning: " + warn_msg)
-                try:
-                    submit_urgent_issue("LibreQoS", "Warning", "BINPACKING_REQUIRES_INSIGHT", warn_msg, "{}", "BINPACKING_REQUIRES_INSIGHT_PARENT_NODES")
+                    for w in weights:
+                        weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
                 except Exception:
                     pass
-                # Fallback: round-robin assignment when Insight is not enabled
-                genPNcounter = 0
-                for circuit in subscriberCircuits:
-                    pn_val = str(circuit.get('ParentNode', '')).strip().lower()
-                    if pn_val in ('', 'none'):
-                        circuit['ParentNode'] = generatedPNs[genPNcounter]
-                        genPNcounter += 1
-                        if genPNcounter >= queuesAvailable:
-                            genPNcounter = 0
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                    item_id = circuit['idForCircuitsWithoutParentNodes']
+                    # Prefer provided weights; default to 1.0
+                    w = dictForCircuitsWithoutParentNodes.get(item_id, 1.0)
+                    # If a specific circuit weight exists, prefer it
+                    if 'circuitID' in circuit and str(circuit['circuitID']) in weight_by_circuit_id:
+                        w = weight_by_circuit_id[str(circuit['circuitID'])]
+                    # Ignore placeholder default rates for weight purposes
+                    try:
+                        default_rate = float(generated_pn_download_mbps())
+                        max_dl = float(circuit.get('maxDownload', 0))
+                        if abs(max_dl - default_rate) < 1e-6:
+                            w = 0.0
+                    except Exception:
+                        pass
+                    items.append({"id": item_id, "weight": float(w)})
+
+            # Prepare bins and capacities
+            bins_list = [{"id": pn} for pn in generatedPNs]
+            capacities = {pn: 1.0 for pn in generatedPNs}
+
+            # Load planner state
+            try:
+                import bin_planner
+            except ImportError:
+                bin_planner = None
+            # Store planner state directly in lqos_directory (no hidden subdirs)
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state = {}
+            if bin_planner is not None:
+                state = bin_planner.load_state(state_path)
+            now_ts = time.time()
+            prev_assign = {}
+            last_change_ts = {}
+            if isinstance(state, dict):
+                prev_assign = state.get("assignments", {}) or {}
+                last_change_ts = state.get("last_change_ts", {}) or {}
+            # Filter previous assignments to only items/bins in this context
+            item_ids = {str(it["id"]) for it in items}
+            valid_bins = set(capacities.keys())
+            prev_assign = {iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins}
+            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+
+            # Planner parameters
+            params = {
+                "candidate_set_size": 4,
+                "headroom": 0.05,
+                "alpha": 0.1,
+                "hysteresis_threshold": 0.03,
+                "cooldown_seconds": 3600,
+                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
+                "last_change_ts_by_item": last_change_ts,
+            }
+            if monitor_mode_only() == True:
+                params["move_budget_per_run"] = 0
+
+            if bin_planner is not None:
+                assignments, changed = bin_planner.plan_assignments(
+                    items, bins_list, capacities, prev_assign, now_ts, params
+                )
+            else:
+                # Fallback to simple greedy if planner unavailable
+                bin_loads = {pn: 0.0 for pn in generatedPNs}
+                pairs = [(str(it["id"]), float(it["weight"])) for it in items]
+                pairs.sort(key=lambda iw: (-iw[1], str(iw[0])))
+                assignments = {}
+                for item_id, w in pairs:
+                    target_pn = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    assignments[item_id] = target_pn
+                    bin_loads[target_pn] += w
+                changed = list(assignments.keys())
+
+            # Apply assignments to circuits
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                    item_id = circuit['idForCircuitsWithoutParentNodes']
+                    if item_id in assignments:
+                        circuit['ParentNode'] = assignments[item_id]
+
+            # Update and save state
+            if bin_planner is not None and isinstance(state, dict):
+                if state.get("salt") is None:
+                    state["salt"] = "default_salt"
+                if "assignments" not in state or not isinstance(state["assignments"], dict):
+                    state["assignments"] = {}
+                if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
+                    state["last_change_ts"] = {}
+                for iid, b in assignments.items():
+                    # record last change time if changed
+                    if iid in changed:
+                        state["last_change_ts"][iid] = now_ts
+                    state["assignments"][iid] = b
+                try:
+                    print(f"Saving planner state to {state_path} (generated PNs)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
+
+            print("Finished planning generated parent nodes")
         else:
             genPNcounter = 0
             for circuit in subscriberCircuits:
-                pn_val = str(circuit.get('ParentNode', '')).strip().lower()
-                if pn_val in ('', 'none'):
+                if circuit['ParentNode'] == 'none':
                     circuit['ParentNode'] = generatedPNs[genPNcounter]
                     genPNcounter += 1
                     if genPNcounter >= queuesAvailable:
                         genPNcounter = 0
         print("Generated parent nodes created")
-
-        # Safety pass: ensure every circuit has a valid ParentNode key present in the current network
-        try:
-            available_nodes = set([str(k) for k in network.keys()]) if isinstance(network, dict) else set()
-        except Exception:
-            available_nodes = set()
-        if len(available_nodes) > 0 and len(generatedPNs) > 0:
-            rr = 0
-            for circuit in subscriberCircuits:
-                try:
-                    pn_raw = str(circuit.get('ParentNode', '')).strip()
-                    pn_lower = pn_raw.lower()
-                    if pn_raw == '' or pn_lower == 'none' or pn_raw not in available_nodes:
-                        circuit['ParentNode'] = generatedPNs[rr]
-                        rr = (rr + 1) % len(generatedPNs)
-                except Exception:
-                    pass
 
         # Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's hierarchy
         def findBandwidthMins(data, depth):
@@ -1252,26 +884,6 @@ def refreshShapers():
 
         ensure_min_less_than_max(network)
 
-        # Populate transient site speeds for planner reuse (not persisted)
-        try:
-            if 'planner' in locals() and isinstance(planner, Planner):
-                speeds = {}
-                if isinstance(network, dict):
-                    for key, val in network.items():
-                        if isinstance(val, dict):
-                            try:
-                                speeds[str(key)] = {
-                                    'dl_max': float(val.get('downloadBandwidthMbps', 0)),
-                                    'ul_max': float(val.get('uploadBandwidthMbps', 0)),
-                                    'dl_min': float(val.get('downloadBandwidthMbpsMin', val.get('downloadBandwidthMbps', 0))),
-                                    'ul_min': float(val.get('uploadBandwidthMbpsMin', val.get('uploadBandwidthMbps', 0))),
-                                }
-                            except Exception:
-                                pass
-                planner._site_speeds = speeds
-        except Exception:
-            pass
-
         # Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
         def flattenB(data):
             newDict = {}
@@ -1304,19 +916,18 @@ def refreshShapers():
             return newDict
         network = flattenA(network, 1)
 
-        # Prepare planner weights only when Insight is enabled; otherwise avoid LTS chatter
+        # Prepare planner weights (actual weighting may come from Insight or CSV defaults)
         weight_by_circuit_id = {}
-        if is_insight_enabled():
-            try:
-                weights = get_weights()
-                for w in weights:
-                    try:
-                        weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
-                    except Exception:
-                        pass
-            except Exception:
-                # If we can't get weights, leave mapping empty; UI will fall back
-                weight_by_circuit_id = {}
+        try:
+            weights = get_weights()
+            for w in weights:
+                try:
+                    weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
+                except Exception:
+                    pass
+        except Exception:
+            # If we can't get weights, leave mapping empty; UI will fall back
+            weight_by_circuit_id = {}
 
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
@@ -1339,21 +950,16 @@ def refreshShapers():
         # Parse network structure and add devices from ShapedDevices.csv
         print("Parsing network structure and tallying devices")
         parentNodes = []
-        site_insert_counter = 0
         minorByCPUpreloaded = {}
-        node_refs = {}
-        circuits_start_minor = {}
         knownClassIDs = []
         nodes_requiring_min_squashing = {}
         # Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
-        # Minor numbers start at 4 to reserve:
-        #   1 = root qdisc, 2 = default class, 3 = per-CPU Generated_PN_* sites
+        # Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
         # With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
         # without disrupting existing ClassID assignments. This maintains stability across reloads.
         for x in range(queuesAvailable):
-            minorByCPUpreloaded[x+1] = 4
+            minorByCPUpreloaded[x+1] = 3
         def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
-            nonlocal site_insert_counter
             # ClassID Assignment Strategy:
             # - Nodes and circuits are processed in alphabetical order for stability
             # - Each node gets a unique minor number that increments sequentially
@@ -1384,67 +990,9 @@ def refreshShapers():
                 #	data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
                 #	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
                 #	continue
-                # Prefer fixed, low minors for Generated_PN_* per CPU so they are
-                # visually obvious and stable. For all other nodes, prefer reusing
-                # previously-assigned site minors from planner.site_map; else try
-                # planner free_minors for this CPU; else fallback to sequential
-                # counter starting at 4.
-                name_s = str(node)
-                is_generated_pn = False
-                try:
-                    is_generated_pn = name_s.startswith('Generated_PN_')
-                except Exception:
-                    is_generated_pn = False
-
-                chosen_minor = None
-                # Fixed minor for Generated_PN_*: always 3 per CPU, independent of
-                # planner state and traversal order.
-                if is_generated_pn:
-                    chosen_minor = 3
-                else:
-                    try:
-                        if ('planner' in locals() or 'planner' in globals()) and isinstance(planner, Planner) and (not getattr(planner, '_is_default', False)):
-                            st = planner.getState()
-                            cpu_index = int(queue - 1)
-                            # 1) Attempt reuse from site_map when CPU/major match
-                            try:
-                                site_map = st.get('site_map') if isinstance(st, dict) else None
-                                if isinstance(site_map, dict):
-                                    key_hash = int(hash_to_i64(str(node)))
-                                    entry = site_map.get(key_hash)
-                                    if isinstance(entry, dict):
-                                        saved_cpu = int(entry.get('cpu', -1))
-                                        saved_major = int(entry.get('major', -1))
-                                        saved_minor = int(entry.get('minor', -1))
-                                        if saved_cpu == cpu_index and saved_major == int(major) and saved_minor >= 4:
-                                            chosen_minor = saved_minor
-                                            # Remove from free list if present
-                                            try:
-                                                fm = st.get('free_minors')
-                                                if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and saved_minor in fm[cpu_index]:
-                                                    fm[cpu_index].remove(saved_minor)
-                                            except Exception:
-                                                pass
-                            except Exception:
-                                pass
-                            # 2) If no reuse, allocate from free list for this CPU (depth >= 1 only)
-                            if chosen_minor is None and depth >= 1:
-                                try:
-                                    fm = st.get('free_minors') if isinstance(st, dict) else None
-                                    if isinstance(fm, list) and 0 <= cpu_index < len(fm) and isinstance(fm[cpu_index], list) and len(fm[cpu_index]) > 0:
-                                        chosen_minor = int(fm[cpu_index].pop(0))
-                                except Exception:
-                                    chosen_minor = None
-                    except Exception:
-                        chosen_minor = None
-                    if chosen_minor is None:
-                        try:
-                            chosen_minor = int(minorByCPU[queue])
-                        except Exception:
-                            chosen_minor = 4
-
-                nodeClassID = hex(major) + ':' + hex(chosen_minor)
-                upNodeClassID = hex(major+stickOffset) + ':' + hex(chosen_minor)
+                circuitsForThisNetworkNode = []
+                nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
+                upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
                 data[node]['classid'] = nodeClassID
                 data[node]['up_classid'] = upNodeClassID
                 if depth == 0:
@@ -1468,52 +1016,9 @@ def refreshShapers():
                 # Calculations are done in findBandwidthMins() to determine optimal HTB rates (mins) and ceils (maxs)
                 data[node]['classMajor'] = hex(major)
                 data[node]['up_classMajor'] = hex(major + stickOffset)
-                data[node]['classMinor'] = hex(chosen_minor)
+                data[node]['classMinor'] = hex(minorByCPU[queue])
                 data[node]['cpuNum'] = hex(queue-1)
                 data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
-                # Index node by name for later circuit attachment
-                try:
-                    node_refs[str(node)] = data[node]
-                except Exception:
-                    pass
-
-                # Notify planner of site details where applicable (insert-only)
-                try:
-                    if ('planner' in locals() or 'planner' in globals()) and isinstance(planner, Planner):
-                        name_s = str(node)
-                        synthetic = (not flat_mode) and (name_s.startswith('Generated_PN_') or name_s.startswith('CpueQueue'))
-                        # Capture site mapping for non-synthetic nodes at depth 0/1 (tiered),
-                        # or depth 0 in flat mode.
-                        if (not synthetic) and ((depth in (0, 1)) or (flat_mode and depth == 0)):
-                            st = planner.getState()
-                            if 'site_map' not in st or not isinstance(st['site_map'], dict):
-                                st['site_map'] = {}
-                            # Store as integers for ease of later use
-                            cpu_int = int(queue - 1)
-                            major_int = int(major)
-                            minor_int = int(chosen_minor)
-                            site_key = int(hash_to_i64(str(node)))
-                            st['site_map'][site_key] = {
-                                'cpu': cpu_int,
-                                'major': major_int,
-                                'minor': minor_int,
-                                'insertion_order': int(site_insert_counter),
-                            }
-                            site_insert_counter += 1
-                        # Always reserve the site's minor in the free list, even for synthetic nodes
-                        try:
-                            st = planner.getState()
-                            fm = st.get('free_minors')
-                            cpu_int = int(queue - 1)
-                            minor_int = int(chosen_minor)
-                            if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list):
-                                if int(minor_int) in fm[cpu_int]:
-                                    fm[cpu_int].remove(int(minor_int))
-                        except Exception:
-                            pass
-                except Exception:
-                    # Planner is optional; ignore errors during capture
-                    pass
                 thisParentNode =	{
                                     "parentNodeName": node,
                                     "classID": nodeClassID,
@@ -1532,10 +1037,9 @@ def refreshShapers():
                     except Exception:
                         pass
                     raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
-                # If a device from ShapedDevices.csv lists this node as its Parent Node,
-                # record starting minor and reserve enough minors to keep classid sequence stable.
+                # If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
                 if node in circuits_by_parent_node:
-                    # Determine if we need to squash mins at TC time (record only)
+                    # If mins of circuits combined exceed min of parent node - set to 1
                     override_min_down = None
                     override_min_up = None
                     if monitor_mode_only() == False:
@@ -1546,13 +1050,79 @@ def refreshShapers():
                             if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
                                 logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
                                 nodes_requiring_min_squashing[node] = True
-                    # Record starting minor for circuits under this node
-                    circuits_start_minor[str(node)] = int(minorByCPU[queue])
-                    # Increment minor counter by number of circuits to keep classid allocation stable
-                    try:
-                        minorByCPU[queue] = minorByCPU[queue] + len(circuits_by_parent_node[node])
-                    except Exception:
-                        pass
+                    # Sort circuits by name for stable ordering
+                    sorted_circuits = sorted(circuits_by_parent_node[node],
+                                           key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+                    for circuit in sorted_circuits:
+                        if node == circuit['ParentNode']:
+                            if monitor_mode_only() == False:
+                                if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
+                                    logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                                if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
+                                    logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                            parentString = hex(major) + ':'
+                            flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
+                            upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
+                            circuit['classid'] = flowIDstring
+                            circuit['up_classid'] = upFlowIDstring
+                            logging.info("Added up_classid to circuit: " + circuit['up_classid'])
+                            # Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
+                            maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
+                            maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
+                            if override_min_down:
+                                circuit['minDownload'] = 1
+                            if override_min_up:
+                                circuit['minUpload'] = 1
+                            minDownload = min(circuit['minDownload'],maxDownload)
+                            minUpload = min(circuit['minUpload'],maxUpload)
+                            thisNewCircuitItemForNetwork = {
+                                'maxDownload' : maxDownload,
+                                'maxUpload' : maxUpload,
+                                'minDownload' : minDownload,
+                                'minUpload' : minUpload,
+                                "circuitID": circuit['circuitID'],
+                                "circuitName": circuit['circuitName'],
+                                "ParentNode": circuit['ParentNode'],
+                                "devices": circuit['devices'],
+                                "classid": flowIDstring,
+                                "up_classid" : upFlowIDstring,
+                                "classMajor": hex(major),
+                                "up_classMajor" : hex(major + stickOffset),
+                                "classMinor": hex(minorByCPU[queue]),
+                                "comment": circuit['comment']
+                            }
+                            # Attach the planner weight used by the planner/UI summary
+                            # Priority: explicit weight -> fallback to maxDownload
+                            try:
+                                cid = str(circuit.get('circuitID',''))
+                                w = None
+                                if cid in weight_by_circuit_id:
+                                    w = float(weight_by_circuit_id[cid])
+                                if w is None:
+                                    w = float(maxDownload)
+                                # Treat 1000 as a sentinel default from Insight; use maxDownload instead
+                                if abs(w - 1000.0) < 1e-6:
+                                    w = float(maxDownload)
+                                # If the circuit's configured rate equals the generated PN default,
+                                # ignore it for weight purposes.
+                                try:
+                                    default_rate = float(generated_pn_download_mbps())
+                                    if abs(float(maxDownload) - default_rate) < 1e-6:
+                                        w = 0.0
+                                except Exception:
+                                    pass
+                                thisNewCircuitItemForNetwork['planner_weight'] = w
+                            except Exception:
+                                pass
+                            # Preserve optional per-circuit SQM override for downstream bakery call
+                            if 'sqm' in circuit and circuit['sqm']:
+                                thisNewCircuitItemForNetwork['sqm'] = circuit['sqm']
+                            # Generate TC commands to be executed later
+                            thisNewCircuitItemForNetwork['devices'] = circuit['devices']
+                            circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
+                            minorByCPU[queue] = minorByCPU[queue] + 1
+                if len(circuitsForThisNetworkNode) > 0:
+                    data[node]['circuits'] = circuitsForThisNetworkNode
 
                 # Add padding for future circuit additions (applies to all nodes)
                 # This ensures space is reserved even for nodes without circuits
@@ -1587,467 +1157,125 @@ def refreshShapers():
 
         # If we're in binpacking mode, we need to sort the network structure a bit
         if use_bin_packing_to_balance_cpu() and not is_network_flat():
-            if not is_insight_enabled():
-                warn_msg2 = "Binpacking is enabled, but requires an Insight subscription."
-                print("Warning: " + warn_msg2)
+            print("Planner is enabled, so we're going to sort your network across CPU queues.")
+            # Build items from top-level nodes with weights
+            items = []
+            try:
+                weights = get_tree_weights()
+            except Exception as e:
+                warnings.warn("get_tree_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
+                weights = None
+            weight_by_name = {}
+            if weights is not None:
                 try:
-                    submit_urgent_issue("LibreQoS", "Warning", "BINPACKING_REQUIRES_INSIGHT", warn_msg2, "{}", "BINPACKING_REQUIRES_INSIGHT_SITE_DISTRIBUTION")
+                    for w in weights:
+                        weight_by_name[str(w.name)] = float(w.weight)
                 except Exception:
                     pass
+            for node in network:
+                w = weight_by_name.get(str(node), 1.0)
+                items.append({"id": str(node), "weight": float(w)})
+
+            # Prepare bins and capacities
+            cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
+            bins_list = [{"id": key} for key in cpu_keys]
+            capacities = {key: 1.0 for key in cpu_keys}
+
+            # Load planner state
+            try:
+                import bin_planner
+            except ImportError:
+                bin_planner = None
+            # Store planner state directly in lqos_directory (no hidden subdirs)
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state = {}
+            if bin_planner is not None:
+                state = bin_planner.load_state(state_path)
+            now_ts = time.time()
+            prev_assign = {}
+            last_change_ts = {}
+            if isinstance(state, dict):
+                prev_assign = state.get("assignments", {}) or {}
+                last_change_ts = state.get("last_change_ts", {}) or {}
+            item_ids = {str(it["id"]) for it in items}
+            valid_bins = set(capacities.keys())
+            prev_assign = {iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins}
+            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+
+            params = {
+                "candidate_set_size": 4,
+                "headroom": 0.05,
+                "alpha": 0.1,
+                "hysteresis_threshold": 0.03,
+                "cooldown_seconds": 3600,
+                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
+                "last_change_ts_by_item": last_change_ts,
+            }
+            if monitor_mode_only() == True:
+                params["move_budget_per_run"] = 0
+
+            if bin_planner is not None:
+                assignment, changed = bin_planner.plan_assignments(
+                    items, bins_list, capacities, prev_assign, now_ts, params
+                )
             else:
-                # Decide reuse vs greedy
-                reuse_planner = False
+                # Fallback to simple greedy if planner unavailable
+                bin_loads = {key: 0.0 for key in cpu_keys}
+                pairs = [(str(it["id"]), float(it["weight"])) for it in items]
+                pairs.sort(key=lambda nw: (-nw[1], nw[0]))
+                assignment = {}
+                for name, w in pairs:
+                    target = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    assignment[name] = target
+                    bin_loads[target] += w
+                changed = list(assignment.keys())
+
+            for x in range(queuesAvailable):
+                key = "CpueQueue" + str(x)
+                assigned = [name for name, tgt in assignment.items() if tgt == key]
+                print("Bin " + str(x) + " = ", assigned)
+
+            # Build the binned network structure
+            binnedNetwork = {}
+            for cpu in range(queuesAvailable):
+                cpuKey = "CpueQueue" + str(cpu)
+                binnedNetwork[cpuKey] = {
+                    'downloadBandwidthMbps': generated_pn_download_mbps(),
+                    'uploadBandwidthMbps': generated_pn_upload_mbps(),
+                    'type': 'site',
+                    'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
+                    'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
+                    'children': {},
+                    'name': cpuKey
+                }
+            for node in network:
+                tgt = assignment.get(node)
+                if tgt is None:
+                    tgt = "CpueQueue" + str(queuesAvailable - 1)
+                binnedNetwork[tgt]['children'][node] = network[node]
+            network = binnedNetwork
+
+            # Update and save state
+            if bin_planner is not None and isinstance(state, dict):
+                if state.get("salt") is None:
+                    state["salt"] = "default_salt"
+                if "assignments" not in state or not isinstance(state["assignments"], dict):
+                    state["assignments"] = {}
+                if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
+                    state["last_change_ts"] = {}
+                for iid, b in assignment.items():
+                    if iid in changed:
+                        state["last_change_ts"][iid] = now_ts
+                    state["assignments"][iid] = b
                 try:
-                    if 'planner' in locals() and isinstance(planner, Planner):
-                        st = planner.getState()
-                        if isinstance(st, dict) and isinstance(st.get('site_map', None), dict) and (not getattr(planner, '_is_default', False)):
-                            reuse_planner = True
-                except Exception:
-                    reuse_planner = False
-
-                if reuse_planner:
-                    print("Rebuilding CPU bins from planner map (stable).")
-                    cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
-                    binnedNetwork = {}
-                    for cpu in range(queuesAvailable):
-                        cpuKey = "CpueQueue" + str(cpu)
-                        binnedNetwork[cpuKey] = {
-                            'downloadBandwidthMbps': generated_pn_download_mbps(),
-                            'uploadBandwidthMbps': generated_pn_upload_mbps(),
-                            'type': 'site',
-                            'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
-                            'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
-                            'children': {},
-                            'name': cpuKey
-                        }
-                    # Build name->node map from current (flattened) network
-                    def map_all_nodes(data, out):
-                        if isinstance(data, dict):
-                            for key, val in data.items():
-                                if key == 'children':
-                                    continue
-                                if isinstance(val, dict):
-                                    try:
-                                        out[str(key)] = val
-                                    except Exception:
-                                        pass
-                                    if 'children' in val and isinstance(val['children'], dict):
-                                        map_all_nodes(val['children'], out)
-                    all_nodes = {}
-                    map_all_nodes(network, all_nodes)
-                    # Hash map for current names
-                    name_hash_to_name = {}
-                    try:
-                        for nm in list(all_nodes.keys()):
-                            try:
-                                name_hash_to_name[int(hash_to_i64(str(nm)))] = str(nm)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    # Group sites by CPU and order by insertion_order
-                    st = planner.getState()
-                    cpu_to_sites = {cpu: [] for cpu in range(queuesAvailable)}
-                    for name, entry in st['site_map'].items():
-                        try:
-                            cpu = int(entry.get('cpu', 0))
-                            ins = int(entry.get('insertion_order', 0))
-                            # name may be hashed int or legacy string; coerce to hash int
-                            try:
-                                name_hash = int(name)
-                            except Exception:
-                                name_hash = int(hash_to_i64(str(name)))
-                            cpu_to_sites.setdefault(cpu, []).append((ins, name_hash))
-                        except Exception:
-                            pass
-                    for cpu, lst in cpu_to_sites.items():
-                        lst.sort(key=lambda t: t[0])
-                        cpuKey = "CpueQueue" + str(cpu)
-                        for _, site_hash in lst:
-                            site_name = name_hash_to_name.get(int(site_hash))
-                            if site_name is None:
-                                continue
-                            # Skip synthetic default PN containers in site binning
-                            try:
-                                if str(site_name).startswith('Generated_PN_'):
-                                    continue
-                            except Exception:
-                                pass
-                            node_obj = all_nodes.get(site_name)
-                            if node_obj is None:
-                                continue
-                            # Ensure speeds reflect current network.json
-                            try:
-                                speeds = getattr(planner, '_site_speeds', {}).get(site_name)
-                                if isinstance(speeds, dict):
-                                    node_obj['downloadBandwidthMbps'] = speeds.get('dl_max', node_obj.get('downloadBandwidthMbps'))
-                                    node_obj['uploadBandwidthMbps'] = speeds.get('ul_max', node_obj.get('uploadBandwidthMbps'))
-                                    node_obj['downloadBandwidthMbpsMin'] = speeds.get('dl_min', node_obj.get('downloadBandwidthMbpsMin', node_obj.get('downloadBandwidthMbps')))
-                                    node_obj['uploadBandwidthMbpsMin'] = speeds.get('ul_min', node_obj.get('uploadBandwidthMbpsMin', node_obj.get('uploadBandwidthMbps')))
-                            except Exception:
-                                pass
-                            binnedNetwork[cpuKey]['children'][site_name] = node_obj
-                    # After placing real sites, guarantee one Generated_PN per CPU
-                    try:
-                        for idx, pn in enumerate(generatedPNs):
-                            cpuKey = "CpueQueue" + str(idx if idx < queuesAvailable else queuesAvailable-1)
-                            node_obj = network.get(pn) if isinstance(network, dict) else None
-                            if node_obj is None:
-                                node_obj = {
-                                    'downloadBandwidthMbps': generated_pn_download_mbps(),
-                                    'uploadBandwidthMbps': generated_pn_upload_mbps(),
-                                    'type': 'site',
-                                    'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
-                                    'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
-                                }
-                            binnedNetwork[cpuKey]['children'][pn] = node_obj
-                    except Exception:
-                        pass
-                    network = binnedNetwork
-                else:
-                    print("Using greedy binpacking to distribute sites across CPU queues.")
-                    # Build items from top-level nodes with weights
-                    items = []
-                    try:
-                        weights = get_tree_weights()
-                    except Exception as e:
-                        warnings.warn("get_tree_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
-                        weights = None
-                    weight_by_name = {}
-                    if weights is not None:
-                        try:
-                            for w in weights:
-                                weight_by_name[str(w.name)] = float(w.weight)
-                        except Exception:
-                            pass
-                    for node in network:
-                        # Exclude Generated_PN_* from site binpacking entirely
-                        try:
-                            if str(node).startswith('Generated_PN_'):
-                                continue
-                        except Exception:
-                            pass
-                        w = weight_by_name.get(str(node), 1.0)
-                        items.append({"id": str(node), "weight": float(w)})
-
-                    # Prepare bins and capacities
-                    cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
-                    capacities = {key: 1.0 for key in cpu_keys}
-
-                    # Greedy assignment of sites to CPU bins
-                    assignment = _greedy_binpack(items, cpu_keys, capacities)
-                    for x in range(queuesAvailable):
-                        key = "CpueQueue" + str(x)
-                        assigned = [name for name, tgt in assignment.items() if tgt == key]
-                        print("Bin " + str(x) + " = ", assigned)
-
-                    # Build the binned network structure
-                    binnedNetwork = {}
-                    for cpu in range(queuesAvailable):
-                        cpuKey = "CpueQueue" + str(cpu)
-                        binnedNetwork[cpuKey] = {
-                            'downloadBandwidthMbps': generated_pn_download_mbps(),
-                            'uploadBandwidthMbps': generated_pn_upload_mbps(),
-                            'type': 'site',
-                            'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
-                            'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
-                            'children': {},
-                            'name': cpuKey
-                        }
-                    for node in network:
-                        try:
-                            if str(node).startswith('Generated_PN_'):
-                                continue
-                        except Exception:
-                            pass
-                        tgt = assignment.get(node)
-                        if tgt is None:
-                            tgt = "CpueQueue" + str(queuesAvailable - 1)
-                        binnedNetwork[tgt]['children'][node] = network[node]
-                    # After placing real sites, guarantee one Generated_PN per CPU
-                    try:
-                        for idx, pn in enumerate(generatedPNs):
-                            cpuKey = "CpueQueue" + str(idx if idx < queuesAvailable else queuesAvailable-1)
-                            node_obj = network.get(pn) if isinstance(network, dict) else None
-                            if node_obj is None:
-                                node_obj = {
-                                    'downloadBandwidthMbps': generated_pn_download_mbps(),
-                                    'uploadBandwidthMbps': generated_pn_upload_mbps(),
-                                    'type': 'site',
-                                    'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
-                                    'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
-                                }
-                            binnedNetwork[cpuKey]['children'][pn] = node_obj
-                    except Exception:
-                        pass
-                    network = binnedNetwork
+                    print(f"Saving planner state to {state_path} (top-level CPU binning)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
         # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
         minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
-
-        # Hoisted pass: attach circuits to built site tree using reserved minors
-        # Prepare a stale set of prior circuits to detect removals
-        stale_circuits = set()
-        try:
-            if 'planner' in locals() and isinstance(planner, Planner):
-                st0 = planner.getState()
-                cmap = st0.get('circuit_map') if isinstance(st0, dict) else None
-                if isinstance(cmap, dict):
-                    # Keep keys as stored (may be ints or legacy strings)
-                    stale_circuits = set(cmap.keys())
-        except Exception:
-            stale_circuits = set()
-        for node_name, circuit_list in circuits_by_parent_node.items():
-            if node_name not in node_refs:
-                continue
-            node = node_refs[node_name]
-            # Determine major/cpu
-            try:
-                major_int = int(node.get('classMajor', '0x0'), 16)
-            except Exception:
-                major_int = 0
-            try:
-                if node_name in circuits_start_minor:
-                    start_minor = int(circuits_start_minor.get(node_name))
-                else:
-                    # Fallback: never start circuits at the site's own minor; advance by at least +1
-                    site_minor = int(node.get('classMinor', '0x0'), 16)
-                    start_minor = max(4, site_minor + 1)
-            except Exception:
-                start_minor = 4
-            # Precompute override flags (same logic as before)
-            override_min_down = None
-            override_min_up = None
-            if monitor_mode_only() == False:
-                try:
-                    if (circuit_min_down_combined_by_parent_node[node_name] > node['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node_name] > node['uploadBandwidthMbpsMin']):
-                        override_min_down = 1
-                        override_min_up = 1
-                except Exception:
-                    pass
-            # Sort circuits by name for stable ordering
-            sorted_circuits = sorted(circuit_list, key=lambda c: c.get('circuitName', c.get('circuitID', '')))
-            circuits_for_node = []
-            current_minor = start_minor
-            # Planner reuse toggle for circuits
-            use_planner_circuits = False
-            st = {}
-            cpu_int = 0
-            try:
-                if 'planner' in locals() and isinstance(planner, Planner) and (not getattr(planner, '_is_default', False)):
-                    st = planner.getState()
-                    use_planner_circuits = isinstance(st, dict) and isinstance(st.get('circuit_map', None), dict)
-            except Exception:
-                use_planner_circuits = False
-            # CPU index for this node (from hex string)
-            try:
-                cpu_int = int(node.get('cpuNum', '0x0'), 16)
-            except Exception:
-                cpu_int = 0
-            for circuit in sorted_circuits:
-                if node_name != circuit.get('ParentNode'):
-                    continue
-                # Mark as present this run (not stale)
-                try:
-                    cid_raw = circuit.get('circuitID', '')
-                    # Discard both hashed and string forms to be robust across versions
-                    try:
-                        stale_circuits.discard(int(hash_to_i64(str(cid_raw))))
-                    except Exception:
-                        pass
-                    try:
-                        stale_circuits.discard(str(cid_raw))
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                # Bound to parent's maxima
-                maxDownload = min(circuit['maxDownload'], node['downloadBandwidthMbps'])
-                maxUpload = min(circuit['maxUpload'], node['uploadBandwidthMbps'])
-                # Apply override min=1 if needed (further squashing to 0.01 happens at TC emission)
-                if override_min_down:
-                    circuit['minDownload'] = 1
-                if override_min_up:
-                    circuit['minUpload'] = 1
-                minDownload = min(circuit['minDownload'], maxDownload)
-                minUpload = min(circuit['minUpload'], maxUpload)
-                # Choose minor: reuse from planner if available, else take from free list, else fall back to sequential
-                chosen_minor = None
-                if use_planner_circuits:
-                    try:
-                        cid_raw = circuit['circuitID']
-                        entry = None
-                        # Prefer hashed lookup
-                        try:
-                            entry = st['circuit_map'].get(int(hash_to_i64(str(cid_raw))))
-                        except Exception:
-                            entry = None
-                        if entry is None:
-                            # Fallback to legacy string key (pre-hash)
-                            entry = st['circuit_map'].get(str(cid_raw))
-                        if isinstance(entry, dict):
-                            saved_major = int(entry.get('major', major_int))
-                            saved_minor = int(entry.get('minor', -1))
-                            saved_parent = str(entry.get('parent_site', node_name))
-                            # Reuse only if this circuit still belongs to this node and major matches
-                            if saved_parent == str(node_name) and saved_major == int(major_int) and saved_minor >= 4:
-                                chosen_minor = saved_minor
-                                # Remove from free list if present
-                                try:
-                                    fm = st.get('free_minors')
-                                    if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list) and saved_minor in fm[cpu_int]:
-                                        fm[cpu_int].remove(saved_minor)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-                if chosen_minor is None:
-                    # Allocate from free list for this CPU
-                    try:
-                        fm = st.get('free_minors') if isinstance(st, dict) else None
-                        if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list) and len(fm[cpu_int]) > 0:
-                            chosen_minor = int(fm[cpu_int].pop(0))
-                    except Exception:
-                        chosen_minor = None
-                if chosen_minor is None:
-                    # Fallback to reserved sequential range; ensure we never collide with the site's minor (<3 reserved)
-                    chosen_minor = max(4, int(current_minor))
-                    # Guard against collision with the parent site's own minor (e.g., 0xd)
-                    try:
-                        site_minor = int(node.get('classMinor', '0x0'), 16)
-                    except Exception:
-                        site_minor = -1
-                    if chosen_minor == site_minor:
-                        chosen_minor += 1
-                    # Also guard against collisions within this node's already-assigned circuits
-                    try:
-                        used_minors = set()
-                        for c in circuits_for_node:
-                            try:
-                                used_minors.add(int(str(c.get('classMinor', '0x0')), 16))
-                            except Exception:
-                                pass
-                        while chosen_minor in used_minors:
-                            chosen_minor += 1
-                    except Exception:
-                        pass
-                    current_minor = chosen_minor + 1
-                flowIDstring = hex(major_int) + ':' + hex(chosen_minor)
-                upFlowIDstring = hex(major_int + stickOffset) + ':' + hex(chosen_minor)
-                item = {
-                    'maxDownload': maxDownload,
-                    'maxUpload': maxUpload,
-                    'minDownload': minDownload,
-                    'minUpload': minUpload,
-                    'circuitID': circuit['circuitID'],
-                    'circuitName': circuit['circuitName'],
-                    'ParentNode': circuit['ParentNode'],
-                    'devices': circuit['devices'],
-                    'classid': flowIDstring,
-                    'up_classid': upFlowIDstring,
-                    'classMajor': hex(major_int),
-                    'up_classMajor': hex(major_int + stickOffset),
-                    'classMinor': hex(chosen_minor),
-                    'comment': circuit['comment']
-                }
-                # Planner/UI weight
-                try:
-                    cid = str(circuit.get('circuitID', ''))
-                    w = None
-                    if cid in weight_by_circuit_id:
-                        w = float(weight_by_circuit_id[cid])
-                    if w is None:
-                        w = float(maxDownload)
-                    if abs(w - 1000.0) < 1e-6:
-                        w = float(maxDownload)
-                    try:
-                        default_rate = float(generated_pn_download_mbps())
-                        if abs(float(maxDownload) - default_rate) < 1e-6:
-                            w = 0.0
-                    except Exception:
-                        pass
-                    item['planner_weight'] = w
-                except Exception:
-                    pass
-                # SQM override copy-through
-                if 'sqm' in circuit and circuit['sqm']:
-                    item['sqm'] = circuit['sqm']
-                circuits_for_node.append(item)
-                # Insert circuit details into planner's circuit_map for future reuse
-                try:
-                    if 'planner' in locals() and isinstance(planner, Planner):
-                        st = planner.getState()
-                        if 'circuit_map' not in st or not isinstance(st['circuit_map'], dict):
-                            st['circuit_map'] = {}
-                        st['circuit_map'][int(hash_to_i64(str(circuit['circuitID'])))] = {
-                            'cpu': int(cpu_int),
-                            'major': int(major_int),
-                            'minor': int(chosen_minor),
-                            'parent_site': str(node_name),
-                            'sqm': str(circuit['sqm']) if 'sqm' in circuit and circuit['sqm'] else '',
-                        }
-                        # Remove used minor from the planner's free list for this CPU, if present
-                        try:
-                            fm = st.get('free_minors')
-                            if isinstance(fm, list) and 0 <= cpu_int < len(fm) and isinstance(fm[cpu_int], list):
-                                if int(chosen_minor) in fm[cpu_int]:
-                                    fm[cpu_int].remove(int(chosen_minor))
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                if current_minor > 0xFFFF:
-                    msg = f"Minor class ID overflow while attaching circuits on node {node_name}: {current_minor} exceeds TC u16 limit."
-                    logging.error(msg)
-                    try:
-                        ctx = json.dumps({"node": str(node_name), "minor": int(current_minor)})
-                        submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_NODE_{str(node_name)}")
-                    except Exception:
-                        pass
-                    raise ValueError(msg)
-            if len(circuits_for_node) > 0:
-                node['circuits'] = circuits_for_node
-
-        # Any circuits left in stale_circuits are removed this run: reclaim their minors
-        try:
-            if 'planner' in locals() and isinstance(planner, Planner) and len(stale_circuits) > 0:
-                st_final = planner.getState()
-                cmap = st_final.get('circuit_map') if isinstance(st_final, dict) else None
-                fm = st_final.get('free_minors') if isinstance(st_final, dict) else None
-                if isinstance(cmap, dict):
-                    for cid in list(stale_circuits):
-                        try:
-                            entry = cmap.get(cid)
-                            if entry is None:
-                                # Attempt both string/int conversions for robustness
-                                try:
-                                    entry = cmap.get(str(cid))
-                                except Exception:
-                                    entry = None
-                                if entry is None:
-                                    try:
-                                        entry = cmap.get(int(cid))
-                                    except Exception:
-                                        entry = None
-                            if isinstance(entry, dict):
-                                cpu = int(entry.get('cpu', 0))
-                                minor = int(entry.get('minor', -1))
-                                if isinstance(fm, list) and 0 <= cpu < len(fm) and isinstance(fm[cpu], list):
-                                    # Reserve 1..3 globally; only return minors >=4 to the free list
-                                    if minor >= 4 and minor <= 0xFFFF and (minor not in fm[cpu]):
-                                        fm[cpu].append(minor)
-                                # Remove from circuit_map
-                                try:
-                                    cmap.pop(cid, None)
-                                except Exception:
-                                    try:
-                                        cmap.pop(str(cid), None)
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
-        except Exception:
-            pass
 
         bakery = Bakery()
         bakery.start_batch() # Initializes the bakery transaction
@@ -2099,25 +1327,33 @@ def refreshShapers():
             linuxTCcommands.append(command)
 
 
-        # Parse network structure. Emit all site HTB classes before any circuits for clarity.
+        # Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
+        # Define lists for hash filters
         print("Preparing TC commands")
+        def traverseNetwork(data):
 
-        def emit_sites(data):
+            # Cake needs help handling rates lower than 5 Mbps
+            def sqmFixupRate(rate:int, sqm:str) -> str:
+                # If we aren't using cake, just return the sqm string
+                if not sqm.startswith("cake") or "rtt" in sqm:
+                    return sqm
+
+                # If we are using cake, we need to fixup the rate
+                # Based on: 1 MTU is 1500 bytes, or 12,000 bits.
+                # At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
+                #    So 15ms divided by 5 (for 1%) multiplied by 100 yields 300ms.
+                #    The same formula gives 180ms at 2Mbps
+                #    140ms at 3Mbps
+                #    120ms at 4Mbps
+                match rate:
+                    case 1: return sqm + " rtt 300"
+                    case 2: return sqm + " rtt 180"
+                    case 3: return sqm + " rtt 140"
+                    case 4: return sqm + " rtt 120"
+                    case _: return sqm
+
             for node in sorted(data.keys()):
                 site_name = data[node]['name'] if 'name' in data[node] else node
-                # Avoid creating Bakery sites for CpueQueue* (CPU bin containers) when not in flat mode.
-                # Generated_PN_* must be real HTB parents (one per CPU) so circuits under them have valid parents;
-                # therefore, do NOT skip Generated_PN_* here.
-                try:
-                    name_s = str(site_name)
-                    if (not is_network_flat()) and (name_s.startswith('CpueQueue')):
-                        # Recurse into children to ensure real sites are still emitted
-                        if 'children' in data[node]:
-                            sorted_children = dict(sorted(data[node]['children'].items()))
-                            emit_sites(sorted_children)
-                        continue
-                except Exception:
-                    pass
                 bakery.add_site(
                     site_name,
                     data[node]['parentClassID'],
@@ -2128,36 +1364,19 @@ def refreshShapers():
                     data[node]['downloadBandwidthMbps'],
                     data[node]['uploadBandwidthMbps'],
                 )
-                # Legacy TC output for reference
                 command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
                 linuxTCcommands.append(command)
+                logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
+                logging.info("ClassMinor: " + data[node]['classMinor'])
                 command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
                 linuxTCcommands.append(command)
-                if 'children' in data[node]:
-                    sorted_children = dict(sorted(data[node]['children'].items()))
-                    emit_sites(sorted_children)
-
-        def emit_circuits(data):
-            # Cake needs help handling rates lower than 5 Mbps
-            def sqmFixupRate(rate:int, sqm:str) -> str:
-                # If we aren't using cake, just return the sqm string
-                if not sqm.startswith("cake") or "rtt" in sqm:
-                    return sqm
-                match rate:
-                    case 1: return sqm + " rtt 300"
-                    case 2: return sqm + " rtt 180"
-                    case 3: return sqm + " rtt 140"
-                    case 4: return sqm + " rtt 120"
-                    case _: return sqm
-
-            for node in sorted(data.keys()):
                 if 'circuits' in data[node]:
-                    sorted_circuits = sorted(
-                        data[node]['circuits'],
-                        key=lambda c: c.get('circuitName', c.get('circuitID', ''))
-                    )
+                    # Sort circuits by name for stable ordering
+                    sorted_circuits = sorted(data[node]['circuits'],
+                                           key=lambda c: c.get('circuitName', c.get('circuitID', '')))
                     for circuit in sorted_circuits:
                         # If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
+                        # Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
                         min_down = circuit['minDownload']
                         min_up = circuit['minUpload']
                         if node in nodes_requiring_min_squashing:
@@ -2165,7 +1384,7 @@ def refreshShapers():
                                 min_down = 0.01
                             if min_up == 1:
                                 min_up = 0.01
-                        # Ensure min < max
+                        # Ensure min < max for circuits as well
                         try:
                             max_down = float(circuit['maxDownload'])
                             max_up = float(circuit['maxUpload'])
@@ -2178,23 +1397,31 @@ def refreshShapers():
                             mu = min_up
                         if md >= max_down:
                             new_md = (max_down - 1.0) if max_down >= 1.0 else max(0.01, max_down - 0.01)
+                            # Too noisy in practice; keep as debug for diagnostics
                             logging.debug(f"Circuit '{circuit.get('circuitID','unknown')}' min download ({md}) >= max ({max_down}); lowering min to {new_md}")
                             min_down = new_md
                         if mu >= max_up:
                             new_mu = (max_up - 1.0) if max_up >= 1.0 else max(0.01, max_up - 0.01)
+                            # Too noisy in practice; keep as debug for diagnostics
                             logging.debug(f"Circuit '{circuit.get('circuitID','unknown')}' min upload ({mu}) >= max ({max_up}); lowering min to {new_mu}")
                             min_up = new_mu
-
-                        # Comment and IP aggregation (for legacy output and mappings)
+                        # Generate TC commands to be executed later
                         tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
+                        for device in circuit['devices']:
+                            tcComment = '' #tcComment + device['deviceID'] + ', '
+                        if 'devices' in circuit:
+                            if 'comment' in circuit['devices'][0]:
+                                tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
                         tcComment = tcComment.replace("\n", "")
                         circuit_name = circuit['circuitID'] if 'circuitID' in circuit else "unknown"
+                        # Collect all IP addresses for this circuit
                         ip_list = []
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 ip_list.extend(device['ipv4s'])
                             if device['ipv6s']:
                                 ip_list.extend(device['ipv6s'])
+                        # Concatenate IPs with comma separator
                         ip_addresses_str = ','.join(ip_list)
 
                         sqm_override = circuit['sqm'] if 'sqm' in circuit else None
@@ -2212,12 +1439,14 @@ def refreshShapers():
                             ip_addresses_str,
                             sqm_override,
                         )
-                        # Legacy TC output for reference
                         command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
                         linuxTCcommands.append(command)
+                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
                         if monitor_mode_only() == False:
+                            # SQM Fixup for lower rates (and per-circuit override)
                             def effective_sqm_str(rate, override, direction):
                                 base = sqm()
+                                # Resolve per-direction token from override string
                                 chosen = None
                                 if override:
                                     try:
@@ -2231,6 +1460,7 @@ def refreshShapers():
                                             chosen = ov
                                     except Exception:
                                         chosen = None
+                                # If no explicit token for this direction, use default behavior
                                 if not chosen:
                                     try:
                                         thresh = fast_queues_fq_codel()
@@ -2254,7 +1484,9 @@ def refreshShapers():
                                 linuxTCcommands.append(command)
                         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
                         linuxTCcommands.append(command)
+                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
                         if monitor_mode_only() == False:
+                            # SQM Fixup for lower rates (and per-circuit override)
                             sqm_override = circuit['sqm'] if 'sqm' in circuit else None
                             useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
                             if useSqm != '':
@@ -2264,22 +1496,26 @@ def refreshShapers():
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:
                                     ipMapBatch.add_ip_mapping(str(ipv4), circuit['classid'], data[node]['cpuNum'], False)
+                                    #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(str(ipv4), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
                             if device['ipv6s']:
                                 for ipv6 in device['ipv6s']:
                                     ipMapBatch.add_ip_mapping(str(ipv6), circuit['classid'], data[node]['cpuNum'], False)
+                                    #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(str(ipv6), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
                             if device['deviceName'] not in devicesShaped:
                                 devicesShaped.append(device['deviceName'])
+                # Recursive call this function for children nodes attached to this node
                 if 'children' in data[node]:
+                    # Sort children to ensure consistent traversal order
                     sorted_children = dict(sorted(data[node]['children'].items()))
-                    emit_circuits(sorted_children)
-
-        # Emit site HTB classes first, then circuits
-        emit_sites(network)
-        emit_circuits(network)
+                    traverseNetwork(sorted_children)
+        # Here is the actual call to the recursive traverseNetwork() function.
+        traverseNetwork(network)
 
         # Save queuingStructure
         queuingStructure = {}
@@ -2395,15 +1631,6 @@ def refreshShapers():
         print("\tXDP filters: \t " + "{:g}".format(round(xdpFilterTimeSeconds,4)) + " seconds")
 
 
-        # Persist planner state (if initialized)
-        try:
-            if 'planner' in locals() and isinstance(planner, Planner):
-                # Do not mutate 'site_names' here; it must reflect the original invariant
-                # used to decide planner rebuild (e.g., depth-1 names for tiered).
-                planner.persist()
-        except Exception as e:
-            warnings.warn(f"Planner persist failed: {e}", stacklevel=2)
-
         # Done
         print("refreshShapers completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
@@ -2470,6 +1697,8 @@ def refreshShapersUpdateOnly():
                     devicesChanged = True
                 if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] != lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']:
                     devicesChanged = True
+            else:
+                devicesChanged = True
         for circuitID, circuit in newlyUpdatedSubscriberCircuitsByID.items():
             if (circuitID not in lastLoadedSubscriberCircuitsByID):
                 devicesChanged = True
@@ -2534,10 +1763,22 @@ if __name__ == '__main__':
         help="Clear ip filters, qdiscs, and xdp setup if any",
         action=argparse.BooleanOptionalAction,
     )
+    parser.add_argument(
+        '--planner-reset',
+        help="Delete planner state file before running",
+        action=argparse.BooleanOptionalAction,
+    )
     args = parser.parse_args()
     logging.basicConfig(level=args.loglevel)
 
-    # Planner reset no longer applicable (stateful planner removed)
+    if getattr(args, 'planner_reset', False):
+        try:
+            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            if os.path.exists(state_path):
+                os.remove(state_path)
+                print(f"Removed planner state: {state_path}")
+        except Exception as e:
+            print(f"Warning: could not remove planner state: {e}")
 
     if args.validate:
         status = validateNetworkAndDevices()
