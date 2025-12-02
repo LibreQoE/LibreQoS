@@ -67,8 +67,7 @@ use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use lqos_stormguard::STORMGUARD_STATS;
 use tracing::level_filters::LevelFilter;
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::LtsStatus;
+
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 // #[global_allocator]
@@ -639,10 +638,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
-            BusRequest::LogInfo(msg) => {
-                info!("BUS LOG: {}", msg);
-                BusResponse::Ack
-            }
             BusRequest::CheckSchedulerStatus => {
                 let running = tool_status::is_scheduler_available();
                 let error = tool_status::scheduler_error_message();
@@ -659,13 +654,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::ClearUrgentIssue(id) => {
                 urgent::clear(*id);
                 BusResponse::Ack
-            }
-            BusRequest::CheckInsight => {
-                let (status, _) = get_lts_license_status();
-                match status {
-                    LtsStatus::Invalid | LtsStatus::NotChecked => BusResponse::InsightStatus(false),
-                    _ => BusResponse::InsightStatus(true)
-                }
             }
         });
     }

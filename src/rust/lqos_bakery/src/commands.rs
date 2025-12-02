@@ -350,12 +350,11 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                // On ISP-facing (downlink) side, use downlink capacity
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -371,8 +370,7 @@ impl BakeryCommands {
 
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
-            // Default class parameters should also reflect downlink capacity on ISP-facing side
-            let mbps = config.queues.downlink_bandwidth_mbps as f64;
+            let mbps = config.queues.uplink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -392,7 +390,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -464,12 +462,11 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + stick_offset + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                // Internet-facing (uplink) side should use uplink capacity
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -484,8 +481,7 @@ impl BakeryCommands {
             result.push(class);
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
-            // Default class parameters should reflect uplink capacity on Internet-facing side
-            let mbps = config.queues.uplink_bandwidth_mbps as f64;
+            let mbps = config.queues.downlink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -505,7 +501,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -529,10 +525,6 @@ impl BakeryCommands {
         params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        // Derive major IDs from parent handles so classids are fully qualified
-        // and consistent with queuingStructure.json (classMajor/classMinor).
-        let (down_major, _) = params.parent_class_id.get_major_minor();
-        let (up_major, _) = params.up_parent_class_id.get_major_minor();
 
         /*
         bakery.add_site(data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
@@ -544,7 +536,6 @@ impl BakeryCommands {
         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
                  */
 
-        // Use 'replace' for idempotency: it adds when absent and updates when present.
         result.push(vec![
             "class".to_string(),
             "replace".to_string(),
@@ -553,7 +544,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}:0x{:x}", down_major, params.class_minor),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -575,7 +566,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.up_parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}:0x{:x}", up_major, params.class_minor),
+            format!("0x{:x}", params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -613,11 +604,18 @@ impl BakeryCommands {
         let mut do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
-            // Initial tree build: always create HTB + SQM classes for circuits,
-            // regardless of lazy queue mode. Laziness applies to live updates
-            // (ExecutionMode::LiveUpdate) and pruning, not the first full build.
-            do_htb = true;
-            do_sqm = true;
+            // In builder mode, if we're fully lazy - we don't do anything.
+            match config.queues.lazy_queues.as_ref() {
+                None | Some(LazyQueueMode::No) => {
+                    do_htb = true;
+                    do_sqm = true;
+                }
+                Some(LazyQueueMode::Full) => return None,
+                Some(LazyQueueMode::Htb) => {
+                    do_htb = true;
+                    do_sqm = false; // Only HTB, no SQM
+                }
+            }
         } else {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
@@ -683,17 +681,15 @@ impl BakeryCommands {
             pass
          */
         if do_htb {
-            // Use 'replace' for idempotency across repeated batches
-            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
-                verb.to_string(),
+                "replace".to_string(),
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
                 params.parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -728,17 +724,15 @@ impl BakeryCommands {
         }
 
         if do_htb {
-            // Use 'replace' for idempotency across repeated batches
-            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
-                verb.to_string(),
+                "replace".to_string(),
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
                 params.up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
+                format!("0x{:x}", params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -893,11 +887,7 @@ impl BakeryCommands {
                 "parent".to_string(),
                 parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!(
-                    "0x{:x}:0x{:x}",
-                    parent_class_id.get_major_minor().0,
-                    class_minor
-                ),
+                format!("0x{class_minor:x}"),
             ]);
             result.push(vec![
                 "class".to_string(),
@@ -907,11 +897,7 @@ impl BakeryCommands {
                 "parent".to_string(),
                 up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!(
-                    "0x{:x}:0x{:x}",
-                    up_parent_class_id.get_major_minor().0,
-                    class_minor
-                ),
+                format!("0x{class_minor:x}"),
             ]);
         }
 
