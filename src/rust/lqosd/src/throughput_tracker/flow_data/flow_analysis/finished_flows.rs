@@ -1,4 +1,5 @@
 use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id};
+use crate::lts2_sys::{get_lts_license_status, shared_types::LtsStatus};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use allocative_derive::Allocative;
@@ -15,6 +16,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::time::Duration;
 use tracing::debug;
+use uuid::Uuid;
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
@@ -452,6 +454,28 @@ impl FinishedFlowAnalysis {
 
 fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     debug!("Finished flow analysis");
+    let Ok(config) = load_config() else {
+        return;
+    };
+    if !config.long_term_stats.gather_stats {
+        return;
+    }
+    let Some(license_key) = &config.long_term_stats.license_key else {
+        return;
+    };
+    let license_key = license_key.trim();
+    if license_key.is_empty() {
+        return;
+    }
+    if Uuid::parse_str(&license_key.replace('-', "")).is_err() {
+        return;
+    }
+    let (license_status, _) = get_lts_license_status();
+    match license_status {
+        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid => return,
+        _ => {}
+    }
+
     let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
@@ -509,12 +533,6 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         };
     } else {
         // We have a one-way flow!
-        let Ok(config) = load_config() else {
-            return;
-        };
-        if !config.long_term_stats.gather_stats {
-            return;
-        }
         if let Err(e) = crate::lts2_sys::one_way_flow(
             start_time,
             last_seen,
