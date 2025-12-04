@@ -598,6 +598,28 @@ def refreshShapers():
         with open(networkJSONfile, 'r') as j:
             network = json.loads(j.read())
 
+        # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
+        # unparented so they can be distributed across generated parent nodes / CPUs.
+        flat_network = (len(network) == 0)
+        try:
+            flat_network = flat_network or is_network_flat()
+        except Exception:
+            pass
+        if flat_network:
+            print("Flat network detected; assigning circuits to generated parent nodes")
+            next_id = max(dictForCircuitsWithoutParentNodes.keys(), default=-1) + 1
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') != 'none':
+                    circuit['ParentNode'] = 'none'
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' not in circuit:
+                    try:
+                        weight = float(circuit.get('maxDownload', 0)) + float(circuit.get('maxUpload', 0))
+                    except Exception:
+                        weight = 0.0
+                    dictForCircuitsWithoutParentNodes[next_id] = weight
+                    circuit['idForCircuitsWithoutParentNodes'] = next_id
+                    next_id += 1
+
         # Normalize any zero or missing bandwidths in the network model early
         # Some users may specify 0 for site bandwidths. HTB requires positive
         # rates, so bump zeros to the parent/default capacity and log a warning.
