@@ -24,7 +24,6 @@ LQOS_FILES=(
   integrationRestHttp.py
   integrationSonar.py
   integrationSplynx.py
-  bin_planner.py
   integrationUISP.py
   LibreQoS.py
   lqos.example

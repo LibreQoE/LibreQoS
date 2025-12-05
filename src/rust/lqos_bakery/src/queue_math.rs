@@ -125,16 +125,16 @@ pub(crate) fn sqm_rate_fixup(rate: f32, config: &Arc<lqos_config::Config>) -> Ve
 
     if rate <= 1.0 {
         result.push("rtt".to_string());
-        result.push("300".to_string());
+        result.push("300ms".to_string());
     } else if rate <= 2.0 {
         result.push("rtt".to_string());
-        result.push("180".to_string());
+        result.push("180ms".to_string());
     } else if rate <= 3.0 {
         result.push("rtt".to_string());
-        result.push("140".to_string());
+        result.push("140ms".to_string());
     } else if rate <= 4.0 {
         result.push("rtt".to_string());
-        result.push("120".to_string());
+        result.push("120ms".to_string());
     }
     result
 }
@@ -172,16 +172,16 @@ pub(crate) fn sqm_tokens_for(
                 // Mirror the thresholds used in sqm_rate_fixup
                 if rate <= 1.0 {
                     base.push("rtt".to_string());
-                    base.push("300".to_string());
+                    base.push("300ms".to_string());
                 } else if rate <= 2.0 {
                     base.push("rtt".to_string());
-                    base.push("180".to_string());
+                    base.push("180ms".to_string());
                 } else if rate <= 3.0 {
                     base.push("rtt".to_string());
-                    base.push("140".to_string());
+                    base.push("140ms".to_string());
                 } else if rate <= 4.0 {
                     base.push("rtt".to_string());
-                    base.push("120".to_string());
+                    base.push("120ms".to_string());
                 }
             }
             base
