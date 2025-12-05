@@ -51,6 +51,25 @@ try:
 except ImportError:
     CIRCUIT_PADDING = 8  # Default value if not configured
 
+
+def is_missing_parent_node(value):
+    """Return True if the parent node field is effectively empty."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped == "" or stripped.lower() == "none"
+    return False
+
+
+def normalize_parent_node(value):
+    """Normalize parent node strings so blanks/'none' all map to 'none'."""
+    if is_missing_parent_node(value):
+        return "none"
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
 def get_shaped_devices_path():
     base_dir = get_libreqos_directory()
 
@@ -413,6 +432,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     token = left + '/' + right
                 sqm_override_token = token
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
+            ParentNode = normalize_parent_node(ParentNode)
             # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
             if monitor_mode_only() == True:
                 downloadMin = 10000
@@ -444,8 +464,10 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 if circuitID in knownCircuitIDs:
                     for circuit in subscriberCircuits:
                         if circuit['circuitID'] == circuitID:
-                            if circuit['ParentNode'] != "none":
-                                if circuit['ParentNode'] != ParentNode:
+                            # Normalize parent node for consistency across duplicate rows
+                            circuit_parent = normalize_parent_node(circuit['ParentNode'])
+                            if not is_missing_parent_node(circuit_parent):
+                                if circuit_parent != ParentNode:
                                     errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
                                     raise ValueError(errorMessageString)
                             # Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
@@ -476,8 +498,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 # Have not seen circuit before
                 else:
                     knownCircuitIDs.append(circuitID)
-                    if ParentNode == "":
-                        ParentNode = "none"
                     #ParentNode = ParentNode.strip()
                     deviceListForCircuit = []
                     thisDevice = 	{
@@ -503,7 +523,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     }
                     if sqm_override_token != '':
                         thisCircuit['sqm'] = sqm_override_token
-                    if thisCircuit['ParentNode'] == 'none':
+                    if is_missing_parent_node(thisCircuit['ParentNode']):
                         thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
                         dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
                         counterForCircuitsWithoutParentNodes += 1
@@ -513,8 +533,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 # Copy deviceName to circuitName if none defined already
                 if circuitName == "":
                     circuitName = deviceName
-                if ParentNode == "":
-                    ParentNode = "none"
                 #ParentNode = ParentNode.strip()
                 deviceListForCircuit = []
                 thisDevice = 	{
@@ -539,7 +557,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 }
                 if sqm_override_token != '':
                     thisCircuit['sqm'] = sqm_override_token
-                if thisCircuit['ParentNode'] == 'none':
+                if is_missing_parent_node(thisCircuit['ParentNode']):
                     thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
                     dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
                     counterForCircuitsWithoutParentNodes += 1
@@ -609,9 +627,9 @@ def refreshShapers():
             print("Flat network detected; assigning circuits to generated parent nodes")
             next_id = max(dictForCircuitsWithoutParentNodes.keys(), default=-1) + 1
             for circuit in subscriberCircuits:
-                if circuit.get('ParentNode') != 'none':
-                    circuit['ParentNode'] = 'none'
-                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' not in circuit:
+                # Treat every circuit as unparented in a flat network
+                circuit['ParentNode'] = 'none'
+                if 'idForCircuitsWithoutParentNodes' not in circuit:
                     try:
                         weight = float(circuit.get('maxDownload', 0)) + float(circuit.get('maxUpload', 0))
                     except Exception:
@@ -710,7 +728,7 @@ def refreshShapers():
                 except Exception:
                     pass
             for circuit in subscriberCircuits:
-                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                if is_missing_parent_node(circuit.get('ParentNode')) and 'idForCircuitsWithoutParentNodes' in circuit:
                     item_id = circuit['idForCircuitsWithoutParentNodes']
                     # Prefer provided weights; default to 1.0
                     w = dictForCircuitsWithoutParentNodes.get(item_id, 1.0)
@@ -785,7 +803,7 @@ def refreshShapers():
 
             # Apply assignments to circuits
             for circuit in subscriberCircuits:
-                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
+                if is_missing_parent_node(circuit.get('ParentNode')) and 'idForCircuitsWithoutParentNodes' in circuit:
                     item_id = circuit['idForCircuitsWithoutParentNodes']
                     if item_id in assignments:
                         circuit['ParentNode'] = assignments[item_id]
@@ -813,12 +831,21 @@ def refreshShapers():
         else:
             genPNcounter = 0
             for circuit in subscriberCircuits:
-                if circuit['ParentNode'] == 'none':
+                if is_missing_parent_node(circuit.get('ParentNode')):
                     circuit['ParentNode'] = generatedPNs[genPNcounter]
                     genPNcounter += 1
                     if genPNcounter >= queuesAvailable:
                         genPNcounter = 0
         print("Generated parent nodes created")
+
+        # As a safety net, ensure no circuits remain parentless after planning
+        orphan_circuits = [c for c in subscriberCircuits if is_missing_parent_node(c.get('ParentNode'))]
+        if orphan_circuits and len(generatedPNs) > 0:
+            logging.warning(f"{len(orphan_circuits)} circuits lacked a parent after planning; assigning round-robin to generated parent nodes.")
+            for idx, circuit in enumerate(orphan_circuits):
+                circuit['ParentNode'] = generatedPNs[idx % len(generatedPNs)]
+        elif orphan_circuits:
+            warnings.warn(f"{len(orphan_circuits)} circuits are missing a parent and no generated parent nodes exist to attach them.", stacklevel=2)
 
         # Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's hierarchy
         def findBandwidthMins(data, depth):
@@ -956,6 +983,14 @@ def refreshShapers():
         circuit_min_down_combined_by_parent_node = {}
         circuit_min_up_combined_by_parent_node = {}
         for circuit in subscriberCircuits:
+            # If any circuit still lacks a parent here, attach it to the first generated PN to keep it from being skipped.
+            if is_missing_parent_node(circuit.get('ParentNode')):
+                if len(generatedPNs) > 0:
+                    warnings.warn(f"Circuit {circuit.get('circuitID','unknown')} is missing a parent; assigning to {generatedPNs[0]}.", stacklevel=2)
+                    circuit['ParentNode'] = generatedPNs[0]
+                else:
+                    warnings.warn(f"Circuit {circuit.get('circuitID','unknown')} is missing a parent and no generatedPNs are available. Skipping.", stacklevel=2)
+                    continue
             #If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
             if circuit['ParentNode'] not in  circuits_by_parent_node:
                 circuits_by_parent_node[circuit['ParentNode']] = []
