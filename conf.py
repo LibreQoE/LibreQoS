@@ -38,7 +38,7 @@ def ultimateReplace(app, docname, source):
     source[0] = result
 
 ultimate_replacements = {
-    "{deb_url_v1_5}" : "libreqos_1.5-RC2.202510052233-1_amd64.deb"
+    "{deb_url_v1_5}" : "libreqos_1.5-RC2.202511301718-1_amd64.deb"
 }
 
 def setup(app):
