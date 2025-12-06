@@ -25,12 +25,12 @@ impl UispData {
         ip_ranges: IpRanges,
     ) -> std::result::Result<Self, UispIntegrationError> {
         // Obtain the UISP data and transform it into easier to work with types
-        let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
+        let (sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
 
         if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
             warn!("Unable to write sites to blackboard: {e:?}");
         }
-        if let Err(e) = blackboard_blob("uisp_devices", &devices_raw).await {
+        if let Err(e) = blackboard_blob("uisp_devices", &devices_as_json).await {
             warn!("Unable to write devices to blackboard: {e:?}");
         }
         if let Err(e) = blackboard_blob("uisp_data_links", &data_links_raw).await {

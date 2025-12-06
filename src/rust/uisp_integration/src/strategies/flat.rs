@@ -38,7 +38,7 @@ pub async fn build_flat_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Load the devices from UISP
-    let devices = uisp::load_all_devices_with_interfaces(config.clone())
+    let (devices, json_devices) = uisp::load_all_devices_with_interfaces(config.clone())
         .await
         .map_err(|e| {
             error!("Unable to load device list from UISP");
@@ -61,7 +61,7 @@ pub async fn build_flat_network(
     if let Err(e) = blackboard_blob("uisp_sites", &sites).await {
         warn!("Unable to write sites to blackboard: {e:?}");
     }
-    if let Err(e) = blackboard_blob("uisp_devices", &devices).await {
+    if let Err(e) = blackboard_blob("uisp_devices", &json_devices).await {
         warn!("Unable to write devices to blackboard: {e:?}");
     }
     if let Err(e) = blackboard_blob("uisp_data_links", &data_links).await {
