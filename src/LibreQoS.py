@@ -787,8 +787,9 @@ def refreshShapers():
             for circuit in subscriberCircuits:
                 if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
                     item_id = circuit['idForCircuitsWithoutParentNodes']
-                    if item_id in assignments:
-                        circuit['ParentNode'] = assignments[item_id]
+                    item_key = str(item_id)
+                    if item_key in assignments:
+                        circuit['ParentNode'] = assignments[item_key]
 
             # Update and save state
             if bin_planner is not None and isinstance(state, dict):
