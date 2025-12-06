@@ -13,6 +13,7 @@ use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
+use itertools::Itertools;
 use lqos_utils::unix_time::unix_now;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
@@ -143,10 +144,15 @@ pub async fn apply_templates(
             let week_ago = now - (7 * 24 * 60 * 60);
             let fl = FIRST_LOAD.load(Relaxed);
             if fl != 0 && fl < week_ago {
-                let sd = SHAPED_DEVICES.load().devices.len();
-                if sd > 250 && !script_has_insight {
+                let sd = SHAPED_DEVICES.load();
+                let num_circuits = sd.devices
+                    .iter()
+                    .sorted_by(|a,b| a.circuit_hash.cmp(&b.circuit_hash))
+                    .dedup()
+                    .count();
+                if num_circuits > 1_000 && !script_has_insight {
                     show_modal = "true";
-                    show_modal_number = sd.to_string();
+                    show_modal_number = num_circuits.to_string();
                 }
             }
         }
