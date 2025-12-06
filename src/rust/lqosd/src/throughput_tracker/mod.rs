@@ -239,6 +239,10 @@ fn throughput_task(
                 info!("No last submission timestamp; skipping stats submission this cycle");
             }
         }
+        // Notify of completion, which triggers processing
+        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
+            tracing::log::warn!("Error sending message to LTS2: {e:?}");
+        }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
 

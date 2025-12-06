@@ -534,11 +534,6 @@ pub(crate) fn submit_throughput_stats(
                 }
             }
         }
-
-        // Notify of completion, which triggers processing
-        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
-            warn!("Error sending message to LTS2: {e:?}");
-        }
     }
 }
 
