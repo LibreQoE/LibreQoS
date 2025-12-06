@@ -190,12 +190,12 @@ static __always_inline void process_icmp(
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
-        data = bpf_map_lookup_elem(&flowbee, &key);
-        if (data == NULL) return;
+        return;
     }
     update_flow_rates(dissector, rate_index, data);
 }
@@ -214,12 +214,12 @@ static __always_inline void process_udp(
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
-        data = bpf_map_lookup_elem(&flowbee, &key);
-        if (data == NULL) return;
+        return;
     }
     update_flow_rates(dissector, rate_index, data);
 }
