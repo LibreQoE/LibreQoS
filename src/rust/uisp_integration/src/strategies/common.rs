@@ -19,13 +19,52 @@ pub(crate) struct UispData {
     //pub data_links: Vec<UispDataLink>,
 }
 
+/// Ensure site names are unique by appending a numeric suffix to duplicates.
+pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
+    let mut used_names = HashSet::new();
+    let mut next_suffix: HashMap<String, usize> = HashMap::new();
+
+    for site in sites.iter_mut() {
+        let base_name = site.name_or_blank();
+        if base_name.is_empty() {
+            continue;
+        }
+
+        let mut candidate = base_name.clone();
+        if used_names.contains(&candidate) {
+            let mut suffix = *next_suffix.get(&base_name).unwrap_or(&1);
+            while used_names.contains(&candidate) {
+                candidate = format!("{base_name} {suffix}");
+                suffix += 1;
+            }
+            next_suffix.insert(base_name.clone(), suffix);
+            if let Some(ident) = site.identification.as_mut() {
+                ident.name = Some(candidate.clone());
+            }
+            warn!(
+                site_id = %site.id,
+                original = %base_name,
+                renamed = %candidate,
+                "Duplicate UISP site name detected; renaming for LibreQoS uniqueness"
+            );
+        } else {
+            next_suffix.entry(base_name.clone()).or_insert(1);
+        }
+
+        used_names.insert(candidate);
+    }
+}
+
 impl UispData {
     pub(crate) async fn fetch_uisp_data(
         config: Arc<Config>,
         ip_ranges: IpRanges,
     ) -> std::result::Result<Self, UispIntegrationError> {
         // Obtain the UISP data and transform it into easier to work with types
-        let (sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
+        let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
+
+        // Deduplicate site names so downstream graph building has unique keys
+        dedup_site_names(&mut sites_raw);
 
         if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
             warn!("Unable to write sites to blackboard: {e:?}");

@@ -1,6 +1,7 @@
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
+use crate::strategies::common::dedup_site_names;
 use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use serde::Serialize;
@@ -43,9 +44,9 @@ pub async fn build_flat_network(
         .map_err(|e| {
             error!("Unable to load device list from UISP");
             error!("{e:?}");
-            UispIntegrationError::UispConnectError
+        UispIntegrationError::UispConnectError
         })?;
-    let sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
+    let mut sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
         error!("Unable to load device list from UISP");
         error!("{e:?}");
         UispIntegrationError::UispConnectError
@@ -54,9 +55,12 @@ pub async fn build_flat_network(
         .await
         .map_err(|e| {
             error!("Unable to load device list from UISP");
-            error!("{e:?}");
-            UispIntegrationError::UispConnectError
+        error!("{e:?}");
+        UispIntegrationError::UispConnectError
         })?;
+
+    // Normalize duplicate site names before building any structures
+    dedup_site_names(&mut sites);
 
     if let Err(e) = blackboard_blob("uisp_sites", &sites).await {
         warn!("Unable to write sites to blackboard: {e:?}");
