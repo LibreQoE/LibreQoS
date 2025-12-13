@@ -19,10 +19,16 @@ pub(crate) struct UispData {
     //pub data_links: Vec<UispDataLink>,
 }
 
-/// Ensure site names are unique by appending a numeric suffix to duplicates.
+/// Ensure site names are unique by appending the site ID to duplicates.
 pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
-    let mut used_names = HashSet::new();
-    let mut next_suffix: HashMap<String, usize> = HashMap::new();
+    let mut name_counts: HashMap<String, usize> = HashMap::new();
+    for site in sites.iter() {
+        let base_name = site.name_or_blank();
+        if base_name.is_empty() {
+            continue;
+        }
+        *name_counts.entry(base_name).or_insert(0) += 1;
+    }
 
     for site in sites.iter_mut() {
         let base_name = site.name_or_blank();
@@ -30,14 +36,8 @@ pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
             continue;
         }
 
-        let mut candidate = base_name.clone();
-        if used_names.contains(&candidate) {
-            let mut suffix = *next_suffix.get(&base_name).unwrap_or(&1);
-            while used_names.contains(&candidate) {
-                candidate = format!("{base_name} {suffix}");
-                suffix += 1;
-            }
-            next_suffix.insert(base_name.clone(), suffix);
+        if name_counts.get(&base_name).copied().unwrap_or(0) > 1 {
+            let candidate = format!("{base_name} {}", site.id);
             if let Some(ident) = site.identification.as_mut() {
                 ident.name = Some(candidate.clone());
             }
@@ -45,13 +45,9 @@ pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
                 site_id = %site.id,
                 original = %base_name,
                 renamed = %candidate,
-                "Duplicate UISP site name detected; renaming for LibreQoS uniqueness"
+                "Duplicate UISP site name detected; renaming with site ID for LibreQoS uniqueness"
             );
-        } else {
-            next_suffix.entry(base_name.clone()).or_insert(1);
         }
-
-        used_names.insert(candidate);
     }
 }
 
