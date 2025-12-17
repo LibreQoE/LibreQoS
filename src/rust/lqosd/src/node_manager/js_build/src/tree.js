@@ -11,66 +11,97 @@ import {subscribeWS} from "./pubsub/ws";
 var tree = null;
 var parent = 0;
 var upParent = 0;
-var maxDepth = 1;
 var subscribed = false;
+var expandedNodes = new Set();
+var childrenByParentId = new Map();
+
+function buildChildrenMap() {
+    childrenByParentId = new Map();
+    for (let i=0; i<tree.length; i++) {
+        let node = tree[i][1];
+        if (node.immediate_parent !== null) {
+            if (!childrenByParentId.has(node.immediate_parent)) {
+                childrenByParentId.set(node.immediate_parent, []);
+            }
+            childrenByParentId.get(node.immediate_parent).push(i);
+        }
+    }
+}
+
+function hasChildren(nodeId) {
+    let children = childrenByParentId.get(nodeId);
+    return children !== undefined && children.length > 0;
+}
+
+function toggleNode(nodeId) {
+    if (!hasChildren(nodeId)) {
+        return;
+    }
+    if (expandedNodes.has(nodeId)) {
+        expandedNodes.delete(nodeId);
+    } else {
+        expandedNodes.add(nodeId);
+    }
+    renderTree();
+}
+
+function renderTree() {
+    let treeTable = document.createElement("table");
+    treeTable.classList.add("table", "table-striped", "table-bordered");
+    let thead = document.createElement("thead");
+    thead.appendChild(theading("Name"));
+    thead.appendChild(theading("Limit"));
+    thead.appendChild(theading("⬇️"));
+    thead.appendChild(theading("⬆️"));
+    thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
+    thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
+    thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
+    thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
+
+    treeTable.appendChild(thead);
+    let tbody = document.createElement("tbody");
+
+    let topChildren = childrenByParentId.get(parent) || [];
+    topChildren.forEach((childIdx) => {
+        let row = buildRow(childIdx);
+        tbody.appendChild(row);
+        let childId = tree[childIdx][0];
+        if (expandedNodes.has(childId)) {
+            iterateChildren(childIdx, tbody, 1);
+        }
+    });
+
+    if (parent !== 0) {
+        let row = document.createElement("tr");
+        let col = document.createElement("td");
+        col.colSpan = 12;
+        col.classList.add("small", "text-center");
+        if (upParent === 0) {
+            upParent = tree[parent][1].immediate_parent;
+        }
+        col.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'><i class='fa fa-chevron-up'></i> Up One Level - " + tree[upParent][1].name + "</a>";
+        row.appendChild(col);
+        thead.appendChild(row);
+    }
+
+    treeTable.appendChild(tbody);
+
+    // Clear and apply
+    let target = document.getElementById("tree");
+    clearDiv(target)
+    target.appendChild(treeTable);
+}
 
 // This runs first and builds the initial structure on the page
 function getInitialTree() {
     $.get("/local-api/networkTree", (data) => {
         //console.log(data);
         tree = data;
-
-        let treeTable = document.createElement("table");
-        treeTable.classList.add("table", "table-striped", "table-bordered");
-        let thead = document.createElement("thead");
-        thead.appendChild(theading("Name"));
-        thead.appendChild(theading("Limit"));
-        thead.appendChild(theading("⬇️"));
-        thead.appendChild(theading("⬆️"));
-        thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
-        thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
-        thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
-        thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
-
-        treeTable.appendChild(thead);
-        let tbody = document.createElement("tbody");
-
-        for (let i=0; i<tree.length; i++) {
-            let nodeId = tree[i][0];
-            let node = tree[i][1];
-
-            if (nodeId === parent) {
-                fillHeader(node)
-            }
-
-            if (node.immediate_parent !== null && node.immediate_parent === parent) {
-                let row = buildRow(i);
-                tbody.appendChild(row);
-                if (maxDepth > 1) {
-                    iterateChildren(i, tbody, 1);
-                }
-            }
+        buildChildrenMap();
+        if (tree[parent] !== undefined) {
+            fillHeader(tree[parent][1]);
         }
-
-        if (parent !== 0) {
-            let row = document.createElement("tr");
-            let col = document.createElement("td");
-            col.colSpan = 12;
-            col.classList.add("small", "text-center");
-            if (upParent === 0) {
-                upParent = tree[parent][1].immediate_parent;
-            }
-            col.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'><i class='fa fa-chevron-up'></i> Up One Level - " + tree[upParent][1].name + "</a>";
-            row.appendChild(col);
-            thead.appendChild(row);
-        }
-
-        treeTable.appendChild(tbody);
-
-        // Clear and apply
-        let target = document.getElementById("tree");
-        clearDiv(target)
-        target.appendChild(treeTable);
+        renderTree();
 
         if (!subscribed) {
             subscribeWS(["NetworkTree", "NetworkTreeClients"], onMessage);
@@ -114,16 +145,16 @@ function fillHeader(node) {
 }
 
 function iterateChildren(idx, tBody, depth) {
-    for (let i=0; i<tree.length; i++) {
-        let node = tree[i][1];
-        if (node.immediate_parent !== null && node.immediate_parent === tree[idx][0]) {
-            let row = buildRow(i, depth);
-            tBody.appendChild(row);
-            if (depth < maxDepth-1) {
-                iterateChildren(i, tBody, depth + 1);
-            }
+    let nodeId = tree[idx][0];
+    let children = childrenByParentId.get(nodeId) || [];
+    children.forEach((childIdx) => {
+        let row = buildRow(childIdx, depth);
+        tBody.appendChild(row);
+        let childId = tree[childIdx][0];
+        if (expandedNodes.has(childId)) {
+            iterateChildren(childIdx, tBody, depth + 1);
         }
-    }
+    });
 }
 
 function buildRow(i, depth=0) {
@@ -133,22 +164,45 @@ function buildRow(i, depth=0) {
     row.classList.add("small");
     let col = document.createElement("td");
     col.style.textOverflow = "ellipsis";
-    let nodeName = "";
-    if (depth > 0) {
-        nodeName += "└";
-    }
-    for (let j=1; j<depth; j++) {
-        nodeName += "─";
-    }
-    if (depth > 0) nodeName += " ";
-    nodeName += "<a href='/tree.html?parent=" + nodeId + "&upParent=" + parent + "' class='redactable'>";
-    nodeName += node.name;
-    nodeName += "</a>";
-    if (node.type !== null) {
-        nodeName += " (" + node.type + ")";
-    }
-    col.innerHTML = nodeName;
     col.classList.add("small");
+    if (depth > 0) {
+        col.style.paddingLeft = (depth * 1.25) + "rem";
+    }
+    let nameWrap = document.createElement("div");
+    nameWrap.classList.add("d-flex", "align-items-center", "gap-1");
+    if (hasChildren(nodeId)) {
+        let toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.classList.add("btn", "btn-link", "btn-sm", "p-0", "text-decoration-none");
+        toggle.style.lineHeight = "1";
+        let icon = document.createElement("i");
+        icon.classList.add("fa", "fa-fw", expandedNodes.has(nodeId) ? "fa-minus" : "fa-plus");
+        toggle.appendChild(icon);
+        toggle.title = expandedNodes.has(nodeId) ? "Collapse" : "Expand";
+        toggle.setAttribute("aria-label", toggle.title);
+        toggle.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleNode(nodeId);
+        });
+        nameWrap.appendChild(toggle);
+    } else {
+        let spacer = document.createElement("i");
+        spacer.classList.add("fa", "fa-fw", "fa-plus");
+        spacer.style.visibility = "hidden";
+        nameWrap.appendChild(spacer);
+    }
+    let link = document.createElement("a");
+    link.href = "/tree.html?parent=" + nodeId + "&upParent=" + parent;
+    link.classList.add("redactable");
+    link.textContent = node.name;
+    nameWrap.appendChild(link);
+    if (node.type !== null) {
+        let typeText = document.createElement("span");
+        typeText.textContent = " (" + node.type + ")";
+        nameWrap.appendChild(typeText);
+    }
+    col.appendChild(nameWrap);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -261,9 +315,20 @@ function buildRow(i, depth=0) {
 
 function treeUpdate(msg) {
     //console.log(msg);
+    let needsRebuild = false;
     msg.data.forEach((n) => {
         let nodeId = n[0];
         let node = n[1];
+
+        if (tree[nodeId] === undefined) {
+            tree[nodeId] = [nodeId, node];
+            needsRebuild = true;
+        } else {
+            if (tree[nodeId][1].immediate_parent !== node.immediate_parent) {
+                needsRebuild = true;
+            }
+            tree[nodeId][1] = node;
+        }
 
         if (nodeId === parent) {
             fillHeader(node);
@@ -342,6 +407,10 @@ function treeUpdate(msg) {
             }
         }
     });
+    if (needsRebuild) {
+        buildChildrenMap();
+        renderTree();
+    }
 }
 
 function clientsUpdate(msg) {
@@ -418,16 +487,5 @@ if (params.parent !== null) {
 if (params.upParent !== null) {
     upParent = parseInt(params.upParent);
 }
-
-if (localStorage.getItem("treeMaxDepth") !== null) {
-    maxDepth = parseInt(localStorage.getItem("treeMaxDepth"));
-    $("#maxDepth").val(maxDepth);
-}
-
-$("#maxDepth").on("change", function() {
-    maxDepth = parseInt($(this).val());
-    localStorage.setItem("treeMaxDepth", maxDepth);
-    getInitialTree();
-});
 
 getInitialTree();
