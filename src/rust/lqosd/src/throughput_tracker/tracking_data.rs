@@ -1,7 +1,8 @@
 use super::{
     RETIRE_AFTER_SECONDS,
     flow_data::{
-        ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, RttData, get_flowbee_event_count_and_reset,
+        ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttData,
+        get_flowbee_event_count_and_reset, update_asn_heatmaps,
     },
     throughput_entry::ThroughputEntry,
 };
@@ -499,6 +500,23 @@ impl ThroughputTracker {
     ) {
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
+        let enable_asn_heatmaps = lqos_config::load_config()
+            .map(|config| config.enable_asn_heatmaps)
+            .unwrap_or(true);
+        let mut asn_aggregates: FxHashMap<u32, AsnAggregate> = FxHashMap::default();
+        let mut add_asn_sample = |asn: u32,
+                                  bytes: DownUpOrder<u64>,
+                                  packets: DownUpOrder<u64>,
+                                  retransmits: DownUpOrder<u64>,
+                                  rtt_ms: Option<f32>| {
+            let agg = asn_aggregates.entry(asn).or_insert_with(AsnAggregate::default);
+            agg.bytes.checked_add(bytes);
+            agg.packets.checked_add(packets);
+            agg.retransmits.checked_add(retransmits);
+            if let Some(rtt) = rtt_ms {
+                agg.rtts.push(rtt);
+            }
+        };
 
         if let Ok(now) = time_since_boot() {
             let rtt_samples = flowbee_rtt_map();
@@ -522,6 +540,17 @@ impl ThroughputTracker {
                 } else {
                     // We have a valid flow, so it needs to be tracked
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
+                        let delta_bytes =
+                            data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+                        let delta_packets =
+                            data.packets_sent.checked_sub_or_zero(this_flow.0.packets_sent);
+                        let delta_retrans = data
+                            .tcp_retransmits
+                            .checked_sub_or_zero(this_flow.0.tcp_retransmits);
+                        let delta_retrans = DownUpOrder::new(
+                            delta_retrans.down as u64,
+                            delta_retrans.up as u64,
+                        );
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
                             if this_flow.0.retry_times_down.is_none() {
@@ -565,6 +594,16 @@ impl ThroughputTracker {
                                 this_flow.0.rtt[1] = *down;
                             }
                         }
+                        if enable_asn_heatmaps {
+                            let flow_rtt = combine_rtt_ms(this_flow.0.rtt);
+                            add_asn_sample(
+                                this_flow.1.asn_id.0,
+                                delta_bytes,
+                                delta_packets,
+                                delta_retrans,
+                                flow_rtt,
+                            );
+                        }
                     } else {
                         // Check if we've hit the flow limit
                         if all_flows_lock.flow_data.len() >= MAX_FLOWS {
@@ -583,6 +622,22 @@ impl ThroughputTracker {
                         } else {
                             // Insert it into the map
                             let flow_analysis = FlowAnalysis::new(&key);
+                            if enable_asn_heatmaps {
+                                let flow_rtt = rtt_samples
+                                    .get(&key)
+                                    .and_then(|rtt| combine_rtt_ms(*rtt));
+                                let delta_retrans = DownUpOrder::new(
+                                    data.tcp_retransmits.down as u64,
+                                    data.tcp_retransmits.up as u64,
+                                );
+                                add_asn_sample(
+                                    flow_analysis.asn_id.0,
+                                    data.bytes_sent,
+                                    data.packets_sent,
+                                    delta_retrans,
+                                    flow_rtt,
+                                );
+                            }
                             all_flows_lock
                                 .flow_data
                                 .insert(key.clone(), (data.into(), flow_analysis));
@@ -703,6 +758,10 @@ impl ThroughputTracker {
                 .retain(|_k, v| v.0.last_seen >= expire);
             all_flows_lock.flow_data.shrink_to_fit();
             expire_rtt_flows();
+        }
+
+        if enable_asn_heatmaps || !asn_aggregates.is_empty() {
+            update_asn_heatmaps(asn_aggregates, self_cycle, enable_asn_heatmaps);
         }
     }
 
@@ -869,4 +928,15 @@ fn median(values: &mut Vec<f32>) -> Option<f32> {
     } else {
         Some((values[mid - 1] + values[mid]) / 2.0)
     }
+}
+
+fn combine_rtt_ms(rtts: [RttData; 2]) -> Option<f32> {
+    let mut samples = Vec::with_capacity(2);
+    if rtts[0].as_nanos() > 0 {
+        samples.push(rtts[0].as_millis() as f32);
+    }
+    if rtts[1].as_nanos() > 0 {
+        samples.push(rtts[1].as_millis() as f32);
+    }
+    median(&mut samples)
 }

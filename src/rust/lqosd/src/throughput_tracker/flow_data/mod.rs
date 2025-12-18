@@ -5,6 +5,7 @@ mod flow_analysis;
 mod flow_tracker;
 mod netflow5;
 mod netflow9;
+mod asn_heatmap;
 
 use crate::throughput_tracker::flow_data::{
     flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9,
@@ -18,6 +19,7 @@ pub(crate) use flow_analysis::{
     get_rtt_events_per_second, setup_flow_analysis,
 };
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
+pub(crate) use asn_heatmap::{AsnAggregate, update_asn_heatmaps};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
 
