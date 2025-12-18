@@ -17,10 +17,10 @@ pub mod hex_string;
 pub mod packet_scale;
 mod string_table_enum;
 
-/// Helpers for units of measurement
-pub mod units;
 /// Rolling heatmap data storage for executive summary views.
 pub mod temporal_heatmap;
+/// Helpers for units of measurement
+pub mod units;
 /// Utilities dealing with Unix Timestamps
 pub mod unix_time;
 mod xdp_ip_address;

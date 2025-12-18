@@ -21,7 +21,7 @@ pub struct HeatmapBlocks {
 }
 
 /// Fixed-size rolling heatmap storage for 15 minutes of data.
-/// 
+///
 /// Size: 4 * (RAW_SAMPLES + SUMMARY_BLOCKS) Option<f32> values + indices.
 #[derive(Clone, Debug, Allocative)]
 pub struct TemporalHeatmap {
@@ -99,8 +99,7 @@ impl TemporalHeatmap {
         download[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_download, self.raw_filled);
         upload[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_upload, self.raw_filled);
         rtt[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_rtt, self.raw_filled);
-        retransmit[TOTAL_BLOCKS - 1] =
-            Self::median_from_raw(&self.raw_retransmit, self.raw_filled);
+        retransmit[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_retransmit, self.raw_filled);
 
         HeatmapBlocks {
             download,

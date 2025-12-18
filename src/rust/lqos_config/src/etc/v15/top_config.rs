@@ -231,7 +231,8 @@ mod test {
 
     #[test]
     fn load_example() {
-        let config = Config::load_from_string(include_str!("example.toml")).expect("Cannot read example toml file");
+        let config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
     }
 }

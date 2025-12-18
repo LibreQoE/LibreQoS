@@ -14,11 +14,7 @@ const TTL_SECONDS: u64 = 24 * 60 * 60; // 24h
 const DEDUPE_WINDOW_SECONDS: u64 = 300; // 5 minutes
 
 fn now_unix() -> u64 {
-    if let Ok(n) = unix_now() {
-        n
-    } else {
-        0
-    }
+    if let Ok(n) = unix_now() { n } else { 0 }
 }
 
 fn prune_expired(q: &mut VecDeque<UrgentIssue>) {

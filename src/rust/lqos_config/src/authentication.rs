@@ -91,8 +91,8 @@ impl WebUsers {
 
     fn save_to_disk(&self) -> Result<(), AuthenticationError> {
         let path = Self::path()?;
-        let new_contents = toml_edit::ser::to_string(&self)
-            .map_err(AuthenticationError::SerializationError)?;
+        let new_contents =
+            toml_edit::ser::to_string(&self).map_err(AuthenticationError::SerializationError)?;
         if path.exists() && remove_file(&path).is_err() {
             error!("Unable to delete web users file");
             return Err(AuthenticationError::UnableToDelete);

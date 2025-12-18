@@ -25,7 +25,10 @@ pub async fn network_tree(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("NetworkTree: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "NetworkTree: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
@@ -55,7 +58,10 @@ pub async fn all_circuits(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("AllCircuits: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "AllCircuits: failed to receive throughput from bus: {:?}",
+                e
+            );
             return Vec::new();
         }
     };

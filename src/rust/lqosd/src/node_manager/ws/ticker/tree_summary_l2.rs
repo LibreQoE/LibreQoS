@@ -67,4 +67,3 @@ pub async fn tree_summary_l2(channels: Arc<PubSub>) {
         .send(PublishedChannels::TreeSummaryL2, message)
         .await;
 }
-

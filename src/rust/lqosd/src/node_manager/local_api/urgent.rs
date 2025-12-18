@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Serialize;
 
 use crate::urgent;
@@ -87,7 +87,10 @@ pub async fn urgent_status() -> (StatusCode, Json<UrgentStatus>) {
     let items = urgent::list();
     (
         StatusCode::OK,
-        Json(UrgentStatus { has_urgent: !items.is_empty(), count: items.len() }),
+        Json(UrgentStatus {
+            has_urgent: !items.is_empty(),
+            count: items.len(),
+        }),
     )
 }
 

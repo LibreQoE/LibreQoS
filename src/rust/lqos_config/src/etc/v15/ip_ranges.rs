@@ -36,12 +36,14 @@ impl IpRanges {
             let split: Vec<_> = excluded_ip.split('/').collect();
             if split[0].contains(':') {
                 // It's IPv6
-                let ip_network: Ipv6Addr = split[0].parse()
+                let ip_network: Ipv6Addr = split[0]
+                    .parse()
                     .map_err(|e| IpRangeError::IpParseError { e: Box::new(e) })?;
                 let ip = IpNetwork::new(
                     ip_network,
-                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?
-                ).map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
+                    split[1].parse().map_err(|_| IpRangeError::InvalidNetmask)?,
+                )
+                .map_err(|e| IpRangeError::InvalidNetwork { e: Box::new(e) })?;
                 ignored.insert(ip, true);
             } else {
                 // It's IPv4
@@ -99,5 +101,5 @@ pub enum IpRangeError {
     #[error("Invalid network: {e:?}")]
     InvalidNetwork { e: Box<dyn std::error::Error> },
     #[error("Invalid netmask")]
-    InvalidNetmask
+    InvalidNetmask,
 }

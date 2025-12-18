@@ -11,7 +11,7 @@ use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
 static LAST_PUBLISH: Lazy<Mutex<Option<Instant>>> = Lazy::new(|| Mutex::new(None));
-const MIN_INTERVAL: Duration = Duration::from_secs(30);
+const MIN_INTERVAL: Duration = Duration::from_secs(1);
 
 pub async fn executive_heatmaps(
     channels: Arc<PubSub>,

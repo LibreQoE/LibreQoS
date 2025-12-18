@@ -1,8 +1,8 @@
 mod cake_watcher;
+mod chatbot;
 mod circuit;
 mod flows_by_circuit;
 mod ping_monitor;
-mod chatbot;
 
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
@@ -11,11 +11,11 @@ use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 use axum::Extension;
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
+use axum::http::{HeaderMap, header};
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
 use tracing::{debug, info};
-use axum::http::{HeaderMap, header};
 
 #[derive(Serialize, Deserialize)]
 enum PrivateChannel {
@@ -35,7 +35,7 @@ pub(super) async fn private_channel_ws_handler(
         )>,
     >,
     Extension(control_tx): Extension<
-        tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>
+        tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     >,
     headers: HeaderMap,
 ) -> impl IntoResponse {

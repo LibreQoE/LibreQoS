@@ -194,9 +194,8 @@ impl ShapedDevice {
                     let up = parts.next().unwrap_or("").trim();
 
                     // Validate each side if present
-                    let valid = |s: &str| -> bool {
-                        matches!(s, "" | "cake" | "fq_codel" | "none")
-                    };
+                    let valid =
+                        |s: &str| -> bool { matches!(s, "" | "cake" | "fq_codel" | "none") };
                     if !valid(down) || !valid(up) {
                         return Err(ShapedDevicesError::CsvEntryParseError(format!(
                             "Invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"

@@ -44,7 +44,7 @@ pub async fn build_flat_network(
         .map_err(|e| {
             error!("Unable to load device list from UISP");
             error!("{e:?}");
-        UispIntegrationError::UispConnectError
+            UispIntegrationError::UispConnectError
         })?;
     let mut sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
         error!("Unable to load device list from UISP");
@@ -55,8 +55,8 @@ pub async fn build_flat_network(
         .await
         .map_err(|e| {
             error!("Unable to load device list from UISP");
-        error!("{e:?}");
-        UispIntegrationError::UispConnectError
+            error!("{e:?}");
+            UispIntegrationError::UispConnectError
         })?;
 
     // Normalize duplicate site names before building any structures

@@ -254,10 +254,8 @@ impl NetworkJson {
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
             );
-            let retransmit_up = retransmit_percent(
-                node.current_tcp_retransmits.up,
-                node.current_tcp_packets.up,
-            );
+            let retransmit_up =
+                retransmit_percent(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
 
             let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
             heatmap.add_sample(
@@ -316,7 +314,9 @@ fn recurse_node(
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
         rtts: HashSet::new(),
-        node_type: json.get("type").map(|v| v.as_str().unwrap_or_default().to_string()),
+        node_type: json
+            .get("type")
+            .map(|v| v.as_str().unwrap_or_default().to_string()),
         heatmap: None,
     };
 

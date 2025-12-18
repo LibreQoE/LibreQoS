@@ -32,8 +32,7 @@ pub enum MigrationError {
 
 pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     debug!("Checking config file version");
-    let raw =
-        std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
+    let raw = std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
 
     let doc = raw
         .parse::<DocumentMut>()
@@ -43,7 +42,12 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
             "Configuration file is at version {}",
             version.as_str().ok_or(MigrationError::InvalidVersion)?
         );
-        if version.as_str().ok_or(MigrationError::InvalidVersion)?.trim() == "1.5" {
+        if version
+            .as_str()
+            .ok_or(MigrationError::InvalidVersion)?
+            .trim()
+            == "1.5"
+        {
             debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
@@ -52,7 +56,10 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
                 version.as_str().ok_or(MigrationError::InvalidVersion)?
             );
             return Err(MigrationError::UnknownVersion(
-                version.as_str().ok_or(MigrationError::InvalidVersion)?.to_string(),
+                version
+                    .as_str()
+                    .ok_or(MigrationError::InvalidVersion)?
+                    .to_string(),
             ));
         }
     } else {
@@ -69,7 +76,8 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
         std::fs::rename(from, to).map_err(MigrationError::ReadError)?;
 
         // Save the configuration
-        let raw = toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
+        let raw =
+            toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
         std::fs::write("/etc/lqos.conf", raw).map_err(MigrationError::ReadError)?;
     }
 
@@ -104,7 +112,9 @@ fn do_migration_14_to_15(
     migrate_queues(python_config, &mut new_config)?;
     migrate_influx(python_config, &mut new_config)?;
 
-    new_config.validate().map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
+    new_config
+        .validate()
+        .map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
     Ok(new_config)
 }
 
@@ -156,7 +166,11 @@ fn migrate_bridge(
     } else {
         new_config.single_interface = None;
         new_config.bridge = Some(BridgeConfig {
-            use_xdp_bridge: old_config.bridge.as_ref().ok_or(MigrationError::SerializeError)?.use_xdp_bridge,
+            use_xdp_bridge: old_config
+                .bridge
+                .as_ref()
+                .ok_or(MigrationError::SerializeError)?
+                .use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
         });

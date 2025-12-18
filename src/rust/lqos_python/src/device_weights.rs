@@ -12,8 +12,8 @@
 //! ```
 
 use anyhow::Result;
-use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
 use lqos_bus::{BusRequest, BusResponse};
+use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -108,7 +108,9 @@ fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
 /// This function is used to determine if we should use the Long Term Stats API to get the weights
 fn use_lts_weights() -> bool {
     // Basic config gates first
-    let Ok(config) = load_config() else { return false };
+    let Ok(config) = load_config() else {
+        return false;
+    };
     if !(config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some()) {
         return false;
     }
