@@ -185,7 +185,7 @@ fn compute_oversubscribed_sites() -> Vec<serde_json::Value> {
     }
 
     // Helper to collect descendant names including the node itself.
-    let collect_descendants = |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<_>| {
+    let collect_descendants = |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<lqos_config::NetworkJsonNode>| {
         let mut stack = vec![start];
         let mut visited = HashSet::new();
         let mut names = HashSet::new();
@@ -250,6 +250,12 @@ fn compute_oversubscribed_sites() -> Vec<serde_json::Value> {
             if ratio_down.is_none() && ratio_up.is_none() {
                 return None;
             }
+            let ratio_max = match (ratio_down, ratio_up) {
+                (Some(d), Some(u)) => Some(d.max(u)),
+                (Some(d), None) => Some(d),
+                (None, Some(u)) => Some(u),
+                (None, None) => None,
+            };
             Some(json!({
                 "site_name": site_name,
                 "cap_down": t.cap_down,
@@ -258,7 +264,7 @@ fn compute_oversubscribed_sites() -> Vec<serde_json::Value> {
                 "sub_up": t.sub_up,
                 "ratio_down": ratio_down,
                 "ratio_up": ratio_up,
-                "ratio_max": ratio_down.max(ratio_up),
+                "ratio_max": ratio_max,
             }))
         })
         .collect()
