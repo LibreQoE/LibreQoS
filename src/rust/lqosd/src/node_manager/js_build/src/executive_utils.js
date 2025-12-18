@@ -61,3 +61,4 @@ export function renderTable(targetId, columns, rows, emptyMessage) {
 
 export function colorSwatch(color) {
     return `<span class="d-inline-block me-1" style="width:12px;height:12px;border-radius:3px;background:${color};"></span>`;
+}
