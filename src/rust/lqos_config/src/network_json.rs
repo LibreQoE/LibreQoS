@@ -346,7 +346,8 @@ fn utilization_percent_bytes(bytes: u64, max_mbps: u32) -> Option<f32> {
 }
 
 fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    if retransmits == 0 || packets == 0 {
+    // Ignore very small samples to avoid extreme ratios from tiny flows.
+    if retransmits == 0 || packets < 1_000 {
         return None;
     }
     Some((retransmits as f32 / packets as f32) * 100.0)
