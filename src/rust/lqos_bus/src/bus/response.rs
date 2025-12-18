@@ -51,6 +51,24 @@ pub struct CircuitHeatmapData {
     pub blocks: HeatmapBlocks,
 }
 
+/// Site-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct SiteHeatmapData {
+    /// Site name from network.json.
+    pub site_name: String,
+    /// Heatmap blocks for the site.
+    pub blocks: HeatmapBlocks,
+}
+
+/// ASN-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct AsnHeatmapData {
+    /// ASN number.
+    pub asn: u32,
+    /// Heatmap blocks for the ASN.
+    pub blocks: HeatmapBlocks,
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -99,6 +117,15 @@ pub enum BusResponse {
 
     /// Provides circuit-level heatmaps.
     CircuitHeatmaps(Vec<CircuitHeatmapData>),
+
+    /// Provides site-level heatmaps.
+    SiteHeatmaps(Vec<SiteHeatmapData>),
+
+    /// Provides ASN-level heatmaps.
+    AsnHeatmaps(Vec<AsnHeatmapData>),
+
+    /// Provides the global (roll-up) heatmap.
+    GlobalHeatmap(HeatmapBlocks),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),

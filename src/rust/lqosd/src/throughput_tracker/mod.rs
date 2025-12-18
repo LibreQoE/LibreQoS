@@ -3,7 +3,9 @@ mod stats_submission;
 mod throughput_entry;
 mod tracking_data;
 
-use self::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
+use self::flow_data::{
+    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, snapshot_asn_heatmaps,
+};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 use crate::{
@@ -14,8 +16,8 @@ use crate::{
 use fxhash::FxHashMap;
 use lqos_bakery::BakeryCommands;
 use lqos_bus::{
-    BusResponse, CircuitHeatmapData, FlowbeeProtocol, IpStats, TcHandle, TopFlowType,
-    XdpPpingResult,
+    AsnHeatmapData, BusResponse, CircuitHeatmapData, FlowbeeProtocol, IpStats, SiteHeatmapData,
+    TcHandle, TopFlowType, XdpPpingResult,
 };
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
@@ -438,6 +440,52 @@ pub fn circuit_heatmaps() -> BusResponse {
         .collect();
     rows.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
     BusResponse::CircuitHeatmaps(rows)
+}
+
+/// Retrieve per-site heatmap data for the executive summary.
+pub fn site_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_site_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::SiteHeatmaps(Vec::new());
+    }
+
+    let reader = NETWORK_JSON.read();
+    let mut rows: Vec<SiteHeatmapData> = reader
+        .get_nodes_when_ready()
+        .iter()
+        .filter_map(|node| {
+            node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
+                site_name: node.name.clone(),
+                blocks: heatmap.blocks(),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
+    BusResponse::SiteHeatmaps(rows)
+}
+
+/// Retrieve per-ASN heatmap data for the executive summary.
+pub fn asn_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_asn_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::AsnHeatmaps(Vec::new());
+    }
+
+    let rows: Vec<AsnHeatmapData> = snapshot_asn_heatmaps()
+        .into_iter()
+        .map(|(asn, blocks)| AsnHeatmapData { asn, blocks })
+        .collect();
+    BusResponse::AsnHeatmaps(rows)
+}
+
+/// Retrieve the global roll-up heatmap data for the executive summary.
+pub fn global_heatmap() -> BusResponse {
+    let heatmap = THROUGHPUT_TRACKER.global_heatmap.lock();
+    BusResponse::GlobalHeatmap(heatmap.blocks())
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {

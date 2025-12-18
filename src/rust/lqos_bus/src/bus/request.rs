@@ -59,6 +59,15 @@ pub enum BusRequest {
     /// Retrieve per-circuit TemporalHeatmap blocks.
     GetCircuitHeatmaps,
 
+    /// Retrieve per-site TemporalHeatmap blocks.
+    GetSiteHeatmaps,
+
+    /// Retrieve per-ASN TemporalHeatmap blocks.
+    GetAsnHeatmaps,
+
+    /// Retrieve the global (roll-up) TemporalHeatmap.
+    GetGlobalHeatmap,
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)

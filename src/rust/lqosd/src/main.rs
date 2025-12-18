@@ -361,6 +361,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 throughput_tracker::top_n_up(*start, *end)
             }
             BusRequest::GetCircuitHeatmaps => throughput_tracker::circuit_heatmaps(),
+            BusRequest::GetSiteHeatmaps => throughput_tracker::site_heatmaps(),
+            BusRequest::GetAsnHeatmaps => throughput_tracker::asn_heatmaps(),
+            BusRequest::GetGlobalHeatmap => throughput_tracker::global_heatmap(),
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)

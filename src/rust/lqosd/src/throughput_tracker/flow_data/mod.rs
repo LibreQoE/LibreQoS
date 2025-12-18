@@ -19,7 +19,7 @@ pub(crate) use flow_analysis::{
     get_rtt_events_per_second, setup_flow_analysis,
 };
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
-pub(crate) use asn_heatmap::{AsnAggregate, update_asn_heatmaps};
+pub(crate) use asn_heatmap::{AsnAggregate, snapshot_asn_heatmaps, update_asn_heatmaps};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
 

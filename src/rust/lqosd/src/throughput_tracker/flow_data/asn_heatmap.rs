@@ -1,6 +1,6 @@
 use fxhash::FxHashMap;
 use lqos_utils::{
-    temporal_heatmap::TemporalHeatmap,
+    temporal_heatmap::{HeatmapBlocks, TemporalHeatmap},
     units::DownUpOrder,
 };
 use once_cell::sync::Lazy;
@@ -107,6 +107,16 @@ pub fn update_asn_heatmaps(
 ) {
     let mut store = ASN_HEATMAPS.lock();
     store.update(aggregates, current_cycle, enable);
+}
+
+/// Snapshot current ASN heatmap data for bus responses.
+pub fn snapshot_asn_heatmaps() -> Vec<(u32, HeatmapBlocks)> {
+    let store = ASN_HEATMAPS.lock();
+    store
+        .entries
+        .iter()
+        .map(|(asn, entry)| (*asn, entry.heatmap.blocks()))
+        .collect()
 }
 
 fn bytes_to_mbps(bytes: u64) -> f32 {
