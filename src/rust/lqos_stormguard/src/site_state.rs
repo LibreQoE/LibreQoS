@@ -153,10 +153,11 @@ impl SiteStateTracker {
                 info!("Queue {} not found in queue structure", recommendation.site);
                 continue;
             };
-            // StormGuard should target a branch, not a leaf. Skip if no descendants.
-            if queue.circuits.is_empty() && queue.devices.is_empty() && queue.children.is_empty() {
+            // Skip circuit-level queues that host a qdisc (CAKE/fq_codel). Changing HTB at that
+            // level can deadlock the kernel; only adjust parent branch nodes.
+            if queue.circuit_id.is_some() {
                 warn!(
-                    "StormGuard skipped {} because it resolves to a leaf queue (no children/devices).",
+                    "StormGuard skipped {} because it resolves to a circuit queue (qdisc host).",
                     recommendation.site
                 );
                 continue;
@@ -261,7 +262,6 @@ impl SiteStateTracker {
                 if max_rate < new_rate {
                     continue;
                 }
-                let class_id = dependent.class_id.to_string();
                 info!(
                     "Applying rate change to dependent {}: {} -> {}",
                     dependent.name, dependent.original_max_download_mbps, new_rate
