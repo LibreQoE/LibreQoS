@@ -913,7 +913,13 @@ fn utilization_percent(bytes: u64, max_mbps: f32) -> Option<f32> {
         return None;
     }
     let bits_per_second = bytes.saturating_mul(8) as f64;
-    let capacity_bps = max_mbps as f64 * 1_000_000.0;
+    // Some installations store capacity already in bps; others use Mbps.
+    // Heuristically treat very large values as bps to avoid double-scaling.
+    let capacity_bps = if max_mbps > 1_000_000.0 {
+        max_mbps as f64
+    } else {
+        max_mbps as f64 * 1_000_000.0
+    };
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
 }
 
