@@ -42,6 +42,7 @@ pub struct ThroughputTracker {
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
+    pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
 }
 
 #[derive(Default)]
@@ -69,6 +70,7 @@ impl ThroughputTracker {
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             circuit_heatmaps: Mutex::default(),
+            global_heatmap: Mutex::new(TemporalHeatmap::new()),
         }
     }
 
@@ -79,6 +81,7 @@ impl ThroughputTracker {
 
         if !config.enable_circuit_heatmaps {
             self.circuit_heatmaps.lock().clear();
+            *self.global_heatmap.lock() = TemporalHeatmap::new();
             return;
         }
 
@@ -101,6 +104,11 @@ impl ThroughputTracker {
             });
 
         let mut aggregates: FxHashMap<i64, CircuitHeatmapAggregate> = FxHashMap::default();
+        let mut total_download_bytes: u64 = 0;
+        let mut total_upload_bytes: u64 = 0;
+        let mut total_retransmits: DownUpOrder<u64> = DownUpOrder::zeroed();
+        let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+        let mut total_rtts: Vec<f32> = Vec::new();
         {
             let raw_data = self.raw_data.lock();
             for entry in raw_data.values() {
@@ -110,15 +118,31 @@ impl ThroughputTracker {
                     continue;
                 };
 
+                let download_delta =
+                    entry.bytes.down.saturating_sub(entry.prev_bytes.down);
+                let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
+                total_download_bytes = total_download_bytes.saturating_add(download_delta);
+                total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
+                total_tcp_packets.down = total_tcp_packets
+                    .down
+                    .saturating_add(entry.tcp_packets.down.saturating_sub(entry.prev_tcp_packets.down));
+                total_tcp_packets.up = total_tcp_packets
+                    .up
+                    .saturating_add(entry.tcp_packets.up.saturating_sub(entry.prev_tcp_packets.up));
+                total_retransmits.down =
+                    total_retransmits.down.saturating_add(entry.tcp_retransmits.down);
+                total_retransmits.up =
+                    total_retransmits.up.saturating_add(entry.tcp_retransmits.up);
+
                 let agg = aggregates
                     .entry(circuit_hash)
                     .or_insert_with(CircuitHeatmapAggregate::default);
                 agg.download_bytes = agg
                     .download_bytes
-                    .saturating_add(entry.bytes.down.saturating_sub(entry.prev_bytes.down));
+                    .saturating_add(download_delta);
                 agg.upload_bytes = agg
                     .upload_bytes
-                    .saturating_add(entry.bytes.up.saturating_sub(entry.prev_bytes.up));
+                    .saturating_add(upload_delta);
                 agg.tcp_packets.down = agg
                     .tcp_packets
                     .down
@@ -138,6 +162,7 @@ impl ThroughputTracker {
 
                 if let Some(rtt) = entry.median_latency() {
                     agg.rtts.push(rtt);
+                    total_rtts.push(rtt);
                 }
             }
         }
@@ -173,6 +198,22 @@ impl ThroughputTracker {
                 retransmit_up,
             );
         }
+
+        let total_max_down_mbps: f32 = capacity_lookup.values().map(|(d, _)| *d).sum();
+        let total_max_up_mbps: f32 = capacity_lookup.values().map(|(_, u)| *u).sum();
+        let mut global_heatmap = self.global_heatmap.lock();
+        let global_rtt = median(&mut total_rtts);
+        let global_retransmit_down =
+            retransmit_percent(total_retransmits.down, total_tcp_packets.down);
+        let global_retransmit_up = retransmit_percent(total_retransmits.up, total_tcp_packets.up);
+        global_heatmap.add_sample(
+            utilization_percent(total_download_bytes, total_max_down_mbps).unwrap_or(0.0),
+            utilization_percent(total_upload_bytes, total_max_up_mbps).unwrap_or(0.0),
+            global_rtt,
+            global_rtt,
+            global_retransmit_down,
+            global_retransmit_up,
+        );
     }
 
     pub(crate) fn copy_previous_and_reset_rtt(&self) {
