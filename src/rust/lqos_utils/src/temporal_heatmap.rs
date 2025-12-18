@@ -4,6 +4,8 @@ const RAW_SAMPLES: usize = 60;
 const SUMMARY_BLOCKS: usize = 14;
 const TOTAL_BLOCKS: usize = SUMMARY_BLOCKS + 1;
 
+use allocative::Allocative;
+
 /// Heatmap block medians for download, upload, RTT, and TCP retransmits.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeatmapBlocks {
@@ -18,8 +20,9 @@ pub struct HeatmapBlocks {
 }
 
 /// Fixed-size rolling heatmap storage for 15 minutes of data.
-///
+/// 
 /// Size: 4 * (RAW_SAMPLES + SUMMARY_BLOCKS) Option<f32> values + indices.
+#[derive(Clone, Debug, Allocative)]
 pub struct TemporalHeatmap {
     raw_download: [Option<f32>; RAW_SAMPLES],
     raw_upload: [Option<f32>; RAW_SAMPLES],

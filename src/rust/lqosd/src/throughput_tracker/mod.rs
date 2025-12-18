@@ -176,6 +176,10 @@ fn throughput_task(
                 &mut expired_flows,
             );
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
+            let enable_site_heatmaps = lqos_config::load_config()
+                .map(|config| config.enable_site_heatmaps)
+                .unwrap_or(true);
+            net_json_calc.record_site_heatmaps(enable_site_heatmaps);
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
