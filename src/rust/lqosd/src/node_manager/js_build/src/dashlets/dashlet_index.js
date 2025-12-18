@@ -39,7 +39,15 @@ import {ShaperChildrenDown} from "./children_sankey_down";
 import {ShaperChildrenUp} from "./children_sankey_up";
 import {ShaperWorldMapDown} from "./world_map_down";
 import {ShaperWorldMapUp} from "./world_map_up";
-import {ExecutiveSummaryStub} from "./executive_summary_stub";
+import {ExecutiveSnapshotDashlet} from "./executive_snapshot";
+import {ExecutiveHelpersDashlet} from "./executive_helpers";
+import {
+    ExecutiveDownloadHeatmapDashlet,
+    ExecutiveGlobalHeatmapDashlet,
+    ExecutiveRetransmitsHeatmapDashlet,
+    ExecutiveRttHeatmapDashlet,
+    ExecutiveUploadHeatmapDashlet
+} from "./executive_heatmap_panels";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
@@ -83,7 +91,13 @@ export const DashletMenu = [
     { name: "Shaper Children (Upload)", tag: "shaperChildrenUp", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
-    { name: "Executive Summary", tag: "executiveSummaryStub", size: 12, category: "Executive" },
+    { name: "Network Snapshot", tag: "executiveSnapshot", size: 12, category: "Executive" },
+    { name: "Executive Helper Links", tag: "executiveHelpers", size: 12, category: "Executive" },
+    { name: "Global Heatmap", tag: "executiveGlobalHeatmap", size: 12, category: "Executive" },
+    { name: "Median RTT Heatmap", tag: "executiveHeatmapRtt", size: 6, category: "Executive" },
+    { name: "TCP Retransmits Heatmap", tag: "executiveHeatmapRetrans", size: 6, category: "Executive" },
+    { name: "Download Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
+    { name: "Upload Utilization Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -130,7 +144,13 @@ export function widgetFactory(widgetName, count) {
         case "shaperChildrenUp"  : widget = new ShaperChildrenUp(count); break;
         case "shaperWorldMapDown": widget = new ShaperWorldMapDown(count); break;
         case "shaperWorldMapUp"  : widget = new ShaperWorldMapUp(count); break;
-        case "executiveSummaryStub": widget = new ExecutiveSummaryStub(count); break;
+        case "executiveSnapshot": widget = new ExecutiveSnapshotDashlet(count); break;
+        case "executiveHelpers": widget = new ExecutiveHelpersDashlet(count); break;
+        case "executiveGlobalHeatmap": widget = new ExecutiveGlobalHeatmapDashlet(count); break;
+        case "executiveHeatmapRtt": widget = new ExecutiveRttHeatmapDashlet(count); break;
+        case "executiveHeatmapRetrans": widget = new ExecutiveRetransmitsHeatmapDashlet(count); break;
+        case "executiveHeatmapDownload": widget = new ExecutiveDownloadHeatmapDashlet(count); break;
+        case "executiveHeatmapUpload": widget = new ExecutiveUploadHeatmapDashlet(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;
