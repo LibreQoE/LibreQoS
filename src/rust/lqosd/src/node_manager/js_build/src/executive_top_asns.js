@@ -1,4 +1,5 @@
-import {listenExecutiveHeatmaps, medianFromBlocks, sumBlocks, renderTable} from "./executive_utils";
+import {listenExecutiveHeatmaps, medianFromBlocks, sumBlocks, renderTable, colorSwatch} from "./executive_utils";
+import {colorByRttMs, colorByRetransmitPct} from "./helpers/color_scales";
 
 const SECONDS_PER_BLOCK = 60;
 const BITS_PER_MEGABIT = 1_000_000;
@@ -39,8 +40,17 @@ function render(data) {
     renderTable("executiveTopAsnsTable", [
         { header: "ASN", render: (r) => r.asn },
         { header: "Total Traffic (15m)", render: (r) => formatBytes(r.totalBytes) },
-        { header: "Median RTT (ms)", render: (r) => r.medianRtt !== null ? r.medianRtt.toFixed(1) : "—" },
-        { header: "Median Retrans (%)", render: (r) => r.medianRetrans !== null ? r.medianRetrans.toFixed(2) : "—" },
+        { header: "Median RTT (ms)", render: (r) => {
+            if (r.medianRtt === null) return "—";
+            const color = colorByRttMs(r.medianRtt, 200);
+            return `${colorSwatch(color)}${r.medianRtt.toFixed(1)}`;
+        }},
+        { header: "Median Retrans (%)", render: (r) => {
+            if (r.medianRetrans === null) return "—";
+            const capped = Math.min(10, Math.max(0, r.medianRetrans));
+            const color = colorByRetransmitPct(capped);
+            return `${colorSwatch(color)}${r.medianRetrans.toFixed(2)}`;
+        }},
     ], rows, "No ASN heatmap data yet.");
 }
 

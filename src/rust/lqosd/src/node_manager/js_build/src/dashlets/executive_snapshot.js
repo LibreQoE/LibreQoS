@@ -91,7 +91,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
             { label: "HTB", value: formatCount(header.htb_queue_count) },
             { label: "CAKE", value: formatCount(header.cake_queue_count) },
         ];
-        return this.groupCard("Queues", "fa-stream", "text-secondary", items);
+        return this.groupCard("Queues", "fa-stream", "text-secondary", items, false, true);
     }
 
     throughputCard() {
@@ -141,11 +141,12 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         `;
     }
 
-    groupCard(title, icon, accent, items, allowHtmlLabel = false) {
-        const rows = items.map(item => `
+    groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false) {
+        const hasZero = allowAlerts && items.some(item => this.isZero(item.value));
+        const rows = items.map((item, idx) => `
             <div class="d-flex align-items-baseline gap-1">
                 <span class="text-secondary small">${allowHtmlLabel ? item.label : this.escapeHtml(item.label)}</span>
-                <span class="exec-metric-value text-secondary">${item.value}</span>
+                ${this.renderValueWithAlert(item.value, hasZero && idx === 0)}
             </div>
         `).join("");
         return `
@@ -161,6 +162,27 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
                 </div>
             </div>
         `;
+    }
+
+    renderValueWithAlert(value, showAlert) {
+        const isZero = this.isZero(value);
+        const valueClass = isZero ? "text-danger" : "text-secondary";
+        if (!showAlert || !isZero) {
+            return `<span class="exec-metric-value ${valueClass}">${value}</span>`;
+        }
+        const alertTitle = "No active queues - click 'Reload LibreQoS'";
+        return `
+            <span class="exec-metric-value ${valueClass}">${value}</span>
+            <span class="ms-2 text-danger small d-inline-flex align-items-center" title="${alertTitle}" aria-label="${alertTitle}">
+                <i class="fas fa-exclamation-triangle me-1"></i>Reload LibreQoS
+            </span>
+        `;
+    }
+
+    isZero(value) {
+        if (value === "0" || value === 0) return true;
+        const num = Number(value);
+        return Number.isFinite(num) && num === 0;
     }
 
     formatBps(bits) {

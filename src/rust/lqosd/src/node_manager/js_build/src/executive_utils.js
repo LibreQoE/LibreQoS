@@ -51,10 +51,13 @@ export function renderTable(targetId, columns, rows, emptyMessage) {
     }).join("");
     target.innerHTML = `
         <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
+            <table class="table table-sm table-striped align-middle mb-0">
                 ${thead}
                 <tbody>${tbody}</tbody>
             </table>
         </div>
     `;
 }
+
+export function colorSwatch(color) {
+    return `<span class="d-inline-block me-1" style="width:12px;height:12px;border-radius:3px;background:${color};"></span>`;
