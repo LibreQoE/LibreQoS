@@ -39,6 +39,7 @@ import {ShaperChildrenDown} from "./children_sankey_down";
 import {ShaperChildrenUp} from "./children_sankey_up";
 import {ShaperWorldMapDown} from "./world_map_down";
 import {ShaperWorldMapUp} from "./world_map_up";
+import {ExecutiveSummaryStub} from "./executive_summary_stub";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
@@ -82,6 +83,7 @@ export const DashletMenu = [
     { name: "Shaper Children (Upload)", tag: "shaperChildrenUp", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
+    { name: "Executive Summary (Preview)", tag: "executiveSummaryStub", size: 12, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -128,6 +130,7 @@ export function widgetFactory(widgetName, count) {
         case "shaperChildrenUp"  : widget = new ShaperChildrenUp(count); break;
         case "shaperWorldMapDown": widget = new ShaperWorldMapDown(count); break;
         case "shaperWorldMapUp"  : widget = new ShaperWorldMapUp(count); break;
+        case "executiveSummaryStub": widget = new ExecutiveSummaryStub(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;
