@@ -4,7 +4,8 @@ mod throughput_entry;
 mod tracking_data;
 
 use self::flow_data::{
-    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, snapshot_asn_heatmaps,
+    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
+    snapshot_asn_heatmaps,
 };
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
@@ -484,7 +485,15 @@ pub fn asn_heatmaps() -> BusResponse {
 
     let rows: Vec<AsnHeatmapData> = snapshot_asn_heatmaps()
         .into_iter()
-        .map(|(asn, blocks)| AsnHeatmapData { asn, blocks })
+        .map(|(asn, blocks)| {
+            let name = get_asn_name_by_id(asn);
+            let asn_name = if name.eq_ignore_ascii_case("unknown") {
+                None
+            } else {
+                Some(name)
+            };
+            AsnHeatmapData { asn, asn_name, blocks }
+        })
         .collect();
     BusResponse::AsnHeatmaps(rows)
 }

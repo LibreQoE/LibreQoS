@@ -46,11 +46,16 @@ export function buildHeatmapRows(data) {
         });
     });
     const asns = (data?.asns || []);
-    asns.forEach(asn => rows.push({
-        label: `ASN ${asn.asn}`,
-        badge: "ASN",
-        blocks: asn.blocks,
-    }));
+    asns.forEach(asn => {
+        const label = asn.asn_name
+            ? `${asn.asn_name} (ASN ${asn.asn})`
+            : `ASN ${asn.asn}`;
+        rows.push({
+            label,
+            badge: "ASN",
+            blocks: asn.blocks,
+        });
+    });
 
     rows.sort((a, b) => {
         const aScore = rowScore(a);

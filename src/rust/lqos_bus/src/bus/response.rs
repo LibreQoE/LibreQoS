@@ -71,6 +71,9 @@ pub struct SiteHeatmapData {
 pub struct AsnHeatmapData {
     /// ASN number.
     pub asn: u32,
+    /// ASN descriptive name (if available).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asn_name: Option<String>,
     /// Heatmap blocks for the ASN.
     pub blocks: HeatmapBlocks,
 }

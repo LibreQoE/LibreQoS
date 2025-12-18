@@ -14,6 +14,7 @@ function buildRows(data) {
         const medianRetrans = medianFromBlocks(asn.blocks?.retransmit || []);
         return {
             asn: asn.asn,
+            asn_name: asn.asn_name,
             totalBytes,
             medianRtt,
             medianRetrans,
@@ -38,7 +39,7 @@ function formatBytes(bytes) {
 function render(data) {
     const rows = buildRows(data);
     renderTable("executiveTopAsnsTable", [
-        { header: "ASN", render: (r) => r.asn },
+        { header: "ASN", render: (r) => r.asn_name ? `${r.asn_name} (ASN ${r.asn})` : r.asn },
         { header: "Total Traffic (15m)", render: (r) => formatBytes(r.totalBytes) },
         { header: "Median RTT (ms)", render: (r) => {
             if (r.medianRtt === null) return "—";
