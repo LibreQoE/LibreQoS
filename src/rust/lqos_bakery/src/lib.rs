@@ -38,8 +38,8 @@ use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
-use lqos_config::{Config, LazyQueueMode};
 use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient, TcHandle};
+use lqos_config::{Config, LazyQueueMode};
 use lqos_sys; // direct mapping control for live-move to avoid bus full-sync side-effects
 
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
@@ -80,6 +80,12 @@ struct Migration {
     // Per-circuit SQM override ("cake" or "fq_codel"), if any
     sqm_override: Option<String>,
     stage: MigrationStage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct StormguardOverrideKey {
+    interface: String,
+    class: TcHandle,
 }
 
 fn parse_ip_list(s: &str) -> Vec<String> {
@@ -223,6 +229,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut sites: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut circuits: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut live_circuits: HashMap<i64, u64> = HashMap::new();
+    // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
+    let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -736,17 +744,29 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     warn!("StormGuardAdjustment received before MQ setup, skipping.");
                     continue;
                 }
+                let Ok(tc_handle) = TcHandle::from_string(class_id) else {
+                    warn!("StormGuardAdjustment has invalid class_id [{}], skipping.", class_id);
+                    continue;
+                };
+                if !dry_run {
+                    let key = StormguardOverrideKey {
+                        interface: interface_name.to_string(),
+                        class: tc_handle,
+                    };
+                    stormguard_overrides.insert(key, *new_rate);
+                }
+                let normalized_class = tc_handle.as_tc_string();
                 // Build the HTB command
                 let args = vec![
                     "class".to_string(),
-                    "change".to_string(),
+                    "replace".to_string(),
                     "dev".to_string(),
                     interface_name.to_string(),
                     "classid".to_string(),
-                    class_id.to_string(),
+                    normalized_class.clone(),
                     "htb".to_string(),
                     "rate".to_string(),
-                    format!("{}mbit", new_rate - 1),
+                    format!("{}mbit", new_rate.saturating_sub(1)),
                     "ceil".to_string(),
                     format!("{}mbit", new_rate),
                 ];
@@ -801,7 +821,15 @@ fn handle_commit_batch(
     if !has_mq_been_setup {
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
         info!("MQ not created, performing full reload.");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            &config,
+            new_batch,
+            &stormguard_overrides,
+        );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
@@ -810,7 +838,15 @@ fn handle_commit_batch(
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
         info!("Bakery full reload: site_struct=1, circuit_struct=0");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            &config,
+            new_batch,
+            &stormguard_overrides,
+        );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
@@ -833,7 +869,15 @@ fn handle_commit_batch(
                 "Bakery full reload: site_struct=0, circuit_struct={}",
                 categories.structural_changed.len()
             );
-            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            full_reload(
+                batch,
+                sites,
+                circuits,
+                live_circuits,
+                &config,
+                new_batch,
+                &stormguard_overrides,
+            );
             MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
             return;
         }
@@ -876,6 +920,7 @@ fn handle_commit_batch(
                     live_circuits,
                     &config,
                     new_batch.clone(),
+                    &stormguard_overrides,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
@@ -1303,6 +1348,7 @@ fn full_reload(
     live_circuits: &mut HashMap<i64, u64>,
     config: &Arc<Config>,
     new_batch: Vec<Arc<BakeryCommands>>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
     sites.clear();
@@ -1310,6 +1356,7 @@ fn full_reload(
     live_circuits.clear();
     process_batch(new_batch, config, sites, circuits);
     *batch = None;
+    apply_stormguard_overrides(stormguard_overrides, config);
 }
 
 fn process_batch(
@@ -1345,4 +1392,31 @@ fn process_batch(
 
     // Mark that at least one batch has been applied, unblocking live activation.
     FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
+}
+
+fn apply_stormguard_overrides(
+    overrides: &HashMap<StormguardOverrideKey, u64>,
+    config: &Arc<Config>,
+) {
+    let _ = config; // currently unused but kept for future interface-specific logic
+    if overrides.is_empty() {
+        return;
+    }
+    let mut commands = Vec::new();
+    for (key, rate) in overrides.iter() {
+        commands.push(vec![
+            "class".to_string(),
+            "replace".to_string(),
+            "dev".to_string(),
+            key.interface.clone(),
+            "classid".to_string(),
+            key.class.as_tc_string(),
+            "htb".to_string(),
+            "rate".to_string(),
+            format!("{}mbit", rate.saturating_sub(1)),
+            "ceil".to_string(),
+            format!("{}mbit", rate),
+        ]);
+    }
+    execute_in_memory(&commands, "replaying StormGuard overrides");
 }

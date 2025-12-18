@@ -15,7 +15,7 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse};
+use lqos_bus::{BusRequest, BusResponse, TcHandle};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -153,6 +153,14 @@ impl SiteStateTracker {
                 info!("Queue {} not found in queue structure", recommendation.site);
                 continue;
             };
+            // StormGuard should target a branch, not a leaf. Skip if no descendants.
+            if queue.circuits.is_empty() && queue.devices.is_empty() && queue.children.is_empty() {
+                warn!(
+                    "StormGuard skipped {} because it resolves to a leaf queue (no children/devices).",
+                    recommendation.site
+                );
+                continue;
+            }
 
             // Find the interface
             let interface_name = match recommendation.direction {
@@ -161,7 +169,7 @@ impl SiteStateTracker {
             };
 
             // Find the TC class
-            let class_id = queue.class_id.to_string();
+            let class_handle = queue.class_id;
 
             // Find the new bandwidth
             let current_rate = match recommendation.direction {
@@ -179,8 +187,8 @@ impl SiteStateTracker {
             } as f64;
 
             let new_rate_multiplier = match recommendation.action {
-                RecommendationAction::Increase => 1.05,
-                RecommendationAction::IncreaseFast => 1.12,
+                RecommendationAction::Increase => 1.15,
+                RecommendationAction::IncreaseFast => 1.30,
                 RecommendationAction::Decrease => 0.95,
                 RecommendationAction::DecreaseFast => 0.88,
             };
@@ -208,11 +216,14 @@ impl SiteStateTracker {
 
             let cooldown_secs = match recommendation.action {
                 RecommendationAction::IncreaseFast => {
-                    (READING_ACCUMULATOR_SIZE as f32 * 0.1).max(2.0)
+                    // Halved to allow quicker follow-up increases.
+                    (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(2.0)
                 }
-                RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(1.0),
-                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
-                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
+                RecommendationAction::Increase => {
+                    (READING_ACCUMULATOR_SIZE as f32 * 0.025).max(1.0)
+                }
+                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.25,
+                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32 * 0.5,
             };
             debug!(
                 "Cooldown for {:?} set to {:.1}s",
@@ -258,7 +269,7 @@ impl SiteStateTracker {
                 Self::apply_htb_change(
                     config,
                     &interface_name,
-                    class_id,
+                    dependent.class_id,
                     new_rate,
                     bakery_sender.clone(),
                 );
@@ -268,7 +279,7 @@ impl SiteStateTracker {
             Self::apply_htb_change(
                 config,
                 &interface_name,
-                class_id,
+                class_handle,
                 new_rate,
                 bakery_sender.clone(),
             );
@@ -303,14 +314,14 @@ impl SiteStateTracker {
     fn apply_htb_change(
         config: &StormguardConfig,
         interface_name: &str,
-        class_id: String,
+        class_handle: TcHandle,
         new_rate: u64,
         bakery_sender: Sender<BakeryCommands>,
     ) {
         if let Err(e) = bakery_sender.send(BakeryCommands::StormGuardAdjustment {
             dry_run: config.dry_run,
             interface_name: interface_name.to_owned(),
-            class_id,
+            class_id: class_handle.as_tc_string(),
             new_rate,
         }) {
             warn!("Failed to send StormGuard adjustment command: {}", e);
