@@ -502,6 +502,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut live_circuits,
                     &tx,
                     &mut migrations,
+                    &stormguard_overrides,
                 );
             }
             BakeryCommands::MqSetup { .. } => {
@@ -744,7 +745,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     warn!("StormGuardAdjustment received before MQ setup, skipping.");
                     continue;
                 }
-                let Ok(tc_handle) = TcHandle::from_string(class_id) else {
+                let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
                     warn!("StormGuardAdjustment has invalid class_id [{}], skipping.", class_id);
                     continue;
                 };
@@ -753,7 +754,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         interface: interface_name.to_string(),
                         class: tc_handle,
                     };
-                    stormguard_overrides.insert(key, *new_rate);
+                    stormguard_overrides.insert(key, new_rate);
                 }
                 let normalized_class = tc_handle.as_tc_string();
                 // Build the HTB command
@@ -806,6 +807,7 @@ fn handle_commit_batch(
     live_circuits: &mut HashMap<i64, u64>,
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
