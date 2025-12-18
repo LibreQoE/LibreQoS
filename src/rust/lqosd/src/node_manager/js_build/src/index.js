@@ -6,9 +6,15 @@ import {showTimeControls} from "./components/timescale";
 import {DashletMenu, widgetFactory} from "./dashlets/dashlet_index";
 
 const defaultLayout = {
-    version: 2,
+    version: 3,
     activeTab: 0,
     tabs: [
+        {
+            name: "Executive Summary",
+            dashlets: [
+                { tag: "executiveSummaryStub", size: 12 }
+            ]
+        },
         {
             name: "Overview",
             dashlets: [
