@@ -1,6 +1,6 @@
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 
-export const MAX_HEATMAP_ROWS = 20;
+export const MAX_HEATMAP_ROWS = 10;
 
 export function formatCount(value) {
     if (value === undefined || value === null) return "—";

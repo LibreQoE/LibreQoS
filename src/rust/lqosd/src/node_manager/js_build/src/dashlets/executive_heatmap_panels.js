@@ -118,11 +118,14 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             this.config.colorFn,
             this.config.formatFn
         )).join("");
+        const titleHtml = this.config.link
+            ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}</a>`
+            : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}`;
         target.innerHTML = `
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body py-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0"><i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}</div>
+                        <div class="exec-section-title mb-0">${titleHtml}</div>
                         <span class="badge bg-light text-secondary border">${rows.length} rows</span>
                     </div>
                     <div class="exec-heat-rows">${metricRows}</div>
@@ -136,14 +139,23 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         const bVals = b.blocks[this.config.metricKey] || [];
         const aLatest = latestValue(aVals);
         const bLatest = latestValue(bVals);
-        if (bLatest !== aLatest) {
-            // Descending by latest value (nulls last)
-            if (aLatest === null) return 1;
-            if (bLatest === null) return -1;
-            return bLatest - aLatest;
-        }
         const aCount = nonNullCount(aVals);
         const bCount = nonNullCount(bVals);
+        const countWeight = this.config.countWeight || 0;
+        const minSamples = this.config.minSamples || 0;
+
+        const score = (latest, count) => {
+            if (latest === null || latest === undefined) return -Infinity;
+            let s = latest + countWeight * (count / 15);
+            if (count < minSamples) {
+                s -= 1000; // Heavily de-prioritize sparse data
+            }
+            return s;
+        };
+
+        const aScore = score(aLatest, aCount);
+        const bScore = score(bLatest, bCount);
+        if (bScore !== aScore) return bScore - aScore;
         if (bCount !== aCount) return bCount - aCount;
         return (a.label || "").localeCompare(b.label || "");
     }
@@ -157,6 +169,9 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             metricKey: "rtt",
             colorFn: (v) => colorByRttMs(v, 200),
             formatFn: (v) => formatLatest(v, "ms"),
+            link: "executive_heatmap_rtt.html",
+            countWeight: 100,
+            minSamples: 3,
         });
     }
     title() { return "Median RTT"; }
@@ -170,6 +185,9 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
             metricKey: "retransmit",
             colorFn: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))),
             formatFn: (v) => formatLatest(v, "%", 1),
+            link: "executive_heatmap_retransmit.html",
+            countWeight: 100,
+            minSamples: 3,
         });
     }
     title() { return "TCP Retransmits"; }
@@ -183,6 +201,7 @@ export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase 
             metricKey: "download",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
+            link: "executive_heatmap_download.html",
         });
     }
     title() { return "Download Utilization"; }
@@ -196,6 +215,7 @@ export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             metricKey: "upload",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
+            link: "executive_heatmap_upload.html",
         });
     }
     title() { return "Upload Utilization"; }
