@@ -16,7 +16,10 @@ use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
-use lqos_utils::units::{AtomicDownUp, DownUpOrder};
+use lqos_utils::{
+    temporal_heatmap::TemporalHeatmap,
+    units::{AtomicDownUp, DownUpOrder},
+};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
@@ -38,6 +41,16 @@ pub struct ThroughputTracker {
     pub(crate) udp_packets_per_second: AtomicDownUp,
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
+    pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
+}
+
+#[derive(Default)]
+struct CircuitHeatmapAggregate {
+    download_bytes: u64,
+    upload_bytes: u64,
+    rtts: Vec<f32>,
+    tcp_retransmits: DownUpOrder<u64>,
+    tcp_packets: DownUpOrder<u64>,
 }
 
 impl ThroughputTracker {
@@ -55,6 +68,110 @@ impl ThroughputTracker {
             udp_packets_per_second: AtomicDownUp::zeroed(),
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
+            circuit_heatmaps: Mutex::default(),
+        }
+    }
+
+    pub(crate) fn record_circuit_heatmaps(&self) {
+        let Ok(config) = lqos_config::load_config() else {
+            return;
+        };
+
+        if !config.enable_circuit_heatmaps {
+            self.circuit_heatmaps.lock().clear();
+            return;
+        }
+
+        let shaped_devices = SHAPED_DEVICES.load();
+        let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
+        capacity_lookup.reserve(shaped_devices.devices.len());
+        shaped_devices
+            .devices
+            .iter()
+            .for_each(|device| {
+                let entry = capacity_lookup
+                    .entry(device.circuit_hash)
+                    .or_insert((device.download_max_mbps, device.upload_max_mbps));
+                if device.download_max_mbps > entry.0 {
+                    entry.0 = device.download_max_mbps;
+                }
+                if device.upload_max_mbps > entry.1 {
+                    entry.1 = device.upload_max_mbps;
+                }
+            });
+
+        let mut aggregates: FxHashMap<i64, CircuitHeatmapAggregate> = FxHashMap::default();
+        {
+            let raw_data = self.raw_data.lock();
+            for entry in raw_data.values() {
+                let circuit_hash = if let Some(circuit_hash) = entry.circuit_hash {
+                    circuit_hash
+                } else {
+                    continue;
+                };
+
+                let agg = aggregates
+                    .entry(circuit_hash)
+                    .or_insert_with(CircuitHeatmapAggregate::default);
+                agg.download_bytes = agg
+                    .download_bytes
+                    .saturating_add(entry.bytes.down.saturating_sub(entry.prev_bytes.down));
+                agg.upload_bytes = agg
+                    .upload_bytes
+                    .saturating_add(entry.bytes.up.saturating_sub(entry.prev_bytes.up));
+                agg.tcp_packets.down = agg
+                    .tcp_packets
+                    .down
+                    .saturating_add(entry.tcp_packets.down.saturating_sub(entry.prev_tcp_packets.down));
+                agg.tcp_packets.up = agg
+                    .tcp_packets
+                    .up
+                    .saturating_add(entry.tcp_packets.up.saturating_sub(entry.prev_tcp_packets.up));
+                agg.tcp_retransmits.down = agg
+                    .tcp_retransmits
+                    .down
+                    .saturating_add(entry.tcp_retransmits.down);
+                agg.tcp_retransmits.up = agg
+                    .tcp_retransmits
+                    .up
+                    .saturating_add(entry.tcp_retransmits.up);
+
+                if let Some(rtt) = entry.median_latency() {
+                    agg.rtts.push(rtt);
+                }
+            }
+        }
+
+        let mut heatmaps = self.circuit_heatmaps.lock();
+        heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
+
+        for (circuit_hash, mut aggregate) in aggregates {
+            let (max_down_mbps, max_up_mbps) = capacity_lookup
+                .get(&circuit_hash)
+                .copied()
+                .unwrap_or((0.0, 0.0));
+
+            let download_util = utilization_percent(aggregate.download_bytes, max_down_mbps)
+                .unwrap_or(0.0);
+            let upload_util =
+                utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
+            let rtt = median(&mut aggregate.rtts);
+            let retransmit_down =
+                retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
+            let retransmit_up =
+                retransmit_percent(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
+
+            let heatmap = heatmaps
+                .entry(circuit_hash)
+                .or_insert_with(TemporalHeatmap::new);
+            heatmap.add_sample(
+                download_util,
+                upload_util,
+                rtt,
+                rtt,
+                retransmit_down,
+                retransmit_up,
+            );
         }
     }
 
@@ -681,5 +798,34 @@ impl ThroughputTracker {
             let ip = k.as_ip();
             info!("{:<34}{:?}", ip, v.tc_handle);
         }
+    }
+}
+
+fn utilization_percent(bytes: u64, max_mbps: f32) -> Option<f32> {
+    if max_mbps <= 0.0 {
+        return None;
+    }
+    let bits_per_second = bytes.saturating_mul(8) as f64;
+    let capacity_bps = max_mbps as f64 * 1_000_000.0;
+    Some(((bits_per_second / capacity_bps) * 100.0) as f32)
+}
+
+fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
+    if retransmits == 0 || packets == 0 {
+        return None;
+    }
+    Some((retransmits as f32 / packets as f32) * 100.0)
+}
+
+fn median(values: &mut Vec<f32>) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.total_cmp(b));
+    let mid = values.len() / 2;
+    if values.len() % 2 == 1 {
+        Some(values[mid])
+    } else {
+        Some((values[mid - 1] + values[mid]) / 2.0)
     }
 }

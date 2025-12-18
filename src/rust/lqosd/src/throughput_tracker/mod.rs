@@ -175,6 +175,7 @@ fn throughput_task(
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+            THROUGHPUT_TRACKER.record_circuit_heatmaps();
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
