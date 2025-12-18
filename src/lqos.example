@@ -4,6 +4,9 @@ node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
 queue_check_period_ms = 1000
+enable_circuit_heatmaps = true
+enable_site_heatmaps = true
+enable_asn_heatmaps = true
 
 [tuning]
 stop_irq_balance = true

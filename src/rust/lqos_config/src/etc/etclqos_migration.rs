@@ -37,6 +37,15 @@ pub struct EtcLqos {
 
     /// Long-term statistics retention settings.
     pub long_term_stats: Option<LongTermStats>,
+
+    /// Enable per-circuit TemporalHeatmap collection.
+    pub enable_circuit_heatmaps: Option<bool>,
+
+    /// Enable per-site TemporalHeatmap collection.
+    pub enable_site_heatmaps: Option<bool>,
+
+    /// Enable per-ASN TemporalHeatmap collection.
+    pub enable_asn_heatmaps: Option<bool>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
