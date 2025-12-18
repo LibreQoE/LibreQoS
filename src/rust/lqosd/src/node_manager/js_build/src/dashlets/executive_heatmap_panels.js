@@ -4,7 +4,10 @@ import {
     buildHeatmapRows,
     colorByCapacity,
     formatLatest,
+    latestValue,
+    nonNullCount,
     heatRow,
+    MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
 
 class ExecutiveHeatmapBase extends BaseDashlet {
@@ -106,7 +109,9 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             target.innerHTML = this.emptyCard();
             return;
         }
-        const metricRows = rows.map(row => heatRow(
+        const sorted = rows.slice().sort((a, b) => this.metricSort(a, b));
+        const limited = sorted.slice(0, MAX_HEATMAP_ROWS);
+        const metricRows = limited.map(row => heatRow(
             row.label,
             row.badge,
             row.blocks[this.config.metricKey] || [],
@@ -124,6 +129,23 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
+    }
+
+    metricSort(a, b) {
+        const aVals = a.blocks[this.config.metricKey] || [];
+        const bVals = b.blocks[this.config.metricKey] || [];
+        const aLatest = latestValue(aVals);
+        const bLatest = latestValue(bVals);
+        if (bLatest !== aLatest) {
+            // Descending by latest value (nulls last)
+            if (aLatest === null) return 1;
+            if (bLatest === null) return -1;
+            return bLatest - aLatest;
+        }
+        const aCount = nonNullCount(aVals);
+        const bCount = nonNullCount(bVals);
+        if (bCount !== aCount) return bCount - aCount;
+        return (a.label || "").localeCompare(b.label || "");
     }
 }
 

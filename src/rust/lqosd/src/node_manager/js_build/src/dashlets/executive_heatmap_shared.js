@@ -1,6 +1,6 @@
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 
-const MAX_TOTAL_ROWS = 20;
+export const MAX_HEATMAP_ROWS = 20;
 
 export function formatCount(value) {
     if (value === undefined || value === null) return "—";
@@ -57,34 +57,7 @@ export function buildHeatmapRows(data) {
         });
     });
 
-    rows.sort((a, b) => {
-        const aScore = rowScore(a);
-        const bScore = rowScore(b);
-        if (bScore !== aScore) return bScore - aScore;
-        return (a.label || "").localeCompare(b.label || "");
-    });
-    return rows.slice(0, MAX_TOTAL_ROWS);
-}
-
-function rowScore(row) {
-    if (!row || !row.blocks) return 0;
-    const latest = (arr) => {
-        if (!arr || !arr.length) return null;
-        for (let i = arr.length - 1; i >= 0; i--) {
-            const v = arr[i];
-            if (v !== null && v !== undefined && Number.isFinite(Number(v))) return Number(v);
-        }
-        return null;
-    };
-    const d = latest(row.blocks.download);
-    const u = latest(row.blocks.upload);
-    const rtt = latest(row.blocks.rtt);
-    const retr = latest(row.blocks.retransmit);
-    const util = Math.max(d || 0, u || 0);
-    const latencyScore = rtt !== null ? (200 - Math.min(200, rtt)) / 200 * 5 : 0;
-    const retrScore = retr !== null ? retr : 0;
-    const hasData = (util > 0 || rtt !== null || retr !== null) ? 1 : 0;
-    return util + latencyScore + retrScore * 0.5 + hasData;
+    return rows;
 }
 
 export function formatLatest(value, unit = "", precision = 0) {
@@ -108,6 +81,11 @@ export function latestValue(values) {
         }
     }
     return null;
+}
+
+export function nonNullCount(values) {
+    if (!values || !values.length) return 0;
+    return values.filter(v => v !== null && v !== undefined).length;
 }
 
 export function heatmapRow(values, colorFn, formatValue) {
