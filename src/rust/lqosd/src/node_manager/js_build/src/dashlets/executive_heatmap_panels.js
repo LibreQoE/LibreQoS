@@ -126,7 +126,6 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                 <div class="card-body py-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div class="exec-section-title mb-0">${titleHtml}</div>
-                        <span class="badge bg-light text-secondary border">${rows.length} rows</span>
                     </div>
                     <div class="exec-heat-rows">${metricRows}</div>
                 </div>

@@ -108,10 +108,12 @@ export function heatmapRow(values, colorFn, formatValue) {
 export function heatRow(label, badge, values, colorFn, formatValue) {
     const latest = latestValue(values);
     const formattedLatest = formatValue(latest);
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
     return `
         <div class="exec-heat-row">
             <div class="exec-heat-label text-truncate" title="${label}">
-                <div class="fw-semibold text-truncate">${label}</div>
+                <div class="fw-semibold text-truncate${redactClass}">${label}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
             <div class="exec-heat-cells">${heatmapRow(values, colorFn, formatValue)}</div>

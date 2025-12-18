@@ -83,7 +83,6 @@ function renderHeatmapTable(targetId, metricKey) {
                 <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title}</div>
-                        <span class="badge bg-light text-secondary border">${rows.length} rows</span>
                     </div>
                     <p class="text-muted small mb-3">${cfg.description}</p>
                     <div class="exec-heat-rows">${body}</div>
