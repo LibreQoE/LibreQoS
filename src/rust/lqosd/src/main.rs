@@ -360,6 +360,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetTopNUploaders { start, end } => {
                 throughput_tracker::top_n_up(*start, *end)
             }
+            BusRequest::GetCircuitHeatmaps => throughput_tracker::circuit_heatmaps(),
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)

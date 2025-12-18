@@ -5,9 +5,10 @@ const SUMMARY_BLOCKS: usize = 14;
 const TOTAL_BLOCKS: usize = SUMMARY_BLOCKS + 1;
 
 use allocative::Allocative;
+use serde::{Deserialize, Serialize};
 
 /// Heatmap block medians for download, upload, RTT, and TCP retransmits.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Allocative)]
 pub struct HeatmapBlocks {
     /// Median download values for each block.
     pub download: [Option<f32>; TOTAL_BLOCKS],

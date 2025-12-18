@@ -21,7 +21,7 @@ pub use ip_stats::{
     tos_parser,
 };
 mod tc_handle;
-pub use bus::response::{BakeryStatsSnapshot, UrgentIssue};
+pub use bus::response::{BakeryStatsSnapshot, CircuitHeatmapData, UrgentIssue};
 pub use bus::{
     BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,
     CakeDiffTinTransit, CakeDiffTransit, CakeTransit, LibreqosBusClient, QueueStoreTransit,

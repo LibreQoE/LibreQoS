@@ -56,6 +56,9 @@ pub enum BusRequest {
         end: u32,
     },
 
+    /// Retrieve per-circuit TemporalHeatmap blocks.
+    GetCircuitHeatmaps,
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)

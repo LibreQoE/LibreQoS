@@ -7,7 +7,7 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{temporal_heatmap::HeatmapBlocks, units::DownUpOrder};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -36,6 +36,19 @@ pub struct UrgentIssue {
 pub struct BakeryStatsSnapshot {
     /// The number of active circuits in the bakery
     pub active_circuits: u64,
+}
+
+/// Circuit-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct CircuitHeatmapData {
+    /// Circuit hash identifier from ShapedDevices.csv.
+    pub circuit_hash: i64,
+    /// Circuit ID string.
+    pub circuit_id: String,
+    /// Circuit name string.
+    pub circuit_name: String,
+    /// Heatmap blocks for the circuit.
+    pub blocks: HeatmapBlocks,
 }
 
 /// A `BusResponse` object represents a single
@@ -83,6 +96,9 @@ pub enum BusResponse {
 
     /// Provides the Top N uploaders IP stats.
     TopUploaders(Vec<IpStats>),
+
+    /// Provides circuit-level heatmaps.
+    CircuitHeatmaps(Vec<CircuitHeatmapData>),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),

@@ -13,7 +13,10 @@ use crate::{
 };
 use fxhash::FxHashMap;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
+use lqos_bus::{
+    BusResponse, CircuitHeatmapData, FlowbeeProtocol, IpStats, TcHandle, TopFlowType,
+    XdpPpingResult,
+};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
@@ -398,6 +401,43 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
         )
         .collect();
     BusResponse::TopUploaders(result)
+}
+
+/// Retrieve per-circuit heatmap data for the executive summary.
+pub fn circuit_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_circuit_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::CircuitHeatmaps(Vec::new());
+    }
+
+    let devices = SHAPED_DEVICES.load();
+    let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
+    devices.devices.iter().for_each(|device| {
+        circuit_meta
+            .entry(device.circuit_hash)
+            .or_insert_with(|| (device.circuit_id.clone(), device.circuit_name.clone()));
+    });
+
+    let heatmaps = THROUGHPUT_TRACKER.circuit_heatmaps.lock();
+    let mut rows: Vec<CircuitHeatmapData> = heatmaps
+        .iter()
+        .map(|(hash, heatmap)| {
+            let (circuit_id, circuit_name) = circuit_meta
+                .get(hash)
+                .cloned()
+                .unwrap_or_else(|| (String::new(), String::new()));
+            CircuitHeatmapData {
+                circuit_hash: *hash,
+                circuit_id,
+                circuit_name,
+                blocks: heatmap.blocks(),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
+    BusResponse::CircuitHeatmaps(rows)
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
