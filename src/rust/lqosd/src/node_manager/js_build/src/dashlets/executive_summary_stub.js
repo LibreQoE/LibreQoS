@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
 
 const HELPER_LINKS = [
@@ -39,16 +40,16 @@ export class ExecutiveSummaryStub extends BaseDashlet {
         super(slot);
         this.size = 12;
         this.lastUpdate = null;
+        this.latestThroughput = null;
         this._headerId = `${this.id}_header`;
         this._helpersId = `${this.id}_helpers`;
         this._heatmapId = `${this.id}_heatmaps`;
-        this._timestampId = `${this.id}_timestamp`;
     }
 
     canBeSlowedDown() { return true; }
     title() { return "Executive Summary"; }
     tooltip() { return "Headline health metrics with helper shortcuts and 30s heatmap updates."; }
-    subscribeTo() { return ["ExecutiveHeatmaps"]; }
+    subscribeTo() { return ["ExecutiveHeatmaps", "Throughput"]; }
 
     buildContainer() {
         const container = super.buildContainer();
@@ -85,6 +86,11 @@ export class ExecutiveSummaryStub extends BaseDashlet {
             window.executiveHeatmapData = msg.data;
             this.lastUpdate = new Date();
             this.#render();
+            return;
+        }
+        if (msg.event === "Throughput") {
+            this.latestThroughput = msg.data;
+            this.#render();
         }
     }
 
@@ -103,42 +109,19 @@ export class ExecutiveSummaryStub extends BaseDashlet {
             return;
         }
 
-        const metrics = [
-            { key: "circuit_count", label: "Circuits", icon: "fa-bullseye", accent: "text-primary" },
-            { key: "device_count", label: "Devices", icon: "fa-server", accent: "text-info" },
-            { key: "site_count", label: "Sites", icon: "fa-sitemap", accent: "text-success" },
-            { key: "mapped_ip_count", label: "Mapped IPs", icon: "fa-map-marker-alt", accent: "text-primary" },
-            { key: "unmapped_ip_count", label: "Unknown IPs", icon: "fa-question-circle", accent: "text-warning" },
-            { key: "htb_queue_count", label: "HTB Queues", icon: "fa-stream", accent: "text-secondary" },
-            { key: "cake_queue_count", label: "CAKE Queues", icon: "fa-birthday-cake", accent: "text-danger" },
-            {
-                key: "insight_connected",
-                label: "Insight",
-                icon: "fa-satellite-dish",
-                accent: (h) => h.insight_connected ? "text-success" : "text-danger",
-                render: (value) => {
-                    if (value === undefined) {
-                        return `<span class="badge bg-light text-secondary border exec-badge">Pending</span>`;
-                    }
-                    return value
-                        ? `<span class="badge bg-success-subtle text-success exec-badge">Connected</span>`
-                        : `<span class="badge bg-danger-subtle text-danger exec-badge">Offline</span>`;
-                }
-            },
-        ];
-
-        const cards = metrics.map(metric => this.#renderMetricCard(metric, header)).join("");
-
         target.innerHTML = `
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                <div class="exec-section-title mb-0"><i class="fas fa-chart-pie me-2 text-primary"></i>Network Snapshot</div>
-                <div class="text-secondary small" id="${this._timestampId}">${this.#formatTimestamp()}</div>
+                <div class="exec-section-title mb-0 text-secondary"><i class="fas fa-chart-pie me-2 text-primary"></i>Network Snapshot</div>
             </div>
-            <div class="row row-cols-2 row-cols-md-4 g-3">
-                ${cards}
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-3 g-3">
+                ${this.#renderInventoryCard(header)}
+                ${this.#renderQueuesCard(header)}
+                ${this.#renderThroughputCard()}
+                ${this.#renderSimpleCard("Mapped IPs", "fa-map-marker-alt", "text-primary", formatCount(header.mapped_ip_count))}
+                ${this.#renderSimpleCard("Unknown IPs", "fa-question-circle", "text-warning", formatCount(header.unmapped_ip_count))}
+                ${this.#renderInsightCard(header)}
             </div>
         `;
-        this.#updateTimestamp();
     }
 
     #renderHelpers() {
@@ -388,20 +371,43 @@ export class ExecutiveSummaryStub extends BaseDashlet {
         return util + latencyScore + retrScore * 0.5 + hasData;
     }
 
-    #renderMetricCard(metric, header) {
-        const valueRaw = header[metric.key];
-        const value = metric.render ? metric.render(valueRaw) : formatCount(valueRaw);
-        const accent = typeof metric.accent === "function"
-            ? metric.accent(header)
-            : (metric.accent || "text-primary");
+    #renderInventoryCard(header) {
+        const items = [
+            { label: "Circuits", value: formatCount(header.circuit_count) },
+            { label: "Devices", value: formatCount(header.device_count) },
+            { label: "Sites", value: formatCount(header.site_count) },
+        ];
+        return this.#groupCard("Inventory", "fa-layer-group", "text-primary", items);
+    }
+
+    #renderQueuesCard(header) {
+        const items = [
+            { label: "HTB", value: formatCount(header.htb_queue_count) },
+            { label: "CAKE", value: formatCount(header.cake_queue_count) },
+        ];
+        return this.#groupCard("Queues", "fa-stream", "text-secondary", items);
+    }
+
+    #renderThroughputCard() {
+        const bps = this.latestThroughput?.bps;
+        const down = this.#formatBps(bps?.down);
+        const up = this.#formatBps(bps?.up);
+        const items = [
+            { label: `<i class="fas fa-arrow-down"></i>`, value: down },
+            { label: `<i class="fas fa-arrow-up"></i>`, value: up },
+        ];
+        return this.#groupCard("Throughput", "fa-tachometer-alt", "text-info", items, true);
+    }
+
+    #renderSimpleCard(label, icon, accent, value) {
         return `
             <div class="col">
                 <div class="executive-card h-100">
                     <div class="d-flex align-items-center gap-3">
-                        <span class="exec-icon ${accent}"><i class="fas ${metric.icon}"></i></span>
+                        <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
                         <div>
-                            <div class="text-muted small">${metric.label}</div>
-                            <div class="exec-metric-value">${value}</div>
+                            <div class="text-secondary small">${label}</div>
+                            <div class="exec-metric-value text-secondary">${value}</div>
                         </div>
                     </div>
                 </div>
@@ -409,14 +415,63 @@ export class ExecutiveSummaryStub extends BaseDashlet {
         `;
     }
 
-    #formatTimestamp() {
-        if (!this.lastUpdate) return "Waiting…";
-        return `Updated ${this.lastUpdate.toLocaleTimeString()}`;
+    #renderInsightCard(header) {
+        const value = header.insight_connected;
+        const badge = value === undefined
+            ? `<span class="badge bg-light text-secondary border exec-badge">Pending</span>`
+            : value
+                ? `<span class="badge bg-success-subtle text-success exec-badge">Connected</span>`
+                : `<span class="badge bg-danger-subtle text-danger exec-badge">Offline</span>`;
+        return `
+            <div class="col">
+                <div class="executive-card h-100">
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="exec-icon ${value ? "text-success" : "text-danger"}"><i class="fas fa-satellite-dish"></i></span>
+                        <div>
+                            <div class="text-secondary small">Insight</div>
+                            <div class="exec-metric-value">${badge}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
-    #updateTimestamp() {
-        const ts = document.getElementById(this._timestampId);
-        if (ts) ts.textContent = this.#formatTimestamp();
+    #groupCard(title, icon, accent, items, allowHtmlLabel = false) {
+        const rows = items.map(item => `
+            <div class="d-flex align-items-baseline gap-1">
+                <span class="text-secondary small">${allowHtmlLabel ? item.label : this.#escapeHtml(item.label)}</span>
+                <span class="exec-metric-value text-secondary">${item.value}</span>
+            </div>
+        `).join("");
+        return `
+            <div class="col">
+                <div class="executive-card h-100">
+                    <div class="d-flex align-items-start gap-3">
+                        <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
+                        <div class="flex-grow-1">
+                            <div class="text-secondary small">${title}</div>
+                            <div class="d-flex flex-wrap gap-3 mt-2">${rows}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    #formatBps(bits) {
+        if (bits === undefined || bits === null || Number.isNaN(bits)) return "—";
+        const scaled = scaleNumber(bits, 1);
+        return `${scaled}bps`;
+    }
+
+    #escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
     #loadingRow(msg) {
