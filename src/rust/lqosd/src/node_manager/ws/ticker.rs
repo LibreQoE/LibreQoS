@@ -11,6 +11,7 @@ mod circuit_capacity;
 mod flow_counter;
 mod flow_endpoints;
 mod endpoint_latlon;
+mod executive_heatmaps;
 mod ipstats_conversion;
 mod network_tree;
 mod queue_stats_total;
@@ -78,6 +79,7 @@ async fn one_second_cadence(
             retransmits::tcp_retransmits(channels.clone()),
             stormguard::stormguard_ticker(channels.clone(), bus_tx.clone()),
             bakery::bakery_ticker(channels.clone(), bus_tx.clone()),
+            executive_heatmaps::executive_heatmaps(channels.clone(), bus_tx.clone()),
         );
 
         channels.clean().await;
