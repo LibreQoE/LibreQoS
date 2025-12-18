@@ -9,16 +9,18 @@ use self::flow_data::{
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 use crate::{
+    lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
 use lqos_bus::{
-    AsnHeatmapData, BusResponse, CircuitHeatmapData, FlowbeeProtocol, IpStats, SiteHeatmapData,
-    TcHandle, TopFlowType, XdpPpingResult,
+    AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
+    IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
 };
+use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
@@ -456,8 +458,13 @@ pub fn site_heatmaps() -> BusResponse {
         .get_nodes_when_ready()
         .iter()
         .filter_map(|node| {
+            if node.name == "Root" || node.name.parse::<std::net::IpAddr>().is_ok() {
+                return None;
+            }
             node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
                 site_name: node.name.clone(),
+                node_type: node.node_type.clone(),
+                depth: node.parents.len().saturating_sub(1),
                 blocks: heatmap.blocks(),
             })
         })
@@ -794,6 +801,11 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
 }
 
 pub fn host_counts() -> BusResponse {
+    let (total, shaped) = current_host_counts();
+    BusResponse::HostCounts((total, shaped))
+}
+
+fn current_host_counts() -> (u32, u32) {
     let mut total = 0;
     let mut shaped = 0;
     let tp_cycle = THROUGHPUT_TRACKER
@@ -810,7 +822,47 @@ pub fn host_counts() -> BusResponse {
                 shaped += 1;
             }
         });
-    BusResponse::HostCounts((total, shaped))
+    (total, shaped)
+}
+
+/// Gather headline metrics for the Executive Summary header cards.
+pub fn executive_summary_header() -> BusResponse {
+    let devices = SHAPED_DEVICES.load();
+    let circuit_count = devices
+        .devices
+        .iter()
+        .map(|device| device.circuit_hash)
+        .collect::<FxHashSet<_>>()
+        .len() as u64;
+    let device_count = devices.devices.len() as u64;
+
+    let site_count = {
+        let reader = NETWORK_JSON.read();
+        let total_nodes = reader.get_nodes_when_ready().len();
+        // Remove the synthetic root node when counting sites.
+        total_nodes.saturating_sub(1) as u64
+    };
+
+    let (total_hosts, shaped_hosts) = current_host_counts();
+    let mapped_ip_count = shaped_hosts as u64;
+    let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
+
+    let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
+    let insight_connected = !matches!(
+        get_lts_license_status().0,
+        LtsStatus::Invalid | LtsStatus::NotChecked
+    );
+
+    BusResponse::ExecutiveSummaryHeader(ExecutiveSummaryHeader {
+        circuit_count,
+        device_count,
+        site_count,
+        mapped_ip_count,
+        unmapped_ip_count,
+        htb_queue_count: queue_counts.htb as u64,
+        cake_queue_count: queue_counts.cake as u64,
+        insight_connected,
+    })
 }
 
 type FullList = (
@@ -830,7 +882,7 @@ pub fn all_unknown_ips() -> BusResponse {
         return BusResponse::NotReadyYet;
     }
     let Ok(boot_time) = boot_time else {
-        return BusResponse::Fail("Boot time unavailable".to_string())
+        return BusResponse::Fail("Boot time unavailable".to_string());
     };
 
     // Safely convert TimeSpec to Duration - handle potential negative values

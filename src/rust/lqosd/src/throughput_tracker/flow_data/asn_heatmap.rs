@@ -45,21 +45,21 @@ impl AsnHeatmapStore {
             return;
         }
 
+        // Drop unknown ASN 0 and purge any existing entry.
+        aggregates.retain(|asn, _| *asn != 0);
+        self.entries.remove(&0);
+
         self.retain_recent(current_cycle);
 
         for (asn, mut aggregate) in aggregates.drain() {
             let rtt = median(&mut aggregate.rtts);
             let retransmit_down =
                 retransmit_percent(aggregate.retransmits.down, aggregate.packets.down);
-            let retransmit_up =
-                retransmit_percent(aggregate.retransmits.up, aggregate.packets.up);
-            let entry = self
-                .entries
-                .entry(asn)
-                .or_insert_with(|| AsnHeatmapEntry {
-                    heatmap: TemporalHeatmap::new(),
-                    last_updated_cycle: current_cycle,
-                });
+            let retransmit_up = retransmit_percent(aggregate.retransmits.up, aggregate.packets.up);
+            let entry = self.entries.entry(asn).or_insert_with(|| AsnHeatmapEntry {
+                heatmap: TemporalHeatmap::new(),
+                last_updated_cycle: current_cycle,
+            });
             entry.last_updated_cycle = current_cycle;
             entry.heatmap.add_sample(
                 bytes_to_mbps(aggregate.bytes.down),
@@ -115,6 +115,7 @@ pub fn snapshot_asn_heatmaps() -> Vec<(u32, HeatmapBlocks)> {
     store
         .entries
         .iter()
+        .filter(|(asn, _)| **asn != 0)
         .map(|(asn, entry)| (*asn, entry.heatmap.blocks()))
         .collect()
 }

@@ -44,7 +44,7 @@ import {ExecutiveSummaryStub} from "./executive_summary_stub";
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
     { name: "Throughput Packets/Second", tag: "throughputPps", size: 3, category: "Throughput" },
-    { name: "Shaped/Unshaped Pie", tag: "shapedUnshaped", size: 3, category: "Shaped" },
+    { name: "Mapped/Unmapped Traffic", tag: "shapedUnshaped", size: 3, category: "Shaped" },
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3, category: "Flows" },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6, category: "Throughput" },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6, category: "RTT" },
@@ -83,7 +83,7 @@ export const DashletMenu = [
     { name: "Shaper Children (Upload)", tag: "shaperChildrenUp", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
-    { name: "Executive Summary (Preview)", tag: "executiveSummaryStub", size: 12, category: "Executive" },
+    { name: "Executive Summary", tag: "executiveSummaryStub", size: 12, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {

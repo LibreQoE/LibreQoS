@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse};
+use lqos_bus::{BusReply, BusRequest, BusResponse, ExecutiveSummaryHeader};
 use lqos_utils::temporal_heatmap::{HeatmapBlocks, TemporalHeatmap};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -28,14 +28,24 @@ pub async fn executive_heatmaps(
         return;
     }
 
-    let circuits = fetch_circuit_heatmaps(bus_tx.clone()).await.unwrap_or_default();
-    let sites = fetch_site_heatmaps(bus_tx.clone()).await.unwrap_or_default();
+    let circuits = fetch_circuit_heatmaps(bus_tx.clone())
+        .await
+        .unwrap_or_default();
+    let sites = fetch_site_heatmaps(bus_tx.clone())
+        .await
+        .unwrap_or_default();
     let asns = fetch_asn_heatmaps(bus_tx.clone()).await.unwrap_or_default();
-    let global = fetch_global_heatmap(bus_tx).await.unwrap_or_else(empty_blocks);
+    let header = fetch_executive_header(bus_tx.clone())
+        .await
+        .unwrap_or_else(empty_header);
+    let global = fetch_global_heatmap(bus_tx)
+        .await
+        .unwrap_or_else(empty_blocks);
 
     let payload = json!({
         "event": PublishedChannels::ExecutiveHeatmaps.to_string(),
         "data": {
+            "header": header,
             "global": global,
             "circuits": circuits,
             "sites": sites,
@@ -94,6 +104,17 @@ async fn fetch_asn_heatmaps(
     None
 }
 
+async fn fetch_executive_header(
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
+) -> Option<ExecutiveSummaryHeader> {
+    if let Some(BusResponse::ExecutiveSummaryHeader(data)) =
+        fetch_single_response(bus_tx, BusRequest::GetExecutiveSummaryHeader).await
+    {
+        return Some(data);
+    }
+    None
+}
+
 async fn fetch_global_heatmap(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
 ) -> Option<HeatmapBlocks> {
@@ -117,4 +138,8 @@ async fn fetch_single_response(
 
 fn empty_blocks() -> HeatmapBlocks {
     TemporalHeatmap::new().blocks()
+}
+
+fn empty_header() -> ExecutiveSummaryHeader {
+    ExecutiveSummaryHeader::default()
 }

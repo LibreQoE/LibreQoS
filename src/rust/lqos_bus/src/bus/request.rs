@@ -68,6 +68,9 @@ pub enum BusRequest {
     /// Retrieve the global (roll-up) TemporalHeatmap.
     GetGlobalHeatmap,
 
+    /// Retrieve headline metrics for the Executive Summary tab.
+    GetExecutiveSummaryHeader,
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)

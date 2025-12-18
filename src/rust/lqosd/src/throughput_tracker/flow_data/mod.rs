@@ -1,16 +1,17 @@
 //! Provides tracking and data-services for per-flow data. Includes implementations
 //! of netflow protocols.
 
+mod asn_heatmap;
 mod flow_analysis;
 mod flow_tracker;
 mod netflow5;
 mod netflow9;
-mod asn_heatmap;
 
 use crate::throughput_tracker::flow_data::{
     flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9,
 };
 use anyhow::Result;
+pub(crate) use asn_heatmap::{AsnAggregate, snapshot_asn_heatmaps, update_asn_heatmaps};
 use crossbeam_channel::Sender;
 pub(crate) use flow_analysis::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysis,
@@ -19,7 +20,6 @@ pub(crate) use flow_analysis::{
     get_rtt_events_per_second, setup_flow_analysis,
 };
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
-pub(crate) use asn_heatmap::{AsnAggregate, snapshot_asn_heatmaps, update_asn_heatmaps};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
 
@@ -50,12 +50,14 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
                     let target = format!("{ip}:{port}", ip = ip, port = port);
                     match version {
                         5 => {
-                            let endpoint = Netflow5::new(target).expect("Cannot parse endpoint for netflow v5");
+                            let endpoint = Netflow5::new(target)
+                                .expect("Cannot parse endpoint for netflow v5");
                             endpoints.push(endpoint);
                             info!("Netflow 5 endpoint added");
                         }
                         9 => {
-                            let endpoint = Netflow9::new(target).expect("Cannot parse endpoint for netflow v9");
+                            let endpoint = Netflow9::new(target)
+                                .expect("Cannot parse endpoint for netflow v9");
                             endpoints.push(endpoint);
                             info!("Netflow 9 endpoint added");
                         }

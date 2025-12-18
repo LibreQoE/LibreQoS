@@ -21,7 +21,10 @@ pub(crate) fn make_queue_diff(
         QueueType::FqCodel(..) => match current {
             QueueType::FqCodel(..) => Ok(fq_codel_diff(previous, current)?),
             _ => {
-                error!("Queue diffs are not implemented for FqCodel to {:?}", current);
+                error!(
+                    "Queue diffs are not implemented for FqCodel to {:?}",
+                    current
+                );
                 Err(QueueDiffError::NotImplemented)
             }
         },

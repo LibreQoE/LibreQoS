@@ -17,11 +17,11 @@ use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
+use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
     temporal_heatmap::TemporalHeatmap,
     units::{AtomicDownUp, DownUpOrder},
 };
-use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
@@ -89,20 +89,17 @@ impl ThroughputTracker {
         let shaped_devices = SHAPED_DEVICES.load();
         let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
         capacity_lookup.reserve(shaped_devices.devices.len());
-        shaped_devices
-            .devices
-            .iter()
-            .for_each(|device| {
-                let entry = capacity_lookup
-                    .entry(device.circuit_hash)
-                    .or_insert((device.download_max_mbps, device.upload_max_mbps));
-                if device.download_max_mbps > entry.0 {
-                    entry.0 = device.download_max_mbps;
-                }
-                if device.upload_max_mbps > entry.1 {
-                    entry.1 = device.upload_max_mbps;
-                }
-            });
+        shaped_devices.devices.iter().for_each(|device| {
+            let entry = capacity_lookup
+                .entry(device.circuit_hash)
+                .or_insert((device.download_max_mbps, device.upload_max_mbps));
+            if device.download_max_mbps > entry.0 {
+                entry.0 = device.download_max_mbps;
+            }
+            if device.upload_max_mbps > entry.1 {
+                entry.1 = device.upload_max_mbps;
+            }
+        });
 
         let mut aggregates: FxHashMap<i64, CircuitHeatmapAggregate> = FxHashMap::default();
         let mut total_download_bytes: u64 = 0;
@@ -119,39 +116,46 @@ impl ThroughputTracker {
                     continue;
                 };
 
-                let download_delta =
-                    entry.bytes.down.saturating_sub(entry.prev_bytes.down);
+                let download_delta = entry.bytes.down.saturating_sub(entry.prev_bytes.down);
                 let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
                 total_download_bytes = total_download_bytes.saturating_add(download_delta);
                 total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
-                total_tcp_packets.down = total_tcp_packets
+                total_tcp_packets.down = total_tcp_packets.down.saturating_add(
+                    entry
+                        .tcp_packets
+                        .down
+                        .saturating_sub(entry.prev_tcp_packets.down),
+                );
+                total_tcp_packets.up = total_tcp_packets.up.saturating_add(
+                    entry
+                        .tcp_packets
+                        .up
+                        .saturating_sub(entry.prev_tcp_packets.up),
+                );
+                total_retransmits.down = total_retransmits
                     .down
-                    .saturating_add(entry.tcp_packets.down.saturating_sub(entry.prev_tcp_packets.down));
-                total_tcp_packets.up = total_tcp_packets
+                    .saturating_add(entry.tcp_retransmits.down);
+                total_retransmits.up = total_retransmits
                     .up
-                    .saturating_add(entry.tcp_packets.up.saturating_sub(entry.prev_tcp_packets.up));
-                total_retransmits.down =
-                    total_retransmits.down.saturating_add(entry.tcp_retransmits.down);
-                total_retransmits.up =
-                    total_retransmits.up.saturating_add(entry.tcp_retransmits.up);
+                    .saturating_add(entry.tcp_retransmits.up);
 
                 let agg = aggregates
                     .entry(circuit_hash)
                     .or_insert_with(CircuitHeatmapAggregate::default);
-                agg.download_bytes = agg
-                    .download_bytes
-                    .saturating_add(download_delta);
-                agg.upload_bytes = agg
-                    .upload_bytes
-                    .saturating_add(upload_delta);
-                agg.tcp_packets.down = agg
-                    .tcp_packets
-                    .down
-                    .saturating_add(entry.tcp_packets.down.saturating_sub(entry.prev_tcp_packets.down));
-                agg.tcp_packets.up = agg
-                    .tcp_packets
-                    .up
-                    .saturating_add(entry.tcp_packets.up.saturating_sub(entry.prev_tcp_packets.up));
+                agg.download_bytes = agg.download_bytes.saturating_add(download_delta);
+                agg.upload_bytes = agg.upload_bytes.saturating_add(upload_delta);
+                agg.tcp_packets.down = agg.tcp_packets.down.saturating_add(
+                    entry
+                        .tcp_packets
+                        .down
+                        .saturating_sub(entry.prev_tcp_packets.down),
+                );
+                agg.tcp_packets.up = agg.tcp_packets.up.saturating_add(
+                    entry
+                        .tcp_packets
+                        .up
+                        .saturating_sub(entry.prev_tcp_packets.up),
+                );
                 agg.tcp_retransmits.down = agg
                     .tcp_retransmits
                     .down
@@ -177,8 +181,8 @@ impl ThroughputTracker {
                 .copied()
                 .unwrap_or((0.0, 0.0));
 
-            let download_util = utilization_percent(aggregate.download_bytes, max_down_mbps)
-                .unwrap_or(0.0);
+            let download_util =
+                utilization_percent(aggregate.download_bytes, max_down_mbps).unwrap_or(0.0);
             let upload_util =
                 utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
             let rtt = median(&mut aggregate.rtts);
@@ -509,7 +513,12 @@ impl ThroughputTracker {
                                   packets: DownUpOrder<u64>,
                                   retransmits: DownUpOrder<u64>,
                                   rtt_ms: Option<f32>| {
-            let agg = asn_aggregates.entry(asn).or_insert_with(AsnAggregate::default);
+            if asn == 0 {
+                return;
+            }
+            let agg = asn_aggregates
+                .entry(asn)
+                .or_insert_with(AsnAggregate::default);
             agg.bytes.checked_add(bytes);
             agg.packets.checked_add(packets);
             agg.retransmits.checked_add(retransmits);
@@ -542,15 +551,14 @@ impl ThroughputTracker {
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
                         let delta_bytes =
                             data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
-                        let delta_packets =
-                            data.packets_sent.checked_sub_or_zero(this_flow.0.packets_sent);
+                        let delta_packets = data
+                            .packets_sent
+                            .checked_sub_or_zero(this_flow.0.packets_sent);
                         let delta_retrans = data
                             .tcp_retransmits
                             .checked_sub_or_zero(this_flow.0.tcp_retransmits);
-                        let delta_retrans = DownUpOrder::new(
-                            delta_retrans.down as u64,
-                            delta_retrans.up as u64,
-                        );
+                        let delta_retrans =
+                            DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64);
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
                             if this_flow.0.retry_times_down.is_none() {
@@ -623,9 +631,8 @@ impl ThroughputTracker {
                             // Insert it into the map
                             let flow_analysis = FlowAnalysis::new(&key);
                             if enable_asn_heatmaps {
-                                let flow_rtt = rtt_samples
-                                    .get(&key)
-                                    .and_then(|rtt| combine_rtt_ms(*rtt));
+                                let flow_rtt =
+                                    rtt_samples.get(&key).and_then(|rtt| combine_rtt_ms(*rtt));
                                 let delta_retrans = DownUpOrder::new(
                                     data.tcp_retransmits.down as u64,
                                     data.tcp_retransmits.up as u64,

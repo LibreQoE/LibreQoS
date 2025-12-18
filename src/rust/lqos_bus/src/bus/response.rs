@@ -56,6 +56,12 @@ pub struct CircuitHeatmapData {
 pub struct SiteHeatmapData {
     /// Site name from network.json.
     pub site_name: String,
+    /// Optional node type from network.json (e.g., Site/AP).
+    #[serde(default)]
+    pub node_type: Option<String>,
+    /// Depth of the site within the network tree (root is 0).
+    #[serde(default)]
+    pub depth: usize,
     /// Heatmap blocks for the site.
     pub blocks: HeatmapBlocks,
 }
@@ -67,6 +73,27 @@ pub struct AsnHeatmapData {
     pub asn: u32,
     /// Heatmap blocks for the ASN.
     pub blocks: HeatmapBlocks,
+}
+
+/// Metrics for the Executive Summary header cards.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative, Default)]
+pub struct ExecutiveSummaryHeader {
+    /// Total number of unique circuits from SHAPED_DEVICES.
+    pub circuit_count: u64,
+    /// Total number of shaped devices.
+    pub device_count: u64,
+    /// Total number of sites in the site tree.
+    pub site_count: u64,
+    /// Number of mapped IPs (shaped).
+    pub mapped_ip_count: u64,
+    /// Number of unmapped IPs (unknown).
+    pub unmapped_ip_count: u64,
+    /// Number of HTB queues being tracked.
+    pub htb_queue_count: u64,
+    /// Number of CAKE queues being tracked.
+    pub cake_queue_count: u64,
+    /// Whether Insight is connected.
+    pub insight_connected: bool,
 }
 
 /// A `BusResponse` object represents a single
@@ -126,6 +153,9 @@ pub enum BusResponse {
 
     /// Provides the global (roll-up) heatmap.
     GlobalHeatmap(HeatmapBlocks),
+
+    /// Provides headline metrics for the Executive Summary page.
+    ExecutiveSummaryHeader(ExecutiveSummaryHeader),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),

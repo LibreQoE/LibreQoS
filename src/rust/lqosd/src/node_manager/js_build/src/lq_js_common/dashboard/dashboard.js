@@ -186,8 +186,10 @@ export class Dashboard {
         // Process each tab
         this.layout.tabs.forEach((tab, tabIndex) => {
             this.tabDashlets[tabIndex] = [];
-            
-            tab.dashlets.forEach((dashletDef) => {
+            const dashlets = Array.isArray(tab.dashlets) ? tab.dashlets : [];
+            tab.dashlets = dashlets;
+
+            dashlets.forEach((dashletDef) => {
                 let widget = this.widgetFactory(dashletDef.tag, globalIndex);
                 if (widget == null) return; // Skip build
                 
