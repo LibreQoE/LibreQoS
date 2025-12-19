@@ -64,7 +64,7 @@ function fmtMbps(val) {
 function render(data) {
     const rows = buildRows(data);
     renderTable("executiveOversubscribedTable", [
-        { header: "Site", render: (r) => r.name },
+        { header: "Site", render: (r) => `<span class="redactable">${r.name}</span>` },
         { header: "Oversub Down", render: (r) => fmtRatio(r.ratio_down) },
         { header: "Oversub Up", render: (r) => fmtRatio(r.ratio_up) },
         { header: "Cap (D/U)", render: (r) => `${fmtMbps(r.cap_down)} / ${fmtMbps(r.cap_up)}` },

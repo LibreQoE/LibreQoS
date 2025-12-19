@@ -22,7 +22,7 @@ function buildRows(data) {
 function render(data) {
     const rows = buildRows(data);
     renderTable("executiveWorstSitesTable", [
-        { header: "Site", render: (r) => r.name },
+        { header: "Site", render: (r) => `<span class="redactable">${r.name}</span>` },
         { header: "Median RTT (ms)", render: (r) => {
             if (r.rtt === null) return "—";
             const color = colorByRttMs(r.rtt, 200);

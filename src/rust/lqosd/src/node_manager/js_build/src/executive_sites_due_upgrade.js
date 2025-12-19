@@ -26,7 +26,7 @@ function buildRows(data) {
 function render(data) {
     const rows = buildRows(data);
     renderTable("executiveSitesDueTable", [
-        { header: "Site", render: (r) => r.name },
+        { header: "Site", render: (r) => `<span class="redactable">${r.name}</span>` },
         { header: "Avg Down Util (%)", render: (r) => r.down.avg !== null ? r.down.avg.toFixed(1) : "—" },
         { header: "Avg Up Util (%)", render: (r) => r.up.avg !== null ? r.up.avg.toFixed(1) : "—" },
     ], rows, "No sites meet the 80%+ utilization threshold yet.");
