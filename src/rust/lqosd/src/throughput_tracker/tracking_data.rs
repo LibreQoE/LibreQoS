@@ -79,6 +79,8 @@ impl ThroughputTracker {
         let Ok(config) = lqos_config::load_config() else {
             return;
         };
+        let global_down_mbps = config.queues.downlink_bandwidth_mbps as f32;
+        let global_up_mbps = config.queues.uplink_bandwidth_mbps as f32;
 
         if !config.enable_circuit_heatmaps {
             self.circuit_heatmaps.lock().clear();
@@ -204,16 +206,14 @@ impl ThroughputTracker {
             );
         }
 
-        let total_max_down_mbps: f32 = capacity_lookup.values().map(|(d, _)| *d).sum();
-        let total_max_up_mbps: f32 = capacity_lookup.values().map(|(_, u)| *u).sum();
         let mut global_heatmap = self.global_heatmap.lock();
         let global_rtt = median(&mut total_rtts);
         let global_retransmit_down =
             retransmit_percent(total_retransmits.down, total_tcp_packets.down);
         let global_retransmit_up = retransmit_percent(total_retransmits.up, total_tcp_packets.up);
         global_heatmap.add_sample(
-            utilization_percent(total_download_bytes, total_max_down_mbps).unwrap_or(0.0),
-            utilization_percent(total_upload_bytes, total_max_up_mbps).unwrap_or(0.0),
+            utilization_percent(total_download_bytes, global_down_mbps).unwrap_or(0.0),
+            utilization_percent(total_upload_bytes, global_up_mbps).unwrap_or(0.0),
             global_rtt,
             global_rtt,
             global_retransmit_down,
