@@ -924,10 +924,15 @@ fn utilization_percent(bytes: u64, max_mbps: f32) -> Option<f32> {
 }
 
 fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    if retransmits == 0 || packets == 0 {
+    if retransmits == 0 || packets < 10 {
         return None;
     }
-    Some((retransmits as f32 / packets as f32) * 100.0)
+    let value =(retransmits as f32 / packets as f32) * 100.0;
+    if value > 50.0 {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn median(values: &mut Vec<f32>) -> Option<f32> {

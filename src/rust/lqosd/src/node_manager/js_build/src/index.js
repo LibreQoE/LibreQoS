@@ -15,10 +15,10 @@ const defaultLayout = {
                 { tag: "executiveSnapshot", size: 12 },
                 { tag: "executiveHelpers", size: 12 },
                 { tag: "executiveGlobalHeatmap", size: 12 },
-                { tag: "executiveHeatmapRtt", size: 6 },
-                { tag: "executiveHeatmapRetrans", size: 6 },
                 { tag: "executiveHeatmapDownload", size: 6 },
-                { tag: "executiveHeatmapUpload", size: 6 }
+                { tag: "executiveHeatmapUpload", size: 6 },
+                { tag: "executiveHeatmapRtt", size: 6 },
+                { tag: "executiveHeatmapRetrans", size: 6 }
             ]
         },
         {
