@@ -5,6 +5,7 @@ mod site;
 mod stormguard_state;
 
 use crate::config::StormguardConfig;
+use crate::site_state::analysis::SaturationLevel;
 use crate::datalog::LogCommand;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
@@ -15,7 +16,9 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse, TcHandle};
+use lqos_bus::{
+    BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle,
+};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -117,6 +120,109 @@ impl SiteStateTracker {
             .iter_mut()
             .for_each(|(_, s)| s.recommendations(&mut recommendations));
         recommendations
+    }
+
+    pub fn debug_snapshot(&self, config: &StormguardConfig) -> Vec<StormguardDebugEntry> {
+        self.sites
+            .iter()
+            .filter_map(|(name, site)| {
+                let Some(site_config) = config.sites.get(name) else {
+                    return None;
+                };
+
+                let make_direction =
+                    |direction: RecommendationDirection| -> StormguardDebugDirection {
+                        let (queue_mbps, min_mbps, max_mbps, throughput_mbps, throughput_ma_mbps, retrans, retrans_ma) = match direction {
+                            RecommendationDirection::Download => (
+                                site.queue_download_mbps,
+                                site_config.min_download_mbps,
+                                site_config.max_download_mbps,
+                                site.current_throughput.0,
+                                site.throughput_down_moving_average.average(),
+                                site.retransmits_down.average(),
+                                site.retransmits_down_moving_average.average(),
+                            ),
+                            RecommendationDirection::Upload => (
+                                site.queue_upload_mbps,
+                                site_config.min_upload_mbps,
+                                site_config.max_upload_mbps,
+                                site.current_throughput.1,
+                                site.throughput_up_moving_average.average(),
+                                site.retransmits_up.average(),
+                                site.retransmits_up_moving_average.average(),
+                            ),
+                        };
+
+                        let (state, cooldown_remaining_secs) = match direction {
+                            RecommendationDirection::Download => match &site.download_state {
+                                StormguardState::Warmup => ("Warmup".to_string(), None),
+                                StormguardState::Running => ("Running".to_string(), None),
+                                StormguardState::Cooldown {
+                                    start,
+                                    duration_secs,
+                                } => {
+                                    let elapsed = start.elapsed().as_secs_f32();
+                                    let remaining = (duration_secs - elapsed).max(0.0);
+                                    ("Cooldown".to_string(), Some(remaining))
+                                }
+                            },
+                            RecommendationDirection::Upload => match &site.upload_state {
+                                StormguardState::Warmup => ("Warmup".to_string(), None),
+                                StormguardState::Running => ("Running".to_string(), None),
+                                StormguardState::Cooldown {
+                                    start,
+                                    duration_secs,
+                                } => {
+                                    let elapsed = start.elapsed().as_secs_f32();
+                                    let remaining = (duration_secs - elapsed).max(0.0);
+                                    ("Cooldown".to_string(), Some(remaining))
+                                }
+                            },
+                        };
+
+                        let saturation_max = SaturationLevel::from_throughput(
+                            throughput_mbps,
+                            match direction {
+                                RecommendationDirection::Download => {
+                                    site_config.max_download_mbps as f64
+                                }
+                                RecommendationDirection::Upload => site_config.max_upload_mbps as f64,
+                            },
+                        );
+                        let saturation_current = SaturationLevel::from_throughput(
+                            throughput_mbps,
+                            queue_mbps as f64,
+                        );
+
+                        let can_increase = queue_mbps < max_mbps;
+                        let can_decrease = queue_mbps > min_mbps;
+
+                        StormguardDebugDirection {
+                            queue_mbps,
+                            min_mbps,
+                            max_mbps,
+                            throughput_mbps,
+                            throughput_ma_mbps,
+                            retrans,
+                            retrans_ma,
+                            rtt: site.round_trip_time.average(),
+                            rtt_ma: site.round_trip_time_moving_average.average(),
+                            state,
+                            cooldown_remaining_secs,
+                            saturation_current: saturation_current.to_string(),
+                            saturation_max: saturation_max.to_string(),
+                            can_increase,
+                            can_decrease,
+                        }
+                    };
+
+                Some(StormguardDebugEntry {
+                    site: name.clone(),
+                    download: make_direction(RecommendationDirection::Download),
+                    upload: make_direction(RecommendationDirection::Upload),
+                })
+            })
+            .collect()
     }
 
     pub fn apply_recommendations(

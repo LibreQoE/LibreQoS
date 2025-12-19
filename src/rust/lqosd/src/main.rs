@@ -65,7 +65,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use lqos_stormguard::STORMGUARD_STATS;
+use lqos_stormguard::{STORMGUARD_STATS, STORMGUARD_DEBUG};
 use tracing::level_filters::LevelFilter;
 use crate::lts2_sys::get_lts_license_status;
 use crate::lts2_sys::shared_types::LtsStatus;
@@ -619,6 +619,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     (*lock).clone()
                 };
                 BusResponse::StormguardStats(cloned)
+            }
+            BusRequest::GetStormguardDebug => {
+                let cloned = {
+                    let lock = STORMGUARD_DEBUG.lock();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardDebug(cloned)
             }
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
