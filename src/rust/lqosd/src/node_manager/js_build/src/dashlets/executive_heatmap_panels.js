@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
+import {getSiteIdMap, linkToCircuit, linkToSite} from "../executive_utils";
 import {
     buildHeatmapRows,
     colorByCapacity,
@@ -111,26 +112,41 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         }
         const sorted = rows.slice().sort((a, b) => this.metricSort(a, b));
         const limited = sorted.slice(0, MAX_HEATMAP_ROWS);
-        const metricRows = limited.map(row => heatRow(
-            row.label,
-            row.badge,
-            row.blocks[this.config.metricKey] || [],
-            this.config.colorFn,
-            this.config.formatFn
-        )).join("");
-        const titleHtml = this.config.link
-            ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}</a>`
-            : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}`;
-        target.innerHTML = `
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body py-3">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0">${titleHtml}</div>
+        getSiteIdMap().then((siteIdMap) => {
+            const activeTarget = document.getElementById(this._contentId);
+            if (!activeTarget) return;
+            const metricRows = limited.map(row => {
+                const link = row.badge === "Circuit"
+                    ? linkToCircuit(row.circuit_id)
+                    : row.badge === "Site"
+                        ? linkToSite(row.site_name || row.label, siteIdMap)
+                        : null;
+                return heatRow(
+                    row.label,
+                    row.badge,
+                    row.blocks[this.config.metricKey] || [],
+                    this.config.colorFn,
+                    this.config.formatFn,
+                    link
+                );
+            }).join("");
+            const linkIcon = this.config.link
+                ? `<i class="fas fa-external-link-alt ms-2 small text-muted"></i>`
+                : "";
+            const titleHtml = this.config.link
+                ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}${linkIcon}</a>`
+                : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}`;
+            activeTarget.innerHTML = `
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body py-3">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <div class="exec-section-title mb-0">${titleHtml}</div>
+                        </div>
+                        <div class="exec-heat-rows">${metricRows}</div>
                     </div>
-                    <div class="exec-heat-rows">${metricRows}</div>
                 </div>
-            </div>
-        `;
+            `;
+        });
     }
 
     metricSort(a, b) {

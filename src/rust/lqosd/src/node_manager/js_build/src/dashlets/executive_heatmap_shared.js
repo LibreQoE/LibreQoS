@@ -31,16 +31,21 @@ export function buildHeatmapRows(data) {
             const t = (site.node_type || "").toLowerCase();
             return t === "site" || t === "ap" || t === "";
         });
-    sites.forEach(site => rows.push({
-        label: site.site_name || "Site",
-        badge: "Site",
-        blocks: site.blocks,
-    }));
+    sites.forEach(site => {
+        const siteLabel = site.site_name || "Site";
+        rows.push({
+            label: siteLabel,
+            site_name: site.site_name || "",
+            badge: "Site",
+            blocks: site.blocks,
+        });
+    });
     const circuits = (data?.circuits || []);
     circuits.forEach(circuit => {
         const name = circuit.circuit_name || circuit.circuit_id || `Circuit ${circuit.circuit_hash}`;
         rows.push({
             label: name,
+            circuit_id: circuit.circuit_id || "",
             badge: "Circuit",
             blocks: circuit.blocks,
         });
@@ -105,15 +110,16 @@ export function heatmapRow(values, colorFn, formatValue) {
     return cells;
 }
 
-export function heatRow(label, badge, values, colorFn, formatValue) {
+export function heatRow(label, badge, values, colorFn, formatValue, link = null) {
     const latest = latestValue(values);
     const formattedLatest = formatValue(latest);
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
     return `
         <div class="exec-heat-row">
             <div class="exec-heat-label text-truncate" title="${label}">
-                <div class="fw-semibold text-truncate${redactClass}">${label}</div>
+                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
             <div class="exec-heat-cells">${heatmapRow(values, colorFn, formatValue)}</div>

@@ -1,4 +1,12 @@
-import {listenExecutiveHeatmaps, medianFromBlocks, averageFromBlocks, renderTable, colorSwatch} from "./executive_utils";
+import {
+    listenExecutiveHeatmaps,
+    medianFromBlocks,
+    averageFromBlocks,
+    renderTable,
+    colorSwatch,
+    getSiteIdMap,
+    renderSiteLink
+} from "./executive_utils";
 import {colorByRttMs} from "./helpers/color_scales";
 import {colorByCapacity} from "./dashlets/executive_heatmap_shared";
 
@@ -21,24 +29,26 @@ function buildRows(data) {
 
 function render(data) {
     const rows = buildRows(data);
-    renderTable("executiveWorstSitesTable", [
-        { header: "Site", render: (r) => `<span class="redactable">${r.name}</span>` },
-        { header: "Median RTT (ms)", render: (r) => {
-            if (r.rtt === null) return "—";
-            const color = colorByRttMs(r.rtt, 200);
-            return `${colorSwatch(color)}${r.rtt.toFixed(1)}`;
-        }},
-        { header: "Avg Down Util (%)", render: (r) => {
-            if (r.avgDown === null) return "—";
-            const color = colorByCapacity(r.avgDown);
-            return `${colorSwatch(color)}${r.avgDown.toFixed(1)}`;
-        }},
-        { header: "Avg Up Util (%)", render: (r) => {
-            if (r.avgUp === null) return "—";
-            const color = colorByCapacity(r.avgUp);
-            return `${colorSwatch(color)}${r.avgUp.toFixed(1)}`;
-        }},
-    ], rows, "No site heatmap data yet.");
+    getSiteIdMap().then((siteIdMap) => {
+        renderTable("executiveWorstSitesTable", [
+            { header: "Site", render: (r) => renderSiteLink(r.name, siteIdMap) },
+            { header: "Median RTT (ms)", render: (r) => {
+                if (r.rtt === null) return "—";
+                const color = colorByRttMs(r.rtt, 200);
+                return `${colorSwatch(color)}${r.rtt.toFixed(1)}`;
+            }},
+            { header: "Avg Down Util (%)", render: (r) => {
+                if (r.avgDown === null) return "—";
+                const color = colorByCapacity(r.avgDown);
+                return `${colorSwatch(color)}${r.avgDown.toFixed(1)}`;
+            }},
+            { header: "Avg Up Util (%)", render: (r) => {
+                if (r.avgUp === null) return "—";
+                const color = colorByCapacity(r.avgUp);
+                return `${colorSwatch(color)}${r.avgUp.toFixed(1)}`;
+            }},
+        ], rows, "No site heatmap data yet.");
+    });
 }
 
 listenExecutiveHeatmaps(render);

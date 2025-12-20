@@ -8,6 +8,57 @@ export function listenExecutiveHeatmaps(onData) {
     });
 }
 
+let siteIdMap = null;
+let siteIdMapPromise = null;
+
+export function getSiteIdMap() {
+    if (siteIdMap) return Promise.resolve(siteIdMap);
+    if (siteIdMapPromise) return siteIdMapPromise;
+    siteIdMapPromise = new Promise((resolve) => {
+        $.get("/local-api/networkTree", (data) => {
+            const map = new Map();
+            (data || []).forEach((entry) => {
+                if (!Array.isArray(entry) || entry.length < 2) return;
+                const [id, node] = entry;
+                if (!node || !node.name) return;
+                if (!map.has(node.name)) {
+                    map.set(node.name, id);
+                }
+            });
+            siteIdMap = map;
+            resolve(map);
+        }).fail(() => {
+            siteIdMap = new Map();
+            resolve(siteIdMap);
+        });
+    });
+    return siteIdMapPromise;
+}
+
+export function linkToCircuit(circuitId) {
+    if (!circuitId) return null;
+    return `circuit.html?id=${encodeURIComponent(circuitId)}`;
+}
+
+export function linkToSite(siteName, siteIdLookup) {
+    if (!siteName || !siteIdLookup) return null;
+    const siteId = siteIdLookup.get(siteName);
+    if (siteId === undefined || siteId === null) return null;
+    return `tree.html?parent=${encodeURIComponent(siteId)}`;
+}
+
+export function renderCircuitLink(name, circuitId) {
+    const link = linkToCircuit(circuitId);
+    if (!link) return `<span class="redactable">${name}</span>`;
+    return `<a class="redactable" href="${link}">${name}</a>`;
+}
+
+export function renderSiteLink(name, siteIdLookup) {
+    const link = linkToSite(name, siteIdLookup);
+    if (!link) return `<span class="redactable">${name}</span>`;
+    return `<a class="redactable" href="${link}">${name}</a>`;
+}
+
 export function median(values) {
     const vals = (values || []).filter(v => v !== null && v !== undefined && Number.isFinite(Number(v))).map(Number);
     if (!vals.length) return null;

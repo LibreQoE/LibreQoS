@@ -1,4 +1,4 @@
-import {listenExecutiveHeatmaps, renderTable} from "./executive_utils";
+import {listenExecutiveHeatmaps, renderTable, getSiteIdMap, linkToCircuit, linkToSite} from "./executive_utils";
 import {
     buildHeatmapRows,
     heatRow,
@@ -68,27 +68,37 @@ function renderHeatmapTable(targetId, metricKey) {
     const target = document.getElementById(targetId);
     if (!target) return;
     const renderRows = (data) => {
-        const rows = buildHeatmapRows(data).sort(metricSort(metricKey));
-        const body = rows.map(row =>
-            heatRow(
-                row.label,
-                row.badge,
-                row.blocks[metricKey] || [],
-                cfg.colorFn,
-                cfg.formatFn
-            )
-        ).join("");
-        target.innerHTML = `
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title}</div>
+        getSiteIdMap().then((siteIdMap) => {
+            const activeTarget = document.getElementById(targetId);
+            if (!activeTarget) return;
+            const rows = buildHeatmapRows(data).sort(metricSort(metricKey));
+            const body = rows.map(row => {
+                const link = row.badge === "Circuit"
+                    ? linkToCircuit(row.circuit_id)
+                    : row.badge === "Site"
+                        ? linkToSite(row.site_name || row.label, siteIdMap)
+                        : null;
+                return heatRow(
+                    row.label,
+                    row.badge,
+                    row.blocks[metricKey] || [],
+                    cfg.colorFn,
+                    cfg.formatFn,
+                    link
+                );
+            }).join("");
+            activeTarget.innerHTML = `
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title}</div>
+                        </div>
+                        <p class="text-muted small mb-3">${cfg.description}</p>
+                        <div class="exec-heat-rows">${body}</div>
                     </div>
-                    <p class="text-muted small mb-3">${cfg.description}</p>
-                    <div class="exec-heat-rows">${body}</div>
                 </div>
-            </div>
-        `;
+            `;
+        });
     };
     listenExecutiveHeatmaps(renderRows);
     // initial placeholder

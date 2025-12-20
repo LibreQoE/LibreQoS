@@ -2,7 +2,9 @@ import {
     listenExecutiveHeatmaps,
     averageWithCount,
     renderTable,
-    medianFromBlocks
+    medianFromBlocks,
+    getSiteIdMap,
+    renderSiteLink
 } from "./executive_utils";
 import {colorSwatch} from "./executive_utils";
 import {colorByCapacity, formatLatest} from "./dashlets/executive_heatmap_shared";
@@ -63,28 +65,30 @@ function fmtMbps(val) {
 
 function render(data) {
     const rows = buildRows(data);
-    renderTable("executiveOversubscribedTable", [
-        { header: "Site", render: (r) => `<span class="redactable">${r.name}</span>` },
-        { header: "Oversub Down", render: (r) => fmtRatio(r.ratio_down) },
-        { header: "Oversub Up", render: (r) => fmtRatio(r.ratio_up) },
-        { header: "Cap (D/U)", render: (r) => `${fmtMbps(r.cap_down)} / ${fmtMbps(r.cap_up)}` },
-        { header: "Subscribed (D/U)", render: (r) => `${fmtMbps(r.sub_down)} / ${fmtMbps(r.sub_up)}` },
-        { header: "Median RTT (ms)", render: (r) => {
-            if (r.rtt === null || r.rtt === undefined) return "—";
-            const color = colorByRttMs(r.rtt, 200);
-            return `${colorSwatch(color)}${formatLatest(r.rtt, "ms", 1)}`;
-        }},
-        { header: "Avg Down Util (%)", render: (r) => {
-            if (r.perf_down.avg === null || r.perf_down.avg === undefined) return "—";
-            const color = colorByCapacity(r.perf_down.avg);
-            return `${colorSwatch(color)}${r.perf_down.avg.toFixed(1)}`;
-        }},
-        { header: "Avg Up Util (%)", render: (r) => {
-            if (r.perf_up.avg === null || r.perf_up.avg === undefined) return "—";
-            const color = colorByCapacity(r.perf_up.avg);
-            return `${colorSwatch(color)}${r.perf_up.avg.toFixed(1)}`;
-        }},
-    ], rows, "No oversubscription data available yet.");
+    getSiteIdMap().then((siteIdMap) => {
+        renderTable("executiveOversubscribedTable", [
+            { header: "Site", render: (r) => renderSiteLink(r.name, siteIdMap) },
+            { header: "Oversub Down", render: (r) => fmtRatio(r.ratio_down) },
+            { header: "Oversub Up", render: (r) => fmtRatio(r.ratio_up) },
+            { header: "Cap (D/U)", render: (r) => `${fmtMbps(r.cap_down)} / ${fmtMbps(r.cap_up)}` },
+            { header: "Subscribed (D/U)", render: (r) => `${fmtMbps(r.sub_down)} / ${fmtMbps(r.sub_up)}` },
+            { header: "Median RTT (ms)", render: (r) => {
+                if (r.rtt === null || r.rtt === undefined) return "—";
+                const color = colorByRttMs(r.rtt, 200);
+                return `${colorSwatch(color)}${formatLatest(r.rtt, "ms", 1)}`;
+            }},
+            { header: "Avg Down Util (%)", render: (r) => {
+                if (r.perf_down.avg === null || r.perf_down.avg === undefined) return "—";
+                const color = colorByCapacity(r.perf_down.avg);
+                return `${colorSwatch(color)}${r.perf_down.avg.toFixed(1)}`;
+            }},
+            { header: "Avg Up Util (%)", render: (r) => {
+                if (r.perf_up.avg === null || r.perf_up.avg === undefined) return "—";
+                const color = colorByCapacity(r.perf_up.avg);
+                return `${colorSwatch(color)}${r.perf_up.avg.toFixed(1)}`;
+            }},
+        ], rows, "No oversubscription data available yet.");
+    });
 }
 
 listenExecutiveHeatmaps(render);
