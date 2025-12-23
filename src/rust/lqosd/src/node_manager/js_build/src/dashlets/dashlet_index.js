@@ -18,8 +18,6 @@ import {TopTreeSummary} from "./top_tree_summary";
 import {CombinedTopDashlet} from "./combined_top_dash";
 import {RttHisto3dDash} from "./rtt_histo3d_dash";
 import {QueueStatsTotalDash} from "./queue_stats_total";
-import {TreeCapacityDash} from "./tree_capacity_dash";
-import {CircuitCapacityDash} from "./circuit_capacity_dash";
 import {TopTreeSankey} from "./top_tree_sankey";
 import {Top10DownloadersVisual} from "./top10_downloads_graphic";
 import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
@@ -76,8 +74,6 @@ export const DashletMenu = [
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 6, category: "Top 10" },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3, category: "CAKE" },
     { name: "Total TCP Retransmits", tag: "totalRetransmits", size: 3, category: "Retransmits" },
-    { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6, category: "Capacity" },
-    { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6, category: "Capacity" },
     { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6, category: "Tree" },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12, category: "RTT" },
     { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3, category: "Insight" },
@@ -130,8 +126,6 @@ export function widgetFactory(widgetName, count) {
         case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
         case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
         case "totalRetransmits" : widget = new TcpRetransmitsDash(count); break;
-        case "circuitCapacity"  : widget = new CircuitCapacityDash(count); break;
-        case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
         case "networkTreeSankey": widget = new TopTreeSankey(count); break;
         case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;

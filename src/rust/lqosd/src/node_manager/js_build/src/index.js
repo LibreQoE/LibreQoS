@@ -49,9 +49,7 @@ const defaultLayout = {
             name: "Network",
             dashlets: [
                 { tag: "networkTreeSankey", size: 6 },
-                { tag: "treeSummary", size: 6 },
-                { tag: "circuitCapacity", size: 6 },
-                { tag: "treeCapacity", size: 6 }
+                { tag: "treeSummary", size: 6 }
             ]
         },
         {
