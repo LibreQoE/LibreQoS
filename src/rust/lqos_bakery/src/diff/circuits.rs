@@ -1,7 +1,7 @@
 use crate::BakeryCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::debug;
 
 pub(crate) struct CircuitDiffCategories<'a> {
     pub newly_added: Vec<&'a Arc<BakeryCommands>>,
@@ -106,7 +106,7 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         ..
     } = a
     else {
-        warn!("classify_circuit_change called on non-circuit command: {:?}", a);
+        debug!("classify_circuit_change called on non-circuit command: {:?}", a);
         return CircuitChange::None;
     };
     let BakeryCommands::AddCircuit {
@@ -124,7 +124,7 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         ..
     } = b
     else {
-        warn!("classify_circuit_change called on non-circuit command: {:?}", b);
+        debug!("classify_circuit_change called on non-circuit command: {:?}", b);
         return CircuitChange::None;
     };
     // Structural change?
