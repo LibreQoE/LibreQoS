@@ -239,6 +239,10 @@ fn throughput_task(
                 info!("No last submission timestamp; skipping stats submission this cycle");
             }
         }
+        // Notify of completion, which triggers processing
+        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
+            tracing::log::warn!("Error sending message to LTS2: {e:?}");
+        }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
 
@@ -345,6 +349,50 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
         )
         .collect();
     BusResponse::TopDownloaders(result)
+}
+
+pub fn top_n_up(start: u32, end: u32) -> BusResponse {
+    let mut full_list: Vec<TopList> = {
+        let tp_cycle = THROUGHPUT_TRACKER
+            .cycle
+            .load(std::sync::atomic::Ordering::Relaxed);
+        THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .iter()
+            .filter(|(k, _v)| !k.as_ip().is_loopback())
+            .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .map(|(k, te)| {
+                (
+                    *k,
+                    te.bytes_per_second,
+                    te.packets_per_second,
+                    te.median_latency().unwrap_or(0.0),
+                    te.tc_handle,
+                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                )
+            })
+            .collect()
+    };
+    full_list.sort_by(|a, b| b.1.up.cmp(&a.1.up));
+    let result = full_list
+        .iter()
+        //.skip(start as usize)
+        .take((end as usize) - (start as usize))
+        .map(
+            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+                ip_address: ip.as_ip().to_string(),
+                circuit_id: circuit_id.clone(),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
+                median_tcp_rtt: *median_rtt,
+                tc_handle: *tc_handle,
+                tcp_retransmits: *tcp_retransmits,
+            },
+        )
+        .collect();
+    BusResponse::TopUploaders(result)
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {

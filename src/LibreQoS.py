@@ -30,6 +30,13 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     fast_queues_fq_codel, \
     Bakery
 
+# Optional: urgent issue submission (available in newer liblqos_python)
+try:
+    from liblqos_python import submit_urgent_issue  # type: ignore
+except Exception:
+    def submit_urgent_issue(*_args, **_kwargs):
+        return False
+
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
@@ -591,6 +598,28 @@ def refreshShapers():
         with open(networkJSONfile, 'r') as j:
             network = json.loads(j.read())
 
+        # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
+        # unparented so they can be distributed across generated parent nodes / CPUs.
+        flat_network = (len(network) == 0)
+        try:
+            flat_network = flat_network or is_network_flat()
+        except Exception:
+            pass
+        if flat_network:
+            print("Flat network detected; assigning circuits to generated parent nodes")
+            next_id = max(dictForCircuitsWithoutParentNodes.keys(), default=-1) + 1
+            for circuit in subscriberCircuits:
+                if circuit.get('ParentNode') != 'none':
+                    circuit['ParentNode'] = 'none'
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' not in circuit:
+                    try:
+                        weight = float(circuit.get('maxDownload', 0)) + float(circuit.get('maxUpload', 0))
+                    except Exception:
+                        weight = 0.0
+                    dictForCircuitsWithoutParentNodes[next_id] = weight
+                    circuit['idForCircuitsWithoutParentNodes'] = next_id
+                    next_id += 1
+
         # Normalize any zero or missing bandwidths in the network model early
         # Some users may specify 0 for site bandwidths. HTB requires positive
         # rates, so bump zeros to the parent/default capacity and log a warning.
@@ -758,8 +787,9 @@ def refreshShapers():
             for circuit in subscriberCircuits:
                 if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
                     item_id = circuit['idForCircuitsWithoutParentNodes']
-                    if item_id in assignments:
-                        circuit['ParentNode'] = assignments[item_id]
+                    item_key = str(item_id)
+                    if item_key in assignments:
+                        circuit['ParentNode'] = assignments[item_key]
 
             # Update and save state
             if bin_planner is not None and isinstance(state, dict):
@@ -946,6 +976,10 @@ def refreshShapers():
         minorByCPUpreloaded = {}
         knownClassIDs = []
         nodes_requiring_min_squashing = {}
+        # Persisted circuit minor assignments for stability across reloads
+        circuit_state_from_disk = {}
+        circuit_state_updated = {}
+        used_minors_by_queue = {cpu + 1: set() for cpu in range(queuesAvailable)}
         # Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
         # Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
         # With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
@@ -1012,6 +1046,7 @@ def refreshShapers():
                 data[node]['classMinor'] = hex(minorByCPU[queue])
                 data[node]['cpuNum'] = hex(queue-1)
                 data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
+                used_minors_by_queue.setdefault(queue, set()).add(minorByCPU[queue])
                 thisParentNode =	{
                                     "parentNodeName": node,
                                     "classID": nodeClassID,
@@ -1022,7 +1057,13 @@ def refreshShapers():
                 minorByCPU[queue] = minorByCPU[queue] + 1
                 # Check for overflow - TC uses u16 for minor class ID (max 65535)
                 if minorByCPU[queue] > 0xFFFF:
-                    logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                    msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                    logging.error(msg)
+                    try:
+                        ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                        submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                    except Exception:
+                        pass
                     raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                 # If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
                 if node in circuits_by_parent_node:
@@ -1039,7 +1080,7 @@ def refreshShapers():
                                 nodes_requiring_min_squashing[node] = True
                     # Sort circuits by name for stable ordering
                     sorted_circuits = sorted(circuits_by_parent_node[node],
-                                           key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+                               key=lambda c: c.get('circuitName', c.get('circuitID', '')))
                     for circuit in sorted_circuits:
                         if node == circuit['ParentNode']:
                             if monitor_mode_only() == False:
@@ -1048,8 +1089,36 @@ def refreshShapers():
                                 if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
                                     logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
                             parentString = hex(major) + ':'
-                            flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
-                            upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
+                            # Attempt to reuse a stored minor for stability (only if parent/bin unchanged and not colliding)
+                            reuse_minor = None
+                            try:
+                                circuit_id_str = str(circuit.get('circuitID'))
+                                stored_entry = circuit_state_from_disk.get(circuit_id_str, {}) if isinstance(circuit_state_from_disk, dict) else {}
+                                stored_minor = stored_entry.get("class_minor")
+                                stored_queue = stored_entry.get("queue")
+                                stored_parent = stored_entry.get("parent_node")
+                                if stored_minor is not None and stored_queue is not None and stored_parent is not None:
+                                    try:
+                                        stored_minor = int(stored_minor)
+                                    except Exception:
+                                        stored_minor = None
+                                    try:
+                                        stored_queue = int(stored_queue)
+                                    except Exception:
+                                        stored_queue = None
+                                if stored_minor is not None and stored_queue == queue and stored_parent == circuit['ParentNode']:
+                                    if stored_minor not in used_minors_by_queue.setdefault(queue, set()):
+                                        reuse_minor = stored_minor
+                            except Exception:
+                                pass
+
+                            candidate_minor = reuse_minor if reuse_minor is not None else minorByCPU[queue]
+                            reserved = used_minors_by_queue.setdefault(queue, set())
+                            while candidate_minor in reserved:
+                                candidate_minor += 1
+
+                            flowIDstring = hex(major) + ':' + hex(candidate_minor)
+                            upFlowIDstring = hex(major + stickOffset) + ':' + hex(candidate_minor)
                             circuit['classid'] = flowIDstring
                             circuit['up_classid'] = upFlowIDstring
                             logging.info("Added up_classid to circuit: " + circuit['up_classid'])
@@ -1075,7 +1144,7 @@ def refreshShapers():
                                 "up_classid" : upFlowIDstring,
                                 "classMajor": hex(major),
                                 "up_classMajor" : hex(major + stickOffset),
-                                "classMinor": hex(minorByCPU[queue]),
+                                "classMinor": hex(candidate_minor),
                                 "comment": circuit['comment']
                             }
                             # Attach the planner weight used by the planner/UI summary
@@ -1107,7 +1176,19 @@ def refreshShapers():
                             # Generate TC commands to be executed later
                             thisNewCircuitItemForNetwork['devices'] = circuit['devices']
                             circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
-                            minorByCPU[queue] = minorByCPU[queue] + 1
+                            reserved.add(candidate_minor)
+                            minorByCPU[queue] = max(minorByCPU[queue], candidate_minor) + 1
+                            try:
+                                # Record the assigned minor for future stability
+                                circuit_state_updated[str(circuit.get('circuitID'))] = {
+                                    "class_minor": candidate_minor,
+                                    "queue": queue,
+                                    "parent_node": circuit['ParentNode'],
+                                    "class_major": major,
+                                    "up_class_major": major + stickOffset,
+                                }
+                            except Exception:
+                                pass
                 if len(circuitsForThisNetworkNode) > 0:
                     data[node]['circuits'] = circuitsForThisNetworkNode
 
@@ -1123,7 +1204,13 @@ def refreshShapers():
                     minorByCPU[queue] = minorByCPU[queue] + 1
                     # Check for overflow - TC uses u16 for minor class ID (max 65535)
                     if minorByCPU[queue] > 0xFFFF:
-                        logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+                        msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+                        logging.error(msg)
+                        try:
+                            ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
+                            submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+                        except Exception:
+                            pass
                         raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
                     minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
                 # If top level node, increment to next queue / cpu core
@@ -1255,8 +1342,48 @@ def refreshShapers():
                 except Exception as e:
                     warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
+        # Seed persisted circuit minor assignments (TTL already enforced in bin_planner.load_state()).
+        try:
+            state  # noqa: B018
+        except NameError:
+            state = {}
+        try:
+            import bin_planner  # noqa: F401
+        except ImportError:
+            bin_planner = None
+        if bin_planner is not None and (not isinstance(state, dict) or len(state.keys()) == 0):
+            try:
+                state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+                state = bin_planner.load_state(state_path)
+            except Exception:
+                state = {}
+        try:
+            circuit_state_from_disk = state.get("circuits", {}) if isinstance(state, dict) else {}
+        except Exception:
+            circuit_state_from_disk = {}
+        circuit_state_updated = {}
+        used_minors_by_queue = {cpu + 1: set() for cpu in range(queuesAvailable)}
+
         # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
         minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
+
+        # Persist the updated circuit minor map for future stability
+        if 'bin_planner' not in locals():
+            bin_planner = None
+        if bin_planner is not None and isinstance(state, dict):
+            if 'circuits' not in state or not isinstance(state.get('circuits'), dict):
+                state['circuits'] = {}
+            state['circuits'] = circuit_state_updated
+            try:
+                state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            except Exception:
+                state_path = None
+            if state_path:
+                try:
+                    print(f"Saving planner state to {state_path} (circuit minors)")
+                    bin_planner.save_state(state_path, state)
+                except Exception as e:
+                    warnings.warn(f"Failed to save planner circuit state at {state_path}: {e}", stacklevel=2)
 
         bakery = Bakery()
         bakery.start_batch() # Initializes the bakery transaction

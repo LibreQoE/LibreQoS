@@ -8,14 +8,57 @@ use axum::http::StatusCode;
 use axum::response::{Html, Response};
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::Cookie;
-use lqos_config::{UserRole, WebUsers};
+use lqos_config::{UserRole, WebUsers, load_config};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
+use tracing::warn;
 
 const COOKIE_PATH: &str = "User-Token";
 
 static WEB_USERS: Lazy<Mutex<Option<WebUsers>>> = Lazy::new(|| Mutex::new(None));
+pub static FIRST_LOAD: AtomicU64 = AtomicU64::new(0);
+
+fn record_first_login_timestamp_if_needed() {
+    let config = match load_config() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            warn!("Unable to load config to record first-login timestamp: {e}");
+            return;
+        }
+    };
+
+    let path = Path::new(&config.lqos_directory).join(".fl");
+    if path.exists() {
+        if FIRST_LOAD.load(Relaxed) != 0 {
+            return;
+        }
+        let Ok(str) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(ts_int) = str.trim().parse::<u64>() else {
+            return;
+        };
+        FIRST_LOAD.store(ts_int, Relaxed);
+        return;
+    }
+
+    let ts = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs(),
+        Err(e) => {
+            warn!("SystemTime before UNIX_EPOCH when recording first-login timestamp: {e:?}");
+            return;
+        }
+    };
+
+    if let Err(e) = std::fs::write(&path, ts.to_string()) {
+        warn!("Failed to write first-login timestamp to {:?}: {e}", path);
+    }
+}
 
 pub async fn get_username(jar: &CookieJar) -> String {
     let lock = WEB_USERS.lock().await;
@@ -80,6 +123,7 @@ pub async fn auth_layer(
         let login_result = check_login(&jar, users).await;
         return match login_result {
             LoginResult::Admin | LoginResult::ReadOnly => {
+                record_first_login_timestamp_if_needed();
                 req.extensions_mut().insert(login_result);
                 Ok(next.run(req).await)
             }
@@ -110,9 +154,13 @@ pub async fn try_login(
     let users = WEB_USERS.lock().await;
     if let Some(users) = &*users {
         return match users.login(&login.username, &login.password) {
-            Ok(token) => Ok((jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)),
+            Ok(token) => {
+                record_first_login_timestamp_if_needed();
+                Ok((jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK))
+            }
             Err(..) => {
                 if users.do_we_allow_anonymous() {
+                    record_first_login_timestamp_if_needed();
                     Ok((jar, StatusCode::OK))
                 } else {
                     Err(StatusCode::UNAUTHORIZED)
@@ -141,5 +189,6 @@ pub async fn first_user(
         .expect("Unable to add or update user");
     let mut lock = WEB_USERS.lock().await;
     *lock = Some(users);
+    record_first_login_timestamp_if_needed();
     (jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)
 }

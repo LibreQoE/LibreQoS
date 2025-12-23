@@ -123,6 +123,10 @@ For networks with no Parent Nodes (no strictly defined Access Points or Sites) e
 echo "{}" > network.json
 ```
 
+#### CPU Considerations
+
+<img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
+
 ##### CSV to JSON conversion helper
 
 You can use

@@ -8,8 +8,51 @@ function private_ws_url() {
 const log = document.getElementById('chatLog');
 const input = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
+const insightEnabled = typeof window.hasInsight !== 'undefined' ? !!window.hasInsight : false;
 
 function scrollToBottom() { log.scrollTop = log.scrollHeight; }
+
+function ensureInsightNotice() {
+  if (insightEnabled) return;
+  const chatWrap = document.querySelector('.chat-wrap');
+  const chatLog = document.getElementById('chatLog');
+  if (!chatWrap || !chatLog) return;
+  let notice = document.getElementById('libbyInsightNotice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'libbyInsightNotice';
+    notice.className = 'alert alert-info';
+    notice.setAttribute('role', 'alert');
+    notice.innerHTML = `
+      <div class="d-flex align-items-center">
+        <div class="me-2 text-info"><i class="fa fa-circle-info fa-lg"></i></div>
+        <div>
+          <div class="fw-semibold">Libby is an Insight feature.</div>
+          <a class="alert-link" href="lts_trial.html">Start an Insight free trial</a> to enable Libby on this node.
+        </div>
+      </div>`;
+    chatWrap.insertBefore(notice, chatLog);
+  } else {
+    notice.classList.remove('d-none');
+    notice.style.display = '';
+  }
+}
+
+ensureInsightNotice();
+
+function disableChatWhenUnavailable() {
+  if (insightEnabled) return;
+  if (input) {
+    input.disabled = true;
+    input.placeholder = 'Insight required to chat with Libby';
+  }
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.title = 'Enable Insight to chat with Libby';
+  }
+}
+
+disableChatWhenUnavailable();
 
 function bubbleUser(text) {
   const row = document.createElement('div');
@@ -177,24 +220,32 @@ function handleStreamText(text) {
   }
 }
 
-const ws = new WebSocket(private_ws_url());
-ws.onopen = () => {
-  appendSys('Connected to Libby');
-  const startMsg = { Chatbot: { browser_ts_ms: Date.now() } };
-  ws.send(JSON.stringify(startMsg));
-};
-ws.onmessage = (ev) => {
-  const text = typeof ev.data === 'string' ? ev.data : String(ev.data || '');
-  handleStreamText(text);
-};
-ws.onclose = () => appendSys('Disconnected');
+let ws = null;
+if (insightEnabled) {
+  ws = new WebSocket(private_ws_url());
+  ws.onopen = () => {
+    appendSys('Connected to Libby');
+    const startMsg = { Chatbot: { browser_ts_ms: Date.now() } };
+    ws.send(JSON.stringify(startMsg));
+  };
+  ws.onmessage = (ev) => {
+    const text = typeof ev.data === 'string' ? ev.data : String(ev.data || '');
+    handleStreamText(text);
+  };
+  ws.onclose = () => appendSys('Disconnected');
+} else {
+  appendSys('Libby requires an active Insight subscription. Start a free trial to enable chat.');
+}
 
 function sendText() {
   const text = input.value.trim();
+  if (!insightEnabled) return;
   if (!text) return;
   bubbleUser(text);
   const msg = { ChatbotUserInput: { text } };
-  ws.send(JSON.stringify(msg));
+  if (ws) {
+    ws.send(JSON.stringify(msg));
+  }
   input.value = '';
 }
 

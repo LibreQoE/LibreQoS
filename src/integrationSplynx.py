@@ -302,8 +302,14 @@ def spylnxRequest(target, headers):
 	"""
 	Send a GET request to the Splynx API and return the JSON response.
 	"""
-	url = splynx_api_url() + "/api/2.0/" + target
-	r = requests.get(url, headers=headers, timeout=120)
+	base_url = splynx_api_url().strip()
+	url = base_url + "/api/2.0/" + target
+	verify_tls = True
+	if base_url.lower().startswith("http://"):
+		verify_tls = False
+		warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+		print("Warning: splynx_api_url uses http://; TLS verification disabled for redirected HTTPS requests.")
+	r = requests.get(url, headers=headers, timeout=120, verify=verify_tls)
 	return r.json()
 
 def getTariffs(headers):

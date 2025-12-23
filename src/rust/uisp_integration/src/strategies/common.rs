@@ -19,18 +19,53 @@ pub(crate) struct UispData {
     //pub data_links: Vec<UispDataLink>,
 }
 
+/// Ensure site names are unique by appending the site ID to duplicates.
+pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
+    let mut name_counts: HashMap<String, usize> = HashMap::new();
+    for site in sites.iter() {
+        let base_name = site.name_or_blank();
+        if base_name.is_empty() {
+            continue;
+        }
+        *name_counts.entry(base_name).or_insert(0) += 1;
+    }
+
+    for site in sites.iter_mut() {
+        let base_name = site.name_or_blank();
+        if base_name.is_empty() {
+            continue;
+        }
+
+        if name_counts.get(&base_name).copied().unwrap_or(0) > 1 {
+            let candidate = format!("{base_name} {}", site.id);
+            if let Some(ident) = site.identification.as_mut() {
+                ident.name = Some(candidate.clone());
+            }
+            warn!(
+                site_id = %site.id,
+                original = %base_name,
+                renamed = %candidate,
+                "Duplicate UISP site name detected; renaming with site ID for LibreQoS uniqueness"
+            );
+        }
+    }
+}
+
 impl UispData {
     pub(crate) async fn fetch_uisp_data(
         config: Arc<Config>,
         ip_ranges: IpRanges,
     ) -> std::result::Result<Self, UispIntegrationError> {
         // Obtain the UISP data and transform it into easier to work with types
-        let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
+        let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
+
+        // Deduplicate site names so downstream graph building has unique keys
+        dedup_site_names(&mut sites_raw);
 
         if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
             warn!("Unable to write sites to blackboard: {e:?}");
         }
-        if let Err(e) = blackboard_blob("uisp_devices", &devices_raw).await {
+        if let Err(e) = blackboard_blob("uisp_devices", &devices_as_json).await {
             warn!("Unable to write devices to blackboard: {e:?}");
         }
         if let Err(e) = blackboard_blob("uisp_data_links", &data_links_raw).await {

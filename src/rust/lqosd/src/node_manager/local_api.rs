@@ -12,6 +12,7 @@ mod cpu_affinity;
 mod packet_analysis;
 mod reload_libreqos;
 mod scheduler;
+mod urgent;
 mod search;
 mod shaped_device_api;
 mod support;
@@ -117,6 +118,10 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ltsRecentMedian", get(lts::recent_medians))
         .route("/scheduler/status", get(scheduler::scheduler_status))
         .route("/scheduler/details", get(scheduler::scheduler_details))
+        .route("/urgent/status", get(urgent::urgent_status))
+        .route("/urgent/list", get(urgent::urgent_list))
+        .route("/urgent/clear/:id", post(urgent::urgent_clear))
+        .route("/urgent/clear_all", post(urgent::urgent_clear_all))
         .route("/chatbot_sso_token", get(chatbot_sso_token))
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())

@@ -1,6 +1,71 @@
 # Configurar LibreQoS
 
-## Archivo de Configuración Principal
+## Configuración inicial mediante la herramienta de instalación (desde el .deb)
+<img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
+
+NOTAS:
+- La herramienta de configuración de LibreQoS solo se controla con teclado. Usa las flechas para desplazarte y presiona ```Enter``` para seleccionar.
+- Al presionar la tecla ```Q``` se cierra la herramienta sin guardar.
+- Si estabas usando la herramienta y se cerró, debes ejecutar los siguientes comandos para relanzarla:
+  ```
+  sudo apt remove libreqos
+  sudo apt install ./{deb_url_v1_5}
+  ```
+
+El primer paso es darle un nombre a tu Shaper Box (nodo). Por defecto se llama LibreQoS.
+Usa las flechas del teclado para recorrer las secciones de configuración:
+
+### Bridge Mode
+<img width="1668" height="397" alt="bridge_mode" src="https://github.com/user-attachments/assets/22bc05cc-f1e5-451a-b4f8-5e75d7b8d64f" />
+
+De manera predeterminada se selecciona el puente Linux. Si elegiste el puente XDP en el paso anterior, ajústalo aquí.
+
+NOTA: el modo Single Interface, como su nombre indica, es para usuarios que solo pueden usar 1 interfaz y requiere soporte especial. Para más detalles visita nuestro [Zulip Chat].
+
+### Interfaces
+<img width="885" height="352" alt="interfaces" src="https://github.com/user-attachments/assets/4afedfe6-65b8-450c-a675-bea25ef4553c" />
+
+Siguiendo el diagrama recomendado, la interfaz “To Internet” debe apuntar al router de borde (y, por lo tanto, a Internet) y la interfaz “To Network” debe apuntar al router central.
+
+### Bandwidth
+<img width="1089" height="350" alt="bandwidth" src="https://github.com/user-attachments/assets/f68185c3-82dc-4fb5-b78a-d812665533fb" />
+
+En el contexto del ancho de banda contratado a tu proveedor upstream, ```To Internet``` representa el ancho de banda de subida y ```To Network``` el de bajada.
+
+### IP Range
+<img width="1331" height="481" alt="ip_ranges" src="https://github.com/user-attachments/assets/b846baa7-288e-460c-ab77-ad400384057c" />
+
+En esta sección debes especificar todos los rangos IP utilizados por los routers de tus clientes, incluyendo rangos para IPs estáticas. De forma predeterminada se incluyen 4 rangos comunes, como se ve en la imagen.
+
+*Tip: para eliminar un rango, selecciónalo con las flechas del teclado y presiona ```Tab``` hasta resaltar ```<Remove Selected>```, luego ```Enter```.
+
+### Web Users
+<img width="1664" height="528" alt="web_users" src="https://github.com/user-attachments/assets/8db17e0e-cc3d-4d67-9c59-4751bc4d9b0f" />
+
+Aquí puedes crear usuarios para el panel web de LibreQoS con sus respectivos roles. Hay dos tipos: ```Admin``` y ```Read Only```.
+***
+Después de guardar el archivo podrías ver el siguiente mensaje en la terminal:
+```
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+N: Download is performed unsandboxed as root as file '/home/libreqos/libreqos_1.5-RC2.202510052233-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+```
+Ese mensaje es benigno; puedes ignorarlo.
+
+### Próximos pasos
+
+Si la instalación se completó correctamente, podrás ingresar a la WebUI en ```http://tu_ip_del_shaper:9123```. En el primer ingreso podrás definir usuario y contraseña.
+
+Luego, configura tu [integración con CRM o NMS](integrations-es.md) usando la página de configuración de la WebUI. Si no usas un CRM/NMS soportado, tendrás que crear un script o proceso que genere los archivos necesarios para que LibreQoS pueda regular el tráfico: `network.json` y `ShapedDevices.csv`. Los formatos se explican más adelante en esta página.
+
+## Configuración mediante la interfaz web
+
+La mayoría de los parámetros del shaper pueden modificarse desde la página Configuration en la WebUI (http://tu_ip_del_shaper:9123/config_general.html).
+
+## Configuración por línea de comando
+
+También puedes modificar ajustes usando la CLI.
+
+### Archivo de Configuración Principal
 ### /etc/lqos.conf
 
 La configuración para cada caja reguladora de LibreQoS se almacena en el archivo `/etc/lqos.conf`.
@@ -25,7 +90,7 @@ Nota: Si observa que el tráfico no se está regulando cuando debería, asegúre
 
 Después de cambiar cualquier parte de `/etc/lqos.conf`, se recomienda reiniciar siempre lqosd usando: `sudo systemctl restart lqosd`. Esto integra los nuevos valores en lqos.conf, haciéndolos accesibles tanto para el código en Rust como en Python.
 
-### Netflow (optional)
+### Netflow (opcional)
 Para habilitar Netflow, agregue la siguiente sección `[flows]` al archivo de configuración `/etc/lqos.conf`, configurando el `netflow_ip` adecuado:
 ```
 [flows]
@@ -53,10 +118,14 @@ Si no planea usar una integración, puede definir manualmente el archivo network
 
 <table><thead><tr><th colspan="5">Entire Network</th></tr></thead><tbody><tr><td colspan="3">Site_1</td><td colspan="2">Site_2</td></tr><tr><td>AP_A</td><td colspan="2">Site_3</td><td>Pop_1</td><td>AP_1</td></tr><tr><td></td><td colspan="2">PoP_5</td><td>AP_7</td><td></td></tr><tr><td></td><td>AP_9</td><td>PoP_6</td><td></td><td></td></tr><tr><td></td><td></td><td>AP_11</td><td></td><td></td></tr></tbody></table>
 
-Para redes sin nodos padre (sin puntos de acceso o sitios estrictamente definidos), edite el network.json para usar una topología de red plana con:
+Para redes sin nodos padre (sin puntos de acceso o sitios estrictamente definidos), edita el network.json para usar una topología de red plana con:
 ```
 echo "{}" > network.json
 ```
+
+#### Consideraciones de CPU
+
+<img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
 
 #### Ayudante para convertir CSV a JSON
 
@@ -81,7 +150,7 @@ El archivo ShapedDevices.csv correlaciona direcciones IP de dispositivos con cir
 
 ### ShapedDevices.csv
 
-The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
+El archivo ShapedDevices.csv correlaciona las direcciones IP de los dispositivos con los circuitos (cada servicio único de suscriptor).
 
 A continuación un ejemplo de entrada en ShapedDevices.csv:
 | Circuit ID | Circuit Name                                        | Device ID | Device Name | Parent Node | MAC | IPv4                    | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |

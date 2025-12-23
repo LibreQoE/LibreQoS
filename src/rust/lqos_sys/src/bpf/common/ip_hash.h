@@ -25,7 +25,9 @@ static __always_inline void encode_ipv4(
     __be32 addr, 
     struct in6_addr * out_address
 ) {
-    __builtin_memset(&out_address->in6_u.u6_addr8, 0xFF, 16);
+    out_address->in6_u.u6_addr32[0] = (__u32)0xFFFFFFFF;
+    out_address->in6_u.u6_addr32[1] = (__u32)0xFFFFFFFF;
+    out_address->in6_u.u6_addr32[2] = (__u32)0xFFFFFFFF;
     out_address->in6_u.u6_addr32[3] = addr;
 }
 

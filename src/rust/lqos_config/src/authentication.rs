@@ -178,6 +178,33 @@ impl WebUsers {
         Ok(token)
     }
 
+    /// Update an existing user, optionally changing their password.
+    ///
+    /// If `password` is `Some`, the password hash is updated; if it is `None`,
+    /// the existing password hash is left unchanged. The user's role is always
+    /// updated. This function does not create a new user; attempting to update
+    /// a non-existent user returns [`AuthenticationError::UserNotFound`].
+    pub fn update_user_with_optional_password(
+        &mut self,
+        username: &str,
+        password: Option<&str>,
+        role: UserRole,
+    ) -> Result<String, AuthenticationError> {
+        let token;
+        if let Some(user) = self.users.iter_mut().find(|u| u.username == username) {
+            if let Some(password) = password {
+                user.password_hash = Self::hash_password(password);
+            }
+            user.role = role;
+            token = user.token.clone();
+        } else {
+            return Err(AuthenticationError::UserNotFound);
+        }
+
+        self.save_to_disk()?;
+        Ok(token)
+    }
+
     /// Delete a user from `lqusers.toml`
     pub fn remove_user(&mut self, username: &str) -> Result<(), AuthenticationError> {
         let old_len = self.users.len();

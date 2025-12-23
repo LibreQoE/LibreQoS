@@ -1,6 +1,6 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSource, UrgentSeverity};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
@@ -15,6 +15,470 @@ use anyhow::{Error, Result};
 use blocking::run_query;
 use sysinfo::System;
 mod device_weights;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::Engine as _;
+use std::time::Duration;
+
+// ===== Planner CBOR I/O =====
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerSiteEntry {
+    cpu: i64,
+    major: i64,
+    minor: i64,
+    #[serde(default)]
+    insertion_order: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerCircuitEntry {
+    cpu: i64,
+    major: i64,
+    minor: i64,
+    #[serde(default)]
+    parent_site: String,
+    #[serde(default)]
+    sqm: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerStateSerde {
+    #[serde(default = "default_algo_version")]
+    algo_version: String,
+    #[serde(default)]
+    updated_at: f64,
+    #[serde(default)]
+    queuesAvailable: i64,
+    #[serde(default)]
+    on_a_stick: bool,
+    #[serde(default)]
+    site_count: i64,
+    #[serde(default)]
+    site_names: Vec<i64>,
+    #[serde(default)]
+    site_map: BTreeMap<i64, PlannerSiteEntry>,
+    #[serde(default)]
+    circuit_map: BTreeMap<i64, PlannerCircuitEntry>,
+}
+
+fn default_algo_version() -> String { "v1".to_string() }
+
+fn to_i64_any(v: &pyo3::Bound<'_, pyo3::types::PyAny>) -> Option<i64> {
+    if let Ok(n) = v.extract::<i64>() { return Some(n); }
+    if let Ok(s) = v.extract::<String>() { return s.parse::<i64>().ok(); }
+    None
+}
+
+fn get_string(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: String) -> String {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<String>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_f64(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: f64) -> f64 {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<f64>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_i64(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: i64) -> i64 {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<i64>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_bool(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: bool) -> bool {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<bool>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+#[pyfunction]
+fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<bool> {
+    use std::fs;
+    use std::io::Write;
+    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    // Build strongly typed struct, preserving integer keys
+    let algo_version = get_string(&dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(&dict, "updated_at", 0.0);
+    let queues_available = get_i64(&dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(&dict, "on_a_stick", false);
+    let site_count = get_i64(&dict, "site_count", 0);
+    let mut site_names: Vec<i64> = Vec::new();
+    if let Ok(Some(sn)) = dict.get_item("site_names") {
+        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
+            for item in list.iter() {
+                if let Some(n) = to_i64_any(&item) { site_names.push(n); }
+            }
+        }
+    }
+    // site_map
+    let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
+    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
+        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in sm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let insertion_order = match entry.get_item("insertion_order") {
+                            Ok(Some(x)) => x.extract::<i64>().ok(),
+                            _ => None,
+                        };
+                        site_map.insert(key, PlannerSiteEntry { cpu, major, minor, insertion_order });
+                    }
+                }
+            }
+        }
+    }
+    // circuit_map
+    let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
+        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in cm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let parent_site = get_string(&entry, "parent_site", String::new());
+                        let sqm = get_string(&entry, "sqm", String::new());
+                        circuit_map.insert(key, PlannerCircuitEntry { cpu, major, minor, parent_site, sqm });
+                    }
+                }
+            }
+        }
+    }
+
+    let to_save = PlannerStateSerde {
+        algo_version,
+        updated_at,
+        queuesAvailable: queues_available,
+        on_a_stick,
+        site_count,
+        site_names,
+        site_map,
+        circuit_map,
+    };
+
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}")))?;
+    // Compress using the standard deflate scheme used elsewhere in the project
+    let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
+    let path_tmp = format!("{}.tmp", &path);
+    {
+        let mut f = fs::File::create(&path_tmp).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Open {path_tmp} failed: {e:?}")))?;
+        f.write_all(&bytes).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Write {path_tmp} failed: {e:?}")))?;
+        f.flush().ok();
+    }
+    // Atomic replace
+    fs::rename(&path_tmp, &path).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Rename {path_tmp} -> {path} failed: {e:?}")))?;
+    // Optionally, remove legacy JSON file – leave for migration
+    Ok(true)
+}
+
+#[pyfunction]
+fn read_planner_cbor(py: Python, path: String) -> PyResult<Option<PyObject>> {
+    use std::fs;
+    use std::path::Path;
+    if !Path::new(&path).exists() {
+        return Ok(None);
+    }
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return Ok(None),
+    };
+    // Attempt decompress-then-decode; fall back to raw CBOR for backward compatibility
+    let decoded: PlannerStateSerde = if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+        match serde_cbor::from_slice(&decompressed) {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        }
+    } else {
+        match serde_cbor::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        }
+    };
+    // Convert to Python dict structure
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("algo_version", decoded.algo_version).ok();
+    out.set_item("updated_at", decoded.updated_at).ok();
+    out.set_item("queuesAvailable", decoded.queuesAvailable).ok();
+    out.set_item("on_a_stick", decoded.on_a_stick).ok();
+    out.set_item("site_count", decoded.site_count).ok();
+    // site_names list
+    let list = pyo3::types::PyList::new(py, decoded.site_names).unwrap();
+    out.set_item("site_names", list).ok();
+    // site_map
+    let sm = pyo3::types::PyDict::new(py);
+    for (k, v) in decoded.site_map.into_iter() {
+        let entry = pyo3::types::PyDict::new(py);
+        entry.set_item("cpu", v.cpu).ok();
+        entry.set_item("major", v.major).ok();
+        entry.set_item("minor", v.minor).ok();
+        if let Some(ins) = v.insertion_order { entry.set_item("insertion_order", ins).ok(); }
+        sm.set_item(k, entry).ok();
+    }
+    out.set_item("site_map", sm).ok();
+    // circuit_map
+    let cm = pyo3::types::PyDict::new(py);
+    for (k, v) in decoded.circuit_map.into_iter() {
+        let entry = pyo3::types::PyDict::new(py);
+        entry.set_item("cpu", v.cpu).ok();
+        entry.set_item("major", v.major).ok();
+        entry.set_item("minor", v.minor).ok();
+        entry.set_item("parent_site", v.parent_site).ok();
+        entry.set_item("sqm", v.sqm).ok();
+        cm.set_item(k, entry).ok();
+    }
+    out.set_item("circuit_map", cm).ok();
+    Ok(Some(out.into_any().unbind()))
+}
+
+// ===== Remote planner fetch/store over Insight web API =====
+
+#[derive(Serialize, Deserialize)]
+struct FetchPlannerRequest {
+    org_key: String,
+    node_id: String,
+    queues_available: u32,
+    on_a_stick: bool,
+    site_count: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", content = "content")] // allow robust parsing if needed
+enum FetchPlannerResponse {
+    NoPlan,
+    PlanBase64(String),
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistPlannerRequest {
+    org_key: String,
+    node_id: String,
+    queues_available: u32,
+    on_a_stick: bool,
+    site_count: u32,
+    body_base64: String,
+}
+
+fn base_url_from_config() -> anyhow::Result<String> {
+    let config = lqos_config::load_config()?;
+    let base = config
+        .long_term_stats
+        .lts_url
+        .clone()
+        .unwrap_or_else(|| "insight.libreqos.com".to_string());
+    Ok(format!("https://{}/shaper_api", base))
+}
+
+fn license_and_node_from_config() -> anyhow::Result<(String, String)> {
+    let config = lqos_config::load_config()?;
+    let org_key = config
+        .long_term_stats
+        .license_key
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("No Insight license key configured"))?;
+    let node_id = config.node_id.clone();
+    Ok((org_key, node_id))
+}
+
+#[pyfunction]
+fn fetch_planner_remote(
+    py: Python,
+    queues_available: i64,
+    on_a_stick: bool,
+    site_count: i64,
+) -> PyResult<Option<PyObject>> {
+    // Build request
+    let (org_key, node_id) = match license_and_node_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let base_url = match base_url_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let req = FetchPlannerRequest {
+        org_key,
+        node_id,
+        queues_available: queues_available.max(0) as u32,
+        on_a_stick,
+        site_count: site_count.max(0) as u32,
+    };
+    let url = format!("{}/fetchPlanner", base_url);
+    // Send
+    // Allow invalid certs for self-hosted Insight instances (non-default URL)
+    let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
+    let client = match reqwest::blocking::Client::builder()
+        // Use a generous timeout similar to deviceWeights to tolerate
+        // slow or distant Insight instances when fetching planner state.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
+        .danger_accept_invalid_certs(allow_insecure)
+        .build() {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    let resp = match client.post(&url).json(&req).send() {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+    let parsed: FetchPlannerResponse = match resp.json() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    // Handle response
+    match parsed {
+        FetchPlannerResponse::NoPlan => Ok(None),
+        FetchPlannerResponse::PlanBase64(b64) => {
+            let Ok(bytes) = BASE64_STANDARD.decode(b64.as_bytes()) else { return Ok(None) };
+            // Attempt decompress-then-decode; fall back to raw CBOR
+            let decoded: PlannerStateSerde = if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+                match serde_cbor::from_slice(&decompressed) { Ok(v) => v, Err(_) => return Ok(None) }
+            } else {
+                match serde_cbor::from_slice(&bytes) { Ok(v) => v, Err(_) => return Ok(None) }
+            };
+            // Convert to Python dict
+            let out = pyo3::types::PyDict::new(py);
+            out.set_item("algo_version", decoded.algo_version).ok();
+            out.set_item("updated_at", decoded.updated_at).ok();
+            out.set_item("queuesAvailable", decoded.queuesAvailable).ok();
+            out.set_item("on_a_stick", decoded.on_a_stick).ok();
+            out.set_item("site_count", decoded.site_count).ok();
+            let list = pyo3::types::PyList::new(py, decoded.site_names).unwrap();
+            out.set_item("site_names", list).ok();
+            let sm = pyo3::types::PyDict::new(py);
+            for (k, v) in decoded.site_map.into_iter() {
+                let entry = pyo3::types::PyDict::new(py);
+                entry.set_item("cpu", v.cpu).ok();
+                entry.set_item("major", v.major).ok();
+                entry.set_item("minor", v.minor).ok();
+                if let Some(ins) = v.insertion_order { entry.set_item("insertion_order", ins).ok(); }
+                sm.set_item(k, entry).ok();
+            }
+            out.set_item("site_map", sm).ok();
+            let cm = pyo3::types::PyDict::new(py);
+            for (k, v) in decoded.circuit_map.into_iter() {
+                let entry = pyo3::types::PyDict::new(py);
+                entry.set_item("cpu", v.cpu).ok();
+                entry.set_item("major", v.major).ok();
+                entry.set_item("minor", v.minor).ok();
+                entry.set_item("parent_site", v.parent_site).ok();
+                entry.set_item("sqm", v.sqm).ok();
+                cm.set_item(k, entry).ok();
+            }
+            out.set_item("circuit_map", cm).ok();
+            Ok(Some(out.into_any().unbind()))
+        }
+    }
+}
+
+#[pyfunction]
+fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
+    // Extract needed values and serialize as compressed CBOR
+    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    let algo_version = get_string(&dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(&dict, "updated_at", 0.0);
+    let queues_available = get_i64(&dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(&dict, "on_a_stick", false);
+    let site_count = get_i64(&dict, "site_count", 0);
+    // site_names
+    let mut site_names: Vec<i64> = Vec::new();
+    if let Ok(Some(sn)) = dict.get_item("site_names") {
+        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
+            for item in list.iter() {
+                if let Some(n) = to_i64_any(&item) { site_names.push(n); }
+            }
+        }
+    }
+    // site_map
+    let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
+    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
+        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in sm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let insertion_order = match entry.get_item("insertion_order") { Ok(Some(x)) => x.extract::<i64>().ok(), _ => None };
+                        site_map.insert(key, PlannerSiteEntry { cpu, major, minor, insertion_order });
+                    }
+                }
+            }
+        }
+    }
+    // circuit_map
+    let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
+        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in cm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let parent_site = get_string(&entry, "parent_site", String::new());
+                        let sqm = get_string(&entry, "sqm", String::new());
+                        circuit_map.insert(key, PlannerCircuitEntry { cpu, major, minor, parent_site, sqm });
+                    }
+                }
+            }
+        }
+    }
+    let to_save = PlannerStateSerde {
+        algo_version,
+        updated_at,
+        queuesAvailable: queues_available,
+        on_a_stick,
+        site_count,
+        site_names,
+        site_map,
+        circuit_map,
+    };
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}")))?;
+    let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
+    let body_base64 = BASE64_STANDARD.encode(&bytes);
+
+    let (org_key, node_id) = match license_and_node_from_config() { Ok(v) => v, Err(_) => return Ok(false) };
+    let base_url = match base_url_from_config() { Ok(v) => v, Err(_) => return Ok(false) };
+    let url = format!("{}/storePlanner", base_url);
+    let req = PersistPlannerRequest {
+        org_key,
+        node_id,
+        queues_available: queues_available.max(0) as u32,
+        on_a_stick,
+        site_count: site_count.max(0) as u32,
+        body_base64,
+    };
+    // Allow invalid certs for self-hosted Insight instances (non-default URL)
+    let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
+    let client = match reqwest::blocking::Client::builder()
+        // Match the extended planner fetch timeout for symmetry.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
+        .danger_accept_invalid_certs(allow_insecure)
+        .build() {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    match client.put(&url).json(&req).send() {
+        Ok(resp) if resp.status().is_success() => Ok(true),
+        _ => Ok(false),
+    }
+}
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
@@ -117,6 +581,15 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
+    m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
+    m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
+    m.add_function(wrap_pyfunction!(log_info, m)?)?;
+    m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
+    // Planner remote fetch/store for Insight integration
+    m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;
+    m.add_function(wrap_pyfunction!(store_planner_remote, m)?)?;
+    m.add_function(wrap_pyfunction!(write_planner_cbor, m)?)?;
+    m.add_function(wrap_pyfunction!(read_planner_cbor, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -1169,4 +1642,81 @@ fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
         }
     }
     Ok(false)
+}
+
+/// Submit an urgent issue for prominent display in the Node Manager UI.
+///
+/// Parameters:
+/// - source: one of "Scheduler", "LibreQoS", "API", "System"
+/// - severity: "Error" or "Warning"
+/// - code: short machine-readable code (e.g., "TC_U16_OVERFLOW")
+/// - message: human-readable description
+/// - context: optional JSON string with extra details
+/// - dedupe_key: optional key to deduplicate repeats (e.g., code+cpu)
+#[pyfunction]
+fn submit_urgent_issue(
+    _py: Python,
+    source: String,
+    severity: String,
+    code: String,
+    message: String,
+    context: Option<String>,
+    dedupe_key: Option<String>,
+) -> PyResult<bool> {
+    let src = match source.to_ascii_lowercase().as_str() {
+        "scheduler" => UrgentSource::Scheduler,
+        "libreqos" => UrgentSource::LibreQoS,
+        "api" => UrgentSource::API,
+        _ => UrgentSource::System,
+    };
+    let sev = match severity.to_ascii_lowercase().as_str() {
+        "warning" => UrgentSeverity::Warning,
+        _ => UrgentSeverity::Error,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SubmitUrgentIssue {
+        source: src,
+        severity: sev,
+        code,
+        message,
+        context,
+        dedupe_key,
+    }]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Log an informational message via the lqosd bus (appears in lqosd logs).
+#[pyfunction]
+fn log_info(_py: Python, message: String) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::LogInfo(message)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+pub fn is_insight_enabled() -> PyResult<bool> {
+    let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
+        return Ok(false)
+    };
+    for resp in responses {
+        if let BusResponse::InsightStatus(enabled) = resp {
+            return Ok(enabled)
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+pub fn hash_to_i64(text: String) -> PyResult<i64> {
+    Ok(lqos_utils::hash_to_i64(&text))
 }

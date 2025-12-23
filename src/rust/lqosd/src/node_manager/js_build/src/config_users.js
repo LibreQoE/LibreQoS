@@ -12,7 +12,6 @@ $(document).ready(() => {
         const username = $('#add-username').val().trim();
         const password = $('#password').val();
         const role = $('#role').val();
-        console.log(username, password, role);
         
         if (!username) {
             alert('Username cannot be empty');
@@ -45,17 +44,25 @@ $(document).ready(() => {
         const username = $('#edit-username').val();
         const password = $('#edit-password').val();
         const role = $('#edit-role').val();
-        
+
+        const payload = {
+            username: username,
+            role: role
+        };
+
+        // Only send password if the field is non-empty; leaving it blank
+        // preserves the existing password on the server.
+        if (password && password.trim().length > 0) {
+            payload.password = password;
+        }
+
         $.ajax({
             type: "POST",
             url: "/local-api/updateUser",
-            data: JSON.stringify({ 
-                username: username,
-                password: password,
-                role: role 
-            }),
+            data: JSON.stringify(payload),
             contentType: 'application/json',
             success: () => {
+                $('#edit-password').val('');
                 $('#editUserModal').modal('hide');
                 loadUsers();
             },
@@ -103,6 +110,7 @@ function loadUsers() {
         $('.edit-user').on('click', function() {
             const username = $(this).data('username');
             const user = users.find(u => u.username === username);
+            $('#edit-password').val('');
             $('#edit-username').val(user.username);
             $('#edit-role').val(user.role);
             $('#editUserModal').modal('show');

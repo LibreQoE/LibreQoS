@@ -18,6 +18,7 @@
 </head>
 <body>
 %%%LTS_SCRIPT%%%
+<script>window.sm = %%MODAL%%; window.smn = "%%MODAL_NUM%%"</script>
 <div id="wrapper"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
@@ -116,6 +117,7 @@
                             <i class="fa fa-fw fa-centerline fa-recycle"></i> Reload LibreQoS
                         </a>
                     </li>
+                    %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
                     <hr />
                     <!-- Dark mode switch -->
@@ -210,8 +212,29 @@
     </div>
     </div>
 
+<!-- Urgent Issues Modal -->
+<div class='modal fade' id='urgentModal' tabindex='-1' aria-labelledby='urgentModalLabel' aria-hidden='true'>
+    <div class='modal-dialog modal-xl modal-dialog-scrollable'>
+        <div class='modal-content'>
+            <div class='modal-header'>
+                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Urgent Issues</h1>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge All'><i class='fa fa-times'></i></button>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+            </div>
+            <div class='modal-body'>
+                <div id='urgentListContainer'>
+                    <div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>
+                </div>
+            </div>
+            <div class='modal-footer'>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
-    LibreQoS %%VERSION%%. &copy; Copyright 2022-2024, LibreQoE LLC. All Rights Reserved.
+    LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
 </footer>
 
     <script src="template.js"></script>
@@ -230,6 +253,106 @@
             el.removeAttribute('title');
         });
         obs.observe(container, { childList: true, subtree: true });
+    })();
+    
+    document.getElementById('year').textContent = new Date().getFullYear();
+        
+
+    // Urgent Issues: poll status, update badge, and show modal with details
+    (function(){
+        const containerId = 'urgentStatus';
+        const linkId = 'urgentStatusLink';
+        const badgeId = 'urgentBadge';
+
+        function ensurePlaceholder(){
+            // no-op: server injects a placeholder; if not present, skip
+            return document.getElementById(containerId) !== null;
+        }
+
+        function renderStatus(count){
+            const cont = document.getElementById(containerId);
+            if (!cont) return;
+            const cls = count > 0 ? 'text-danger' : 'text-secondary';
+            const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
+            cont.innerHTML = `
+                <a class="nav-link ${cls}" href="#" id="${linkId}">
+                    <i class="fa fa-fw fa-centerline ${icon}"></i> Urgent Issues
+                    <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
+                </a>`;
+            $("#"+containerId).off("click").on("click", `#${linkId}`, (e)=>{
+                e.preventDefault();
+                showModal();
+            });
+        }
+
+        function poll(){
+            if (!ensurePlaceholder()) return;
+            $.get('/local-api/urgent/status', (res)=>{
+                renderStatus(res.count||0);
+            });
+        }
+
+        function showModal(){
+            const modalEl = document.getElementById('urgentModal');
+            if (!modalEl) return;
+            new bootstrap.Modal(modalEl,{focus:true}).show();
+            const holder = document.getElementById('urgentListContainer');
+            holder.innerHTML = `<div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>`;
+            $.get('/local-api/urgent/list', (res)=>{
+                const items = res.items||[];
+                if (items.length===0){ holder.innerHTML = '<div class="text-center text-success">No urgent issues.</div>'; return; }
+                const table = document.createElement('table');
+                table.className = 'table table-sm table-striped';
+                const tbody = document.createElement('tbody');
+                items.forEach(it=>{
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    const when = new Date(it.ts*1000).toLocaleString();
+                    const sev = it.severity === 'Error' ? 'danger' : 'warning';
+                    td.innerHTML = `
+                        <div>
+                            <span class="badge bg-${sev}">${it.severity}</span>
+                            <strong class="ms-2">${it.code}</strong>
+                            <span class="text-muted ms-2">(${it.source})</span>
+                            <span class="text-muted float-end">${when}</span>
+                            <a href="#" class="text-secondary float-end ms-3 urgent-clear" data-id="${it.id}" title="Acknowledge"><i class="fa fa-times"></i></a>
+                        </div>
+                        <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
+                        ${it.context?`<pre class="mt-2">${it.context}</pre>`:''}
+                        `;
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                });
+                table.appendChild(tbody);
+                // Clear existing content and insert table
+                holder.innerHTML = '';
+                holder.appendChild(table);
+                // Bind clear buttons (acknowledge)
+                $(holder).off('click').on('click','a.urgent-clear', function(e){
+                    e.preventDefault();
+                    const id = $(this).data('id');
+                    $.post(`/local-api/urgent/clear/${id}`, ()=>{ showModal(); poll(); });
+                });
+            }).fail(()=>{
+                holder.innerHTML = '<div class="text-center text-danger">Failed to load urgent issues.</div>';
+            });
+        }
+
+        // Initial placeholder in case server didn’t inject content (defensive)
+        if (!document.getElementById(containerId)){
+            const ul = document.querySelector('.sidebar .navbar-nav');
+            if (ul){
+                const li = document.createElement('li'); li.className='nav-item'; li.id=containerId; ul.appendChild(li);
+            }
+        }
+        // Clear all action
+        $(document).off('click','#urgentClearAll').on('click','#urgentClearAll', function(){
+            $.post('/local-api/urgent/clear_all', ()=>{ showModal(); poll(); });
+        });
+
+        // Start polling
+        poll();
+        setInterval(poll, 30000);
     })();
     </script>
 
