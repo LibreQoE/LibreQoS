@@ -30,7 +30,14 @@ function tableRow(device) {
     tr.appendChild(td);
 
     tr.appendChild(simpleRow(device.download_max_mbps + " / " + device.upload_max_mbps));
-    tr.appendChild(simpleRow(device.parent_node, true));
+    let parentNode = document.createElement("td");
+    parentNode.classList.add("redactable");
+    parentNode.innerText = device.parent_node;
+    parentNode.title = device.parent_node;
+    parentNode.style.whiteSpace = "nowrap";
+    parentNode.style.overflow = "hidden";
+    parentNode.style.textOverflow = "ellipsis";
+    tr.appendChild(parentNode);
     let ipList = "";
     device.ipv4.forEach((ip) => {
         ipList += ip[0] + "/" + ip[1] + "<br />";
