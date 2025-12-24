@@ -22,6 +22,22 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
+        let controls = document.createElement("div");
+        controls.classList.add("d-flex", "justify-content-between", "align-items-center", "mb-2");
+
+        let caption = document.createElement("div");
+        caption.classList.add("text-muted", "small");
+        caption.innerText = "Live StormGuard queue limits";
+
+        let debugLink = document.createElement("a");
+        debugLink.href = "stormguard_debug.html";
+        debugLink.classList.add("btn", "btn-sm", "btn-outline-primary");
+        debugLink.innerHTML = "<i class='fas fa-bug'></i> Debug view";
+
+        controls.appendChild(caption);
+        controls.appendChild(debugLink);
+        base.appendChild(controls);
+
         let graphs = this.graphDiv();
         
         base.appendChild(graphs);

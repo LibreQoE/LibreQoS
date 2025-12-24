@@ -12,7 +12,9 @@ pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity, UrgentSource};
-pub use response::{BakeryStatsSnapshot, BusResponse, UrgentIssue};
+pub use response::{
+    BakeryStatsSnapshot, BusResponse, StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+};
 pub use session::BusSession;
 use thiserror::Error;
 use tracing::error;
