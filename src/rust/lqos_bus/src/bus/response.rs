@@ -99,6 +99,52 @@ pub struct ExecutiveSummaryHeader {
     pub insight_connected: bool,
 }
 
+/// Debug snapshot of StormGuard evaluation for one direction
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardDebugDirection {
+    /// Current queue rate (Mbps)
+    pub queue_mbps: u64,
+    /// Minimum allowed (Mbps)
+    pub min_mbps: u64,
+    /// Maximum allowed (Mbps)
+    pub max_mbps: u64,
+    /// Latest measured throughput (Mbps)
+    pub throughput_mbps: f64,
+    /// Moving-average throughput (Mbps)
+    pub throughput_ma_mbps: Option<f64>,
+    /// Latest retransmit fraction (0-1)
+    pub retrans: Option<f64>,
+    /// Moving-average retransmit fraction (0-1)
+    pub retrans_ma: Option<f64>,
+    /// Latest RTT sample (as reported)
+    pub rtt: Option<f64>,
+    /// Moving-average RTT
+    pub rtt_ma: Option<f64>,
+    /// State (Warmup/Running/Cooldown)
+    pub state: String,
+    /// Seconds remaining in cooldown, if applicable
+    pub cooldown_remaining_secs: Option<f32>,
+    /// Saturation level vs current queue
+    pub saturation_current: String,
+    /// Saturation level vs max plan
+    pub saturation_max: String,
+    /// Whether StormGuard can increase this direction
+    pub can_increase: bool,
+    /// Whether StormGuard can decrease this direction
+    pub can_decrease: bool,
+}
+
+/// Debug snapshot of StormGuard evaluation for a site
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardDebugEntry {
+    /// Site name
+    pub site: String,
+    /// Download direction debug data
+    pub download: StormguardDebugDirection,
+    /// Upload direction debug data
+    pub upload: StormguardDebugDirection,
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -275,6 +321,9 @@ pub enum BusResponse {
 
     /// Stormguard statistics
     StormguardStats(Vec<(String, u64, u64)>),
+
+    /// Stormguard debug snapshot
+    StormguardDebug(Vec<StormguardDebugEntry>),
 
     /// Bakery statistics
     BakeryActiveCircuits(usize),

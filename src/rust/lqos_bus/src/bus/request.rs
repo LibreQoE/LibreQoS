@@ -336,6 +336,9 @@ pub enum BusRequest {
     /// Get current Stormguard statistics
     GetStormguardStats,
 
+    /// Get current Stormguard debug snapshot
+    GetStormguardDebug,
+
     /// Get current Bakery statistics
     GetBakeryStats,
 

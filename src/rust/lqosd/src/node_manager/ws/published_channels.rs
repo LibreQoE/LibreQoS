@@ -29,6 +29,7 @@ pub enum PublishedChannels {
     CircuitCapacity,
     TreeCapacity,
     StormguardStatus,
+    StormguardDebug,
     BakeryStatus,
     EndpointLatLon,
     AsnTopDownload,

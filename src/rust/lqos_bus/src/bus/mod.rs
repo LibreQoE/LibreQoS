@@ -14,7 +14,7 @@ pub use reply::BusReply;
 pub use request::{BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity, UrgentSource};
 pub use response::{
     AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
-    UrgentIssue,
+    StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
 };
 pub use session::BusSession;
 use thiserror::Error;

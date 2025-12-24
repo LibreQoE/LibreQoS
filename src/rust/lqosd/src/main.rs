@@ -67,7 +67,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use lqos_stormguard::STORMGUARD_STATS;
+use lqos_stormguard::{STORMGUARD_STATS, STORMGUARD_DEBUG};
 use tracing::level_filters::LevelFilter;
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -623,6 +623,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     (*lock).clone()
                 };
                 BusResponse::StormguardStats(cloned)
+            }
+            BusRequest::GetStormguardDebug => {
+                let cloned = {
+                    let lock = STORMGUARD_DEBUG.lock();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardDebug(cloned)
             }
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),

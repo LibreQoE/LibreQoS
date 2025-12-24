@@ -14,6 +14,7 @@ use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
 use tracing::{debug, info};
+use lqos_bus::StormguardDebugEntry;
 
 mod config;
 mod datalog;
@@ -25,6 +26,9 @@ const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
 /// Globally accessible stormguard statistics
 pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
+
+/// Debug snapshots of StormGuard evaluation state
+pub static STORMGUARD_DEBUG: Mutex<Vec<StormguardDebugEntry>> = Mutex::new(Vec::new());
 
 /// Launches the StormGuard component. Will exit if there's
 /// nothing to do.
@@ -83,6 +87,12 @@ pub async fn start_stormguard(
 
             // Check for state changes
             tracker.check_state();
+            // Update debug snapshot for UI/diagnostics
+            let snapshot = tracker.debug_snapshot(cfg);
+            {
+                let mut lock = STORMGUARD_DEBUG.lock();
+                *lock = snapshot;
+            }
             let recommendations = tracker.recommendations();
             if !recommendations.is_empty() {
                 if let Some(sender) = &log_sender {
