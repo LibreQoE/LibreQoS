@@ -91,6 +91,29 @@ function tableRow(device) {
 function make_table() {
     let table = document.createElement("table");
     table.classList.add("table", "table-striped");
+    table.style.tableLayout = "fixed";
+    table.style.width = "100%";
+    let colgroup = document.createElement("colgroup");
+    let colWidths = [
+        "16%", // Circuit
+        "16%", // Device
+        "8%",  // Plan (Mbps)
+        "10%", // Parent
+        "18%", // IP
+        "120px", // Last Seen
+        "120px", // Throughput Down
+        "120px", // Throughput Up
+        "80px", // RTT Down
+        "80px", // RTT Up
+        "80px", // Re-Xmit Down
+        "80px"  // Re-Xmit Up
+    ];
+    colWidths.forEach((width) => {
+        let col = document.createElement("col");
+        col.style.width = width;
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
     table.appendChild(clientTableHeader());
     let tb = document.createElement("tbody");
     let start = page * devicesPerPage;
@@ -159,6 +182,7 @@ function ensureFilter() {
     filter.appendChild(searchButton);
 
     let target = document.getElementById("deviceTable");
+    clearDiv(target);
     target.appendChild(filter);
 
     content = document.createElement("div");
