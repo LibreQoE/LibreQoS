@@ -160,6 +160,10 @@ function fillTable() {
     sdSearch.id = "sdSearch";
     sdSearch.placeholder = "Search";
     sdSearch.value = searchTerm;
+    sdSearch.oninput = () => {
+        searchTerm = $("#sdSearch").val();
+        filterDevices();
+    }
     sdSearch.onkeydown = (event) => {
         if (event.keyCode == 13) {
             searchTerm = $("#sdSearch").val();
@@ -170,7 +174,7 @@ function fillTable() {
     searchButton.type = "button"
     searchButton.classList.add("btn", "btn-sm");
     searchButton.innerHTML = "<i class='fa fa-search'></i>";
-    searchButton.onchange = () => {
+    searchButton.onclick = () => {
         searchTerm = $("#sdSearch").val();
         filterDevices();
     }
