@@ -74,7 +74,11 @@ pub async fn asn_top(
             name: a.name.clone(),
             value: a.sum_down,
             flow_count: a.flows,
-            retransmit_percent: if a.rx_down_den > 0.0 { (a.rx_down_num / a.rx_down_den) * 100.0 } else { 0.0 },
+            retransmit_percent: if a.rx_down_den > 0.0 {
+                (a.rx_down_num / a.rx_down_den) * 100.0
+            } else {
+                0.0
+            },
         })
         .collect();
     down_rows.sort_by(|a, b| b.value.cmp(&a.value));
@@ -86,7 +90,11 @@ pub async fn asn_top(
             name: a.name.clone(),
             value: a.sum_up,
             flow_count: a.flows,
-            retransmit_percent: if a.rx_up_den > 0.0 { (a.rx_up_num / a.rx_up_den) * 100.0 } else { 0.0 },
+            retransmit_percent: if a.rx_up_den > 0.0 {
+                (a.rx_up_num / a.rx_up_den) * 100.0
+            } else {
+                0.0
+            },
         })
         .collect();
     up_rows.sort_by(|a, b| b.value.cmp(&a.value));
@@ -136,4 +144,3 @@ fn accumulate(map: &mut HashMap<String, Agg>, f: FlowbeeSummaryData) {
     entry.rx_up_den += f.packets_sent.up as f64;
     entry.flows += 1;
 }
-

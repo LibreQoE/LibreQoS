@@ -9,7 +9,15 @@ use uisp::{DataLink, Device, Site};
 /// Requires a valid configuration with working token data.
 pub async fn load_uisp_data(
     config: Arc<Config>,
-) -> Result<(Vec<Site>, Vec<Device>, Vec<DataLink>, Vec<serde_json::Value>), UispIntegrationError> {
+) -> Result<
+    (
+        Vec<Site>,
+        Vec<Device>,
+        Vec<DataLink>,
+        Vec<serde_json::Value>,
+    ),
+    UispIntegrationError,
+> {
     info!("Loading Devices, Sites and Data-Links from UISP");
     let (devices, sites, data_links) = join!(
         uisp::load_all_devices_with_interfaces(config.clone()),

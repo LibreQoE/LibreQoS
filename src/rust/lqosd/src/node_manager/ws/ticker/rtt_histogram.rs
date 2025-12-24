@@ -25,7 +25,10 @@ pub async fn rtt_histo(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("RttHistogram: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "RttHistogram: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };

@@ -154,7 +154,11 @@ mod test {
 
     #[test]
     fn test_ipv6_round_trip() {
-        let ipv6 = IpAddr::V6("2001:db8:85a3::8a2e:370:7334".parse().expect("IP parsing is broken"));
+        let ipv6 = IpAddr::V6(
+            "2001:db8:85a3::8a2e:370:7334"
+                .parse()
+                .expect("IP parsing is broken"),
+        );
         let xip = XdpIpAddress::from_ip(ipv6);
         let test = xip.as_ip();
         assert_eq!(ipv6, test);

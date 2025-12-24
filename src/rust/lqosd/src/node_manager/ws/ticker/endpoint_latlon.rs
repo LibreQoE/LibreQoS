@@ -47,4 +47,3 @@ pub async fn endpoint_latlon(
         }
     }
 }
-

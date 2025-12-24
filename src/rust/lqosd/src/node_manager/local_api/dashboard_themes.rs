@@ -10,8 +10,7 @@ pub async fn list_themes() -> Json<Vec<String>> {
             .join("bin")
             .join("dashboards");
         if !base_path.exists() {
-            std::fs::create_dir(&base_path)
-                .expect("Unable to create dashboards directory");
+            std::fs::create_dir(&base_path).expect("Unable to create dashboards directory");
         }
 
         let mut result = Vec::new();
@@ -47,16 +46,14 @@ pub async fn save_theme(Json(data): Json<DashletSave>) -> StatusCode {
             .join("bin")
             .join("dashboards");
         if !base_path.exists() {
-            std::fs::create_dir(&base_path)
-                .expect("Unable to create dashboards directory");
+            std::fs::create_dir(&base_path).expect("Unable to create dashboards directory");
         }
 
         let name = data.name.replace('/', "_");
         let name = format!("{}.json", name);
         let file_path = base_path.join(name);
         let serialized = serde_json::to_string(&data).expect("Unable to serialize theme payload");
-        std::fs::write(&file_path, serialized.as_bytes())
-            .expect("Unable to write theme file");
+        std::fs::write(&file_path, serialized.as_bytes()).expect("Unable to write theme file");
     }
 
     StatusCode::OK
@@ -89,7 +86,8 @@ pub async fn get_theme(Json(f): Json<ThemeSelector>) -> Json<Vec<DashletIdentity
             .join(&f.theme);
         if base_path.exists() {
             let raw = std::fs::read_to_string(&base_path).expect("Unable to read theme file");
-            let result: DashletSave = serde_json::from_str(&raw).expect("Unable to parse theme file");
+            let result: DashletSave =
+                serde_json::from_str(&raw).expect("Unable to parse theme file");
             return Json(result.entries);
         }
     }

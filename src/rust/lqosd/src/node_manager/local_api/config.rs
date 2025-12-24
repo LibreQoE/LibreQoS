@@ -22,8 +22,7 @@ pub async fn get_config(
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    let config = lqos_config::load_config()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let config = lqos_config::load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json((*config).clone()))
 }
 
@@ -112,8 +111,7 @@ pub async fn update_network_and_devices(
     let sd_backup_path =
         std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
     if sd_path.exists() {
-        std::fs::copy(&sd_path, sd_backup_path)
-            .expect("Unable to create ShapedDevices.csv backup");
+        std::fs::copy(&sd_path, sd_backup_path).expect("Unable to create ShapedDevices.csv backup");
     }
     let mut copied = ConfigShapedDevices::default();
     copied.replace_with_new_data(data.shaped_devices.clone());

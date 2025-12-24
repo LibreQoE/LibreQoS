@@ -34,4 +34,5 @@ pub enum PublishedChannels {
     EndpointLatLon,
     AsnTopDownload,
     AsnTopUpload,
+    ExecutiveHeatmaps,
 }

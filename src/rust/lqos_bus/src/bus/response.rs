@@ -7,7 +7,7 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{temporal_heatmap::HeatmapBlocks, units::DownUpOrder};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -36,6 +36,67 @@ pub struct UrgentIssue {
 pub struct BakeryStatsSnapshot {
     /// The number of active circuits in the bakery
     pub active_circuits: u64,
+}
+
+/// Circuit-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct CircuitHeatmapData {
+    /// Circuit hash identifier from ShapedDevices.csv.
+    pub circuit_hash: i64,
+    /// Circuit ID string.
+    pub circuit_id: String,
+    /// Circuit name string.
+    pub circuit_name: String,
+    /// Heatmap blocks for the circuit.
+    pub blocks: HeatmapBlocks,
+}
+
+/// Site-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct SiteHeatmapData {
+    /// Site name from network.json.
+    pub site_name: String,
+    /// Optional node type from network.json (e.g., Site/AP).
+    #[serde(default)]
+    pub node_type: Option<String>,
+    /// Depth of the site within the network tree (root is 0).
+    #[serde(default)]
+    pub depth: usize,
+    /// Heatmap blocks for the site.
+    pub blocks: HeatmapBlocks,
+}
+
+/// ASN-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct AsnHeatmapData {
+    /// ASN number.
+    pub asn: u32,
+    /// ASN descriptive name (if available).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asn_name: Option<String>,
+    /// Heatmap blocks for the ASN.
+    pub blocks: HeatmapBlocks,
+}
+
+/// Metrics for the Executive Summary header cards.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative, Default)]
+pub struct ExecutiveSummaryHeader {
+    /// Total number of unique circuits from SHAPED_DEVICES.
+    pub circuit_count: u64,
+    /// Total number of shaped devices.
+    pub device_count: u64,
+    /// Total number of sites in the site tree.
+    pub site_count: u64,
+    /// Number of mapped IPs (shaped).
+    pub mapped_ip_count: u64,
+    /// Number of unmapped IPs (unknown).
+    pub unmapped_ip_count: u64,
+    /// Number of HTB queues being tracked.
+    pub htb_queue_count: u64,
+    /// Number of CAKE queues being tracked.
+    pub cake_queue_count: u64,
+    /// Whether Insight is connected.
+    pub insight_connected: bool,
 }
 
 /// Debug snapshot of StormGuard evaluation for one direction
@@ -129,6 +190,21 @@ pub enum BusResponse {
 
     /// Provides the Top N uploaders IP stats.
     TopUploaders(Vec<IpStats>),
+
+    /// Provides circuit-level heatmaps.
+    CircuitHeatmaps(Vec<CircuitHeatmapData>),
+
+    /// Provides site-level heatmaps.
+    SiteHeatmaps(Vec<SiteHeatmapData>),
+
+    /// Provides ASN-level heatmaps.
+    AsnHeatmaps(Vec<AsnHeatmapData>),
+
+    /// Provides the global (roll-up) heatmap.
+    GlobalHeatmap(HeatmapBlocks),
+
+    /// Provides headline metrics for the Executive Summary page.
+    ExecutiveSummaryHeader(ExecutiveSummaryHeader),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),

@@ -1,3 +1,5 @@
+const CURRENT_VERSION = 3;
+
 export class DashboardLayout {
     constructor(cookieName, defaultLayout) {
         this.cookieName = cookieName;
@@ -7,17 +9,17 @@ export class DashboardLayout {
         if (template !== null) {
             let parsed = JSON.parse(template);
             // Check if it's the new format with version
-            if (parsed.version === 2) {
-                this.version = 2;
-                this.tabs = parsed.tabs;
+            if (parsed.version >= 2) {
+                this.version = parsed.version;
+                this.tabs = Array.isArray(parsed.tabs) ? parsed.tabs : [];
                 this.activeTab = parsed.activeTab || 0;
             } else {
                 // Old format saved in localStorage (pre-tabs)
                 // Treat as a signal to reset to the new default layout,
                 // so users see the new Overview tab instead of a single-tab conversion.
-                this.version = 2;
-                if (defaultLayout && defaultLayout.version === 2) {
-                    this.tabs = defaultLayout.tabs;
+                this.version = CURRENT_VERSION;
+                if (defaultLayout && defaultLayout.version >= 2) {
+                    this.tabs = defaultLayout.tabs || [];
                     this.activeTab = defaultLayout.activeTab || 0;
                 } else {
                     this.tabs = [{
@@ -30,14 +32,14 @@ export class DashboardLayout {
             }
         } else {
             // No saved layout - use default
-            if (defaultLayout && defaultLayout.version === 2) {
+            if (defaultLayout && defaultLayout.version >= 2) {
                 // New format default
-                this.version = 2;
-                this.tabs = defaultLayout.tabs;
+                this.version = defaultLayout.version;
+                this.tabs = defaultLayout.tabs || [];
                 this.activeTab = defaultLayout.activeTab || 0;
             } else {
                 // Old format default - convert to new format
-                this.version = 2;
+                this.version = CURRENT_VERSION;
                 this.tabs = [{
                     name: "Dashboard",
                     dashlets: defaultLayout || []
@@ -54,8 +56,8 @@ export class DashboardLayout {
             this.tabs[this.activeTab].dashlets = layoutData;
         } else {
             // New style - full layout object
-            this.version = layoutData.version || 2;
-            this.tabs = layoutData.tabs;
+            this.version = layoutData.version || CURRENT_VERSION;
+            this.tabs = layoutData.tabs || [];
             this.activeTab = layoutData.activeTab || 0;
         }
         // Only persist if layout differs from default tabs/dashlets
@@ -92,7 +94,7 @@ export class DashboardLayout {
 // Static helpers
 DashboardLayout.normalizeToTabs = function(defaultLayout) {
     if (!defaultLayout) return [];
-    if (defaultLayout.version === 2 && Array.isArray(defaultLayout.tabs)) {
+    if (defaultLayout.version >= 2 && Array.isArray(defaultLayout.tabs)) {
         return defaultLayout.tabs.map(t => ({
             name: t.name || "Dashboard",
             dashlets: Array.isArray(t.dashlets) ? t.dashlets.map(d => ({ tag: d.tag, size: d.size })) : []

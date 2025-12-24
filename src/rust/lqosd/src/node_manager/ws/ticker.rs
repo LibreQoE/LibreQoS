@@ -5,12 +5,14 @@ use lqos_bus::BusRequest;
 use tokio::join;
 use tokio::sync::mpsc::Sender;
 use tracing::debug;
+mod asn_top;
 mod bakery;
 mod cadence;
 mod circuit_capacity;
+mod endpoint_latlon;
+mod executive_heatmaps;
 mod flow_counter;
 mod flow_endpoints;
-mod endpoint_latlon;
 mod ipstats_conversion;
 mod network_tree;
 mod queue_stats_total;
@@ -21,7 +23,6 @@ pub mod system_info;
 mod throughput;
 mod top_10;
 mod top_flows;
-mod asn_top;
 mod tree_capacity;
 mod tree_summary;
 mod tree_summary_l2;
@@ -78,6 +79,7 @@ async fn one_second_cadence(
             retransmits::tcp_retransmits(channels.clone()),
             stormguard::stormguard_ticker(channels.clone(), bus_tx.clone()),
             bakery::bakery_ticker(channels.clone(), bus_tx.clone()),
+            executive_heatmaps::executive_heatmaps(channels.clone(), bus_tx.clone()),
         );
 
         channels.clean().await;

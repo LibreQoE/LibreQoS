@@ -1,4 +1,6 @@
-use crate::lts2_sys::control_channel::{ControlChannelCommand, HistoryQueryResultPayload, RemoteInsightRequest};
+use crate::lts2_sys::control_channel::{
+    ControlChannelCommand, HistoryQueryResultPayload, RemoteInsightRequest,
+};
 use crate::node_manager::local_api::lts::{
     AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
     ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,

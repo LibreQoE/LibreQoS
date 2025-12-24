@@ -16,7 +16,10 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
 
     let Ok(time_since_boot) = time_since_boot() else {
-        return Json(CircuitCount { count: 0, configured_count: 0 });
+        return Json(CircuitCount {
+            count: 0,
+            configured_count: 0,
+        });
     };
     let now = Duration::from(time_since_boot).as_nanos() as u64;
 

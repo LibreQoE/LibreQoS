@@ -30,5 +30,8 @@ pub async fn pcap_dump(Path(id): Path<usize>, headers: HeaderMap) -> impl IntoRe
     let filename = n_second_pcap(id).expect("Could not determine pcap filename");
     let mut req = Request::new(Body::empty());
     *req.headers_mut() = headers;
-    ServeFile::new(filename).try_call(req).await.expect("ServeFile call failed")
+    ServeFile::new(filename)
+        .try_call(req)
+        .await
+        .expect("ServeFile call failed")
 }

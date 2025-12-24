@@ -8,6 +8,10 @@ use sha2::Digest;
 use sha2::digest::Update;
 use uuid::Uuid;
 
+fn default_true() -> bool {
+    true
+}
+
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct Config {
@@ -88,6 +92,18 @@ pub struct Config {
 
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
+
+    /// Enable per-circuit TemporalHeatmap collection.
+    #[serde(default = "default_true")]
+    pub enable_circuit_heatmaps: bool,
+
+    /// Enable per-site TemporalHeatmap collection.
+    #[serde(default = "default_true")]
+    pub enable_site_heatmaps: bool,
+
+    /// Enable per-ASN TemporalHeatmap collection.
+    #[serde(default = "default_true")]
+    pub enable_asn_heatmaps: bool,
 }
 
 impl Config {
@@ -164,6 +180,9 @@ impl Default for Config {
             webserver_listen: None,
             stormguard: None,
             disable_icmp_ping: Some(false),
+            enable_circuit_heatmaps: true,
+            enable_site_heatmaps: true,
+            enable_asn_heatmaps: true,
         }
     }
 }
@@ -212,7 +231,8 @@ mod test {
 
     #[test]
     fn load_example() {
-        let config = Config::load_from_string(include_str!("example.toml")).expect("Cannot read example toml file");
+        let config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
     }
 }

@@ -3,17 +3,25 @@ mod stats_submission;
 mod throughput_entry;
 mod tracking_data;
 
-use self::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
+use self::flow_data::{
+    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
+    snapshot_asn_heatmaps,
+};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 use crate::{
+    lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
+use lqos_bus::{
+    AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
+    IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
+};
+use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
@@ -175,6 +183,11 @@ fn throughput_task(
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+            THROUGHPUT_TRACKER.record_circuit_heatmaps();
+            let enable_site_heatmaps = lqos_config::load_config()
+                .map(|config| config.enable_site_heatmaps)
+                .unwrap_or(true);
+            net_json_calc.record_site_heatmaps(enable_site_heatmaps);
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
@@ -393,6 +406,102 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
         )
         .collect();
     BusResponse::TopUploaders(result)
+}
+
+/// Retrieve per-circuit heatmap data for the executive summary.
+pub fn circuit_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_circuit_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::CircuitHeatmaps(Vec::new());
+    }
+
+    let devices = SHAPED_DEVICES.load();
+    let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
+    devices.devices.iter().for_each(|device| {
+        circuit_meta
+            .entry(device.circuit_hash)
+            .or_insert_with(|| (device.circuit_id.clone(), device.circuit_name.clone()));
+    });
+
+    let heatmaps = THROUGHPUT_TRACKER.circuit_heatmaps.lock();
+    let mut rows: Vec<CircuitHeatmapData> = heatmaps
+        .iter()
+        .map(|(hash, heatmap)| {
+            let (circuit_id, circuit_name) = circuit_meta
+                .get(hash)
+                .cloned()
+                .unwrap_or_else(|| (String::new(), String::new()));
+            CircuitHeatmapData {
+                circuit_hash: *hash,
+                circuit_id,
+                circuit_name,
+                blocks: heatmap.blocks(),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
+    BusResponse::CircuitHeatmaps(rows)
+}
+
+/// Retrieve per-site heatmap data for the executive summary.
+pub fn site_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_site_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::SiteHeatmaps(Vec::new());
+    }
+
+    let reader = NETWORK_JSON.read();
+    let mut rows: Vec<SiteHeatmapData> = reader
+        .get_nodes_when_ready()
+        .iter()
+        .filter_map(|node| {
+            if node.name == "Root" || node.name.parse::<std::net::IpAddr>().is_ok() {
+                return None;
+            }
+            node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
+                site_name: node.name.clone(),
+                node_type: node.node_type.clone(),
+                depth: node.parents.len().saturating_sub(1),
+                blocks: heatmap.blocks(),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
+    BusResponse::SiteHeatmaps(rows)
+}
+
+/// Retrieve per-ASN heatmap data for the executive summary.
+pub fn asn_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_asn_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::AsnHeatmaps(Vec::new());
+    }
+
+    let rows: Vec<AsnHeatmapData> = snapshot_asn_heatmaps()
+        .into_iter()
+        .map(|(asn, blocks)| {
+            let name = get_asn_name_by_id(asn);
+            let asn_name = if name.eq_ignore_ascii_case("unknown") {
+                None
+            } else {
+                Some(name)
+            };
+            AsnHeatmapData { asn, asn_name, blocks }
+        })
+        .collect();
+    BusResponse::AsnHeatmaps(rows)
+}
+
+/// Retrieve the global roll-up heatmap data for the executive summary.
+pub fn global_heatmap() -> BusResponse {
+    let heatmap = THROUGHPUT_TRACKER.global_heatmap.lock();
+    BusResponse::GlobalHeatmap(heatmap.blocks())
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
@@ -701,6 +810,11 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
 }
 
 pub fn host_counts() -> BusResponse {
+    let (total, shaped) = current_host_counts();
+    BusResponse::HostCounts((total, shaped))
+}
+
+fn current_host_counts() -> (u32, u32) {
     let mut total = 0;
     let mut shaped = 0;
     let tp_cycle = THROUGHPUT_TRACKER
@@ -717,7 +831,47 @@ pub fn host_counts() -> BusResponse {
                 shaped += 1;
             }
         });
-    BusResponse::HostCounts((total, shaped))
+    (total, shaped)
+}
+
+/// Gather headline metrics for the Executive Summary header cards.
+pub fn executive_summary_header() -> BusResponse {
+    let devices = SHAPED_DEVICES.load();
+    let circuit_count = devices
+        .devices
+        .iter()
+        .map(|device| device.circuit_hash)
+        .collect::<FxHashSet<_>>()
+        .len() as u64;
+    let device_count = devices.devices.len() as u64;
+
+    let site_count = {
+        let reader = NETWORK_JSON.read();
+        let total_nodes = reader.get_nodes_when_ready().len();
+        // Remove the synthetic root node when counting sites.
+        total_nodes.saturating_sub(1) as u64
+    };
+
+    let (total_hosts, shaped_hosts) = current_host_counts();
+    let mapped_ip_count = shaped_hosts as u64;
+    let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
+
+    let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
+    let insight_connected = !matches!(
+        get_lts_license_status().0,
+        LtsStatus::Invalid | LtsStatus::NotChecked
+    );
+
+    BusResponse::ExecutiveSummaryHeader(ExecutiveSummaryHeader {
+        circuit_count,
+        device_count,
+        site_count,
+        mapped_ip_count,
+        unmapped_ip_count,
+        htb_queue_count: queue_counts.htb as u64,
+        cake_queue_count: queue_counts.cake as u64,
+        insight_connected,
+    })
 }
 
 type FullList = (
@@ -737,7 +891,7 @@ pub fn all_unknown_ips() -> BusResponse {
         return BusResponse::NotReadyYet;
     }
     let Ok(boot_time) = boot_time else {
-        return BusResponse::Fail("Boot time unavailable".to_string())
+        return BusResponse::Fail("Boot time unavailable".to_string());
     };
 
     // Safely convert TimeSpec to Duration - handle potential negative values

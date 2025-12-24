@@ -9,12 +9,12 @@ export class ShapedUnshapedTimescale extends DashboardGraph {
         // Graph Options
         this.option = new GraphOptionsBuilder()
             .withTimeAxis()
-            .withScaledAbsYAxis("% Shaped", 40)
+            .withScaledAbsYAxis("% Mapped", 40)
             .withEmptySeries()
             .withEmptyLegend()
             .build();
         this.option.series.push({
-            name: "% Shaped",
+            name: "% Mapped",
             type: "line",
             data: []
         });

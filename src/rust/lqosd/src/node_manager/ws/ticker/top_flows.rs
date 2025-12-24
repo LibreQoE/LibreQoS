@@ -30,7 +30,10 @@ pub async fn top_flows_bytes(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TopFlowsBytes: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TopFlowsBytes: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
@@ -73,7 +76,10 @@ pub async fn top_flows_rate(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TopFlowsRate: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TopFlowsRate: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };

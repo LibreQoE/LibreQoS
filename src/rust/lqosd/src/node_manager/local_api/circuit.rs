@@ -1,6 +1,6 @@
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use axum::http::StatusCode;
 use axum::Json;
+use axum::http::StatusCode;
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 

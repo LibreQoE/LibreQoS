@@ -56,6 +56,21 @@ pub enum BusRequest {
         end: u32,
     },
 
+    /// Retrieve per-circuit TemporalHeatmap blocks.
+    GetCircuitHeatmaps,
+
+    /// Retrieve per-site TemporalHeatmap blocks.
+    GetSiteHeatmaps,
+
+    /// Retrieve per-ASN TemporalHeatmap blocks.
+    GetAsnHeatmaps,
+
+    /// Retrieve the global (roll-up) TemporalHeatmap.
+    GetGlobalHeatmap,
+
+    /// Retrieve headline metrics for the Executive Summary tab.
+    GetExecutiveSummaryHeader,
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)

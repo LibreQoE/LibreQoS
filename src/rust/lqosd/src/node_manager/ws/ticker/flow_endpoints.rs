@@ -127,7 +127,10 @@ pub async fn ip_protocols(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("IpProtocols: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "IpProtocols: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
@@ -165,7 +168,10 @@ pub async fn flow_duration(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("FlowDurations: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "FlowDurations: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };

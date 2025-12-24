@@ -26,7 +26,10 @@ pub async fn top_10_downloaders(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TopDownloads: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TopDownloads: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
@@ -82,10 +85,8 @@ pub async fn top_10_uploaders(
                     "data": result
                 }
             )
-                .to_string();
-            channels
-                .send(PublishedChannels::TopUploads, message)
-                .await;
+            .to_string();
+            channels.send(PublishedChannels::TopUploads, message).await;
         }
     }
 }

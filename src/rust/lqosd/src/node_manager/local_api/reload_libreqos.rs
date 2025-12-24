@@ -6,8 +6,7 @@ use tracing::info;
 pub async fn reload_libreqos(Extension(login): Extension<LoginResult>) -> String {
     info!("Reloading LibreQoS");
     if let LoginResult::Admin = login {
-        let Ok(result) = spawn_blocking(lqos_config::load_libreqos)
-            .await else {
+        let Ok(result) = spawn_blocking(lqos_config::load_libreqos).await else {
             return "Failed to spawn blocking thread".to_string();
         };
         //println!("{:?}", result);

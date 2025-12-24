@@ -25,7 +25,10 @@ pub async fn tree_summary(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TreeSummary: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TreeSummary: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };

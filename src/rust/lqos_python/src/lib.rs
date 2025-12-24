@@ -1,6 +1,6 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSource, UrgentSeverity};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSeverity, UrgentSource};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
@@ -15,10 +15,10 @@ use anyhow::{Error, Result};
 use blocking::run_query;
 use sysinfo::System;
 mod device_weights;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use base64::Engine as _;
 use std::time::Duration;
 
 // ===== Planner CBOR I/O =====
@@ -63,11 +63,17 @@ struct PlannerStateSerde {
     circuit_map: BTreeMap<i64, PlannerCircuitEntry>,
 }
 
-fn default_algo_version() -> String { "v1".to_string() }
+fn default_algo_version() -> String {
+    "v1".to_string()
+}
 
 fn to_i64_any(v: &pyo3::Bound<'_, pyo3::types::PyAny>) -> Option<i64> {
-    if let Ok(n) = v.extract::<i64>() { return Some(n); }
-    if let Ok(s) = v.extract::<String>() { return s.parse::<i64>().ok(); }
+    if let Ok(n) = v.extract::<i64>() {
+        return Some(n);
+    }
+    if let Ok(s) = v.extract::<String>() {
+        return s.parse::<i64>().ok();
+    }
     None
 }
 
@@ -114,7 +120,9 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     if let Ok(Some(sn)) = dict.get_item("site_names") {
         if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
             for item in list.iter() {
-                if let Some(n) = to_i64_any(&item) { site_names.push(n); }
+                if let Some(n) = to_i64_any(&item) {
+                    site_names.push(n);
+                }
             }
         }
     }
@@ -132,7 +140,15 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
                             Ok(Some(x)) => x.extract::<i64>().ok(),
                             _ => None,
                         };
-                        site_map.insert(key, PlannerSiteEntry { cpu, major, minor, insertion_order });
+                        site_map.insert(
+                            key,
+                            PlannerSiteEntry {
+                                cpu,
+                                major,
+                                minor,
+                                insertion_order,
+                            },
+                        );
                     }
                 }
             }
@@ -150,7 +166,16 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
                         let minor = get_i64(&entry, "minor", 0);
                         let parent_site = get_string(&entry, "parent_site", String::new());
                         let sqm = get_string(&entry, "sqm", String::new());
-                        circuit_map.insert(key, PlannerCircuitEntry { cpu, major, minor, parent_site, sqm });
+                        circuit_map.insert(
+                            key,
+                            PlannerCircuitEntry {
+                                cpu,
+                                major,
+                                minor,
+                                parent_site,
+                                sqm,
+                            },
+                        );
                     }
                 }
             }
@@ -168,17 +193,25 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
         circuit_map,
     };
 
-    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}")))?;
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}"))
+    })?;
     // Compress using the standard deflate scheme used elsewhere in the project
     let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
     let path_tmp = format!("{}.tmp", &path);
     {
-        let mut f = fs::File::create(&path_tmp).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Open {path_tmp} failed: {e:?}")))?;
-        f.write_all(&bytes).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Write {path_tmp} failed: {e:?}")))?;
+        let mut f = fs::File::create(&path_tmp).map_err(|e| {
+            pyo3::exceptions::PyOSError::new_err(format!("Open {path_tmp} failed: {e:?}"))
+        })?;
+        f.write_all(&bytes).map_err(|e| {
+            pyo3::exceptions::PyOSError::new_err(format!("Write {path_tmp} failed: {e:?}"))
+        })?;
         f.flush().ok();
     }
     // Atomic replace
-    fs::rename(&path_tmp, &path).map_err(|e| pyo3::exceptions::PyOSError::new_err(format!("Rename {path_tmp} -> {path} failed: {e:?}")))?;
+    fs::rename(&path_tmp, &path).map_err(|e| {
+        pyo3::exceptions::PyOSError::new_err(format!("Rename {path_tmp} -> {path} failed: {e:?}"))
+    })?;
     // Optionally, remove legacy JSON file – leave for migration
     Ok(true)
 }
@@ -195,22 +228,24 @@ fn read_planner_cbor(py: Python, path: String) -> PyResult<Option<PyObject>> {
         Err(_) => return Ok(None),
     };
     // Attempt decompress-then-decode; fall back to raw CBOR for backward compatibility
-    let decoded: PlannerStateSerde = if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
-        match serde_cbor::from_slice(&decompressed) {
-            Ok(v) => v,
-            Err(_) => return Ok(None),
-        }
-    } else {
-        match serde_cbor::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(_) => return Ok(None),
-        }
-    };
+    let decoded: PlannerStateSerde =
+        if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+            match serde_cbor::from_slice(&decompressed) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            }
+        } else {
+            match serde_cbor::from_slice(&bytes) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            }
+        };
     // Convert to Python dict structure
     let out = pyo3::types::PyDict::new(py);
     out.set_item("algo_version", decoded.algo_version).ok();
     out.set_item("updated_at", decoded.updated_at).ok();
-    out.set_item("queuesAvailable", decoded.queuesAvailable).ok();
+    out.set_item("queuesAvailable", decoded.queuesAvailable)
+        .ok();
     out.set_item("on_a_stick", decoded.on_a_stick).ok();
     out.set_item("site_count", decoded.site_count).ok();
     // site_names list
@@ -223,7 +258,9 @@ fn read_planner_cbor(py: Python, path: String) -> PyResult<Option<PyObject>> {
         entry.set_item("cpu", v.cpu).ok();
         entry.set_item("major", v.major).ok();
         entry.set_item("minor", v.minor).ok();
-        if let Some(ins) = v.insertion_order { entry.set_item("insertion_order", ins).ok(); }
+        if let Some(ins) = v.insertion_order {
+            entry.set_item("insertion_order", ins).ok();
+        }
         sm.set_item(k, entry).ok();
     }
     out.set_item("site_map", sm).ok();
@@ -324,7 +361,8 @@ fn fetch_planner_remote(
         .timeout(Duration::from_secs(10))
         .connect_timeout(Duration::from_secs(6))
         .danger_accept_invalid_certs(allow_insecure)
-        .build() {
+        .build()
+    {
         Ok(c) => c,
         Err(_) => return Ok(None),
     };
@@ -343,18 +381,28 @@ fn fetch_planner_remote(
     match parsed {
         FetchPlannerResponse::NoPlan => Ok(None),
         FetchPlannerResponse::PlanBase64(b64) => {
-            let Ok(bytes) = BASE64_STANDARD.decode(b64.as_bytes()) else { return Ok(None) };
-            // Attempt decompress-then-decode; fall back to raw CBOR
-            let decoded: PlannerStateSerde = if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
-                match serde_cbor::from_slice(&decompressed) { Ok(v) => v, Err(_) => return Ok(None) }
-            } else {
-                match serde_cbor::from_slice(&bytes) { Ok(v) => v, Err(_) => return Ok(None) }
+            let Ok(bytes) = BASE64_STANDARD.decode(b64.as_bytes()) else {
+                return Ok(None);
             };
+            // Attempt decompress-then-decode; fall back to raw CBOR
+            let decoded: PlannerStateSerde =
+                if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+                    match serde_cbor::from_slice(&decompressed) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    }
+                } else {
+                    match serde_cbor::from_slice(&bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    }
+                };
             // Convert to Python dict
             let out = pyo3::types::PyDict::new(py);
             out.set_item("algo_version", decoded.algo_version).ok();
             out.set_item("updated_at", decoded.updated_at).ok();
-            out.set_item("queuesAvailable", decoded.queuesAvailable).ok();
+            out.set_item("queuesAvailable", decoded.queuesAvailable)
+                .ok();
             out.set_item("on_a_stick", decoded.on_a_stick).ok();
             out.set_item("site_count", decoded.site_count).ok();
             let list = pyo3::types::PyList::new(py, decoded.site_names).unwrap();
@@ -365,7 +413,9 @@ fn fetch_planner_remote(
                 entry.set_item("cpu", v.cpu).ok();
                 entry.set_item("major", v.major).ok();
                 entry.set_item("minor", v.minor).ok();
-                if let Some(ins) = v.insertion_order { entry.set_item("insertion_order", ins).ok(); }
+                if let Some(ins) = v.insertion_order {
+                    entry.set_item("insertion_order", ins).ok();
+                }
                 sm.set_item(k, entry).ok();
             }
             out.set_item("site_map", sm).ok();
@@ -399,7 +449,9 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     if let Ok(Some(sn)) = dict.get_item("site_names") {
         if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
             for item in list.iter() {
-                if let Some(n) = to_i64_any(&item) { site_names.push(n); }
+                if let Some(n) = to_i64_any(&item) {
+                    site_names.push(n);
+                }
             }
         }
     }
@@ -413,8 +465,19 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
                         let cpu = get_i64(&entry, "cpu", 0);
                         let major = get_i64(&entry, "major", 0);
                         let minor = get_i64(&entry, "minor", 0);
-                        let insertion_order = match entry.get_item("insertion_order") { Ok(Some(x)) => x.extract::<i64>().ok(), _ => None };
-                        site_map.insert(key, PlannerSiteEntry { cpu, major, minor, insertion_order });
+                        let insertion_order = match entry.get_item("insertion_order") {
+                            Ok(Some(x)) => x.extract::<i64>().ok(),
+                            _ => None,
+                        };
+                        site_map.insert(
+                            key,
+                            PlannerSiteEntry {
+                                cpu,
+                                major,
+                                minor,
+                                insertion_order,
+                            },
+                        );
                     }
                 }
             }
@@ -432,7 +495,16 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
                         let minor = get_i64(&entry, "minor", 0);
                         let parent_site = get_string(&entry, "parent_site", String::new());
                         let sqm = get_string(&entry, "sqm", String::new());
-                        circuit_map.insert(key, PlannerCircuitEntry { cpu, major, minor, parent_site, sqm });
+                        circuit_map.insert(
+                            key,
+                            PlannerCircuitEntry {
+                                cpu,
+                                major,
+                                minor,
+                                parent_site,
+                                sqm,
+                            },
+                        );
                     }
                 }
             }
@@ -448,12 +520,20 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
         site_map,
         circuit_map,
     };
-    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}")))?;
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}"))
+    })?;
     let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
     let body_base64 = BASE64_STANDARD.encode(&bytes);
 
-    let (org_key, node_id) = match license_and_node_from_config() { Ok(v) => v, Err(_) => return Ok(false) };
-    let base_url = match base_url_from_config() { Ok(v) => v, Err(_) => return Ok(false) };
+    let (org_key, node_id) = match license_and_node_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(false),
+    };
+    let base_url = match base_url_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(false),
+    };
     let url = format!("{}/storePlanner", base_url);
     let req = PersistPlannerRequest {
         org_key,
@@ -470,7 +550,8 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
         .timeout(Duration::from_secs(10))
         .connect_timeout(Duration::from_secs(6))
         .danger_accept_invalid_certs(allow_insecure)
-        .build() {
+        .build()
+    {
         Ok(c) => c,
         Err(_) => return Ok(false),
     };
@@ -844,10 +925,7 @@ fn sqm() -> PyResult<String> {
 #[pyfunction]
 fn fast_queues_fq_codel() -> PyResult<f32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config
-        .queues
-        .fast_queues_fq_codel
-        .unwrap_or(1000.0) as f32)
+    Ok(config.queues.fast_queues_fq_codel.unwrap_or(1000.0) as f32)
 }
 
 #[pyfunction]
@@ -1081,37 +1159,31 @@ fn splynx_strategy() -> PyResult<String> {
 #[pyfunction]
 fn netzur_api_key() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.api_key.clone())
-            .unwrap_or_default(),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.api_key.clone())
+        .unwrap_or_default())
 }
 
 #[pyfunction]
 fn netzur_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.api_url.clone())
-            .unwrap_or_default(),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.api_url.clone())
+        .unwrap_or_default())
 }
 
 #[pyfunction]
 fn netzur_api_timeout() -> PyResult<u64> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.timeout_secs)
-            .unwrap_or(60),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.timeout_secs)
+        .unwrap_or(60))
 }
 
 #[pyfunction]
@@ -1129,13 +1201,11 @@ fn automatic_import_splynx() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_netzur() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.enable_netzur)
-            .unwrap_or(false),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.enable_netzur)
+        .unwrap_or(false))
 }
 
 #[pyfunction]
@@ -1706,11 +1776,11 @@ fn log_info(_py: Python, message: String) -> PyResult<bool> {
 #[pyfunction]
 pub fn is_insight_enabled() -> PyResult<bool> {
     let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
-        return Ok(false)
+        return Ok(false);
     };
     for resp in responses {
         if let BusResponse::InsightStatus(enabled) = resp {
-            return Ok(enabled)
+            return Ok(enabled);
         }
     }
     Ok(false)

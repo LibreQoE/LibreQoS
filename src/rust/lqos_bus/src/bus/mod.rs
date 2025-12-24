@@ -13,7 +13,8 @@ pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity, UrgentSource};
 pub use response::{
-    BakeryStatsSnapshot, BusResponse, StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+    AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
+    StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
 };
 pub use session::BusSession;
 use thiserror::Error;

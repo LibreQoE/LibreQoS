@@ -84,8 +84,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn get_full_network_map() -> BusResponse {
     let nj = NETWORK_JSON.read();
     let data = {
-        nj
-            .get_nodes_when_ready()
+        nj.get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(i, n)| (i, n.clone_to_transit()))

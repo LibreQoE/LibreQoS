@@ -38,7 +38,10 @@ pub(crate) fn format_rate_for_tc_f32(rate: f32) -> String {
 
     // Handle NaN/Inf
     if !r.is_finite() {
-        debug!("format_rate_for_tc_f32: non-finite rate detected ({:?}); clamping to {} Mbps", rate, MIN_RATE_MBPS);
+        debug!(
+            "format_rate_for_tc_f32: non-finite rate detected ({:?}); clamping to {} Mbps",
+            rate, MIN_RATE_MBPS
+        );
         r = MIN_RATE_MBPS;
     }
 

@@ -1,4 +1,4 @@
-use axum::{extract::Path, extract::Query, Json};
+use axum::{Json, extract::Path, extract::Query};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -133,20 +133,28 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("cpuNum") {
             rec.cpu_down = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("classMajor") {
-            if let Some(v) = parse_hex_u32(s) { rec.cpu_down = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) {
+                rec.cpu_down = Some(v.saturating_sub(1));
+            }
         } else if let Some(Value::String(s)) = cm.get("classid") {
             // Fallback: parse major from TC handle like "0x1:0x51"
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) { rec.cpu_down = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) {
+                    rec.cpu_down = Some(v.saturating_sub(1));
+                }
             }
         }
         if let Some(Value::String(s)) = cm.get("up_cpuNum") {
             rec.cpu_up = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("up_classMajor") {
-            if let Some(v) = parse_hex_u32(s) { rec.cpu_up = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) {
+                rec.cpu_up = Some(v.saturating_sub(1));
+            }
         } else if let Some(Value::String(s)) = cm.get("up_classid") {
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) { rec.cpu_up = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) {
+                    rec.cpu_up = Some(v.saturating_sub(1));
+                }
             }
         }
         // classids
@@ -156,30 +164,34 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("up_classid") {
             rec.classid_up = Some(s.clone());
         }
-    // bandwidths
-    if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
-        rec.min_down = v;
-    }
-    if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
-        rec.max_down = v;
-    }
-    if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
-        rec.min_up = v;
-    }
-    if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
-        rec.max_up = v;
-    }
-    // planner weight if present
-    if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
-        rec.planner_weight = v;
-        rec.has_planner_weight = true;
-    }
+        // bandwidths
+        if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
+            rec.min_down = v;
+        }
+        if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
+            rec.max_down = v;
+        }
+        if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
+            rec.min_up = v;
+        }
+        if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
+            rec.max_up = v;
+        }
+        // planner weight if present
+        if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
+            rec.planner_weight = v;
+            rec.has_planner_weight = true;
+        }
         // identity
         if let Some(Value::String(s)) = cm.get("circuitID") {
-            if !s.is_empty() { rec.circuit_id = Some(s.clone()); }
+            if !s.is_empty() {
+                rec.circuit_id = Some(s.clone());
+            }
         }
         if let Some(Value::String(s)) = cm.get("circuitName") {
-            if !s.is_empty() { rec.circuit_name = Some(s.clone()); }
+            if !s.is_empty() {
+                rec.circuit_name = Some(s.clone());
+            }
         }
         if rec.circuit_name.is_none() {
             // Fallback to the JSON key is not available here; leave empty
@@ -303,7 +315,13 @@ pub async fn cpu_affinity_circuits(
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
 
     let page = q.page.unwrap_or(1).max(1);
@@ -335,7 +353,11 @@ pub async fn cpu_affinity_circuits(
             } else {
                 c.classid_down
             },
-            max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            max_mbps: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
             weight: c.planner_weight,
             ip_count: c.ip_count,
             ignored: c.has_planner_weight && c.planner_weight <= 0.0,
@@ -377,13 +399,17 @@ pub async fn cpu_affinity_circuits(
 }
 
 // Return all circuits (direction-filtered) without pagination to support client-side previews.
-pub async fn cpu_affinity_circuits_all(
-    Query(q): Query<CircuitsQuery>,
-) -> Json<Vec<CircuitBrief>> {
+pub async fn cpu_affinity_circuits_all(Query(q): Query<CircuitsQuery>) -> Json<Vec<CircuitBrief>> {
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
     let search = q.search.as_deref().map(|s| s.to_lowercase());
 
@@ -408,7 +434,11 @@ pub async fn cpu_affinity_circuits_all(
             } else {
                 c.classid_down
             },
-            max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            max_mbps: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
             weight: c.planner_weight,
             ip_count: c.ip_count,
             ignored: c.has_planner_weight && c.planner_weight <= 0.0,
@@ -446,7 +476,13 @@ pub async fn cpu_affinity_preview_weights(
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
     let search = q.search.as_deref().map(|s| s.to_lowercase());
 
@@ -468,13 +504,20 @@ pub async fn cpu_affinity_preview_weights(
                 .clone()
                 .or(c.circuit_name.clone())
                 .unwrap_or_default(),
-            weight: if direction == "up" { c.max_up } else { c.max_down },
+            weight: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
         })
         .collect();
 
     // Deterministic ordering for ties
     items.sort_by(|a, b| {
-        let ow = b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal);
+        let ow = b
+            .weight
+            .partial_cmp(&a.weight)
+            .unwrap_or(std::cmp::Ordering::Equal);
         if ow == std::cmp::Ordering::Equal {
             a.key.cmp(&b.key)
         } else {

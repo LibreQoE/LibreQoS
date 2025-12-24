@@ -2,21 +2,21 @@ mod circuit;
 mod circuit_count;
 mod config;
 mod container_status;
+mod cpu_affinity;
 mod dashboard_themes;
 mod device_counts;
 mod flow_explorer;
 mod flow_map;
 pub mod lts;
 mod network_tree;
-mod cpu_affinity;
 mod packet_analysis;
 mod reload_libreqos;
 mod scheduler;
-mod urgent;
 mod search;
 mod shaped_device_api;
 mod support;
 mod unknown_ips;
+mod urgent;
 mod version_check;
 mod warnings;
 
@@ -68,7 +68,10 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         )
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route("/flowMap", get(flow_map::flow_lat_lon))
-        .route("/cpuAffinity/summary", get(cpu_affinity::cpu_affinity_summary))
+        .route(
+            "/cpuAffinity/summary",
+            get(cpu_affinity::cpu_affinity_summary),
+        )
         .route(
             "/cpuAffinity/circuits/:cpu",
             get(cpu_affinity::cpu_affinity_circuits),
