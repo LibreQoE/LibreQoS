@@ -114,41 +114,17 @@ function filterDevices() {
         }
     });
     page = 0;
-    fillTable();
+    renderTable();
 }
 
-function fillTable() {
-    let table = make_table();
-    let pages = document.createElement("div");
-    pages.classList.add("mt-2", "mb-1");
-
-    let numPages = (displayDevices.length / devicesPerPage) - 2;
-
-    if (numPages > 1) {
-        if (page > 0) {
-            let left = document.createElement("button");
-            left.classList.add("btn", "btn-sm", "btn-secondary", "me-2");
-            left.innerHTML = "<i class='fa fa-arrow-left'></i>";
-            left.onclick = () => {
-                page -= 1;
-                fillTable();
-            }
-            pages.appendChild(left);
+function ensureFilter() {
+    let content = document.getElementById("deviceTableContent");
+    if (content !== null) {
+        let existingSearch = document.getElementById("sdSearch");
+        if (existingSearch !== null) {
+            existingSearch.value = searchTerm;
         }
-        let counter = document.createElement("span");
-        counter.classList.add("text-secondary");
-        counter.innerText = page + " / " + numPages.toFixed(0);
-        pages.appendChild(counter);
-        if (page < numPages - 2) {
-            let right = document.createElement("button");
-            right.classList.add("btn", "btn-sm", "btn-secondary", "ms-2");
-            right.innerHTML = "<i class='fa fa-arrow-right'></i>";
-            right.onclick = () => {
-                page += 1;
-                fillTable();
-            }
-            pages.appendChild(right);
-        }
+        return content;
     }
 
     let filter = document.createElement("div");
@@ -183,10 +159,52 @@ function fillTable() {
     filter.appendChild(searchButton);
 
     let target = document.getElementById("deviceTable");
-    clearDiv(target);
     target.appendChild(filter);
-    target.appendChild(pages);
-    target.appendChild(table);
+
+    content = document.createElement("div");
+    content.id = "deviceTableContent";
+    target.appendChild(content);
+    return content;
+}
+
+function renderTable() {
+    let table = make_table();
+    let pages = document.createElement("div");
+    pages.classList.add("mt-2", "mb-1");
+
+    let numPages = (displayDevices.length / devicesPerPage) - 2;
+
+    if (numPages > 1) {
+        if (page > 0) {
+            let left = document.createElement("button");
+            left.classList.add("btn", "btn-sm", "btn-secondary", "me-2");
+            left.innerHTML = "<i class='fa fa-arrow-left'></i>";
+            left.onclick = () => {
+                page -= 1;
+                renderTable();
+            }
+            pages.appendChild(left);
+        }
+        let counter = document.createElement("span");
+        counter.classList.add("text-secondary");
+        counter.innerText = page + " / " + numPages.toFixed(0);
+        pages.appendChild(counter);
+        if (page < numPages - 2) {
+            let right = document.createElement("button");
+            right.classList.add("btn", "btn-sm", "btn-secondary", "ms-2");
+            right.innerHTML = "<i class='fa fa-arrow-right'></i>";
+            right.onclick = () => {
+                page += 1;
+                renderTable();
+            }
+            pages.appendChild(right);
+        }
+    }
+
+    let content = ensureFilter();
+    clearDiv(content);
+    content.appendChild(pages);
+    content.appendChild(table);
 }
 
 function countCircuits() {
@@ -208,7 +226,7 @@ function loadDevices() {
         //console.log(data);
         shapedDevices = data;
         displayDevices = data;
-        fillTable();
+        renderTable();
         $("#count").text(shapedDevices.length + " devices");
         $("#countCircuit").text(countCircuits() + " circuits");
     })
