@@ -1,19 +1,13 @@
+use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
-use lqos_bus::{BusRequest, Circuit};
-use serde::Serialize;
+use lqos_bus::BusRequest;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::info;
 
-#[derive(Serialize)]
-pub struct Devices {
-    pub circuit_id: String,
-    pub devices: Vec<Circuit>,
-}
-
 pub(super) async fn circuit_watcher(
     circuit: String,
-    tx: tokio::sync::mpsc::Sender<String>,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
     bus_tx: tokio::sync::mpsc::Sender<(
         tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
         BusRequest,
@@ -37,16 +31,19 @@ pub(super) async fn circuit_watcher(
             })
             .collect();
 
-        let result = Devices {
+        let result = WsResponse::CircuitWatcher {
             circuit_id: circuit.clone(),
             devices: devices_for_circuit,
         };
 
-        if let Ok(message) = serde_json::to_string(&result) {
-            if let Err(_) = tx.send(message.to_string()).await {
+        if let Ok(payload) = encode_ws_message(&result) {
+            if let Err(_) = tx.send(payload).await {
                 info!("Channel is gone");
                 break;
             }
+        } else {
+            info!("CircuitWatcher encode failed");
+            break;
         }
     }
 }

@@ -1,7 +1,7 @@
+use crate::node_manager::ws::messages::{BakeryStatusData, BakeryStatusState, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -24,17 +24,16 @@ pub async fn bakery_ticker(
             for response in replies.responses {
                 if let BusResponse::BakeryActiveCircuits(stats) = response {
                     // Format as JSON
-                    let msg = json!({
-                        "event": "BakeryStatus",
-                        "data": {
-                            "currentState": {
-                                "activeCircuits": stats,
+                    let msg = WsResponse::BakeryStatus {
+                        data: BakeryStatusData {
+                            current_state: BakeryStatusState {
+                                active_circuits: stats,
                             },
-                        }
-                    });
+                        },
+                    };
 
                     pubsub
-                        .send(PublishedChannels::BakeryStatus, msg.to_string())
+                        .send(PublishedChannels::BakeryStatus, msg)
                         .await;
                 }
             }

@@ -28,6 +28,16 @@ function lerpViridis(t) {
 import {isRedacted} from "./helpers/redact";
 import {GenericRingBuffer} from "./helpers/ringbuffer";
 import {trimStringWithElipsis} from "./helpers/strings_help";
+import {get_ws_client} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 class AllTreeSankeyGraph extends GenericRingBuffer {
     constructor() {
@@ -36,7 +46,8 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
 
     onTick(graph) {
         let self = this;
-        $.get("/local-api/networkTree", (data) => {
+        listenOnce("NetworkTree", (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             // Maintain a 10-second ringbuffer of recent data
             this.push(data);
 
@@ -154,6 +165,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             // Update the graph
             graph.update(nodes, links);
         });
+        wsClient.send({ NetworkTree: {} });
     }
 }
 

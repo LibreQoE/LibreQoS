@@ -1,8 +1,8 @@
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::node_manager::ws::ticker::ipstats_conversion::IpStatsWithPlan;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -37,13 +37,7 @@ pub async fn top_10_downloaders(
         if let BusResponse::TopDownloaders(top) = reply {
             let result: Vec<IpStatsWithPlan> = top.iter().map(|stat| stat.into()).collect();
 
-            let message = json!(
-                {
-                    "event": PublishedChannels::TopDownloads.to_string(),
-                    "data": result
-                }
-            )
-            .to_string();
+            let message = WsResponse::TopDownloads { data: result };
             channels
                 .send(PublishedChannels::TopDownloads, message)
                 .await;
@@ -79,13 +73,7 @@ pub async fn top_10_uploaders(
         if let BusResponse::TopUploaders(top) = reply {
             let result: Vec<IpStatsWithPlan> = top.iter().map(|stat| stat.into()).collect();
 
-            let message = json!(
-                {
-                    "event": PublishedChannels::TopUploads.to_string(),
-                    "data": result
-                }
-            )
-            .to_string();
+            let message = WsResponse::TopUploads { data: result };
             channels.send(PublishedChannels::TopUploads, message).await;
         }
     }
@@ -116,13 +104,7 @@ pub async fn worst_10_downloaders(
         if let BusResponse::WorstRtt(top) = reply {
             let result: Vec<IpStatsWithPlan> = top.iter().map(|stat| stat.into()).collect();
 
-            let message = json!(
-                {
-                    "event": PublishedChannels::WorstRTT.to_string(),
-                    "data": result
-                }
-            )
-            .to_string();
+            let message = WsResponse::WorstRTT { data: result };
             channels.send(PublishedChannels::WorstRTT, message).await;
         }
     }
@@ -159,13 +141,7 @@ pub async fn worst_10_retransmit(
         if let BusResponse::WorstRetransmits(top) = reply {
             let result: Vec<IpStatsWithPlan> = top.iter().map(|stat| stat.into()).collect();
 
-            let message = json!(
-                {
-                    "event": PublishedChannels::WorstRetransmits.to_string(),
-                    "data": result
-                }
-            )
-            .to_string();
+            let message = WsResponse::WorstRetransmits { data: result };
             channels
                 .send(PublishedChannels::WorstRetransmits, message)
                 .await;

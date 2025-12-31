@@ -1,5 +1,15 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {get_ws_client} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 class FlowMap extends DashboardGraph {
     constructor(id) {
@@ -66,7 +76,8 @@ class FlowMap extends DashboardGraph {
 }
 
 function updateMap() {
-    $.get("/local-api/flowMap", (data) => {
+    listenOnce("FlowMap", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         let output = [];
         data.forEach((d) => {
             let rtt = Math.min(200, d[4]);
@@ -83,6 +94,7 @@ function updateMap() {
         // Note that I'm NOT using a channel ticker here because of the amount of data
         setTimeout(updateMap, 1000); // Keep on ticking!
     });
+    wsClient.send({ FlowMap: {} });
 }
 
 let map = new FlowMap("flowMap");

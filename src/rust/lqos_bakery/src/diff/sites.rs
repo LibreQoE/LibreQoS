@@ -1,7 +1,7 @@
 use crate::BakeryCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 pub(crate) enum SiteDiffResult {
     RebuildRequired,
@@ -51,7 +51,7 @@ pub(crate) fn diff_sites(
                 );
                 // Log a concise before/after for diagnostics at warn! level so operators
                 // can see why the site is considered structurally different.
-                let (ocpu, opar, oup, omin) = match old_cmd.as_ref() {
+                let (_ocpu, opar, oup, omin) = match old_cmd.as_ref() {
                     crate::BakeryCommands::AddSite {
                         parent_class_id,
                         up_parent_class_id,
@@ -65,7 +65,7 @@ pub(crate) fn diff_sites(
                     ),
                     _ => (0, String::new(), String::new(), 0),
                 };
-                let (ncpu, npar, nup, nmin) = match new_cmd.as_ref() {
+                let (_ncpu, npar, nup, nmin) = match new_cmd.as_ref() {
                     crate::BakeryCommands::AddSite {
                         parent_class_id,
                         up_parent_class_id,

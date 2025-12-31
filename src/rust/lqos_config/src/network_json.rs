@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing

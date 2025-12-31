@@ -1,4 +1,3 @@
-use axum::{Json, extract::Path, extract::Query};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -18,9 +17,6 @@ pub struct CpuAffinitySummaryEntry {
     pub download: CpuSideSummary,
     pub upload: CpuSideSummary,
 }
-
-#[derive(Serialize, Clone, Debug)]
-pub struct CpuAffinitySummaryResponse(pub Vec<CpuAffinitySummaryEntry>);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct CircuitBrief {
@@ -252,7 +248,7 @@ fn load_all_circuits() -> Vec<CircuitRecord> {
     circuits
 }
 
-pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
+pub fn cpu_affinity_summary_data() -> Vec<CpuAffinitySummaryEntry> {
     let circuits = load_all_circuits();
     let mut down: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
     let mut up: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
@@ -305,13 +301,10 @@ pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
         });
     }
 
-    Json(CpuAffinitySummaryResponse(entries))
+    entries
 }
 
-pub async fn cpu_affinity_circuits(
-    Path(cpu): Path<u32>,
-    Query(q): Query<CircuitsQuery>,
-) -> Json<CpuAffinityCircuitsPage> {
+pub fn cpu_affinity_circuits_data(cpu: u32, q: CircuitsQuery) -> CpuAffinityCircuitsPage {
     let direction = q
         .direction
         .as_deref()
@@ -388,18 +381,18 @@ pub async fn cpu_affinity_circuits(
         Vec::new()
     };
 
-    Json(CpuAffinityCircuitsPage {
+    CpuAffinityCircuitsPage {
         cpu,
         direction: direction.to_string(),
         total,
         page,
         page_size,
         items: page_items,
-    })
+    }
 }
 
 // Return all circuits (direction-filtered) without pagination to support client-side previews.
-pub async fn cpu_affinity_circuits_all(Query(q): Query<CircuitsQuery>) -> Json<Vec<CircuitBrief>> {
+pub fn cpu_affinity_circuits_all_data(q: CircuitsQuery) -> Vec<CircuitBrief> {
     let direction = q
         .direction
         .as_deref()
@@ -460,7 +453,7 @@ pub async fn cpu_affinity_circuits_all(Query(q): Query<CircuitsQuery>) -> Json<V
         }
     });
 
-    Json(items)
+    items
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -470,9 +463,7 @@ pub struct PreviewWeightItem {
 }
 
 // Minimal payload for preview: just (key, weight) for each circuit in a direction.
-pub async fn cpu_affinity_preview_weights(
-    Query(q): Query<CircuitsQuery>,
-) -> Json<Vec<PreviewWeightItem>> {
+pub fn cpu_affinity_preview_weights_data(q: CircuitsQuery) -> Vec<PreviewWeightItem> {
     let direction = q
         .direction
         .as_deref()
@@ -525,5 +516,5 @@ pub async fn cpu_affinity_preview_weights(
         }
     });
 
-    Json(items)
+    items
 }

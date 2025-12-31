@@ -1,4 +1,13 @@
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export function listenExecutiveHeatmaps(onData) {
     subscribeWS(["ExecutiveHeatmaps"], (msg) => {
@@ -15,7 +24,15 @@ export function getSiteIdMap() {
     if (siteIdMap) return Promise.resolve(siteIdMap);
     if (siteIdMapPromise) return siteIdMapPromise;
     siteIdMapPromise = new Promise((resolve) => {
-        $.get("/local-api/networkTree", (data) => {
+        let resolved = false;
+        const resolveOnce = (map) => {
+            if (resolved) return;
+            resolved = true;
+            siteIdMap = map;
+            resolve(map);
+        };
+        listenOnce("NetworkTree", (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             const map = new Map();
             (data || []).forEach((entry) => {
                 if (!Array.isArray(entry) || entry.length < 2) return;
@@ -25,12 +42,11 @@ export function getSiteIdMap() {
                     map.set(node.name, id);
                 }
             });
-            siteIdMap = map;
-            resolve(map);
-        }).fail(() => {
-            siteIdMap = new Map();
-            resolve(siteIdMap);
         });
+        wsClient.send({ NetworkTree: {} });
+        setTimeout(() => {
+            resolveOnce(new Map());
+        }, 5000);
     });
     return siteIdMapPromise;
 }

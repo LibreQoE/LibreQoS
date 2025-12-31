@@ -1,5 +1,5 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow} from "./helpers/builders";
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
 
 let shapedDevices = null;
@@ -7,6 +7,14 @@ let displayDevices = null;
 let devicesPerPage = 10;
 let page = 0;
 let searchTerm = "";
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 function tableRow(device) {
     let tr = document.createElement("tr");
@@ -253,14 +261,15 @@ function countCircuits() {
 }
 
 function loadDevices() {
-    $.get("/local-api/devicesAll", (data) => {
-        //console.log(data);
+    listenOnce("DevicesAll", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         shapedDevices = data;
         displayDevices = data;
         renderTable();
         $("#count").text(shapedDevices.length + " devices");
         $("#countCircuit").text(countCircuits() + " circuits");
-    })
+    });
+    wsClient.send({ DevicesAll: {} });
 }
 
 loadDevices();

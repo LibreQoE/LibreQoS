@@ -168,9 +168,10 @@ pub async fn apply_templates(
             .await
             .expect("Cannot read template bytes");
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
+        let version_string = VERSION_STRING.trim();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)
-            .replace("%%VERSION%%", VERSION_STRING)
+            .replace("%%VERSION%%", version_string)
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script)

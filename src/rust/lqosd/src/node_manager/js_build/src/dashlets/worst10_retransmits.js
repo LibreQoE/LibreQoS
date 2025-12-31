@@ -4,6 +4,17 @@ import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class Worst10Retransmits extends DashletBaseInsight {
     constructor(slot) {
@@ -66,7 +77,8 @@ export class Worst10Retransmits extends DashletBaseInsight {
         let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
         target.appendChild(spinnerDiv);
-        $.get("/local-api/ltsWorst10Rxmit/" + seconds, (data) => {
+        listenOnceForSeconds("LtsWorst10Rxmit", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
@@ -101,5 +113,6 @@ export class Worst10Retransmits extends DashletBaseInsight {
             clearDashDiv(this.id, target);
             target.appendChild(table);
         });
+        wsClient.send({ LtsWorst10Rxmit: { seconds } });
     }
 }

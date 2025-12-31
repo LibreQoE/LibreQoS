@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::node_manager::ws::messages::{TopAsnRow, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse, FlowbeeSummaryData};
-use serde::Serialize;
-use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
 #[derive(Default)]
@@ -18,14 +17,6 @@ struct Agg {
     rx_up_num: f64,
     rx_up_den: f64,
     flows: u64,
-}
-
-#[derive(Serialize)]
-struct TopAsnRow {
-    name: String,
-    value: u64,
-    flow_count: u64,
-    retransmit_percent: f64,
 }
 
 pub async fn asn_top(
@@ -102,21 +93,13 @@ pub async fn asn_top(
 
     // Publish to channels as needed
     if live_down {
-        let message = json!({
-            "event": PublishedChannels::AsnTopDownload.to_string(),
-            "data": down_rows,
-        })
-        .to_string();
+        let message = WsResponse::AsnTopDownload { data: down_rows };
         channels
             .send(PublishedChannels::AsnTopDownload, message)
             .await;
     }
     if live_up {
-        let message = json!({
-            "event": PublishedChannels::AsnTopUpload.to_string(),
-            "data": up_rows,
-        })
-        .to_string();
+        let message = WsResponse::AsnTopUpload { data: up_rows };
         channels
             .send(PublishedChannels::AsnTopUpload, message)
             .await;

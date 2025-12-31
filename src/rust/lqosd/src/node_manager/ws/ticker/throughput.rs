@@ -1,9 +1,9 @@
+use crate::node_manager::ws::messages::{ThroughputData, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
 use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -50,21 +50,17 @@ pub async fn throughput(
                 DownUpOrder::zeroed()
             };
 
-            let bps = json!(
-            {
-                "event" : PublishedChannels::Throughput.to_string(),
-                "data": {
-                    "bps": bits_per_second,
-                    "pps": packets_per_second,
-                    "tcp_pps": tcp_packets_per_second,
-                    "udp_pps": udp_packets_per_second,
-                    "icmp_pps": icmp_packets_per_second,
-                    "shaped_bps": shaped_bits_per_second,
-                    "max": max,
-                }
-            }
-            )
-            .to_string();
+            let bps = WsResponse::Throughput {
+                data: ThroughputData {
+                    bps: bits_per_second,
+                    pps: packets_per_second,
+                    tcp_pps: tcp_packets_per_second,
+                    udp_pps: udp_packets_per_second,
+                    icmp_pps: icmp_packets_per_second,
+                    shaped_bps: shaped_bits_per_second,
+                    max,
+                },
+            };
             channels.send(PublishedChannels::Throughput, bps).await;
         }
     }

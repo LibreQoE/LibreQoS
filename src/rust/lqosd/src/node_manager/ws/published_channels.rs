@@ -1,7 +1,21 @@
 use allocative::Allocative;
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
-#[derive(PartialEq, Clone, Copy, Debug, EnumIter, Display, EnumString, Hash, Eq, Allocative)]
+#[derive(
+    PartialEq,
+    Clone,
+    Copy,
+    Debug,
+    EnumIter,
+    Display,
+    EnumString,
+    Hash,
+    Eq,
+    Allocative,
+    Serialize,
+    Deserialize,
+)]
 pub enum PublishedChannels {
     /// Provides a 1-second tick notification to the client
     Cadence,

@@ -1,7 +1,7 @@
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse, Circuit};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -34,13 +34,7 @@ pub async fn network_tree(
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::NetworkMap(nodes) = reply {
-            let message = json!(
-                {
-                    "event": PublishedChannels::NetworkTree.to_string(),
-                    "data": nodes,
-                }
-            )
-            .to_string();
+            let message = WsResponse::NetworkTree { data: nodes };
             channels.send(PublishedChannels::NetworkTree, message).await;
         }
     }
@@ -85,13 +79,7 @@ pub async fn all_subscribers(
     }
 
     let devices = all_circuits(bus_tx).await;
-    let message = json!(
-    {
-        "event": PublishedChannels::NetworkTreeClients.to_string(),
-        "data": devices,
-    }
-    )
-    .to_string();
+    let message = WsResponse::NetworkTreeClients { data: devices };
     channels
         .send(PublishedChannels::NetworkTreeClients, message)
         .await;

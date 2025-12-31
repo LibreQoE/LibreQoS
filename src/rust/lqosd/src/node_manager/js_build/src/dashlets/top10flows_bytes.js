@@ -5,6 +5,17 @@ import {formatRetransmit, formatRtt, rttNanosAsSpan} from "../helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class Top10FlowsBytes extends DashletBaseInsight {
     constructor(slot) {
@@ -147,7 +158,8 @@ export class Top10FlowsBytes extends DashletBaseInsight {
         let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
         target.appendChild(spinnerDiv);
-        $.get("/local-api/ltsTopFlows/" + seconds, (data) => {
+        listenOnceForSeconds("LtsTopFlows", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
@@ -203,5 +215,6 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             clearDashDiv(this.id, target);
             target.appendChild(table);
         });
+        wsClient.send({ LtsTopFlows: { seconds } });
     }
 }

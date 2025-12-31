@@ -1,6 +1,7 @@
 // Provides a generic dashboard system for use in LibreQoS and Insight
 import {DashboardLayout} from "./layout";
 import {resetWS, subscribeWS} from "./ws";
+import {get_ws_client} from "../../pubsub/ws";
 import {heading5Icon} from "../helpers/content_builders";
 import {openDashboardEditor} from "./dashboard_editor";
 
@@ -408,6 +409,15 @@ export class Dashboard {
         c3.classList.add("col-3");
         c3.appendChild(heading5Icon("save", "Save Layout"));
 
+        const wsClient = get_ws_client();
+        const listenOnce = (eventName, handler) => {
+            const wrapped = (msg) => {
+                wsClient.off(eventName, wrapped);
+                handler(msg);
+            };
+            wsClient.on(eventName, wrapped);
+        };
+
         let saveGroup = document.createElement("div");
         saveGroup.classList.add("input-group");
         let saveAppend = document.createElement("div");
@@ -427,20 +437,20 @@ export class Dashboard {
         saveBtn.onclick = () => {
             let name = $("#saveDashName").val();
             if (name.length < 1) return;
-            let request = {
-                name: name,
-                entries: this.dashletIdentities
-            }
-            $.ajax({
-                type: "POST",
-                url: "/local-api/dashletSave",
-                data: JSON.stringify(request),
-                contentType : 'application/json',
-                success: () => {
-                    localStorage.setItem("forceEditMode", "true");
-                    window.location.reload();
+            listenOnce("DashletSaveResult", (msg) => {
+                if (!msg || !msg.ok) {
+                    alert(msg && msg.error ? msg.error : "Failed to save dashboard layout");
+                    return;
                 }
-            })
+                localStorage.setItem("forceEditMode", "true");
+                window.location.reload();
+            });
+            wsClient.send({
+                DashletSave: {
+                    name: name,
+                    entries: this.dashletIdentities
+                }
+            });
         }
         saveGroup.appendChild(saveDashName);
         saveAppend.appendChild(saveBtn);
@@ -450,7 +460,7 @@ export class Dashboard {
         let c4 = document.createElement("div");
         c4.classList.add("col-3");
         c4.appendChild(heading5Icon("save", "Saved Layouts"));
-        $.get(this.savedDashUrl, (data) => {
+        listenOnce("DashletThemes", (data) => {
             let list = document.createElement("ul");
             list.classList.add("list-group", "list-group-numbered");
             data.entries.forEach((d) => {
@@ -462,19 +472,17 @@ export class Dashboard {
                 ln.onclick = () => {
                     let resp = confirm("Load [" + d.name + "] from [" + d.path + "]?");
                     if (resp) {
-                        $.ajax({
-                            type: "POST",
-                            url: "/local-api/dashletGet",
-                            data: JSON.stringify({name: d.name}),
-                            contentType : 'application/json',
-                            success: (x) => {
-                                console.log(x);
-                                this.dashletIdentities = x.entries;
-                                this.layout.save(this.dashletIdentities);
-                                localStorage.setItem("forceEditMode", "true");
-                                window.location.reload();
+                        listenOnce("DashletTheme", (x) => {
+                            if (!x || !x.entries) {
+                                alert("Failed to load dashboard layout");
+                                return;
                             }
+                            this.dashletIdentities = x.entries;
+                            this.layout.save(this.dashletIdentities);
+                            localStorage.setItem("forceEditMode", "true");
+                            window.location.reload();
                         });
+                        wsClient.send({ DashletGet: { name: d.name } });
                     }
                 };
                 let dl = document.createElement("a");
@@ -485,16 +493,15 @@ export class Dashboard {
                 dl.onclick = () => {
                     let resp = confirm("Delete [" + d.name + "] from [" + d.path + "]?");
                     if (resp) {
-                        $.ajax({
-                            type: "POST",
-                            url: "/local-api/dashletDelete",
-                            data: JSON.stringify({name: d.name}),
-                            contentType : 'application/json',
-                            success: () => {
-                                localStorage.setItem("forceEditMode", "true");
-                                window.location.reload();
+                        listenOnce("DashletDeleteResult", (msg) => {
+                            if (!msg || !msg.ok) {
+                                alert(msg && msg.error ? msg.error : "Failed to delete dashboard layout");
+                                return;
                             }
+                            localStorage.setItem("forceEditMode", "true");
+                            window.location.reload();
                         });
+                        wsClient.send({ DashletDelete: { name: d.name } });
                     }
                 }
                 i.appendChild(ln);
@@ -503,6 +510,7 @@ export class Dashboard {
             });
             c4.appendChild(list);
         });
+        wsClient.send({ DashletThemes: {} });
 
         row.appendChild(c1);
         row.appendChild(c2);

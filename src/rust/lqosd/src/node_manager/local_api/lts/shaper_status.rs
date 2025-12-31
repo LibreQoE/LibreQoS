@@ -1,16 +1,16 @@
-use axum::Json;
 use axum::http::StatusCode;
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ShaperStatus {
     name: String,
     last_seen_seconds_ago: f32,
 }
 
-pub async fn shaper_status_from_lts() -> Result<Json<Vec<ShaperStatus>>, StatusCode> {
+pub async fn shaper_status_data() -> Result<Vec<ShaperStatus>, StatusCode> {
+    super::insight_gate().await?;
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let url = format!(
         "https://{}/shaper_api/status",
@@ -54,5 +54,5 @@ pub async fn shaper_status_from_lts() -> Result<Json<Vec<ShaperStatus>>, StatusC
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(shapers))
+    Ok(shapers)
 }

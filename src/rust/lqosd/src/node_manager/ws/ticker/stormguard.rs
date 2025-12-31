@@ -1,7 +1,7 @@
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -28,13 +28,9 @@ pub async fn stormguard_ticker(
             if let Ok(replies) = rx.await {
                 for response in replies.responses {
                     if let BusResponse::StormguardStats(stats) = response {
-                        let msg = json!({
-                            "event": "StormguardStatus",
-                            "data": stats,
-                        });
-
+                        let msg = WsResponse::StormguardStatus { data: stats };
                         pubsub
-                            .send(PublishedChannels::StormguardStatus, msg.to_string())
+                            .send(PublishedChannels::StormguardStatus, msg)
                             .await;
                     }
                 }
@@ -49,13 +45,10 @@ pub async fn stormguard_ticker(
             if let Ok(replies) = rx.await {
                 for response in replies.responses {
                     if let BusResponse::StormguardDebug(stats) = response {
-                        let msg = json!({
-                            "event": "StormguardDebug",
-                            "data": stats,
-                        });
+                        let msg = WsResponse::StormguardDebug { data: stats };
 
                         pubsub
-                            .send(PublishedChannels::StormguardDebug, msg.to_string())
+                            .send(PublishedChannels::StormguardDebug, msg)
                             .await;
                     }
                 }

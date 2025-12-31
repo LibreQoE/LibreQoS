@@ -13,7 +13,7 @@ mod endpoint_latlon;
 mod executive_heatmaps;
 mod flow_counter;
 mod flow_endpoints;
-mod ipstats_conversion;
+pub(crate) mod ipstats_conversion;
 mod network_tree;
 mod queue_stats_total;
 mod retransmits;
