@@ -48,7 +48,6 @@ export class BaseDashlet {
     }
 
     onMessage(msg) {
-        console.log(msg);
     }
 
     setupOnce(msg) {

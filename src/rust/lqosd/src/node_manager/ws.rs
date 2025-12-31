@@ -46,33 +46,6 @@ mod ticker;
 const WS_VERSION: &str = include_str!("../../../../VERSION_STRING");
 const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
 
-fn log_expected_cbor_payloads() {
-    let subscribe = WsRequest::Subscribe {
-        channel: PublishedChannels::Cadence,
-    };
-    if let Ok(payload) = serde_cbor::to_vec(&subscribe) {
-        let hex = payload_prefix_hex(&payload, payload.len());
-        info!(
-            "WS expected CBOR Subscribe(Cadence): len {}, hex {}",
-            payload.len(),
-            hex
-        );
-    }
-
-    let hello_reply = WsRequest::HelloReply(WsHelloReply {
-        ack: WS_HANDSHAKE_REQUIREMENT.to_string(),
-        token: "TOKEN".to_string(),
-    });
-    if let Ok(payload) = serde_cbor::to_vec(&hello_reply) {
-        let hex = payload_prefix_hex(&payload, payload.len());
-        info!(
-            "WS expected CBOR HelloReply: len {}, hex {}",
-            payload.len(),
-            hex
-        );
-    }
-}
-
 /// Provides an Axum router for the websocket system. Exposes a single /ws route that supports
 /// pubsub subscriptions and private commands.
 pub fn websocket_router(
@@ -81,7 +54,6 @@ pub fn websocket_router(
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     shaper_query: Sender<ShaperQueryCommand>,
 ) -> Router {
-    log_expected_cbor_payloads();
     let channels = PubSub::new();
     tokio::spawn(channel_ticker(
         channels.clone(),
