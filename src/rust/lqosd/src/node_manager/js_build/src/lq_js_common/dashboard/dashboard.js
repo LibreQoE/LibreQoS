@@ -1,6 +1,6 @@
 // Provides a generic dashboard system for use in LibreQoS and Insight
 import {DashboardLayout} from "./layout";
-import {resetWS, subscribeWS} from "./ws";
+import {subscribeWS} from "./ws";
 import {get_ws_client} from "../../pubsub/ws";
 import {heading5Icon} from "../helpers/content_builders";
 import {openDashboardEditor} from "./dashboard_editor";
@@ -240,7 +240,6 @@ export class Dashboard {
             }
             return;
         }
-        resetWS();
         subscribeWS(this.channels, (msg) => {
             if (msg.event === "join") {
                 // The DOM will be present now, setup events

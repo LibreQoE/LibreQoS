@@ -185,6 +185,13 @@ function normalizeRequest(request_obj) {
 }
 
 export function get_ws_client() {
+    if (typeof window !== "undefined") {
+        if (!window.__lqos_ws_client) {
+            window.__lqos_ws_client = new WsClient();
+        }
+        shared_client = window.__lqos_ws_client;
+        return window.__lqos_ws_client;
+    }
     if (!shared_client) {
         shared_client = new WsClient();
     }
@@ -206,6 +213,10 @@ export function subscribeWS(channels, handler) {
 export function resetWS() {
     if (shared_client) {
         shared_client.close();
+    }
+    if (typeof window !== "undefined" && window.__lqos_ws_client) {
+        window.__lqos_ws_client.close();
+        delete window.__lqos_ws_client;
     }
     shared_client = null;
 }
