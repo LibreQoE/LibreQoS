@@ -1,6 +1,7 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
 import {isColorBlindMode} from "./helpers/colorblind";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 /**
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
@@ -70,9 +71,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                     continue;
                 }
                 let name = head[i][1].name;
-                let bytes = head[i][1].current_throughput[0];
+                let bytes = toNumber(head[i][1].current_throughput[0], 0);
                 let bytesAsMegabits = bytes / 1000000;
-                let maxBytes = head[i][1].max_throughput[0] / 8;
+                let maxBytes = toNumber(head[i][1].max_throughput[0], 0) / 8;
                 let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
                 // Use appropriate color scale based on color blind mode
                 let capacityColor = isColorBlindMode() 
@@ -108,7 +109,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                     links.push({
                         source: head[immediateParent][1].name,
                         target: head[i][1].name,
-                        value: Math.min(1, head[i][1].current_throughput[0]),
+                        value: Math.min(1, toNumber(head[i][1].current_throughput[0], 0)),
                         lineStyle: {
                             color: capacityColor,
                         },
@@ -127,7 +128,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         let immediateParent = data[i][1].immediate_parent;
                         let link = links.find((link) => { return link.source === data[immediateParent][1].name && link.target === data[i][1].name; });
                         if (link !== undefined) {
-                            link.value += data[i][1].current_throughput[0];
+                            link.value += toNumber(data[i][1].current_throughput[0], 0);
                             link.n++;
                         }
                     }

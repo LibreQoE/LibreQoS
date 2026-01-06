@@ -2,7 +2,7 @@ import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} 
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
 
@@ -91,16 +91,16 @@ export class Worst10Retransmits extends DashletBaseInsight {
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
 
-            data.forEach((row) => {
-                //console.log(row);
-                let tr = document.createElement("tr");
-                tr.classList.add("small");
-                tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
-                tr.appendChild(simpleRow(scaleNumber(row.bytes_down * 1000000, 0)));
-                if (row.rtt !== null) {
-                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
-                } else {
-                    tr.appendChild(simpleRow("-"));
+                data.forEach((row) => {
+                    //console.log(row);
+                    let tr = document.createElement("tr");
+                    tr.classList.add("small");
+                    tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
+                    tr.appendChild(simpleRow(scaleNumber(toNumber(row.bytes_down, 0) * 1000000, 0)));
+                    if (row.rtt !== null) {
+                        tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
+                    } else {
+                        tr.appendChild(simpleRow("-"));
                 }
                 if (row.rxmit !== null) {
                     tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit)));

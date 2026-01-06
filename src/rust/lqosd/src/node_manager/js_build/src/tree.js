@@ -5,7 +5,7 @@ import {
     formatRtt,
     formatThroughput,
 } from "./helpers/scaling";
-import {scaleNumber} from "./lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
 var tree = null;
@@ -126,29 +126,31 @@ function fillHeader(node) {
     if (node.max_throughput[0] === 0) {
         limitD = "Unlimited";
     } else {
-        limitD = scaleNumber(node.max_throughput[0] * 1000 * 1000, 1);
+        limitD = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
     }
     let limitU = "";
     if (node.max_throughput[1] === 0) {
         limitU = "Unlimited";
     } else {
-        limitU = scaleNumber(node.max_throughput[1] * 1000 * 1000, 1);
+        limitU = scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
     }
     $("#parentLimitsD").text(limitD);
     $("#parentLimitsU").text(limitU);
-    $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
-    $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
+    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]));
+    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]));
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
     let retr = 0;
-    if (node.current_tcp_packets[0] > 0) {
-        retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+    const packetsDown = toNumber(node.current_tcp_packets[0], 0);
+    if (packetsDown > 0) {
+        retr = toNumber(node.current_retransmits[0], 0) / packetsDown;
     }
     $("#parentRxmitD").html(formatRetransmit(retr));
     retr = 0;
-    if (node.current_tcp_packets[1] > 0) {
-        retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+    const packetsUp = toNumber(node.current_tcp_packets[1], 0);
+    if (packetsUp > 0) {
+        retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
     }
     $("#parentRxmitU").html(formatRetransmit(retr));
 }
@@ -222,13 +224,13 @@ function buildRow(i, depth=0) {
     if (node.max_throughput[0] === 0) {
         limit = "Unlimited";
     } else {
-        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 1);
+        limit = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
     }
     limit += " / ";
     if (node.max_throughput[1] === 0) {
         limit += "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 1);
+        limit += scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
     }
     col.textContent = limit;
     row.appendChild(col);
@@ -237,14 +239,14 @@ function buildRow(i, depth=0) {
     col.id = "down-" + nodeId;
     col.classList.add("small");
     col.style.width = "6%";
-    col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
     col.style.width = "6%";
-    col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -345,11 +347,11 @@ function treeUpdate(msg) {
 
         let col = document.getElementById("down-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
         }
         col = document.getElementById("up-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
         }
         col = document.getElementById("rtt-down-" + nodeId);
         if (col !== null) {
@@ -363,8 +365,9 @@ function treeUpdate(msg) {
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
                 let retr = 0;
-                if (node.current_tcp_packets[0] > 0) {
-                    retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+                const packetsDown = toNumber(node.current_tcp_packets[0], 0);
+                if (packetsDown > 0) {
+                    retr = toNumber(node.current_retransmits[0], 0) / packetsDown;
                 }
                 col.innerHTML = formatRetransmit(retr);
             } else {
@@ -375,8 +378,9 @@ function treeUpdate(msg) {
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
                 let retr = 0;
-                if (node.current_tcp_packets[1] > 0) {
-                    retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+                const packetsUp = toNumber(node.current_tcp_packets[1], 0);
+                if (packetsUp > 0) {
+                    retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
                 }
                 col.innerHTML = formatRetransmit(retr);
             } else {
@@ -447,8 +451,8 @@ function clientsUpdate(msg) {
             tr.appendChild(simpleRow(device.parent_node));
             tr.appendChild(simpleRow(device.ip));
             tr.appendChild(simpleRow(formatLastSeen(device.last_seen_nanos)));
-            tr.appendChild(simpleRowHtml(formatThroughput(device.bytes_per_second.down * 8, device.plan.down)));
-            tr.appendChild(simpleRowHtml(formatThroughput(device.bytes_per_second.up * 8, device.plan.up)));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, device.plan.down)));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, device.plan.up)));
             if (device.median_latency !== null) {
                 tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.down)));
                 tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.up)));
@@ -457,13 +461,15 @@ function clientsUpdate(msg) {
                 tr.appendChild(simpleRow("-"));
             }
             let retr = 0;
-            if (device.tcp_packets.down > 0) {
-                retr = device.tcp_retransmits.down / device.tcp_packets.down;
+            const devicePacketsDown = toNumber(device.tcp_packets.down, 0);
+            if (devicePacketsDown > 0) {
+                retr = toNumber(device.tcp_retransmits.down, 0) / devicePacketsDown;
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
             retr = 0;
-            if (device.tcp_packets.up > 0) {
-                retr = device.tcp_retransmits.up / device.tcp_packets.up;
+            const devicePacketsUp = toNumber(device.tcp_packets.up, 0);
+            if (devicePacketsUp > 0) {
+                retr = toNumber(device.tcp_retransmits.up, 0) / devicePacketsUp;
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 

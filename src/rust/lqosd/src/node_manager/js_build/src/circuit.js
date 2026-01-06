@@ -790,17 +790,24 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[1] *8);
+        tpGraph.update(
+            toNumber(myMessage.current_throughput[0], 0) * 8,
+            toNumber(myMessage.current_throughput[1], 0) * 8
+        );
         let rxmit = [0, 0];
-        if (myMessage.current_retransmits[0] > 0) {
-            rxmit[0] = (myMessage.current_retransmits[0] / myMessage.current_tcp_packets[0]) * 100.0;
+        const packetsDown = toNumber(myMessage.current_tcp_packets[0], 0);
+        const packetsUp = toNumber(myMessage.current_tcp_packets[1], 0);
+        const retransmitsDown = toNumber(myMessage.current_retransmits[0], 0);
+        const retransmitsUp = toNumber(myMessage.current_retransmits[1], 0);
+        if (retransmitsDown > 0 && packetsDown > 0) {
+            rxmit[0] = (retransmitsDown / packetsDown) * 100.0;
         }
-        if (myMessage.current_retransmits[1] > 0) {
-            rxmit[1] = (myMessage.current_retransmits[1] / myMessage.current_tcp_packets[1]) * 100.0;
+        if (retransmitsUp > 0 && packetsUp > 0) {
+            rxmit[1] = (retransmitsUp / packetsUp) * 100.0;
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
         myMessage.rtts.forEach((rtt) => {
-            rttGraph.updateMs(rtt);
+            rttGraph.updateMs(toNumber(rtt, 0));
         });
         tpGraph.chart.resize();
         rxmitGraph.chart.resize();
