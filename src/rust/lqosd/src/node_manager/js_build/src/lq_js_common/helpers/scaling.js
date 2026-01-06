@@ -27,9 +27,17 @@ export function toNumber(value, fallback = 0) {
     return Number.isFinite(num) ? num : fallback;
 }
 
+function toFixedDigits(value, fallback = 2, min = 0, max = 20) {
+    let digits = Math.round(toNumber(value, fallback));
+    if (!Number.isFinite(digits)) digits = fallback;
+    digits = Math.max(min, Math.min(max, digits));
+    return digits;
+}
+
 
 // Scale a number to T/G/M/K, with a fixed number of decimal places.
 export function scaleNumber(n, fixed=2) {
+    fixed = toFixedDigits(fixed, 2);
     n = toNumber(n, 0);
     if (n >= 1000000000000) {
         return trimTrailingZeros((n / 1000000000000).toFixed(fixed)) + "T";
@@ -46,6 +54,7 @@ export function scaleNumber(n, fixed=2) {
 
 // Scale nanoseconds to a time period
 export function scaleNanos(n, precision=2) {
+    precision = toFixedDigits(precision, 2);
     n = toNumber(n, 0);
     if (n === 0) return "-";
     if (n > 60000000000) {
