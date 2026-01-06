@@ -30,6 +30,7 @@ export function toNumber(value, fallback = 0) {
 
 // Scale a number to T/G/M/K, with a fixed number of decimal places.
 export function scaleNumber(n, fixed=2) {
+    n = toNumber(n, 0);
     if (n >= 1000000000000) {
         return trimTrailingZeros((n / 1000000000000).toFixed(fixed)) + "T";
     } else if (n >= 1000000000) {
@@ -45,6 +46,7 @@ export function scaleNumber(n, fixed=2) {
 
 // Scale nanoseconds to a time period
 export function scaleNanos(n, precision=2) {
+    n = toNumber(n, 0);
     if (n === 0) return "-";
     if (n > 60000000000) {
         return trimTrailingZeros((n / 60000000000).toFixed(precision)) + "m";
