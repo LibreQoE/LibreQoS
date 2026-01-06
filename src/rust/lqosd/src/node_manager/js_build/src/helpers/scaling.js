@@ -3,6 +3,7 @@ import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 
 export function colorRamp(n) {
+    n = toNumber(n, 0);
     if (n <= 100) {
         return "#aaffaa";
     } else if (n <= 150) {
@@ -110,6 +111,7 @@ export function formatCakeStatPercent(n, packets) {
 }
 
 export function lerpColor(color1, color2, weight) {
+    weight = toNumber(weight, 0);
     var r = Math.round(color1[0] + (color2[0] - color1[0]) * weight);
     var g = Math.round(color1[1] + (color2[1] - color1[1]) * weight);
     var b = Math.round(color1[2] + (color2[2] - color1[2]) * weight);

@@ -17,14 +17,22 @@ export function toNumber(value, fallback = 0) {
         return fallback;
     }
     if (typeof value === "bigint") {
-        const num = Number(value);
-        return Number.isFinite(num) ? num : fallback;
+        try {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : fallback;
+        } catch (err) {
+            return fallback;
+        }
     }
     if (typeof value === "number") {
         return Number.isFinite(value) ? value : fallback;
     }
-    const num = Number(value);
-    return Number.isFinite(num) ? num : fallback;
+    try {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+    } catch (err) {
+        return fallback;
+    }
 }
 
 function toFixedDigits(value, fallback = 2, min = 0, max = 20) {
