@@ -6,7 +6,7 @@ import {
     formatThroughput,
 } from "./helpers/scaling";
 import {scaleNumber} from "./lq_js_common/helpers/scaling";
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
 var tree = null;
 var parent = 0;
@@ -14,6 +14,14 @@ var upParent = 0;
 var subscribed = false;
 var expandedNodes = new Set();
 var childrenByParentId = new Map();
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 function buildChildrenMap() {
     childrenByParentId = new Map();
@@ -94,8 +102,8 @@ function renderTree() {
 
 // This runs first and builds the initial structure on the page
 function getInitialTree() {
-    $.get("/local-api/networkTree", (data) => {
-        //console.log(data);
+    listenOnce("NetworkTree", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         tree = data;
         buildChildrenMap();
         if (tree[parent] !== undefined) {
@@ -108,6 +116,7 @@ function getInitialTree() {
             subscribed = true;
         }
     });
+    wsClient.send({ NetworkTree: {} });
 }
 
 function fillHeader(node) {

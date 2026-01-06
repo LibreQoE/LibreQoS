@@ -1,9 +1,35 @@
 // Mostly ported from the original node manager
+import { get_ws_client } from "./pubsub/ws";
 
 let nics = null;
 let lqosd_config = null;
 let shaped_devices = null;
 let network_json = null;
+
+const wsClient = get_ws_client();
+
+function sendWsRequest(responseEvent, request, onComplete, onError) {
+    let done = false;
+    const responseHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        onComplete(msg);
+    };
+    const errorHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        if (onError) {
+            onError(msg);
+        }
+    };
+    wsClient.on(responseEvent, responseHandler);
+    wsClient.on("Error", errorHandler);
+    wsClient.send(request);
+}
 
 const bindings = [
     // General
@@ -123,6 +149,26 @@ const bindings = [
 
 ];
 
+function getConfigPath(path) {
+    if (!path || lqosd_config == null) {
+        return { found: false, value: undefined };
+    }
+    let trimmed = path.startsWith(".") ? path.slice(1) : path;
+    if (trimmed.length === 0) {
+        return { found: true, value: lqosd_config };
+    }
+    let current = lqosd_config;
+    let parts = trimmed.split(".");
+    for (let i = 0; i < parts.length; i++) {
+        let part = parts[i];
+        if (current == null || !Object.prototype.hasOwnProperty.call(current, part)) {
+            return { found: false, value: undefined };
+        }
+        current = current[part];
+    }
+    return { found: true, value: current };
+}
+
 function doBindings() {
     let active = true;
 
@@ -132,8 +178,8 @@ function doBindings() {
         if (entry.conditional != null) {
             console.log("Conditional encountered");
             if (entry.condition === "if_exists") {
-                let val = "lqosd_config" + entry.path;
-                if (eval(val) != null) {
+                let result = getConfigPath(entry.path);
+                if (result.found && result.value != null) {
                     console.log("Conditional fired");
                     active = true;
                     if (entry.showDiv != null) {
@@ -155,8 +201,7 @@ function doBindings() {
                 console.log("Skipping " + entry.path);
                 continue;
             }
-            let value_location = "lqosd_config" + entry.path;
-            let value = eval(value_location);
+            let value = getConfigPath(entry.path).value;
             let controlId = "#" + entry.field;
             if (entry.data === "bool") {
                 $(controlId).prop('checked', value);
@@ -164,19 +209,17 @@ function doBindings() {
                 $(controlId + " select").val(value);
             } else if (entry.data === "array_of_strings") {
                 let expanded = "";
-                let length = eval("lqosd_config" + entry.path + ".length");
-                for (let j = 0; j < length; j++) {
-                    let v = eval("lqosd_config" + entry.path + "[" + j + "]");
-                    expanded += v + " ";
+                let values = Array.isArray(value) ? value : [];
+                for (let j = 0; j < values.length; j++) {
+                    expanded += values[j] + " ";
                 }
                 expanded = expanded.trimEnd();
                 $(controlId).val(expanded);
             } else if (entry.data === "ip_array") {
                 let expanded = "";
-                let length = eval("lqosd_config" + entry.path + ".length");
-                for (let j = 0; j < length; j++) {
-                    let v = eval("lqosd_config" + entry.path + "[" + j + "]");
-                    expanded += v + "\n";
+                let values = Array.isArray(value) ? value : [];
+                for (let j = 0; j < values.length; j++) {
+                    expanded += values[j] + "\n";
                 }
                 expanded = expanded.trimEnd();
                 $(controlId).val(expanded);
@@ -226,7 +269,6 @@ function detectChanges() {
         let controlId = entry.field;
         if (entry.path === ".bridge" || entry.path === ".single_interface") continue;
         if (entry.path != null) {
-            let path = "lqosd_config" + entry.path;
             let currentValue = $("#" + controlId).val();
             // TODO: Bridge/Stick special case
             if (entry.data === "bool") {
@@ -236,20 +278,20 @@ function detectChanges() {
             } else if (entry.data === "ip_array") {
                 currentValue = currentValue.split('\n');
             }
-            try {
-                let storedValue = eval(path);
-                if (entry.data === "string" || entry.data === "integer") {
-                    if (storedValue === null && currentValue === "")
-                        currentValue = null;
-                }
-                //console.log(path, currentValue, storedValue);
-                if (String(currentValue) !== String(storedValue)) {
-                    console.log("Change detected!");
-                    console.log(entry.path, " has changed. ", storedValue, '=>', currentValue);
-                    changes.push(i);
-                }
-            } catch {
-                //console.log(path + 'ignored');
+            let result = getConfigPath(entry.path);
+            if (!result.found) {
+                continue;
+            }
+            let storedValue = result.value;
+            if (entry.data === "string" || entry.data === "integer") {
+                if (storedValue === null && currentValue === "")
+                    currentValue = null;
+            }
+            //console.log(entry.path, currentValue, storedValue);
+            if (String(currentValue) !== String(storedValue)) {
+                console.log("Change detected!");
+                console.log(entry.path, " has changed. ", storedValue, '=>', currentValue);
+                changes.push(i);
             }
         }
     }
@@ -391,19 +433,21 @@ function saveConfig() {
     if (!validationResult.valid) return;
 
     updateSavedConfig(validationResult.changes);
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateConfig",
-        contentType:"application/json",
-        data: JSON.stringify(lqosd_config),
-        success: (data) => {
-            if (data === "Ok") {
+    sendWsRequest(
+        "UpdateConfigResult",
+        { UpdateConfig: { config: lqosd_config } },
+        (msg) => {
+            if (msg && msg.ok) {
                 alert("Configuration saved");
             } else {
-                alert("Configuration not saved: " + data);
+                const message = msg && msg.message ? msg.message : "Error";
+                alert("Configuration not saved: " + message);
             }
-        }
-    })
+        },
+        () => {
+            alert("Configuration not saved: Error");
+        },
+    );
 }
 
 function iterateNetJson(level, depth) {
@@ -786,82 +830,6 @@ function checkIpv6Duplicate(ip, index) {
     return -1;
 }
 
-function validNodeList() {
-    let nodes = [];
-
-    function iterate(data, level) {
-        for (const [key, value] of Object.entries(data)) {
-            nodes.push(key);
-            if (value.children != null)
-                iterate(value.children, level+1);
-        }
-    }
-
-    iterate(network_json, 0);
-
-    return nodes;
-}
-
-function checkIpv4(ip) {
-    const ipv4Pattern =
-        /^(\d{1,3}\.){3}\d{1,3}$/;
-
-    if (ip.indexOf('/') === -1) {
-        return ipv4Pattern.test(ip);
-    } else {
-        let parts = ip.split('/');
-        return ipv4Pattern.test(parts[0]);
-    }
-}
-
-function checkIpv6(ip) {
-    // Check if the input is a valid IPv6 address with prefix
-    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
-    return regex.test(ip);
-}
-
-function checkIpv4Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv4.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv4[j][0] + "/" + sd.ipv4[j][1];
-                } else {
-                    formatted = sd.ipv4[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-function checkIpv6Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv6.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv6[j][0] + "/" + sd.ipv6[j][1];
-                } else {
-                    formatted = sd.ipv6[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
 function validateSd() {
     let valid = true;
     let errors = [];
@@ -1136,19 +1104,21 @@ function saveNetAndDevices() {
         shaped_devices: shaped_devices,
         network_json: network_json,
     }
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateNetworkAndDevices",
-        contentType:"application/json",
-        data: JSON.stringify(submission),
-        success: (data) => {
-            if (data === "Ok") {
+    sendWsRequest(
+        "UpdateNetworkAndDevicesResult",
+        { UpdateNetworkAndDevices: submission },
+        (msg) => {
+            if (msg && msg.ok) {
                 alert("Configuration saved");
             } else {
-                alert("Configuration not saved: " + data);
+                const message = msg && msg.message ? msg.message : "Error";
+                alert("Configuration not saved: " + message);
             }
-        }
-    })
+        },
+        () => {
+            alert("Configuration not saved: Error");
+        },
+    );
 }
 
 function shapedDevices() {
@@ -1252,49 +1222,80 @@ function start() {
 
     // Old
     display();
-    $.get("/local-api/adminCheck", (is_admin) => {
-        if (!is_admin) {
-            $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
-            $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
-        } else {
-            // Handle Saving ispConfig.py
-            $("#btnSaveIspConfig").on('click', (data) => {
-                saveConfig();
-            });
-            $("#btnSaveNetDevices").on('click', (data) => {
-                saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
-                    if (success) {
-                        alert("Network configuration saved successfully!");
-                    } else {
-                        alert("Failed to save network configuration: " + message);
-                    }
+    sendWsRequest(
+        "AdminCheck",
+        { AdminCheck: {} },
+        (msg) => {
+            const is_admin = msg && msg.ok;
+            if (!is_admin) {
+                $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
+                $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
+            } else {
+                // Handle Saving ispConfig.py
+                $("#btnSaveIspConfig").on('click', (data) => {
+                    saveConfig();
                 });
-            });
-        }
-        $.get("/local-api/getConfig", (data) => {
-            lqosd_config = data;
-            console.log("Bindings Done");
-            $.get("/local-api/listNics", (data) => {
-                nics = data;
-                console.log(lqosd_config);
-                doBindings();
-
-                // User management
-                if (is_admin) {
-                    userManager();
-                }
-
-                $.get("/local-api/networkJson", (njs) => {
-                    network_json = njs;
-                    $.get("/local-api/allShapedDevices", (data) => {
-                        shaped_devices = data;
-                        shapedDevices(data);
-                        RenderNetworkJson();
-                    });
+                $("#btnSaveNetDevices").on('click', (data) => {
+                    saveNetAndDevices();
                 });
-            });
-        });
-    });
+            }
+
+            sendWsRequest(
+                "GetConfig",
+                { GetConfig: {} },
+                (cfgMsg) => {
+                    lqosd_config = cfgMsg.data;
+                    console.log("Bindings Done");
+                    sendWsRequest(
+                        "ListNics",
+                        { ListNics: {} },
+                        (nicsMsg) => {
+                            nics = nicsMsg.data;
+                            console.log(lqosd_config);
+                            doBindings();
+
+                            // User management
+                            if (is_admin) {
+                                userManager();
+                            }
+
+                            sendWsRequest(
+                                "NetworkJson",
+                                { NetworkJson: {} },
+                                (netMsg) => {
+                                    network_json = netMsg.data;
+                                    sendWsRequest(
+                                        "AllShapedDevices",
+                                        { AllShapedDevices: {} },
+                                        (sdMsg) => {
+                                            shaped_devices = sdMsg.data;
+                                            shapedDevices();
+                                            RenderNetworkJson();
+                                        },
+                                        () => {
+                                            alert("Unable to load shaped devices");
+                                        },
+                                    );
+                                },
+                                () => {
+                                    alert("Unable to load network.json");
+                                },
+                            );
+                        },
+                        () => {
+                            alert("Unable to list NICs");
+                        },
+                    );
+                },
+                () => {
+                    alert("Unable to load configuration");
+                },
+            );
+        },
+        () => {
+            alert("Unable to confirm admin status");
+        },
+    );
 }
 
 $(document).ready(start);

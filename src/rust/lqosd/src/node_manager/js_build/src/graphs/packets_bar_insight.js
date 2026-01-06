@@ -1,6 +1,18 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {periodNameToSeconds} from "../helpers/time_periods";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class PacketsPerSecondTimescale extends DashboardGraph {
     constructor(id, period) {
@@ -36,8 +48,8 @@ export class PacketsPerSecondTimescale extends DashboardGraph {
 
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data");
-        $.get("/local-api/ltsPackets/" + seconds, (data) => {
-            //console.log(data);
+        listenOnceForSeconds("LtsPackets", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
 
             let n = 1;
             let seriesTcpDown = {
@@ -139,7 +151,8 @@ export class PacketsPerSecondTimescale extends DashboardGraph {
 
             this.chart.setOption(this.option);
             this.chart.hideLoading();
-        })
+        });
+        wsClient.send({ LtsPackets: { seconds } });
     }
 
     update(down, up, tcp, udp, icmp) {

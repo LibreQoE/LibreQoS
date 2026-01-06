@@ -1,4 +1,10 @@
-import {renderConfigMenu} from "./config/config_helper";
+import {
+    addUser,
+    deleteUser,
+    getUsers,
+    renderConfigMenu,
+    updateUser,
+} from "./config/config_helper";
 
 $(document).ready(() => {
     // Render the configuration menu
@@ -18,25 +24,26 @@ $(document).ready(() => {
             return;
         }
         
-        $.ajax({
-            type: "POST",
-            url: "/local-api/addUser",
-            data: JSON.stringify({ 
+        addUser(
+            {
                 username: username,
                 password: password,
-                role: role 
-            }),
-            contentType: 'application/json',
-            success: () => {
-                $('#username').val('');
-                $('#password').val('');
-                loadUsers();
+                role: role,
             },
-            error: (e) => {
+            (msg) => {
+                if (msg && msg.ok) {
+                    $('#add-username').val('');
+                    $('#password').val('');
+                    loadUsers();
+                } else {
+                    alert(msg && msg.message ? msg.message : 'Failed to add user');
+                }
+            },
+            (e) => {
                 alert('Failed to add user');
                 console.log(e);
-            }
-        });
+            },
+        );
     });
 
     // Handle edit user form submission
@@ -56,25 +63,26 @@ $(document).ready(() => {
             payload.password = password;
         }
 
-        $.ajax({
-            type: "POST",
-            url: "/local-api/updateUser",
-            data: JSON.stringify(payload),
-            contentType: 'application/json',
-            success: () => {
-                $('#edit-password').val('');
-                $('#editUserModal').modal('hide');
-                loadUsers();
+        updateUser(
+            payload,
+            (msg) => {
+                if (msg && msg.ok) {
+                    $('#edit-password').val('');
+                    $('#editUserModal').modal('hide');
+                    loadUsers();
+                } else {
+                    alert(msg && msg.message ? msg.message : 'Failed to update user');
+                }
             },
-            error: () => {
+            () => {
                 alert('Failed to update user');
-            }
-        });
+            },
+        );
     });
 });
 
 function loadUsers() {
-    $.get('/local-api/getUsers', (users) => {
+    getUsers((users) => {
         const userList = $('#users-list');
         userList.empty();
         
@@ -120,22 +128,23 @@ function loadUsers() {
         $('.delete-user').on('click', function() {
             if (confirm('Are you sure you want to delete this user?')) {
                 const username = $(this).data('username');
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/deleteUser",
-                    data: JSON.stringify({ username: username }),
-                    contentType: 'application/json',
-                    success: () => {
-                        loadUsers();
+                deleteUser(
+                    { username: username },
+                    (msg) => {
+                        if (msg && msg.ok) {
+                            loadUsers();
+                        } else {
+                            alert(msg && msg.message ? msg.message : 'Failed to delete user');
+                        }
                     },
-                    error: (e) => {
+                    (e) => {
                         console.error(e);
                         alert('Failed to delete user');
-                    }
-                });
+                    },
+                );
             }
         });
-    }).fail(() => {
+    }, () => {
         $('#users-list').html('<div class="alert alert-danger">Failed to load users</div>');
     });
 }

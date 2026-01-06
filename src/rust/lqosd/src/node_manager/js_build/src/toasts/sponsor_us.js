@@ -1,9 +1,11 @@
+import { get_ws_client } from "../pubsub/ws";
+
 const sponsorBtn = "<a href=\"https://github.com/sponsors/LibreQoE/\" target='_blank' class='text-primary-emphasis'><i class=\"fa fa-heart\"></i> Sponsor Us on GitHub</a>";
 
 export function sponsorTag(parentId) {
     if (!window.hasLts) {
-        $.get("/local-api/deviceCount", (counts) => {
-            //console.log(data);
+        const client = get_ws_client();
+        const handler = () => {
             if (!window.hasLts) {
                 let div = document.createElement("div");
                 let random = Math.floor(Math.random() * 5) + 1;
@@ -27,6 +29,9 @@ export function sponsorTag(parentId) {
                 let parent = document.getElementById(parentId);
                 parent.appendChild(div);
             }
-        });
+            client.off("DeviceCount", handler);
+        };
+        client.on("DeviceCount", handler);
+        client.send({ DeviceCount: {} });
     }
 }

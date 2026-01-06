@@ -14,8 +14,21 @@ pub use support_info::gather_all_support_info;
 const REMOTE_SYSTEM: &str = "stats.libreqos.io:9200";
 
 pub fn submit_to_network(dump: SupportDump) {
+    match submit_to_network_result(dump) {
+        Ok(()) => {
+            success("Submitted to LibreQoS for Analysis. Thank you.");
+        }
+        Err(err) => {
+            error(&err);
+        }
+    }
+}
+
+pub fn submit_to_network_result(dump: SupportDump) -> Result<(), String> {
     // Build the payload
-    let serialized = dump.serialize_and_compress().unwrap();
+    let serialized = dump
+        .serialize_and_compress()
+        .map_err(|e| format!("Failed to serialize support data: {e}"))?;
     let length = serialized.len() as u64;
     let mut bytes = Vec::new();
     bytes.extend(1212u32.to_be_bytes());
@@ -24,13 +37,10 @@ pub fn submit_to_network(dump: SupportDump) {
     bytes.extend(1212u32.to_be_bytes());
 
     // Do the actual connection
-    let stream = TcpStream::connect(REMOTE_SYSTEM);
-    if stream.is_err() {
-        error(&format!("Unable to connect to {REMOTE_SYSTEM}"));
-        println!("{stream:?}");
-        return;
-    }
-    let mut stream = stream.unwrap();
-    stream.write_all(&bytes).unwrap();
-    success("Submitted to LibreQoS for Analysis. Thank you.");
+    let mut stream = TcpStream::connect(REMOTE_SYSTEM)
+        .map_err(|e| format!("Unable to connect to {REMOTE_SYSTEM}: {e}"))?;
+    stream
+        .write_all(&bytes)
+        .map_err(|e| format!("Failed to submit support data: {e}"))?;
+    Ok(())
 }

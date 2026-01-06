@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::node_manager::ws::messages::{ExecutiveHeatmapsData, OversubscribedSite, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
@@ -8,7 +9,6 @@ use lqos_bus::{BusReply, BusRequest, BusResponse, ExecutiveSummaryHeader};
 use lqos_utils::temporal_heatmap::{HeatmapBlocks, TemporalHeatmap};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::Sender;
 
@@ -45,18 +45,16 @@ pub async fn executive_heatmaps(
         .unwrap_or_else(empty_blocks);
     let oversubscribed_sites = compute_oversubscribed_sites();
 
-    let payload = json!({
-        "event": PublishedChannels::ExecutiveHeatmaps.to_string(),
-        "data": {
-            "header": header,
-            "global": global,
-            "circuits": circuits,
-            "sites": sites,
-            "asns": asns,
-            "oversubscribed_sites": oversubscribed_sites,
-        }
-    })
-    .to_string();
+    let payload = WsResponse::ExecutiveHeatmaps {
+        data: ExecutiveHeatmapsData {
+            header,
+            global,
+            circuits,
+            sites,
+            asns,
+            oversubscribed_sites,
+        },
+    };
 
     channels
         .send(PublishedChannels::ExecutiveHeatmaps, payload)
@@ -156,7 +154,7 @@ struct OversubTally {
     sub_up: f32,
 }
 
-fn compute_oversubscribed_sites() -> Vec<serde_json::Value> {
+fn compute_oversubscribed_sites() -> Vec<OversubscribedSite> {
     let devices = SHAPED_DEVICES.load();
     let mut circuit_map: HashMap<String, (String, f32, f32)> = HashMap::new();
     for device in devices.devices.iter() {
@@ -256,16 +254,16 @@ fn compute_oversubscribed_sites() -> Vec<serde_json::Value> {
                 (None, Some(u)) => Some(u),
                 (None, None) => None,
             };
-            Some(json!({
-                "site_name": site_name,
-                "cap_down": t.cap_down,
-                "cap_up": t.cap_up,
-                "sub_down": t.sub_down,
-                "sub_up": t.sub_up,
-                "ratio_down": ratio_down,
-                "ratio_up": ratio_up,
-                "ratio_max": ratio_max,
-            }))
+            Some(OversubscribedSite {
+                site_name,
+                cap_down: t.cap_down,
+                cap_up: t.cap_up,
+                sub_down: t.sub_down,
+                sub_up: t.sub_up,
+                ratio_down,
+                ratio_up,
+                ratio_max,
+            })
         })
         .collect()
 }

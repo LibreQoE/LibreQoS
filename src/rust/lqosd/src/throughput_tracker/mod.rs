@@ -746,7 +746,7 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     Some(result)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct TcpRetransmitTotal {
     pub up: i32,
     pub down: i32,

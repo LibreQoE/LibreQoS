@@ -3,27 +3,25 @@ use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
     RECENT_FLOWS, RttData,
 };
-use axum::Json;
-use axum::extract::Path;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use serde::Serialize;
 use std::time::Duration;
 
-pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
-    Json(RECENT_FLOWS.asn_list())
+pub fn asn_list_data() -> Vec<AsnListEntry> {
+    RECENT_FLOWS.asn_list()
 }
 
-pub async fn country_list() -> Json<Vec<AsnCountryListEntry>> {
-    Json(RECENT_FLOWS.country_list())
+pub fn country_list_data() -> Vec<AsnCountryListEntry> {
+    RECENT_FLOWS.country_list()
 }
 
-pub async fn protocol_list() -> Json<Vec<AsnProtocolListEntry>> {
-    Json(RECENT_FLOWS.protocol_list())
+pub fn protocol_list_data() -> Vec<AsnProtocolListEntry> {
+    RECENT_FLOWS.protocol_list()
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct FlowTimeline {
     start: u64,
     end: u64,
@@ -40,7 +38,7 @@ pub struct FlowTimeline {
     remote_ip: String,
 }
 
-pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
+pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
     let boot_time = unix_now()
@@ -51,7 +49,7 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }
 
 fn all_flows_to_transport(
@@ -110,21 +108,21 @@ fn all_flows_to_transport(
         .collect::<Vec<_>>()
 }
 
-pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
+pub fn country_timeline_data(iso_code: &str) -> Vec<FlowTimeline> {
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
     let boot_time = unix_now()
         .expect("failed to retrieve current unix time")
         .saturating_sub(since_boot.as_secs());
 
-    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
+    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(iso_code);
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }
 
-pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<FlowTimeline>> {
+pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
     let protocol_name = protocol_name.replace("_", "/");
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
@@ -136,5 +134,5 @@ pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<Fl
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }

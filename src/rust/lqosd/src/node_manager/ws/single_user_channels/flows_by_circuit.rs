@@ -1,9 +1,9 @@
+use crate::node_manager::ws::messages::{FlowbeeKeyTransit, WsResponse, encode_ws_message};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country,
 };
 use lqos_utils::unix_time::time_since_boot;
-use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
@@ -94,37 +94,10 @@ fn recent_flows_by_circuit(
     Vec::new()
 }
 
-#[derive(Serialize)]
-pub struct FlowbeeKeyTransit {
-    /// Mapped `XdpIpAddress` source for the flow.
-    pub remote_ip: String,
-    /// Mapped `XdpIpAddress` destination for the flow
-    pub local_ip: String,
-    /// Source port number, or ICMP type.
-    pub src_port: u16,
-    /// Destination port number.
-    pub dst_port: u16,
-    /// IP protocol (see the Linux kernel!)
-    pub ip_protocol: u8,
-    /// Device Name
-    pub device_name: String,
-    /// ASN Name
-    pub asn_name: String,
-    /// ASN Country
-    pub asn_country: String,
-    /// Protocol Name
-    pub protocol_name: String,
-    /// Last Seen Nanos
-    pub last_seen_nanos: u64,
-}
-
-#[derive(Serialize)]
-struct FlowData {
-    circuit_id: String,
-    flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)>,
-}
-
-pub(super) async fn flows_by_circuit(circuit: String, tx: tokio::sync::mpsc::Sender<String>) {
+pub(super) async fn flows_by_circuit(
+    circuit: String,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
+) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
@@ -135,15 +108,17 @@ pub(super) async fn flows_by_circuit(circuit: String, tx: tokio::sync::mpsc::Sen
                 .collect();
 
         if !flows.is_empty() {
-            let result = FlowData {
+            let result = WsResponse::FlowsByCircuit {
                 circuit_id: circuit.clone(),
                 flows,
             };
-            if let Ok(message) = serde_json::to_string(&result) {
-                if let Err(_) = tx.send(message).await {
+            if let Ok(payload) = encode_ws_message(&result) {
+                if let Err(_) = tx.send(payload).await {
                     debug!("Channel is gone");
                     break;
                 }
+            } else {
+                break;
             }
         }
 

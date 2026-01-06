@@ -1,8 +1,19 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {periodNameToSeconds} from "../helpers/time_periods";
+import {get_ws_client} from "../pubsub/ws";
 
 export const N_ITEMS = 50;
+const wsClient = get_ws_client();
+
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class RttHistogramTimeseries extends DashboardGraph {
     constructor(id, period) {
@@ -41,7 +52,8 @@ export class RttHistogramTimeseries extends DashboardGraph {
 
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data (RTT Histo)");
-        $.get("/local-api/ltsRttHisto/" + seconds, (rtt) => {
+        listenOnceForSeconds("LtsRttHisto", seconds, (msg) => {
+            const rtt = msg && msg.data ? msg.data : [];
             console.log(rtt);
             this.option.series.data = [];
             for (let i=0; i<rtt.length; i++) {
@@ -50,6 +62,7 @@ export class RttHistogramTimeseries extends DashboardGraph {
             this.chart.setOption(this.option);
             this.chart.hideLoading();
         });
+        wsClient.send({ LtsRttHisto: { seconds } });
     }
 
     update(rtt) {
@@ -60,4 +73,3 @@ export class RttHistogramTimeseries extends DashboardGraph {
         this.chart.setOption(this.option);
     }
 }
-

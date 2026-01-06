@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 import {RamPie} from "../graphs/ram_pie";
 
 export class RamDash extends BaseDashlet{
@@ -35,9 +36,9 @@ export class RamDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Ram") {
-            let total = msg.data.total;
-            let used = msg.data.used;
-            let free = total - used;
+            let total = toNumber(msg.data.total, 0);
+            let used = toNumber(msg.data.used, 0);
+            let free = Math.max(0, total - used);
             this.graph.update(free, used);
         }
     }

@@ -1,9 +1,5 @@
-// Node Manager Chatbot UI using private_ws and persistent gateway proxy
-
-function private_ws_url() {
-  const proto = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-  return proto + window.location.host + '/websocket/private_ws';
-}
+// Node Manager Chatbot UI using unified websocket client
+import { get_ws_client } from "./pubsub/ws";
 
 const log = document.getElementById('chatLog');
 const input = document.getElementById('chatInput');
@@ -220,21 +216,18 @@ function handleStreamText(text) {
   }
 }
 
-let ws = null;
+let client = null;
 if (insightEnabled) {
-  ws = new WebSocket(private_ws_url());
-  ws.onopen = () => {
-    appendSys('Connected to Libby');
-    const startMsg = { Chatbot: { browser_ts_ms: Date.now() } };
-    ws.send(JSON.stringify(startMsg));
-  };
-  ws.onmessage = (ev) => {
-    const text = typeof ev.data === 'string' ? ev.data : String(ev.data || '');
-    handleStreamText(text);
-  };
-  ws.onclose = () => appendSys('Disconnected');
+  client = get_ws_client();
+  client.on("ChatbotChunk", (msg) => {
+    if (msg && typeof msg.text === "string") {
+      handleStreamText(msg.text);
+    }
+  });
+  appendSys("Connected to Libby");
+  client.send({ Private: { Chatbot: { browser_ts_ms: Date.now() } } });
 } else {
-  appendSys('Libby requires an active Insight subscription. Start a free trial to enable chat.');
+  appendSys("Libby requires an active Insight subscription. Start a free trial to enable chat.");
 }
 
 function sendText() {
@@ -242,9 +235,8 @@ function sendText() {
   if (!insightEnabled) return;
   if (!text) return;
   bubbleUser(text);
-  const msg = { ChatbotUserInput: { text } };
-  if (ws) {
-    ws.send(JSON.stringify(msg));
+  if (client) {
+    client.send({ Private: { ChatbotUserInput: { text } } });
   }
   input.value = '';
 }

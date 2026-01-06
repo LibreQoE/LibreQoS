@@ -8,7 +8,7 @@ import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
 import {CakeQueueLength} from "./graphs/cake_queue_length";
@@ -33,6 +33,55 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function formatIpBytes(bytes) {
+    const list = Array.from(bytes);
+    if (list.length === 4) {
+        return list.join(".");
+    }
+    if (list.length === 16) {
+        const parts = [];
+        for (let i = 0; i < list.length; i += 2) {
+            const part = (list[i] << 8) | list[i + 1];
+            parts.push(part.toString(16).padStart(4, "0"));
+        }
+        return parts.join(":");
+    }
+    return list.join(".");
+}
+
+function ipToString(ip) {
+    if (typeof ip === "string") {
+        return ip;
+    }
+    if (ip instanceof Uint8Array || Array.isArray(ip)) {
+        return formatIpBytes(ip);
+    }
+    return String(ip);
+}
+
+function requestCircuitById(onSuccess, onError) {
+    listenOnce("CircuitByIdResult", (msg) => {
+        if (!msg || !msg.ok) {
+            if (onError) onError();
+            return;
+        }
+        if (msg.id && msg.id !== circuit_id) {
+            if (onError) onError();
+            return;
+        }
+        onSuccess(msg.devices || []);
+    });
+    wsClient.send({ CircuitById: { id: circuit_id } });
+}
 
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
@@ -52,10 +101,10 @@ function fullIpList(circuits) {
     let ipList = [];
     circuits.forEach((circuit) => {
         circuit.ipv4.forEach((ip) => {
-            ipList.push([ip[0], circuit.device_id]);
+            ipList.push([ipToString(ip[0]), circuit.device_id]);
         });
         circuit.ipv6.forEach((ip) => {
-            ipList.push([ip[0], circuit.device_id]);
+            ipList.push([ipToString(ip[0]), circuit.device_id]);
         });
     });
     return ipList;
@@ -624,7 +673,8 @@ function initialDevices(circuits) {
 
 function initialFunnel(parentNode) {
     let target = document.getElementById("theFunnel");
-    $.get("/local-api/networkTree", (data) => {
+    listenOnce("NetworkTree", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         let immediateParent = null;
         data.forEach((node) => {
             if (node[1].name === parentNode) {
@@ -693,6 +743,7 @@ function initialFunnel(parentNode) {
             subscribeWS(["NetworkTree"], onTreeEvent);
         }, 0)});
     });
+    wsClient.send({ NetworkTree: {} });
 }
 
 function onTreeEvent(msg) {
@@ -859,14 +910,15 @@ function wireupAnalysis(circuits) {
         let address = ip[0]; // For closure capture
         item.onclick = () => {
             //console.log("Clicky " + address);
-            $.get("/local-api/requestAnalysis/" + encodeURI(address), (data) => {
-                //console.log(data);
-                if (data === "Fail") {
+            listenOnce("RequestAnalysisResult", (msg) => {
+                const data = msg ? msg.data : null;
+                const okData = data && data.Ok ? data.Ok : null;
+                if (!okData) {
                     alert("Packet capture is already active for another IP. Please try again when it is finished.")
                     return;
                 }
-                let counter = parseInt(data.Ok.countdown)+1;
-                let sessionId = data.Ok.session_id;
+                let counter = parseInt(okData.countdown) + 1;
+                let sessionId = okData.session_id;
                 let btn = document.getElementById("CaptureTopBtn");
                 btn.disabled = true;
                 btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
@@ -884,14 +936,8 @@ function wireupAnalysis(circuits) {
                             //console.log(url);
 
                             // Restore the buttons
-                            $.ajax({
-                                type: "POST",
-                                url: "/local-api/circuitById",
-                                data: JSON.stringify({id: circuit_id}),
-                                contentType: 'application/json',
-                                success: (circuits) => {
-                                    wireupAnalysis(circuits);
-                                }
+                            requestCircuitById((circuits) => {
+                                wireupAnalysis(circuits);
                             });
                         }
                         return;
@@ -899,6 +945,7 @@ function wireupAnalysis(circuits) {
                     btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
                 }, 1000);
             });
+            wsClient.send({ RequestAnalysis: { ip: address } });
         }
         entry.appendChild(item);
         listUl.appendChild(entry);
@@ -917,39 +964,31 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
-    $.ajax({
-        type: "POST",
-        url: "/local-api/circuitById",
-        data: JSON.stringify({ id: circuit_id }),
-        contentType: 'application/json',
-        success: (circuits) => {
-            //console.log(circuits);
-            let circuit = circuits[0];
-            $("#circuitName").text(circuit.circuit_name);
-            $("#parentNode").text(circuit.parent_node);
-            $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
-            $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
-            plan = {
-                down: circuit.download_max_mbps,
-                up: circuit.upload_max_mbps,
-            };
-            initialDevices(circuits);
-            speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
-            totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
-            totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-            flowSankey = new FlowsSankey("flowSankey");
+    requestCircuitById((circuits) => {
+        let circuit = circuits[0];
+        $("#circuitName").text(circuit.circuit_name);
+        $("#parentNode").text(circuit.parent_node);
+        $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
+        $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
+        plan = {
+            down: circuit.download_max_mbps,
+            up: circuit.upload_max_mbps,
+        };
+        initialDevices(circuits);
+        speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
+        totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
+        totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
+        flowSankey = new FlowsSankey("flowSankey");
 
-            connectPrivateChannel();
-            connectPingers(circuits);
-            connectFlowChannel();
-            initialFunnel(circuit.parent_node);
-            subscribeToCake();
-            wireupAnalysis(circuits);
-        },
-        error: () => {
-            alert("Circuit with id " + circuit_id + " not found");
-        }
-    })
+        connectPrivateChannel();
+        connectPingers(circuits);
+        connectFlowChannel();
+        initialFunnel(circuit.parent_node);
+        subscribeToCake();
+        wireupAnalysis(circuits);
+    }, () => {
+        alert("Circuit with id " + circuit_id + " not found");
+    });
 }
 
 loadInitial();

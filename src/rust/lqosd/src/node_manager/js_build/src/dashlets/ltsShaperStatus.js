@@ -1,5 +1,15 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class LtsShaperStatus extends BaseDashlet {
     constructor(slot) {
@@ -42,7 +52,8 @@ export class LtsShaperStatus extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "Cadence") {
             if (this.count === 0) {
-                $.get("/local-api/ltsShaperStatus", (data) => {
+                listenOnce("LtsShaperStatus", (msg) => {
+                    const data = msg && msg.data ? msg.data : [];
                     let target = document.getElementById(this.contentId);
 
                     let table = document.createElement("table");
@@ -74,6 +85,7 @@ export class LtsShaperStatus extends BaseDashlet {
 
                     //console.log(data);
                 });
+                wsClient.send({ LtsShaperStatus: {} });
             }
             this.count++;
             this.count %= 10;

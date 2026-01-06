@@ -1,33 +1,17 @@
-// Setup any WS feeds for this page
-import { ws_proto } from '../../pubsub/ws.js';
-let ws = null;
+import { get_ws_client, resetWS as reset_shared } from "../../pubsub/ws";
 
 export function subscribeWS(channels, handler) {
-    if (channels.length === 0) {
+    if (!channels || channels.length === 0) {
         return;
     }
-    if (ws) {
-        ws.close();
+    const client = get_ws_client();
+    client.on("join", handler);
+    for (let i = 0; i < channels.length; i++) {
+        client.on(channels[i], handler);
     }
-
-    ws = new WebSocket(ws_proto() + window.location.host + '/websocket/ws');
-    ws.onopen = () => {
-        for (let i=0; i<channels.length; i++) {
-            ws.send("{ \"channel\" : \"" + channels[i] + "\"}");
-        }
-    }
-    ws.onclose = () => {
-        ws = null;
-    }
-    ws.onerror = (error) => {
-        ws = null
-    }
-    ws.onmessage = function (event) {
-        let msg = JSON.parse(event.data);
-        handler(msg);
-    };
+    client.subscribe(channels);
 }
 
 export function resetWS() {
-    ws = null;
+    reset_shared();
 }

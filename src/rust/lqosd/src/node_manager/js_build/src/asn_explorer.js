@@ -1,10 +1,15 @@
 import {clearDiv} from "./helpers/builders";
 import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
+import {get_ws_client} from "./pubsub/ws";
 
-//const API_URL = "local-api/";
-const API_URL = "local-api/";
-const LIST_URL = API_URL + "asnList";
-const FLOW_URL = API_URL + "flowTimeline/";
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 let asnList = [];
 let countryList = [];
@@ -29,7 +34,8 @@ function unixTimeToDate(unixTime) {
 }
 
 function asnDropdown() {
-    $.get(LIST_URL, (data) => {
+    listenOnce("AsnList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         asnList = data;
 
         // Sort data by row.count, descending
@@ -71,10 +77,12 @@ function asnDropdown() {
         clearDiv(target);
         target.appendChild(parentDiv);
     });
+    wsClient.send({ AsnList: {} });
 }
 
 function countryDropdown() {
-    $.get(API_URL + "countryList", (data) => {
+    listenOnce("CountryList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         countryList = data;
 
         // Sort data by row.count, descending
@@ -113,10 +121,12 @@ function countryDropdown() {
         clearDiv(target);
         target.appendChild(parentDiv);
     });
+    wsClient.send({ CountryList: {} });
 }
 
 function protocolDropdown() {
-    $.get(API_URL + "protocolList", (data) => {
+    listenOnce("ProtocolList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         protocolList = data;
 
         // Sort data by row.count, descending
@@ -155,29 +165,34 @@ function protocolDropdown() {
         clearDiv(target);
         target.appendChild(parentDiv);
     });
+    wsClient.send({ ProtocolList: {} });
 }
 
 function selectAsn(asn) {
-    $.get(FLOW_URL + encodeURI(asn), (data) => {
+    listenOnce("AsnFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(asn, data);
     });
+    wsClient.send({ AsnFlowTimeline: { asn: asn } });
 }
 
 function selectCountry(country) {
-    let url = API_URL + "countryTimeline/" + encodeURI(country);
-    $.get(url, (data) => {
+    listenOnce("CountryFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(country, data);
     });
+    wsClient.send({ CountryFlowTimeline: { iso_code: country } });
 }
 
 function selectProtocol(protocol) {
-    let url = API_URL + "protocolTimeline/" + encodeURI(protocol.replace('/', '_'));
-    $.get(url, (data) => {
+    listenOnce("ProtocolFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(protocol, data);
     });
+    wsClient.send({ ProtocolFlowTimeline: { protocol: protocol } });
 }
 
 function renderAsn(asn, data) {

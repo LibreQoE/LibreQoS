@@ -12,6 +12,21 @@ export function trimTrailingZeros(str) {
     }
 }
 
+export function toNumber(value, fallback = 0) {
+    if (value === null || value === undefined) {
+        return fallback;
+    }
+    if (typeof value === "bigint") {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+    }
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : fallback;
+    }
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+}
+
 
 // Scale a number to T/G/M/K, with a fixed number of decimal places.
 export function scaleNumber(n, fixed=2) {

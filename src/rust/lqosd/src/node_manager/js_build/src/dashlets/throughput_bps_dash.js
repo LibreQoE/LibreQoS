@@ -1,5 +1,15 @@
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class ThroughputBpsDash extends DashletBaseInsight{
     title() {
@@ -228,7 +238,8 @@ export class ThroughputBpsDash extends DashletBaseInsight{
             if (window.hasLts && this.busy === false && (this.medians === null || this.tickCount > 300)) {
                 this.tickCount = 0;
                 this.busy = true;
-                $.get("/local-api/ltsRecentMedian", (m) => {
+                listenOnce("LtsRecentMedian", (msg) => {
+                    const m = msg && msg.data ? msg.data : [];
                     if (m === null || m.length === 0) {
                         this.busy = false;
                         return;
@@ -239,6 +250,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
                     this.medians.last_week[0] = this.medians.last_week[0] * 8;
                     this.medians.last_week[1] = this.medians.last_week[1] * 8;
                 });
+                wsClient.send({ LtsRecentMedian: {} });
             }
 
             this.upRing.push(msg.data.bps.up);
