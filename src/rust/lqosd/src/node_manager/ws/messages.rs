@@ -54,7 +54,7 @@ pub enum PrivateRequest {
     PingMonitor { ips: Vec<(String, String)> },
     FlowsByCircuit { circuit: String },
     CakeWatcher { circuit: String },
-    Chatbot { browser_ts_ms: Option<i64> },
+    Chatbot { browser_ts_ms: Option<f64> },
     ChatbotUserInput { text: String },
 }
 
