@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
 mod client;
+mod protocol;
 mod queue_data;
 mod reply;
 mod request;
