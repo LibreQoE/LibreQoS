@@ -9,16 +9,6 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, calculate_hash, scheduler_alive, scheduler_error
 
-if automatic_import_splynx():
-    from integrationSplynx import importFromSplynx
-if automatic_import_netzur():
-    from integrationNetzur import importFromNetzur
-if automatic_import_powercode():
-    from integrationPowercode import importFromPowercode
-if automatic_import_sonar():
-    from integrationSonar import importFromSonar
-if automatic_import_wispgate():
-    from integrationWISPGate import importFromWISPGate
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
@@ -28,30 +18,55 @@ network_hash = 0
 
 
 def capture_output_and_run(func):
-    """Wrapper function to capture stdout/stderr from a function and handle errors."""
+    """Capture stdout/stderr from a callable and ensure failures are non-fatal."""
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    captured_output = StringIO()
     try:
-        # Capture stdout/stderr from Python function
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        captured_output = StringIO()
-
         sys.stdout = captured_output
         sys.stderr = captured_output
-
-        func()  # Execute the function
-
-        # Restore original stdout/stderr
+        func()
+    except BaseException as e:
+        # Catch BaseException to also handle SystemExit/KeyboardInterrupt from integrations
+        error_msg = f"Failed to execute function: {str(e)}"
+        try:
+            print(error_msg)
+        finally:
+            # Ensure scheduler gets error details even if printing fails
+            scheduler_error(error_msg)
+    finally:
+        # Always restore stdio and flush captured output
         sys.stdout = old_stdout
         sys.stderr = old_stderr
-
         output = captured_output.getvalue()
-        print(output)  # Print captured output
-        scheduler_error(output)  # Send to error reporting
+        if output:
+            print(output)
+            scheduler_error(output)
 
+
+def run_python_integration(module_name: str, func_name: str, label: str = ""):
+    """
+    Run a Python integration in a subprocess so failures cannot terminate the scheduler.
+    Captures stdout/stderr, logs them, and continues regardless of exit code.
+    """
+    try:
+        code = f"from {module_name} import {func_name} as f; f()"
+        cmd = [sys.executable, "-c", code]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        output = (result.stdout or "") + (result.stderr or "")
+        if output:
+            print(output)
+            scheduler_error(output)
+        if result.returncode != 0:
+            # Non-zero exit shouldn't stop scheduling; log and continue
+            friendly = label or f"{module_name}.{func_name}"
+            msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
+            print(msg)
+            scheduler_error(msg)
     except Exception as e:
-        error_msg = f"Failed to execute function: {str(e)}"
-        print(error_msg)
-        scheduler_error(error_msg)
+        err = f"Failed to invoke integration {label or (module_name + '.' + func_name)}: {e}"
+        print(err)
+        scheduler_error(err)
 
 def importFromCRM():
     # Check Insight Topology Status
@@ -67,40 +82,43 @@ def importFromCRM():
     # CRM Hooks
     if automatic_import_uisp():
         try:
-            # Call bin/uisp_integration with output capture
+            # Execute UISP integration in a subprocess and keep going on failure
             path = get_libreqos_directory() + "/bin/uisp_integration"
             result = subprocess.run([path], capture_output=True, text=True)
-            output = result.stdout + result.stderr
-            print(output)  # Maintain console output
-            # Report UISP output to error channel regardless of return code,
-            # as UISP may signal errors in text while returning success.
-            scheduler_error(output)
+            output = (result.stdout or "") + (result.stderr or "")
+            if output:
+                print(output)
+                # Report UISP output to error channel regardless of return code.
+                scheduler_error(output)
+            if result.returncode != 0:
+                msg = f"UISP integration exited with code {result.returncode}. Continuing."
+                print(msg)
+                scheduler_error(msg)
             blackboard_finish()
         except Exception as e:
-            error_msg = f"Failed to import from UISP: {str(e)}"
+            error_msg = f"Failed to run UISP integration: {str(e)}"
             print(error_msg)
             scheduler_error(error_msg)
     elif automatic_import_splynx():
-        try:
-            capture_output_and_run(importFromSplynx)
-        except:
-            print("Failed to import from Splynx")
+        run_python_integration("integrationSplynx", "importFromSplynx", label="Splynx")
     elif automatic_import_netzur():
-        try:
-            capture_output_and_run(importFromNetzur)
-        except:
-            print("Failed to import from Netzur")
+        run_python_integration("integrationNetzur", "importFromNetzur", label="Netzur")
     elif automatic_import_powercode():
-        capture_output_and_run(importFromPowercode)
+        run_python_integration("integrationPowercode", "importFromPowercode", label="Powercode")
     elif automatic_import_sonar():
-        capture_output_and_run(importFromSonar)
+        run_python_integration("integrationSonar", "importFromSonar", label="Sonar")
     elif automatic_import_wispgate():
-        capture_output_and_run(importFromWISPGate)
+        run_python_integration("integrationWISPGate", "importFromWISPGate", label="WISPGate")
     # Post-CRM Hooks
     path = get_libreqos_directory() + "/bin/post_integration_hook.sh"
     binPath = get_libreqos_directory() + "/bin"
     if os.path.isfile(path):
-        subprocess.Popen(path, cwd=binPath)
+        try:
+            subprocess.Popen(path, cwd=binPath)
+        except Exception as e:
+            msg = f"post_integration_hook.sh failed to launch: {e}"
+            print(msg)
+            scheduler_error(msg)
 
 
 def importAndShapeFullReload():
