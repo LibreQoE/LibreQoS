@@ -2,6 +2,7 @@ import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {MinMaxSeries} from "../lq_js_common/e_charts/min_max_median_series";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 import {get_ws_client} from "../pubsub/ws";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
@@ -39,14 +40,14 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
             data.forEach((r) => {
                 this.option.xAxis.data.push(r.time);
                 shaperDown.pushPositive(
-                    r.median_down * 8,
-                    r.min_down * 8,
-                    r.max_down * 8
+                    toNumber(r.median_down, 0) * 8,
+                    toNumber(r.min_down, 0) * 8,
+                    toNumber(r.max_down, 0) * 8
                 );
                 shaperUp.pushNegative(
-                    (r.median_up) * 8,
-                    (r.min_up) * 8,
-                    (r.max_up) * 8
+                    toNumber(r.median_up, 0) * 8,
+                    toNumber(r.min_up, 0) * 8,
+                    toNumber(r.max_up, 0) * 8
                 );
             });
             shaperDown.addToOptions(this.option);

@@ -5,7 +5,7 @@ import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, 
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
-import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
+import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
@@ -130,21 +130,22 @@ function connectPingers(circuits) {
                 }
             }
 
-            devicePings[msg.ip].count++;
-            if (msg.result === "NoResponse") {
-                devicePings[msg.ip].timeout++;
-            } else {
-                devicePings[msg.ip].success++;
-                devicePings[msg.ip].times.push(msg.result.Ping.time_nanos);
-                if (devicePings[msg.ip].times.length > 300) {
-                    devicePings[msg.ip].times.shift();
+                devicePings[msg.ip].count++;
+                if (msg.result === "NoResponse") {
+                    devicePings[msg.ip].timeout++;
+                } else {
+                    devicePings[msg.ip].success++;
+                    const pingNanos = toNumber(msg.result.Ping.time_nanos, 0);
+                    devicePings[msg.ip].times.push(pingNanos);
+                    if (devicePings[msg.ip].times.length > 300) {
+                        devicePings[msg.ip].times.shift();
+                    }
+                    let graphId = "pingGraph_" + msg.result.Ping.label;
+                    let graph = deviceGraphs[graphId];
+                    if (graph !== undefined) {
+                        graph.update(pingNanos);
+                    }
                 }
-                let graphId = "pingGraph_" + msg.result.Ping.label;
-                let graph = deviceGraphs[graphId];
-                if (graph !== undefined) {
-                    graph.update(msg.result.Ping.time_nanos);
-                }
-            }
 
             // Visual Updates
             let target = document.getElementById("ip_" + msg.ip);
@@ -198,6 +199,13 @@ let tickCount = 0;
 let trafficSortColumn = 'rate'; // Default sort by rate
 let trafficSortDirection = 'desc'; // 'asc' or 'desc'
 
+function diffToNumber(current, previous, fallback = 0) {
+    if (typeof current === "bigint" && typeof previous === "bigint") {
+        return toNumber(current - previous, fallback);
+    }
+    return toNumber(current, fallback) - toNumber(previous, fallback);
+}
+
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
 
@@ -244,10 +252,12 @@ function updateTrafficTab(msg) {
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        let rate =
+            toNumber(flow[1].rate_estimate_bps.down, 0) +
+            toNumber(flow[1].rate_estimate_bps.up, 0);
         if (prevFlowBytes.has(flowKey)) {
-            let down = flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0];
-            let up = flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1];
+            let down = diffToNumber(flow[1].bytes_sent.down, prevFlowBytes.get(flowKey)[0], 0);
+            let up = diffToNumber(flow[1].bytes_sent.up, prevFlowBytes.get(flowKey)[1], 0);
             rate = down + up;
         }
         if (movingAverages.has(flowKey)) {
@@ -265,18 +275,19 @@ function updateTrafficTab(msg) {
     // Process flows and collect data
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let down = flow[1].rate_estimate_bps.down;
-        let up = flow[1].rate_estimate_bps.up;
+        let down = toNumber(flow[1].rate_estimate_bps.down, 0);
+        let up = toNumber(flow[1].rate_estimate_bps.up, 0);
 
         //console.log(flow);
         if (prevFlowBytes.has(flowKey)) {
-            let ticks = tickCount - prevFlowBytes.get(flowKey)[2];
+            let prev = prevFlowBytes.get(flowKey);
+            let ticks = tickCount - prev[2];
             if (ticks === 1) {
-                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
-                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
+                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
             } else if (ticks > 1) {
-                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
-                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
+                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
                 down = down / ticks;
                 up = up / ticks;
             }
@@ -285,9 +296,10 @@ function updateTrafficTab(msg) {
         if (up < 0) up = 0;
         prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
 
-        if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
+        const lastSeenNanos = toNumber(flow[0].last_seen_nanos, 0);
+        if (lastSeenNanos > thirty_seconds_in_nanos) return;
         
-        let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
+        let opacity = Math.min(1, lastSeenNanos / thirty_seconds_in_nanos);
         let visible = !hideSmallFlows || (down > 1024*1024 || up > 1024*1024);
         
         // Calculate retransmit percentages
@@ -296,30 +308,41 @@ function updateTrafficTab(msg) {
         let retransmitDownPct = 0;
         let retransmitUpPct = 0;
         
-        if (flow[1].tcp_retransmits.down > 0) {
-            retransmitDownPct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+        const tcpRetransmitsDown = toNumber(flow[1].tcp_retransmits.down, 0);
+        const tcpRetransmitsUp = toNumber(flow[1].tcp_retransmits.up, 0);
+        const packetsSentDown = toNumber(flow[1].packets_sent.down, 0);
+        const packetsSentUp = toNumber(flow[1].packets_sent.up, 0);
+
+        if (tcpRetransmitsDown > 0 && packetsSentDown > 0) {
+            retransmitDownPct = tcpRetransmitsDown / packetsSentDown;
             retransmitDown = formatRetransmit(retransmitDownPct);
         }
-        if (flow[1].tcp_retransmits.up > 0) {
-            retransmitUpPct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+        if (tcpRetransmitsUp > 0 && packetsSentUp > 0) {
+            retransmitUpPct = tcpRetransmitsUp / packetsSentUp;
             retransmitUp = formatRetransmit(retransmitUpPct);
         }
         
         // Get average rate for sorting
         let avgRate = down + up;
         if (movingAverages.has(flowKey)) {
-            avgRate = movingAverages.get(flowKey).reduce((a, b) => a + b, 0) / movingAverages.get(flowKey).length;
+            const avg = movingAverages.get(flowKey);
+            avgRate = avg.reduce((a, b) => a + b, 0) / avg.length;
         }
         
+        const bytesSentDown = toNumber(flow[1].bytes_sent.down, 0);
+        const bytesSentUp = toNumber(flow[1].bytes_sent.up, 0);
+        const rttDownNanos = toNumber(flow[1].rtt[0].nanoseconds, 0);
+        const rttUpNanos = toNumber(flow[1].rtt[1].nanoseconds, 0);
+
         // Collect row data
         tableRows.push({
             sortKeys: {
                 protocol: flow[0].protocol_name,
                 rate: avgRate,
-                bytes: flow[1].bytes_sent.down + flow[1].bytes_sent.up,
-                packets: flow[1].packets_sent.down + flow[1].packets_sent.up,
+                bytes: bytesSentDown + bytesSentUp,
+                packets: packetsSentDown + packetsSentUp,
                 retransmits: retransmitDownPct + retransmitUpPct,
-                rtt: flow[1].rtt[0].nanoseconds + flow[1].rtt[1].nanoseconds,
+                rtt: rttDownNanos + rttUpNanos,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
                 ip: flow[0].remote_ip
@@ -328,14 +351,14 @@ function updateTrafficTab(msg) {
                 flow[0].protocol_name,
                 formatThroughput(down, plan.down),
                 formatThroughput(up, plan.up),
-                scaleNumber(flow[1].bytes_sent.down),
-                scaleNumber(flow[1].bytes_sent.up),
-                scaleNumber(flow[1].packets_sent.down),
-                scaleNumber(flow[1].packets_sent.up),
+                scaleNumber(bytesSentDown),
+                scaleNumber(bytesSentUp),
+                scaleNumber(packetsSentDown),
+                scaleNumber(packetsSentUp),
                 retransmitDown,
                 retransmitUp,
-                scaleNanos(flow[1].rtt[0].nanoseconds),
-                scaleNanos(flow[1].rtt[1].nanoseconds),
+                scaleNanos(rttDownNanos),
+                scaleNanos(rttUpNanos),
                 flow[0].asn_name,
                 flow[0].asn_country,
                 flow[0].remote_ip
@@ -398,21 +421,26 @@ function updateSpeedometer(devices) {
     let retransmitsDown = 0;
     let retransmitsUp = 0;
     devices.forEach((device) => {
-        totalDown += device.bytes_per_second.down;
-        totalUp += device.bytes_per_second.up;
-        planDown = Math.max(planDown, device.plan.down);
-        planUp = Math.max(planUp, device.plan.up);
-        retransmitsDown += device.tcp_retransmits.down;
-        retransmitsUp += device.tcp_retransmits.up;
+        const deviceDown = toNumber(device.bytes_per_second.down, 0);
+        const deviceUp = toNumber(device.bytes_per_second.up, 0);
+        totalDown += deviceDown;
+        totalUp += deviceUp;
+        planDown = Math.max(planDown, toNumber(device.plan.down, 0));
+        planUp = Math.max(planUp, toNumber(device.plan.up, 0));
+        retransmitsDown += toNumber(device.tcp_retransmits.down, 0);
+        retransmitsUp += toNumber(device.tcp_retransmits.up, 0);
 
         let throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
-            throughputGraph.update(device.bytes_per_second.down * 8, device.bytes_per_second.up * 8);
+            throughputGraph.update(deviceDown * 8, deviceUp * 8);
         }
 
         let retransmitGraph = deviceGraphs["tcpRetransmitsGraph_" + device.device_id];
         if (retransmitGraph !== undefined) {
-            retransmitGraph.update(device.tcp_retransmits.down, device.tcp_retransmits.up);
+            retransmitGraph.update(
+                toNumber(device.tcp_retransmits.down, 0),
+                toNumber(device.tcp_retransmits.up, 0)
+            );
         }
     });
     speedometer.update(totalDown * 8, totalUp * 8, planDown, planUp);
@@ -435,11 +463,17 @@ function fillLiveDevices(devices) {
         }
 
         if (throughputDown !== null) {
-            throughputDown.innerHTML = formatThroughput(device.bytes_per_second.down * 8, device.plan.down);
+            throughputDown.innerHTML = formatThroughput(
+                toNumber(device.bytes_per_second.down, 0) * 8,
+                toNumber(device.plan.down, 0)
+            );
         }
 
         if (throughputUp !== null) {
-            throughputUp.innerHTML = formatThroughput(device.bytes_per_second.up * 8, device.plan.up);
+            throughputUp.innerHTML = formatThroughput(
+                toNumber(device.bytes_per_second.up, 0) * 8,
+                toNumber(device.plan.up, 0)
+            );
         }
 
         if (rttDown !== null) {
@@ -756,17 +790,24 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[1] *8);
+        tpGraph.update(
+            toNumber(myMessage.current_throughput[0], 0) * 8,
+            toNumber(myMessage.current_throughput[1], 0) * 8
+        );
         let rxmit = [0, 0];
-        if (myMessage.current_retransmits[0] > 0) {
-            rxmit[0] = (myMessage.current_retransmits[0] / myMessage.current_tcp_packets[0]) * 100.0;
+        const packetsDown = toNumber(myMessage.current_tcp_packets[0], 0);
+        const packetsUp = toNumber(myMessage.current_tcp_packets[1], 0);
+        const retransmitsDown = toNumber(myMessage.current_retransmits[0], 0);
+        const retransmitsUp = toNumber(myMessage.current_retransmits[1], 0);
+        if (retransmitsDown > 0 && packetsDown > 0) {
+            rxmit[0] = (retransmitsDown / packetsDown) * 100.0;
         }
-        if (myMessage.current_retransmits[1] > 0) {
-            rxmit[1] = (myMessage.current_retransmits[1] / myMessage.current_tcp_packets[1]) * 100.0;
+        if (retransmitsUp > 0 && packetsUp > 0) {
+            rxmit[1] = (retransmitsUp / packetsUp) * 100.0;
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
         myMessage.rtts.forEach((rtt) => {
-            rttGraph.updateMs(rtt);
+            rttGraph.updateMs(toNumber(rtt, 0));
         });
         tpGraph.chart.resize();
         rxmitGraph.chart.resize();
@@ -971,8 +1012,8 @@ function loadInitial() {
         $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
         $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
         plan = {
-            down: circuit.download_max_mbps,
-            up: circuit.upload_max_mbps,
+            down: toNumber(circuit.download_max_mbps, 0),
+            up: toNumber(circuit.upload_max_mbps, 0),
         };
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");

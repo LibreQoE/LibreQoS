@@ -1,6 +1,7 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow} from "./helpers/builders";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 
 let shapedDevices = null;
 let displayDevices = null;
@@ -283,11 +284,11 @@ subscribeWS(["NetworkTreeClients"], (msg) => {
             }
             let throughputDown = document.getElementById("throughputDown_" + d.circuit_id);
             if (throughputDown !== null) {
-                throughputDown.innerHTML = formatThroughput(d.bytes_per_second.down * 8, d.plan.down);
+                throughputDown.innerHTML = formatThroughput(toNumber(d.bytes_per_second.down, 0) * 8, d.plan.down);
             }
             let throughputUp = document.getElementById("throughputUp_" + d.circuit_id);
             if (throughputUp !== null) {
-                throughputUp.innerHTML = formatThroughput(d.bytes_per_second.up * 8, d.plan.up);
+                throughputUp.innerHTML = formatThroughput(toNumber(d.bytes_per_second.up, 0) * 8, d.plan.up);
             }
             let rttDown = document.getElementById("rttDown_" + d.circuit_id);
             if (rttDown !== null && d.median_latency != null) {
