@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
 use crate::{
-    BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession,
+    BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse,
     bus::client::{MAGIC_NUMBER, MAGIC_RESPONSE},
 };
 use std::{ffi::CString, fs::remove_file};
@@ -14,14 +14,11 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 
 use super::BUS_SOCKET_DIRECTORY;
+use super::protocol::{decode_session_cbor, encode_reply_cbor, read_frame, write_frame};
 
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
-
-static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> =
-    tokio::sync::OnceCell::const_new();
-const RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 512; // 512 MiB
 
 impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
@@ -96,10 +93,6 @@ impl UnixSocketServer {
             BusRequest,
         )>,
     ) -> Result<(), UnixSocketServerError> {
-        RECEIVE_BUFFER
-            .set(tokio::sync::Mutex::new(vec![0; RECEIVE_BUFFER_SIZE])) // 512 MiB
-            .map_err(|_| UnixSocketServerError::MkDirFail)?;
-
         // Set up the listener and grant permissions to it
         let listener = UnixListener::bind(BUS_SOCKET_PATH);
         let Ok(listener) = listener else {
@@ -156,75 +149,46 @@ impl UnixSocketServer {
                     }
 
                     loop {
-                        // Read the request ID (64 bits) and the Size (64 bits)
-                        // This is the size of the request in bytes, not the number of requests
-                        let mut id_buf = [0; 16];
-                        let bytes_read = socket.read_exact(&mut id_buf).await;
-                        if bytes_read.is_err() {
-                            debug!("Unable to read request ID from client socket. Server remains alive.");
-                            debug!("This is probably harmless.");
-                            debug!("{:?}", bytes_read);
-                            break; // Escape out of the thread
-                        }
-                        let Ok(id_bytes): Result<[u8; 8], _> = id_buf[0..8].try_into() else {
-                            warn!("Invalid request header for ID; closing client socket.");
-                            break; // Escape out of the thread
+                        let (request_id, request_bytes) = match read_frame(&mut socket).await {
+                            Ok(frame) => frame,
+                            Err(e) => {
+                                debug!("Unable to read request frame from client socket.");
+                                debug!("This is probably harmless.");
+                                debug!("{:?}", e);
+                                break;
+                            }
                         };
-                        let request_id = u64::from_le_bytes(id_bytes);
-
-                        let Ok(size_bytes): Result<[u8; 8], _> = id_buf[8..16].try_into() else {
-                            warn!("Invalid request header for size; closing client socket.");
-                            break; // Escape out of the thread
-                        };
-                        let request_size = u64::from_le_bytes(size_bytes);
-                        debug!("Received request ID: {request_id}, Size: {request_size}");
-                        if request_size > RECEIVE_BUFFER_SIZE as u64 {
-                            warn!("Received request size ({request_size}) exceeds buffer size ({RECEIVE_BUFFER_SIZE}).");
-                            break; // Escape out of the thread
+                        if request_bytes.is_empty() {
+                            warn!("Received empty request payload; closing client socket.");
+                            break;
                         }
-
-                        // Read the request data
-                        //let mut buf = vec![0; request_size as usize];
-                        let Some(buf_cell) = RECEIVE_BUFFER.get() else {
-                            error!("Receive buffer not initialized; closing client socket.");
-                            break; // Escape out of the thread
-                        };
-                        let mut buf = buf_cell.lock().await;
-
-                        let bytes_read = socket.read_exact(&mut buf[0 .. request_size as usize]).await;
-                        if bytes_read.is_err() {
-                            debug!("Unable to read request data from client socket. Server remains alive.");
-                            debug!("This is probably harmless.");
-                            debug!("{:?}", bytes_read);
-                            break; // Escape out of the thread
-                        }
+                        debug!(
+                            "Received request ID: {request_id}, Size: {}",
+                            request_bytes.len()
+                        );
 
                         // Decode the request
-                        let Ok(request) = bincode::deserialize::<BusSession>(&buf[0..request_size as usize]) else {
+                        let Ok(request) = decode_session_cbor(&request_bytes) else {
                             warn!("Invalid data on local socket");
                             break;
                         };
                         debug!("Received request: {:?}", request);
-                        drop(buf); // Release the lock on the buffer
 
                         // Handle the request and build the response
                         let mut response = BusReply { responses: Vec::with_capacity(8) };
                         handle_bus_requests(&request.requests, &mut response.responses);
 
                         // Encode the response
-                        let Ok(encoded_response) = bincode::serialize(&response) else {
+                        let Ok(encoded_response) = encode_reply_cbor(&response) else {
                             warn!("Unable to encode response for request ID: {request_id}");
                             break;
                         };
                         debug!("Sending response for request ID: {request_id}");
 
                         // Send the response back to the client
-                        let response_size = encoded_response.len() as u64;
-                        let mut response_buf = vec![0; 16 + encoded_response.len()];
-                        response_buf[0..8].copy_from_slice(&request_id.to_le_bytes());
-                        response_buf[8..16].copy_from_slice(&response_size.to_le_bytes());
-                        response_buf[16..].copy_from_slice(&encoded_response);
-                        if let Err(e) = socket.write_all(&response_buf).await {
+                        if let Err(e) =
+                            write_frame(&mut socket, request_id, &encoded_response).await
+                        {
                             debug!("Unable to write response to client socket. Server remains alive.");
                             debug!("This is probably harmless.");
                             debug!("{:?}", e);

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Fetch and install the lqos_api binary into src/bin
-# - Downloads https://download.libreqos.com/api.zip
+# - Downloads https://download.libreqos.com/api2.zip
 # - Extracts the single file lqos_api
 # - Places it into ./bin alongside other binaries
 
@@ -12,7 +12,11 @@ BIN_DIR="$SCRIPT_DIR/bin"
 TMP_ZIP="$(mktemp /tmp/lqos_api.XXXXXX.zip)"
 
 echo "Downloading lqos_api..."
-curl -fsSL -o "$TMP_ZIP" "https://download.libreqos.com/api.zip"
+if ! curl -fsSL -o "$TMP_ZIP" "https://download.libreqos.com/api2.zip"; then
+  echo "Warning: Failed to download lqos_api; leaving existing binary untouched."
+  rm -f "$TMP_ZIP"
+  exit 0
+fi
 
 # Ensure unzip is available
 if ! command -v unzip >/dev/null 2>&1; then
