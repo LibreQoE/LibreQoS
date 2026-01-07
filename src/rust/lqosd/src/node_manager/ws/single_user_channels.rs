@@ -64,7 +64,8 @@ impl PrivateState {
                 spawn(cake_watcher(circuit, self.tx.clone()));
             }
             PrivateRequest::Chatbot { browser_ts_ms } => {
-                self.start_chatbot(browser_ts_ms).await;
+                self.start_chatbot(normalize_browser_ts_ms(browser_ts_ms))
+                    .await;
             }
             PrivateRequest::ChatbotUserInput { text } => {
                 self.forward_chatbot_input(text).await;
@@ -125,4 +126,17 @@ impl PrivateState {
             })
             .await;
     }
+}
+
+// JS CBOR encoder emits float64 for timestamps beyond 32-bit ranges; normalize to i64.
+fn normalize_browser_ts_ms(browser_ts_ms: Option<f64>) -> Option<i64> {
+    let ts_ms = browser_ts_ms?;
+    if !ts_ms.is_finite() {
+        return None;
+    }
+    let ts_ms = ts_ms.trunc();
+    if ts_ms < i64::MIN as f64 || ts_ms > i64::MAX as f64 {
+        return None;
+    }
+    Some(ts_ms as i64)
 }
