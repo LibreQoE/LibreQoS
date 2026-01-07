@@ -7,10 +7,13 @@
 //! with the LibreQoS system.
 //!
 //! A normal session consists of connecting and sending a single `BusSession`
-//! object (serialized with `bincode`), that must contain one or more
-//! `BusRequest` objects. Replies are then batched inside a `BusReply`
-//! object, containing one or more `BusResponse` detail objects.
-//! The session then terminates.
+//! object (serialized with CBOR), that must contain one or more
+//! `BusRequest` objects. Payloads are framed with a header and chunked
+//! into length-prefixed blocks for transport. Replies are then batched
+//! inside a `BusReply` object, containing one or more `BusResponse`
+//! detail objects. The session then terminates.
+//!
+//! Protocol versioning/negotiation is intentionally skipped.
 
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
@@ -31,11 +34,6 @@ pub use bus::{
     TopFlowType, UnixSocketServer, UrgentSeverity, UrgentSource, bus_request,
 };
 pub use tc_handle::TcHandle;
-
-/// Re-export bincode
-pub mod bincode {
-    pub use bincode::*;
-}
 
 /// Re-export CBOR
 pub mod cbor {

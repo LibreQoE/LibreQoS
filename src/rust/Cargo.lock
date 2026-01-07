@@ -1896,7 +1896,6 @@ version = "0.1.0"
 dependencies = [
  "allocative",
  "allocative_derive",
- "bincode",
  "lqos_config",
  "lqos_utils",
  "nix",
