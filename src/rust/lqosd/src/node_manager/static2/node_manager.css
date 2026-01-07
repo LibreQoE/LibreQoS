@@ -262,6 +262,75 @@ table tr td a {
     z-index: 10000;
     background: var(--bs-body-bg);
 }
+.executive-card {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.75rem;
+    padding: 12px 14px;
+    background: var(--bs-body-bg);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+.exec-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bs-light-bg-subtle, #f8f9fa);
+    font-size: 14px;
+}
+.exec-metric-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+.exec-section-title {
+    font-weight: 600;
+    color: var(--bs-body-color);
+}
+.exec-helper-button {
+    min-width: 220px;
+}
+.exec-badge {
+    font-size: 0.78rem;
+}
+.exec-heat-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.exec-heat-row {
+    display: grid;
+    grid-template-columns: minmax(0, 160px) 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+@media (max-width: 576px) {
+    .exec-heat-row {
+        grid-template-columns: minmax(0, 120px) 1fr auto;
+    }
+}
+.exec-heat-label .badge {
+    font-size: 0.7rem;
+}
+.exec-heat-label .fw-semibold {
+    font-size: 0.92rem;
+}
+.exec-heat-cells {
+    display: grid;
+    grid-template-columns: repeat(15, minmax(0, 1fr));
+    gap: 4px;
+}
+.exec-heat-cell {
+    height: 16px;
+    border-radius: 3px;
+    background: var(--bs-border-color);
+}
+.exec-heat-cell.empty {
+    opacity: 0.4;
+}
+.exec-latest {
+    min-width: 54px;
+}
 @font-face {
     font-family: Klingon;
     src: url(/vendor/klingon.ttf);

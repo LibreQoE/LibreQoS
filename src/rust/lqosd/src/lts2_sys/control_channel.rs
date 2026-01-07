@@ -1,11 +1,11 @@
 use anyhow::{Result, bail};
 use futures_util::{StreamExt, sink::SinkExt};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tokio::sync::mpsc::error::TrySendError;
-use serde::{Serialize, Deserialize};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
@@ -37,8 +37,13 @@ pub enum ControlChannelCommand {
         browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
-    ChatSend { request_id: u64, text: String },
-    ChatStop { request_id: u64 },
+    ChatSend {
+        request_id: u64,
+        text: String,
+    },
+    ChatStop {
+        request_id: u64,
+    },
 }
 
 pub enum ConnectionCommand {
@@ -56,8 +61,13 @@ pub enum ConnectionCommand {
         browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
-    ChatSend { request_id: u64, text: String },
-    ChatStop { request_id: u64 },
+    ChatSend {
+        request_id: u64,
+        text: String,
+    },
+    ChatStop {
+        request_id: u64,
+    },
 }
 
 pub struct ControlChannelBuilder {
@@ -105,8 +115,18 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     }
                 }
             }
-            ControlChannelCommand::StartChat { request_id, browser_ts_ms, browser_language, stream } => {
-                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream });
+            ControlChannelCommand::StartChat {
+                request_id,
+                browser_ts_ms,
+                browser_language,
+                stream,
+            } => {
+                let _ = tx.try_send(ConnectionCommand::StartChat {
+                    request_id,
+                    browser_ts_ms,
+                    browser_language,
+                    stream,
+                });
             }
             ControlChannelCommand::ChatSend { request_id, text } => {
                 let _ = tx.try_send(ConnectionCommand::ChatSend { request_id, text });
@@ -120,7 +140,7 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
     Ok(())
 }
 
-const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+const TCP_TIMEOUT: Duration = Duration::from_secs(30);
 // Prevent unbounded growth while waiting for Welcome
 const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
@@ -153,7 +173,8 @@ async fn persistent_connection(
                 u64,
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
-            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> = HashMap::new();
+            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> =
+                HashMap::new();
             // Queue chatbot control messages until the connection is permitted (Welcome received)
             let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
@@ -591,7 +612,12 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     debug!("Connecting tungstenite client to shaper gateway server: {target}");
     let result = timeout(
         TCP_TIMEOUT,
-        tokio_tungstenite::client_async_tls_with_config(target.clone(), stream, None, Some(t_connector)),
+        tokio_tungstenite::client_async_tls_with_config(
+            target.clone(),
+            stream,
+            None,
+            Some(t_connector),
+        ),
     )
     .await;
     if result.is_err() {
@@ -726,7 +752,12 @@ async fn api_request(
         }
     };
 
-    let message = messages::WsMessage::ApiReply { request_id, status, headers, data: bytes };
+    let message = messages::WsMessage::ApiReply {
+        request_id,
+        status,
+        headers,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize ApiReply");
         return Ok(());
@@ -777,7 +808,9 @@ async fn shaper_snapshot_streaming(
         };
         if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
             match e {
-                TrySendError::Full(_) => warn!("Send unavailable: StreamingShaper queue full; dropping reply"),
+                TrySendError::Full(_) => {
+                    warn!("Send unavailable: StreamingShaper queue full; dropping reply")
+                }
                 TrySendError::Closed(_) => error!("Failed to send StreamingShaper: channel closed"),
             }
         }
@@ -841,23 +874,29 @@ async fn circuit_snapshot_streaming(
 
     // Helper: run one ping with 1s timeout; respects disable_icmp_ping
     async fn one_ping(ip: std::net::IpAddr) -> Option<f32> {
-        let Ok(cfg) = lqos_config::load_config() else { return None; };
+        let Ok(cfg) = lqos_config::load_config() else {
+            return None;
+        };
         if cfg.disable_icmp_ping.unwrap_or(false) {
             return None;
         }
-        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
         use rand::random;
+        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
         let client = match ip {
             std::net::IpAddr::V4(_) => Client::new(&Config::default()),
             std::net::IpAddr::V6(_) => Client::new(&Config::builder().kind(ICMP::V6).build()),
         };
-        if client.is_err() { return None; }
+        if client.is_err() {
+            return None;
+        }
         let client = client.ok()?;
         let payload = [0; 56];
         let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
         pinger.timeout(Duration::from_secs(1));
         match pinger.ping(PingSequence(0), &payload).await {
-            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => Some(dur.as_secs_f32() * 1000.0),
+            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => {
+                Some(dur.as_secs_f32() * 1000.0)
+            }
             _ => None,
         }
     }
@@ -881,15 +920,27 @@ async fn circuit_snapshot_streaming(
     }
     let mut aggregates: std::collections::HashMap<usize, Agg> = std::collections::HashMap::new();
     for idx in &device_indexes {
-        aggregates.insert(*idx, Agg { bps_bytes: DownUpOrder::zeroed(), tcp_packets: DownUpOrder::zeroed(), tcp_retries: DownUpOrder::zeroed(), rtts: Vec::new() });
+        aggregates.insert(
+            *idx,
+            Agg {
+                bps_bytes: DownUpOrder::zeroed(),
+                tcp_packets: DownUpOrder::zeroed(),
+                tcp_retries: DownUpOrder::zeroed(),
+                rtts: Vec::new(),
+            },
+        );
     }
 
     // Walk raw throughput data and fold into devices of this circuit
     {
-        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
+        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .raw_data
+            .lock();
         for (xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
-            if te.circuit_hash != Some(circuit_hash) { continue; }
+            if te.circuit_hash != Some(circuit_hash) {
+                continue;
+            }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
             // Map IP to a device via trie
@@ -915,7 +966,12 @@ async fn circuit_snapshot_streaming(
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
     for idx in device_indexes {
         let dev = &shaped.devices[idx];
-        let agg = aggregates.remove(&idx).unwrap_or(Agg { bps_bytes: DownUpOrder::zeroed(), tcp_packets: DownUpOrder::zeroed(), tcp_retries: DownUpOrder::zeroed(), rtts: Vec::new() });
+        let agg = aggregates.remove(&idx).unwrap_or(Agg {
+            bps_bytes: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            tcp_retries: DownUpOrder::zeroed(),
+            rtts: Vec::new(),
+        });
         // Compact addresses into a single list
         let mut addresses: Vec<(std::net::IpAddr, u8)> = Vec::new();
         addresses.extend(
@@ -933,7 +989,11 @@ async fn circuit_snapshot_streaming(
         let device_name = dev.device_name.clone();
         // Ping selection
         let ping_ip = choose_host_ip(&dev.ipv4, &dev.ipv6);
-        let last_ping_ms = if let Some(ip) = ping_ip { one_ping(ip).await } else { None };
+        let last_ping_ms = if let Some(ip) = ping_ip {
+            one_ping(ip).await
+        } else {
+            None
+        };
         // Compute RTT median across collected medians
         let median_tcp_rtt_ms = if agg.rtts.is_empty() {
             None
@@ -972,13 +1032,22 @@ async fn circuit_snapshot_streaming(
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
         for (key, (local, ..)) in all_flows.flow_data.iter() {
-            if local.last_seen < five_minutes_ago { continue; }
+            if local.last_seen < five_minutes_ago {
+                continue;
+            }
             // Identify if this flow belongs to our circuit via local or remote mapping
             use std::net::IpAddr;
-            let local_ip_v6 = match key.local_ip.as_ip() { IpAddr::V4(ip) => ip.to_ipv6_mapped(), IpAddr::V6(ip) => ip };
-            let remote_ip_v6 = match key.remote_ip.as_ip() { IpAddr::V4(ip) => ip.to_ipv6_mapped(), IpAddr::V6(ip) => ip };
+            let local_ip_v6 = match key.local_ip.as_ip() {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                IpAddr::V6(ip) => ip,
+            };
+            let remote_ip_v6 = match key.remote_ip.as_ip() {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                IpAddr::V6(ip) => ip,
+            };
             let mut include = false;
-            let (mut local_ip_addr, mut remote_ip_addr) = (key.local_ip.as_ip(), key.remote_ip.as_ip());
+            let (mut local_ip_addr, mut remote_ip_addr) =
+                (key.local_ip.as_ip(), key.remote_ip.as_ip());
             if let Some((_, id)) = shaped.trie.longest_match(local_ip_v6) {
                 if shaped.devices[*id].circuit_hash == circuit_hash {
                     include = true;
@@ -996,7 +1065,9 @@ async fn circuit_snapshot_streaming(
                     }
                 }
             }
-            if !include { continue; }
+            if !include {
+                continue;
+            }
 
             let rtt_ms = (
                 local.rtt[0].as_millis() as f32,
@@ -1018,20 +1089,29 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    let payload = StreamingCircuitPayload { devices: devices_out, flows: flows_out };
+    let payload = StreamingCircuitPayload {
+        devices: devices_out,
+        flows: flows_out,
+    };
     let Ok(bytes) = serde_cbor::to_vec(&payload) else {
         error!("Failed to serialize StreamingCircuitPayload");
         return Ok(());
     };
 
-    let message = messages::WsMessage::StreamingCircuit { request_id, circuit_hash, data: bytes };
+    let message = messages::WsMessage::StreamingCircuit {
+        request_id,
+        circuit_hash,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize StreamingCircuit message");
         return Ok(());
     };
     if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
         match e {
-            TrySendError::Full(_) => warn!("Send unavailable: StreamingCircuit queue full; dropping reply"),
+            TrySendError::Full(_) => {
+                warn!("Send unavailable: StreamingCircuit queue full; dropping reply")
+            }
             TrySendError::Closed(_) => error!("Failed to send StreamingCircuit: channel closed"),
         }
     }
@@ -1094,14 +1174,19 @@ async fn tree_snapshot_streaming(
         return Ok(());
     };
 
-    let message = messages::WsMessage::StreamingShaperTree { request_id, data: bytes };
+    let message = messages::WsMessage::StreamingShaperTree {
+        request_id,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize StreamingShaperTree message");
         return Ok(());
     };
     if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
         match e {
-            TrySendError::Full(_) => warn!("Send unavailable: StreamingShaperTree queue full; dropping reply"),
+            TrySendError::Full(_) => {
+                warn!("Send unavailable: StreamingShaperTree queue full; dropping reply")
+            }
             TrySendError::Closed(_) => error!("Failed to send StreamingShaperTree: channel closed"),
         }
     }

@@ -408,6 +408,7 @@ pub fn submit_site_rtt_batch(batch: &[shared_types::SiteRtt]) -> anyhow::Result<
     Ok(()) // SUCCESS
 }
 
+#[allow(dead_code)]
 pub fn get_lts_license_status() -> anyhow::Result<i32> {
     if let Ok(tx) = client_commands::get_command_channel() {
         let (otx, orx) = oneshot::channel();
@@ -429,6 +430,7 @@ pub fn get_lts_license_status() -> anyhow::Result<i32> {
     Err(anyhow::anyhow!("Failed to get command channel"))
 }
 
+#[allow(dead_code)]
 pub fn get_lts_license_trial_remaining() -> anyhow::Result<i32> {
     if let Ok(tx) = client_commands::get_command_channel() {
         let (otx, orx) = oneshot::channel();

@@ -1,12 +1,21 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow} from "./helpers/builders";
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 
 let shapedDevices = null;
 let displayDevices = null;
 let devicesPerPage = 10;
 let page = 0;
 let searchTerm = "";
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 function tableRow(device) {
     let tr = document.createElement("tr");
@@ -30,7 +39,14 @@ function tableRow(device) {
     tr.appendChild(td);
 
     tr.appendChild(simpleRow(device.download_max_mbps + " / " + device.upload_max_mbps));
-    tr.appendChild(simpleRow(device.parent_node, true));
+    let parentNode = document.createElement("td");
+    parentNode.classList.add("redactable");
+    parentNode.innerText = device.parent_node;
+    parentNode.title = device.parent_node;
+    parentNode.style.whiteSpace = "nowrap";
+    parentNode.style.overflow = "hidden";
+    parentNode.style.textOverflow = "ellipsis";
+    tr.appendChild(parentNode);
     let ipList = "";
     device.ipv4.forEach((ip) => {
         ipList += ip[0] + "/" + ip[1] + "<br />";
@@ -91,6 +107,29 @@ function tableRow(device) {
 function make_table() {
     let table = document.createElement("table");
     table.classList.add("table", "table-striped");
+    table.style.tableLayout = "fixed";
+    table.style.width = "100%";
+    let colgroup = document.createElement("colgroup");
+    let colWidths = [
+        "16%", // Circuit
+        "16%", // Device
+        "8%",  // Plan (Mbps)
+        "10%", // Parent
+        "18%", // IP
+        "120px", // Last Seen
+        "120px", // Throughput Down
+        "120px", // Throughput Up
+        "80px", // RTT Down
+        "80px", // RTT Up
+        "80px", // Re-Xmit Down
+        "80px"  // Re-Xmit Up
+    ];
+    colWidths.forEach((width) => {
+        let col = document.createElement("col");
+        col.style.width = width;
+        colgroup.appendChild(col);
+    });
+    table.appendChild(colgroup);
     table.appendChild(clientTableHeader());
     let tb = document.createElement("tbody");
     let start = page * devicesPerPage;
@@ -114,10 +153,61 @@ function filterDevices() {
         }
     });
     page = 0;
-    fillTable();
+    renderTable();
 }
 
-function fillTable() {
+function ensureFilter() {
+    let content = document.getElementById("deviceTableContent");
+    if (content !== null) {
+        let existingSearch = document.getElementById("sdSearch");
+        if (existingSearch !== null) {
+            existingSearch.value = searchTerm;
+        }
+        return content;
+    }
+
+    let filter = document.createElement("div");
+    //let label = document.createElement("label");
+    //label.classList.add("text-secondary");
+    //label.innerText = "Search";
+    //label.htmlFor = "sdSearch";
+    let sdSearch = document.createElement("input");
+    sdSearch.id = "sdSearch";
+    sdSearch.placeholder = "Search";
+    sdSearch.value = searchTerm;
+    sdSearch.oninput = () => {
+        searchTerm = $("#sdSearch").val();
+        filterDevices();
+    }
+    sdSearch.onkeydown = (event) => {
+        if (event.keyCode == 13) {
+            searchTerm = $("#sdSearch").val();
+            filterDevices();
+        }
+    }
+    let searchButton = document.createElement("button");
+    searchButton.type = "button"
+    searchButton.classList.add("btn", "btn-sm");
+    searchButton.innerHTML = "<i class='fa fa-search'></i>";
+    searchButton.onclick = () => {
+        searchTerm = $("#sdSearch").val();
+        filterDevices();
+    }
+    //filter.appendChild(label);
+    filter.appendChild(sdSearch);
+    filter.appendChild(searchButton);
+
+    let target = document.getElementById("deviceTable");
+    clearDiv(target);
+    target.appendChild(filter);
+
+    content = document.createElement("div");
+    content.id = "deviceTableContent";
+    target.appendChild(content);
+    return content;
+}
+
+function renderTable() {
     let table = make_table();
     let pages = document.createElement("div");
     pages.classList.add("mt-2", "mb-1");
@@ -131,7 +221,7 @@ function fillTable() {
             left.innerHTML = "<i class='fa fa-arrow-left'></i>";
             left.onclick = () => {
                 page -= 1;
-                fillTable();
+                renderTable();
             }
             pages.appendChild(left);
         }
@@ -145,44 +235,16 @@ function fillTable() {
             right.innerHTML = "<i class='fa fa-arrow-right'></i>";
             right.onclick = () => {
                 page += 1;
-                fillTable();
+                renderTable();
             }
             pages.appendChild(right);
         }
     }
 
-    let filter = document.createElement("div");
-    //let label = document.createElement("label");
-    //label.classList.add("text-secondary");
-    //label.innerText = "Search";
-    //label.htmlFor = "sdSearch";
-    let sdSearch = document.createElement("input");
-    sdSearch.id = "sdSearch";
-    sdSearch.placeholder = "Search";
-    sdSearch.value = searchTerm;
-    sdSearch.onkeydown = (event) => {
-        if (event.keyCode == 13) {
-            searchTerm = $("#sdSearch").val();
-            filterDevices();
-        }
-    }
-    let searchButton = document.createElement("button");
-    searchButton.type = "button"
-    searchButton.classList.add("btn", "btn-sm");
-    searchButton.innerHTML = "<i class='fa fa-search'></i>";
-    searchButton.onchange = () => {
-        searchTerm = $("#sdSearch").val();
-        filterDevices();
-    }
-    //filter.appendChild(label);
-    filter.appendChild(sdSearch);
-    filter.appendChild(searchButton);
-
-    let target = document.getElementById("deviceTable");
-    clearDiv(target);
-    target.appendChild(filter);
-    target.appendChild(pages);
-    target.appendChild(table);
+    let content = ensureFilter();
+    clearDiv(content);
+    content.appendChild(pages);
+    content.appendChild(table);
 }
 
 function countCircuits() {
@@ -200,14 +262,15 @@ function countCircuits() {
 }
 
 function loadDevices() {
-    $.get("/local-api/devicesAll", (data) => {
-        //console.log(data);
+    listenOnce("DevicesAll", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         shapedDevices = data;
         displayDevices = data;
-        fillTable();
+        renderTable();
         $("#count").text(shapedDevices.length + " devices");
         $("#countCircuit").text(countCircuits() + " circuits");
-    })
+    });
+    wsClient.send({ DevicesAll: {} });
 }
 
 loadDevices();
@@ -221,11 +284,11 @@ subscribeWS(["NetworkTreeClients"], (msg) => {
             }
             let throughputDown = document.getElementById("throughputDown_" + d.circuit_id);
             if (throughputDown !== null) {
-                throughputDown.innerHTML = formatThroughput(d.bytes_per_second.down * 8, d.plan.down);
+                throughputDown.innerHTML = formatThroughput(toNumber(d.bytes_per_second.down, 0) * 8, d.plan.down);
             }
             let throughputUp = document.getElementById("throughputUp_" + d.circuit_id);
             if (throughputUp !== null) {
-                throughputUp.innerHTML = formatThroughput(d.bytes_per_second.up * 8, d.plan.up);
+                throughputUp.innerHTML = formatThroughput(toNumber(d.bytes_per_second.up, 0) * 8, d.plan.up);
             }
             let rttDown = document.getElementById("rttDown_" + d.circuit_id);
             if (rttDown !== null && d.median_latency != null) {

@@ -343,7 +343,10 @@ pub(crate) fn submit_throughput_stats(
                 if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap_or(0)) {
                     c.push(h.median_latency().unwrap_or(0.0));
                 } else {
-                    circuit_rtt.insert(h.circuit_hash.unwrap_or(0), vec![h.median_latency().unwrap_or(0.0)]);
+                    circuit_rtt.insert(
+                        h.circuit_hash.unwrap_or(0),
+                        vec![h.median_latency().unwrap_or(0.0)],
+                    );
                 }
             });
 
@@ -533,11 +536,6 @@ pub(crate) fn submit_throughput_stats(
                     }
                 }
             }
-        }
-
-        // Notify of completion, which triggers processing
-        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
-            warn!("Error sending message to LTS2: {e:?}");
         }
     }
 }

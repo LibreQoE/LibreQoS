@@ -18,6 +18,8 @@
 </head>
 <body>
 %%%LTS_SCRIPT%%%
+<script>window.LQOS_UI_VERSION = "%%VERSION%%";</script>
+<script>window.sm = %%MODAL%%; window.smn = "%%MODAL_NUM%%"</script>
 <div id="wrapper"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
@@ -87,6 +89,12 @@
                             <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Explorer
                         </a>
                     </li>
+                    <!-- CPU Affinity -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="cpu_weights.html">
+                            <i class="fa fa-fw fa-centerline fa-microchip nav-icon"></i> CPU Affinity
+                        </a>
+                    </li>
                     <!-- Statistics -->
                     %%LTS_LINK%%
                     %%API_LINK%%
@@ -110,6 +118,7 @@
                             <i class="fa fa-fw fa-centerline fa-recycle"></i> Reload LibreQoS
                         </a>
                     </li>
+                    %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
                     <hr />
                     <!-- Dark mode switch -->
@@ -204,8 +213,29 @@
     </div>
     </div>
 
+<!-- Urgent Issues Modal -->
+<div class='modal fade' id='urgentModal' tabindex='-1' aria-labelledby='urgentModalLabel' aria-hidden='true'>
+    <div class='modal-dialog modal-xl modal-dialog-scrollable'>
+        <div class='modal-content'>
+            <div class='modal-header'>
+                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Urgent Issues</h1>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge All'><i class='fa fa-times'></i></button>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+            </div>
+            <div class='modal-body'>
+                <div id='urgentListContainer'>
+                    <div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>
+                </div>
+            </div>
+            <div class='modal-footer'>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
-    LibreQoS %%VERSION%%. &copy; Copyright 2022-2024, LibreQoE LLC. All Rights Reserved.
+    LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
 </footer>
 
     <script src="template.js"></script>
@@ -225,6 +255,13 @@
         });
         obs.observe(container, { childList: true, subtree: true });
     })();
+    
+    document.getElementById('year').textContent = new Date().getFullYear();
+        
+
+    if (window.lqosInitUrgentIssues) {
+        window.lqosInitUrgentIssues();
+    }
     </script>
 
 </body>

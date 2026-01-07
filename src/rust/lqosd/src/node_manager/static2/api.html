@@ -1,15 +1,14 @@
 <!-- API & Chatbot (Libby) overview -->
 
 <!-- Subscription notice -->
-<div class="alert alert-info d-flex align-items-start" role="alert">
-  <i class="fa-solid fa-circle-info me-2 mt-1"></i>
-  <div>
-    <strong>You need an Insight account.</strong>
-    Setup LibreQoS with your Insight license key to enable the Local API and Libby (the LibreQoS chatbot).
+<div id="apiInsightNotice" class="alert alert-info d-none" role="alert">
+  <div class="d-flex align-items-center">
+    <div class="me-2 text-info"><i class="fa fa-circle-info fa-lg"></i></div>
+    <div>
+      <div class="fw-semibold">The LibreQoS API is an Insight feature.</div>
+      <a class="alert-link" href="lts_trial.html">Start an Insight free trial</a> to enable API access and Libby on this node.
+    </div>
   </div>
-  <div class="ms-auto small">
-    <i class="fa-solid fa-key me-1"></i>API access requires a valid license
-</div>
 </div>
 
 <!-- Benefits intro -->
@@ -51,3 +50,16 @@
 </div>
 <!-- Close the outer text-secondary wrapper -->
 </div>
+
+<script>
+  (function(){
+    const notice = document.getElementById('apiInsightNotice');
+    if (!notice) return;
+    const hasInsight = typeof window.hasInsight !== 'undefined' ? !!window.hasInsight : false;
+    if (!hasInsight) {
+      notice.classList.remove('d-none');
+    } else {
+      notice.classList.add('d-none');
+    }
+  })();
+</script>

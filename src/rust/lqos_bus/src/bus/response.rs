@@ -7,15 +7,142 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{temporal_heatmap::HeatmapBlocks, units::DownUpOrder};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
+/// An urgent issue to be displayed prominently in the UI
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct UrgentIssue {
+    /// Unique identifier
+    pub id: u64,
+    /// Unix timestamp (seconds)
+    pub ts: u64,
+    /// Source component
+    pub source: crate::bus::request::UrgentSource,
+    /// Severity level
+    pub severity: crate::bus::request::UrgentSeverity,
+    /// Machine-readable code (e.g., TC_U16_OVERFLOW)
+    pub code: String,
+    /// Human-readable message
+    pub message: String,
+    /// Optional JSON context
+    pub context: Option<String>,
+    /// Optional dedupe key
+    pub dedupe_key: Option<String>,
+}
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
     /// The number of active circuits in the bakery
     pub active_circuits: u64,
+}
+
+/// Circuit-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct CircuitHeatmapData {
+    /// Circuit hash identifier from ShapedDevices.csv.
+    pub circuit_hash: i64,
+    /// Circuit ID string.
+    pub circuit_id: String,
+    /// Circuit name string.
+    pub circuit_name: String,
+    /// Heatmap blocks for the circuit.
+    pub blocks: HeatmapBlocks,
+}
+
+/// Site-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct SiteHeatmapData {
+    /// Site name from network.json.
+    pub site_name: String,
+    /// Optional node type from network.json (e.g., Site/AP).
+    #[serde(default)]
+    pub node_type: Option<String>,
+    /// Depth of the site within the network tree (root is 0).
+    #[serde(default)]
+    pub depth: usize,
+    /// Heatmap blocks for the site.
+    pub blocks: HeatmapBlocks,
+}
+
+/// ASN-level TemporalHeatmap data for the executive summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct AsnHeatmapData {
+    /// ASN number.
+    pub asn: u32,
+    /// ASN descriptive name (if available).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asn_name: Option<String>,
+    /// Heatmap blocks for the ASN.
+    pub blocks: HeatmapBlocks,
+}
+
+/// Metrics for the Executive Summary header cards.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative, Default)]
+pub struct ExecutiveSummaryHeader {
+    /// Total number of unique circuits from SHAPED_DEVICES.
+    pub circuit_count: u64,
+    /// Total number of shaped devices.
+    pub device_count: u64,
+    /// Total number of sites in the site tree.
+    pub site_count: u64,
+    /// Number of mapped IPs (shaped).
+    pub mapped_ip_count: u64,
+    /// Number of unmapped IPs (unknown).
+    pub unmapped_ip_count: u64,
+    /// Number of HTB queues being tracked.
+    pub htb_queue_count: u64,
+    /// Number of CAKE queues being tracked.
+    pub cake_queue_count: u64,
+    /// Whether Insight is connected.
+    pub insight_connected: bool,
+}
+
+/// Debug snapshot of StormGuard evaluation for one direction
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardDebugDirection {
+    /// Current queue rate (Mbps)
+    pub queue_mbps: u64,
+    /// Minimum allowed (Mbps)
+    pub min_mbps: u64,
+    /// Maximum allowed (Mbps)
+    pub max_mbps: u64,
+    /// Latest measured throughput (Mbps)
+    pub throughput_mbps: f64,
+    /// Moving-average throughput (Mbps)
+    pub throughput_ma_mbps: Option<f64>,
+    /// Latest retransmit fraction (0-1)
+    pub retrans: Option<f64>,
+    /// Moving-average retransmit fraction (0-1)
+    pub retrans_ma: Option<f64>,
+    /// Latest RTT sample (as reported)
+    pub rtt: Option<f64>,
+    /// Moving-average RTT
+    pub rtt_ma: Option<f64>,
+    /// State (Warmup/Running/Cooldown)
+    pub state: String,
+    /// Seconds remaining in cooldown, if applicable
+    pub cooldown_remaining_secs: Option<f32>,
+    /// Saturation level vs current queue
+    pub saturation_current: String,
+    /// Saturation level vs max plan
+    pub saturation_max: String,
+    /// Whether StormGuard can increase this direction
+    pub can_increase: bool,
+    /// Whether StormGuard can decrease this direction
+    pub can_decrease: bool,
+}
+
+/// Debug snapshot of StormGuard evaluation for a site
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardDebugEntry {
+    /// Site name
+    pub site: String,
+    /// Download direction debug data
+    pub download: StormguardDebugDirection,
+    /// Upload direction debug data
+    pub upload: StormguardDebugDirection,
 }
 
 /// A `BusResponse` object represents a single
@@ -60,6 +187,24 @@ pub enum BusResponse {
 
     /// Provides the Top N downloaders IP stats.
     TopDownloaders(Vec<IpStats>),
+
+    /// Provides the Top N uploaders IP stats.
+    TopUploaders(Vec<IpStats>),
+
+    /// Provides circuit-level heatmaps.
+    CircuitHeatmaps(Vec<CircuitHeatmapData>),
+
+    /// Provides site-level heatmaps.
+    SiteHeatmaps(Vec<SiteHeatmapData>),
+
+    /// Provides ASN-level heatmaps.
+    AsnHeatmaps(Vec<AsnHeatmapData>),
+
+    /// Provides the global (roll-up) heatmap.
+    GlobalHeatmap(HeatmapBlocks),
+
+    /// Provides headline metrics for the Executive Summary page.
+    ExecutiveSummaryHeader(ExecutiveSummaryHeader),
 
     /// Provides the worst N RTT scores, sorted in descending order.
     WorstRtt(Vec<IpStats>),
@@ -177,6 +322,9 @@ pub enum BusResponse {
     /// Stormguard statistics
     StormguardStats(Vec<(String, u64, u64)>),
 
+    /// Stormguard debug snapshot
+    StormguardDebug(Vec<StormguardDebugEntry>),
+
     /// Bakery statistics
     BakeryActiveCircuits(usize),
 
@@ -187,4 +335,10 @@ pub enum BusResponse {
         /// Any error message from integrations
         error: Option<String>,
     },
+
+    /// List of urgent issues
+    UrgentIssues(Vec<UrgentIssue>),
+
+    /// Is Insight Enabled?
+    InsightStatus(bool),
 }

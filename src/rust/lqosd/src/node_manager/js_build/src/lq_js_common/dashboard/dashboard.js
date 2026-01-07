@@ -1,6 +1,7 @@
 // Provides a generic dashboard system for use in LibreQoS and Insight
 import {DashboardLayout} from "./layout";
-import {resetWS, subscribeWS} from "./ws";
+import {subscribeWS} from "./ws";
+import {get_ws_client} from "../../pubsub/ws";
 import {heading5Icon} from "../helpers/content_builders";
 import {openDashboardEditor} from "./dashboard_editor";
 
@@ -35,8 +36,10 @@ export class Dashboard {
 
         // Content
         this.dashlets = [];
+        this.tabDashlets = {}; // dashlets organized by tab
         this.layout = new DashboardLayout(cookieName, defaultLayout);
-        this.dashletIdentities = this.layout.dashlets;
+        // During edit mode, this holds the active tab's dashlets being edited
+        this.dashletIdentities = [];
 
         // Data Wrangling
         this.channels = [];
@@ -56,36 +59,154 @@ export class Dashboard {
 
     build() {
         this.#filterWidgetList();
-        let childDivs = this.#buildWidgetChildDivs();
-        this.childIds = [];
-        childDivs.forEach((d) => { this.childIds.push(d.id); });
         this.#clearRenderedDashboard();
-        childDivs.forEach((d) => { this.parentDiv.appendChild(d) });
+        this.#buildTabUI();
+        this.#buildTabContents();
         this.#buildChannelList(this.dashlets);
         this.#webSocketSubscription();
     }
 
+    #buildTabUI() {
+        // Create tab navigation
+        let tabNav = document.createElement('ul');
+        tabNav.classList.add('nav', 'nav-tabs', 'mb-3');
+        tabNav.id = this.divName + '_tabs';
+        
+        this.layout.tabs.forEach((tab, index) => {
+            let li = document.createElement('li');
+            li.classList.add('nav-item');
+            
+            let a = document.createElement('a');
+            a.classList.add('nav-link');
+            if (index === this.layout.activeTab) {
+                a.classList.add('active');
+            }
+            a.href = '#';
+            a.innerText = tab.name;
+            a.onclick = (e) => {
+                e.preventDefault();
+                this.switchTab(index);
+            };
+            
+            li.appendChild(a);
+            tabNav.appendChild(li);
+        });
+        
+        this.parentDiv.appendChild(tabNav);
+    }
+
+    #buildTabContents() {
+        // Create tab content container
+        let tabContent = document.createElement('div');
+        tabContent.classList.add('tab-content');
+        tabContent.id = this.divName + '_tab_content';
+        
+        this.childIds = [];
+        
+        this.layout.tabs.forEach((tab, tabIndex) => {
+            let tabPane = document.createElement('div');
+            tabPane.classList.add('tab-pane', 'row');
+            tabPane.id = this.divName + '_tab_' + tabIndex;
+            
+            if (tabIndex === this.layout.activeTab) {
+                tabPane.classList.add('active');
+                tabPane.style.display = 'flex';
+            } else {
+                tabPane.style.display = 'none';
+            }
+            
+            // Build dashlets for this tab
+            let tabDashlets = this.tabDashlets[tabIndex] || [];
+            tabDashlets.forEach(dashlet => {
+                let div = dashlet.buildContainer();
+                this.childIds.push(div.id);
+                tabPane.appendChild(div);
+            });
+            
+            tabContent.appendChild(tabPane);
+        });
+        
+        this.parentDiv.appendChild(tabContent);
+    }
+
+    switchTab(tabIndex) {
+        if (tabIndex === this.layout.activeTab) return;
+        
+        // Update active tab in layout
+        this.layout.activeTab = tabIndex;
+        this.layout.save(this.layout);
+        
+        // Update tab navigation
+        let tabs = document.querySelectorAll('#' + this.divName + '_tabs .nav-link');
+        tabs.forEach((tab, index) => {
+            if (index === tabIndex) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+        
+        // Update tab content visibility
+        let tabPanes = document.querySelectorAll('#' + this.divName + '_tab_content .tab-pane');
+        tabPanes.forEach((pane, index) => {
+            if (index === tabIndex) {
+                pane.classList.add('active');
+                pane.style.display = 'flex';
+                // Notify dashlets in this tab that they're now visible
+                let tabDashlets = this.tabDashlets[index] || [];
+                tabDashlets.forEach(dashlet => {
+                    if (dashlet.onTabActivated) {
+                        dashlet.onTabActivated();
+                    }
+                });
+                
+                // Resize all ECharts instances in the newly visible tab
+                setTimeout(() => {
+                    const charts = pane.querySelectorAll('.dashgraph, .dashgraphZoomed');
+                    charts.forEach(chartDiv => {
+                        if (typeof echarts !== 'undefined') {
+                            const chart = echarts.getInstanceByDom(chartDiv);
+                            if (chart) {
+                                chart.resize();
+                            }
+                        }
+                    });
+                }, 0);
+            } else {
+                pane.classList.remove('active');
+                pane.style.display = 'none';
+            }
+        });
+    }
+
     #filterWidgetList() {
         this.dashlets = [];
-        for (let i=0; i<this.dashletIdentities.length; i++) {
-            let widget = this.widgetFactory(this.dashletIdentities[i].tag, i);
-            if (widget == null) continue; // Skip build
-            widget.size = this.dashletIdentities[i].size;
-            this.dashlets.push(widget);
-        }
+        this.tabDashlets = {};
+        let globalIndex = 0;
+        
+        // Process each tab
+        this.layout.tabs.forEach((tab, tabIndex) => {
+            this.tabDashlets[tabIndex] = [];
+            const dashlets = Array.isArray(tab.dashlets) ? tab.dashlets : [];
+            tab.dashlets = dashlets;
+
+            dashlets.forEach((dashletDef) => {
+                let widget = this.widgetFactory(dashletDef.tag, globalIndex);
+                if (widget == null) return; // Skip build
+                
+                widget.size = dashletDef.size;
+                widget.tabIndex = tabIndex;
+                
+                this.dashlets.push(widget);
+                this.tabDashlets[tabIndex].push(widget);
+                globalIndex++;
+            });
+        });
     }
 
-    #buildWidgetChildDivs() {
-        let childDivs = [];
-        for (let i=0; i<this.dashlets.length; i++) {
-            let div = this.dashlets[i].buildContainer();
-            childDivs.push(div);
-        }
-        return childDivs;
-    }
 
     #clearRenderedDashboard() {
-        while (this.parentDiv.children.length > 1) {
+        while (this.parentDiv.children.length > 0) {
             this.parentDiv.removeChild(this.parentDiv.lastChild);
         }
     }
@@ -119,7 +240,6 @@ export class Dashboard {
             }
             return;
         }
-        resetWS();
         subscribeWS(this.channels, (msg) => {
             if (msg.event === "join") {
                 // The DOM will be present now, setup events
@@ -152,18 +272,7 @@ export class Dashboard {
         editDiv.id = this.divName + "_edit";
         editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
-            // New Editor
-            let initialElements = [];
-            console.log("Layout", this.layout);
-            for (let i=0; i<this.dashletIdentities.length; i++) {
-                let e = this.dashletIdentities[i];
-                initialElements.push({
-                    size: e.size,
-                    name: this.dashlets[i].title(),
-                    tag: e.tag,
-                });
-            }
-
+            // New Editor - pass the full layout with tabs
             let availableElements = [];
             this.dashletMenu.forEach((d) => {
                 let category = "Uncategorized";
@@ -176,12 +285,11 @@ export class Dashboard {
                 });
             });
 
-            openDashboardEditor(initialElements, availableElements, function(newLayout) {
+            openDashboardEditor(this.layout, availableElements, (newLayout) => {
                 console.log("New dashboard layout:", newLayout);
-                let template = JSON.stringify(newLayout);
-                localStorage.setItem(window.cookieName, template);
+                this.layout.save(newLayout);
                 window.location.reload();
-            });
+            }, this.cookieName);
         };
 
         // Cadence Picker
@@ -234,6 +342,8 @@ export class Dashboard {
         editDiv.style.marginLeft = "0";
         let toasts = document.getElementById("toasts");
         this.editingDashboard = true;
+        // Work on a copy of the active tab's dashlets so indices align with visible widgets
+        this.dashletIdentities = JSON.parse(JSON.stringify(this.#getActiveTabDashlets()));
 
         // Add the editing elements
         let row = document.createElement("div");
@@ -280,7 +390,7 @@ export class Dashboard {
                 let didSomething = false;
                 this.dashletMenu.forEach((d) => {
                     if (d.tag === myTag) {
-                        this.dashletIdentities.push(d);
+                        this.dashletIdentities.push({ tag: d.tag, size: d.size });
                         didSomething = true;
                     }
                 });
@@ -297,6 +407,15 @@ export class Dashboard {
         let c3 = document.createElement("div");
         c3.classList.add("col-3");
         c3.appendChild(heading5Icon("save", "Save Layout"));
+
+        const wsClient = get_ws_client();
+        const listenOnce = (eventName, handler) => {
+            const wrapped = (msg) => {
+                wsClient.off(eventName, wrapped);
+                handler(msg);
+            };
+            wsClient.on(eventName, wrapped);
+        };
 
         let saveGroup = document.createElement("div");
         saveGroup.classList.add("input-group");
@@ -317,194 +436,166 @@ export class Dashboard {
         saveBtn.onclick = () => {
             let name = $("#saveDashName").val();
             if (name.length < 1) return;
-            let request = {
-                name: name,
-                entries: this.dashletIdentities
-            }
-            $.ajax({
-                type: "POST",
-                url: "/local-api/dashletSave",
-                data: JSON.stringify(request),
-                contentType : 'application/json',
-                success: () => {
-                    localStorage.setItem("forceEditMode", "true");
-                    window.location.reload();
+            listenOnce("DashletSaveResult", (msg) => {
+                if (!msg || !msg.ok) {
+                    alert(msg && msg.error ? msg.error : "Failed to save dashboard layout");
+                    return;
                 }
-            })
+                localStorage.setItem("forceEditMode", "true");
+                window.location.reload();
+            });
+            wsClient.send({
+                DashletSave: {
+                    name: name,
+                    entries: this.dashletIdentities
+                }
+            });
         }
         saveGroup.appendChild(saveDashName);
         saveAppend.appendChild(saveBtn);
         saveGroup.appendChild(saveAppend);
         c3.appendChild(saveGroup);
 
-        //c3.appendChild(lbl);
-        //c3.appendChild(saveDashName);
-        //c3.appendChild(saveBtn);
-
         let c4 = document.createElement("div");
         c4.classList.add("col-3");
-        c4.appendChild(heading5Icon("cloud", "Load Layout"))
-        let listRemote = document.createElement("div");
-        listRemote.classList.add("dropdown");
-        let listBtnRemote = document.createElement("button");
-        listBtnRemote.type = "button";
-        listBtnRemote.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
-        listBtnRemote.setAttribute("data-bs-toggle", "dropdown");
-        listBtnRemote.innerHTML = "<i class='fa fa-cloud'></i> Load Layout";
-        listRemote.appendChild(listBtnRemote);
-        let listUlRemote = document.createElement("ul");
-        listUlRemote.classList.add("dropdown-menu");
-        listUlRemote.id = "remoteDashletList";
-        listRemote.appendChild(listUlRemote);
-        c4.appendChild(listRemote);
-        if (this.savedDashUrl.length > 0) {
-            $.get(this.savedDashUrl, (data) => {
-                let parent = document.getElementById("remoteDashletList");
-                data.forEach((d) => {
-                    let li = document.createElement("li");
-                    let link = document.createElement("a");
-                    link.innerText = d;
-                    let filename = d;
-                    link.onclick = () => {
-                        console.log("Loading " + d);
-                        $.ajax({
-                            type: "POST",
-                            url: "/local-api/dashletGet",
-                            data: JSON.stringify({theme: filename}),
-                            contentType: 'application/json',
-                            success: (data) => {
-                                this.dashletIdentities = data;
-                                this.layout.save(this.dashletIdentities);
-                                localStorage.setItem("forceEditMode", "true");
-                                window.location.reload();
+        c4.appendChild(heading5Icon("save", "Saved Layouts"));
+        listenOnce("DashletThemes", (data) => {
+            let list = document.createElement("ul");
+            list.classList.add("list-group", "list-group-numbered");
+            data.entries.forEach((d) => {
+                let i = document.createElement("li");
+                i.classList.add("list-group-item","list-group-item-action");
+                let ln = document.createElement("a");
+                ln.href = "#";
+                ln.innerHTML = "<i class='fa fa-save'></i> " + d.name;
+                ln.onclick = () => {
+                    let resp = confirm("Load [" + d.name + "] from [" + d.path + "]?");
+                    if (resp) {
+                        listenOnce("DashletTheme", (x) => {
+                            if (!x || !x.entries) {
+                                alert("Failed to load dashboard layout");
+                                return;
                             }
+                            this.dashletIdentities = x.entries;
+                            this.layout.save(this.dashletIdentities);
+                            localStorage.setItem("forceEditMode", "true");
+                            window.location.reload();
                         });
+                        wsClient.send({ DashletGet: { name: d.name } });
                     }
-                    li.appendChild(link);
-                    parent.appendChild(li);
-                });
+                };
+                let dl = document.createElement("a");
+                dl.classList.add("badge","text-bg-danger");
+                dl.style.float = "right";
+                dl.href = "#";
+                dl.innerHTML = "<i class='fa fa-trash'></i> Delete";
+                dl.onclick = () => {
+                    let resp = confirm("Delete [" + d.name + "] from [" + d.path + "]?");
+                    if (resp) {
+                        listenOnce("DashletDeleteResult", (msg) => {
+                            if (!msg || !msg.ok) {
+                                alert(msg && msg.error ? msg.error : "Failed to delete dashboard layout");
+                                return;
+                            }
+                            localStorage.setItem("forceEditMode", "true");
+                            window.location.reload();
+                        });
+                        wsClient.send({ DashletDelete: { name: d.name } });
+                    }
+                }
+                i.appendChild(ln);
+                i.appendChild(dl);
+                list.appendChild(i);
             });
-        }
+            c4.appendChild(list);
+        });
+        wsClient.send({ DashletThemes: {} });
 
         row.appendChild(c1);
         row.appendChild(c2);
-        if (this.savedDashUrl.length > 0) {
-            row.appendChild(c3);
-            row.appendChild(c4);
-        }
+        row.appendChild(c3);
+        row.appendChild(c4);
         editDiv.appendChild(row);
-
-
-        // Decorate all the dashboard elements with controls after a refresh period
-        requestAnimationFrame(() => {
-            setTimeout(() => { this.#updateEditDecorations() });
-        });
-
         toasts.appendChild(editDiv);
-    }
 
-    #replaceDashletList() {
-        resetWS();
+        // Insert the inline edit buttons
+        let editDivParent = document.getElementById(this.childIds[0]);
+        if (editDivParent != null) {
+            let div = document.getElementById(this.childIds[0]);
+            let clientRect = div.getClientRects()[0];
+            let clientLeft = (clientRect.left - 10) + "px";
+            let clientTop  = (clientRect.top - 20) + "px";
+            for (let i = 0; i < this.dashlets.length; i++) {
+                let div = document.getElementById(this.childIds[i]);
+                if (div !== null) {
+                    let clientRect = div.getClientRects()[0];
+                    let clientTop  = (clientRect.top - 20) + "px";
+                    let clientLeft = (clientRect.left + 10) + "px";
+                    let clientMiddleX = (clientRect.left + 80) + "px";
+                    let clientMiddleY = (clientRect.top + 18) + "px";
 
-        // Apply
-        this.build();
-        let self = this;
-        requestAnimationFrame(() => {
-            setTimeout(() => { self.#updateEditDecorations() });
-        });
-
-        // Persist
-        this.layout.save(this.dashletIdentities);
-    }
-
-    #updateEditDecorations() {
-        let oldEditDiv = document.getElementById("divEditorElements");
-        if (oldEditDiv !== null) editDiv.remove();
-
-        let editDivParent = document.getElementById("dashboardEditingDiv");
-        let editDiv = document.createElement("div");
-        editDiv.id = "divEditorElements";
-
-        for (let i=0; i<this.childIds.length; i++) {
-            let dashDiv = document.getElementById(this.childIds[i]);
-            if (dashDiv != null) {
-                let clientRect = dashDiv.getBoundingClientRect();
-                let clientLeft = (clientRect.left + 4) + "px";
-                let clientRight = (clientRect.right - 34) + "px";
-                let clientTop = (clientRect.top) + "px";
-                let clientBottom = (clientRect.bottom) + "px";
-                let clientMiddleY = (((clientRect.bottom - clientRect.top) / 2) + clientRect.top - 10) + "px";
-                let clientMiddleX = (((clientRect.right - clientRect.left) / 2) + clientRect.left - 10) + "px";
-
-                // Left Navigation Arrow
-                if (i > 0) {
+                    // Up Button
                     let myI = i;
                     editDiv.appendChild(this.#dashEditButton(
                         clientLeft,
-                        clientMiddleY,
-                        "arrow-circle-left",
-                        "warning",
-                        () => {
-                            this.clickUp(myI);
-                        }
+                        clientTop,
+                        "arrow-up",
+                        "secondary",
+                        () => { if (myI > 0) this.clickUp(myI); }
                     ));
-                }
 
-                // Right Navigation Arrow
-                if (i < this.childIds.length-1) {
-                    let myI = i;
+                    // Down Button
+                    let myI2 = i;
                     editDiv.appendChild(this.#dashEditButton(
-                        clientRight,
+                        (clientRect.left + 20) + "px",
+                        clientTop,
+                        "arrow-down",
+                        "secondary",
+                        () => { if (myI2 < (this.dashlets.length - 1)) this.clickDown(myI2); }
+                    ));
+
+                    // Trash Button
+                    let myI3 = i;
+                    editDiv.appendChild(this.#dashEditButton(
+                        clientMiddleX,
                         clientMiddleY,
-                        "arrow-circle-right",
-                        "warning",
+                        "trash",
+                        "danger",
                         () => {
-                            this.clickDown(myI);
+                            this.clickTrash(myI3);
                         }
                     ));
+
+                    // Expand Button
+                    let myI4 = i;
+                    editDiv.appendChild(this.#dashEditButton(
+                        clientLeft,
+                        clientTop,
+                        "plus-circle",
+                        "secondary",
+                        () => {
+                            this.zoomIn(myI4);
+                        }
+                    ));
+
+                    // Contract Button
+                    let myI5 = i;
+                    editDiv.appendChild(this.#dashEditButton(
+                        (clientRect.left + 40) + "px",
+                        clientTop,
+                        "minus-circle",
+                        "secondary",
+                        () => {
+                            this.zoomOut(myI5);
+                        }
+                    ));
+                } else {
+                    console.log("Warning: NULL div found in dashlet list");
                 }
-
-                // Trash Button
-                let myI = i;
-                editDiv.appendChild(this.#dashEditButton(
-                    clientMiddleX,
-                    clientMiddleY,
-                    "trash",
-                    "danger",
-                    () => {
-                        this.clickTrash(myI);
-                    }
-                ));
-
-                // Expand Button
-                let myI2 = i;
-                editDiv.appendChild(this.#dashEditButton(
-                    clientLeft,
-                    clientTop,
-                    "plus-circle",
-                    "secondary",
-                    () => {
-                        this.zoomIn(myI2);
-                    }
-                ));
-
-                // Contract Button
-                let myI3 = i;
-                editDiv.appendChild(this.#dashEditButton(
-                    (clientRect.left + 40) + "px",
-                    clientTop,
-                    "minus-circle",
-                    "secondary",
-                    () => {
-                        this.zoomOut(myI3);
-                    }
-                ));
-            } else {
-                console.log("Warning: NULL div found in dashlet list");
             }
-        }
 
-        editDivParent.appendChild(editDiv);
+            editDivParent.appendChild(editDiv);
+        }
     }
 
     #dashEditButton(left, top, iconSuffix, style, closure) {
@@ -538,7 +629,6 @@ export class Dashboard {
         let toReplace = this.dashletIdentities[i-1];
         this.dashletIdentities[i-1] = toMove;
         this.dashletIdentities[i] = toReplace;
-
         this.#replaceDashletList();
     }
 
@@ -547,46 +637,54 @@ export class Dashboard {
         let toReplace = this.dashletIdentities[i+1];
         this.dashletIdentities[i+1] = toMove;
         this.dashletIdentities[i] = toReplace;
-
         this.#replaceDashletList();
     }
 
     clickTrash(i) {
         this.dashletIdentities.splice(i, 1);
-        this.layout.save(this.dashletIdentities);
-        localStorage.setItem("forceEditMode", "true");
-        window.location.reload();
+        this.#replaceDashletList();
     }
 
     zoomIn(i) {
-        console.log(i);
         if (this.dashletIdentities[i].size < 12) {
             this.dashletIdentities[i].size += 1;
         }
-        this.layout.save(this.dashletIdentities);
-        localStorage.setItem("forceEditMode", "true");
-        window.location.reload();
+        this.#replaceDashletList();
     }
 
     zoomOut(i) {
         if (this.dashletIdentities[i].size > 1) {
             this.dashletIdentities[i].size -= 1;
         }
-        this.layout.save(this.dashletIdentities);
-        localStorage.setItem("forceEditMode", "true");
-        window.location.reload();
+        this.#replaceDashletList();
     }
 
     removeAll() {
         this.dashletIdentities = [];
-        this.layout.save(this.dashletIdentities);
-        localStorage.setItem("forceEditMode", "true");
-        window.location.reload();
+        this.#replaceDashletList();
     }
 
     addAll() {
-        this.dashletIdentities = DashletMenu;
-        this.layout.save(this.dashletIdentities);
+        // Add all known widgets into current tab as tag/size pairs
+        this.dashletIdentities = this.dashletMenu.map(d => ({ tag: d.tag, size: d.size }));
+        this.#replaceDashletList();
+    }
+
+    #getActiveTabDashlets() {
+        const t = this.layout.activeTab || 0;
+        if (this.layout.tabs && this.layout.tabs[t] && Array.isArray(this.layout.tabs[t].dashlets)) {
+            return this.layout.tabs[t].dashlets;
+        }
+        return [];
+    }
+
+    #replaceDashletList() {
+        // Persist the current tab’s dashlets and reload to apply
+        const t = this.layout.activeTab || 0;
+        if (this.layout.tabs && this.layout.tabs[t]) {
+            this.layout.tabs[t].dashlets = this.dashletIdentities;
+        }
+        this.layout.save(this.layout);
         localStorage.setItem("forceEditMode", "true");
         window.location.reload();
     }

@@ -85,6 +85,14 @@ struct
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } flowbee SEC(".maps");
 
+// Scratch space to avoid large flow_data_t allocations on the stack
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct flow_data_t);
+} flowbee_scratch SEC(".maps");
+
 // Ringbuffer to userspace for recording RTT events
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -94,36 +102,24 @@ struct {
 // Event structure we send for events.
 struct flowbee_event {
     struct flow_key_t key;
-    __u64 round_trip_time;
-    __u32 effective_direction;
+	__u64 round_trip_time;
+	__u32 effective_direction;
 };
 
 // Construct an empty flow_data_t structure, using default values.
-static __always_inline struct flow_data_t new_flow_data(
+static __always_inline void init_flow_data(
     // The packet dissector from the previous step
-    struct dissector_t *dissector
+    struct dissector_t *dissector,
+    struct flow_data_t *data
 ) {
-    struct flow_data_t data = {
-        .start_time = dissector->now,
-        .bytes_sent = { 0, 0 },
-        .packets_sent = { 0, 0 },
-        // Track flow rates at an MS scale rather than per-second
-        // to minimize rounding errors.
-        .next_count_time = { dissector->now + SECOND_IN_NANOS, dissector->now + SECOND_IN_NANOS },
-        .last_count_time = { dissector->now, dissector->now },
-        .next_count_bytes = { 0, 0 }, // Should be packet size, that isn't working?
-        .rate_estimate_bps = { 0, 0 },
-        .last_sequence = { 0, 0 },
-        .last_ack = { 0, 0 },
-        .tcp_retransmits = { 0, 0 },
-        .tsval = { 0, 0 },
-        .tsecr = { 0, 0 },
-        .ts_change_time = { 0, 0 },
-        .end_status = 0,
-        .tos = 0,
-        .ip_flags = 0,
-    };
-    return data;
+    __builtin_memset(data, 0, sizeof(*data));
+    data->start_time = dissector->now;
+    // Track flow rates at an MS scale rather than per-second
+    // to minimize rounding errors.
+    data->next_count_time[0] = dissector->now + SECOND_IN_NANOS;
+    data->next_count_time[1] = dissector->now + SECOND_IN_NANOS;
+    data->last_count_time[0] = dissector->now;
+    data->last_count_time[1] = dissector->now;
 }
 
 // Construct a flow_key_t structure from a dissector_t. This represents the
@@ -190,14 +186,16 @@ static __always_inline void process_icmp(
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
-        // There isn't a flow, so we need to make one
-        struct flow_data_t new_data = new_flow_data(dissector);
-        if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
+        __u32 zero = 0;
+        struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
+        if (!new_data) return;
+        init_flow_data(dissector, new_data);
+        update_flow_rates(dissector, rate_index, new_data);
+        if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
-        data = bpf_map_lookup_elem(&flowbee, &key);
-        if (data == NULL) return;
+        return;
     }
     update_flow_rates(dissector, rate_index, data);
 }
@@ -212,14 +210,16 @@ static __always_inline void process_udp(
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
-        // There isn't a flow, so we need to make one
-        struct flow_data_t new_data = new_flow_data(dissector);
-        if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
+        __u32 zero = 0;
+        struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
+        if (!new_data) return;
+        init_flow_data(dissector, new_data);
+        update_flow_rates(dissector, rate_index, new_data);
+        if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
-        data = bpf_map_lookup_elem(&flowbee, &key);
-        if (data == NULL) return;
+        return;
     }
     update_flow_rates(dissector, rate_index, data);
 }
@@ -268,10 +268,16 @@ static __always_inline void process_tcp(
         bpf_debug("[FLOWS] New TCP Connection Detected (%u)", direction);
         #endif
         struct flow_key_t key = build_flow_key(dissector, direction);
-        struct flow_data_t data = new_flow_data(dissector);
-        data.tos = dissector->tos;
-        data.ip_flags = 0; // Obtain these
-        if (bpf_map_update_elem(&flowbee, &key, &data, BPF_ANY) != 0) {
+        __u32 zero = 0;
+        struct flow_data_t *data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
+        if (!data) {
+            bpf_debug("[FLOWS] Failed to allocate scratch flow");
+            return;
+        }
+        init_flow_data(dissector, data);
+        data->tos = dissector->tos;
+        data->ip_flags = 0; // Obtain these
+        if (bpf_map_update_elem(&flowbee, &key, data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
         }
         return;

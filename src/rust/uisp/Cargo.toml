@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 lqos_config = { path = "../lqos_config" }
 serde = { workspace = true }
+serde_json.workspace = true
 reqwest = { workspace = true }
 anyhow = { workspace = true }
 # For memory debugging

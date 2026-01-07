@@ -2,7 +2,7 @@ mod network_json_node;
 mod network_json_transport;
 
 use allocative_derive::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
 use serde_json::{Map, Value};
@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
@@ -86,6 +86,7 @@ impl NetworkJson {
             immediate_parent: None,
             rtts: HashSet::new(),
             node_type: None,
+            heatmap: None,
         }];
         if !Self::exists() {
             return Err(NetworkJsonError::FileNotFound);
@@ -232,6 +233,41 @@ impl NetworkJson {
             }
         }
     }
+
+    /// Record a heatmap sample for each site based on the current per-cycle data.
+    pub fn record_site_heatmaps(&mut self, enable: bool) {
+        if !enable {
+            self.nodes.iter_mut().for_each(|node| node.heatmap = None);
+            return;
+        }
+
+        for node in self.nodes.iter_mut() {
+            let download_util =
+                utilization_percent_bytes(node.current_throughput.down, node.max_throughput.0)
+                    .unwrap_or(0.0);
+            let upload_util =
+                utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
+                    .unwrap_or(0.0);
+            let mut rtts: Vec<f32> = node.rtts.iter().map(|n| *n as f32 / 100.0).collect();
+            let median_rtt = median_rtt(&mut rtts);
+            let retransmit_down = retransmit_percent(
+                node.current_tcp_retransmits.down,
+                node.current_tcp_packets.down,
+            );
+            let retransmit_up =
+                retransmit_percent(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+
+            let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
+            heatmap.add_sample(
+                download_util,
+                upload_util,
+                median_rtt,
+                median_rtt,
+                retransmit_down,
+                retransmit_up,
+            );
+        }
+    }
 }
 
 fn json_to_u32(val: Option<&Value>) -> u32 {
@@ -278,7 +314,10 @@ fn recurse_node(
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
         rtts: HashSet::new(),
-        node_type: json.get("type").map(|v| v.as_str().unwrap_or_default().to_string()),
+        node_type: json
+            .get("type")
+            .map(|v| v.as_str().unwrap_or_default().to_string()),
+        heatmap: None,
     };
 
     if node.name != "children" {
@@ -294,6 +333,36 @@ fn recurse_node(
         {
             recurse_node(nodes, key, value, &parents, my_id);
         }
+    }
+}
+
+fn utilization_percent_bytes(bytes: u64, max_mbps: u32) -> Option<f32> {
+    if max_mbps == 0 {
+        return None;
+    }
+    let bits_per_second = bytes.saturating_mul(8) as f64;
+    let capacity_bps = max_mbps as f64 * 1_000_000.0;
+    Some(((bits_per_second / capacity_bps) * 100.0) as f32)
+}
+
+fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
+    // Ignore very small samples to avoid extreme ratios from tiny flows.
+    if retransmits == 0 || packets < 1_000 {
+        return None;
+    }
+    Some((retransmits as f32 / packets as f32) * 100.0)
+}
+
+fn median_rtt(values: &mut Vec<f32>) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.total_cmp(b));
+    let mid = values.len() / 2;
+    if values.len() % 2 == 1 {
+        Some(values[mid])
+    } else {
+        Some((values[mid - 1] + values[mid]) / 2.0)
     }
 }
 

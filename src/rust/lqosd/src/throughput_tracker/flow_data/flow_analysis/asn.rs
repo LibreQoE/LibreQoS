@@ -50,6 +50,7 @@ pub struct GeoTable {
 impl GeoTable {
     const FILENAME: &'static str = "geo2.bin";
 
+    #[allow(dead_code)]
     pub fn len(&self) -> (usize, usize, usize, usize) {
         (
             self.asn_trie.len().1,

@@ -20,6 +20,7 @@ mod system_stats;
 mod throughput_tracker;
 mod tool_status;
 mod tuning;
+mod urgent;
 mod validation;
 mod version_checks;
 
@@ -57,6 +58,8 @@ use tracing::{error, info, warn};
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 
+use crate::lts2_sys::get_lts_license_status;
+use crate::lts2_sys::shared_types::LtsStatus;
 use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -64,9 +67,8 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use lqos_stormguard::STORMGUARD_STATS;
+use lqos_stormguard::{STORMGUARD_STATS, STORMGUARD_DEBUG};
 use tracing::level_filters::LevelFilter;
-
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 // #[global_allocator]
@@ -245,69 +247,68 @@ fn main() -> Result<()> {
         .spawn(move || {
             let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                .build() else {
+                .build()
+            else {
                 error!("Unable to start Tokio runtime. Not much is going to work");
                 return;
             };
             tokio_runtime.block_on(async {
-                    // Notify bakery when the bus socket becomes available
-                    tokio::spawn(async move {
-                        use tokio::time::{sleep, Duration};
-                        // Wait up to ~5 seconds for the socket to appear
-                        for _ in 0..100u32 {
-                            if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
-                                break;
-                            }
-                            sleep(Duration::from_millis(50)).await;
+                // Notify bakery when the bus socket becomes available
+                tokio::spawn(async move {
+                    use tokio::time::{Duration, sleep};
+                    // Wait up to ~5 seconds for the socket to appear
+                    for _ in 0..100u32 {
+                        if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                            break;
                         }
-                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                            let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
-                        }
-                    });
-
-                    tokio::spawn(async move {
-                        match lts2_sys::control_channel::start_control_channel(control_channel)
-                            .await
-                        {
-                            Ok(_) => info!("Insight control channel started successfully"),
-                            Err(e) => error!("Insight control channel failed to start: {:#}", e),
-                        }
-
-                        match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
-                            Ok(_) => info!("StormGuard started successfully"),
-                            Err(e) => error!("StormGuard failed to start: {:#}", e),
-                        }
-                    });
-
-                    let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
-                        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
-                        BusRequest,
-                    )>(100);
-
-                    // Webserver starting point
-                    let webserver_disabled = config.disable_webserver.unwrap_or(false);
-                    if !webserver_disabled {
-                        let control_tx_for_webserver = control_tx_for_webserver.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = node_manager::spawn_webserver(
-                                bus_tx,
-                                system_usage_tx,
-                                control_tx_for_webserver,
-                            )
-                            .await
-                            {
-                                error!("Node Manager Failed: {e:?}");
-                            }
-                        });
-                    } else {
-                        warn!("Webserver disabled by configuration");
+                        sleep(Duration::from_millis(50)).await;
                     }
-
-                    // Main bus listen loop
-                    if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
-                        error!("Bus stopped: {e:?}");
+                    if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                        let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
                     }
                 });
+
+                tokio::spawn(async move {
+                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                        Ok(_) => info!("Insight control channel started successfully"),
+                        Err(e) => error!("Insight control channel failed to start: {:#}", e),
+                    }
+
+                    match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                        Ok(_) => info!("StormGuard started successfully"),
+                        Err(e) => error!("StormGuard failed to start: {:#}", e),
+                    }
+                });
+
+                let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
+                    tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+                    BusRequest,
+                )>(100);
+
+                // Webserver starting point
+                let webserver_disabled = config.disable_webserver.unwrap_or(false);
+                if !webserver_disabled {
+                    let control_tx_for_webserver = control_tx_for_webserver.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = node_manager::spawn_webserver(
+                            bus_tx,
+                            system_usage_tx,
+                            control_tx_for_webserver,
+                        )
+                        .await
+                        {
+                            error!("Node Manager Failed: {e:?}");
+                        }
+                    });
+                } else {
+                    warn!("Webserver disabled by configuration");
+                }
+
+                // Main bus listen loop
+                if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
+                    error!("Bus stopped: {e:?}");
+                }
+            });
         })?;
     let _ = handle.join();
     warn!("Main thread exiting");
@@ -355,6 +356,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetTopNDownloaders { start, end } => {
                 throughput_tracker::top_n(*start, *end)
             }
+            BusRequest::GetTopNUploaders { start, end } => {
+                throughput_tracker::top_n_up(*start, *end)
+            }
+            BusRequest::GetCircuitHeatmaps => throughput_tracker::circuit_heatmaps(),
+            BusRequest::GetSiteHeatmaps => throughput_tracker::site_heatmaps(),
+            BusRequest::GetAsnHeatmaps => throughput_tracker::asn_heatmaps(),
+            BusRequest::GetGlobalHeatmap => throughput_tracker::global_heatmap(),
+            BusRequest::GetExecutiveSummaryHeader => throughput_tracker::executive_summary_header(),
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)
@@ -629,6 +638,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 };
                 BusResponse::StormguardStats(cloned)
             }
+            BusRequest::GetStormguardDebug => {
+                let cloned = {
+                    let lock = STORMGUARD_DEBUG.lock();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardDebug(cloned)
+            }
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
             ),
@@ -648,10 +664,33 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
+            BusRequest::LogInfo(msg) => {
+                info!("BUS LOG: {}", msg);
+                BusResponse::Ack
+            }
             BusRequest::CheckSchedulerStatus => {
                 let running = tool_status::is_scheduler_available();
                 let error = tool_status::scheduler_error_message();
                 BusResponse::SchedulerStatus { running, error }
+            }
+            BusRequest::SubmitUrgentIssue { source, severity, code, message, context, dedupe_key } => {
+                urgent::submit(*source, *severity, code.clone(), message.clone(), context.clone(), dedupe_key.clone());
+                BusResponse::Ack
+            }
+            BusRequest::GetUrgentIssues => {
+                let list = urgent::list();
+                BusResponse::UrgentIssues(list)
+            }
+            BusRequest::ClearUrgentIssue(id) => {
+                urgent::clear(*id);
+                BusResponse::Ack
+            }
+            BusRequest::CheckInsight => {
+                let (status, _) = get_lts_license_status();
+                match status {
+                    LtsStatus::Invalid | LtsStatus::NotChecked => BusResponse::InsightStatus(false),
+                    _ => BusResponse::InsightStatus(true)
+                }
             }
         });
     }

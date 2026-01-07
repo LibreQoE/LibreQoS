@@ -1,3 +1,38 @@
+import {PLACEHOLDER_TEASERS} from "./lts_teasers_shared";
+import {get_ws_client} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function sendWsRequest(responseEvent, request) {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const onResponse = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            resolve(msg);
+        };
+        const onError = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            reject(msg);
+        };
+        wsClient.on(responseEvent, onResponse);
+        wsClient.on("Error", onError);
+        wsClient.send(request);
+    });
+}
+
 // Paddle-compatible countries (excluding embargoed nations)
 const ALLOWED_COUNTRIES = [
     { code: 'ad', name: 'Andorra' },
@@ -240,52 +275,6 @@ const ALLOWED_COUNTRIES = [
     // Note: Excluded embargoed countries: Cuba (cu), Iran (ir), North Korea (kp), Russia (ru), Syria (sy)
 ];
 
-// Static placeholder teasers for testing
-const PLACEHOLDER_TEASERS = [
-    {
-        id: 'ai',
-        title: 'AI Reports',
-        description: 'Diagnose problems quickly using AI-powered analyses of aggregated data.',
-        image: '01_ai_report.png',
-        order: 1
-    },
-    {
-        id: 'mapper',
-        title: 'Insight Network Mapper',
-        description: 'Configure and manage complex networks and multiple shaper boxes with ease.',
-        image: '02_mapper.png',
-        order: 2
-    },
-    {
-        id: 'long_term',
-        title: 'Long Term Data',
-        description: 'Flexible time windows ranging from 15 minutes to 28 days, giving you comprehensive network performance insights. ',
-        image: '03_long_term.png',
-        order: 3
-    },
-    {
-        id: 'heatmap',
-        title: 'Heatmaps',
-        description: "Don't waste time going through charts - instantly spot performance trends on APs, OLTs, and Sites.",
-        image: '04_heatmap.png',
-        order: 4
-    },
-    {
-        id: 'alerts',
-        title: 'Alerts',
-        description: 'Get notified before issues impact your customers with intelligent alert monitoring.',
-        image: '05_alerts.png',
-        order: 5
-    },
-    {
-        id: 'endpoints',
-        title: 'Endpoints by Circuit',
-        description: 'Observe important endpoint information, even for individual circuits.',
-        image: '06_endpoints.png',
-        order: 6
-    }
-];
-
 
 // State management
 let currentTeasers = [];
@@ -477,12 +466,13 @@ function getLtsUrl(endpoint) {
 // Fetch node ID and LTS URL from configuration
 async function fetchNodeId() {
     try {
-        const response = await $.get('/local-api/getConfig');
-        nodeId = response.node_id || null;
+        const response = await sendWsRequest("LtsTrialConfigResult", { LtsTrialConfig: {} });
+        const data = response && response.data ? response.data : {};
+        nodeId = data.node_id || null;
         
         // Extract LTS URL from config, defaulting to the standard URL
-        if (response.long_term_stats && response.long_term_stats.lts_url) {
-            ltsBaseUrl = response.long_term_stats.lts_url;
+        if (data.lts_url) {
+            ltsBaseUrl = data.lts_url;
             // Ensure the URL ends with a slash
             if (!ltsBaseUrl.endsWith('/')) {
                 ltsBaseUrl += '/';
@@ -497,9 +487,10 @@ async function fetchNodeId() {
 // Fetch circuit count
 async function fetchCircuitCount() {
     try {
-        const response = await $.get('/local-api/circuits/count');
-        const count = response.count || 0;
-        const configuredCount = response.configured_count || 0;
+        const response = await sendWsRequest("CircuitCountResult", { CircuitCount: {} });
+        const data = response && response.data ? response.data : {};
+        const count = data.count || 0;
+        const configuredCount = data.configured_count || 0;
         
         // Always show circuit count if we have any circuits (active or configured)
         if (count > 0 || configuredCount > 0) {
@@ -628,14 +619,7 @@ function attachEventHandlers() {
                 `);
                 $('#configStatus').text('Saving configuration...');
 
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/ltsSignUp",
-                    data: JSON.stringify({
-                        license_key: licenseKey,
-                    }),
-                    contentType: 'application/json',
-                });
+                wsClient.send({ LtsSignUp: { license_key: licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
                 $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {
@@ -741,14 +725,7 @@ function attachEventHandlers() {
                 `);
                 $('#configStatus').text('Saving configuration...');
 
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/ltsSignUp",
-                    data: JSON.stringify({
-                        license_key: response.licenseKey,
-                    }),
-                    contentType: 'application/json',
-                });
+                wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
                 $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {

@@ -2,8 +2,20 @@ import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {MinMaxSeries} from "../lq_js_common/e_charts/min_max_median_series";
+import {toNumber} from "../lq_js_common/helpers/scaling";
+import {get_ws_client} from "../pubsub/ws";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
+const wsClient = get_ws_client();
+
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
     constructor(id, period) {
@@ -20,21 +32,22 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
 
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data");
-        $.get("local-api/ltsThroughput/" + seconds, (data) => {
+        listenOnceForSeconds("LtsThroughput", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             console.log("Received Insight History Data", data);
             let shaperDown = new MinMaxSeries("Down", 1);
             let shaperUp = new MinMaxSeries(" Up", 1);
             data.forEach((r) => {
                 this.option.xAxis.data.push(r.time);
                 shaperDown.pushPositive(
-                    r.median_down * 8,
-                    r.min_down * 8,
-                    r.max_down * 8
+                    toNumber(r.median_down, 0) * 8,
+                    toNumber(r.min_down, 0) * 8,
+                    toNumber(r.max_down, 0) * 8
                 );
                 shaperUp.pushNegative(
-                    (r.median_up) * 8,
-                    (r.min_up) * 8,
-                    (r.max_up) * 8
+                    toNumber(r.median_up, 0) * 8,
+                    toNumber(r.min_up, 0) * 8,
+                    toNumber(r.max_up, 0) * 8
                 );
             });
             shaperDown.addToOptions(this.option);
@@ -42,6 +55,7 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
             this.chart.setOption(this.option);
             this.chart.hideLoading();
         });
+        wsClient.send({ LtsThroughput: { seconds } });
     }
 
     onThemeChange() {
