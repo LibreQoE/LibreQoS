@@ -124,6 +124,9 @@ struct AddArgs {
     upload_max_mbps: f32,
     #[arg(long, default_value = "")]
     comment: String,
+    /// Optional per-circuit SQM override token ("cake", "fq_codel", "none", or "down/up").
+    #[arg(long, default_value = "")]
+    sqm_override: String,
 }
 
 fn parse_ipv4(s: &str) -> Result<(Ipv4Addr, u32)> {
@@ -163,6 +166,8 @@ impl AddArgs {
             return Err(anyhow!("Bandwidth values must be positive"));
         }
 
+        let sqm_override = normalize_sqm_override(&self.sqm_override)?;
+
         Ok(ShapedDevice {
             circuit_id: self.circuit_id,
             circuit_name: self.circuit_name,
@@ -177,10 +182,39 @@ impl AddArgs {
             download_max_mbps: self.download_max_mbps,
             upload_max_mbps: self.upload_max_mbps,
             comment: self.comment,
+            sqm_override,
             circuit_hash: 0,
             device_hash: 0,
             parent_hash: 0,
         })
+    }
+}
+
+fn normalize_sqm_override(raw: &str) -> Result<Option<String>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let token = trimmed.to_ascii_lowercase();
+    if token.contains('/') {
+        let mut parts = token.splitn(2, '/');
+        let down = parts.next().unwrap_or("").trim();
+        let up = parts.next().unwrap_or("").trim();
+        let valid = |s: &str| matches!(s, "" | "cake" | "fq_codel" | "none");
+        if !valid(down) || !valid(up) {
+            return Err(anyhow!(
+                "invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"
+            ));
+        }
+        return Ok(Some(format!("{down}/{up}")));
+    }
+
+    match token.as_str() {
+        "cake" | "fq_codel" | "none" => Ok(Some(token)),
+        _ => Err(anyhow!(
+            "invalid sqm override '{token}'. Allowed values: 'cake', 'fq_codel', 'none', or down/up"
+        )),
     }
 }
 
