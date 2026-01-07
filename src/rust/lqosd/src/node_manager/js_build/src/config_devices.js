@@ -1,4 +1,10 @@
-import { renderConfigMenu, saveNetworkAndDevices, validNodeList } from "./config/config_helper";
+import {
+    loadAllShapedDevices,
+    loadNetworkJson,
+    renderConfigMenu,
+    saveNetworkAndDevices,
+    validNodeList,
+} from "./config/config_helper";
 
 let shaped_devices = null;
 let network_json = null;
@@ -79,6 +85,7 @@ function newSdRow() {
         download_max_mbps: 100,
         upload_max_mbps: 100,
         comment: "",
+        sqm_override: "",
     });
     shapedDevices();
 }
@@ -90,9 +97,12 @@ function deleteSdRow(id) {
 
 function shapedDevices() {
     console.log(shaped_devices);
-    let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
+    let html = "<div class='alert alert-info' style='padding: 6px; margin-bottom: 8px; font-size: 10pt;'>"
+        + "SQM overrides can be set per direction. Leave a side blank to use the global default; set to 'none' to disable that side."
+        + "</div>";
+    html += "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
     html += "<thead style='position: sticky; top: 0; height: 50px; background: navy; color: white;'>";
-    html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
+    html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th>SQM Down</th><th>SQM Up</th><th></th></th></tr>";
     html += "</thead>";
     for (var i=0; i<shaped_devices.length; i++) {
         let row = shaped_devices[i];
@@ -110,6 +120,37 @@ function shapedDevices() {
         html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
         html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
         html += makeSheetBox(i, "comment", row.comment, true);
+        // SQM override dropdowns (optional, per direction)
+        const overrideRaw = (row.sqm_override || "").toLowerCase();
+        let downSel = "", upSel = "";
+        if (overrideRaw.indexOf('/') !== -1) {
+            const parts = overrideRaw.split('/')
+            downSel = (parts[0] || "").trim();
+            upSel = (parts[1] || "").trim();
+        } else if (overrideRaw.length > 0) {
+            downSel = overrideRaw;
+            upSel = overrideRaw;
+        }
+        const opts = ["", "cake", "fq_codel", "none"]; // empty means default
+        const labels = {"": "(default)", "cake": "cake", "fq_codel": "fq_codel", "none": "none"};
+        // Down
+        let sqmDownHtml = "<td style='padding: 0px'>";
+        sqmDownHtml += "<select title='Download SQM override (blank=cfg default, none=disable)' id='" + rowPrefix(i, "sqm_override_down") + "' style='font-size: 8pt; width: 120px;'>";
+        for (let k = 0; k < opts.length; k++) {
+            const v = opts[k];
+            sqmDownHtml += "<option value='" + v + "'" + (downSel === v ? " selected" : "") + ">" + labels[v] + "</option>";
+        }
+        sqmDownHtml += "</select></td>";
+        html += sqmDownHtml;
+        // Up
+        let sqmUpHtml = "<td style='padding: 0px'>";
+        sqmUpHtml += "<select title='Upload SQM override (blank=cfg default, none=disable)' id='" + rowPrefix(i, "sqm_override_up") + "' style='font-size: 8pt; width: 120px;'>";
+        for (let k = 0; k < opts.length; k++) {
+            const v = opts[k];
+            sqmUpHtml += "<option value='" + v + "'" + (upSel === v ? " selected" : "") + ">" + labels[v] + "</option>";
+        }
+        sqmUpHtml += "</select></td>";
+        html += sqmUpHtml;
         html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
 
         html += "</tr>";
@@ -122,12 +163,16 @@ function start() {
     // Render the configuration menu
     renderConfigMenu('devices');
     // Load shaped devices data
-    $.get("/local-api/networkJson", (njs) => {
+    loadNetworkJson((njs) => {
         network_json = njs;
-        $.get("/local-api/allShapedDevices", (data) => {
+        loadAllShapedDevices((data) => {
             shaped_devices = data;
             shapedDevices();
+        }, () => {
+            alert("Failed to load shaped devices");
         });
+    }, () => {
+        alert("Failed to load network configuration");
     });
 
     // Setup button handlers
@@ -156,6 +201,15 @@ function start() {
             row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
             row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
             row.comment = $("#" + rowPrefix(i, "comment")).val();
+            const sqmDown = $("#" + rowPrefix(i, "sqm_override_down")).val().trim().toLowerCase();
+            const sqmUp = $("#" + rowPrefix(i, "sqm_override_up")).val().trim().toLowerCase();
+            // Compose normalized token string: trimmed, lowercase
+            if (!sqmDown && !sqmUp) {
+                delete row.sqm_override; // default behavior
+            } else {
+                // Allow partial overrides; keep slash even if one side empty
+                row.sqm_override = `${sqmDown}/${sqmUp}`;
+            }
         }
 
         saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {

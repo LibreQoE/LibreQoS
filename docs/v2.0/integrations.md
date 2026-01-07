@@ -17,6 +17,10 @@
   * [Powercode Integration](#powercode-integration)
   * [Sonar Integration](#sonar-integration)
 
+## What these integrations do
+
+These integrations work by synchronizing with your CRM/NMS system to produce the two files LibreQoS requires for shaping - [network.json](configuration.md#network-hierarchy) and [ShapedDevices.csv](configuration.md#circuits).
+
 ## Splynx Integration
 
 > **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. Starting with v1.5-RC-2, the default strategy is `ap_only` for improved CPU performance. If you require the previous behavior, explicitly set `strategy = "full"` in your Splynx configuration section.

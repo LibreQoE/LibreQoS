@@ -58,8 +58,8 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
     }
 }
 
-/// Removes the XDP bindings from an interface. 
-/// 
+/// Removes the XDP bindings from an interface.
+///
 /// # Arguments
 /// * `interface_name` - The name of the interface from which you wish to remove XDP
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
@@ -356,18 +356,22 @@ unsafe fn attach_xdp_best_available(
         let mut attempts = 0;
         loop {
             let err = match mode_flag {
-                Some(flag) => unsafe { bpf_xdp_attach(
-                    iface_index.try_into().expect("Invalid interface index"),
-                    prog_fd,
-                    XDP_FLAGS_UPDATE_IF_NOEXIST | flag,
-                    std::ptr::null(),
-                ) },
-                None => unsafe { bpf_xdp_attach(
-                    iface_index.try_into().expect("Invalid interface index"),
-                    prog_fd,
-                    XDP_FLAGS_UPDATE_IF_NOEXIST,
-                    std::ptr::null(),
-                ) } ,
+                Some(flag) => unsafe {
+                    bpf_xdp_attach(
+                        iface_index.try_into().expect("Invalid interface index"),
+                        prog_fd,
+                        XDP_FLAGS_UPDATE_IF_NOEXIST | flag,
+                        std::ptr::null(),
+                    )
+                },
+                None => unsafe {
+                    bpf_xdp_attach(
+                        iface_index.try_into().expect("Invalid interface index"),
+                        prog_fd,
+                        XDP_FLAGS_UPDATE_IF_NOEXIST,
+                        std::ptr::null(),
+                    )
+                },
             };
             if err == 0 {
                 return Ok(());

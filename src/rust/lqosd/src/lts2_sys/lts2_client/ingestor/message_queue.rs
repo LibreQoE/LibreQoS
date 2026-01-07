@@ -167,7 +167,7 @@ impl MessageQueue {
         debug!("Submitting {} chunks of data", n_chunks);
         Ok(chunks)
     }
-    
+
     pub(crate) fn clear(&mut self) {
         self.general_queue.clear();
         self.circuit_throughput.clear();

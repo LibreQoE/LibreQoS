@@ -1,13 +1,14 @@
 use crate::MQ_CREATED;
 use crate::queue_math::{
-    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup,
+    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec,
+    sqm_tokens_for,
 };
 use allocative::Allocative;
 use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -21,7 +22,7 @@ struct AddSiteParams {
     upload_bandwidth_max: f32,
 }
 
-#[derive(Debug, Clone, Copy, Allocative)]
+#[derive(Debug, Clone, Allocative)]
 struct AddCircuitParams {
     circuit_hash: i64,
     parent_class_id: TcHandle,
@@ -33,6 +34,8 @@ struct AddCircuitParams {
     upload_bandwidth_max: f32,
     class_major: u16,
     up_class_major: u16,
+    // Optional per-circuit SQM override: "cake" or "fq_codel"
+    sqm_override: Option<String>,
 }
 
 /// Execution Mode
@@ -47,6 +50,30 @@ pub enum ExecutionMode {
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
+    /// Notification that the bus socket is ready; bakery can seed mappings
+    BusReady,
+    /// Add or update an IP mapping (mirrors `MapIpToFlow` from the bus)
+    MapIp {
+        /// The IP address to map (may include CIDR prefix)
+        ip_address: String,
+        /// Classifier handle (major:minor)
+        tc_handle: TcHandle,
+        /// CPU index
+        cpu: u32,
+        /// Upload map (on-a-stick second map)
+        upload: bool,
+    },
+    /// Delete an IP mapping (mirrors `DelIpFlow` from the bus)
+    DelIp {
+        /// The IP address to unmap (may include CIDR prefix)
+        ip_address: String,
+        /// Upload map (on-a-stick second map)
+        upload: bool,
+    },
+    /// Clear all IP mappings (mirrors `ClearIpFlow` from the bus)
+    ClearIpAll,
+    /// Commit the current set of staged IP mappings and perform stale cleanup.
+    CommitMappings,
     /// Send this when circuits are seen by the throughput tracker
     OnCircuitActivity {
         /// All active circuit IDs
@@ -125,6 +152,8 @@ pub enum BakeryCommands {
         up_class_major: u16,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
+        /// Optional per-circuit SQM override: "cake" or "fq_codel"
+        sqm_override: Option<String>,
     },
     /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
@@ -199,6 +228,7 @@ impl BakeryCommands {
                 class_major,
                 up_class_major,
                 ip_addresses: _,
+                sqm_override,
             } => Self::add_circuit(
                 execution_mode,
                 config,
@@ -213,6 +243,7 @@ impl BakeryCommands {
                     upload_bandwidth_max: *upload_bandwidth_max,
                     class_major: *class_major,
                     up_class_major: *up_class_major,
+                    sqm_override: sqm_override.clone(),
                 },
             ),
             _ => None,
@@ -225,7 +256,7 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        warn!("Clearing prior settings");
+        info!("Clearing prior settings");
         if config.on_a_stick_mode() {
             // Clear just the MQ on the ISP-facing interface
             result.push(vec![
@@ -319,11 +350,12 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                // On ISP-facing (downlink) side, use downlink capacity
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -339,7 +371,8 @@ impl BakeryCommands {
 
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
-            let mbps = config.queues.uplink_bandwidth_mbps as f64;
+            // Default class parameters should also reflect downlink capacity on ISP-facing side
+            let mbps = config.queues.downlink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -359,7 +392,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -431,11 +464,12 @@ impl BakeryCommands {
                 format!("0x{:x}:1", queue + stick_offset + 1),
                 "htb".to_string(),
                 "rate".to_string(),
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                // Internet-facing (uplink) side should use uplink capacity
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "ceil".to_string(),
-                format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -450,7 +484,8 @@ impl BakeryCommands {
             result.push(class);
             // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
-            let mbps = config.queues.downlink_bandwidth_mbps as f64;
+            // Default class parameters should reflect uplink capacity on Internet-facing side
+            let mbps = config.queues.uplink_bandwidth_mbps as f64;
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
@@ -470,7 +505,7 @@ impl BakeryCommands {
                 "prio".to_string(),
                 "5".to_string(),
                 "quantum".to_string(),
-                quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -494,6 +529,10 @@ impl BakeryCommands {
         params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
+        // Derive major IDs from parent handles so classids are fully qualified
+        // and consistent with queuingStructure.json (classMajor/classMinor).
+        let (down_major, _) = params.parent_class_id.get_major_minor();
+        let (up_major, _) = params.up_parent_class_id.get_major_minor();
 
         /*
         bakery.add_site(data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
@@ -505,6 +544,7 @@ impl BakeryCommands {
         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
                  */
 
+        // Use 'replace' for idempotency: it adds when absent and updates when present.
         result.push(vec![
             "class".to_string(),
             "replace".to_string(),
@@ -513,7 +553,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}", params.class_minor),
+            format!("0x{:x}:0x{:x}", down_major, params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -535,7 +575,7 @@ impl BakeryCommands {
             "parent".to_string(),
             params.up_parent_class_id.as_tc_string(),
             "classid".to_string(),
-            format!("0x{:x}", params.class_minor),
+            format!("0x{:x}:0x{:x}", up_major, params.class_minor),
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -558,27 +598,31 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
+        if let Some(ref s) = params.sqm_override {
+            if s.eq_ignore_ascii_case("fq_codel") {
+                debug!(
+                    "Bakery: building AddCircuit with fq_codel override (circuit_hash={}, class_minor=0x{:x}, class_major=0x{:x}, up_class_major=0x{:x})",
+                    params.circuit_hash,
+                    params.class_minor,
+                    params.class_major,
+                    params.up_class_major
+                );
+            }
+        }
         let do_htb;
         let do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
-            // In builder mode, if we're fully lazy - we don't do anything.
-            match config.queues.lazy_queues.as_ref() {
-                None | Some(LazyQueueMode::No) => {
-                    do_htb = true;
-                    do_sqm = true;
-                }
-                Some(LazyQueueMode::Full) => return None,
-                Some(LazyQueueMode::Htb) => {
-                    do_htb = true;
-                    do_sqm = false; // Only HTB, no SQM
-                }
-            }
+            // Initial tree build: always create HTB + SQM classes for circuits,
+            // regardless of lazy queue mode. Laziness applies to live updates
+            // (ExecutionMode::LiveUpdate) and pruning, not the first full build.
+            do_htb = true;
+            do_sqm = true;
         } else {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
                 None | Some(LazyQueueMode::No) => {
-                    warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                    debug!("Builder should not encounter lazy updates when lazy is disabled!");
                     // Set both modes to false, avoiding clashes
                     do_htb = false;
                     do_sqm = false;
@@ -595,6 +639,31 @@ impl BakeryCommands {
                 }
             }
         }
+
+        // Parse per-direction override tokens: single token applies to both;
+        // directional form is "down/up" with either side optionally empty.
+        let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
+            match &params.sqm_override {
+                None => (None, None),
+                Some(s) => {
+                    if s.contains('/') {
+                        let mut it = s.splitn(2, '/');
+                        let down = it.next().unwrap_or("").trim();
+                        let up = it.next().unwrap_or("").trim();
+                        let map = |t: &str| -> Option<String> {
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
+                        };
+                        (map(down), map(up))
+                    } else {
+                        (Some(s.clone()), Some(s.clone()))
+                    }
+                }
+            }
+        })();
 
         let mut result = Vec::new();
         /*
@@ -618,15 +687,17 @@ impl BakeryCommands {
             pass
          */
         if do_htb {
+            // Use 'replace' for idempotency across repeated batches
+            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
-                "replace".to_string(),
+                verb.to_string(),
                 "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(),
                 params.parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}", params.class_minor),
+                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.download_bandwidth_min),
@@ -642,28 +713,36 @@ impl BakeryCommands {
             ]);
         }
         if !config.queues.monitor_only && do_sqm {
-            let mut sqm_command = vec![
-                "qdisc".to_string(),
-                "replace".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
-            ];
-            sqm_command.extend(sqm_rate_fixup(params.download_bandwidth_max, config));
-            result.push(sqm_command);
+            if !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")) {
+                let mut sqm_command = vec![
+                    "qdisc".to_string(),
+                    "replace".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "parent".to_string(),
+                    format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
+                ];
+                sqm_command.extend(sqm_tokens_for(
+                    params.download_bandwidth_max,
+                    config,
+                    &down_override_opt,
+                ));
+                result.push(sqm_command);
+            }
         }
 
         if do_htb {
+            // Use 'replace' for idempotency across repeated batches
+            let verb = "replace";
             result.push(vec![
                 "class".to_string(),
-                "replace".to_string(),
+                verb.to_string(),
                 "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(),
                 params.up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{:x}", params.class_minor),
+                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
                 "htb".to_string(),
                 "rate".to_string(),
                 format_rate_for_tc_f32(params.upload_bandwidth_min),
@@ -680,16 +759,25 @@ impl BakeryCommands {
         }
 
         if !config.queues.monitor_only && do_sqm {
-            let mut sqm_command = vec![
-                "qdisc".to_string(),
-                "replace".to_string(),
-                "dev".to_string(),
-                config.internet_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
-            ];
-            sqm_command.extend(sqm_rate_fixup(params.upload_bandwidth_max, config));
-            result.push(sqm_command);
+            if !config.on_a_stick_mode() {
+                if !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
+                {
+                    let mut sqm_command = vec![
+                        "qdisc".to_string(),
+                        "replace".to_string(),
+                        "dev".to_string(),
+                        config.internet_interface(),
+                        "parent".to_string(),
+                        format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
+                    ];
+                    sqm_command.extend(sqm_tokens_for(
+                        params.upload_bandwidth_max,
+                        config,
+                        &up_override_opt,
+                    ));
+                    result.push(sqm_command);
+                }
+            }
         }
 
         Some(result)
@@ -721,10 +809,11 @@ impl BakeryCommands {
             class_minor,
             class_major,
             up_class_major,
+            sqm_override,
             ..
         } = self
         else {
-            warn!("to_prune called on non-circuit command!");
+            debug!("to_prune called on non-circuit command!");
             return None;
         };
 
@@ -738,7 +827,7 @@ impl BakeryCommands {
         } else {
             match config.queues.lazy_queues.as_ref() {
                 None | Some(LazyQueueMode::No) => {
-                    warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                    debug!("Builder should not encounter lazy updates when lazy is disabled!");
                     // Set both modes to false, avoiding clashes
                     return None;
                 }
@@ -756,8 +845,34 @@ impl BakeryCommands {
         }
 
         if prune_sqm {
-            // Prune the SQM qdisc
-            if !config.on_a_stick_mode() {
+            // Determine per-direction pruning based on override tokens
+            let (down_override_opt, up_override_opt) = match sqm_override.as_ref() {
+                None => (None, None),
+                Some(s) => {
+                    if s.contains('/') {
+                        let mut it = s.splitn(2, '/');
+                        let down = it.next().unwrap_or("").trim();
+                        let up = it.next().unwrap_or("").trim();
+                        let map = |t: &str| -> Option<String> {
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
+                        };
+                        (map(down), map(up))
+                    } else {
+                        (Some(s.clone()), Some(s.clone()))
+                    }
+                }
+            };
+
+            let prune_down =
+                !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+            let prune_up =
+                !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+
+            if prune_up && !config.on_a_stick_mode() {
                 result.push(vec![
                     "qdisc".to_string(),
                     "del".to_string(),
@@ -767,14 +882,16 @@ impl BakeryCommands {
                     format!("0x{:x}:0x{:x}", up_class_major, class_minor),
                 ]);
             }
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "parent".to_string(),
-                format!("0x{:x}:0x{:x}", class_major, class_minor),
-            ]);
+            if prune_down {
+                result.push(vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "parent".to_string(),
+                    format!("0x{:x}:0x{:x}", class_major, class_minor),
+                ]);
+            }
         }
 
         if prune_htb {
@@ -787,7 +904,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!(
+                    "0x{:x}:0x{:x}",
+                    parent_class_id.get_major_minor().0,
+                    class_minor
+                ),
             ]);
             result.push(vec![
                 "class".to_string(),
@@ -797,7 +918,11 @@ impl BakeryCommands {
                 "parent".to_string(),
                 up_parent_class_id.as_tc_string(),
                 "classid".to_string(),
-                format!("0x{class_minor:x}"),
+                format!(
+                    "0x{:x}:0x{:x}",
+                    up_parent_class_id.get_major_minor().0,
+                    class_minor
+                ),
             ]);
         }
 

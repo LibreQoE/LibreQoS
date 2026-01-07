@@ -8,7 +8,7 @@
 # Don't forget to setup `/etc/lqos.conf`
 
 # Check Pre-Requisites
-sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev esbuild mold
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
 
 if ! rustup -V &> /dev/null
 then
@@ -97,6 +97,8 @@ cargo build $BUILD_FLAGS
 popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
+
+
 
 # Update the lqos_api binary
 echo "Updating lqos_api binary..."

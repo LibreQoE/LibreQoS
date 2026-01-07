@@ -13,6 +13,7 @@ use std::sync::Arc;
 use lqos_config::Config;
 // UISP data link definitions
 use self::rest::nms_request_get_vec;
+use crate::rest::nms_request_get_text;
 use anyhow::Result;
 pub use data_link::*;
 pub use device::Device;
@@ -40,13 +41,22 @@ pub async fn load_all_sites(config: Arc<Config>) -> Result<Vec<Site>> {
 }
 
 /// Load all devices from UISP that are authorized, and include their full interface definitions
-pub async fn load_all_devices_with_interfaces(config: Arc<Config>) -> Result<Vec<Device>> {
-    Ok(nms_request_get_vec(
+pub async fn load_all_devices_with_interfaces(
+    config: Arc<Config>,
+) -> Result<(Vec<Device>, Vec<serde_json::Value>)> {
+    // TODO: We need to get this as serde_json::Value and cast later, because we want to
+    // send the original data to Insight!
+    let raw_data = nms_request_get_text(
         "devices?withInterfaces=true",
         &config.uisp_integration.token,
         &config.uisp_integration.url,
     )
-    .await?)
+    .await?;
+
+    let as_values: Vec<serde_json::Value> = serde_json::from_str(&raw_data)?;
+    let as_devices: Vec<Device> = serde_json::from_value(serde_json::json!(as_values))?;
+
+    Ok((as_devices, as_values))
 }
 
 /// Loads all data links from UISP (including links in client sites)

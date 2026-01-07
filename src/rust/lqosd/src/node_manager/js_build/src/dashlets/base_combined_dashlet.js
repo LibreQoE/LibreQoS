@@ -16,7 +16,18 @@ export class BaseCombinedDashlet extends BaseDashlet {
     }
 
     subscribeTo() {
-        return this.subsciptions;
+        const channels = [];
+        for (let i = 0; i < this.subsciptions.length; i++) {
+            const entry = this.subsciptions[i];
+            if (Array.isArray(entry)) {
+                for (let j = 0; j < entry.length; j++) {
+                    channels.push(entry[j]);
+                }
+            } else if (entry) {
+                channels.push(entry);
+            }
+        }
+        return channels;
     }
 
     #base() {

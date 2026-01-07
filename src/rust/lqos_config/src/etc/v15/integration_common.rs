@@ -29,7 +29,7 @@ impl Default for IntegrationConfig {
     fn default() -> Self {
         Self {
             circuit_name_as_address: false,
-            always_overwrite_network_json: false,
+            always_overwrite_network_json: true,
             queue_refresh_interval_mins: 30,
             use_mikrotik_ipv6: false,
             promote_to_root: None,

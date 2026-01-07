@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 /**
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
@@ -24,12 +25,12 @@ function lerpViridis(t) {
     let b = Math.round(c0[2] + frac * (c1[2] - c0[2]));
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
 
 export class TopNSankey extends DashboardGraph {
-    constructor(id) {
+    constructor(id, upload=false) {
         super(id);
+        this.upload = upload;
         this.nodeMap = {};
         this.option = {
             series: [
@@ -49,23 +50,6 @@ export class TopNSankey extends DashboardGraph {
         this.option.series[0].links = links;
         this.chart.hideLoading();
         this.chart.setOption(this.option);
-
-        /*this.chart.on('click', (params) => {
-            let name = params.name;
-            // Trim to before " ("
-            name = name.substring(0, name.indexOf(" ("));
-            if (name.indexOf(" > ") === -1) {
-                if (this.nodeMap[name] !== undefined) {
-                    window.location.href = "/circuit.html?id=" + encodeURI(this.nodeMap[name]);
-                }
-            } else {
-                let actualName = params.data.target;
-                actualName = actualName.substring(0, actualName.indexOf(" ("));
-                if (this.nodeMap[actualName] !== undefined) {
-                    window.location.href = "/circuit.html?id=" + encodeURI(this.nodeMap[actualName]);
-                }
-            }
-        });*/
     }
 
     processMessage(msg) {
@@ -92,20 +76,24 @@ export class TopNSankey extends DashboardGraph {
             if (isRedacted()) label.fontFamily = "Illegible";
 
             let name = r.ip_address;
-            let bytes = r.bits_per_second.down / 8;
-            let bytesAsMegabits = bytes / 1000000;
-            let maxBytes = r.plan.down / 8;
-            let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
+            // Choose the correct direction for value and capacity coloring
+            const bps = toNumber(this.upload ? r.bits_per_second.up : r.bits_per_second.down, 0);
+            const planMbps = toNumber(this.upload ? r.plan.up : r.plan.down, 0);
+            // Convert bits/s to MB/s (decimal) and Mbps plan to MB/s for a comparable ratio
+            const bytes = bps / 8;
+            const bytesAsMegabytes = bytes / 1000000;
+            const maxBytes = planMbps / 8;
+            const percent = Math.min(100, (maxBytes > 0 ? (bytesAsMegabytes / maxBytes) * 100 : 0));
             let capacityColor = isColorBlindMode()
                 ? lerpViridis(percent / 100)
                 : lerpGreenToRedViaOrange(100 - percent, 100);
             
-            let rtt = Math.max(Math.min(r.median_tcp_rtt, 200), 0);
+            let rtt = Math.max(Math.min(toNumber(r.median_tcp_rtt, 0), 200), 0);
             let rttColor = isColorBlindMode()
                 ? lerpViridis(rtt / 200)
                 : lerpGreenToRedViaOrange(200 - rtt, 200);
             
-            let percentRxmit = Math.min(100, r.tcp_retransmits[0] + r.tcp_retransmits[1]) / 100;
+            let percentRxmit = Math.min(100, toNumber(r.tcp_retransmits[0], 0) + toNumber(r.tcp_retransmits[1], 0)) / 100;
             let rxmitColor = isColorBlindMode()
                 ? lerpViridis(percentRxmit)
                 : lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
@@ -119,11 +107,12 @@ export class TopNSankey extends DashboardGraph {
                     borderColor: rttColor,
                 }
             });
-            
+
+            let value = bps;
             links.push({
                 source: "Root",
                 target: name,
-                value: r.bits_per_second.down,
+                value,
                 lineStyle: {
                     color: capacityColor
                 }

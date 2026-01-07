@@ -413,6 +413,7 @@ impl TimeBuffer {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn len_and_capacity(&self) -> (usize, usize) {
         let buffer = self.buffer.lock();
         (buffer.len(), buffer.capacity())

@@ -133,6 +133,9 @@ impl ConfigShapedDevices {
         let mut reader = ReaderBuilder::new()
             .comment(Some(b'#'))
             .trim(csv::Trim::All)
+            // Allow optional trailing fields like per-circuit SQM override
+            // without forcing all rows to match header length.
+            .flexible(true)
             .from_reader(utf8_bytes.as_slice());
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
@@ -348,7 +351,10 @@ mod test {
     fn test_single_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[0].0,
+            "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[0].1, 32);
     }
 
@@ -356,9 +362,15 @@ mod test {
     fn test_two_ipv4() {
         let r = ShapedDevice::parse_ipv4("1.2.3.4, 1.2.3.4/24");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[0].0,
+            "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[0].1, 32);
-        assert_eq!(r[1].0, "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[1].0,
+            "1.2.3.4".parse::<Ipv4Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[1].1, 24);
     }
 
@@ -392,7 +404,10 @@ mod test {
     fn test_single_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5");
         assert_eq!(r.len(), 1);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[0].0,
+            "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[0].1, 128);
     }
 
@@ -400,9 +415,15 @@ mod test {
     fn test_two_ipv6() {
         let r = ShapedDevice::parse_ipv6("fd77::1:5, fd77::1:5/64");
         assert_eq!(r.len(), 2);
-        assert_eq!(r[0].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[0].0,
+            "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[0].1, 128);
-        assert_eq!(r[1].0, "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error"));
+        assert_eq!(
+            r[1].0,
+            "fd77::1:5".parse::<Ipv6Addr>().expect("IP Parse Error")
+        );
         assert_eq!(r[1].1, 64);
     }
 
@@ -423,8 +444,12 @@ mod test {
         let trie = ConfigShapedDevices::make_trie(&devices);
         assert_eq!(trie.len(), (0, 2));
         assert!(
-            trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").expect("IP Parse Error").0)
-                .is_none()
+            trie.longest_match(
+                ShapedDevice::parse_cidr_v4("192.168.2.2")
+                    .expect("IP Parse Error")
+                    .0
+            )
+            .is_none()
         );
 
         let addr: Ipv4Addr = "192.168.1.2".parse().expect("IP Parse Error");
@@ -455,7 +480,10 @@ mod test {
         input.extend_from_slice("Hello UTF-8 with BOM".as_bytes());
 
         let result = ConfigShapedDevices::handle_encodings(&input);
-        assert_eq!(String::from_utf8(result).expect("Unicode error"), "Hello UTF-8 with BOM");
+        assert_eq!(
+            String::from_utf8(result).expect("Unicode error"),
+            "Hello UTF-8 with BOM"
+        );
     }
 
     #[test]

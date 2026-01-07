@@ -20,6 +20,9 @@ nix = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 chrono = "0.4.33"
+serde_cbor = { workspace = true }
+base64 = "0.22"
+miniz_oxide = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10"

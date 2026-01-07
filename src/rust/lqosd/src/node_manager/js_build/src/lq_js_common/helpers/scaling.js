@@ -12,9 +12,41 @@ export function trimTrailingZeros(str) {
     }
 }
 
+export function toNumber(value, fallback = 0) {
+    if (value === null || value === undefined) {
+        return fallback;
+    }
+    if (typeof value === "bigint") {
+        try {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : fallback;
+        } catch (err) {
+            return fallback;
+        }
+    }
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : fallback;
+    }
+    try {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+    } catch (err) {
+        return fallback;
+    }
+}
+
+function toFixedDigits(value, fallback = 2, min = 0, max = 20) {
+    let digits = Math.round(toNumber(value, fallback));
+    if (!Number.isFinite(digits)) digits = fallback;
+    digits = Math.max(min, Math.min(max, digits));
+    return digits;
+}
+
 
 // Scale a number to T/G/M/K, with a fixed number of decimal places.
 export function scaleNumber(n, fixed=2) {
+    fixed = toFixedDigits(fixed, 2);
+    n = toNumber(n, 0);
     if (n >= 1000000000000) {
         return trimTrailingZeros((n / 1000000000000).toFixed(fixed)) + "T";
     } else if (n >= 1000000000) {
@@ -30,6 +62,8 @@ export function scaleNumber(n, fixed=2) {
 
 // Scale nanoseconds to a time period
 export function scaleNanos(n, precision=2) {
+    precision = toFixedDigits(precision, 2);
+    n = toNumber(n, 0);
     if (n === 0) return "-";
     if (n > 60000000000) {
         return trimTrailingZeros((n / 60000000000).toFixed(precision)) + "m";

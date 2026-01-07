@@ -1,4 +1,9 @@
-import {saveNetworkAndDevices, renderConfigMenu} from "./config/config_helper";
+import {
+    loadAllShapedDevices,
+    loadNetworkJson,
+    renderConfigMenu,
+    saveNetworkAndDevices,
+} from "./config/config_helper";
 
 let network_json = null;
 let shaped_devices = null;
@@ -264,12 +269,16 @@ function start() {
     });
 
     // Load network data
-    $.get("/local-api/allShapedDevices", (data) => {
+    loadAllShapedDevices((data) => {
         shaped_devices = data;
-        $.get("/local-api/networkJson", (njs) => {
+        loadNetworkJson((njs) => {
             network_json = njs;
             renderNetwork();
+        }, () => {
+            alert("Failed to load network configuration");
         });
+    }, () => {
+        alert("Failed to load shaped devices");
     });
 }
 

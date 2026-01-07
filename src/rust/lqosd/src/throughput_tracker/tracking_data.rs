@@ -1,7 +1,8 @@
 use super::{
     RETIRE_AFTER_SECONDS,
     flow_data::{
-        ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, RttData, get_flowbee_event_count_and_reset,
+        ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttData,
+        get_flowbee_event_count_and_reset, update_asn_heatmaps,
     },
     throughput_entry::ThroughputEntry,
 };
@@ -16,8 +17,11 @@ use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
-use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
+use lqos_utils::{
+    temporal_heatmap::TemporalHeatmap,
+    units::{AtomicDownUp, DownUpOrder},
+};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
@@ -38,6 +42,17 @@ pub struct ThroughputTracker {
     pub(crate) udp_packets_per_second: AtomicDownUp,
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
+    pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
+    pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
+}
+
+#[derive(Default)]
+struct CircuitHeatmapAggregate {
+    download_bytes: u64,
+    upload_bytes: u64,
+    rtts: Vec<f32>,
+    tcp_retransmits: DownUpOrder<u64>,
+    tcp_packets: DownUpOrder<u64>,
 }
 
 impl ThroughputTracker {
@@ -55,7 +70,155 @@ impl ThroughputTracker {
             udp_packets_per_second: AtomicDownUp::zeroed(),
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
+            circuit_heatmaps: Mutex::default(),
+            global_heatmap: Mutex::new(TemporalHeatmap::new()),
         }
+    }
+
+    pub(crate) fn record_circuit_heatmaps(&self) {
+        let Ok(config) = lqos_config::load_config() else {
+            return;
+        };
+        let global_down_mbps = config.queues.downlink_bandwidth_mbps as f32;
+        let global_up_mbps = config.queues.uplink_bandwidth_mbps as f32;
+
+        if !config.enable_circuit_heatmaps {
+            self.circuit_heatmaps.lock().clear();
+            *self.global_heatmap.lock() = TemporalHeatmap::new();
+            return;
+        }
+
+        let shaped_devices = SHAPED_DEVICES.load();
+        let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
+        capacity_lookup.reserve(shaped_devices.devices.len());
+        shaped_devices.devices.iter().for_each(|device| {
+            let entry = capacity_lookup
+                .entry(device.circuit_hash)
+                .or_insert((device.download_max_mbps, device.upload_max_mbps));
+            if device.download_max_mbps > entry.0 {
+                entry.0 = device.download_max_mbps;
+            }
+            if device.upload_max_mbps > entry.1 {
+                entry.1 = device.upload_max_mbps;
+            }
+        });
+
+        let mut aggregates: FxHashMap<i64, CircuitHeatmapAggregate> = FxHashMap::default();
+        let mut total_download_bytes: u64 = 0;
+        let mut total_upload_bytes: u64 = 0;
+        let mut total_retransmits: DownUpOrder<u64> = DownUpOrder::zeroed();
+        let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+        let mut total_rtts: Vec<f32> = Vec::new();
+        {
+            let raw_data = self.raw_data.lock();
+            for entry in raw_data.values() {
+                let circuit_hash = if let Some(circuit_hash) = entry.circuit_hash {
+                    circuit_hash
+                } else {
+                    continue;
+                };
+
+                let download_delta = entry.bytes.down.saturating_sub(entry.prev_bytes.down);
+                let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
+                total_download_bytes = total_download_bytes.saturating_add(download_delta);
+                total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
+                total_tcp_packets.down = total_tcp_packets.down.saturating_add(
+                    entry
+                        .tcp_packets
+                        .down
+                        .saturating_sub(entry.prev_tcp_packets.down),
+                );
+                total_tcp_packets.up = total_tcp_packets.up.saturating_add(
+                    entry
+                        .tcp_packets
+                        .up
+                        .saturating_sub(entry.prev_tcp_packets.up),
+                );
+                total_retransmits.down = total_retransmits
+                    .down
+                    .saturating_add(entry.tcp_retransmits.down);
+                total_retransmits.up = total_retransmits
+                    .up
+                    .saturating_add(entry.tcp_retransmits.up);
+
+                let agg = aggregates
+                    .entry(circuit_hash)
+                    .or_insert_with(CircuitHeatmapAggregate::default);
+                agg.download_bytes = agg.download_bytes.saturating_add(download_delta);
+                agg.upload_bytes = agg.upload_bytes.saturating_add(upload_delta);
+                agg.tcp_packets.down = agg.tcp_packets.down.saturating_add(
+                    entry
+                        .tcp_packets
+                        .down
+                        .saturating_sub(entry.prev_tcp_packets.down),
+                );
+                agg.tcp_packets.up = agg.tcp_packets.up.saturating_add(
+                    entry
+                        .tcp_packets
+                        .up
+                        .saturating_sub(entry.prev_tcp_packets.up),
+                );
+                agg.tcp_retransmits.down = agg
+                    .tcp_retransmits
+                    .down
+                    .saturating_add(entry.tcp_retransmits.down);
+                agg.tcp_retransmits.up = agg
+                    .tcp_retransmits
+                    .up
+                    .saturating_add(entry.tcp_retransmits.up);
+
+                if let Some(rtt) = entry.median_latency() {
+                    agg.rtts.push(rtt);
+                    total_rtts.push(rtt);
+                }
+            }
+        }
+
+        let mut heatmaps = self.circuit_heatmaps.lock();
+        heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
+
+        for (circuit_hash, mut aggregate) in aggregates {
+            let (max_down_mbps, max_up_mbps) = capacity_lookup
+                .get(&circuit_hash)
+                .copied()
+                .unwrap_or((0.0, 0.0));
+
+            let download_util =
+                utilization_percent(aggregate.download_bytes, max_down_mbps).unwrap_or(0.0);
+            let upload_util =
+                utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
+            let rtt = median(&mut aggregate.rtts);
+            let retransmit_down =
+                retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
+            let retransmit_up =
+                retransmit_percent(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
+
+            let heatmap = heatmaps
+                .entry(circuit_hash)
+                .or_insert_with(TemporalHeatmap::new);
+            heatmap.add_sample(
+                download_util,
+                upload_util,
+                rtt,
+                rtt,
+                retransmit_down,
+                retransmit_up,
+            );
+        }
+
+        let mut global_heatmap = self.global_heatmap.lock();
+        let global_rtt = median(&mut total_rtts);
+        let global_retransmit_down =
+            retransmit_percent(total_retransmits.down, total_tcp_packets.down);
+        let global_retransmit_up = retransmit_percent(total_retransmits.up, total_tcp_packets.up);
+        global_heatmap.add_sample(
+            utilization_percent(total_download_bytes, global_down_mbps).unwrap_or(0.0),
+            utilization_percent(total_upload_bytes, global_up_mbps).unwrap_or(0.0),
+            global_rtt,
+            global_rtt,
+            global_retransmit_down,
+            global_retransmit_up,
+        );
     }
 
     pub(crate) fn copy_previous_and_reset_rtt(&self) {
@@ -341,6 +504,28 @@ impl ThroughputTracker {
     ) {
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
+        let enable_asn_heatmaps = lqos_config::load_config()
+            .map(|config| config.enable_asn_heatmaps)
+            .unwrap_or(true);
+        let mut asn_aggregates: FxHashMap<u32, AsnAggregate> = FxHashMap::default();
+        let mut add_asn_sample = |asn: u32,
+                                  bytes: DownUpOrder<u64>,
+                                  packets: DownUpOrder<u64>,
+                                  retransmits: DownUpOrder<u64>,
+                                  rtt_ms: Option<f32>| {
+            if asn == 0 {
+                return;
+            }
+            let agg = asn_aggregates
+                .entry(asn)
+                .or_insert_with(AsnAggregate::default);
+            agg.bytes.checked_add(bytes);
+            agg.packets.checked_add(packets);
+            agg.retransmits.checked_add(retransmits);
+            if let Some(rtt) = rtt_ms {
+                agg.rtts.push(rtt);
+            }
+        };
 
         if let Ok(now) = time_since_boot() {
             let rtt_samples = flowbee_rtt_map();
@@ -364,6 +549,16 @@ impl ThroughputTracker {
                 } else {
                     // We have a valid flow, so it needs to be tracked
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
+                        let delta_bytes =
+                            data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+                        let delta_packets = data
+                            .packets_sent
+                            .checked_sub_or_zero(this_flow.0.packets_sent);
+                        let delta_retrans = data
+                            .tcp_retransmits
+                            .checked_sub_or_zero(this_flow.0.tcp_retransmits);
+                        let delta_retrans =
+                            DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64);
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
                             if this_flow.0.retry_times_down.is_none() {
@@ -407,6 +602,16 @@ impl ThroughputTracker {
                                 this_flow.0.rtt[1] = *down;
                             }
                         }
+                        if enable_asn_heatmaps {
+                            let flow_rtt = combine_rtt_ms(this_flow.0.rtt);
+                            add_asn_sample(
+                                this_flow.1.asn_id.0,
+                                delta_bytes,
+                                delta_packets,
+                                delta_retrans,
+                                flow_rtt,
+                            );
+                        }
                     } else {
                         // Check if we've hit the flow limit
                         if all_flows_lock.flow_data.len() >= MAX_FLOWS {
@@ -425,6 +630,21 @@ impl ThroughputTracker {
                         } else {
                             // Insert it into the map
                             let flow_analysis = FlowAnalysis::new(&key);
+                            if enable_asn_heatmaps {
+                                let flow_rtt =
+                                    rtt_samples.get(&key).and_then(|rtt| combine_rtt_ms(*rtt));
+                                let delta_retrans = DownUpOrder::new(
+                                    data.tcp_retransmits.down as u64,
+                                    data.tcp_retransmits.up as u64,
+                                );
+                                add_asn_sample(
+                                    flow_analysis.asn_id.0,
+                                    data.bytes_sent,
+                                    data.packets_sent,
+                                    delta_retrans,
+                                    flow_rtt,
+                                );
+                            }
                             all_flows_lock
                                 .flow_data
                                 .insert(key.clone(), (data.into(), flow_analysis));
@@ -545,6 +765,10 @@ impl ThroughputTracker {
                 .retain(|_k, v| v.0.last_seen >= expire);
             all_flows_lock.flow_data.shrink_to_fit();
             expire_rtt_flows();
+        }
+
+        if enable_asn_heatmaps || !asn_aggregates.is_empty() {
+            update_asn_heatmaps(asn_aggregates, self_cycle, enable_asn_heatmaps);
         }
     }
 
@@ -682,4 +906,55 @@ impl ThroughputTracker {
             info!("{:<34}{:?}", ip, v.tc_handle);
         }
     }
+}
+
+fn utilization_percent(bytes: u64, max_mbps: f32) -> Option<f32> {
+    if max_mbps <= 0.0 {
+        return None;
+    }
+    let bits_per_second = bytes.saturating_mul(8) as f64;
+    // Some installations store capacity already in bps; others use Mbps.
+    // Heuristically treat very large values as bps to avoid double-scaling.
+    let capacity_bps = if max_mbps > 1_000_000.0 {
+        max_mbps as f64
+    } else {
+        max_mbps as f64 * 1_000_000.0
+    };
+    Some(((bits_per_second / capacity_bps) * 100.0) as f32)
+}
+
+fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
+    if retransmits == 0 || packets < 10 {
+        return None;
+    }
+    let value =(retransmits as f32 / packets as f32) * 100.0;
+    if value > 50.0 {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn median(values: &mut Vec<f32>) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.total_cmp(b));
+    let mid = values.len() / 2;
+    if values.len() % 2 == 1 {
+        Some(values[mid])
+    } else {
+        Some((values[mid - 1] + values[mid]) / 2.0)
+    }
+}
+
+fn combine_rtt_ms(rtts: [RttData; 2]) -> Option<f32> {
+    let mut samples = Vec::with_capacity(2);
+    if rtts[0].as_nanos() > 0 {
+        samples.push(rtts[0].as_millis() as f32);
+    }
+    if rtts[1].as_nanos() > 0 {
+        samples.push(rtts[1].as_millis() as f32);
+    }
+    median(&mut samples)
 }

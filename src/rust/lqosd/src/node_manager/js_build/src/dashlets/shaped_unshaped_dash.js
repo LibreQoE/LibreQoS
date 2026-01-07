@@ -4,11 +4,11 @@ import {DashletBaseInsight} from "./insight_dashlet_base";
 
 export class ShapedUnshapedDash extends DashletBaseInsight {
     title() {
-        return "Shaped/Unshaped Traffic";
+        return "Mapped/Unmapped Traffic";
     }
 
     tooltip() {
-        return "<h5>Shaped/Unshaped Traffic</h5><p>Shows the amount of traffic that is shaped and unshaped. Shaped traffic is limited by the configured bandwidth limits, while unshaped traffic is not.</p>";
+        return "<h5>Mapped/Unmapped Traffic</h5><p>Shows the amount of traffic that is mapped (shaped) and unmapped. Mapped traffic follows configured bandwidth limits; unmapped traffic is not.</p>";
     }
 
     subscribeTo() {

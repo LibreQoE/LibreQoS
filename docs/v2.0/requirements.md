@@ -96,6 +96,8 @@ Such vendors often stock servers capable of 10 Gbps throughput, for around $500 
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * A Dedicated Network Interface Card for Two Shaping Interfaces
 
+> **⚠️ Bonded Interfaces**: LibreQoS does not support the use of bonded interfaces. This is a limitation of XDP.
+
 Officially supported Network Interface Cards for the two shaping interfaces are listed below:
 
 | NIC Controller         | Port Speed       | Suggested Models                                                                        | Known Issues                                                                                  |

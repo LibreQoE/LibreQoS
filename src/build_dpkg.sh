@@ -11,7 +11,7 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
+APT_DEPENDENCIES="python3-pip, nano, graphviz, curl, ca-certificates"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
@@ -113,9 +113,9 @@ pushd /opt/libreqos
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
 sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
 # - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking apscheduler deepdiff --yes
-PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking apscheduler deepdiff --yes
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking apscheduler deepdiff
+sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler deepdiff --yes
+PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler deepdiff --yes
+sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler deepdiff
 
 # Ensure folder permissions are correct post-install
 sudo chown -R $USER /opt/libreqos

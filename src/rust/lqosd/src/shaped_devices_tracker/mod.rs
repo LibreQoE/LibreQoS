@@ -84,8 +84,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn get_full_network_map() -> BusResponse {
     let nj = NETWORK_JSON.read();
     let data = {
-        nj
-            .get_nodes_when_ready()
+        nj.get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(i, n)| (i, n.clone_to_transit()))
@@ -217,7 +216,8 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut device_id = None;
                 let mut device_name = None;
                 let mut parent_node = None;
-                let mut plan = DownUpOrder { down: 0.0, up: 0.0 };
+                // Plan is expressed in Mbps as f32
+                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
                 let lookup = match ip {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,
@@ -228,8 +228,8 @@ pub fn get_all_circuits() -> BusResponse {
                     device_id = Some(devices.devices[*c.1].device_id.clone());
                     device_name = Some(devices.devices[*c.1].device_name.clone());
                     parent_node = Some(devices.devices[*c.1].parent_node.clone());
-                    plan.down = devices.devices[*c.1].download_max_mbps;
-                    plan.up = devices.devices[*c.1].upload_max_mbps;
+                    plan.down = devices.devices[*c.1].download_max_mbps.round();
+                    plan.up = devices.devices[*c.1].upload_max_mbps.round();
                 }
 
                 Circuit {

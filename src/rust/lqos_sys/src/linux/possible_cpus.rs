@@ -78,6 +78,9 @@ mod test {
     #[test]
     fn test_againt_c() {
         let cpu_count = unsafe { libbpf_sys::libbpf_num_possible_cpus() } as u32;
-        assert_eq!(cpu_count, num_possible_cpus().expect("Failure in num_possible_cpus"));
+        assert_eq!(
+            cpu_count,
+            num_possible_cpus().expect("Failure in num_possible_cpus")
+        );
     }
 }

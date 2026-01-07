@@ -21,11 +21,14 @@ pub use ip_stats::{
     tos_parser,
 };
 mod tc_handle;
-pub use bus::response::BakeryStatsSnapshot;
+pub use bus::response::{
+    AsnHeatmapData, BakeryStatsSnapshot, CircuitHeatmapData, ExecutiveSummaryHeader,
+    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+};
 pub use bus::{
     BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,
     CakeDiffTinTransit, CakeDiffTransit, CakeTransit, LibreqosBusClient, QueueStoreTransit,
-    TopFlowType, UnixSocketServer, bus_request,
+    TopFlowType, UnixSocketServer, UrgentSeverity, UrgentSource, bus_request,
 };
 pub use tc_handle::TcHandle;
 

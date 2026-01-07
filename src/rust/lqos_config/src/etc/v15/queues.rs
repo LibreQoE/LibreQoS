@@ -44,6 +44,9 @@ pub struct QueueConfig {
 
     /// Hold-off on creating lazy queues until this many bytes have been seen
     pub lazy_threshold_bytes: Option<u64>,
+
+    /// Auto-change queues to fq_codel if they are greater than or equal to X Mbps. Defaults to 1000.
+    pub fast_queues_fq_codel: Option<f64>,
 }
 
 /// Lazy queue creation modes
@@ -74,6 +77,7 @@ impl Default for QueueConfig {
             lazy_queues: None, // Default to disabled for backward compatibility
             lazy_expire_seconds: Some(600), // 10 minutes default
             lazy_threshold_bytes: None,
+            fast_queues_fq_codel: None,
         }
     }
 }

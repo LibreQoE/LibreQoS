@@ -1,6 +1,6 @@
 use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
 use std::collections::HashSet;
 
 /// Describes a node in the network map tree.
@@ -50,6 +50,9 @@ pub struct NetworkJsonNode {
 
     /// The node type
     pub node_type: Option<String>,
+
+    /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
+    pub heatmap: Option<TemporalHeatmap>,
 }
 
 impl NetworkJsonNode {

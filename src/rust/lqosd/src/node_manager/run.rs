@@ -57,7 +57,12 @@ pub async fn spawn_webserver(
         .route("/health", get(health_check))
         .nest(
             "/websocket/",
-            websocket_router(bus_tx.clone(), system_usage_tx.clone(), control_tx.clone()),
+            websocket_router(
+                bus_tx.clone(),
+                system_usage_tx.clone(),
+                control_tx.clone(),
+                shaper_tx.clone(),
+            ),
         )
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)

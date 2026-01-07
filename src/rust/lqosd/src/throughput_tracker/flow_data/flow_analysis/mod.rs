@@ -51,6 +51,7 @@ impl FlowAnalysisSystem {
         }
     }
 
+    #[allow(dead_code)]
     pub fn len_and_capacity() -> (usize, usize, usize, usize) {
         let lock = ANALYSIS.asn_table.lock();
         if let Some(table) = lock.as_ref() {

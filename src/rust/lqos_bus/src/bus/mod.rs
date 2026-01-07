@@ -11,11 +11,14 @@ mod unix_socket_server;
 pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
-pub use request::{BlackboardSystem, BusRequest, TopFlowType};
-pub use response::BusResponse;
+pub use request::{BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity, UrgentSource};
+#[allow(unused_imports)]
+pub use response::{
+    AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
+    StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+};
 pub use session::BusSession;
 use thiserror::Error;
-use tracing::error;
 pub use unix_socket_server::UnixSocketServer;
 
 /// The local socket path to which `lqosd` will bind itself,

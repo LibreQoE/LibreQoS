@@ -129,8 +129,7 @@ pub enum WsMessage {
         method: ApiRequestType,
         url_suffix: String,
         body: Option<String>,
-    }
-    ,
+    },
     // Chatbot (Ask Libby) streaming via Insight chatbot service
     // From Shaper -> Insight
     ChatbotStart {
