@@ -440,6 +440,30 @@ pub enum BusRequest {
         protocol: String,
     },
 
+    /// Retrieve scheduler details (diagnostics)
+    GetSchedulerDetails,
+
+    /// Retrieve queue marks/drops totals
+    GetQueueStatsTotal,
+
+    /// Retrieve per-circuit capacity utilization
+    GetCircuitCapacity,
+
+    /// Retrieve per-node capacity utilization
+    GetTreeCapacity,
+
+    /// Retrieve aggregate TCP retransmit summary
+    GetRetransmitSummary,
+
+    /// Retrieve two-level tree summary
+    GetTreeSummaryL2,
+
+    /// Search circuits/devices/sites by term
+    Search {
+        /// Search term
+        term: String,
+    },
+
     /// Retrieve current global warning list
     GetGlobalWarnings,
 

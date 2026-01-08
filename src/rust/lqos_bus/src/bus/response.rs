@@ -240,6 +240,99 @@ pub struct FlowTimelineEntry {
     pub remote_ip: String,
 }
 
+/// Scheduler details response
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct SchedulerDetails {
+    /// Whether the scheduler is available
+    pub available: bool,
+    /// Optional error message
+    pub error: Option<String>,
+    /// Human-readable diagnostics
+    pub details: String,
+}
+
+/// Queue statistics totals (marks/drops)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct QueueStatsTotal {
+    /// Total marks (down/up)
+    pub marks: DownUpOrder<u64>,
+    /// Total drops (down/up)
+    pub drops: DownUpOrder<u64>,
+}
+
+/// Circuit capacity utilization row
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct CircuitCapacityRow {
+    /// Circuit ID
+    pub circuit_id: String,
+    /// Circuit name
+    pub circuit_name: String,
+    /// Capacity ratios [down, up]
+    pub capacity: [f64; 2],
+    /// Median RTT
+    pub median_rtt: f32,
+}
+
+/// Node capacity utilization row
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct NodeCapacity {
+    /// Node ID
+    pub id: usize,
+    /// Node name
+    pub name: String,
+    /// Current down Mbps
+    pub down: f64,
+    /// Current up Mbps
+    pub up: f64,
+    /// Max down Mbps
+    pub max_down: f64,
+    /// Max up Mbps
+    pub max_up: f64,
+    /// Median RTT
+    pub median_rtt: f32,
+}
+
+/// Aggregate TCP retransmit summary
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct RetransmitSummary {
+    /// Total retransmits up
+    pub up: i32,
+    /// Total retransmits down
+    pub down: i32,
+    /// TCP packet count up
+    pub tcp_up: u64,
+    /// TCP packet count down
+    pub tcp_down: u64,
+}
+
+/// Search result entry
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub enum SearchResultEntry {
+    /// Circuit result
+    Circuit {
+        /// Circuit ID
+        id: String,
+        /// Circuit name
+        name: String,
+    },
+    /// Device result
+    Device {
+        /// Circuit ID
+        circuit_id: String,
+        /// Device name
+        name: String,
+        /// Circuit name
+        circuit_name: String,
+    },
+    /// Site result
+    Site {
+        /// Site index
+        idx: usize,
+        /// Site name
+        name: String,
+    },
+}
+
 /// Warning level for global warnings
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Allocative)]
 pub enum WarningLevel {
@@ -474,6 +567,27 @@ pub enum BusResponse {
 
     /// Protocol flow timeline
     ProtocolFlowTimeline(Vec<FlowTimelineEntry>),
+
+    /// Scheduler details
+    SchedulerDetails(SchedulerDetails),
+
+    /// Queue stats totals (marks/drops)
+    QueueStatsTotal(QueueStatsTotal),
+
+    /// Circuit capacity utilization
+    CircuitCapacity(Vec<CircuitCapacityRow>),
+
+    /// Tree capacity utilization
+    TreeCapacity(Vec<NodeCapacity>),
+
+    /// Retransmit summary
+    RetransmitSummary(RetransmitSummary),
+
+    /// Two-level tree summary
+    TreeSummaryL2(Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTransport)>)>),
+
+    /// Search results
+    SearchResults(Vec<SearchResultEntry>),
 
     /// Is Insight Enabled?
     InsightStatus(bool),

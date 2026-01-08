@@ -16,3 +16,5 @@ pub use local_api::flow_explorer::{
     country_timeline_data, protocol_timeline_data, FlowTimeline,
 };
 pub use local_api::flow_map::flow_map_data;
+pub use local_api::scheduler::scheduler_details_data;
+pub use local_api::search::{search_results, SearchRequest, SearchResult};

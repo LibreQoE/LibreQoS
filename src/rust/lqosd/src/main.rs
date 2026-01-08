@@ -779,6 +779,42 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     .collect();
                 BusResponse::ProtocolFlowTimeline(data)
             }
+            BusRequest::GetSchedulerDetails => {
+                let details = node_manager::scheduler_details_data();
+                BusResponse::SchedulerDetails(lqos_bus::SchedulerDetails {
+                    available: details.available,
+                    error: details.error,
+                    details: details.details,
+                })
+            }
+            BusRequest::GetQueueStatsTotal => {
+                let totals = queue_stats_total_data();
+                BusResponse::QueueStatsTotal(totals)
+            }
+            BusRequest::GetCircuitCapacity => {
+                let data = circuit_capacity_data();
+                BusResponse::CircuitCapacity(data)
+            }
+            BusRequest::GetTreeCapacity => {
+                let data = tree_capacity_data();
+                BusResponse::TreeCapacity(data)
+            }
+            BusRequest::GetRetransmitSummary => {
+                let data = retransmit_summary_data();
+                BusResponse::RetransmitSummary(data)
+            }
+            BusRequest::GetTreeSummaryL2 => {
+                let data = tree_summary_l2_data();
+                BusResponse::TreeSummaryL2(data)
+            }
+            BusRequest::Search { term } => {
+                let results =
+                    node_manager::search_results(node_manager::SearchRequest { term: term.clone() })
+                .into_iter()
+                .map(search_result_to_bus)
+                .collect();
+                BusResponse::SearchResults(results)
+            }
             BusRequest::CheckInsight => {
                 let (status, _) = get_lts_license_status();
                 match status {
@@ -813,5 +849,181 @@ fn flow_timeline_to_bus(entry: node_manager::FlowTimeline) -> lqos_bus::FlowTime
         circuit_id: entry.circuit_id,
         circuit_name: entry.circuit_name,
         remote_ip: entry.remote_ip,
+    }
+}
+
+fn queue_stats_total_data() -> lqos_bus::QueueStatsTotal {
+    lqos_bus::QueueStatsTotal {
+        marks: lqos_utils::units::DownUpOrder::new(
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.marks.get_down(),
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.marks.get_up(),
+        ),
+        drops: lqos_utils::units::DownUpOrder::new(
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.drops.get_down(),
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.drops.get_up(),
+        ),
+    }
+}
+
+fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
+    use crate::shaped_devices_tracker::SHAPED_DEVICES;
+    use crate::throughput_tracker::THROUGHPUT_TRACKER;
+    use lqos_utils::units::DownUpOrder;
+    use std::collections::HashMap;
+
+    struct CircuitAccumulator {
+        bytes: DownUpOrder<u64>,
+        median_rtt: f32,
+    }
+
+    let mut circuits: HashMap<String, CircuitAccumulator> = HashMap::new();
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .lock()
+        .iter()
+        .for_each(|(_k, c)| {
+            if let Some(circuit_id) = &c.circuit_id {
+                if let Some(accumulator) = circuits.get_mut(circuit_id) {
+                    accumulator.bytes += c.bytes_per_second;
+                    if let Some(latency) = c.median_latency() {
+                        accumulator.median_rtt = latency;
+                    }
+                } else {
+                    circuits.insert(
+                        circuit_id.clone(),
+                        CircuitAccumulator {
+                            bytes: c.bytes_per_second,
+                            median_rtt: c.median_latency().unwrap_or(0.0),
+                        },
+                    );
+                }
+            }
+        });
+
+    let shaped_devices = SHAPED_DEVICES.load();
+    circuits
+        .iter()
+        .filter_map(|(circuit_id, accumulator)| {
+            shaped_devices
+                .devices
+                .iter()
+                .find(|sd| sd.circuit_id == *circuit_id)
+                .map(|device| {
+                    let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;
+                    let down = down_mbps / device.download_max_mbps as f64;
+                    let up_mbps = (accumulator.bytes.up as f64 * 8.0) / 1_000_000.0;
+                    let up = up_mbps / device.upload_max_mbps as f64;
+
+                    lqos_bus::CircuitCapacityRow {
+                        circuit_name: device.circuit_name.clone(),
+                        circuit_id: circuit_id.clone(),
+                        capacity: [down, up],
+                        median_rtt: accumulator.median_rtt,
+                    }
+                })
+        })
+        .collect()
+}
+
+fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
+    use crate::shaped_devices_tracker::NETWORK_JSON;
+
+    let net_json = NETWORK_JSON.read();
+    net_json
+        .get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(id, node)| {
+            let node = node.clone_to_transit();
+            let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
+            let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+            let max_down = node.max_throughput.0 as f64;
+            let max_up = node.max_throughput.1 as f64;
+            let median_rtt = if node.rtts.is_empty() {
+                0.0
+            } else {
+                let n = node.rtts.len() / 2;
+                if node.rtts.len() % 2 == 0 {
+                    (node.rtts[n - 1] + node.rtts[n]) / 2.0
+                } else {
+                    node.rtts[n]
+                }
+            };
+
+            lqos_bus::NodeCapacity {
+                id,
+                name: node.name.clone(),
+                down,
+                up,
+                max_down,
+                max_up,
+                median_rtt,
+            }
+        })
+        .collect()
+}
+
+fn retransmit_summary_data() -> lqos_bus::RetransmitSummary {
+    let data = crate::throughput_tracker::min_max_median_tcp_retransmits();
+    lqos_bus::RetransmitSummary {
+        up: data.up,
+        down: data.down,
+        tcp_up: data.tcp_up,
+        tcp_down: data.tcp_down,
+    }
+}
+
+fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTransport)>)> {
+    use crate::shaped_devices_tracker::NETWORK_JSON;
+    use std::collections::BTreeMap;
+
+    let net_json = NETWORK_JSON.read();
+    let nodes = net_json.get_nodes_when_ready();
+    let mut candidates: Vec<(usize, usize, lqos_config::NetworkJsonTransport, u64)> = Vec::new();
+
+    for (p_idx, p_node) in nodes.iter().enumerate() {
+        if p_node.immediate_parent == Some(0) {
+            for (c_idx, c_node) in nodes.iter().enumerate() {
+                if c_node.immediate_parent == Some(p_idx) {
+                    let t = c_node.clone_to_transit();
+                    let total = t.current_throughput.0 + t.current_throughput.1;
+                    candidates.push((p_idx, c_idx, t, total));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| b.3.cmp(&a.3));
+    let n: usize = 10;
+    if candidates.len() > n {
+        candidates.truncate(n);
+    }
+
+    let mut map: BTreeMap<usize, Vec<(usize, lqos_config::NetworkJsonTransport)>> = BTreeMap::new();
+    for (p_idx, c_idx, t, _total) in candidates.into_iter() {
+        map.entry(p_idx).or_default().push((c_idx, t));
+    }
+
+    map.into_iter().collect()
+}
+
+fn search_result_to_bus(entry: node_manager::SearchResult) -> lqos_bus::SearchResultEntry {
+    match entry {
+        node_manager::SearchResult::Circuit { id, name } => {
+            lqos_bus::SearchResultEntry::Circuit { id, name }
+        }
+        node_manager::SearchResult::Device {
+            circuit_id,
+            name,
+            circuit_name,
+        } => lqos_bus::SearchResultEntry::Device {
+            circuit_id,
+            name,
+            circuit_name,
+        },
+        node_manager::SearchResult::Site { idx, name } => {
+            lqos_bus::SearchResultEntry::Site { idx, name }
+        }
     }
 }
