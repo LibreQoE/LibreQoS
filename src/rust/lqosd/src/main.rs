@@ -441,6 +441,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetNodeNamesFromIds(nodes) => shaped_devices_tracker::map_node_names(nodes),
             BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
+            BusRequest::GetCircuitById { circuit_id } => {
+                shaped_devices_tracker::get_circuit_by_id(circuit_id)
+            }
             BusRequest::GetFunnel { target: parent } => shaped_devices_tracker::get_funnel(parent),
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),

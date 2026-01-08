@@ -195,6 +195,12 @@ pub enum BusRequest {
     /// Get all circuits and usage statistics
     GetAllCircuits,
 
+    /// Get circuit usage statistics for a single circuit ID
+    GetCircuitById {
+        /// Circuit ID to query
+        circuit_id: String,
+    },
+
     /// Retrieve stats for all queues above a named circuit id
     GetFunnel {
         /// Circuit being analyzed, as the named circuit id
