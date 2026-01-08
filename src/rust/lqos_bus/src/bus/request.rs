@@ -404,6 +404,12 @@ pub enum BusRequest {
     /// Clear all urgent issues
     ClearAllUrgentIssues,
 
+    /// Retrieve device counts (shaped + unknown)
+    GetDeviceCounts,
+
+    /// Retrieve circuit counts (active + configured)
+    GetCircuitCount,
+
     /// Retrieve current global warning list
     GetGlobalWarnings,
 

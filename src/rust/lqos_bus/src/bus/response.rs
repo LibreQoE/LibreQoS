@@ -145,11 +145,32 @@ pub struct StormguardDebugEntry {
     pub upload: StormguardDebugDirection,
 }
 
+/// Device counts (shaped devices and unknown IPs)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct DeviceCounts {
+    /// Number of shaped devices
+    pub shaped_devices: usize,
+    /// Number of unknown IPs
+    pub unknown_ips: usize,
+}
+
+/// Circuit counts (active vs configured)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct CircuitCount {
+    /// Active circuit count
+    pub count: usize,
+    /// Configured circuit count
+    pub configured_count: usize,
+}
+
 /// Warning level for global warnings
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Allocative)]
 pub enum WarningLevel {
+    /// Informational warning
     Info,
+    /// Warning-level issue
     Warning,
+    /// Error-level issue
     Error,
 }
 
@@ -349,6 +370,12 @@ pub enum BusResponse {
 
     /// List of global warnings
     GlobalWarnings(Vec<(WarningLevel, String)>),
+
+    /// Device counts (shaped + unknown)
+    DeviceCounts(DeviceCounts),
+
+    /// Circuit counts (active + configured)
+    CircuitCount(CircuitCount),
 
     /// Is Insight Enabled?
     InsightStatus(bool),

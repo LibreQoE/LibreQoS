@@ -699,6 +699,20 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     .collect();
                 BusResponse::GlobalWarnings(warnings)
             }
+            BusRequest::GetDeviceCounts => {
+                let data = node_manager::device_count();
+                BusResponse::DeviceCounts(lqos_bus::DeviceCounts {
+                    shaped_devices: data.shaped_devices,
+                    unknown_ips: data.unknown_ips,
+                })
+            }
+            BusRequest::GetCircuitCount => {
+                let data = node_manager::circuit_count_data();
+                BusResponse::CircuitCount(lqos_bus::CircuitCount {
+                    count: data.count,
+                    configured_count: data.configured_count,
+                })
+            }
             BusRequest::CheckInsight => {
                 let (status, _) = get_lts_license_status();
                 match status {
