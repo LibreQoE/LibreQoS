@@ -67,7 +67,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use lqos_stormguard::{STORMGUARD_STATS, STORMGUARD_DEBUG};
+use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -442,7 +442,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetNodeNamesFromIds(nodes) => shaped_devices_tracker::map_node_names(nodes),
             BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
             BusRequest::GetCircuitById { circuit_id } => {
-                shaped_devices_tracker::get_circuit_by_id(circuit_id)
+                shaped_devices_tracker::get_circuit_by_id(circuit_id.clone())
             }
             BusRequest::GetFunnel { target: parent } => shaped_devices_tracker::get_funnel(parent),
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
