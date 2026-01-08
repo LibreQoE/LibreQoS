@@ -124,7 +124,8 @@ struct AddArgs {
     upload_max_mbps: f32,
     #[arg(long, default_value = "")]
     comment: String,
-    /// Optional per-circuit SQM override token ("cake", "fq_codel", "none", or "down/up").
+    /// Optional per-circuit SQM override token ("cake", "fq_codel", "none", or "down_sqm/up_sqm").
+    /// A single token applies to both directions; empty means use defaults.
     #[arg(long, default_value = "")]
     sqm_override: String,
 }
@@ -204,7 +205,7 @@ fn normalize_sqm_override(raw: &str) -> Result<Option<String>> {
         let valid = |s: &str| matches!(s, "" | "cake" | "fq_codel" | "none");
         if !valid(down) || !valid(up) {
             return Err(anyhow!(
-                "invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"
+                "invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
             ));
         }
         return Ok(Some(format!("{down}/{up}")));
@@ -213,7 +214,7 @@ fn normalize_sqm_override(raw: &str) -> Result<Option<String>> {
     match token.as_str() {
         "cake" | "fq_codel" | "none" => Ok(Some(token)),
         _ => Err(anyhow!(
-            "invalid sqm override '{token}'. Allowed values: 'cake', 'fq_codel', 'none', or down/up"
+            "invalid sqm override '{token}'. Allowed values: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
         )),
     }
 }

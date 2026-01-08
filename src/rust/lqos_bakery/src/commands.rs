@@ -641,7 +641,7 @@ impl BakeryCommands {
         }
 
         // Parse per-direction override tokens: single token applies to both;
-        // directional form is "down/up" with either side optionally empty.
+        // directional form is "down_sqm/up_sqm" with either side optionally empty.
         let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
             match &params.sqm_override {
                 None => (None, None),

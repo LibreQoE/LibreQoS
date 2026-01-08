@@ -138,6 +138,7 @@ SHAPED_DEVICES_HEADER = [
     "Download Max Mbps",
     "Upload Max Mbps",
     "Comment",
+    "sqm",
 ]
 
 
@@ -175,15 +176,24 @@ def read_shaped_devices_csv(path: str):
             return SHAPED_DEVICES_HEADER, []
         header = rows[0]
         data_rows = rows[1:]
+        if len(header) < len(SHAPED_DEVICES_HEADER):
+            header = list(header) + SHAPED_DEVICES_HEADER[len(header):]
+        target_len = len(header)
+        if target_len > 0:
+            for row in data_rows:
+                if len(row) < target_len:
+                    row.extend([""] * (target_len - len(row)))
         return header, data_rows
 
 
 def override_devices_to_rows(devices):
-    """Convert override device dicts to CSV rows (13 columns)."""
+    """Convert override device dicts to CSV rows (14 columns, optional sqm)."""
     rows = []
     for d in devices:
         ipv4s = d.get('ipv4s', [])
         ipv6s = d.get('ipv6s', [])
+        sqm = d.get('sqm', '') or d.get('sqm_override', '')
+        sqm = sqm or ""
         row = [
             d.get('circuitID', ''),
             d.get('circuitName', ''),
@@ -198,6 +208,7 @@ def override_devices_to_rows(devices):
             str(d.get('maxDownload', '')),
             str(d.get('maxUpload', '')),
             d.get('comment', ''),
+            str(sqm),
         ]
         rows.append(row)
     return rows

@@ -17,7 +17,7 @@
 # Backward Compatibility: Existing integer rates continue to work unchanged.
 #
 # Per‑Circuit SQM Override (last column `sqm`):
-# - Accepts: "cake", "fq_codel", "none" or directional form "down/up".
+# - Accepts: "cake", "fq_codel", "none" or directional form "down_sqm/up_sqm".
 # - Directional form: left token applies to download, right to upload. Either side may be empty
 #   to indicate no override for that direction (e.g., "cake/" or "/fq_codel").
 # - Case is ignored on load; values are normalized to trimmed, lowercase.

@@ -866,7 +866,8 @@ fn validate_shaped_devices() -> PyResult<String> {
 /// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
 /// The dictionary keys mirror the normalized loader used in LibreQoS.py:
 /// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
-/// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload, maxUpload, comment.
+/// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload,
+/// maxUpload, comment, sqm.
 #[pyfunction]
 fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     let overrides = match lqos_overrides::OverrideFile::load() {
@@ -901,6 +902,13 @@ fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
         d.set_item("maxDownload", dev.download_max_mbps)?;
         d.set_item("maxUpload", dev.upload_max_mbps)?;
         d.set_item("comment", dev.comment.clone())?;
+        d.set_item(
+            "sqm",
+            dev.sqm_override
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        )?;
         let obj: PyObject = d.unbind().into();
         out.push(obj);
     }
