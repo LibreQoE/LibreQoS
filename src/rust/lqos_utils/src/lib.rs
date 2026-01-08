@@ -19,6 +19,8 @@ mod string_table_enum;
 
 /// Rolling heatmap data storage for executive summary views.
 pub mod temporal_heatmap;
+/// Re-export HeatmapBlocks for downstream crates.
+pub use temporal_heatmap::HeatmapBlocks;
 /// Helpers for units of measurement
 pub mod units;
 /// Utilities dealing with Unix Timestamps

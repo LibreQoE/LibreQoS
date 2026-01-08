@@ -38,7 +38,7 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration"
+PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_overrides"
 mkdir -p bin/static
 pushd rust > /dev/null || exit
 #cargo clean

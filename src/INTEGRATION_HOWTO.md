@@ -154,7 +154,7 @@ LibreQoS supports optional per‑circuit SQM overrides via the last column (`sqm
 
 - Accepted values:
   - Single token: `cake`, `fq_codel`, or `none` (applies to both directions)
-  - Directional: `down/up` where each side is one of `cake`, `fq_codel`, `none`, or empty
+  - Directional: `down_sqm/up_sqm` where each side is one of `cake`, `fq_codel`, `none`, or empty
 - Directional semantics:
   - Left token is download, right token is upload (e.g., `cake/fq_codel`)
   - Either side may be empty to leave that direction at default (e.g., `cake/` or `/fq_codel`)

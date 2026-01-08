@@ -141,4 +141,9 @@ src/bin/lqos_api
 /src/linux_tc_rust.txt
 /src/linux_tc_rust_live.txt
 /src/linux_tc_rust_prune.txt
+<<<<<<< HEAD
+/src/lqos_overrides.json
+
+=======
 /src/planner_state.json
+>>>>>>> develop

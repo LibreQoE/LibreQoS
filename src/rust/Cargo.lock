@@ -1953,6 +1953,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_overrides"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "lqos_config",
+ "nix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lqos_python"
 version = "0.1.0"
 dependencies = [
@@ -1961,6 +1973,7 @@ dependencies = [
  "chrono",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "lqos_utils",
  "miniz_oxide",
  "nix",
@@ -4077,6 +4090,7 @@ dependencies = [
  "ip_network_table",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "petgraph",
  "serde",
  "serde_cbor",

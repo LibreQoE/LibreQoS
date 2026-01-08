@@ -33,7 +33,7 @@ to_network = "eth1"
 [queues]
 # Global default SQM is a single token list applied to both directions.
 # Per-circuit overrides in ShapedDevices.csv may specify directional tokens
-# as "down/up" (see ShapedDevices.example.csv and INTEGRATION_HOWTO.md).
+# as "down_sqm/up_sqm" (see ShapedDevices.example.csv and INTEGRATION_HOWTO.md).
 default_sqm = "cake diffserv4"
 monitor_only = false
 uplink_bandwidth_mbps = 100000

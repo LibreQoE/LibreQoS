@@ -552,7 +552,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::Search { term } => {
-            let results = search::search_results(search::SearchRequest { term: term.clone() }).await;
+            let results = search::search_results(search::SearchRequest { term: term.clone() });
             let response = WsResponse::SearchResults { term, results };
             if send_ws_response(&tx, response).await {
                 return true;

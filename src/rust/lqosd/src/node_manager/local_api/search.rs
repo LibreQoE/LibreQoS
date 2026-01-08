@@ -69,7 +69,7 @@ pub enum SearchResult {
     },
 }
 
-pub async fn search_results(search: SearchRequest) -> Vec<SearchResult> {
+pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
     const MAX_RESULTS: usize = 50;
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new(); // keys like "Device:<circuit_id>:<name>" or "Circuit:<id>" or "Site:<idx>"
