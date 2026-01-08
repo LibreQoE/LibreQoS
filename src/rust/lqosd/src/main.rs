@@ -713,6 +713,72 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     configured_count: data.configured_count,
                 })
             }
+            BusRequest::GetFlowMap => {
+                let points = node_manager::flow_map_data()
+                    .into_iter()
+                    .map(|(lat, lon, country, bytes_sent, rtt_nanos)| lqos_bus::FlowMapPoint {
+                        lat,
+                        lon,
+                        country,
+                        bytes_sent,
+                        rtt_nanos,
+                    })
+                    .collect();
+                BusResponse::FlowMap(points)
+            }
+            BusRequest::GetAsnList => {
+                let entries = node_manager::asn_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::AsnListEntry {
+                        count: entry.count,
+                        asn: entry.asn,
+                        name: entry.name,
+                    })
+                    .collect();
+                BusResponse::AsnList(entries)
+            }
+            BusRequest::GetCountryList => {
+                let entries = node_manager::country_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::CountryListEntry {
+                        count: entry.count,
+                        name: entry.name,
+                        iso_code: entry.iso_code,
+                    })
+                    .collect();
+                BusResponse::CountryList(entries)
+            }
+            BusRequest::GetProtocolList => {
+                let entries = node_manager::protocol_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::ProtocolListEntry {
+                        count: entry.count,
+                        protocol: entry.protocol,
+                    })
+                    .collect();
+                BusResponse::ProtocolList(entries)
+            }
+            BusRequest::GetAsnFlowTimeline { asn } => {
+                let data = node_manager::flow_timeline_data(*asn)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::AsnFlowTimeline(data)
+            }
+            BusRequest::GetCountryFlowTimeline { iso_code } => {
+                let data = node_manager::country_timeline_data(iso_code)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::CountryFlowTimeline(data)
+            }
+            BusRequest::GetProtocolFlowTimeline { protocol } => {
+                let data = node_manager::protocol_timeline_data(protocol)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::ProtocolFlowTimeline(data)
+            }
             BusRequest::CheckInsight => {
                 let (status, _) = get_lts_license_status();
                 match status {
@@ -729,5 +795,23 @@ fn map_warning_level(level: node_manager::WarningLevel) -> lqos_bus::WarningLeve
         node_manager::WarningLevel::Info => lqos_bus::WarningLevel::Info,
         node_manager::WarningLevel::Warning => lqos_bus::WarningLevel::Warning,
         node_manager::WarningLevel::Error => lqos_bus::WarningLevel::Error,
+    }
+}
+
+fn flow_timeline_to_bus(entry: node_manager::FlowTimeline) -> lqos_bus::FlowTimelineEntry {
+    lqos_bus::FlowTimelineEntry {
+        start: entry.start,
+        end: entry.end,
+        duration_nanos: entry.duration_nanos,
+        throughput: entry.throughput,
+        tcp_retransmits: entry.tcp_retransmits,
+        rtt_nanos: [entry.rtt[0].as_nanos(), entry.rtt[1].as_nanos()],
+        retransmit_times_down: entry.retransmit_times_down,
+        retransmit_times_up: entry.retransmit_times_up,
+        total_bytes: entry.total_bytes,
+        protocol: entry.protocol,
+        circuit_id: entry.circuit_id,
+        circuit_name: entry.circuit_name,
+        remote_ip: entry.remote_ip,
     }
 }

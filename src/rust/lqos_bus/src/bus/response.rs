@@ -7,7 +7,7 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::{temporal_heatmap::HeatmapBlocks, units::DownUpOrder};
+use lqos_utils::{HeatmapBlocks, units::DownUpOrder};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -161,6 +161,83 @@ pub struct CircuitCount {
     pub count: usize,
     /// Configured circuit count
     pub configured_count: usize,
+}
+
+/// Flow map point for recent flow endpoints
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct FlowMapPoint {
+    /// Latitude of the endpoint
+    pub lat: f64,
+    /// Longitude of the endpoint
+    pub lon: f64,
+    /// Country label
+    pub country: String,
+    /// Bytes sent (download direction)
+    pub bytes_sent: u64,
+    /// RTT sample in nanoseconds
+    pub rtt_nanos: f32,
+}
+
+/// ASN list entry with recent flow counts
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct AsnListEntry {
+    /// Flow count for this ASN
+    pub count: usize,
+    /// ASN number
+    pub asn: u32,
+    /// ASN name
+    pub name: String,
+}
+
+/// Country list entry with recent flow counts
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct CountryListEntry {
+    /// Flow count for this country
+    pub count: usize,
+    /// Country name
+    pub name: String,
+    /// Country ISO code
+    pub iso_code: String,
+}
+
+/// Protocol list entry with recent flow counts
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct ProtocolListEntry {
+    /// Flow count for this protocol
+    pub count: usize,
+    /// Protocol name
+    pub protocol: String,
+}
+
+/// Flow timeline entry for flow explorer
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct FlowTimelineEntry {
+    /// Flow start time (unix seconds)
+    pub start: u64,
+    /// Flow end time (unix seconds)
+    pub end: u64,
+    /// Flow duration in nanoseconds
+    pub duration_nanos: u64,
+    /// Optional throughput series
+    pub throughput: Vec<DownUpOrder<u64>>,
+    /// TCP retransmit counts
+    pub tcp_retransmits: DownUpOrder<u16>,
+    /// RTT samples in nanoseconds (down/up)
+    pub rtt_nanos: [u64; 2],
+    /// Retransmit timestamps for download (unix seconds)
+    pub retransmit_times_down: Vec<u64>,
+    /// Retransmit timestamps for upload (unix seconds)
+    pub retransmit_times_up: Vec<u64>,
+    /// Total bytes sent
+    pub total_bytes: DownUpOrder<u64>,
+    /// Protocol name
+    pub protocol: String,
+    /// Circuit ID
+    pub circuit_id: String,
+    /// Circuit name
+    pub circuit_name: String,
+    /// Remote IP address
+    pub remote_ip: String,
 }
 
 /// Warning level for global warnings
@@ -376,6 +453,27 @@ pub enum BusResponse {
 
     /// Circuit counts (active + configured)
     CircuitCount(CircuitCount),
+
+    /// Flow map points (lat/lon endpoints)
+    FlowMap(Vec<FlowMapPoint>),
+
+    /// ASN list (recent flows)
+    AsnList(Vec<AsnListEntry>),
+
+    /// Country list (recent flows)
+    CountryList(Vec<CountryListEntry>),
+
+    /// Protocol list (recent flows)
+    ProtocolList(Vec<ProtocolListEntry>),
+
+    /// ASN flow timeline
+    AsnFlowTimeline(Vec<FlowTimelineEntry>),
+
+    /// Country flow timeline
+    CountryFlowTimeline(Vec<FlowTimelineEntry>),
+
+    /// Protocol flow timeline
+    ProtocolFlowTimeline(Vec<FlowTimelineEntry>),
 
     /// Is Insight Enabled?
     InsightStatus(bool),

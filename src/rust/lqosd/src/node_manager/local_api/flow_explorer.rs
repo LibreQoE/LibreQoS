@@ -23,19 +23,19 @@ pub fn protocol_list_data() -> Vec<AsnProtocolListEntry> {
 
 #[derive(Debug, Serialize)]
 pub struct FlowTimeline {
-    start: u64,
-    end: u64,
-    duration_nanos: u64,
-    throughput: Vec<DownUpOrder<u64>>,
-    tcp_retransmits: DownUpOrder<u16>,
-    rtt: [RttData; 2],
-    retransmit_times_down: Vec<u64>,
-    retransmit_times_up: Vec<u64>,
-    total_bytes: DownUpOrder<u64>,
-    protocol: String,
-    circuit_id: String,
-    circuit_name: String,
-    remote_ip: String,
+    pub start: u64,
+    pub end: u64,
+    pub duration_nanos: u64,
+    pub throughput: Vec<DownUpOrder<u64>>,
+    pub tcp_retransmits: DownUpOrder<u16>,
+    pub rtt: [RttData; 2],
+    pub retransmit_times_down: Vec<u64>,
+    pub retransmit_times_up: Vec<u64>,
+    pub total_bytes: DownUpOrder<u64>,
+    pub protocol: String,
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub remote_ip: String,
 }
 
 pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {

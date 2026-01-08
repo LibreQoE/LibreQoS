@@ -34,22 +34,22 @@ pub struct FlowDurationSummary {
 
 #[derive(Debug, Serialize)]
 pub struct AsnListEntry {
-    count: usize,
-    asn: u32,
-    name: String,
+    pub count: usize,
+    pub asn: u32,
+    pub name: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AsnCountryListEntry {
-    count: usize,
-    name: String,
-    iso_code: String,
+    pub count: usize,
+    pub name: String,
+    pub iso_code: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AsnProtocolListEntry {
-    count: usize,
-    protocol: String,
+    pub count: usize,
+    pub protocol: String,
 }
 
 impl TimeBuffer {

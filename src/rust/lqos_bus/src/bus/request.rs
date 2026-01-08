@@ -410,6 +410,36 @@ pub enum BusRequest {
     /// Retrieve circuit counts (active + configured)
     GetCircuitCount,
 
+    /// Retrieve flow map points (lat/lon endpoints)
+    GetFlowMap,
+
+    /// Retrieve list of ASNs with recent flow data
+    GetAsnList,
+
+    /// Retrieve list of countries with recent flow data
+    GetCountryList,
+
+    /// Retrieve list of protocols with recent flow data
+    GetProtocolList,
+
+    /// Retrieve flow timeline entries for an ASN
+    GetAsnFlowTimeline {
+        /// ASN number to filter
+        asn: u32,
+    },
+
+    /// Retrieve flow timeline entries for a country
+    GetCountryFlowTimeline {
+        /// Country ISO code to filter
+        iso_code: String,
+    },
+
+    /// Retrieve flow timeline entries for a protocol
+    GetProtocolFlowTimeline {
+        /// Protocol name to filter
+        protocol: String,
+    },
+
     /// Retrieve current global warning list
     GetGlobalWarnings,
 
