@@ -688,6 +688,17 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 urgent::clear(*id);
                 BusResponse::Ack
             }
+            BusRequest::ClearAllUrgentIssues => {
+                urgent::clear_all();
+                BusResponse::Ack
+            }
+            BusRequest::GetGlobalWarnings => {
+                let warnings = node_manager::get_global_warnings()
+                    .into_iter()
+                    .map(|(level, message)| (map_warning_level(level), message))
+                    .collect();
+                BusResponse::GlobalWarnings(warnings)
+            }
             BusRequest::CheckInsight => {
                 let (status, _) = get_lts_license_status();
                 match status {
@@ -696,5 +707,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
             }
         });
+    }
+}
+
+fn map_warning_level(level: node_manager::WarningLevel) -> lqos_bus::WarningLevel {
+    match level {
+        node_manager::WarningLevel::Info => lqos_bus::WarningLevel::Info,
+        node_manager::WarningLevel::Warning => lqos_bus::WarningLevel::Warning,
+        node_manager::WarningLevel::Error => lqos_bus::WarningLevel::Error,
     }
 }

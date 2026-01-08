@@ -26,7 +26,7 @@ pub use ip_stats::{
 mod tc_handle;
 pub use bus::response::{
     AsnHeatmapData, BakeryStatsSnapshot, CircuitHeatmapData, ExecutiveSummaryHeader,
-    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry, UrgentIssue, WarningLevel,
 };
 pub use bus::{
     BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,

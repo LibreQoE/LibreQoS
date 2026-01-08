@@ -8,4 +8,4 @@ mod warnings;
 mod ws;
 
 pub use run::spawn_webserver;
-pub use warnings::{WarningLevel, add_global_warning};
+pub use warnings::{WarningLevel, add_global_warning, get_global_warnings};

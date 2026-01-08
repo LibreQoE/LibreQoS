@@ -145,6 +145,14 @@ pub struct StormguardDebugEntry {
     pub upload: StormguardDebugDirection,
 }
 
+/// Warning level for global warnings
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub enum WarningLevel {
+    Info,
+    Warning,
+    Error,
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -338,6 +346,9 @@ pub enum BusResponse {
 
     /// List of urgent issues
     UrgentIssues(Vec<UrgentIssue>),
+
+    /// List of global warnings
+    GlobalWarnings(Vec<(WarningLevel, String)>),
 
     /// Is Insight Enabled?
     InsightStatus(bool),

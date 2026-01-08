@@ -401,6 +401,12 @@ pub enum BusRequest {
     /// Clear a specific urgent issue by ID
     ClearUrgentIssue(u64),
 
+    /// Clear all urgent issues
+    ClearAllUrgentIssues,
+
+    /// Retrieve current global warning list
+    GetGlobalWarnings,
+
     /// Is Insight Enabled?
     CheckInsight,
 }
