@@ -115,11 +115,11 @@ pub async fn build_flat_network(
                             .unwrap_or(0.0);
                         let burst_down = qos
                             .downloadBurstSize
-                            .map(|v| (v as f32) * 8.0 / 1000.0)
+                            .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
                             .unwrap_or(0.0);
                         let burst_up = qos
                             .uploadBurstSize
-                            .map(|v| (v as f32) * 8.0 / 1000.0)
+                            .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
                             .unwrap_or(0.0);
                         if base_down > 0.0 || base_up > 0.0 {
                             download_min = f32::max(
