@@ -226,12 +226,13 @@ EOF
 popd || exit
 
 ####################################################
-# Bundle the API into src/bin
-echo "Fetching lqos_api (api.zip) ..."
-curl -fsSL -o /tmp/lqos_api.zip "https://download.libreqos.com/api.zip"
-unzip -o /tmp/lqos_api.zip -d "$LQOS_DIR/bin"
-chmod +x "$LQOS_DIR/bin/lqos_api" || true
-rm -f /tmp/lqos_api.zip
+# Bundle the API into the package
+echo "Fetching lqos_api via update_api.sh ..."
+bash ./update_api.sh --bin-dir "$LQOS_DIR/bin" --no-restart
+if [[ ! -x "$LQOS_DIR/bin/lqos_api" ]]; then
+  echo "Error: lqos_api was not installed into the package at $LQOS_DIR/bin/lqos_api"
+  exit 1
+fi
 
 ####################################################
 # Assemble the package
