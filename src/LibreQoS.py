@@ -693,6 +693,9 @@ def refreshShapers():
                                         "uploadBandwidthMbps": chosenUploadMbps
                                     }
             generatedPNs.append(genPNname)
+        # Planner/device weights (fetched only when planner/binpacking is enabled).
+        # When disabled, we keep this empty and fall back to rate-based weights later.
+        weight_by_circuit_id = {}
         if use_bin_packing_to_balance_cpu():
             print("Using internal planner to sort circuits by CPU core")
             # Build item list with weights for circuits lacking a ParentNode
@@ -938,19 +941,6 @@ def refreshShapers():
                                     newDict[node]['children'] = flattened
             return newDict
         network = flattenA(network, 1)
-
-        # Prepare planner weights (actual weighting may come from Insight or CSV defaults)
-        weight_by_circuit_id = {}
-        try:
-            weights = get_weights()
-            for w in weights:
-                try:
-                    weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
-                except Exception:
-                    pass
-        except Exception:
-            # If we can't get weights, leave mapping empty; UI will fall back
-            weight_by_circuit_id = {}
 
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
