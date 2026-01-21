@@ -301,14 +301,14 @@ class NetworkGraph:
 		if not self._cache_valid:
 			self._buildChildrenCache()
 		
-		for i, node in enumerate(self.nodes):
-			if node.type == NodeType.clientWithChildren:
-				siteNode = NetworkNode(
-					id=node.id + "_gen",
-					displayName="(Generated Site) " + node.displayName,
-					type=NodeType.site
-				)
-				siteNode.parentIndex = node.parentIndex
+			for i, node in enumerate(self.nodes):
+				if node.type == NodeType.clientWithChildren:
+					siteNode = NetworkNode(
+						id=str(node.id) + "_gen",
+						displayName="(Generated Site) " + node.displayName,
+						type=NodeType.site
+					)
+					siteNode.parentIndex = node.parentIndex
 				node.parentId = siteNode.id
 				if node.type == NodeType.clientWithChildren:
 					node.type = NodeType.client
