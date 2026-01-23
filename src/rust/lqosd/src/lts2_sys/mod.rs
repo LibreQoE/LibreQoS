@@ -3,6 +3,7 @@
 use parking_lot::Mutex;
 use std::net::IpAddr;
 pub(crate) mod lts2_client;
+pub mod license_grant;
 pub mod shared_types;
 
 use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};

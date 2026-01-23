@@ -11,6 +11,7 @@ use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use crate::lts2_sys::license_grant;
 
 mod messages;
 pub use messages::{RemoteInsightRequest, WsMessage};
@@ -178,6 +179,30 @@ async fn persistent_connection(
             // Queue chatbot control messages until the connection is permitted (Welcome received)
             let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
+            let queue_license_grant_request =
+                |socket_sender_tx: &tokio::sync::mpsc::Sender<Message>| {
+                    let Some(public_key) = license_grant::local_public_key_bytes() else {
+                        warn!("No local Insight keypair available for license grant request");
+                        return;
+                    };
+                    let message = messages::WsMessage::LicenseGrantRequest { public_key };
+                    let Ok((_, _, bytes)) = message.to_bytes() else {
+                        error!("Failed to serialize LicenseGrantRequest");
+                        return;
+                    };
+                    if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                        match e {
+                            TrySendError::Full(_) => {
+                                warn!(
+                                    "Send unavailable: license grant request queue full; dropping message"
+                                );
+                            }
+                            TrySendError::Closed(_) => {
+                                error!("Failed to send license grant request: channel closed");
+                            }
+                        }
+                    }
+                };
 
             // Message pump
             'message_pump: loop {
@@ -370,25 +395,63 @@ async fn persistent_connection(
                                 match msg {
                                     messages::WsMessage::Welcome { valid, license_state, expiration_date } => {
                                         info!("Control channel connected. License valid={valid}, state={license_state}, expires_unix={expiration_date}");
-                                        set_license_status(LicenseStatus {
-                                            license_type: license_state,
-                                            trial_expires: expiration_date as i32,
-                                        });
-                                        permitted = true;
-                                        sleep_seconds = 60;
-                                        // Flush any pending chatbot messages now that we're permitted
-                                        if !pending_chatbot_messages.is_empty() {
-                                            debug!("Flushing {} queued chatbot message(s)", pending_chatbot_messages.len());
-                                            for bytes in pending_chatbot_messages.drain(..) {
-                                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
-                                                    match e {
-                                                        TrySendError::Full(_) => warn!("Send unavailable: chatbot queue full; dropping queued message"),
-                                                        TrySendError::Closed(_) => {
-                                                            error!("Failed to send queued chatbot message: channel closed");
-                                                            break 'message_pump;
+                                        if valid {
+                                            set_license_status(LicenseStatus {
+                                                license_type: license_state,
+                                                trial_expires: expiration_date as i32,
+                                            });
+                                            permitted = true;
+                                            sleep_seconds = 60;
+                                            // Flush any pending chatbot messages now that we're permitted
+                                            if !pending_chatbot_messages.is_empty() {
+                                                debug!(
+                                                    "Flushing {} queued chatbot message(s)",
+                                                    pending_chatbot_messages.len()
+                                                );
+                                                for bytes in pending_chatbot_messages.drain(..) {
+                                                    if let Err(e) = socket_sender_tx
+                                                        .try_send(Message::Binary(bytes.into()))
+                                                    {
+                                                        match e {
+                                                            TrySendError::Full(_) => warn!(
+                                                                "Send unavailable: chatbot queue full; dropping queued message"
+                                                            ),
+                                                            TrySendError::Closed(_) => {
+                                                                error!(
+                                                                    "Failed to send queued chatbot message: channel closed"
+                                                                );
+                                                                break 'message_pump;
+                                                            }
                                                         }
                                                     }
                                                 }
+                                            }
+                                            queue_license_grant_request(&socket_sender_tx);
+                                        } else {
+                                            set_license_status(LicenseStatus {
+                                                license_type: 0,
+                                                trial_expires: -1,
+                                            });
+                                            permitted = false;
+                                            if let Err(e) = license_grant::invalidate_license_grant() {
+                                                warn!("Failed to invalidate stored license grant: {e:?}");
+                                            }
+                                        }
+                                    }
+                                    messages::WsMessage::InsightPublicKey { public_key } => {
+                                        if let Err(e) =
+                                            license_grant::update_insight_public_key_bytes(public_key)
+                                        {
+                                            warn!("Failed to store Insight public key: {e:?}");
+                                        }
+                                    }
+                                    messages::WsMessage::LicenseGrant { payload, signature } => {
+                                        if let Err(e) =
+                                            license_grant::handle_license_grant(payload, signature)
+                                        {
+                                            warn!("Failed to handle license grant: {e:?}");
+                                            if let Err(err) = license_grant::purge_license_grant_file() {
+                                                warn!("Failed to delete license grant file: {err:?}");
                                             }
                                         }
                                     }
@@ -557,6 +620,9 @@ async fn persistent_connection(
                                     break 'message_pump;
                                 }
                             }
+                        }
+                        if permitted {
+                            queue_license_grant_request(&socket_sender_tx);
                         }
                     }
                 }
