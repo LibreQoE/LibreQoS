@@ -139,6 +139,10 @@ fn main() -> Result<()> {
     // Load config
     let config = lqos_config::load_config()?;
 
+    if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
+        warn!("Failed to initialize Insight license storage: {e:?}");
+    }
+
     // Apply Tunings
     tuning::tune_lqosd_from_config_file()?;
 
