@@ -267,6 +267,7 @@ async fn receive_channel_message(
         }
         WsRequest::Unsubscribe { channel } => {
             subscribed_channels.remove(&channel);
+            channels.unsubscribe(channel, tx.clone()).await;
         }
         WsRequest::Private(command) => {
             private_state.handle_request(command).await;

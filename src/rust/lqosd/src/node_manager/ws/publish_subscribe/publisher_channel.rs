@@ -36,6 +36,11 @@ impl PublisherChannel {
         }
     }
 
+    pub(super) fn unsubscribe(&mut self, sender: &Sender<Arc<Vec<u8>>>) {
+        self.subscribers
+            .retain(|s| !s.sender.same_channel(sender));
+    }
+
     /// Submit a message to an entire channel
     pub(super) async fn send(&mut self, message: Arc<Vec<u8>>) {
         for subscriber in self.subscribers.iter_mut() {
