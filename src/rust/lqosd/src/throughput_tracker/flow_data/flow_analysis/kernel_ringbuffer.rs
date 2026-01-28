@@ -11,6 +11,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     slice,
     sync::atomic::AtomicU64,
+    time::Instant,
     time::Duration,
 };
 use tracing::{error, warn};
@@ -198,8 +199,17 @@ impl FlowActor {
                         // A flow event arrives
                         recv(rx) -> msg => {
                             if let Ok(_) = msg {
-                                while let Some(msg) = FLOW_BYTES.pop() {
+                                // Drain a bounded batch to avoid starving command handling
+                                // under heavy RTT event load.
+                                const MAX_BATCH: usize = 4096;
+                                let mut processed = 0usize;
+                                while processed < MAX_BATCH {
+                                    let Some(msg) = FLOW_BYTES.pop() else { break };
                                     FlowActor::receive_flow(&mut flows, msg.as_slice());
+                                    processed += 1;
+                                }
+                                if processed == MAX_BATCH {
+                                    std::thread::yield_now();
                                 }
                             }
                         }
@@ -325,12 +335,24 @@ pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
         return FxHashMap::default();
     }
 
-    // Use blocking_recv() which is designed for sync contexts
-    match rx.blocking_recv() {
-        Ok(result) => result,
-        Err(_) => {
-            warn!("Failed to receive RTT map from flow actor - channel closed");
-            FxHashMap::default()
+    // Avoid blocking indefinitely if the FlowActor is busy (e.g. under very high RTT
+    // event rates). Worst case, return an empty map and let the UI continue updating.
+    let deadline = Instant::now() + Duration::from_millis(250);
+    let mut rx = rx;
+    loop {
+        match rx.try_recv() {
+            Ok(result) => return result,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                if Instant::now() >= deadline {
+                    warn!("Timed out waiting for RTT map from flow actor");
+                    return FxHashMap::default();
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                warn!("Failed to receive RTT map from flow actor - channel closed");
+                return FxHashMap::default();
+            }
         }
     }
 }
