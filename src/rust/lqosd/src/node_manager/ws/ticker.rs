@@ -42,8 +42,22 @@ async fn ticker_with_timeout<T>(
     let result = timeout(ONE_SECOND_TICKER_TIMEOUT, AssertUnwindSafe(fut).catch_unwind()).await;
     match result {
         Ok(Ok(_)) => {}
-        Ok(Err(_)) => warn!(ticker = name, "Ticker panicked"),
+        Ok(Err(panic)) => warn!(
+            ticker = name,
+            panic = panic_payload_to_string(&panic),
+            "Ticker panicked"
+        ),
         Err(_) => warn!(ticker = name, "Ticker timed out"),
+    }
+}
+
+fn panic_payload_to_string(panic: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = panic.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = panic.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
     }
 }
 
