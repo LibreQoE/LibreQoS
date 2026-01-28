@@ -250,6 +250,7 @@ out:
 // Iterator code
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 struct bpf_link *setup_iterator_link(
 	struct bpf_program *prog, 
@@ -272,7 +273,11 @@ struct bpf_link *setup_iterator_link(
       link = bpf_program__attach_iter(prog, &iter_opts);
 	  long err = libbpf_get_error(link);
 	  if (err) {
-		  fprintf(stderr, "bpf_program__attach_iter() fails (%ld)\n", err);
+		  const char *msg = "unknown";
+		  if (err < 0) {
+			  msg = strerror((int)-err);
+		  }
+		  fprintf(stderr, "bpf_program__attach_iter() fails (%ld: %s)\n", err, msg);
 		  return NULL;
 	  }
 		  return link;
