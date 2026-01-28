@@ -55,11 +55,16 @@ pub fn websocket_router(
     shaper_query: Sender<ShaperQueryCommand>,
 ) -> Router {
     let channels = PubSub::new();
-    tokio::spawn(channel_ticker(
+    let ticker_handle = tokio::spawn(channel_ticker(
         channels.clone(),
         bus_tx.clone(),
         system_usage_tx.clone(),
     ));
+    tokio::spawn(async move {
+        if let Err(err) = ticker_handle.await {
+            warn!("Channel ticker task exited: {err}");
+        }
+    });
     Router::new()
         .route("/ws", get(ws_handler))
         .layer(Extension(channels))

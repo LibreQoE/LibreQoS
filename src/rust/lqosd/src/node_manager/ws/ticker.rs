@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use crate::node_manager::ws::publish_subscribe::PubSub;
+use futures_util::FutureExt;
 use lqos_bus::BusRequest;
+use std::panic::AssertUnwindSafe;
 use tokio::join;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{Duration, timeout};
@@ -37,8 +39,11 @@ async fn ticker_with_timeout<T>(
     name: &'static str,
     fut: impl std::future::Future<Output = T>,
 ) {
-    if timeout(ONE_SECOND_TICKER_TIMEOUT, fut).await.is_err() {
-        warn!(ticker = name, "Ticker timed out");
+    let result = timeout(ONE_SECOND_TICKER_TIMEOUT, AssertUnwindSafe(fut).catch_unwind()).await;
+    match result {
+        Ok(Ok(_)) => {}
+        Ok(Err(_)) => warn!(ticker = name, "Ticker panicked"),
+        Err(_) => warn!(ticker = name, "Ticker timed out"),
     }
 }
 
