@@ -19,6 +19,49 @@ pub enum RemoteInsightRequest {
     CakeStatsTotals { seconds: i32 },
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SupportTicketStatus {
+    #[serde(rename = "NEW")]
+    New,
+    #[serde(rename = "OPEN")]
+    Open,
+    #[serde(rename = "CLOSED")]
+    Closed,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SupportTicketComment {
+    pub commentor: String,
+    /// Unix timestamp (seconds).
+    pub date: i64,
+    pub body: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SupportTicketSummary {
+    pub id: i64,
+    pub subject: String,
+    pub priority: u8,
+    pub status: SupportTicketStatus,
+    /// Unix timestamp (seconds).
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SupportTicket {
+    pub id: i64,
+    pub license: Uuid,
+    pub subject: String,
+    pub priority: u8,
+    pub body: String,
+    pub comments: Vec<SupportTicketComment>,
+    pub status: SupportTicketStatus,
+    /// Unix timestamp (seconds).
+    pub created_at: i64,
+    /// Unix timestamp (seconds).
+    pub updated_at: i64,
+}
+
 pub const MAX_DECOMPRESSED_WS_MSG_BYTES: usize = 16 * 1024 * 1024; // 16 MiB
 
 #[derive(Serialize, Deserialize)]
@@ -160,6 +203,51 @@ pub enum WsMessage {
         data: Vec<u8>,
     },
     ChatbotError {
+        request_id: u64,
+        message: String,
+    },
+
+    // Support tickets (customer support system)
+    // From Shaper -> Insight
+    SupportTicketList {
+        request_id: u64,
+    },
+    SupportTicketGet {
+        request_id: u64,
+        ticket_id: i64,
+    },
+    SupportTicketCreate {
+        request_id: u64,
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+    },
+    SupportTicketAddComment {
+        request_id: u64,
+        ticket_id: i64,
+        commentor: String,
+        date: i64,
+        body: String,
+    },
+
+    // From Insight -> Shaper
+    SupportTicketListResult {
+        request_id: u64,
+        tickets: Vec<SupportTicketSummary>,
+    },
+    SupportTicketGetResult {
+        request_id: u64,
+        ticket: Option<SupportTicket>,
+    },
+    SupportTicketCreateResult {
+        request_id: u64,
+        ticket: SupportTicket,
+    },
+    SupportTicketAddCommentResult {
+        request_id: u64,
+    },
+    SupportTicketError {
         request_id: u64,
         message: String,
     },

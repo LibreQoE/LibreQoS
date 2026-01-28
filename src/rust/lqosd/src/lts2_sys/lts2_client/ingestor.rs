@@ -40,8 +40,8 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
                     continue;
                 };
                 // If we have chunks, submit them
-                if let Ok(permit) = submit.try_reserve() {
-                    permit.send(ControlChannelCommand::SubmitChunks { serial, chunks });
+                if let Err(e) = submit.blocking_send(ControlChannelCommand::SubmitChunks { serial, chunks }) {
+                    warn!("Failed to queue SubmitChunks: {}", e);
                 }
                 serial += 1;
             }

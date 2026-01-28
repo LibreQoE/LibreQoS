@@ -16,6 +16,7 @@ use crate::node_manager::local_api::{
         ThroughputData as LtsThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,
     },
 };
+use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
@@ -145,6 +146,19 @@ pub enum WsRequest {
     UnknownIps,
     UnknownIpsClear,
     UnknownIpsCsv,
+    SupportTicketList,
+    SupportTicketGet { ticket_id: i64 },
+    SupportTicketCreate {
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+    },
+    SupportTicketAddComment {
+        ticket_id: i64,
+        commentor: String,
+        body: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -435,6 +449,10 @@ pub enum WsResponse {
         data: QueueStoreTransit,
     },
     ChatbotChunk { text: String },
+    SupportTicketListResult { tickets: Vec<SupportTicketSummary> },
+    SupportTicketGetResult { ticket: Option<SupportTicket> },
+    SupportTicketCreateResult { ticket: SupportTicket },
+    SupportTicketAddCommentResult { ok: bool },
 }
 
 pub fn encode_ws_message<T>(message: &T) -> Result<std::sync::Arc<Vec<u8>>, serde_cbor::Error>

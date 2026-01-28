@@ -1,91 +1,244 @@
-<div class="row">
-    <div class="col-4">
-        <div class="card">
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
             <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-question-circle"></i> Help & Support</h5>
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h4 class="card-title mb-1">
+                            <i class="fa fa-life-ring text-primary me-2"></i> Support Tickets
+                        </h4>
+                        <div class="text-body-secondary small">
+                            Priority support is available to Insight subscribers.
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" type="button" id="btnRefreshTickets">
+                            <i class="fa fa-rotate"></i> Refresh
+                        </button>
+                        <button class="btn btn-primary" type="button" id="btnNewTicket">
+                            <i class="fa fa-plus"></i> New Ticket
+                        </button>
+                    </div>
+                </div>
 
-                <p class="alert-warning">
-                    <i class="fa fa-info-circle"></i>
+                <div id="ticketGateNoInsight" class="alert alert-info mt-3 mb-0 d-none">
+                    <i class="fa fa-info-circle me-1"></i>
+                    To submit a support ticket you need an <strong>Insight</strong> subscription.
+                    <a class="alert-link" href="lts_trial.html">Start an Insight free trial</a>.
+                </div>
+
+                <div id="ticketGateInsight" class="mt-3 d-none">
+                    <div class="list-group" id="ticketList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <h5 class="card-title mb-2">
+                    <i class="fa fa-question-circle text-secondary me-2"></i> Help & Support
+                </h5>
+
+                <div class="alert alert-warning">
+                    <i class="fa fa-info-circle me-1"></i>
                     Priority support is given to Insight subscribers and donors. Other support is
                     best effort, with volunteers trying to help as best we can.
-                </p>
-                <p>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2">
                     <a href="https://github.com/sponsors/LibreQoE/" class="btn btn-primary">
                         <i class="fa fa-dollar-sign"></i> Support LibreQoS Today
                     </a>
-                    <button class="btn btn-outline-primary mt-2" type="button" id="btnDave">
+                    <button class="btn btn-outline-primary" type="button" id="btnDave">
                         In Memory of Dave Täht
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <h5 class="card-title mb-2">
+                    <i class="fa fa-book text-secondary me-2"></i> Documentation
+                </h5>
+                <p class="text-body-secondary">
+                    The documentation is a great place to start.
+                </p>
+                <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary">
+                    <i class="fa fa-book"></i> Read The LibreQoS Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <h5 class="card-title mb-2">
+                    <i class="fa fa-user-circle text-secondary me-2"></i> Chat
+                </h5>
+                <p class="text-body-secondary">
+                    Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat system.
+                </p>
+                <a class="btn btn-primary" href="https://chat.libreqos.io/">
+                    <i class="fa fa-user-circle"></i> Zulip chat system
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-body">
+                <h5 class="card-title mb-2">
+                    <i class="fab fa-youtube text-secondary me-2"></i> Learn
+                </h5>
+                <p class="text-body-secondary mb-0">
+                    Learn about LibreQoS, bufferbloat and our battle against Internet latency on our
+                    <a href="https://www.youtube.com/@LibreQoS">YouTube channel</a>.
                 </p>
             </div>
         </div>
     </div>
 
-    <div class="col-4">
-        <div class="card">
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
             <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-book"></i> Documentation</h5>
-                <p>The documentation is a great place to start!</p>
-                <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary"><i class="fa fa-book"></i> Read The LibreQoS Documentation</a>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-user-circle"></i> Chat</h5>
-                <p>
-                    Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat System. <br />
-                    <a class="btn btn-primary" href="https://chat.libreqos.io/"><i class="fa fa-user-circle"></i> Zulip chat system</a>.
+                <h5 class="card-title mb-2">
+                    <i class="fa fa-share-alt text-secondary me-2"></i> Connect
+                </h5>
+                <p class="text-body-secondary mb-2">
+                    We're on social media:
                 </p>
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-1">
+                        <a href="https://www.linkedin.com/company/libreqos/"><i class="fab fa-linkedin me-1"></i> LinkedIn</a>
+                    </li>
+                    <li class="mb-1">
+                        <a href="https://twitter.com/libreqos"><i class="fab fa-twitter me-1"></i> Twitter</a>
+                    </li>
+                    <li class="mb-1">
+                        <a href="https://www.facebook.com/libreqos"><i class="fab fa-facebook me-1"></i> Facebook</a>
+                    </li>
+                    <li>
+                        <a href="https://fosstodon.org/@LibreQoS/"><i class="fa fa-link me-1"></i> Fosstodon (Mastodon)</a>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
 
-    <div class="col-4">
-        <div class="card">
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100 shadow-sm border-0">
             <div class="card-body">
-                <h5 class="card-title"><i class="fab fa-youtube"></i> Learn</h5>
-                <p>
-                    Learn about LibreQoS, bufferbloat and our battle against Internet
-                    latency at our <a href="https://www.youtube.com/@LibreQoS">YouTube channel</a>.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title"><i class="fab fa-connectdevelop"></i> Connect</h5>
-                <p>
-                    We're on social media! Connect with us at:
-                    <ul>
-                        <li><a href="https://www.linkedin.com/company/libreqos/"><i class="fab fa-linkedin"></i> LinkedIn</a></li>
-                        <li><a href="https://twitter.com/libreqos"><i class="fab fa-twitter"></i> Twitter</a></li>
-                        <li><a href="https://www.facebook.com/libreqos"><i class="fab fa-facebook"></i> Facebook</a></li>
-                        <li><a href="https://fosstodon.org/@LibreQoS/"><i class="fa fa-link"></i> Fosstodon (Free Open Source Mastadon)</a></li>
-                    </ul>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-4">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title"><i class="fa fa-wrench"></i> Tools</h5>
-                <p>
+                <h5 class="card-title mb-2">
+                    <i class="fa fa-wrench text-secondary me-2"></i> Tools
+                </h5>
+                <p class="text-body-secondary mb-0">
                     <strong>Support tool retired.</strong> The legacy support tool and sanity checks are no longer
                     available in the UI. Use the configuration pages and logs when troubleshooting.
                 </p>
-                <!-- Support dump download/submission removed; server discontinued -->
-
             </div>
         </div>
     </div>
 </div>
 
-<!-- Removed support modals: sanity + support dump -->
+<!-- Ticket View Modal -->
+<div class="modal fade" id="ticketViewModal" tabindex="-1" aria-labelledby="ticketViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ticketViewModalLabel">
+                    <i class="fa fa-ticket me-2"></i> Ticket
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="ticketViewAlert" class="alert alert-danger d-none"></div>
+
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                    <div>
+                        <div class="fw-semibold" id="ticketViewSubject"></div>
+                        <div class="text-body-secondary small" id="ticketViewMeta"></div>
+                    </div>
+                    <div class="d-flex gap-2 align-items-center">
+                        <span class="badge" id="ticketViewStatus"></span>
+                        <span class="badge text-bg-light border" id="ticketViewPriority"></span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="text-body-secondary small mb-1">Description</div>
+                    <div class="border rounded p-2 bg-body-tertiary">
+                        <pre class="mb-0 small" style="white-space: pre-wrap;" id="ticketViewBody"></pre>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="text-body-secondary small mb-2">Comments</div>
+                    <div id="ticketViewComments" class="vstack gap-2"></div>
+                </div>
+
+                <hr />
+
+                <div>
+                    <label class="form-label text-body-secondary small" for="ticketCommentBody">Add a comment</label>
+                    <textarea class="form-control" id="ticketCommentBody" rows="3" placeholder="Type your reply..."></textarea>
+                    <div class="d-flex justify-content-end mt-2">
+                        <button class="btn btn-primary" type="button" id="btnSubmitComment">
+                            <i class="fa fa-paper-plane"></i> Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Ticket Modal -->
+<div class="modal fade" id="newTicketModal" tabindex="-1" aria-labelledby="newTicketModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="newTicketModalLabel">
+                    <i class="fa fa-plus me-2"></i> New Support Ticket
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="newTicketAlert" class="alert alert-danger d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label" for="newTicketSubject">Subject</label>
+                    <input class="form-control" id="newTicketSubject" type="text" placeholder="Brief summary" maxlength="200" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="newTicketPriority">Priority (0-5)</label>
+                    <select class="form-select" id="newTicketPriority">
+                        <option value="0">0 - Lowest</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5 - Highest</option>
+                    </select>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="newTicketBody">Details</label>
+                    <textarea class="form-control" id="newTicketBody" rows="6" placeholder="Describe the issue, what you expected, and what happened."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" type="button" id="btnSubmitTicket">
+                    <i class="fa fa-paper-plane"></i> Submit Ticket
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script src="help.js%CACHEBUSTERS%"></script>
