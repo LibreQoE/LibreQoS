@@ -232,7 +232,7 @@ impl FlowActor {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn receive_flow(flows: &mut FlowTracker, message: &[u8]) {
         if let Ok(incoming) = FlowbeeEvent::read_from_bytes(message) {
             EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
