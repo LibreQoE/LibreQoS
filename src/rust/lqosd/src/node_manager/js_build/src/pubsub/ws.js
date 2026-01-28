@@ -7,31 +7,6 @@ const encoder = new Encoder({ useRecords: false, variableMapSize: true });
 
 let shared_client = null;
 
-function ws_debug_enabled() {
-    try {
-        if (typeof window === "undefined") {
-            return false;
-        }
-        if (window.LQOS_WS_DEBUG) {
-            return true;
-        }
-        const params = new URLSearchParams(window.location ? window.location.search : "");
-        if (params.get("wsdebug") === "1" || params.get("ws_debug") === "1") {
-            return true;
-        }
-        const v = localStorage.getItem("lqosWsDebug");
-        return v === "1" || v === "true";
-    } catch (_) {
-        return false;
-    }
-}
-
-function ws_debug_log(...args) {
-    if (ws_debug_enabled()) {
-        console.debug(...args);
-    }
-}
-
 function get_cookie_value(name) {
     const cookies = document.cookie ? document.cookie.split(";") : [];
     const prefix = `${name}=`;
@@ -67,13 +42,8 @@ export class WsClient {
         if (this.ws) {
             return;
         }
-        ws_debug_log("[ws] connect");
         this.ws = new WebSocket(ws_proto() + window.location.host + "/websocket/ws");
         this.ws.binaryType = "arraybuffer";
-
-        this.ws.onopen = () => {
-            ws_debug_log("[ws] open");
-        };
 
         this.ws.onmessage = async (event) => {
             let msg = null;
@@ -93,23 +63,16 @@ export class WsClient {
                 this._acknowledge_handshake(msg);
                 return;
             }
-            if (msg && msg.event && ws_debug_enabled()) {
-                if (msg.event === "Cadence" || msg.event === "Throughput") {
-                    console.debug(`[ws] next tick: ${msg.event}`);
-                }
-            }
             this._dispatch(msg);
         };
 
-        this.ws.onclose = (ev) => {
-            ws_debug_log("[ws] close", ev ? ev.code : null, ev ? ev.reason : null, ev ? ev.wasClean : null);
+        this.ws.onclose = () => {
             this.ws = null;
             this.handshake_done = false;
             this.pending = [];
         };
 
         this.ws.onerror = () => {
-            ws_debug_log("[ws] error");
             this.ws = null;
             this.handshake_done = false;
         };
@@ -136,20 +99,8 @@ export class WsClient {
             this.connect();
         }
         if (!this.handshake_done) {
-            if (ws_debug_enabled() && normalized && typeof normalized === "object") {
-                const keys = Object.keys(normalized);
-                if (keys.length > 0) {
-                    console.debug("[ws] queue request", keys[0]);
-                }
-            }
             this.pending.push(normalized);
             return;
-        }
-        if (ws_debug_enabled() && normalized && typeof normalized === "object") {
-            const keys = Object.keys(normalized);
-            if (keys.length > 0) {
-                console.debug("[ws] send request", keys[0]);
-            }
         }
         this.ws.send(encoder.encode(normalized));
     }
