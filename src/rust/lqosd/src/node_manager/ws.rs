@@ -16,7 +16,7 @@ use crate::node_manager::local_api::{
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
-    WsHello, WsHelloReply, WsRequest, WsResponse, encode_ws_message, WS_HANDSHAKE_REQUIREMENT,
+    WsHello, WsRequest, WsResponse, encode_ws_message, WS_HANDSHAKE_REQUIREMENT,
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -116,7 +116,9 @@ async fn handle_socket(
 ) {
     info!("Websocket connected");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(128);
+    // Larger buffer helps absorb bursts of pubsub updates without stalling
+    // interactive request/response messages.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(1024);
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
     let mut login = LoginResult::Denied;
@@ -1134,7 +1136,14 @@ async fn send_ws_response(tx: &Sender<Arc<Vec<u8>>>, response: WsResponse) -> bo
         Ok(payload) => payload,
         Err(_) => return true,
     };
-    tx.send(payload).await.is_err()
+    match tx.try_send(payload) {
+        Ok(()) => false,
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            warn!("Websocket outbound queue full; closing connection");
+            true
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => true,
+    }
 }
 
 fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
