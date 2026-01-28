@@ -38,16 +38,16 @@ impl RttBuffer {
         if direction == 0 {
             Self {
                 index: 1,
-                buffer: [empty, filled],
-                last_seen,
-                has_new_data: [false, true],
-            }
-        } else {
-            Self {
-                index: 0,
                 buffer: [filled, empty],
                 last_seen,
                 has_new_data: [true, false],
+            }
+        } else {
+            Self {
+                index: 1,
+                buffer: [empty, filled],
+                last_seen,
+                has_new_data: [false, true],
             }
         }
     }
