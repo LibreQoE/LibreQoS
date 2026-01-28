@@ -29,7 +29,9 @@ pub struct FlowbeeKey {
 #[derive(Debug, Clone, Copy, Default, FromBytes)]
 #[repr(C)]
 pub struct TsvalRecordBuffer {
+    /// Times (nanos since boot) when TSvals were observed.
     pub timestamps: [u64; 2],
+    /// TSval values that correspond to `timestamps`.
     pub tsvals: [u32; 2],
 }
 
