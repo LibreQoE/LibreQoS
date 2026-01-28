@@ -33,6 +33,7 @@ use axum::{
     routing::get,
 };
 use lqos_bus::BusRequest;
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc::Sender;
 use serde_cbor::Value as CborValue;
 use tracing::{info, warn};
@@ -112,7 +113,7 @@ async fn ws_handler(
 }
 
 async fn handle_socket(
-    mut socket: WebSocket,
+    socket: WebSocket,
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
@@ -121,9 +122,18 @@ async fn handle_socket(
 ) {
     info!("Websocket connected");
 
+    let (mut ws_tx, mut ws_rx) = socket.split();
+
     // Larger buffer helps absorb bursts of pubsub updates without stalling
     // interactive request/response messages.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(1024);
+    let outbound_handle = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_tx.send(Message::Binary((*msg).clone())).await.is_err() {
+                break;
+            }
+        }
+    });
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
     let mut login = LoginResult::Denied;
@@ -138,11 +148,9 @@ async fn handle_socket(
             requirement: WS_HANDSHAKE_REQUIREMENT.to_string(),
         },
     };
-    if let Ok(payload) = encode_ws_message(&hello) {
-        if socket.send(Message::Binary((*payload).clone())).await.is_err() {
-            return;
-        }
-    } else {
+    if send_ws_response(&tx, hello).await {
+        outbound_handle.abort();
+        let _ = outbound_handle.await;
         return;
     }
 
@@ -154,7 +162,7 @@ async fn handle_socket(
                 warn!("Websocket handshake timed out");
                 break;
             }
-            inbound = socket.recv() => {
+            inbound = ws_rx.next() => {
                 // Received a websocket message
                 match inbound {
                     Some(Ok(msg)) => {
@@ -179,24 +187,10 @@ async fn handle_socket(
                     None => break, // The channel has closed
                 }
             }
-            outbound = rx.recv() => {
-                match outbound {
-                    Some(msg) => {
-                        if let Err(_) = socket.send(Message::Binary((*msg).clone())).await {
-                            // The outbound websocket has closed. That's ok, it's not
-                            // an error. We're relying on *this* task terminating to in
-                            // turn close the subscription channel, which will in turn
-                            // cause the subscription to end.
-                            break;
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
         }
     }
+    outbound_handle.abort();
+    let _ = outbound_handle.await;
     info!("Websocket disconnected");
 }
 
