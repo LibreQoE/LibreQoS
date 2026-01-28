@@ -31,10 +31,10 @@ struct RttBuffer {
 }
 
 impl RttBuffer {
-    fn new(reading: u64, direction: u32, last_seen: u64) -> Self {
+    fn new(reading: RttData, direction: u32, last_seen: u64) -> Self {
         let empty = [RttData::from_nanos(0); BUFFER_SIZE];
         let mut filled = [RttData::from_nanos(0); BUFFER_SIZE];
-        filled[0] = RttData::from_nanos(reading);
+        filled[0] = reading;
 
         if direction == 0 {
             Self {
@@ -53,8 +53,8 @@ impl RttBuffer {
         }
     }
 
-    fn push(&mut self, reading: u64, direction: u32, last_seen: u64) {
-        self.buffer[direction as usize][self.index] = RttData::from_nanos(reading);
+    fn push(&mut self, reading: RttData, direction: u32, last_seen: u64) {
+        self.buffer[direction as usize][self.index] = reading;
         self.index = (self.index + 1) % BUFFER_SIZE;
         self.last_seen = last_seen;
         self.has_new_data[direction as usize] = true;
@@ -238,7 +238,7 @@ impl FlowActor {
             EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if let Ok(now) = time_since_boot() {
                 let since_boot = Duration::from(now);
-                if incoming.rtt == 0 {
+                if incoming.rtt.as_nanos() == 0 {
                     return;
                 }
 
@@ -272,7 +272,7 @@ impl FlowActor {
 #[derive(FromBytes, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlowbeeEvent {
     key: FlowbeeKey,
-    rtt: u64,
+    rtt: RttData,
     effective_direction: u32,
 }
 
