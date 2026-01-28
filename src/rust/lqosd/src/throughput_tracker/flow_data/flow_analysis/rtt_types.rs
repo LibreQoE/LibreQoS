@@ -9,6 +9,7 @@ use allocative_derive::Allocative;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Allocative)]
+#[repr(C)]
 pub struct RttData {
     nanoseconds: u64,
 }
