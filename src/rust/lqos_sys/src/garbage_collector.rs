@@ -34,8 +34,8 @@ fn throughput_garbage_collect() {
 
     let Ok(now) = time_since_boot() else { return };
     let now = Duration::from(now).as_nanos() as u64;
-    let period_nanos = expiry_time_seconds * 1_000_000_000;
-    let period_ago = now - period_nanos;
+    let period_nanos = expiry_time_seconds.saturating_mul(1_000_000_000);
+    let period_ago = now.saturating_sub(period_nanos);
 
     let mut expired = Vec::new();
     unsafe {
