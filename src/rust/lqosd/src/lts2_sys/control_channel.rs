@@ -278,6 +278,9 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 // Prevent unbounded growth while waiting for Welcome
 const MAX_PENDING_INGEST_BATCHES: usize = 8;
+// When live/interactive replies are queued behind ingestion, wait briefly for capacity before
+// dropping the reply. This avoids "live data stopped" behavior under heavy ingest load.
+const STREAMING_REPLY_ENQUEUE_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn persistent_connection(
     mut rx: tokio::sync::mpsc::Receiver<ConnectionCommand>,
@@ -308,8 +311,11 @@ async fn persistent_connection(
 
             // Outbound message queues:
             // - control_tx: small/high-priority messages (pings, replies, requests)
-            // - data_tx: large/streaming messages (ingest chunks, snapshots)
+            // - reply_tx: interactive replies (live snapshots, API replies) that must not be
+            //   starved by ingestion traffic
+            // - data_tx: bulk/streaming messages (ingest chunks)
             let (control_tx, mut control_rx) = tokio::sync::mpsc::channel::<Message>(128);
+            let (reply_tx, mut reply_rx) = tokio::sync::mpsc::channel::<Message>(256);
             let (data_tx, mut data_rx) = tokio::sync::mpsc::channel::<Message>(512);
             let (outbound_dead_tx, mut outbound_dead_rx) = oneshot::channel::<()>();
 
@@ -318,6 +324,7 @@ async fn persistent_connection(
             tokio::spawn(async move {
                 let mut write = write;
                 let mut control_closed = false;
+                let mut reply_closed = false;
                 let mut data_closed = false;
                 loop {
                     tokio::select! {
@@ -333,6 +340,17 @@ async fn persistent_connection(
                                 None => control_closed = true,
                             }
                         }
+                        msg = reply_rx.recv(), if !reply_closed => {
+                            match msg {
+                                Some(msg) => {
+                                    let Ok(Ok(_)) = timeout(TCP_TIMEOUT, write.send(msg)).await else {
+                                        error!("Failed to send outbound reply message");
+                                        break;
+                                    };
+                                }
+                                None => reply_closed = true,
+                            }
+                        }
                         msg = data_rx.recv(), if !data_closed => {
                             match msg {
                                 Some(msg) => {
@@ -346,7 +364,7 @@ async fn persistent_connection(
                         }
                     }
 
-                    if control_closed && data_closed {
+                    if control_closed && reply_closed && data_closed {
                         debug!("Outbound message queues closed");
                         break;
                     }
@@ -1024,7 +1042,7 @@ async fn persistent_connection(
                                         }
                                     }
                                     messages::WsMessage::MakeApiRequest { request_id, method, url_suffix, body } => {
-                                        let reply_tx = data_tx.clone();
+                                        let reply_tx = reply_tx.clone();
                                         tokio::spawn(async move {
                                             let Ok(()) = api_request(request_id, method, url_suffix, body, reply_tx).await else {
                                                 error!("API request handling failed");
@@ -1033,7 +1051,7 @@ async fn persistent_connection(
                                         });
                                     }
                                     messages::WsMessage::StartStreaming { request_id, circuit_hash } => {
-                                        let reply_tx = data_tx.clone();
+                                        let reply_tx = reply_tx.clone();
                                         tokio::spawn(async move {
                                             let Ok(()) = circuit_snapshot_streaming(request_id, circuit_hash, reply_tx).await else {
                                                 error!("Circuit snapshot streaming failed");
@@ -1042,7 +1060,7 @@ async fn persistent_connection(
                                         });
                                     }
                                     messages::WsMessage::StartShaperStreaming { request_id } => {
-                                        let reply_tx = data_tx.clone();
+                                        let reply_tx = reply_tx.clone();
                                         tokio::spawn(async move {
                                             let Ok(()) = shaper_snapshot_streaming(request_id, reply_tx).await else {
                                                 error!("Circuit snapshot streaming failed");
@@ -1051,7 +1069,7 @@ async fn persistent_connection(
                                         });
                                     }
                                     messages::WsMessage::StartShaperTreeStreaming { request_id } => {
-                                        let reply_tx = data_tx.clone();
+                                        let reply_tx = reply_tx.clone();
                                         tokio::spawn(async move {
                                             let Ok(()) = tree_snapshot_streaming(request_id, reply_tx).await else {
                                                 error!("Tree snapshot streaming failed");
@@ -1349,14 +1367,23 @@ async fn api_request(
         return Ok(());
     };
 
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
-        match e {
-            TrySendError::Full(_) => {
-                warn!("Send unavailable: ApiReply queue full; dropping reply");
+    match reply.try_send(Message::Binary(ws_bytes.into())) {
+        Ok(()) => {}
+        Err(TrySendError::Full(msg)) => {
+            warn!("ApiReply queue full (request_id={request_id}); waiting for capacity");
+            match timeout(STREAMING_REPLY_ENQUEUE_TIMEOUT, reply.send(msg)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    error!("Failed to send ApiReply (request_id={request_id}): channel closed");
+                }
+                Err(_elapsed) => warn!(
+                    "ApiReply queue still full after {}s (request_id={request_id}); dropping reply",
+                    STREAMING_REPLY_ENQUEUE_TIMEOUT.as_secs()
+                ),
             }
-            TrySendError::Closed(_) => {
-                error!("Failed to send ApiReply: channel closed");
-            }
+        }
+        Err(TrySendError::Closed(_)) => {
+            error!("Failed to send ApiReply (request_id={request_id}): channel closed");
         }
     }
 
@@ -1392,13 +1419,24 @@ async fn shaper_snapshot_streaming(
             error!("Failed to serialize StreamingShaper message");
             return Ok(());
         };
-        if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
-            match e {
-                TrySendError::Full(_) => {
-                    warn!("Send unavailable: StreamingShaper queue full; dropping reply")
+        match reply.try_send(Message::Binary(ws_bytes.into())) {
+            Ok(()) => {}
+            Err(TrySendError::Full(msg)) => {
+                warn!("StreamingShaper queue full (request_id={request_id}); waiting for capacity");
+                match timeout(STREAMING_REPLY_ENQUEUE_TIMEOUT, reply.send(msg)).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(_)) => error!(
+                        "Failed to send StreamingShaper (request_id={request_id}): channel closed"
+                    ),
+                    Err(_elapsed) => warn!(
+                        "StreamingShaper queue still full after {}s (request_id={request_id}); dropping reply",
+                        STREAMING_REPLY_ENQUEUE_TIMEOUT.as_secs()
+                    ),
                 }
-                TrySendError::Closed(_) => error!("Failed to send StreamingShaper: channel closed"),
             }
+            Err(TrySendError::Closed(_)) => error!(
+                "Failed to send StreamingShaper (request_id={request_id}): channel closed"
+            ),
         }
     }
     Ok(())
@@ -1693,13 +1731,26 @@ async fn circuit_snapshot_streaming(
         error!("Failed to serialize StreamingCircuit message");
         return Ok(());
     };
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
-        match e {
-            TrySendError::Full(_) => {
-                warn!("Send unavailable: StreamingCircuit queue full; dropping reply")
+    match reply.try_send(Message::Binary(ws_bytes.into())) {
+        Ok(()) => {}
+        Err(TrySendError::Full(msg)) => {
+            warn!(
+                "StreamingCircuit queue full (request_id={request_id}, circuit_hash={circuit_hash}); waiting for capacity"
+            );
+            match timeout(STREAMING_REPLY_ENQUEUE_TIMEOUT, reply.send(msg)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => error!(
+                    "Failed to send StreamingCircuit (request_id={request_id}, circuit_hash={circuit_hash}): channel closed"
+                ),
+                Err(_elapsed) => warn!(
+                    "StreamingCircuit queue still full after {}s (request_id={request_id}, circuit_hash={circuit_hash}); dropping reply",
+                    STREAMING_REPLY_ENQUEUE_TIMEOUT.as_secs()
+                ),
             }
-            TrySendError::Closed(_) => error!("Failed to send StreamingCircuit: channel closed"),
         }
+        Err(TrySendError::Closed(_)) => error!(
+            "Failed to send StreamingCircuit (request_id={request_id}, circuit_hash={circuit_hash}): channel closed"
+        ),
     }
     Ok(())
 }
@@ -1727,35 +1778,42 @@ async fn tree_snapshot_streaming(
         node_type: Option<String>,
     }
 
-    // Use the same data source as local_api::network_tree
-    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
-    let result: Vec<(usize, LiveNetworkTransport)> = net_json
-        .get_nodes_when_ready()
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            let t = n.clone_to_transit();
-            let mapped = LiveNetworkTransport {
-                name: t.name,
-                max_throughput: t.max_throughput,
-                current_throughput: t.current_throughput,
-                current_packets: t.current_packets,
-                current_tcp_packets: t.current_tcp_packets,
-                current_udp_packets: t.current_udp_packets,
-                current_icmp_packets: t.current_icmp_packets,
-                current_retransmits: t.current_retransmits,
-                current_marks: t.current_marks,
-                current_drops: t.current_drops,
-                rtts: t.rtts,
-                parents: t.parents,
-                immediate_parent: t.immediate_parent,
-                node_type: t.node_type,
-            };
-            (i, mapped)
-        })
-        .collect();
+    // Use the same data source as local_api::network_tree.
+    //
+    // Important: NETWORK_JSON is protected by a parking_lot lock, whose guard is not Send. Ensure
+    // we drop the guard before any `.await` so this function can be used inside `tokio::spawn`.
+    let bytes = {
+        let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
+        let result: Vec<(usize, LiveNetworkTransport)> = net_json
+            .get_nodes_when_ready()
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                let t = n.clone_to_transit();
+                let mapped = LiveNetworkTransport {
+                    name: t.name,
+                    max_throughput: t.max_throughput,
+                    current_throughput: t.current_throughput,
+                    current_packets: t.current_packets,
+                    current_tcp_packets: t.current_tcp_packets,
+                    current_udp_packets: t.current_udp_packets,
+                    current_icmp_packets: t.current_icmp_packets,
+                    current_retransmits: t.current_retransmits,
+                    current_marks: t.current_marks,
+                    current_drops: t.current_drops,
+                    rtts: t.rtts,
+                    parents: t.parents,
+                    immediate_parent: t.immediate_parent,
+                    node_type: t.node_type,
+                };
+                (i, mapped)
+            })
+            .collect();
 
-    let Ok(bytes) = serde_cbor::to_vec(&result) else {
+        serde_cbor::to_vec(&result)
+    };
+
+    let Ok(bytes) = bytes else {
         error!("Failed to serialize LiveNetworkTransport payload");
         return Ok(());
     };
@@ -1768,13 +1826,24 @@ async fn tree_snapshot_streaming(
         error!("Failed to serialize StreamingShaperTree message");
         return Ok(());
     };
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
-        match e {
-            TrySendError::Full(_) => {
-                warn!("Send unavailable: StreamingShaperTree queue full; dropping reply")
+    match reply.try_send(Message::Binary(ws_bytes.into())) {
+        Ok(()) => {}
+        Err(TrySendError::Full(msg)) => {
+            warn!("StreamingShaperTree queue full (request_id={request_id}); waiting for capacity");
+            match timeout(STREAMING_REPLY_ENQUEUE_TIMEOUT, reply.send(msg)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => error!(
+                    "Failed to send StreamingShaperTree (request_id={request_id}): channel closed"
+                ),
+                Err(_elapsed) => warn!(
+                    "StreamingShaperTree queue still full after {}s (request_id={request_id}); dropping reply",
+                    STREAMING_REPLY_ENQUEUE_TIMEOUT.as_secs()
+                ),
             }
-            TrySendError::Closed(_) => error!("Failed to send StreamingShaperTree: channel closed"),
         }
+        Err(TrySendError::Closed(_)) => error!(
+            "Failed to send StreamingShaperTree (request_id={request_id}): channel closed"
+        ),
     }
     Ok(())
 }
