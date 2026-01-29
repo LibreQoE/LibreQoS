@@ -169,10 +169,18 @@ impl FlowActor {
                             handle_command(flows, command);
                         }
 
+                        let since_boot_nanos = {
+                            let Ok(now) = time_since_boot() else {
+                                // Keep the queue intact and try again on the next wake/tick.
+                                return;
+                            };
+                            Duration::from(now).as_nanos() as u64
+                        };
+
                         let mut processed = 0usize;
                         while processed < MAX_BATCH {
                             let Some(msg) = FLOW_BYTES.pop() else { break };
-                            FlowActor::receive_flow(flows, msg);
+                            FlowActor::receive_flow(flows, msg, since_boot_nanos);
                             processed += 1;
                         }
 
@@ -231,36 +239,33 @@ impl FlowActor {
     }
 
     #[inline]
-    fn receive_flow(flows: &mut FlowTracker, incoming: FlowbeeEvent) {
+    fn receive_flow(flows: &mut FlowTracker, incoming: FlowbeeEvent, since_boot_nanos: u64) {
         EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if let Ok(now) = time_since_boot() {
-            let since_boot = Duration::from(now);
-            if incoming.rtt.as_nanos() == 0 {
-                return;
-            }
-
-            // Check if it should be ignored
-            let ip = incoming.key.remote_ip.as_ip();
-            let ip = match ip {
-                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                IpAddr::V6(ip) => ip,
-            };
-            if flows.ignore_subnets.longest_match(ip).is_some() {
-                return;
-            }
-
-            // Insert it
-            let entry = flows.flow_rtt.entry(incoming.key).or_insert(RttBuffer::new(
-                incoming.rtt,
-                incoming.effective_direction.as_direction(),
-                since_boot.as_nanos() as u64,
-            ));
-            entry.push(
-                incoming.rtt,
-                incoming.effective_direction.as_direction(),
-                since_boot.as_nanos() as u64,
-            );
+        if incoming.rtt.as_nanos() == 0 {
+            return;
         }
+
+        // Check if it should be ignored
+        let ip = incoming.key.remote_ip.as_ip();
+        let ip = match ip {
+            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+            IpAddr::V6(ip) => ip,
+        };
+        if flows.ignore_subnets.longest_match(ip).is_some() {
+            return;
+        }
+
+        // Insert it
+        let entry = flows.flow_rtt.entry(incoming.key).or_insert(RttBuffer::new(
+            incoming.rtt,
+            incoming.effective_direction.as_direction(),
+            since_boot_nanos,
+        ));
+        entry.push(
+            incoming.rtt,
+            incoming.effective_direction.as_direction(),
+            since_boot_nanos,
+        );
     }
 }
 
