@@ -241,7 +241,7 @@ impl RttBuffer {
         target_bucket.has_new_data = true; // Note that this is reset on READ
     }
 
-    const MIN_SAMPLES: u32 = 5;
+    const MIN_SAMPLES: u32 = 2;
 
     fn percentiles_from_bucket(&self, scope: RttBucket, direction: FlowbeeEffectiveDirection, percentiles: &[u8]) -> Option<smallvec::SmallVec<[RttData; 3]>> {
         let target = self.pick_bucket(direction);
