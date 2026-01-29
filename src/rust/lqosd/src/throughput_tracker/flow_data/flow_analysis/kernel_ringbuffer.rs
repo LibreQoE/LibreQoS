@@ -24,8 +24,8 @@ static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);
 const BUFFER_SIZE: usize = 1024;
 
 struct RttBufferBucket {
-    current_bucket: [u32; 37],
-    total_bucket: [u32; 37],
+    current_bucket: [u32; 38],
+    total_bucket: [u32; 38],
     current_bucket_start_time_nanos: u64,
     best_rtt: Option<RttData>,
     worst_rtt: Option<RttData>,
@@ -35,8 +35,8 @@ struct RttBufferBucket {
 impl Default for RttBufferBucket {
     fn default() -> Self {
         Self {
-            current_bucket: [0; 37],
-            total_bucket: [0; 37],
+            current_bucket: [0; 38],
+            total_bucket: [0; 38],
             current_bucket_start_time_nanos: 0,
             best_rtt: None,
             worst_rtt: None,
