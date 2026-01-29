@@ -186,7 +186,7 @@ impl RttBuffer {
         entry
     }
 
-    const BUCKET_TIME_NANOS: u64 = 30_000_000_000; // 30 seconds
+    const BUCKET_TIME_NANOS: u64 = 10_000_000_000; // 10 seconds
 
     pub(crate) fn push(&mut self, reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) {
         self.last_seen = last_seen;
@@ -218,7 +218,7 @@ impl RttBuffer {
         target_bucket.has_new_data = true; // Note that this is reset on READ
     }
 
-    const MIN_SAMPLES: u32 = 5;
+    const MIN_SAMPLES: u32 = 2;
 
     fn percentiles_from_bucket(&self, scope: RttBucket, direction: FlowbeeEffectiveDirection, percentiles: &[u8]) -> Option<smallvec::SmallVec<[RttData; 3]>> {
         let target = self.pick_bucket(direction);
@@ -273,6 +273,7 @@ impl RttBuffer {
         Some(results.into_iter().map(|r| r.unwrap()).collect())
     }
 
+    #[deprecated(note = "This was a pretty stupid way to do things!")]
     pub(crate) fn median_new_data(&self, direction: FlowbeeEffectiveDirection) -> RttData {
         // Note that this function is kinda sucky, but it's deliberately maintaining
         // the contract - warts and all - of its predecessor. Planned for deprecation
