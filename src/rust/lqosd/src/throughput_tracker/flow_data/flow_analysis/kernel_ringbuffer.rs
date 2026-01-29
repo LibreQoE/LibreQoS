@@ -3,7 +3,6 @@
 mod rtt_buffer;
 
 use crate::throughput_tracker::flow_data::flow_analysis::rtt_types::RttData;
-use allocative::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
@@ -17,7 +16,6 @@ use std::{
     time::Instant,
     time::Duration,
 };
-use smallvec::smallvec;
 use tracing::{error, warn};
 use zerocopy::FromBytes;
 use rtt_buffer::RttBuffer;

@@ -27,8 +27,6 @@ impl Default for RttBufferBucket {
 const NS_PER_MS: u64 = 1_000_000;
 
 // Bucket counts
-const BUCKET_1MS_MAX: u64 = 10; // 0–10ms
-const BUCKET_2MS_MAX: u64 = 20; // 10–20ms
 
 // Offsets
 const OFFSET_1MS: usize = 0;
@@ -236,7 +234,7 @@ impl RttBuffer {
 
         // Precompute rank targets (ceil(p/100 * total))
         // We assume percentiles are in ascending order
-        let mut targets: Vec<u32> = percentiles
+        let targets: Vec<u32> = percentiles
             .iter()
             .map(|p| {
                 // ceil(p * total / 100)
