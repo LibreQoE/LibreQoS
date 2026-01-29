@@ -18,6 +18,7 @@ pub(crate) use flow_analysis::{
     RECENT_FLOWS, RttData, expire_rtt_flows, flowbee_handle_events,
     flowbee_rtt_map, get_asn_name_and_country, get_flowbee_event_count_and_reset,
     get_asn_name_by_id, get_rtt_events_per_second, setup_flow_analysis,
+    FlowbeeEffectiveDirection,
 };
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;

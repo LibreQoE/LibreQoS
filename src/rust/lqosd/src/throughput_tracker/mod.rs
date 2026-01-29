@@ -8,7 +8,7 @@ use self::flow_data::{
     snapshot_asn_heatmaps,
 };
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::RttData;
+use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
@@ -970,14 +970,14 @@ pub fn dump_active_flows() -> BusResponse {
                 tcp_retransmits: row.0.tcp_retransmits,
                 end_status: row.0.end_status,
                 tos: row.0.tos,
-                flags: row.0.flags,
+                flags: row.0.get_flags(),
                 remote_asn: row.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -1034,8 +1034,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_total = a.1.0.rtt;
-                let b_total = b.1.0.rtt;
+                let a_total = a.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
+                let b_total = b.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
                 a_total.cmp(&b_total)
             });
         }
@@ -1065,14 +1065,14 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 tcp_retransmits: flow.0.tcp_retransmits,
                 end_status: flow.0.end_status,
                 tos: flow.0.tos,
-                flags: flow.0.flags,
+                flags: flow.0.get_flags(),
                 remote_asn: flow.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -1111,14 +1111,14 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     tcp_retransmits: row.0.tcp_retransmits,
                     end_status: row.0.end_status,
                     tos: row.0.tos,
-                    flags: row.0.flags,
+                    flags: row.0.get_flags(),
                     remote_asn: row.1.asn_id.0,
                     remote_asn_name: geo.name,
                     remote_asn_country: geo.country,
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                    rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                     circuit_id,
                     circuit_name,
                 }

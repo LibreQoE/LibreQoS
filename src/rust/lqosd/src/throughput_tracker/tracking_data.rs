@@ -9,7 +9,7 @@ use super::{
 use crate::{
     shaped_devices_tracker::SHAPED_DEVICES,
     stats::HIGH_WATERMARK,
-    throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map},
+    throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map, FlowbeeEffectiveDirection},
 };
 use fxhash::FxHashMap;
 use lqos_bakery::BakeryCommands;
@@ -561,49 +561,39 @@ impl ThroughputTracker {
                             DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64);
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            if this_flow.0.retry_times_down.is_none() {
-                                this_flow.0.retry_times_down = Some((0, [0; MAX_RETRY_TIMES]));
-                            }
-                            if let Some(retry_times) = &mut this_flow.0.retry_times_down {
-                                retry_times.1[retry_times.0] = data.last_seen;
-                                retry_times.0 += 1;
-                                retry_times.0 %= MAX_RETRY_TIMES;
-                            }
+                            this_flow
+                                .0
+                                .record_tcp_retry_time(FlowbeeEffectiveDirection::Download, data.last_seen);
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            if this_flow.0.retry_times_up.is_none() {
-                                this_flow.0.retry_times_up = Some((0, [0; MAX_RETRY_TIMES]));
-                            }
-                            if let Some(retry_times) = &mut this_flow.0.retry_times_up {
-                                retry_times.1[retry_times.0] = data.last_seen;
-                                retry_times.0 += 1;
-                                retry_times.0 %= MAX_RETRY_TIMES;
-                            }
+                            this_flow
+                                .0
+                                .record_tcp_retry_time(FlowbeeEffectiveDirection::Upload, data.last_seen);
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
                         //this_flow.0.throughput_buffer.push(change_since_last_time);
                         //println!("{change_since_last_time:?}");
 
-                        this_flow.0.last_seen = data.last_seen;
-                        this_flow.0.bytes_sent = data.bytes_sent;
-                        this_flow.0.packets_sent = data.packets_sent;
-                        this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
-                        this_flow.0.tcp_retransmits = data.tcp_retransmits;
-                        this_flow.0.end_status = data.end_status;
-                        this_flow.0.tos = data.tos;
-                        this_flow.0.flags = data.flags;
+                        this_flow.0.set_last_seen(data.last_seen);
+                        this_flow.0.set_bytes_sent(data.bytes_sent);
+                        this_flow.0.set_packets_sent(data.packets_sent);
+                        this_flow.0.set_rate_estimate_bps(data.rate_estimate_bps);
+                        this_flow.0.set_tcp_retransmits(data.tcp_retransmits);
+                        this_flow.0.set_end_status(data.end_status);
+                        this_flow.0.set_tos(data.tos);
+                        this_flow.0.set_flags(data.flags);
 
-                        if let Some([up, down]) = rtt_samples.get(&key) {
-                            if up.as_nanos() != 0 {
-                                this_flow.0.rtt[0] = *up;
-                            }
-                            if down.as_nanos() != 0 {
-                                this_flow.0.rtt[1] = *down;
-                            }
+                        if let Some([down, up]) = rtt_samples.get(&key) {
+                            this_flow
+                                .0
+                                .set_rtt_if_non_zero(FlowbeeEffectiveDirection::Download, *down);
+                            this_flow
+                                .0
+                                .set_rtt_if_non_zero(FlowbeeEffectiveDirection::Upload, *up);
                         }
                         if enable_asn_heatmaps {
-                            let flow_rtt = combine_rtt_ms(this_flow.0.rtt);
+                            let flow_rtt = combine_rtt_ms(this_flow.0.get_rtt_array());
                             add_asn_sample(
                                 this_flow.1.asn_id.0,
                                 delta_bytes,
@@ -645,9 +635,10 @@ impl ThroughputTracker {
                                     flow_rtt,
                                 );
                             }
+                            let flow_summary = FlowbeeLocalData::from_flow(&data, &key);
                             all_flows_lock
                                 .flow_data
-                                .insert(key.clone(), (data.into(), flow_analysis));
+                                .insert(key.clone(), (flow_summary, flow_analysis));
                         }
                     }
 

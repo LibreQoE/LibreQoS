@@ -72,7 +72,7 @@ fn all_flows_to_transport(
                 circuit_name = flow.0.local_ip.as_ip().to_string();
             }
 
-            let retransmit_times_down = if let Some(v) = &flow.1.retry_times_down {
+            let retransmit_times_down = if let Some(v) = &flow.1.get_retry_times_down() {
                 v.1.iter()
                     .filter(|n| **n > 0)
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
@@ -80,7 +80,7 @@ fn all_flows_to_transport(
             } else {
                 Vec::new()
             };
-            let retransmit_times_up = if let Some(v) = &flow.1.retry_times_up {
+            let retransmit_times_up = if let Some(v) = &flow.1.get_retry_times_up() {
                 v.1.iter()
                     .filter(|n| **n > 0)
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
@@ -95,7 +95,7 @@ fn all_flows_to_transport(
                 duration_nanos: flow.1.last_seen - flow.1.start_time,
                 tcp_retransmits: flow.1.tcp_retransmits.clone(),
                 throughput: vec![],
-                rtt: flow.1.rtt.clone(),
+                rtt: flow.1.get_rtt_array(),
                 retransmit_times_down,
                 retransmit_times_up,
                 total_bytes: flow.1.bytes_sent.clone(),
