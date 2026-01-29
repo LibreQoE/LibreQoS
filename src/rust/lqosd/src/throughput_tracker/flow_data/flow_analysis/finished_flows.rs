@@ -467,22 +467,18 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
 
-        let retransmit_times_down = if let Some(v) = &data.get_retry_times_down() {
-            v.1.iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let retransmit_times_up = if let Some(v) = &data.get_retry_times_up() {
-            v.1.iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let retransmit_times_down = data
+            .get_retry_times_down()
+            .iter()
+            .filter(|n| **n > 0)
+            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+            .collect();
+        let retransmit_times_up = data
+            .get_retry_times_up()
+            .iter()
+            .filter(|n| **n > 0)
+            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+            .collect();
 
         if let Err(e) = crate::lts2_sys::two_way_flow(
             start_time,

@@ -31,7 +31,7 @@ use tracing::{debug, info, warn};
 // TODO: This should be made configurable via the config file
 const MAX_FLOWS: usize = 1_000_000;
 
-pub const MAX_RETRY_TIMES: usize = 32;
+pub const MAX_RETRY_TIMES: usize = 128;
 
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,

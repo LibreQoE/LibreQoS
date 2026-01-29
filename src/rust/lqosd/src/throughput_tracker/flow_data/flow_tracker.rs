@@ -11,7 +11,9 @@ use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::ser::SerializeStruct;
+use serde::ser::SerializeTuple;
 use serde::{Serialize, Serializer};
+use smallvec::SmallVec;
 use crate::throughput_tracker::flow_data::flow_analysis::FlowbeeEffectiveDirection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
@@ -24,16 +26,36 @@ pub struct FlowTracker {
     pub flow_data: FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
 }
 
-#[derive(Debug, Clone, Serialize, Allocative)]
+#[derive(Clone)]
+struct RetryTimesWire {
+    idx: usize,
+    times: [u64; MAX_RETRY_TIMES],
+}
+
+impl Serialize for RetryTimesWire {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut tup = serializer.serialize_tuple(2)?;
+        tup.serialize_element(&self.idx)?;
+        tup.serialize_element(&self.times.as_slice())?;
+        tup.end()
+    }
+}
+
+#[derive(Debug, Clone, Allocative)]
 pub struct FlowbeeLocalDataTcp {
     /// Raw TCP flags
     pub flags: u8,
     /// Recent RTT data for the flow
     pub rtt: RttBuffer,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_down: Option<(usize, [u64; MAX_RETRY_TIMES])>,
+    #[allocative(skip)]
+    pub retry_times_down: SmallVec<[u64; 2]>,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_up: Option<(usize, [u64; MAX_RETRY_TIMES])>,
+    #[allocative(skip)]
+    pub retry_times_up: SmallVec<[u64; 2]>,
 }
 
 /// Condensed representation of the FlowbeeData type. This contains
@@ -81,8 +103,10 @@ impl Serialize for FlowbeeLocalData {
         // TCP-only fields (default to zero/None if this isn't a TCP flow).
         state.serialize_field("flags", &self.get_flags())?;
         state.serialize_field("rtt", &self.get_rtt_array())?;
-        state.serialize_field("retry_times_down", self.get_retry_times_down())?;
-        state.serialize_field("retry_times_up", self.get_retry_times_up())?;
+        let retry_times_down = self.get_retry_times_down_wire();
+        let retry_times_up = self.get_retry_times_up_wire();
+        state.serialize_field("retry_times_down", &retry_times_down)?;
+        state.serialize_field("retry_times_up", &retry_times_up)?;
 
         state.end()
     }
@@ -103,8 +127,8 @@ impl FlowbeeLocalData {
                 Some(Box::new(FlowbeeLocalDataTcp {
                     flags: data.flags,
                     rtt: RttBuffer::default(),
-                    retry_times_down: None,
-                    retry_times_up: None,
+                    retry_times_down: SmallVec::new(),
+                    retry_times_up: SmallVec::new(),
                 }))
             } else {
                 None
@@ -142,18 +166,46 @@ impl FlowbeeLocalData {
         tcp_info.rtt.median_new_data(direction).as_millis()
     }
 
-    pub fn get_retry_times_down(&self) -> &Option<(usize, [u64; MAX_RETRY_TIMES])> {
+    pub fn get_retry_times_down(&self) -> &[u64] {
         let Some(tcp_info) = &self.tcp_info else {
-            return &None;
+            return &[];
         };
-        &tcp_info.retry_times_down
+        tcp_info.retry_times_down.as_slice()
     }
 
-    pub fn get_retry_times_up(&self) -> &Option<(usize, [u64; MAX_RETRY_TIMES])> {
+    pub fn get_retry_times_up(&self) -> &[u64] {
         let Some(tcp_info) = &self.tcp_info else {
-            return &None;
+            return &[];
         };
-        &tcp_info.retry_times_up
+        tcp_info.retry_times_up.as_slice()
+    }
+
+    fn retry_times_to_wire(times: &[u64]) -> Option<RetryTimesWire> {
+        if times.is_empty() {
+            return None;
+        }
+
+        let mut buffer = [0u64; MAX_RETRY_TIMES];
+        let count = usize::min(times.len(), MAX_RETRY_TIMES);
+        buffer[..count].copy_from_slice(&times[..count]);
+        Some(RetryTimesWire {
+            idx: count,
+            times: buffer,
+        })
+    }
+
+    fn get_retry_times_down_wire(&self) -> Option<RetryTimesWire> {
+        let Some(tcp_info) = &self.tcp_info else {
+            return None;
+        };
+        Self::retry_times_to_wire(tcp_info.retry_times_down.as_slice())
+    }
+
+    fn get_retry_times_up_wire(&self) -> Option<RetryTimesWire> {
+        let Some(tcp_info) = &self.tcp_info else {
+            return None;
+        };
+        Self::retry_times_to_wire(tcp_info.retry_times_up.as_slice())
     }
 
     pub fn get_rtt_array(&self) -> [RttData; 2] {
@@ -236,8 +288,11 @@ impl FlowbeeLocalData {
             FlowbeeEffectiveDirection::Upload => &mut tcp_info.retry_times_up,
         };
 
-        let (idx, times) = target.get_or_insert((0, [0; MAX_RETRY_TIMES]));
-        times[*idx] = timestamp_nanos;
-        *idx = (*idx + 1) % MAX_RETRY_TIMES;
+        // Keep the most recent `MAX_RETRY_TIMES` entries.
+        if target.len() >= MAX_RETRY_TIMES {
+            // Not a hot path, and MAX is small enough that shifting is OK.
+            target.remove(0);
+        }
+        target.push(timestamp_nanos);
     }
 }
