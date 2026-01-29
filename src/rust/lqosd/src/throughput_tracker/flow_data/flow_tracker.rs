@@ -48,8 +48,6 @@ pub struct FlowbeeLocalData {
     pub flags: u8,
     /// Recent RTT median
     pub rtt: [RttData; 2],
-    /// Throughput Buffer
-    //pub throughput_buffer: Vec<DownUpOrder<u64>>,
     /// When did the retries happen? In nanoseconds since kernel boot
     pub retry_times_down: Option<(usize, [u64; MAX_RETRY_TIMES])>,
     /// When did the retries happen? In nanoseconds since kernel boot
@@ -69,7 +67,6 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
             tos: data.tos,
             flags: data.flags,
             rtt: [RttData::from_nanos(0); 2],
-            //throughput_buffer: vec![ data.bytes_sent ],
             retry_times_down: None,
             retry_times_up: None,
         }
