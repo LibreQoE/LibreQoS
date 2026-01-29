@@ -2124,6 +2124,7 @@ dependencies = [
  "serde_json",
  "sha256",
  "signal-hook",
+ "smallvec",
  "strum",
  "surge-ping",
  "sysinfo",

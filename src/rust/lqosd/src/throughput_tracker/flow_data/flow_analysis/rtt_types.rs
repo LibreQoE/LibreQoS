@@ -9,7 +9,7 @@ use allocative_derive::Allocative;
 use serde::Serialize;
 use zerocopy::FromBytes;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Allocative, Hash, FromBytes)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Allocative, Hash, FromBytes, Default)]
 #[repr(C)]
 pub struct RttData {
     nanoseconds: u64,
@@ -21,7 +21,7 @@ impl RttData {
         Self { nanoseconds }
     }
 
-    pub fn as_nanos(&self) -> u64 {
+    pub const fn as_nanos(&self) -> u64 {
         self.nanoseconds
     }
 
