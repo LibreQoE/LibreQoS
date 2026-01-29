@@ -90,7 +90,7 @@ const EVENT_SIZE: usize = size_of::<FlowbeeEvent>();
 
 static FLOW_BYTES_SENDER: OnceLock<crossbeam_channel::Sender<()>> = OnceLock::new();
 static FLOW_COMMAND_SENDER: OnceLock<crossbeam_channel::Sender<FlowCommands>> = OnceLock::new();
-static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<[u8; EVENT_SIZE]>> =
+static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<FlowbeeEvent>> =
     Lazy::new(|| crossbeam_queue::ArrayQueue::new(65536 * 32));
 
 #[derive(Debug)]
@@ -172,7 +172,7 @@ impl FlowActor {
                         let mut processed = 0usize;
                         while processed < MAX_BATCH {
                             let Some(msg) = FLOW_BYTES.pop() else { break };
-                            FlowActor::receive_flow(flows, msg.as_slice());
+                            FlowActor::receive_flow(flows, msg);
                             processed += 1;
                         }
 
@@ -231,37 +231,35 @@ impl FlowActor {
     }
 
     #[inline]
-    fn receive_flow(flows: &mut FlowTracker, message: &[u8]) {
-        if let Ok(incoming) = FlowbeeEvent::read_from_bytes(message) {
-            EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Ok(now) = time_since_boot() {
-                let since_boot = Duration::from(now);
-                if incoming.rtt.as_nanos() == 0 {
-                    return;
-                }
-
-                // Check if it should be ignored
-                let ip = incoming.key.remote_ip.as_ip();
-                let ip = match ip {
-                    IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                    IpAddr::V6(ip) => ip,
-                };
-                if flows.ignore_subnets.longest_match(ip).is_some() {
-                    return;
-                }
-
-                // Insert it
-                let entry = flows.flow_rtt.entry(incoming.key).or_insert(RttBuffer::new(
-                    incoming.rtt,
-                    incoming.effective_direction.as_direction(),
-                    since_boot.as_nanos() as u64,
-                ));
-                entry.push(
-                    incoming.rtt,
-                    incoming.effective_direction.as_direction(),
-                    since_boot.as_nanos() as u64,
-                );
+    fn receive_flow(flows: &mut FlowTracker, incoming: FlowbeeEvent) {
+        EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(now) = time_since_boot() {
+            let since_boot = Duration::from(now);
+            if incoming.rtt.as_nanos() == 0 {
+                return;
             }
+
+            // Check if it should be ignored
+            let ip = incoming.key.remote_ip.as_ip();
+            let ip = match ip {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                IpAddr::V6(ip) => ip,
+            };
+            if flows.ignore_subnets.longest_match(ip).is_some() {
+                return;
+            }
+
+            // Insert it
+            let entry = flows.flow_rtt.entry(incoming.key).or_insert(RttBuffer::new(
+                incoming.rtt,
+                incoming.effective_direction.as_direction(),
+                since_boot.as_nanos() as u64,
+            ));
+            entry.push(
+                incoming.rtt,
+                incoming.effective_direction.as_direction(),
+                since_boot.as_nanos() as u64,
+            );
         }
     }
 }
@@ -313,10 +311,10 @@ pub unsafe extern "C" fn flowbee_handle_events(
         // Copy the bytes (to free the ringbuffer slot)
         let data_u8 = data as *const u8;
         let data_slice: &[u8] = unsafe { slice::from_raw_parts(data_u8, EVENT_SIZE) };
-        let Ok(data_slice) = data_slice.try_into() else {
+        let Ok(event) = FlowbeeEvent::read_from_bytes(data_slice) else {
             return 0;
         };
-        if let Ok(_) = FLOW_BYTES.push(data_slice) {
+        if let Ok(_) = FLOW_BYTES.push(event) {
             // Wake FlowActor, but coalesce wakeups under load.
             let _ = tx.try_send(());
         }
