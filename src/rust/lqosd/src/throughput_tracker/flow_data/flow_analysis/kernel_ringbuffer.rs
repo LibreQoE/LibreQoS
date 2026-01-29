@@ -101,7 +101,9 @@ enum FlowCommands {
 
 impl FlowActor {
     pub fn start() -> anyhow::Result<()> {
-        let (tx, rx) = crossbeam_channel::bounded::<()>(131_072);
+        // This is a wakeup channel (not a data transport). Keep it tiny so wakeups coalesce.
+        // The actual data lives in `FLOW_BYTES`.
+        let (tx, rx) = crossbeam_channel::bounded::<()>(1);
         // Placeholder for when you need to read the flow system.
         let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<FlowCommands>(16);
 
@@ -116,48 +118,97 @@ impl FlowActor {
                 };
 
                 use crossbeam_channel::select;
+                let tick = crossbeam_channel::tick(Duration::from_secs(1));
+
+                fn handle_command(flows: &mut FlowTracker, command: FlowCommands) {
+                    match command {
+                        FlowCommands::ExpireRttFlows => {
+                            if let Ok(now) = time_since_boot() {
+                                let since_boot = Duration::from(now);
+                                let expire = since_boot
+                                    .saturating_sub(Duration::from_secs(30))
+                                    .as_nanos() as u64;
+                                flows.flow_rtt.retain(|_, v| v.last_seen > expire);
+                            }
+                        }
+                        FlowCommands::RttMap(reply) => {
+                            let result = flows
+                                .flow_rtt
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.clone(),
+                                        [
+                                            v.median_new_data(FlowbeeEffectiveDirection::Download),
+                                            v.median_new_data(FlowbeeEffectiveDirection::Upload),
+                                        ],
+                                    )
+                                })
+                                .collect();
+
+                            // Clear all fresh data labeling
+                            flows.flow_rtt.iter_mut().for_each(|(_, v)| {
+                                v.clear_freshness();
+                            });
+                            let _ = reply.send(result);
+                        }
+                    }
+                }
+
+                fn drain_events(
+                    flows: &mut FlowTracker,
+                    cmd_rx: &crossbeam_channel::Receiver<FlowCommands>,
+                ) {
+                    // Drain a bounded batch per iteration so we can interleave command handling
+                    // under heavy RTT event load.
+                    const MAX_BATCH: usize = 4096;
+
+                    loop {
+                        // Prioritize any queued commands between RTT batches.
+                        while let Ok(command) = cmd_rx.try_recv() {
+                            handle_command(flows, command);
+                        }
+
+                        let mut processed = 0usize;
+                        while processed < MAX_BATCH {
+                            let Some(msg) = FLOW_BYTES.pop() else { break };
+                            FlowActor::receive_flow(flows, msg.as_slice());
+                            processed += 1;
+                        }
+
+                        // Queue is empty (or we couldn't pop). We're done.
+                        if processed < MAX_BATCH {
+                            break;
+                        }
+
+                        // If we hit the batch limit, yield and keep draining if needed.
+                        if FLOW_BYTES.is_empty() {
+                            break;
+                        }
+                        std::thread::yield_now();
+                    }
+                }
 
                 loop {
                     select! {
                         // A flow command arrives
                         recv(cmd_rx) -> msg => {
                             match msg {
-                                Ok(FlowCommands::ExpireRttFlows) => {
-                                    if let Ok(now) = time_since_boot() {
-                                        let since_boot = Duration::from(now);
-                                        let expire = since_boot.saturating_sub(Duration::from_secs(30)).as_nanos() as u64;
-                                        flows.flow_rtt.retain(|_, v| v.last_seen > expire);
-                                    }
-                                }
-                                Ok(FlowCommands::RttMap(reply)) => {
-                                    let result = flows.flow_rtt.iter()
-                                        .map(|(k, v)| (k.clone(), [v.median_new_data(FlowbeeEffectiveDirection::Download), v.median_new_data(FlowbeeEffectiveDirection::Upload)]))
-                                        .collect();
-
-                                    // Clear all fresh data labeling
-                                    flows.flow_rtt.iter_mut().for_each(|(_, v)| {
-                                        v.clear_freshness();
-                                    });
-                                    let _ = reply.send(result);
-                                }
-                                _ => error!("Error handling flow actor message: {msg:?}"),
+                                Ok(command) => handle_command(&mut flows, command),
+                                Err(e) => error!("Error handling flow actor message: {e:?}"),
                             }
                         }
                         // A flow event arrives
                         recv(rx) -> msg => {
                             if let Ok(_) = msg {
-                                // Drain a bounded batch to avoid starving command handling
-                                // under heavy RTT event load.
-                                const MAX_BATCH: usize = 4096;
-                                let mut processed = 0usize;
-                                while processed < MAX_BATCH {
-                                    let Some(msg) = FLOW_BYTES.pop() else { break };
-                                    FlowActor::receive_flow(&mut flows, msg.as_slice());
-                                    processed += 1;
-                                }
-                                if processed == MAX_BATCH {
-                                    std::thread::yield_now();
-                                }
+                                drain_events(&mut flows, &cmd_rx);
+                            }
+                        }
+                        // Ensure we wake periodically even under very low event rates
+                        // (or if a coalesced wakeup is missed).
+                        recv(tick) -> _ => {
+                            if !FLOW_BYTES.is_empty() {
+                                drain_events(&mut flows, &cmd_rx);
                             }
                         }
                     }
@@ -266,9 +317,8 @@ pub unsafe extern "C" fn flowbee_handle_events(
             return 0;
         };
         if let Ok(_) = FLOW_BYTES.push(data_slice) {
-            if tx.try_send(()).is_err() {
-                warn!("Could not submit flow event - buffer full");
-            }
+            // Wake FlowActor, but coalesce wakeups under load.
+            let _ = tx.try_send(());
         }
     } else {
         warn!("Flow ringbuffer data arrived before the actor is ready. Dropping it.");
