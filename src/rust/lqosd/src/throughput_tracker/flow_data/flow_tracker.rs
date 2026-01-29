@@ -3,7 +3,7 @@
 
 use crate::throughput_tracker::tracking_data::MAX_RETRY_TIMES;
 
-use super::{RttData, flow_analysis::FlowAnalysis};
+use super::{RttData, flow_analysis::FlowAnalysis, RttBuffer};
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
@@ -28,8 +28,8 @@ pub struct FlowTracker {
 pub struct FlowbeeLocalDataTcp {
     /// Raw TCP flags
     pub flags: u8,
-    /// Recent RTT median
-    pub rtt: [RttData; 2],
+    /// Recent RTT data for the flow
+    pub rtt: RttBuffer,
     /// When did the retries happen? In nanoseconds since kernel boot
     pub retry_times_down: Option<(usize, [u64; MAX_RETRY_TIMES])>,
     /// When did the retries happen? In nanoseconds since kernel boot
@@ -102,7 +102,7 @@ impl FlowbeeLocalData {
             tcp_info: if key.ip_protocol == 6 {
                 Some(Box::new(FlowbeeLocalDataTcp {
                     flags: data.flags,
-                    rtt: [RttData::from_nanos(0); 2],
+                    rtt: RttBuffer::default(),
                     retry_times_down: None,
                     retry_times_up: None,
                 }))
@@ -119,7 +119,7 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0;
         };
-        tcp_info.rtt[direction as usize].as_nanos()
+        tcp_info.rtt.median_new_data(direction).as_nanos()
     }
 
     pub fn get_summary_rtt_as_micros(&self, direction: FlowbeeEffectiveDirection) -> f64 {
@@ -129,7 +129,7 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0.0;
         };
-        tcp_info.rtt[direction as usize].as_micros()
+        tcp_info.rtt.median_new_data(direction).as_micros()
     }
 
     pub fn get_summary_rtt_as_millis(&self, direction: FlowbeeEffectiveDirection) -> f64 {
@@ -139,7 +139,7 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0.0;
         };
-        tcp_info.rtt[direction as usize].as_millis()
+        tcp_info.rtt.median_new_data(direction).as_millis()
     }
 
     pub fn get_retry_times_down(&self) -> &Option<(usize, [u64; MAX_RETRY_TIMES])> {
@@ -160,7 +160,14 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return [RttData::from_nanos(0); 2];
         };
-        tcp_info.rtt.clone()
+        [
+            tcp_info
+                .rtt
+                .median_new_data(FlowbeeEffectiveDirection::Download),
+            tcp_info
+                .rtt
+                .median_new_data(FlowbeeEffectiveDirection::Upload),
+        ]
     }
 
     pub fn get_flags(&self) -> u8 {
@@ -174,7 +181,7 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return RttData::from_nanos(0);
         };
-        tcp_info.rtt[direction as usize].clone()
+        tcp_info.rtt.median_new_data(direction)
     }
 
     pub fn set_last_seen(&mut self, last_seen: u64) {
@@ -212,14 +219,11 @@ impl FlowbeeLocalData {
         tcp_info.flags = flags;
     }
 
-    pub fn set_rtt_if_non_zero(&mut self, direction: FlowbeeEffectiveDirection, rtt: RttData) {
-        if rtt.as_nanos() == 0 {
-            return;
-        }
+    pub fn set_rtt_buffer(&mut self, rtt: RttBuffer) {
         let Some(tcp_info) = &mut self.tcp_info else {
             return;
         };
-        tcp_info.rtt[direction as usize] = rtt;
+        tcp_info.rtt.merge_fresh_from(rtt);
     }
 
     pub fn record_tcp_retry_time(&mut self, direction: FlowbeeEffectiveDirection, timestamp_nanos: u64) {

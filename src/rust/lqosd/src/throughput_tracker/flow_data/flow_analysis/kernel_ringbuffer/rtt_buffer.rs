@@ -1,9 +1,21 @@
+use allocative_derive::Allocative;
+use serde::{Serialize, Serializer};
 use smallvec::smallvec;
 use crate::throughput_tracker::flow_data::flow_analysis::FlowbeeEffectiveDirection;
 use crate::throughput_tracker::flow_data::RttData;
 
+fn serialize_u32_array_38<S>(value: &[u32; 38], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value.as_slice().serialize(serializer)
+}
+
+#[derive(Clone, Debug, Serialize, Allocative)]
 struct RttBufferBucket {
+    #[serde(serialize_with = "serialize_u32_array_38")]
     current_bucket: [u32; 38],
+    #[serde(serialize_with = "serialize_u32_array_38")]
     total_bucket: [u32; 38],
     current_bucket_start_time_nanos: u64,
     best_rtt: Option<RttData>,
@@ -142,6 +154,7 @@ pub enum RttBucket {
     Total
 }
 
+#[derive(Clone, Debug, Serialize, Allocative, Default)]
 pub struct RttBuffer {
     pub(crate) last_seen: u64,
     download_bucket: RttBufferBucket,
@@ -167,6 +180,30 @@ impl RttBuffer {
         // Note: called in the collector system
         self.download_bucket.has_new_data = false;
         self.upload_bucket.has_new_data = false;
+    }
+
+    pub(crate) fn has_new_data(&self) -> bool {
+        self.download_bucket.has_new_data || self.upload_bucket.has_new_data
+    }
+
+    pub(crate) fn snapshot_if_new_data(&self) -> Option<Self> {
+        if self.has_new_data() {
+            Some(self.clone())
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn merge_fresh_from(&mut self, incoming: Self) {
+        let Self { last_seen, download_bucket, upload_bucket } = incoming;
+        self.last_seen = last_seen;
+
+        if download_bucket.has_new_data {
+            self.download_bucket = download_bucket;
+        }
+        if upload_bucket.has_new_data {
+            self.upload_bucket = upload_bucket;
+        }
     }
 
     pub(crate) fn new(reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) -> Self {

@@ -20,7 +20,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug, Allocative)]
+#[derive(Clone, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),

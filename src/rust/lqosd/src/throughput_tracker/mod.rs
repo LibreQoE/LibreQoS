@@ -7,6 +7,7 @@ use self::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
     snapshot_asn_heatmaps,
 };
+pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
 use crate::{

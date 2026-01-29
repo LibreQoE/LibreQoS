@@ -18,7 +18,7 @@ use std::{
 };
 use tracing::{error, warn};
 use zerocopy::FromBytes;
-use rtt_buffer::RttBuffer;
+pub use rtt_buffer::RttBuffer;
 
 static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
 static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);
@@ -96,7 +96,7 @@ static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<FlowbeeEvent>> =
 #[derive(Debug)]
 enum FlowCommands {
     ExpireRttFlows,
-    RttMap(tokio::sync::oneshot::Sender<FxHashMap<FlowbeeKey, [RttData; 2]>>),
+    RttMap(tokio::sync::oneshot::Sender<FxHashMap<FlowbeeKey, RttBuffer>>),
 }
 
 impl FlowActor {
@@ -132,25 +132,26 @@ impl FlowActor {
                             }
                         }
                         FlowCommands::RttMap(reply) => {
+                            let mut keys_to_clear: Vec<FlowbeeKey> = Vec::new();
                             let result = flows
                                 .flow_rtt
                                 .iter()
-                                .map(|(k, v)| {
-                                    (
-                                        k.clone(),
-                                        [
-                                            v.median_new_data(FlowbeeEffectiveDirection::Download),
-                                            v.median_new_data(FlowbeeEffectiveDirection::Upload),
-                                        ],
-                                    )
+                                .filter_map(|(k, v)| {
+                                    let snapshot = v.snapshot_if_new_data()?;
+                                    keys_to_clear.push(k.clone());
+                                    Some((k.clone(), snapshot))
                                 })
                                 .collect();
 
-                            // Clear all fresh data labeling
-                            flows.flow_rtt.iter_mut().for_each(|(_, v)| {
-                                v.clear_freshness();
-                            });
-                            let _ = reply.send(result);
+                            // Only clear freshness if the receiver is still alive.
+                            // Otherwise, we'll try again on the next request so data isn't lost.
+                            if reply.send(result).is_ok() {
+                                for key in keys_to_clear {
+                                    if let Some(buffer) = flows.flow_rtt.get_mut(&key) {
+                                        buffer.clear_freshness();
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -346,8 +347,8 @@ pub fn expire_rtt_flows() {
     }
 }
 
-pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
+pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, RttBuffer> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<FxHashMap<FlowbeeKey, RttBuffer>>();
     if let Some(cmd_tx) = FLOW_COMMAND_SENDER.get() {
         if cmd_tx.try_send(FlowCommands::RttMap(tx)).is_err() {
             warn!("Could not submit flow command - buffer full");

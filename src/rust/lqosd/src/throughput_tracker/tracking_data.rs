@@ -528,7 +528,7 @@ impl ThroughputTracker {
         };
 
         if let Ok(now) = time_since_boot() {
-            let rtt_samples = flowbee_rtt_map();
+            let mut rtt_samples = flowbee_rtt_map();
             get_flowbee_event_count_and_reset();
             let since_boot = Duration::from(now);
             let expire = since_boot
@@ -540,6 +540,8 @@ impl ThroughputTracker {
 
             // Track through all the flows
             iterate_flows(&mut |key, data| {
+                let mut rtt_buffer = rtt_samples.remove(key);
+                let mut rtt_for_circuit: Option<[RttData; 2]> = None;
                 if data.end_status == 3 {
                     // The flow has been handled already and should be ignored.
                     // DO NOT process it again.
@@ -584,13 +586,12 @@ impl ThroughputTracker {
                         this_flow.0.set_tos(data.tos);
                         this_flow.0.set_flags(data.flags);
 
-                        if let Some([down, up]) = rtt_samples.get(&key) {
-                            this_flow
-                                .0
-                                .set_rtt_if_non_zero(FlowbeeEffectiveDirection::Download, *down);
-                            this_flow
-                                .0
-                                .set_rtt_if_non_zero(FlowbeeEffectiveDirection::Upload, *up);
+                        if let Some(rtt_buffer) = rtt_buffer.take() {
+                            rtt_for_circuit = Some([
+                                rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
+                                rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
+                            ]);
+                            this_flow.0.set_rtt_buffer(rtt_buffer);
                         }
                         if enable_asn_heatmaps {
                             let flow_rtt = combine_rtt_ms(this_flow.0.get_rtt_array());
@@ -620,9 +621,16 @@ impl ThroughputTracker {
                         } else {
                             // Insert it into the map
                             let flow_analysis = FlowAnalysis::new(&key);
+                            let mut flow_summary = FlowbeeLocalData::from_flow(&data, &key);
+                            if let Some(rtt_buffer) = rtt_buffer.take() {
+                                rtt_for_circuit = Some([
+                                    rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
+                                    rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
+                                ]);
+                                flow_summary.set_rtt_buffer(rtt_buffer);
+                            }
                             if enable_asn_heatmaps {
-                                let flow_rtt =
-                                    rtt_samples.get(&key).and_then(|rtt| combine_rtt_ms(*rtt));
+                                let flow_rtt = rtt_for_circuit.and_then(combine_rtt_ms);
                                 let delta_retrans = DownUpOrder::new(
                                     data.tcp_retransmits.down as u64,
                                     data.tcp_retransmits.up as u64,
@@ -635,7 +643,6 @@ impl ThroughputTracker {
                                     flow_rtt,
                                 );
                             }
-                            let flow_summary = FlowbeeLocalData::from_flow(&data, &key);
                             all_flows_lock
                                 .flow_data
                                 .insert(key.clone(), (flow_summary, flow_analysis));
@@ -647,7 +654,7 @@ impl ThroughputTracker {
                         && data.end_status == 0
                         && raw_data.contains_key(&key.local_ip)
                     {
-                        if let Some(rtt) = rtt_samples.get(&key) {
+                        if let Some(rtt) = rtt_for_circuit {
                             // Add the RTT data to the per-circuit tracker
                             if let Some(tracker) = rtt_circuit_tracker.get_mut(&key.local_ip) {
                                 if rtt[0].as_nanos() > 0 {

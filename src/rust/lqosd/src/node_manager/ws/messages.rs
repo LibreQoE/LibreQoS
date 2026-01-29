@@ -256,7 +256,7 @@ pub enum PingState {
     Ping { time_nanos: u64, label: String },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(tag = "event")]
 pub enum WsResponse {
     #[serde(rename = "join")]
