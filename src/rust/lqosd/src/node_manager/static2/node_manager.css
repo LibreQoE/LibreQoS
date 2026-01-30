@@ -351,11 +351,35 @@ table tr td a {
     opacity: 0.35;
     background: var(--bs-border-color);
 }
+.exec-heat-cell.split {
+    padding: 0;
+    background: var(--bs-border-color);
+    overflow: hidden;
+}
+.exec-heat-cell.split .exec-split-grid {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    gap: 1px;
+    background: var(--bs-border-color);
+}
+.exec-heat-cell.split .exec-split {
+    width: 100%;
+    height: 100%;
+}
+.exec-heat-cell.split .exec-split.empty {
+    opacity: 0.35;
+    background: var(--bs-border-color);
+}
 .exec-heat-cell.empty {
     opacity: 0.4;
 }
 .exec-latest {
     min-width: 54px;
+}
+.exec-latest.split {
+    line-height: 1.1;
 }
 @font-face {
     font-family: Klingon;

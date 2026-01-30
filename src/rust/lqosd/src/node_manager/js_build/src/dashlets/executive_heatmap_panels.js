@@ -9,6 +9,7 @@ import {
     nonNullCount,
     heatRow,
     rttHeatRow,
+    retransmitHeatRow,
     MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
 
@@ -156,7 +157,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
         const rows = [
             { kind: "qoo", label: "Overall QoO", badge: "Global", blocks: globalQoq },
             { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
-            { label: "TCP Retransmits", badge: "Global", values: global.retransmit || [], color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
+            { kind: "retransmit", label: "TCP Retransmits", badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
             { label: "Download Utilization", badge: "Global", values: global.download || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
             { label: "Upload Utilization", badge: "Global", values: global.upload || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
         ];
@@ -172,6 +173,15 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                         row.blocks,
                         (v) => colorByRttMs(v, 200),
                         (v) => formatLatest(v, "ms"),
+                    );
+                }
+                if (row.kind === "retransmit") {
+                    return retransmitHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        row.color,
+                        row.format,
                     );
                 }
                 return heatRow(row.label, row.badge, row.values, row.color, row.format);
@@ -228,6 +238,16 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                         : null;
                 if (this.config.metricKey === "rtt") {
                     return rttHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        this.config.colorFn,
+                        this.config.formatFn,
+                        link
+                    );
+                }
+                if (this.config.metricKey === "retransmit") {
+                    return retransmitHeatRow(
                         row.label,
                         row.badge,
                         row.blocks,

@@ -206,3 +206,77 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
         </div>
     `;
 }
+
+function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
+    const length = Array.isArray(topValues) && topValues.length
+        ? topValues.length
+        : (Array.isArray(bottomValues) && bottomValues.length ? bottomValues.length : 15);
+    let cells = "";
+    for (let i = 0; i < length; i++) {
+        const top = topValues?.[i];
+        const bottom = bottomValues?.[i];
+
+        const allMissing =
+            (top === null || top === undefined) &&
+            (bottom === null || bottom === undefined);
+        if (allMissing) {
+            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            continue;
+        }
+
+        const numOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+        const fmt = (v) => formatValue(numOrNull(v));
+        const title = [
+            `Block ${i + 1}`,
+            `UL: ${fmt(top)}`,
+            `DL: ${fmt(bottom)}`,
+        ].join(" • ");
+
+        const part = (v) => {
+            if (v === null || v === undefined) {
+                return `<div class="exec-split empty"></div>`;
+            }
+            const numeric = Number(v);
+            if (!Number.isFinite(numeric)) {
+                return `<div class="exec-split empty"></div>`;
+            }
+            const color = colorFn(numeric);
+            return `<div class="exec-split" style="background:${color}"></div>`;
+        };
+
+        // Top = upload, bottom = download.
+        cells += `
+            <div class="exec-heat-cell split" title="${title}">
+                <div class="exec-split-grid">
+                    ${part(top)}
+                    ${part(bottom)}
+                </div>
+            </div>
+        `;
+    }
+    return cells;
+}
+
+export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
+    const topValues = blocks?.retransmit_up || [];
+    const bottomValues = blocks?.retransmit_down || [];
+    const latestTop = latestValue(topValues);
+    const latestBottom = latestValue(bottomValues);
+    const formattedLatest = `
+        <div>${formatValue(latestTop)}</div>
+        <div>${formatValue(latestBottom)}</div>
+    `;
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    return `
+        <div class="exec-heat-row">
+            <div class="exec-heat-label text-truncate" title="${label}">
+                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
+                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+            </div>
+            <div class="exec-heat-cells">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue)}</div>
+            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
+        </div>
+    `;
+}
