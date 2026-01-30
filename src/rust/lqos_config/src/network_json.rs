@@ -2,11 +2,14 @@ mod network_json_node;
 mod network_json_transport;
 
 use allocative_derive::Allocative;
-use lqos_utils::{temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
+use lqos_utils::{
+    rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData},
+    temporal_heatmap::TemporalHeatmap,
+    units::DownUpOrder,
+};
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -84,7 +87,7 @@ impl NetworkJson {
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
             immediate_parent: None,
-            rtts: HashSet::new(),
+            rtt_buffer: RttBuffer::default(),
             node_type: None,
             heatmap: None,
         }];
@@ -159,7 +162,7 @@ impl NetworkJson {
             n.current_udp_packets.set_to_zero();
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
-            n.rtts.clear();
+            n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
         });
@@ -191,13 +194,12 @@ impl NetworkJson {
         }
     }
 
-    /// Record RTT time in the tree. Note that due to interior mutability,
-    /// this does not require mutable access.
-    pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
+    /// Record RTT histogram data in the tree for this cycle.
+    pub fn add_rtt_buffer_cycle(&mut self, targets: &[usize], rtt: &RttBuffer) {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
-                node.rtts.insert((rtt * 100.0) as u16);
+                node.rtt_buffer.accumulate(rtt);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -248,8 +250,19 @@ impl NetworkJson {
             let upload_util =
                 utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
                     .unwrap_or(0.0);
-            let mut rtts: Vec<f32> = node.rtts.iter().map(|n| *n as f32 / 100.0).collect();
-            let median_rtt = median_rtt(&mut rtts);
+            let download = node
+                .rtt_buffer
+                .median_new_data(FlowbeeEffectiveDirection::Download);
+            let upload = node
+                .rtt_buffer
+                .median_new_data(FlowbeeEffectiveDirection::Upload);
+            let combined = match (download.as_nanos(), upload.as_nanos()) {
+                (0, 0) => None,
+                (d, 0) => Some(RttData::from_nanos(d)),
+                (0, u) => Some(RttData::from_nanos(u)),
+                (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
+            };
+            let median_rtt = combined.map(|rtt| rtt.as_millis() as f32);
             let retransmit_down = retransmit_percent(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
@@ -313,7 +326,7 @@ fn recurse_node(
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
-        rtts: HashSet::new(),
+        rtt_buffer: RttBuffer::default(),
         node_type: json
             .get("type")
             .map(|v| v.as_str().unwrap_or_default().to_string()),
@@ -351,19 +364,6 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
         return None;
     }
     Some((retransmits as f32 / packets as f32) * 100.0)
-}
-
-fn median_rtt(values: &mut Vec<f32>) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-    values.sort_by(|a, b| a.total_cmp(b));
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        Some(values[mid])
-    } else {
-        Some((values[mid - 1] + values[mid]) / 2.0)
-    }
 }
 
 #[derive(Error, Debug)]

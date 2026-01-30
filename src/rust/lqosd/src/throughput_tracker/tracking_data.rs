@@ -499,6 +499,7 @@ impl ThroughputTracker {
         sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
         net_json_calc: &mut NetworkJson,
         rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
+        rtt_by_circuit: &mut FxHashMap<i64, RttBuffer>,
         tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
         expired_keys: &mut Vec<FlowbeeKey>,
     ) {
@@ -714,10 +715,14 @@ impl ThroughputTracker {
                             }
                             tracker.recent_rtt_data[0] = rtt_median;
                             tracker.last_fresh_rtt_data_cycle = self_cycle;
+                            if let Some(circuit_hash) = tracker.circuit_hash {
+                                rtt_by_circuit
+                                    .entry(circuit_hash)
+                                    .or_default()
+                                    .accumulate(rtt_buffer);
+                            }
                             if let Some(parents) = &tracker.network_json_parents {
-                                if let Some(rtt) = tracker.median_latency() {
-                                    net_json_calc.add_rtt_cycle(parents, rtt);
-                                }
+                                net_json_calc.add_rtt_buffer_cycle(parents, rtt_buffer);
                             }
                         }
                     }

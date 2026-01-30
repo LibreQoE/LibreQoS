@@ -1,8 +1,8 @@
 use allocative_derive::Allocative;
 use serde::{Serialize, Serializer};
 use smallvec::smallvec;
-use crate::throughput_tracker::flow_data::flow_analysis::FlowbeeEffectiveDirection;
-use crate::throughput_tracker::flow_data::RttData;
+
+use super::{FlowbeeEffectiveDirection, RttData};
 
 fn serialize_u32_array_38<S>(value: &[u32; 38], serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -38,13 +38,10 @@ impl Default for RttBufferBucket {
 
 const NS_PER_MS: u64 = 1_000_000;
 
-// Bucket counts
-
 // Offsets
 const OFFSET_1MS: usize = 0;
 const OFFSET_2MS: usize = OFFSET_1MS + 10; // 10 buckets
-const OFFSET_5MS: usize = OFFSET_2MS + 5;  // 5 buckets
-
+const OFFSET_5MS: usize = OFFSET_2MS + 5; // 5 buckets
 
 impl RttBufferBucket {
     #[inline(always)]
@@ -98,21 +95,20 @@ impl RttBufferBucket {
         }
     }
 
-
     #[inline(always)]
     pub const fn bucket_upper_bound_nanos(idx: usize) -> u64 {
         match idx {
             // 1 ms buckets
-            0  => 1 * NS_PER_MS,
-            1  => 2 * NS_PER_MS,
-            2  => 3 * NS_PER_MS,
-            3  => 4 * NS_PER_MS,
-            4  => 5 * NS_PER_MS,
-            5  => 6 * NS_PER_MS,
-            6  => 7 * NS_PER_MS,
-            7  => 8 * NS_PER_MS,
-            8  => 9 * NS_PER_MS,
-            9  => 10 * NS_PER_MS,
+            0 => 1 * NS_PER_MS,
+            1 => 2 * NS_PER_MS,
+            2 => 3 * NS_PER_MS,
+            3 => 4 * NS_PER_MS,
+            4 => 5 * NS_PER_MS,
+            5 => 6 * NS_PER_MS,
+            6 => 7 * NS_PER_MS,
+            7 => 8 * NS_PER_MS,
+            8 => 9 * NS_PER_MS,
+            9 => 10 * NS_PER_MS,
 
             // 2 ms buckets
             10 => 12 * NS_PER_MS,
@@ -144,19 +140,25 @@ impl RttBufferBucket {
             34 => 500 * NS_PER_MS,
             35 => 750 * NS_PER_MS,
             36 => 1_000 * NS_PER_MS,
-            _  => 1_000 * NS_PER_MS,
+            _ => 1_000 * NS_PER_MS,
         }
     }
 }
 
+/// Which RTT bucket to query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RttBucket {
+    /// Current (time-windowed) bucket.
     Current,
-    Total
+    /// Total (lifetime) bucket.
+    Total,
 }
 
+/// A per-flow or aggregated RTT histogram (download + upload).
 #[derive(Clone, Debug, Serialize, Allocative, Default)]
 pub struct RttBuffer {
-    pub(crate) last_seen: u64,
+    /// Last-seen timestamp in nanoseconds since boot.
+    pub last_seen: u64,
     download_bucket: RttBufferBucket,
     upload_bucket: RttBufferBucket,
 }
@@ -176,11 +178,13 @@ impl RttBuffer {
         }
     }
 
-    pub(crate) fn clear(&mut self) {
+    /// Reset this buffer to its default (empty) state.
+    pub fn clear(&mut self) {
         *self = Self::default();
     }
 
-    pub(crate) fn accumulate(&mut self, other: &Self) {
+    /// Accumulate another RTT buffer into this one (saturating bucket counts).
+    pub fn accumulate(&mut self, other: &Self) {
         fn accumulate_bucket(dst: &mut RttBufferBucket, src: &RttBufferBucket) {
             for (dst, src) in dst.current_bucket.iter_mut().zip(src.current_bucket.iter()) {
                 *dst = dst.saturating_add(*src);
@@ -219,17 +223,16 @@ impl RttBuffer {
         accumulate_bucket(&mut self.upload_bucket, &other.upload_bucket);
     }
 
-    pub(crate) fn clear_freshness(&mut self) {
-        // Note: called in the collector system
+    pub fn clear_freshness(&mut self) {
         self.download_bucket.has_new_data = false;
         self.upload_bucket.has_new_data = false;
     }
 
-    pub(crate) fn has_new_data(&self) -> bool {
+    pub fn has_new_data(&self) -> bool {
         self.download_bucket.has_new_data || self.upload_bucket.has_new_data
     }
 
-    pub(crate) fn snapshot_if_new_data(&self) -> Option<Self> {
+    pub fn snapshot_if_new_data(&self) -> Option<Self> {
         if self.has_new_data() {
             Some(self.clone())
         } else {
@@ -237,8 +240,12 @@ impl RttBuffer {
         }
     }
 
-    pub(crate) fn merge_fresh_from(&mut self, incoming: Self) {
-        let Self { last_seen, download_bucket, upload_bucket } = incoming;
+    pub fn merge_fresh_from(&mut self, incoming: Self) {
+        let Self {
+            last_seen,
+            download_bucket,
+            upload_bucket,
+        } = incoming;
         self.last_seen = last_seen;
 
         if download_bucket.has_new_data {
@@ -249,7 +256,11 @@ impl RttBuffer {
         }
     }
 
-    pub(crate) fn new(reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) -> Self {
+    pub fn new(
+        reading: RttData,
+        direction: FlowbeeEffectiveDirection,
+        last_seen: u64,
+    ) -> Self {
         let mut entry = Self {
             last_seen,
             download_bucket: RttBufferBucket::default(),
@@ -257,7 +268,7 @@ impl RttBuffer {
         };
         let target_bucket = entry.pick_bucket_mut(direction);
         let bucket_idx = RttBufferBucket::bucket(reading);
-        target_bucket.current_bucket[bucket_idx] += 1; // Safe because we know it was zero previously.
+        target_bucket.current_bucket[bucket_idx] += 1;
         target_bucket.total_bucket[bucket_idx] += 1;
         target_bucket.current_bucket_start_time_nanos = last_seen;
         target_bucket.best_rtt = Some(reading);
@@ -268,7 +279,12 @@ impl RttBuffer {
 
     const BUCKET_TIME_NANOS: u64 = 10_000_000_000; // 10 seconds
 
-    pub(crate) fn push(&mut self, reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) {
+    pub fn push(
+        &mut self,
+        reading: RttData,
+        direction: FlowbeeEffectiveDirection,
+        last_seen: u64,
+    ) {
         self.last_seen = last_seen;
         let target_bucket = self.pick_bucket_mut(direction);
 
@@ -282,25 +298,38 @@ impl RttBuffer {
         }
 
         let bucket_idx = RttBufferBucket::bucket(reading);
-        target_bucket.current_bucket[bucket_idx] = target_bucket.current_bucket[bucket_idx].saturating_add(1);
-        target_bucket.total_bucket[bucket_idx] = target_bucket.total_bucket[bucket_idx].saturating_add(1);
+        target_bucket.current_bucket[bucket_idx] = target_bucket.current_bucket[bucket_idx]
+            .saturating_add(1);
+        target_bucket.total_bucket[bucket_idx] = target_bucket.total_bucket[bucket_idx]
+            .saturating_add(1);
         target_bucket.has_new_data = true;
+
         if let Some(other_max) = target_bucket.worst_rtt {
-            target_bucket.worst_rtt = Some(RttData::from_nanos(u64::max(other_max.as_nanos(), reading.as_nanos())));
+            target_bucket.worst_rtt = Some(RttData::from_nanos(u64::max(
+                other_max.as_nanos(),
+                reading.as_nanos(),
+            )));
         } else {
             target_bucket.worst_rtt = Some(reading);
         }
         if let Some(other_min) = target_bucket.best_rtt {
-            target_bucket.best_rtt = Some(RttData::from_nanos(u64::min(other_min.as_nanos(), reading.as_nanos())));
+            target_bucket.best_rtt = Some(RttData::from_nanos(u64::min(
+                other_min.as_nanos(),
+                reading.as_nanos(),
+            )));
         } else {
             target_bucket.best_rtt = Some(reading);
         }
-        target_bucket.has_new_data = true; // Note that this is reset on READ
     }
 
     const MIN_SAMPLES: u32 = 2;
 
-    fn percentiles_from_bucket(&self, scope: RttBucket, direction: FlowbeeEffectiveDirection, percentiles: &[u8]) -> Option<smallvec::SmallVec<[RttData; 3]>> {
+    fn percentiles_from_bucket(
+        &self,
+        scope: RttBucket,
+        direction: FlowbeeEffectiveDirection,
+        percentiles: &[u8],
+    ) -> Option<smallvec::SmallVec<[RttData; 3]>> {
         let target = self.pick_bucket(direction);
         let buckets = match scope {
             RttBucket::Current => &target.current_bucket,
@@ -313,17 +342,12 @@ impl RttBuffer {
         }
 
         // Precompute rank targets (ceil(p/100 * total))
-        // We assume percentiles are in ascending order
         let targets: Vec<u32> = percentiles
             .iter()
-            .map(|p| {
-                // ceil(p * total / 100)
-                ((*p as u32 * total) + 99) / 100
-            })
+            .map(|p| ((*p as u32 * total) + 99) / 100)
             .collect();
 
         let mut results: smallvec::SmallVec<[Option<RttData>; 3]> = smallvec![None; percentiles.len()];
-
         let mut cumulative: u32 = 0;
         let mut next_idx = 0;
 
@@ -333,7 +357,6 @@ impl RttBuffer {
             }
 
             cumulative += count;
-
             while next_idx < targets.len() && cumulative >= targets[next_idx] {
                 let rtt_ns = RttBufferBucket::bucket_upper_bound_nanos(bucket_idx);
                 results[next_idx] = Some(RttData::from_nanos(rtt_ns));
@@ -345,7 +368,6 @@ impl RttBuffer {
             }
         }
 
-        // All percentiles should be filled; if not, something went wrong
         if results.iter().any(|r| r.is_none()) {
             return None;
         }
@@ -354,18 +376,12 @@ impl RttBuffer {
     }
 
     #[deprecated(note = "This was a pretty stupid way to do things!")]
-    pub(crate) fn median_new_data(&self, direction: FlowbeeEffectiveDirection) -> RttData {
-        // Note that this function is kinda sucky, but it's deliberately maintaining
-        // the contract - warts and all - of its predecessor. Planned for deprecation
-        // later.
-        // 0 as a sentinel was a bad idea.
+    pub fn median_new_data(&self, direction: FlowbeeEffectiveDirection) -> RttData {
         let target = self.pick_bucket(direction);
         if !target.has_new_data {
             return RttData::from_nanos(0);
         }
-        let Some(median) = self.percentiles_from_bucket(
-            RttBucket::Current, direction, &[50]
-        ) else {
+        let Some(median) = self.percentiles_from_bucket(RttBucket::Current, direction, &[50]) else {
             return RttData::from_nanos(0);
         };
         median[0]

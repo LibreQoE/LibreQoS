@@ -21,6 +21,8 @@ mod string_table_enum;
 pub mod temporal_heatmap;
 /// Re-export HeatmapBlocks for downstream crates.
 pub use temporal_heatmap::HeatmapBlocks;
+/// RTT histograms and strongly-typed RTT units.
+pub mod rtt;
 /// Helpers for units of measurement
 pub mod units;
 /// Utilities dealing with Unix Timestamps

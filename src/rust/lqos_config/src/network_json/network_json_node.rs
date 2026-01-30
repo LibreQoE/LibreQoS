@@ -1,7 +1,10 @@
 use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
-use lqos_utils::{temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
-use std::collections::HashSet;
+use lqos_utils::{
+    rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData},
+    temporal_heatmap::TemporalHeatmap,
+    units::DownUpOrder,
+};
 
 /// Describes a node in the network map tree.
 #[derive(Debug, Clone, Allocative)]
@@ -39,7 +42,7 @@ pub struct NetworkJsonNode {
     /// Approximate RTTs reported for this level of the tree.
     /// It's never going to be as statistically accurate as the actual
     /// numbers, being based on medians.
-    pub rtts: HashSet<u16>,
+    pub rtt_buffer: RttBuffer,
 
     /// A list of indices in the `NetworkJson` vector of nodes
     /// linking to parent nodes
@@ -59,6 +62,22 @@ impl NetworkJsonNode {
     /// Make a deep copy of a `NetworkJsonNode`, converting atomics
     /// into concrete values.
     pub fn clone_to_transit(&self) -> NetworkJsonTransport {
+        let download = self
+            .rtt_buffer
+            .median_new_data(FlowbeeEffectiveDirection::Download);
+        let upload = self
+            .rtt_buffer
+            .median_new_data(FlowbeeEffectiveDirection::Upload);
+        let rtts = match (download.as_nanos(), upload.as_nanos()) {
+            (0, 0) => Vec::new(),
+            (d, 0) => vec![RttData::from_nanos(d).as_millis() as f32; 2],
+            (0, u) => vec![RttData::from_nanos(u).as_millis() as f32; 2],
+            (d, u) => vec![
+                RttData::from_nanos(d).as_millis() as f32,
+                RttData::from_nanos(u).as_millis() as f32,
+            ],
+        };
+
         NetworkJsonTransport {
             name: self.name.clone(),
             max_throughput: self.max_throughput,
@@ -88,7 +107,7 @@ impl NetworkJsonNode {
             ),
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
-            rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
+            rtts,
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,
             node_type: self.node_type.clone(),

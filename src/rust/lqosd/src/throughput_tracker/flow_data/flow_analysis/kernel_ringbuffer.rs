@@ -1,10 +1,8 @@
 //! Connects to the "flowbee_events" ring buffer and processes the events.
 
-mod rtt_buffer;
-
-use crate::throughput_tracker::flow_data::flow_analysis::rtt_types::RttData;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::FlowbeeKey;
+use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 use std::sync::OnceLock;
@@ -18,7 +16,6 @@ use std::{
 };
 use tracing::{error, warn};
 use zerocopy::FromBytes;
-pub use rtt_buffer::RttBuffer;
 
 static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
 static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);
@@ -284,13 +281,6 @@ impl FlowbeeDirectionRaw {
             _ => panic!("Invalid direction"),
         }
     }
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FlowbeeEffectiveDirection {
-    Download = 0,
-    Upload = 1
 }
 
 #[repr(C)]

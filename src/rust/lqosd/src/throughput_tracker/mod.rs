@@ -10,6 +10,7 @@ use self::flow_data::{
 pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use arc_swap::ArcSwap;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
@@ -29,6 +30,7 @@ use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::sync::Arc;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, info, warn};
@@ -36,6 +38,8 @@ use tracing::{debug, info, warn};
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
+pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
 
 /// Create the throughput monitor thread, and begin polling for
 /// throughput data every second.
@@ -153,6 +157,7 @@ fn throughput_task(
 
     // Preallocate some buffers to avoid allocations in the loop
     let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
+    let mut rtt_by_circuit: FxHashMap<i64, RttBuffer> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
@@ -181,9 +186,11 @@ fn throughput_task(
                 netflow_sender.clone(),
                 &mut net_json_calc,
                 &mut rtt_circuit_tracker,
+                &mut rtt_by_circuit,
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+            CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
             let enable_site_heatmaps = lqos_config::load_config()
                 .map(|config| config.enable_site_heatmaps)
@@ -192,9 +199,11 @@ fn throughput_task(
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
+            rtt_by_circuit.clear();
             tcp_retries.clear();
             expired_flows.clear();
             rtt_circuit_tracker.shrink_to_fit();
+            rtt_by_circuit.shrink_to_fit();
             tcp_retries.shrink_to_fit();
             expired_flows.shrink_to_fit();
 
