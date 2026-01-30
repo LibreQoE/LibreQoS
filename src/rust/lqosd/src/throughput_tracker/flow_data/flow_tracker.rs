@@ -7,6 +7,7 @@ use super::{RttData, flow_analysis::FlowAnalysis, RttBuffer};
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_utils::qoo::QoqScores;
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -50,6 +51,8 @@ pub struct FlowbeeLocalDataTcp {
     pub flags: u8,
     /// Recent RTT data for the flow
     pub rtt: RttBuffer,
+    /// QoQ scores (0..100) for the flow, derived from RTT/throughput/retransmits.
+    pub qoq: QoqScores,
     /// When did the retries happen? In nanoseconds since kernel boot
     #[allocative(skip)]
     pub retry_times_down: SmallVec<[u64; 2]>,
@@ -127,6 +130,7 @@ impl FlowbeeLocalData {
                 Some(Box::new(FlowbeeLocalDataTcp {
                     flags: data.flags,
                     rtt: RttBuffer::default(),
+                    qoq: QoqScores::default(),
                     retry_times_down: SmallVec::new(),
                     retry_times_up: SmallVec::new(),
                 }))
@@ -276,6 +280,13 @@ impl FlowbeeLocalData {
             return;
         };
         tcp_info.rtt.merge_fresh_from(rtt);
+    }
+
+    pub fn set_qoq_scores(&mut self, scores: QoqScores) {
+        let Some(tcp_info) = &mut self.tcp_info else {
+            return;
+        };
+        tcp_info.qoq = scores;
     }
 
     pub fn record_tcp_retry_time(&mut self, direction: FlowbeeEffectiveDirection, timestamp_nanos: u64) {

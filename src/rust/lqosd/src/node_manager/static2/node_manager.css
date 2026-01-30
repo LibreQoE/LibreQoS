@@ -325,6 +325,28 @@ table tr td a {
     border-radius: 3px;
     background: var(--bs-border-color);
 }
+.exec-heat-cell.qoq {
+    padding: 0;
+    background: var(--bs-border-color);
+    overflow: hidden;
+}
+.exec-heat-cell.qoq .qoq-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    gap: 1px;
+    background: var(--bs-border-color);
+}
+.exec-heat-cell.qoq .qoq-quad {
+    width: 100%;
+    height: 100%;
+}
+.exec-heat-cell.qoq .qoq-quad.empty {
+    opacity: 0.35;
+    background: var(--bs-border-color);
+}
 .exec-heat-cell.empty {
     opacity: 0.4;
 }

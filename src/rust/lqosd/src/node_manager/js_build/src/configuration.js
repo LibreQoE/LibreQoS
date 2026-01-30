@@ -5,6 +5,7 @@ let nics = null;
 let lqosd_config = null;
 let shaped_devices = null;
 let network_json = null;
+let qoo_profiles = null;
 
 const wsClient = get_ws_client();
 
@@ -37,6 +38,7 @@ const bindings = [
     { field: "bindPath", path: ".lqos_directory", data: "string", editable: true, required: true },
     { field: "bindNodeId", path: ".node_id", data: "string", editable: true, required: true },
     { field: "bindNodeName", path: ".node_name", data: "string", editable: true, required: true },
+    { field: "bindQooProfile", path: ".qoo_profile_id", data: "select-nullable", editable: true },
     { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true, min: 1, max: 300 },
     { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true, min: 100, max: 100000 },
 
@@ -205,6 +207,8 @@ function doBindings() {
             let controlId = "#" + entry.field;
             if (entry.data === "bool") {
                 $(controlId).prop('checked', value);
+            } else if (entry.data === "select-nullable") {
+                $(controlId).val(value === null || value === undefined ? "" : value);
             } else if (entry.data === "selector-premade") {
                 $(controlId + " select").val(value);
             } else if (entry.data === "array_of_strings") {
@@ -284,6 +288,9 @@ function detectChanges() {
             }
             let storedValue = result.value;
             if (entry.data === "string" || entry.data === "integer") {
+                if (storedValue === null && currentValue === "")
+                    currentValue = null;
+            } else if (entry.data === "select-nullable") {
                 if (storedValue === null && currentValue === "")
                     currentValue = null;
             }
@@ -398,6 +405,10 @@ function getFinalValue(target) {
         case "array_of_strings": return $(selector).val().split(' ');
         case "interface": return $(selector).val();
         case "select-premade": return $(selector).val();
+        case "select-nullable": {
+            const v = $(selector).val();
+            return v === "" ? null : v;
+        }
         case "ip_array": return $(selector).val().split('\n');
         default: console.log("Not handled: " + target);
     }
@@ -1169,6 +1180,34 @@ function fillNicList(id, selected) {
     select.html(html);
 }
 
+function fillQooProfileList(selectedId) {
+    const select = $("#bindQooProfile");
+    if (!qoo_profiles || !qoo_profiles.profiles) {
+        select.html("<option value=''>Default</option>");
+        select.val(selectedId === null || selectedId === undefined ? "" : selectedId);
+        return;
+    }
+
+    const defaultId = qoo_profiles.default_profile_id || "";
+    const defaultProfile = qoo_profiles.profiles.find(p => p.id === defaultId);
+    const defaultLabel = defaultProfile ? defaultProfile.name : (defaultId || "Web browsing");
+
+    let html = `<option value=''> (default) ${defaultLabel} </option>`;
+    for (let i = 0; i < qoo_profiles.profiles.length; i++) {
+        const p = qoo_profiles.profiles[i];
+        html += "<option value='";
+        html += p.id;
+        html += "'>";
+        html += p.name;
+        html += " (";
+        html += p.id;
+        html += ")";
+        html += "</option>";
+    }
+    select.html(html);
+    select.val(selectedId === null || selectedId === undefined ? "" : selectedId);
+}
+
 function buildNICList(id, selected, disabled=false) {
     let html = "<select id='" + id + "'";
     if (disabled) html += " disabled='true' ";
@@ -1251,34 +1290,48 @@ function start() {
                         { ListNics: {} },
                         (nicsMsg) => {
                             nics = nicsMsg.data;
-                            console.log(lqosd_config);
-                            doBindings();
-
-                            // User management
-                            if (is_admin) {
-                                userManager();
-                            }
-
                             sendWsRequest(
-                                "NetworkJson",
-                                { NetworkJson: {} },
-                                (netMsg) => {
-                                    network_json = netMsg.data;
+                                "QooProfiles",
+                                { QooProfiles: {} },
+                                (profilesMsg) => {
+                                    qoo_profiles = profilesMsg.data;
+                                    fillQooProfileList(lqosd_config?.qoo_profile_id);
+                                    console.log(lqosd_config);
+                                    doBindings();
+
+                                    // User management
+                                    if (is_admin) {
+                                        userManager();
+                                    }
+
                                     sendWsRequest(
-                                        "AllShapedDevices",
-                                        { AllShapedDevices: {} },
-                                        (sdMsg) => {
-                                            shaped_devices = sdMsg.data;
-                                            shapedDevices();
-                                            RenderNetworkJson();
+                                        "NetworkJson",
+                                        { NetworkJson: {} },
+                                        (netMsg) => {
+                                            network_json = netMsg.data;
+                                            sendWsRequest(
+                                                "AllShapedDevices",
+                                                { AllShapedDevices: {} },
+                                                (sdMsg) => {
+                                                    shaped_devices = sdMsg.data;
+                                                    shapedDevices();
+                                                    RenderNetworkJson();
+                                                },
+                                                () => {
+                                                    alert("Unable to load shaped devices");
+                                                },
+                                            );
                                         },
                                         () => {
-                                            alert("Unable to load shaped devices");
+                                            alert("Unable to load network.json");
                                         },
                                     );
                                 },
                                 () => {
-                                    alert("Unable to load network.json");
+                                    // Profiles are optional for now; still allow config to load.
+                                    fillQooProfileList(lqosd_config?.qoo_profile_id);
+                                    console.log(lqosd_config);
+                                    doBindings();
                                 },
                             );
                         },

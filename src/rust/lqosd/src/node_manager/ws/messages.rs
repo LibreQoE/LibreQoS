@@ -28,7 +28,9 @@ use lqos_bus::{
     QueueStoreTransit, SiteHeatmapData, StormguardDebugEntry,
 };
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
+use lqos_config::QooProfileInfo;
 use lqos_utils::temporal_heatmap::HeatmapBlocks;
+use lqos_utils::qoq_heatmap::QoqHeatmapBlocks;
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -94,6 +96,7 @@ pub enum WsRequest {
     LtsRecentMedian,
     AdminCheck,
     GetConfig,
+    QooProfiles,
     UpdateConfig { config: Config },
     UpdateNetworkAndDevices {
         network_json: Value,
@@ -145,6 +148,13 @@ pub enum WsRequest {
     UnknownIps,
     UnknownIpsClear,
     UnknownIpsCsv,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QooProfilesSummary {
+    #[serde(default)]
+    pub default_profile_id: Option<String>,
+    pub profiles: Vec<QooProfileInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -229,6 +239,7 @@ pub struct OversubscribedSite {
 pub struct ExecutiveHeatmapsData {
     pub header: ExecutiveSummaryHeader,
     pub global: HeatmapBlocks,
+    pub global_qoq: QoqHeatmapBlocks,
     pub circuits: Vec<CircuitHeatmapData>,
     pub sites: Vec<SiteHeatmapData>,
     pub asns: Vec<AsnHeatmapData>,
@@ -288,6 +299,7 @@ pub enum WsResponse {
     UnknownIpsCsv { csv: String },
     AdminCheck { ok: bool },
     GetConfig { data: Config },
+    QooProfiles { data: QooProfilesSummary },
     ListNics {
         data: Vec<(String, String, String)>,
     },

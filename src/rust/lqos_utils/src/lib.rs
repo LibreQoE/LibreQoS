@@ -27,8 +27,11 @@ pub mod rtt;
 pub mod units;
 /// Utilities dealing with Unix Timestamps
 pub mod unix_time;
+/// Rolling QoQ (0..100) score heatmap storage.
+pub mod qoq_heatmap;
 mod xdp_ip_address;
-mod qoo;
+/// Quality-of-Outcome (QoO) scoring utilities and profile loading.
+pub mod qoo;
 
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;

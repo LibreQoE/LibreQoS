@@ -1,5 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
+import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
 import {getSiteIdMap, linkToCircuit, linkToSite} from "../executive_utils";
 import {
     buildHeatmapRows,
@@ -10,6 +10,91 @@ import {
     heatRow,
     MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
+
+function qoqHeatmapRow(blocks, colorFn) {
+    const length = Array.isArray(blocks?.download_total) ? blocks.download_total.length : 15;
+    const fmt = (v) => formatLatest(v, "", 0);
+    let cells = "";
+    for (let i = 0; i < length; i++) {
+        const dlTotal = blocks?.download_total?.[i];
+        const ulTotal = blocks?.upload_total?.[i];
+        const dlCurrent = blocks?.download_current?.[i];
+        const ulCurrent = blocks?.upload_current?.[i];
+
+        const allMissing =
+            (dlTotal === null || dlTotal === undefined) &&
+            (ulTotal === null || ulTotal === undefined) &&
+            (dlCurrent === null || dlCurrent === undefined) &&
+            (ulCurrent === null || ulCurrent === undefined);
+        if (allMissing) {
+            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            continue;
+        }
+
+        const title = [
+            `Block ${i + 1}`,
+            `UL Total: ${fmt(ulTotal)}`,
+            `UL Current: ${fmt(ulCurrent)}`,
+            `DL Total: ${fmt(dlTotal)}`,
+            `DL Current: ${fmt(dlCurrent)}`,
+        ].join(" • ");
+
+        const quad = (v) => {
+            if (v === null || v === undefined) {
+                return `<div class="qoq-quad empty"></div>`;
+            }
+            const numeric = Number(v);
+            if (!Number.isFinite(numeric)) {
+                return `<div class="qoq-quad empty"></div>`;
+            }
+            const color = colorFn(numeric);
+            return `<div class="qoq-quad" style="background:${color}"></div>`;
+        };
+
+        // Quadrants: upload at top, "total" (global) on the left.
+        //  TL: upload_total   TR: upload_current
+        //  BL: download_total BR: download_current
+        cells += `
+            <div class="exec-heat-cell qoq" title="${title}">
+                <div class="qoq-grid">
+                    ${quad(ulTotal)}
+                    ${quad(ulCurrent)}
+                    ${quad(dlTotal)}
+                    ${quad(dlCurrent)}
+                </div>
+            </div>
+        `;
+    }
+    return cells;
+}
+
+function qoqLatest(blocks) {
+    if (!blocks) return null;
+    const values = [
+        latestValue(blocks.download_total),
+        latestValue(blocks.upload_total),
+        latestValue(blocks.download_current),
+        latestValue(blocks.upload_current),
+    ].filter((v) => v !== null && v !== undefined);
+    if (!values.length) return null;
+    const sum = values.reduce((a, b) => a + b, 0);
+    return sum / values.length;
+}
+
+function qoqRow(label, badge, blocks, colorFn) {
+    const latest = qoqLatest(blocks);
+    const formattedLatest = formatLatest(latest, "", 0);
+    return `
+        <div class="exec-heat-row">
+            <div class="exec-heat-label text-truncate" title="${label}">
+                <div class="fw-semibold text-truncate">${label}</div>
+                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+            </div>
+            <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorFn)}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+        </div>
+    `;
+}
 
 class ExecutiveHeatmapBase extends BaseDashlet {
     constructor(slot) {
@@ -62,17 +147,26 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
         const target = document.getElementById(this._contentId);
         if (!target) return;
         const global = this.lastData?.global;
+        const globalQoq = this.lastData?.global_qoq;
         if (!global) {
             target.innerHTML = this.emptyCard();
             return;
         }
         const rows = [
+            { kind: "qoq", label: "Overall QoQ", badge: "Global", blocks: globalQoq },
             { label: "Median RTT", badge: "Global", values: global.rtt || [], color: (v) => colorByRttMs(v, 200), format: (v) => formatLatest(v, "ms") },
             { label: "TCP Retransmits", badge: "Global", values: global.retransmit || [], color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
             { label: "Download Utilization", badge: "Global", values: global.download || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
             { label: "Upload Utilization", badge: "Global", values: global.upload || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
         ];
-        const body = rows.map(row => heatRow(row.label, row.badge, row.values, row.color, row.format)).join("");
+        const body = rows
+            .map((row) => {
+                if (row.kind === "qoq") {
+                    return qoqRow(row.label, row.badge, row.blocks, colorByQoqScore);
+                }
+                return heatRow(row.label, row.badge, row.values, row.color, row.format);
+            })
+            .join("");
         target.innerHTML = `
             <div class="card shadow-sm border-0">
                 <div class="card-body py-3">

@@ -966,6 +966,46 @@ async fn receive_channel_message(
                 }
             }
         }
+        WsRequest::QooProfiles => {
+            if *login != crate::node_manager::auth::LoginResult::Admin {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            } else {
+                match lqos_config::load_qoo_profiles_file() {
+                    Ok(file) => {
+                        let response = WsResponse::QooProfiles {
+                            data: crate::node_manager::ws::messages::QooProfilesSummary {
+                                default_profile_id: file.default_profile_id.clone(),
+                                profiles: file
+                                    .profiles
+                                    .iter()
+                                    .map(|p| lqos_config::QooProfileInfo {
+                                        id: p.id.clone(),
+                                        name: p.name.clone(),
+                                        description: p.description.clone(),
+                                    })
+                                    .collect(),
+                            },
+                        };
+                        if send_ws_response(&tx, response).await {
+                            return true;
+                        }
+                    }
+                    Err(_) => {
+                        let response = WsResponse::Error {
+                            message: "Unable to load QoO profiles".to_string(),
+                        };
+                        if send_ws_response(&tx, response).await {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
         WsRequest::UpdateConfig { config: cfg } => {
             let result = config::update_lqosd_config_data(*login, cfg).await;
             let (ok, message) = match result {

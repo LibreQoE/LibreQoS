@@ -6,6 +6,7 @@ use super::{
     },
     throughput_entry::ThroughputEntry,
 };
+use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::{
     shaped_devices_tracker::SHAPED_DEVICES,
     stats::HIGH_WATERMARK,
@@ -20,8 +21,10 @@ use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
     temporal_heatmap::TemporalHeatmap,
+    qoq_heatmap::TemporalQoqHeatmap,
     units::{AtomicDownUp, DownUpOrder},
 };
+use lqos_utils::qoo::{LossMeasurement, QoqScores, compute_qoq_scores};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
@@ -44,6 +47,7 @@ pub struct ThroughputTracker {
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
     pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
+    pub(crate) global_qoq_heatmap: Mutex<TemporalQoqHeatmap>,
 }
 
 #[derive(Default)]
@@ -72,6 +76,7 @@ impl ThroughputTracker {
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             circuit_heatmaps: Mutex::default(),
             global_heatmap: Mutex::new(TemporalHeatmap::new()),
+            global_qoq_heatmap: Mutex::new(TemporalQoqHeatmap::new()),
         }
     }
 
@@ -79,12 +84,14 @@ impl ThroughputTracker {
         let Ok(config) = lqos_config::load_config() else {
             return;
         };
+        let qoo_profile = lqos_config::active_qoo_profile().ok();
         let global_down_mbps = config.queues.downlink_bandwidth_mbps as f32;
         let global_up_mbps = config.queues.uplink_bandwidth_mbps as f32;
 
         if !config.enable_circuit_heatmaps {
             self.circuit_heatmaps.lock().clear();
             *self.global_heatmap.lock() = TemporalHeatmap::new();
+            *self.global_qoq_heatmap.lock() = TemporalQoqHeatmap::new();
             return;
         }
 
@@ -218,6 +225,39 @@ impl ThroughputTracker {
             global_rtt,
             global_retransmit_down,
             global_retransmit_up,
+        );
+
+        // QoQ is derived from RTT histogram + throughput + retransmit proxy.
+        let mut global_rtt_buffer = RttBuffer::default();
+        let circuit_rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
+        for rtt in circuit_rtt_snapshot.values() {
+            global_rtt_buffer.accumulate(rtt);
+        }
+
+        let download_mbps = (total_download_bytes as f64 * 8.0) / 1_000_000.0;
+        let upload_mbps = (total_upload_bytes as f64 * 8.0) / 1_000_000.0;
+        let loss_download =
+            tcp_retransmit_loss_proxy(total_retransmits.down, total_tcp_packets.down);
+        let loss_upload = tcp_retransmit_loss_proxy(total_retransmits.up, total_tcp_packets.up);
+
+        let scores = if let Some(profile) = qoo_profile.as_ref() {
+            compute_qoq_scores(
+                profile.as_ref(),
+                &global_rtt_buffer,
+                download_mbps,
+                upload_mbps,
+                loss_download,
+                loss_upload,
+            )
+        } else {
+            QoqScores::default()
+        };
+
+        self.global_qoq_heatmap.lock().add_sample(
+            scores.download_total_f32(),
+            scores.upload_total_f32(),
+            scores.download_current_f32(),
+            scores.upload_current_f32(),
         );
     }
 
@@ -434,6 +474,7 @@ impl ThroughputTracker {
                     last_seen: 0,
                     tcp_retransmits: DownUpOrder::zeroed(),
                     prev_tcp_retransmits: DownUpOrder::zeroed(),
+                    qoq: QoqScores::default(),
                 };
                 for c in counts {
                     entry
@@ -965,4 +1006,18 @@ fn combine_rtt_ms(rtts: [RttData; 2]) -> Option<f32> {
         samples.push(rtts[1].as_millis() as f32);
     }
     median(&mut samples)
+}
+
+fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
+    if packets == 0 {
+        return None;
+    }
+
+    let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
+    // Confidence ramps up as we see more packets in this interval; this is a proxy, so remain conservative.
+    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0);
+    Some(LossMeasurement::TcpRetransmitProxy {
+        retransmit_fraction,
+        confidence,
+    })
 }

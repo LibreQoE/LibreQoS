@@ -13,8 +13,12 @@
 
 mod qoo_profile;
 
+pub use qoo_profile::{ProfileIoError, QooProfileSpec, QooProfilesFile};
+
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use crate::rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer};
+use smallvec::SmallVec;
 
 #[inline]
 fn clamp_0_100(x: f64) -> f64 {
@@ -331,17 +335,27 @@ pub fn compute_qoo(profile: &QooProfile, input: &QooInput<'_>) -> QooResult {
     out.components.throughput_upload = Some(profile.upload_mbps.score(input.upload_mbps));
 
     // Latency components from RTT histograms.
-    let dl = latency_for_direction(profile, input.rtt, FlowbeeEffectiveDirection::Download);
-    let ul = latency_for_direction(profile, input.rtt, FlowbeeEffectiveDirection::Upload);
+    let dl = latency_for_direction(
+        profile,
+        input.rtt,
+        FlowbeeEffectiveDirection::Download,
+        profile.rtt_scope,
+    );
+    let ul = latency_for_direction(
+        profile,
+        input.rtt,
+        FlowbeeEffectiveDirection::Upload,
+        profile.rtt_scope,
+    );
 
     out.components.latency_download = dl.score;
     out.components.latency_upload = ul.score;
 
-    out.measured.latency_download_ms = dl.raw_ms;
-    out.measured.latency_upload_ms = ul.raw_ms;
+    out.measured.latency_download_ms = dl.raw_ms.into_iter().collect();
+    out.measured.latency_upload_ms = ul.raw_ms.into_iter().collect();
 
-    out.measured.latency_download_scored_ms = dl.scored_ms;
-    out.measured.latency_upload_scored_ms = ul.scored_ms;
+    out.measured.latency_download_scored_ms = dl.scored_ms.into_iter().collect();
+    out.measured.latency_upload_scored_ms = ul.scored_ms.into_iter().collect();
 
     out.measured.latency_baseline_download_ms = dl.baseline_ms;
     out.measured.latency_baseline_upload_ms = ul.baseline_ms;
@@ -397,8 +411,8 @@ pub fn compute_qoo(profile: &QooProfile, input: &QooInput<'_>) -> QooResult {
 #[derive(Clone, Debug, Default)]
 struct LatencyDirectionResult {
     score: Option<f64>,
-    raw_ms: Vec<(u8, f64)>,
-    scored_ms: Vec<(u8, f64)>,
+    raw_ms: SmallVec<[(u8, f64); 3]>,
+    scored_ms: SmallVec<[(u8, f64); 3]>,
     baseline_ms: Option<f64>,
 }
 
@@ -407,10 +421,11 @@ fn latency_for_direction(
     profile: &QooProfile,
     rtt: &RttBuffer,
     direction: FlowbeeEffectiveDirection,
+    scope: RttBucket,
 ) -> LatencyDirectionResult {
-    let mut raw_ms: Vec<(u8, f64)> = Vec::with_capacity(profile.latency.len());
-    let mut scored_ms: Vec<(u8, f64)> = Vec::with_capacity(profile.latency.len());
-    let mut scores: Vec<f64> = Vec::with_capacity(profile.latency.len());
+    let mut raw_ms: SmallVec<[(u8, f64); 3]> = SmallVec::with_capacity(profile.latency.len());
+    let mut scored_ms: SmallVec<[(u8, f64); 3]> = SmallVec::with_capacity(profile.latency.len());
+    let mut scores: SmallVec<[f64; 3]> = SmallVec::with_capacity(profile.latency.len());
 
     // Determine baseline/offset for this direction if applicable.
     let baseline_ms: Option<f64> = match profile.latency_normalization {
@@ -419,7 +434,7 @@ fn latency_for_direction(
         LatencyNormalization::ExcessOverBaseline { baseline } => match baseline {
             Baseline::FixedMs { ms } => Some(ms.max(0.0)),
             Baseline::Percentile { percentile } => {
-                let Some(b) = rtt.percentile(profile.rtt_scope, direction, percentile) else {
+                let Some(b) = rtt.percentile(scope, direction, percentile) else {
                     return LatencyDirectionResult {
                         score: None,
                         raw_ms,
@@ -433,7 +448,7 @@ fn latency_for_direction(
     };
 
     for req in &profile.latency {
-        let Some(rtt_p) = rtt.percentile(profile.rtt_scope, direction, req.percentile) else {
+        let Some(rtt_p) = rtt.percentile(scope, direction, req.percentile) else {
             return LatencyDirectionResult {
                 score: None,
                 raw_ms,
@@ -462,6 +477,119 @@ fn latency_for_direction(
         raw_ms,
         scored_ms,
         baseline_ms,
+    }
+}
+
+pub const QOQ_UNKNOWN: u8 = 255;
+
+/// QoQ scores for download/upload across both histogram scopes (Total vs Current).
+///
+/// Values are 0..100, with `QOQ_UNKNOWN` meaning "insufficient data".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Allocative)]
+pub struct QoqScores {
+    pub download_total: u8,
+    pub upload_total: u8,
+    pub download_current: u8,
+    pub upload_current: u8,
+}
+
+impl Default for QoqScores {
+    fn default() -> Self {
+        Self {
+            download_total: QOQ_UNKNOWN,
+            upload_total: QOQ_UNKNOWN,
+            download_current: QOQ_UNKNOWN,
+            upload_current: QOQ_UNKNOWN,
+        }
+    }
+}
+
+impl QoqScores {
+    #[inline]
+    pub fn download_total_f32(self) -> Option<f32> {
+        (self.download_total != QOQ_UNKNOWN).then(|| self.download_total as f32)
+    }
+
+    #[inline]
+    pub fn upload_total_f32(self) -> Option<f32> {
+        (self.upload_total != QOQ_UNKNOWN).then(|| self.upload_total as f32)
+    }
+
+    #[inline]
+    pub fn download_current_f32(self) -> Option<f32> {
+        (self.download_current != QOQ_UNKNOWN).then(|| self.download_current as f32)
+    }
+
+    #[inline]
+    pub fn upload_current_f32(self) -> Option<f32> {
+        (self.upload_current != QOQ_UNKNOWN).then(|| self.upload_current as f32)
+    }
+}
+
+fn score_to_u8(score: Option<f64>) -> u8 {
+    let Some(score) = score else { return QOQ_UNKNOWN };
+    if !score.is_finite() {
+        return QOQ_UNKNOWN;
+    }
+    score.clamp(0.0, 100.0).round() as u8
+}
+
+fn loss_effective(profile: &QooProfile, loss: LossMeasurement) -> f64 {
+    let loss_fraction = loss.loss_fraction();
+    let confidence = loss.confidence();
+    let strict = profile.loss_fraction.score(loss_fraction);
+    match profile.loss_handling {
+        LossHandling::Strict => strict,
+        LossHandling::ConfidenceWeighted => 100.0 - confidence * (100.0 - strict),
+    }
+}
+
+fn combine_directional(
+    profile: &QooProfile,
+    latency: Option<f64>,
+    loss: Option<f64>,
+    throughput: f64,
+) -> Option<f64> {
+    match profile.combine {
+        CombineMode::IetfLatencyAndLoss => match (latency, loss) {
+            (Some(l), Some(p)) => Some(l.min(p)),
+            _ => None,
+        },
+        CombineMode::LibreQosLatencyLossThroughput => match (latency, loss) {
+            (Some(l), Some(p)) => Some(l.min(p).min(throughput)),
+            _ => None,
+        },
+    }
+}
+
+/// Compute QoQ scores (0..100) for download/upload directions using both RTT histogram scopes:
+/// `RttBucket::Total` and `RttBucket::Current`.
+///
+/// The only difference between Total vs Current outputs is the RTT bucket scope used for latency.
+pub fn compute_qoq_scores(
+    profile: &QooProfile,
+    rtt: &RttBuffer,
+    download_mbps: f64,
+    upload_mbps: f64,
+    loss_download: Option<LossMeasurement>,
+    loss_upload: Option<LossMeasurement>,
+) -> QoqScores {
+    let throughput_download = profile.download_mbps.score(download_mbps);
+    let throughput_upload = profile.upload_mbps.score(upload_mbps);
+
+    let loss_download = loss_download.map(|l| loss_effective(profile, l));
+    let loss_upload = loss_upload.map(|l| loss_effective(profile, l));
+
+    let dl_current = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Download, RttBucket::Current).score;
+    let ul_current = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Current).score;
+    let dl_total = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Download, RttBucket::Total).score;
+    let ul_total = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total).score;
+
+    QoqScores {
+        download_total: score_to_u8(combine_directional(profile, dl_total, loss_download, throughput_download)),
+        upload_total: score_to_u8(combine_directional(profile, ul_total, loss_upload, throughput_upload)),
+        download_current: score_to_u8(combine_directional(profile, dl_current, loss_download, throughput_download)),
+        upload_current: score_to_u8(combine_directional(profile, ul_current, loss_upload, throughput_upload)),
     }
 }
 

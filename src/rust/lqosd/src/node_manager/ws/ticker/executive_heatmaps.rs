@@ -5,6 +5,7 @@ use crate::node_manager::ws::messages::{ExecutiveHeatmapsData, OversubscribedSit
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_bus::{BusReply, BusRequest, BusResponse, ExecutiveSummaryHeader};
 use lqos_utils::temporal_heatmap::{HeatmapBlocks, TemporalHeatmap};
 use once_cell::sync::Lazy;
@@ -43,12 +44,14 @@ pub async fn executive_heatmaps(
     let global = fetch_global_heatmap(bus_tx)
         .await
         .unwrap_or_else(empty_blocks);
+    let global_qoq = THROUGHPUT_TRACKER.global_qoq_heatmap.lock().blocks();
     let oversubscribed_sites = compute_oversubscribed_sites();
 
     let payload = WsResponse::ExecutiveHeatmaps {
         data: ExecutiveHeatmapsData {
             header,
             global,
+            global_qoq,
             circuits,
             sites,
             asns,

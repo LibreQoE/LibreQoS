@@ -1,5 +1,5 @@
 import {isColorBlindMode} from "./colorblind";
-import {lerpGreenToRedViaOrange} from "./scaling";
+import {lerpColor, lerpGreenToRedViaOrange} from "./scaling";
 
 // Viridis color scale interpolation (0..1)
 function lerpViridis(t) {
@@ -44,3 +44,20 @@ export function colorByRttMs(rttMs, capMs = 200) {
     }
 }
 
+// Color by QoQ score (0..100, higher is better).
+export function colorByQoqScore(score0to100) {
+    // Distinguish "no data" from a real 0 score (which is legitimately bad).
+    if (score0to100 === null || score0to100 === undefined) {
+        return "var(--bs-border-color)";
+    }
+    const raw = Number(score0to100);
+    if (!Number.isFinite(raw)) {
+        return "var(--bs-border-color)";
+    }
+    const s = Math.min(100, Math.max(0, raw));
+    if (isColorBlindMode()) {
+        return lerpViridis(s / 100.0);
+    } else {
+        return lerpColor([255, 0, 0], [0, 255, 0], s / 100.0);
+    }
+}
