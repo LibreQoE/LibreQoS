@@ -47,6 +47,7 @@ pub struct ThroughputTracker {
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
+    pub(crate) circuit_qoq_heatmaps: Mutex<FxHashMap<i64, TemporalQoqHeatmap>>,
     pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
     pub(crate) global_qoq_heatmap: Mutex<TemporalQoqHeatmap>,
 }
@@ -75,6 +76,7 @@ impl ThroughputTracker {
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             circuit_heatmaps: Mutex::default(),
+            circuit_qoq_heatmaps: Mutex::default(),
             global_heatmap: Mutex::new(TemporalHeatmap::new()),
             global_qoq_heatmap: Mutex::new(TemporalQoqHeatmap::new()),
         }
@@ -90,6 +92,7 @@ impl ThroughputTracker {
 
         if !config.enable_circuit_heatmaps {
             self.circuit_heatmaps.lock().clear();
+            self.circuit_qoq_heatmaps.lock().clear();
             *self.global_heatmap.lock() = TemporalHeatmap::new();
             *self.global_qoq_heatmap.lock() = TemporalQoqHeatmap::new();
             return;
@@ -178,6 +181,9 @@ impl ThroughputTracker {
 
         let mut heatmaps = self.circuit_heatmaps.lock();
         heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
+        let mut qoq_heatmaps = self.circuit_qoq_heatmaps.lock();
+        qoq_heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
+        let empty_rtt = RttBuffer::default();
 
         for (circuit_hash, aggregate) in aggregates {
             let (max_down_mbps, max_up_mbps) = capacity_lookup
@@ -222,6 +228,35 @@ impl ThroughputTracker {
                 rtt_p90_up,
                 retransmit_down,
                 retransmit_up,
+            );
+
+            let rtt = circuit_rtt_snapshot.get(&circuit_hash).unwrap_or(&empty_rtt);
+            let download_mbps = (aggregate.download_bytes as f64 * 8.0) / 1_000_000.0;
+            let upload_mbps = (aggregate.upload_bytes as f64 * 8.0) / 1_000_000.0;
+            let loss_download =
+                tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
+            let loss_upload =
+                tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
+            let scores = if let Some(profile) = qoo_profile.as_ref() {
+                compute_qoq_scores(
+                    profile.as_ref(),
+                    rtt,
+                    download_mbps,
+                    upload_mbps,
+                    loss_download,
+                    loss_upload,
+                )
+            } else {
+                QoqScores::default()
+            };
+            let qoq_heatmap = qoq_heatmaps
+                .entry(circuit_hash)
+                .or_insert_with(TemporalQoqHeatmap::new);
+            qoq_heatmap.add_sample(
+                scores.download_total_f32(),
+                scores.upload_total_f32(),
+                scores.download_current_f32(),
+                scores.upload_current_f32(),
             );
         }
 

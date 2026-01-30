@@ -1,6 +1,7 @@
 use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
 use lqos_utils::{
+    qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
@@ -56,6 +57,9 @@ pub struct NetworkJsonNode {
 
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
+
+    /// Rolling per-site QoO/QoQ TemporalQoqHeatmap (optional, allocated when enabled).
+    pub qoq_heatmap: Option<TemporalQoqHeatmap>,
 }
 
 impl NetworkJsonNode {

@@ -92,8 +92,8 @@ export const DashletMenu = [
     { name: "Global Heatmap", tag: "executiveGlobalHeatmap", size: 12, category: "Executive" },
     { name: "Median RTT Heatmap", tag: "executiveHeatmapRtt", size: 6, category: "Executive" },
     { name: "TCP Retransmits Heatmap", tag: "executiveHeatmapRetrans", size: 6, category: "Executive" },
-    { name: "Download Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
-    { name: "Upload Utilization Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
+    { name: "Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
+    { name: "QoO Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {

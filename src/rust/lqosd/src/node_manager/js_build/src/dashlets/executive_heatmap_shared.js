@@ -38,6 +38,7 @@ export function buildHeatmapRows(data) {
             site_name: site.site_name || "",
             badge: "Site",
             blocks: site.blocks,
+            qoq_blocks: site.qoq_blocks,
         });
     });
     const circuits = (data?.circuits || []);
@@ -48,6 +49,7 @@ export function buildHeatmapRows(data) {
             circuit_id: circuit.circuit_id || "",
             badge: "Circuit",
             blocks: circuit.blocks,
+            qoq_blocks: circuit.qoq_blocks,
         });
     });
     const asns = (data?.asns || []);
@@ -257,9 +259,7 @@ function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
     return cells;
 }
 
-export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
-    const topValues = blocks?.retransmit_up || [];
-    const bottomValues = blocks?.retransmit_down || [];
+function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link = null) {
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
@@ -279,4 +279,16 @@ export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, li
             <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
+}
+
+export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
+    const topValues = blocks?.retransmit_up || [];
+    const bottomValues = blocks?.retransmit_down || [];
+    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link);
+}
+
+export function utilizationHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
+    const topValues = blocks?.upload || [];
+    const bottomValues = blocks?.download || [];
+    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link);
 }

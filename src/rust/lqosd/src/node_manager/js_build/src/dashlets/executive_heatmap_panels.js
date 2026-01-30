@@ -10,6 +10,7 @@ import {
     heatRow,
     rttHeatRow,
     retransmitHeatRow,
+    utilizationHeatRow,
     MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
 
@@ -98,6 +99,24 @@ function qoqRow(label, badge, blocks, colorFn) {
     `;
 }
 
+function qoqHeatRow(label, badge, blocks, link = null) {
+    const latest = qoqLatest(blocks);
+    const formattedLatest = formatLatest(latest, "", 0);
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    return `
+        <div class="exec-heat-row">
+            <div class="exec-heat-label text-truncate" title="${label}">
+                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
+                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+            </div>
+            <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorByQoqScore)}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+        </div>
+    `;
+}
+
 class ExecutiveHeatmapBase extends BaseDashlet {
     constructor(slot) {
         super(slot);
@@ -158,8 +177,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             { kind: "qoo", label: "Overall QoO", badge: "Global", blocks: globalQoq },
             { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
             { kind: "retransmit", label: "TCP Retransmits", badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
-            { label: "Download Utilization", badge: "Global", values: global.download || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
-            { label: "Upload Utilization", badge: "Global", values: global.upload || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
+            { kind: "utilization", label: "Utilization", badge: "Global", blocks: global, color: colorByCapacity, format: (v) => formatLatest(v, "%") },
         ];
         const body = rows
             .map((row) => {
@@ -177,6 +195,15 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 }
                 if (row.kind === "retransmit") {
                     return retransmitHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        row.color,
+                        row.format,
+                    );
+                }
+                if (row.kind === "utilization") {
+                    return utilizationHeatRow(
                         row.label,
                         row.badge,
                         row.blocks,
@@ -256,6 +283,24 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                         link
                     );
                 }
+                if (this.config.metricKey === "utilization") {
+                    return utilizationHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        this.config.colorFn,
+                        this.config.formatFn,
+                        link
+                    );
+                }
+                if (this.config.metricKey === "qoo") {
+                    return qoqHeatRow(
+                        row.label,
+                        row.badge,
+                        row.qoq_blocks,
+                        link,
+                    );
+                }
                 return heatRow(
                     row.label,
                     row.badge,
@@ -285,18 +330,70 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
     }
 
     metricSort(a, b) {
-        const aVals = a.blocks[this.config.metricKey] || [];
-        const bVals = b.blocks[this.config.metricKey] || [];
-        const aLatest = latestValue(aVals);
-        const bLatest = latestValue(bVals);
-        const aCount = nonNullCount(aVals);
-        const bCount = nonNullCount(bVals);
+        const metricKey = this.config.metricKey;
+        const isUtilization = metricKey === "utilization";
+        const isQoo = metricKey === "qoo";
+        const aDownVals = a.blocks.download || [];
+        const aUpVals = a.blocks.upload || [];
+        const bDownVals = b.blocks.download || [];
+        const bUpVals = b.blocks.upload || [];
+
+        const aVals = isUtilization ? [] : (a.blocks[metricKey] || []);
+        const bVals = isUtilization ? [] : (b.blocks[metricKey] || []);
+
+        const latestQoo = (blocks) => {
+            if (!blocks) return null;
+            const vals = [
+                latestValue(blocks.download_total),
+                latestValue(blocks.upload_total),
+                latestValue(blocks.download_current),
+                latestValue(blocks.upload_current),
+            ].filter((v) => v !== null && v !== undefined);
+            if (!vals.length) return null;
+            const sum = vals.reduce((x, y) => x + y, 0);
+            return sum / vals.length;
+        };
+        const countQoo = (blocks) => {
+            if (!blocks) return 0;
+            return Math.max(
+                nonNullCount(blocks.download_total),
+                nonNullCount(blocks.upload_total),
+                nonNullCount(blocks.download_current),
+                nonNullCount(blocks.upload_current),
+            );
+        };
+
+        const aLatest = isQoo
+            ? latestQoo(a.qoq_blocks)
+            : isUtilization
+            ? Math.max(latestValue(aDownVals) ?? -Infinity, latestValue(aUpVals) ?? -Infinity)
+            : latestValue(aVals);
+        const bLatest = isQoo
+            ? latestQoo(b.qoq_blocks)
+            : isUtilization
+            ? Math.max(latestValue(bDownVals) ?? -Infinity, latestValue(bUpVals) ?? -Infinity)
+            : latestValue(bVals);
+        const aCount = isQoo
+            ? countQoo(a.qoq_blocks)
+            : isUtilization
+            ? Math.max(nonNullCount(aDownVals), nonNullCount(aUpVals))
+            : nonNullCount(aVals);
+        const bCount = isQoo
+            ? countQoo(b.qoq_blocks)
+            : isUtilization
+            ? Math.max(nonNullCount(bDownVals), nonNullCount(bUpVals))
+            : nonNullCount(bVals);
         const countWeight = this.config.countWeight || 0;
         const minSamples = this.config.minSamples || 0;
 
         const score = (latest, count) => {
             if (latest === null || latest === undefined) return -Infinity;
-            let s = latest + countWeight * (count / 15);
+            let base = latest;
+            if (isQoo) {
+                // QoO: higher is better; show worst first by inverting for sort score.
+                base = -latest;
+            }
+            let s = base + countWeight * (count / 15);
             if (count < minSamples) {
                 s -= 1000; // Heavily de-prioritize sparse data
             }
@@ -348,29 +445,31 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
 export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Download Utilization",
-            icon: "fa-arrow-down",
-            metricKey: "download",
+            title: "Utilization",
+            icon: "fa-chart-line",
+            metricKey: "utilization",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_download.html",
             hideAsns: true,
         });
     }
-    title() { return "Download Utilization"; }
+    title() { return "Utilization"; }
 }
 
 export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Upload Utilization",
-            icon: "fa-arrow-up",
-            metricKey: "upload",
-            colorFn: colorByCapacity,
-            formatFn: (v) => formatLatest(v, "%"),
-            link: "executive_heatmap_upload.html",
+            title: "QoO Heatmap",
+            icon: "fa-bullseye",
+            metricKey: "qoo",
+            colorFn: colorByQoqScore,
+            formatFn: (v) => formatLatest(v, "", 0),
+            link: null,
             hideAsns: true,
+            countWeight: 100,
+            minSamples: 3,
         });
     }
-    title() { return "Upload Utilization"; }
+    title() { return "QoO Heatmap"; }
 }

@@ -3,6 +3,8 @@ mod network_json_transport;
 
 use allocative_derive::Allocative;
 use lqos_utils::{
+    qoq_heatmap::TemporalQoqHeatmap,
+    qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
@@ -90,6 +92,7 @@ impl NetworkJson {
             rtt_buffer: RttBuffer::default(),
             node_type: None,
             heatmap: None,
+            qoq_heatmap: None,
         }];
         if !Self::exists() {
             return Err(NetworkJsonError::FileNotFound);
@@ -239,9 +242,14 @@ impl NetworkJson {
     /// Record a heatmap sample for each site based on the current per-cycle data.
     pub fn record_site_heatmaps(&mut self, enable: bool) {
         if !enable {
-            self.nodes.iter_mut().for_each(|node| node.heatmap = None);
+            self.nodes.iter_mut().for_each(|node| {
+                node.heatmap = None;
+                node.qoq_heatmap = None;
+            });
             return;
         }
+
+        let qoo_profile = crate::active_qoo_profile().ok();
 
         for node in self.nodes.iter_mut() {
             let download_util =
@@ -283,6 +291,34 @@ impl NetworkJson {
                 rtt_p90_up,
                 retransmit_down,
                 retransmit_up,
+            );
+
+            let download_mbps = (node.current_throughput.down as f64 * 8.0) / 1_000_000.0;
+            let upload_mbps = (node.current_throughput.up as f64 * 8.0) / 1_000_000.0;
+            let loss_download = tcp_retransmit_loss_proxy(
+                node.current_tcp_retransmits.down,
+                node.current_tcp_packets.down,
+            );
+            let loss_upload =
+                tcp_retransmit_loss_proxy(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+            let scores = if let Some(profile) = qoo_profile.as_ref() {
+                compute_qoq_scores(
+                    profile.as_ref(),
+                    &node.rtt_buffer,
+                    download_mbps,
+                    upload_mbps,
+                    loss_download,
+                    loss_upload,
+                )
+            } else {
+                QoqScores::default()
+            };
+            let qoq_heatmap = node.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
+            qoq_heatmap.add_sample(
+                scores.download_total_f32(),
+                scores.upload_total_f32(),
+                scores.download_current_f32(),
+                scores.upload_current_f32(),
             );
         }
     }
@@ -336,6 +372,7 @@ fn recurse_node(
             .get("type")
             .map(|v| v.as_str().unwrap_or_default().to_string()),
         heatmap: None,
+        qoq_heatmap: None,
     };
 
     if node.name != "children" {
@@ -369,6 +406,20 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
         return None;
     }
     Some((retransmits as f32 / packets as f32) * 100.0)
+}
+
+fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
+    if packets == 0 {
+        return None;
+    }
+
+    let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
+    const TCP_RETRANSMIT_CONFIDENCE_MAX: f64 = 0.05;
+    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0) * TCP_RETRANSMIT_CONFIDENCE_MAX;
+    Some(LossMeasurement::TcpRetransmitProxy {
+        retransmit_fraction,
+        confidence,
+    })
 }
 
 #[derive(Error, Debug)]

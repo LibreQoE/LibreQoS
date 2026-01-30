@@ -436,6 +436,7 @@ pub fn circuit_heatmaps() -> BusResponse {
     });
 
     let heatmaps = THROUGHPUT_TRACKER.circuit_heatmaps.lock();
+    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
     let mut rows: Vec<CircuitHeatmapData> = heatmaps
         .iter()
         .map(|(hash, heatmap)| {
@@ -448,6 +449,7 @@ pub fn circuit_heatmaps() -> BusResponse {
                 circuit_id,
                 circuit_name,
                 blocks: heatmap.blocks(),
+                qoq_blocks: qoq_heatmaps.get(hash).map(|heatmap| heatmap.blocks()),
             }
         })
         .collect();
@@ -477,6 +479,7 @@ pub fn site_heatmaps() -> BusResponse {
                 node_type: node.node_type.clone(),
                 depth: node.parents.len().saturating_sub(1),
                 blocks: heatmap.blocks(),
+                qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
             })
         })
         .collect();
