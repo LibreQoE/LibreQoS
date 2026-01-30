@@ -16,6 +16,18 @@ pub struct HeatmapBlocks {
     pub upload: [Option<f32>; TOTAL_BLOCKS],
     /// Median RTT values for each block.
     pub rtt: [Option<f32>; TOTAL_BLOCKS],
+    /// RTT 50th percentile (median) for download direction.
+    #[serde(default)]
+    pub rtt_p50_down: [Option<f32>; TOTAL_BLOCKS],
+    /// RTT 50th percentile (median) for upload direction.
+    #[serde(default)]
+    pub rtt_p50_up: [Option<f32>; TOTAL_BLOCKS],
+    /// RTT 90th percentile for download direction.
+    #[serde(default)]
+    pub rtt_p90_down: [Option<f32>; TOTAL_BLOCKS],
+    /// RTT 90th percentile for upload direction.
+    #[serde(default)]
+    pub rtt_p90_up: [Option<f32>; TOTAL_BLOCKS],
     /// Median TCP retransmit percentage values for each block.
     pub retransmit: [Option<f32>; TOTAL_BLOCKS],
 }
@@ -28,10 +40,18 @@ pub struct TemporalHeatmap {
     raw_download: [Option<f32>; RAW_SAMPLES],
     raw_upload: [Option<f32>; RAW_SAMPLES],
     raw_rtt: [Option<f32>; RAW_SAMPLES],
+    raw_rtt_p50_down: [Option<f32>; RAW_SAMPLES],
+    raw_rtt_p50_up: [Option<f32>; RAW_SAMPLES],
+    raw_rtt_p90_down: [Option<f32>; RAW_SAMPLES],
+    raw_rtt_p90_up: [Option<f32>; RAW_SAMPLES],
     raw_retransmit: [Option<f32>; RAW_SAMPLES],
     summary_download: [Option<f32>; SUMMARY_BLOCKS],
     summary_upload: [Option<f32>; SUMMARY_BLOCKS],
     summary_rtt: [Option<f32>; SUMMARY_BLOCKS],
+    summary_rtt_p50_down: [Option<f32>; SUMMARY_BLOCKS],
+    summary_rtt_p50_up: [Option<f32>; SUMMARY_BLOCKS],
+    summary_rtt_p90_down: [Option<f32>; SUMMARY_BLOCKS],
+    summary_rtt_p90_up: [Option<f32>; SUMMARY_BLOCKS],
     summary_retransmit: [Option<f32>; SUMMARY_BLOCKS],
     raw_index: usize,
     raw_filled: usize,
@@ -45,10 +65,18 @@ impl TemporalHeatmap {
             raw_download: [NONE_F32; RAW_SAMPLES],
             raw_upload: [NONE_F32; RAW_SAMPLES],
             raw_rtt: [NONE_F32; RAW_SAMPLES],
+            raw_rtt_p50_down: [NONE_F32; RAW_SAMPLES],
+            raw_rtt_p50_up: [NONE_F32; RAW_SAMPLES],
+            raw_rtt_p90_down: [NONE_F32; RAW_SAMPLES],
+            raw_rtt_p90_up: [NONE_F32; RAW_SAMPLES],
             raw_retransmit: [NONE_F32; RAW_SAMPLES],
             summary_download: [NONE_F32; SUMMARY_BLOCKS],
             summary_upload: [NONE_F32; SUMMARY_BLOCKS],
             summary_rtt: [NONE_F32; SUMMARY_BLOCKS],
+            summary_rtt_p50_down: [NONE_F32; SUMMARY_BLOCKS],
+            summary_rtt_p50_up: [NONE_F32; SUMMARY_BLOCKS],
+            summary_rtt_p90_down: [NONE_F32; SUMMARY_BLOCKS],
+            summary_rtt_p90_up: [NONE_F32; SUMMARY_BLOCKS],
             summary_retransmit: [NONE_F32; SUMMARY_BLOCKS],
             raw_index: 0,
             raw_filled: 0,
@@ -60,17 +88,23 @@ impl TemporalHeatmap {
         &mut self,
         download: f32,
         upload: f32,
-        rtt_down: Option<f32>,
-        rtt_up: Option<f32>,
+        rtt_p50_down: Option<f32>,
+        rtt_p50_up: Option<f32>,
+        rtt_p90_down: Option<f32>,
+        rtt_p90_up: Option<f32>,
         retransmit_down: Option<f32>,
         retransmit_up: Option<f32>,
     ) {
-        let rtt = Self::combine_optional(rtt_down, rtt_up);
+        let rtt = Self::combine_optional(rtt_p50_down, rtt_p50_up);
         let retransmit = Self::combine_optional(retransmit_down, retransmit_up);
 
         self.raw_download[self.raw_index] = Some(download);
         self.raw_upload[self.raw_index] = Some(upload);
         self.raw_rtt[self.raw_index] = rtt;
+        self.raw_rtt_p50_down[self.raw_index] = rtt_p50_down;
+        self.raw_rtt_p50_up[self.raw_index] = rtt_p50_up;
+        self.raw_rtt_p90_down[self.raw_index] = rtt_p90_down;
+        self.raw_rtt_p90_up[self.raw_index] = rtt_p90_up;
         self.raw_retransmit[self.raw_index] = retransmit;
 
         self.raw_index += 1;
@@ -89,22 +123,40 @@ impl TemporalHeatmap {
         let mut download = [None; TOTAL_BLOCKS];
         let mut upload = [None; TOTAL_BLOCKS];
         let mut rtt = [None; TOTAL_BLOCKS];
+        let mut rtt_p50_down = [None; TOTAL_BLOCKS];
+        let mut rtt_p50_up = [None; TOTAL_BLOCKS];
+        let mut rtt_p90_down = [None; TOTAL_BLOCKS];
+        let mut rtt_p90_up = [None; TOTAL_BLOCKS];
         let mut retransmit = [None; TOTAL_BLOCKS];
 
         download[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_download);
         upload[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_upload);
         rtt[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_rtt);
+        rtt_p50_down[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_rtt_p50_down);
+        rtt_p50_up[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_rtt_p50_up);
+        rtt_p90_down[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_rtt_p90_down);
+        rtt_p90_up[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_rtt_p90_up);
         retransmit[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_retransmit);
 
         download[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_download, self.raw_filled);
         upload[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_upload, self.raw_filled);
         rtt[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_rtt, self.raw_filled);
+        rtt_p50_down[TOTAL_BLOCKS - 1] =
+            Self::median_from_raw(&self.raw_rtt_p50_down, self.raw_filled);
+        rtt_p50_up[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_rtt_p50_up, self.raw_filled);
+        rtt_p90_down[TOTAL_BLOCKS - 1] =
+            Self::median_from_raw(&self.raw_rtt_p90_down, self.raw_filled);
+        rtt_p90_up[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_rtt_p90_up, self.raw_filled);
         retransmit[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_retransmit, self.raw_filled);
 
         HeatmapBlocks {
             download,
             upload,
             rtt,
+            rtt_p50_down,
+            rtt_p50_up,
+            rtt_p90_down,
+            rtt_p90_up,
             retransmit,
         }
     }
@@ -122,11 +174,19 @@ impl TemporalHeatmap {
         let median_download = Self::median_from_raw(&self.raw_download, RAW_SAMPLES);
         let median_upload = Self::median_from_raw(&self.raw_upload, RAW_SAMPLES);
         let median_rtt = Self::median_from_raw(&self.raw_rtt, RAW_SAMPLES);
+        let median_rtt_p50_down = Self::median_from_raw(&self.raw_rtt_p50_down, RAW_SAMPLES);
+        let median_rtt_p50_up = Self::median_from_raw(&self.raw_rtt_p50_up, RAW_SAMPLES);
+        let median_rtt_p90_down = Self::median_from_raw(&self.raw_rtt_p90_down, RAW_SAMPLES);
+        let median_rtt_p90_up = Self::median_from_raw(&self.raw_rtt_p90_up, RAW_SAMPLES);
         let median_retransmit = Self::median_from_raw(&self.raw_retransmit, RAW_SAMPLES);
 
         Self::shift_summary(&mut self.summary_download, median_download);
         Self::shift_summary(&mut self.summary_upload, median_upload);
         Self::shift_summary(&mut self.summary_rtt, median_rtt);
+        Self::shift_summary(&mut self.summary_rtt_p50_down, median_rtt_p50_down);
+        Self::shift_summary(&mut self.summary_rtt_p50_up, median_rtt_p50_up);
+        Self::shift_summary(&mut self.summary_rtt_p90_down, median_rtt_p90_down);
+        Self::shift_summary(&mut self.summary_rtt_p90_up, median_rtt_p90_up);
         Self::shift_summary(&mut self.summary_retransmit, median_retransmit);
     }
 
@@ -141,6 +201,10 @@ impl TemporalHeatmap {
         self.raw_download.fill(None);
         self.raw_upload.fill(None);
         self.raw_rtt.fill(None);
+        self.raw_rtt_p50_down.fill(None);
+        self.raw_rtt_p50_up.fill(None);
+        self.raw_rtt_p90_down.fill(None);
+        self.raw_rtt_p90_up.fill(None);
         self.raw_retransmit.fill(None);
         self.raw_index = 0;
         self.raw_filled = 0;
@@ -199,12 +263,14 @@ mod tests {
     #[test]
     fn add_sample_sets_current_block() {
         let mut heatmap = TemporalHeatmap::new();
-        heatmap.add_sample(10.0, 20.0, Some(30.0), None, Some(1.0), Some(3.0));
+        heatmap.add_sample(10.0, 20.0, Some(30.0), None, None, None, Some(1.0), Some(3.0));
 
         let blocks = heatmap.blocks();
         assert_eq!(blocks.download[TOTAL_BLOCKS - 1], Some(10.0));
         assert_eq!(blocks.upload[TOTAL_BLOCKS - 1], Some(20.0));
         assert_eq!(blocks.rtt[TOTAL_BLOCKS - 1], Some(30.0));
+        assert_eq!(blocks.rtt_p50_down[TOTAL_BLOCKS - 1], Some(30.0));
+        assert_eq!(blocks.rtt_p50_up[TOTAL_BLOCKS - 1], None);
         assert_eq!(blocks.retransmit[TOTAL_BLOCKS - 1], Some(2.0));
     }
 
@@ -213,7 +279,7 @@ mod tests {
         let mut heatmap = TemporalHeatmap::new();
         for i in 1..=RAW_SAMPLES {
             let value = i as f32;
-            heatmap.add_sample(value, value + 1.0, None, None, None, None);
+            heatmap.add_sample(value, value + 1.0, None, None, None, None, None, None);
         }
 
         let blocks = heatmap.blocks();
@@ -227,12 +293,14 @@ mod tests {
         let mut heatmap = TemporalHeatmap::new();
         for i in 1..=5 {
             let value = i as f32;
-            heatmap.add_sample(value, value, Some(value), Some(value), None, None);
+            heatmap.add_sample(value, value, Some(value), Some(value), None, None, None, None);
         }
 
         let blocks = heatmap.blocks();
         assert_eq!(blocks.download[TOTAL_BLOCKS - 1], Some(3.0));
         assert_eq!(blocks.upload[TOTAL_BLOCKS - 1], Some(3.0));
         assert_eq!(blocks.rtt[TOTAL_BLOCKS - 1], Some(3.0));
+        assert_eq!(blocks.rtt_p50_down[TOTAL_BLOCKS - 1], Some(3.0));
+        assert_eq!(blocks.rtt_p50_up[TOTAL_BLOCKS - 1], Some(3.0));
     }
 }

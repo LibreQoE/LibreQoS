@@ -2,6 +2,7 @@ import {listenExecutiveHeatmaps, renderTable, getSiteIdMap, linkToCircuit, linkT
 import {
     buildHeatmapRows,
     heatRow,
+    rttHeatRow,
     latestValue,
     nonNullCount,
     formatLatest,
@@ -11,12 +12,12 @@ import {colorByRttMs, colorByRetransmitPct} from "./helpers/color_scales";
 
 const metricConfigs = {
     rtt: {
-        title: "Median RTT Heatmap",
+        title: "RTT (p50/p90) Heatmap",
         metricKey: "rtt",
         colorFn: (v) => colorByRttMs(v, 200),
         formatFn: (v) => formatLatest(v, "ms"),
         icon: "fa-stopwatch",
-        description: "Full list of sites, circuits, and ASNs sorted by latest RTT.",
+        description: "Full list of sites, circuits, and ASNs sorted by latest RTT (p50/p90 quadrants).",
     },
     retransmit: {
         title: "TCP Retransmits Heatmap",
@@ -78,13 +79,23 @@ function renderHeatmapTable(targetId, metricKey) {
                     : row.badge === "Site"
                         ? linkToSite(row.site_name || row.label, siteIdMap)
                         : null;
+                if (metricKey === "rtt") {
+                    return rttHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        cfg.colorFn,
+                        cfg.formatFn,
+                        link,
+                    );
+                }
                 return heatRow(
                     row.label,
                     row.badge,
                     row.blocks[metricKey] || [],
                     cfg.colorFn,
                     cfg.formatFn,
-                    link
+                    link,
                 );
             }).join("");
             activeTarget.innerHTML = `

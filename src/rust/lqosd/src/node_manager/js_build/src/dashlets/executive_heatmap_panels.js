@@ -8,6 +8,7 @@ import {
     latestValue,
     nonNullCount,
     heatRow,
+    rttHeatRow,
     MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
 
@@ -41,22 +42,22 @@ function qoqHeatmapRow(blocks, colorFn) {
 
         const quad = (v) => {
             if (v === null || v === undefined) {
-                return `<div class="qoq-quad empty"></div>`;
+                return `<div class="exec-quad empty"></div>`;
             }
             const numeric = Number(v);
             if (!Number.isFinite(numeric)) {
-                return `<div class="qoq-quad empty"></div>`;
+                return `<div class="exec-quad empty"></div>`;
             }
             const color = colorFn(numeric);
-            return `<div class="qoq-quad" style="background:${color}"></div>`;
+            return `<div class="exec-quad" style="background:${color}"></div>`;
         };
 
         // Quadrants: upload at top, "total" (global) on the left.
         //  TL: upload_total   TR: upload_current
         //  BL: download_total BR: download_current
         cells += `
-            <div class="exec-heat-cell qoq" title="${title}">
-                <div class="qoq-grid">
+            <div class="exec-heat-cell quad" title="${title}">
+                <div class="exec-quad-grid">
                     ${quad(ulTotal)}
                     ${quad(ulCurrent)}
                     ${quad(dlTotal)}
@@ -153,16 +154,25 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             return;
         }
         const rows = [
-            { kind: "qoq", label: "Overall QoQ", badge: "Global", blocks: globalQoq },
-            { label: "Median RTT", badge: "Global", values: global.rtt || [], color: (v) => colorByRttMs(v, 200), format: (v) => formatLatest(v, "ms") },
+            { kind: "qoo", label: "Overall QoO", badge: "Global", blocks: globalQoq },
+            { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
             { label: "TCP Retransmits", badge: "Global", values: global.retransmit || [], color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
             { label: "Download Utilization", badge: "Global", values: global.download || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
             { label: "Upload Utilization", badge: "Global", values: global.upload || [], color: colorByCapacity, format: (v) => formatLatest(v, "%") },
         ];
         const body = rows
             .map((row) => {
-                if (row.kind === "qoq") {
+                if (row.kind === "qoo") {
                     return qoqRow(row.label, row.badge, row.blocks, colorByQoqScore);
+                }
+                if (row.kind === "rtt") {
+                    return rttHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        (v) => colorByRttMs(v, 200),
+                        (v) => formatLatest(v, "ms"),
+                    );
                 }
                 return heatRow(row.label, row.badge, row.values, row.color, row.format);
             })
@@ -200,11 +210,12 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         const target = document.getElementById(this._contentId);
         if (!target) return;
         const rows = buildHeatmapRows(this.lastData || {});
-        if (!rows.length) {
+        const filteredRows = this.config.hideAsns ? rows.filter(row => row.badge !== "ASN") : rows;
+        if (!filteredRows.length) {
             target.innerHTML = this.emptyCard();
             return;
         }
-        const sorted = rows.slice().sort((a, b) => this.metricSort(a, b));
+        const sorted = filteredRows.slice().sort((a, b) => this.metricSort(a, b));
         const limited = sorted.slice(0, MAX_HEATMAP_ROWS);
         getSiteIdMap().then((siteIdMap) => {
             const activeTarget = document.getElementById(this._contentId);
@@ -215,6 +226,16 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                     : row.badge === "Site"
                         ? linkToSite(row.site_name || row.label, siteIdMap)
                         : null;
+                if (this.config.metricKey === "rtt") {
+                    return rttHeatRow(
+                        row.label,
+                        row.badge,
+                        row.blocks,
+                        this.config.colorFn,
+                        this.config.formatFn,
+                        link
+                    );
+                }
                 return heatRow(
                     row.label,
                     row.badge,
@@ -281,6 +302,7 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             link: "executive_heatmap_rtt.html",
             countWeight: 100,
             minSamples: 3,
+            hideAsns: true,
         });
     }
     title() { return "Median RTT"; }
@@ -297,6 +319,7 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
             link: "executive_heatmap_retransmit.html",
             countWeight: 100,
             minSamples: 3,
+            hideAsns: true,
         });
     }
     title() { return "TCP Retransmits"; }
@@ -311,6 +334,7 @@ export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase 
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_download.html",
+            hideAsns: true,
         });
     }
     title() { return "Download Utilization"; }
@@ -325,6 +349,7 @@ export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_upload.html",
+            hideAsns: true,
         });
     }
     title() { return "Upload Utilization"; }

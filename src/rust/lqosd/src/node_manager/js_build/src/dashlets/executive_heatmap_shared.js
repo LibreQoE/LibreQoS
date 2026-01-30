@@ -127,3 +127,82 @@ export function heatRow(label, badge, values, colorFn, formatValue, link = null)
         </div>
     `;
 }
+
+function heatmapRowQuadrants(quads, colorFn, formatValue) {
+    const length = Array.isArray(quads?.ul_p50) && quads.ul_p50.length ? quads.ul_p50.length : 15;
+    let cells = "";
+    for (let i = 0; i < length; i++) {
+        const ulP50 = quads?.ul_p50?.[i];
+        const ulP90 = quads?.ul_p90?.[i];
+        const dlP50 = quads?.dl_p50?.[i];
+        const dlP90 = quads?.dl_p90?.[i];
+
+        const allMissing =
+            (ulP50 === null || ulP50 === undefined) &&
+            (ulP90 === null || ulP90 === undefined) &&
+            (dlP50 === null || dlP50 === undefined) &&
+            (dlP90 === null || dlP90 === undefined);
+        if (allMissing) {
+            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            continue;
+        }
+
+        const fmt = (v) => formatValue(v);
+        const title = [
+            `Block ${i + 1}`,
+            `UL p50: ${fmt(ulP50)}`,
+            `UL p90: ${fmt(ulP90)}`,
+            `DL p50: ${fmt(dlP50)}`,
+            `DL p90: ${fmt(dlP90)}`,
+        ].join(" • ");
+
+        const quad = (v) => {
+            if (v === null || v === undefined) {
+                return `<div class="exec-quad empty"></div>`;
+            }
+            const numeric = Number(v);
+            if (!Number.isFinite(numeric)) {
+                return `<div class="exec-quad empty"></div>`;
+            }
+            const color = colorFn(numeric);
+            return `<div class="exec-quad" style="background:${color}"></div>`;
+        };
+
+        // Quadrants: upload at top, download at bottom. Left=p50, right=p90.
+        cells += `
+            <div class="exec-heat-cell quad" title="${title}">
+                <div class="exec-quad-grid">
+                    ${quad(ulP50)}
+                    ${quad(ulP90)}
+                    ${quad(dlP50)}
+                    ${quad(dlP90)}
+                </div>
+            </div>
+        `;
+    }
+    return cells;
+}
+
+export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
+    const quads = {
+        ul_p50: blocks?.rtt_p50_up || [],
+        ul_p90: blocks?.rtt_p90_up || [],
+        dl_p50: blocks?.rtt_p50_down || [],
+        dl_p90: blocks?.rtt_p90_down || [],
+    };
+    const latest = latestValue(blocks?.rtt || []);
+    const formattedLatest = formatValue(latest);
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    return `
+        <div class="exec-heat-row">
+            <div class="exec-heat-label text-truncate" title="${label}">
+                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
+                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+            </div>
+            <div class="exec-heat-cells">${heatmapRowQuadrants(quads, colorFn, formatValue)}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+        </div>
+    `;
+}

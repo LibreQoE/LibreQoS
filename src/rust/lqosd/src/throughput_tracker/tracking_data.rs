@@ -22,6 +22,7 @@ use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
     temporal_heatmap::TemporalHeatmap,
     qoq_heatmap::TemporalQoqHeatmap,
+    rtt::RttBucket,
     units::{AtomicDownUp, DownUpOrder},
 };
 use lqos_utils::qoo::{LossMeasurement, QoqScores, compute_qoq_scores};
@@ -54,7 +55,6 @@ pub struct ThroughputTracker {
 struct CircuitHeatmapAggregate {
     download_bytes: u64,
     upload_bytes: u64,
-    rtts: Vec<f32>,
     tcp_retransmits: DownUpOrder<u64>,
     tcp_packets: DownUpOrder<u64>,
 }
@@ -115,7 +115,7 @@ impl ThroughputTracker {
         let mut total_upload_bytes: u64 = 0;
         let mut total_retransmits: DownUpOrder<u64> = DownUpOrder::zeroed();
         let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
-        let mut total_rtts: Vec<f32> = Vec::new();
+        let circuit_rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
         {
             let raw_data = self.raw_data.lock();
             for entry in raw_data.values() {
@@ -173,18 +173,13 @@ impl ThroughputTracker {
                     .tcp_retransmits
                     .up
                     .saturating_add(entry.tcp_retransmits.up);
-
-                if let Some(rtt) = entry.median_latency() {
-                    agg.rtts.push(rtt);
-                    total_rtts.push(rtt);
-                }
             }
         }
 
         let mut heatmaps = self.circuit_heatmaps.lock();
         heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
 
-        for (circuit_hash, mut aggregate) in aggregates {
+        for (circuit_hash, aggregate) in aggregates {
             let (max_down_mbps, max_up_mbps) = capacity_lookup
                 .get(&circuit_hash)
                 .copied()
@@ -194,7 +189,22 @@ impl ThroughputTracker {
                 utilization_percent(aggregate.download_bytes, max_down_mbps).unwrap_or(0.0);
             let upload_util =
                 utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
-            let rtt = median(&mut aggregate.rtts);
+            let rtt_p50_down = circuit_rtt_snapshot
+                .get(&circuit_hash)
+                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50))
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p50_up = circuit_rtt_snapshot
+                .get(&circuit_hash)
+                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50))
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_down = circuit_rtt_snapshot
+                .get(&circuit_hash)
+                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90))
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_up = circuit_rtt_snapshot
+                .get(&circuit_hash)
+                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90))
+                .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down =
                 retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
             let retransmit_up =
@@ -206,34 +216,48 @@ impl ThroughputTracker {
             heatmap.add_sample(
                 download_util,
                 upload_util,
-                rtt,
-                rtt,
+                rtt_p50_down,
+                rtt_p50_up,
+                rtt_p90_down,
+                rtt_p90_up,
                 retransmit_down,
                 retransmit_up,
             );
         }
 
+        let mut global_rtt_buffer = RttBuffer::default();
+        for rtt in circuit_rtt_snapshot.values() {
+            global_rtt_buffer.accumulate(rtt);
+        }
+        let global_rtt_p50_down = global_rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+            .map(|rtt| rtt.as_millis() as f32);
+        let global_rtt_p50_up = global_rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+            .map(|rtt| rtt.as_millis() as f32);
+        let global_rtt_p90_down = global_rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+            .map(|rtt| rtt.as_millis() as f32);
+        let global_rtt_p90_up = global_rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+            .map(|rtt| rtt.as_millis() as f32);
+
         let mut global_heatmap = self.global_heatmap.lock();
-        let global_rtt = median(&mut total_rtts);
         let global_retransmit_down =
             retransmit_percent(total_retransmits.down, total_tcp_packets.down);
         let global_retransmit_up = retransmit_percent(total_retransmits.up, total_tcp_packets.up);
         global_heatmap.add_sample(
             utilization_percent(total_download_bytes, global_down_mbps).unwrap_or(0.0),
             utilization_percent(total_upload_bytes, global_up_mbps).unwrap_or(0.0),
-            global_rtt,
-            global_rtt,
+            global_rtt_p50_down,
+            global_rtt_p50_up,
+            global_rtt_p90_down,
+            global_rtt_p90_up,
             global_retransmit_down,
             global_retransmit_up,
         );
 
         // QoQ is derived from RTT histogram + throughput + retransmit proxy.
-        let mut global_rtt_buffer = RttBuffer::default();
-        let circuit_rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
-        for rtt in circuit_rtt_snapshot.values() {
-            global_rtt_buffer.accumulate(rtt);
-        }
-
         let download_mbps = (total_download_bytes as f64 * 8.0) / 1_000_000.0;
         let upload_mbps = (total_upload_bytes as f64 * 8.0) / 1_000_000.0;
         let loss_download =

@@ -3,7 +3,7 @@ mod network_json_transport;
 
 use allocative_derive::Allocative;
 use lqos_utils::{
-    rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData},
+    rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
 };
@@ -250,19 +250,22 @@ impl NetworkJson {
             let upload_util =
                 utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
                     .unwrap_or(0.0);
-            let download = node
+            let rtt_p50_down = node
                 .rtt_buffer
-                .median_new_data(FlowbeeEffectiveDirection::Download);
-            let upload = node
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p50_up = node
                 .rtt_buffer
-                .median_new_data(FlowbeeEffectiveDirection::Upload);
-            let combined = match (download.as_nanos(), upload.as_nanos()) {
-                (0, 0) => None,
-                (d, 0) => Some(RttData::from_nanos(d)),
-                (0, u) => Some(RttData::from_nanos(u)),
-                (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
-            };
-            let median_rtt = combined.map(|rtt| rtt.as_millis() as f32);
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_down = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_up = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+                .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down = retransmit_percent(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
@@ -274,8 +277,10 @@ impl NetworkJson {
             heatmap.add_sample(
                 download_util,
                 upload_util,
-                median_rtt,
-                median_rtt,
+                rtt_p50_down,
+                rtt_p50_up,
+                rtt_p90_down,
+                rtt_p90_up,
                 retransmit_down,
                 retransmit_up,
             );
