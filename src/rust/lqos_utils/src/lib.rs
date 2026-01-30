@@ -28,6 +28,7 @@ pub mod units;
 /// Utilities dealing with Unix Timestamps
 pub mod unix_time;
 mod xdp_ip_address;
+mod qoo;
 
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;

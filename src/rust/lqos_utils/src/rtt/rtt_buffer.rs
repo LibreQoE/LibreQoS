@@ -1,5 +1,5 @@
 use allocative_derive::Allocative;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use smallvec::smallvec;
 
 use super::{FlowbeeEffectiveDirection, RttData};
@@ -146,7 +146,7 @@ impl RttBufferBucket {
 }
 
 /// Which RTT bucket to query.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RttBucket {
     /// Current (time-windowed) bucket.
     Current,
@@ -385,5 +385,36 @@ impl RttBuffer {
             return RttData::from_nanos(0);
         };
         median[0]
+    }
+
+    /// Returns the sample count in the selected histogram scope for a given direction.
+    pub fn sample_count(&self, scope: RttBucket, direction: FlowbeeEffectiveDirection) -> u32 {
+        let target = self.pick_bucket(direction);
+        let buckets = match scope {
+            RttBucket::Current => &target.current_bucket,
+            RttBucket::Total => &target.total_bucket,
+        };
+        buckets.iter().sum()
+    }
+
+    /// Return one percentile (e.g. p95) as an RTT value (bucket upper bound).
+    pub fn percentile(
+        &self,
+        scope: RttBucket,
+        direction: FlowbeeEffectiveDirection,
+        percentile: u8,
+    ) -> Option<RttData> {
+        self.percentiles_from_bucket(scope, direction, &[percentile])
+            .map(|v| v[0])
+    }
+
+    /// Return multiple percentiles in ascending order.
+    pub fn percentiles(
+        &self,
+        scope: RttBucket,
+        direction: FlowbeeEffectiveDirection,
+        percentiles: &[u8],
+    ) -> Option<smallvec::SmallVec<[RttData; 3]>> {
+        self.percentiles_from_bucket(scope, direction, percentiles)
     }
 }

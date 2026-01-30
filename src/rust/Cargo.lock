@@ -2076,6 +2076,7 @@ dependencies = [
  "notify",
  "num-traits",
  "serde",
+ "serde_json",
  "smallvec",
  "thiserror 1.0.69",
  "tracing",
