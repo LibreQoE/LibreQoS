@@ -1,7 +1,7 @@
 use super::{
     RETIRE_AFTER_SECONDS,
     flow_data::{
-        ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttData,
+        ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData,
         get_flowbee_event_count_and_reset, update_asn_heatmaps,
     },
     throughput_entry::ThroughputEntry,
@@ -498,7 +498,7 @@ impl ThroughputTracker {
         _netflow_enabled: bool,
         sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
         net_json_calc: &mut NetworkJson,
-        rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
+        rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
         tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
         expired_keys: &mut Vec<FlowbeeKey>,
     ) {
@@ -587,10 +587,18 @@ impl ThroughputTracker {
                         this_flow.0.set_flags(data.flags);
 
                         if let Some(rtt_buffer) = rtt_buffer.take() {
-                            rtt_for_circuit = Some([
-                                rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
-                                rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
-                            ]);
+                            // Accumulate histogram data per-device so the device median is
+                            // weighted by RTT sample volume (not just per-flow medians).
+                            if key.ip_protocol == 6
+                                && data.end_status == 0
+                                && raw_data.contains_key(&key.local_ip)
+                            {
+                                rtt_circuit_tracker
+                                    .entry(key.local_ip)
+                                    .or_default()
+                                    .accumulate(&rtt_buffer);
+                            }
+
                             this_flow.0.set_rtt_buffer(rtt_buffer);
                         }
                         if enable_asn_heatmaps {
@@ -623,6 +631,15 @@ impl ThroughputTracker {
                             let flow_analysis = FlowAnalysis::new(&key);
                             let mut flow_summary = FlowbeeLocalData::from_flow(&data, &key);
                             if let Some(rtt_buffer) = rtt_buffer.take() {
+                                if key.ip_protocol == 6
+                                    && data.end_status == 0
+                                    && raw_data.contains_key(&key.local_ip)
+                                {
+                                    rtt_circuit_tracker
+                                        .entry(key.local_ip)
+                                        .or_default()
+                                        .accumulate(&rtt_buffer);
+                                }
                                 rtt_for_circuit = Some([
                                     rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
                                     rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
@@ -654,21 +671,6 @@ impl ThroughputTracker {
                         && data.end_status == 0
                         && raw_data.contains_key(&key.local_ip)
                     {
-                        if let Some(rtt) = rtt_for_circuit {
-                            // Add the RTT data to the per-circuit tracker
-                            if let Some(tracker) = rtt_circuit_tracker.get_mut(&key.local_ip) {
-                                if rtt[0].as_nanos() > 0 {
-                                    tracker[0].push(rtt[0]);
-                                }
-                                if rtt[1].as_nanos() > 0 {
-                                    tracker[1].push(rtt[1]);
-                                }
-                            } else if rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0 {
-                                rtt_circuit_tracker
-                                    .insert(key.local_ip, [vec![rtt[0]], vec![rtt[1]]]);
-                            }
-                        }
-
                         // TCP Retries
                         if let Some(retries) = tcp_retries.get_mut(&key.local_ip) {
                             retries.down += data.tcp_retransmits.down as u64;
@@ -691,15 +693,18 @@ impl ThroughputTracker {
             }); // End flow iterator
 
             // Merge in the per-flow RTT data into the per-circuit tracker
-            for (local_ip, rtt_data) in rtt_circuit_tracker {
-                let mut rtts = rtt_data[0]
-                    .iter()
-                    .filter(|r| r.as_nanos() > 0)
-                    .collect::<Vec<_>>();
-                rtts.extend(rtt_data[1].iter().filter(|r| r.as_nanos() > 0));
-                if !rtts.is_empty() {
-                    rtts.sort();
-                    let median = rtts[rtts.len() / 2];
+            for (local_ip, rtt_buffer) in rtt_circuit_tracker {
+                let download = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download);
+                let upload = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload);
+
+                let rtt_median = match (download.as_nanos(), upload.as_nanos()) {
+                    (0, 0) => None,
+                    (d, 0) => Some(RttData::from_nanos(d)),
+                    (0, u) => Some(RttData::from_nanos(u)),
+                    (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
+                };
+
+                if let Some(rtt_median) = rtt_median {
                     if let Some(tracker) = raw_data.get_mut(&local_ip) {
                         // Only apply if the flow has achieved 1 Mbps or more
                         if tracker.bytes_per_second.sum_exceeds(125_000) {
@@ -707,7 +712,7 @@ impl ThroughputTracker {
                             for i in 1..60 {
                                 tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
                             }
-                            tracker.recent_rtt_data[0] = *median;
+                            tracker.recent_rtt_data[0] = rtt_median;
                             tracker.last_fresh_rtt_data_cycle = self_cycle;
                             if let Some(parents) = &tracker.network_json_parents {
                                 if let Some(rtt) = tracker.median_latency() {

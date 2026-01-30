@@ -9,7 +9,7 @@ use self::flow_data::{
 };
 pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
@@ -152,7 +152,7 @@ fn throughput_task(
     let mut timer_metrics = ThroughputTaskTimeMetrics::new();
 
     // Preallocate some buffers to avoid allocations in the loop
-    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
