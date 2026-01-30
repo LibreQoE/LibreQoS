@@ -1038,8 +1038,10 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
     }
 
     let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
-    // Confidence ramps up as we see more packets in this interval; this is a proxy, so remain conservative.
-    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0);
+    // TCP retransmits are only a weak proxy for loss on a transparent bridge. Treat them as low
+    // confidence, even with large sample sizes.
+    const TCP_RETRANSMIT_CONFIDENCE_MAX: f64 = 0.05;
+    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0) * TCP_RETRANSMIT_CONFIDENCE_MAX;
     Some(LossMeasurement::TcpRetransmitProxy {
         retransmit_fraction,
         confidence,
