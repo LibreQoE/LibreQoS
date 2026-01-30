@@ -176,6 +176,49 @@ impl RttBuffer {
         }
     }
 
+    pub(crate) fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub(crate) fn accumulate(&mut self, other: &Self) {
+        fn accumulate_bucket(dst: &mut RttBufferBucket, src: &RttBufferBucket) {
+            for (dst, src) in dst.current_bucket.iter_mut().zip(src.current_bucket.iter()) {
+                *dst = dst.saturating_add(*src);
+            }
+            for (dst, src) in dst.total_bucket.iter_mut().zip(src.total_bucket.iter()) {
+                *dst = dst.saturating_add(*src);
+            }
+
+            dst.has_new_data |= src.has_new_data;
+
+            dst.best_rtt = match (dst.best_rtt, src.best_rtt) {
+                (Some(a), Some(b)) => Some(std::cmp::min(a, b)),
+                (None, Some(b)) => Some(b),
+                (Some(a), None) => Some(a),
+                (None, None) => None,
+            };
+            dst.worst_rtt = match (dst.worst_rtt, src.worst_rtt) {
+                (Some(a), Some(b)) => Some(std::cmp::max(a, b)),
+                (None, Some(b)) => Some(b),
+                (Some(a), None) => Some(a),
+                (None, None) => None,
+            };
+
+            dst.current_bucket_start_time_nanos = match (
+                dst.current_bucket_start_time_nanos,
+                src.current_bucket_start_time_nanos,
+            ) {
+                (0, s) => s,
+                (d, 0) => d,
+                (d, s) => u64::min(d, s),
+            };
+        }
+
+        self.last_seen = u64::max(self.last_seen, other.last_seen);
+        accumulate_bucket(&mut self.download_bucket, &other.download_bucket);
+        accumulate_bucket(&mut self.upload_bucket, &other.upload_bucket);
+    }
+
     pub(crate) fn clear_freshness(&mut self) {
         // Note: called in the collector system
         self.download_bucket.has_new_data = false;
