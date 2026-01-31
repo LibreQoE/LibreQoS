@@ -9,7 +9,6 @@
 //! - Allow UI edits and save back to disk (pretty JSON).
 //!
 //! The JSON format intentionally uses:
-//! - Mbps for throughput
 //! - milliseconds for latency thresholds
 //! - percent for loss thresholds (0..100)
 
@@ -17,9 +16,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
 use crate::qoo::{
-    Baseline, CombineMode, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile,
+    Baseline, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile,
 };
-use crate::rtt::RttBucket;
 
 /// File containing a table of QoO profiles.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,9 +48,9 @@ impl QooProfilesFile {
 
     /// Strict validation (fail fast) so a user can’t silently create nonsense.
     pub fn validate(&self) -> Result<(), ProfileIoError> {
-        if self.schema_version != 1 {
+        if self.schema_version != 2 {
             return Err(ProfileIoError::Validation(vec![format!(
-                "Unsupported schema_version {} (expected 1)",
+                "Unsupported schema_version {} (expected 2)",
                 self.schema_version
             )]));
         }
@@ -149,13 +147,6 @@ pub struct QooProfileSpec {
     #[serde(default)]
     pub description: Option<String>,
 
-    #[serde(default)]
-    pub rtt_scope: RttScopeSpec,
-
-    /// Throughput thresholds in Mbps.
-    pub download_mbps: Range,
-    pub upload_mbps: Range,
-
     /// Usually just [{percentile: 95, ...}] for LibreQoS parity.
     pub latency: Vec<LatencySpec>,
 
@@ -167,20 +158,12 @@ pub struct QooProfileSpec {
     pub latency_normalization: LatencyNormalizationSpec,
 
     #[serde(default)]
-    pub combine: CombineModeSpec,
-
-    #[serde(default)]
     pub loss_handling: LossHandlingSpec,
 }
 
 impl QooProfileSpec {
     /// Convert this wire-format profile into the runtime `QooProfile`.
     pub fn to_runtime(&self) -> QooProfile {
-        let rtt_scope = match self.rtt_scope {
-            RttScopeSpec::Current => RttBucket::Current,
-            RttScopeSpec::Total => RttBucket::Total,
-        };
-
         let latency = self
             .latency
             .iter()
@@ -194,11 +177,6 @@ impl QooProfileSpec {
             (self.loss_percent.low / 100.0).clamp(0.0, 1.0),
             (self.loss_percent.high / 100.0).clamp(0.0, 1.0),
         );
-
-        let combine = match self.combine {
-            CombineModeSpec::IetfLatencyAndLoss => CombineMode::IetfLatencyAndLoss,
-            CombineModeSpec::LibreqosLatencyLossThroughput => CombineMode::LibreQosLatencyLossThroughput,
-        };
 
         let loss_handling = match self.loss_handling {
             LossHandlingSpec::Strict => LossHandling::Strict,
@@ -221,15 +199,8 @@ impl QooProfileSpec {
 
         QooProfile {
             name: self.name.clone(),
-            rtt_scope,
-
-            download_mbps: LowHigh::higher_is_better(self.download_mbps.low, self.download_mbps.high),
-            upload_mbps: LowHigh::higher_is_better(self.upload_mbps.low, self.upload_mbps.high),
-
             latency,
             loss_fraction,
-
-            combine,
             loss_handling,
 
             latency_normalization,
@@ -244,23 +215,6 @@ impl QooProfileSpec {
         }
         if self.name.trim().is_empty() {
             errs.push("name must not be empty".into());
-        }
-
-        // Throughput ranges: higher-is-better, so low <= high.
-        if !(self.download_mbps.low.is_finite() && self.download_mbps.high.is_finite()) {
-            errs.push("download_mbps values must be finite".into());
-        } else if self.download_mbps.low < 0.0 || self.download_mbps.high < 0.0 {
-            errs.push("download_mbps must be >= 0".into());
-        } else if self.download_mbps.low > self.download_mbps.high {
-            errs.push("download_mbps.low must be <= download_mbps.high".into());
-        }
-
-        if !(self.upload_mbps.low.is_finite() && self.upload_mbps.high.is_finite()) {
-            errs.push("upload_mbps values must be finite".into());
-        } else if self.upload_mbps.low < 0.0 || self.upload_mbps.high < 0.0 {
-            errs.push("upload_mbps must be >= 0".into());
-        } else if self.upload_mbps.low > self.upload_mbps.high {
-            errs.push("upload_mbps.low must be <= upload_mbps.high".into());
         }
 
         // Loss in percent.
@@ -314,19 +268,6 @@ impl QooProfileSpec {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RttScopeSpec {
-    Current,
-    Total,
-}
-
-impl Default for RttScopeSpec {
-    fn default() -> Self {
-        RttScopeSpec::Current
-    }
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Range {
     pub low: f64,
@@ -369,19 +310,6 @@ impl Default for LatencyNormalizationSpec {
 pub enum BaselineSpec {
     FixedMs { ms: f64 },
     Percentile { percentile: u8 },
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CombineModeSpec {
-    IetfLatencyAndLoss,
-    LibreqosLatencyLossThroughput,
-}
-
-impl Default for CombineModeSpec {
-    fn default() -> Self {
-        CombineModeSpec::IetfLatencyAndLoss
-    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

@@ -231,8 +231,6 @@ impl ThroughputTracker {
             );
 
             let rtt = circuit_rtt_snapshot.get(&circuit_hash).unwrap_or(&empty_rtt);
-            let download_mbps = (aggregate.download_bytes as f64 * 8.0) / 1_000_000.0;
-            let upload_mbps = (aggregate.upload_bytes as f64 * 8.0) / 1_000_000.0;
             let loss_download =
                 tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
             let loss_upload =
@@ -241,8 +239,6 @@ impl ThroughputTracker {
                 compute_qoq_scores(
                     profile.as_ref(),
                     rtt,
-                    download_mbps,
-                    upload_mbps,
                     loss_download,
                     loss_upload,
                 )
@@ -255,8 +251,6 @@ impl ThroughputTracker {
             qoq_heatmap.add_sample(
                 scores.download_total_f32(),
                 scores.upload_total_f32(),
-                scores.download_current_f32(),
-                scores.upload_current_f32(),
             );
         }
 
@@ -292,9 +286,7 @@ impl ThroughputTracker {
             global_retransmit_up,
         );
 
-        // QoQ is derived from RTT histogram + throughput + retransmit proxy.
-        let download_mbps = (total_download_bytes as f64 * 8.0) / 1_000_000.0;
-        let upload_mbps = (total_upload_bytes as f64 * 8.0) / 1_000_000.0;
+        // QoO is derived from RTT histogram + retransmit proxy.
         let loss_download =
             tcp_retransmit_loss_proxy(total_retransmits.down, total_tcp_packets.down);
         let loss_upload = tcp_retransmit_loss_proxy(total_retransmits.up, total_tcp_packets.up);
@@ -303,8 +295,6 @@ impl ThroughputTracker {
             compute_qoq_scores(
                 profile.as_ref(),
                 &global_rtt_buffer,
-                download_mbps,
-                upload_mbps,
                 loss_download,
                 loss_upload,
             )
@@ -315,8 +305,6 @@ impl ThroughputTracker {
         self.global_qoq_heatmap.lock().add_sample(
             scores.download_total_f32(),
             scores.upload_total_f32(),
-            scores.download_current_f32(),
-            scores.upload_current_f32(),
         );
     }
 
@@ -709,10 +697,6 @@ impl ThroughputTracker {
                             if let (Some(profile), Some(tcp_info)) =
                                 (qoo_profile.as_ref(), this_flow.0.tcp_info.as_ref())
                             {
-                                let download_mbps =
-                                    this_flow.0.rate_estimate_bps.down as f64 / 1_000_000.0;
-                                let upload_mbps =
-                                    this_flow.0.rate_estimate_bps.up as f64 / 1_000_000.0;
                                 let loss_download = tcp_retransmit_loss_proxy(
                                     this_flow.0.tcp_retransmits.down as u64,
                                     this_flow.0.packets_sent.down,
@@ -724,8 +708,6 @@ impl ThroughputTracker {
                                 let scores = compute_qoq_scores(
                                     profile.as_ref(),
                                     &tcp_info.rtt,
-                                    download_mbps,
-                                    upload_mbps,
                                     loss_download,
                                     loss_upload,
                                 );
@@ -783,10 +765,6 @@ impl ThroughputTracker {
                                 if let (Some(profile), Some(tcp_info)) =
                                     (qoo_profile.as_ref(), flow_summary.tcp_info.as_ref())
                                 {
-                                    let download_mbps =
-                                        flow_summary.rate_estimate_bps.down as f64 / 1_000_000.0;
-                                    let upload_mbps =
-                                        flow_summary.rate_estimate_bps.up as f64 / 1_000_000.0;
                                     let loss_download = tcp_retransmit_loss_proxy(
                                         flow_summary.tcp_retransmits.down as u64,
                                         flow_summary.packets_sent.down,
@@ -798,8 +776,6 @@ impl ThroughputTracker {
                                     let scores = compute_qoq_scores(
                                         profile.as_ref(),
                                         &tcp_info.rtt,
-                                        download_mbps,
-                                        upload_mbps,
                                         loss_download,
                                         loss_upload,
                                     );

@@ -1,20 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "default_profile_id": "web_browsing",
   "profiles": [
     {
       "id": "web_browsing",
       "name": "Web browsing",
       "description": "High quality targets responsive page loads; minimum quality defines acceptable interactivity.",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 5.0,
-        "high": 25.0
-      },
-      "upload_mbps": {
-        "low": 3.0,
-        "high": 5.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -29,22 +20,12 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
       "id": "video_streaming",
       "name": "Video streaming",
       "description": "Throughput dominates; high quality down target uses 50 Mbps (table range is 50-100).",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 10.0,
-        "high": 25.0
-      },
-      "upload_mbps": {
-        "low": 1.0,
-        "high": 5.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -59,22 +40,12 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
       "id": "video_conferencing",
       "name": "Video conferencing",
       "description": "Interactive calls need low latency and loss with substantial upstream capacity.",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 3.0,
-        "high": 5.0
-      },
-      "upload_mbps": {
-        "low": 3.0,
-        "high": 5.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -89,22 +60,12 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
       "id": "audio_streaming",
       "name": "Audio streaming",
       "description": "Consistent throughput with moderate latency and loss sensitivity.",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 0.4,
-        "high": 9.0
-      },
-      "upload_mbps": {
-        "low": 0.1,
-        "high": 1.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -119,22 +80,12 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
       "id": "online_backup",
       "name": "Online backup",
       "description": "Upload-heavy use case; download needs are minimal while upstream benefits greatly.",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 1.0,
-        "high": 2.0
-      },
-      "upload_mbps": {
-        "low": 4.0,
-        "high": 20.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -149,22 +100,12 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
       "id": "real_time_gaming",
       "name": "Real-time gaming",
       "description": "Low latency and low loss are key; throughput targets mirror general interactive needs.",
-      "rtt_scope": "current",
-      "download_mbps": {
-        "low": 5.0,
-        "high": 10.0
-      },
-      "upload_mbps": {
-        "low": 3.0,
-        "high": 5.0
-      },
       "latency": [
         {
           "percentile": 95,
@@ -179,7 +120,6 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     }
   ]

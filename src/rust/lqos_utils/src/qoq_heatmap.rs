@@ -2,7 +2,6 @@
 //!
 //! This mirrors the structure of `temporal_heatmap`, but stores four QoQ series:
 //! - download_total, upload_total
-//! - download_current, upload_current
 
 const RAW_SAMPLES: usize = 60;
 const SUMMARY_BLOCKS: usize = 14;
@@ -16,8 +15,6 @@ use serde::{Deserialize, Serialize};
 pub struct QoqHeatmapBlocks {
     pub download_total: [Option<f32>; TOTAL_BLOCKS],
     pub upload_total: [Option<f32>; TOTAL_BLOCKS],
-    pub download_current: [Option<f32>; TOTAL_BLOCKS],
-    pub upload_current: [Option<f32>; TOTAL_BLOCKS],
 }
 
 /// Fixed-size rolling QoQ heatmap storage for 15 minutes of data.
@@ -25,12 +22,8 @@ pub struct QoqHeatmapBlocks {
 pub struct TemporalQoqHeatmap {
     raw_download_total: [Option<f32>; RAW_SAMPLES],
     raw_upload_total: [Option<f32>; RAW_SAMPLES],
-    raw_download_current: [Option<f32>; RAW_SAMPLES],
-    raw_upload_current: [Option<f32>; RAW_SAMPLES],
     summary_download_total: [Option<f32>; SUMMARY_BLOCKS],
     summary_upload_total: [Option<f32>; SUMMARY_BLOCKS],
-    summary_download_current: [Option<f32>; SUMMARY_BLOCKS],
-    summary_upload_current: [Option<f32>; SUMMARY_BLOCKS],
     raw_index: usize,
     raw_filled: usize,
 }
@@ -41,28 +34,16 @@ impl TemporalQoqHeatmap {
         Self {
             raw_download_total: [NONE_F32; RAW_SAMPLES],
             raw_upload_total: [NONE_F32; RAW_SAMPLES],
-            raw_download_current: [NONE_F32; RAW_SAMPLES],
-            raw_upload_current: [NONE_F32; RAW_SAMPLES],
             summary_download_total: [NONE_F32; SUMMARY_BLOCKS],
             summary_upload_total: [NONE_F32; SUMMARY_BLOCKS],
-            summary_download_current: [NONE_F32; SUMMARY_BLOCKS],
-            summary_upload_current: [NONE_F32; SUMMARY_BLOCKS],
             raw_index: 0,
             raw_filled: 0,
         }
     }
 
-    pub fn add_sample(
-        &mut self,
-        download_total: Option<f32>,
-        upload_total: Option<f32>,
-        download_current: Option<f32>,
-        upload_current: Option<f32>,
-    ) {
+    pub fn add_sample(&mut self, download_total: Option<f32>, upload_total: Option<f32>) {
         self.raw_download_total[self.raw_index] = download_total;
         self.raw_upload_total[self.raw_index] = upload_total;
-        self.raw_download_current[self.raw_index] = download_current;
-        self.raw_upload_current[self.raw_index] = upload_current;
 
         self.raw_index += 1;
         if self.raw_filled < RAW_SAMPLES {
@@ -78,41 +59,26 @@ impl TemporalQoqHeatmap {
     pub fn blocks(&self) -> QoqHeatmapBlocks {
         let mut download_total = [None; TOTAL_BLOCKS];
         let mut upload_total = [None; TOTAL_BLOCKS];
-        let mut download_current = [None; TOTAL_BLOCKS];
-        let mut upload_current = [None; TOTAL_BLOCKS];
 
         download_total[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_download_total);
         upload_total[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_upload_total);
-        download_current[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_download_current);
-        upload_current[..SUMMARY_BLOCKS].copy_from_slice(&self.summary_upload_current);
 
         download_total[TOTAL_BLOCKS - 1] =
             Self::median_from_raw(&self.raw_download_total, self.raw_filled);
         upload_total[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_upload_total, self.raw_filled);
-        download_current[TOTAL_BLOCKS - 1] =
-            Self::median_from_raw(&self.raw_download_current, self.raw_filled);
-        upload_current[TOTAL_BLOCKS - 1] =
-            Self::median_from_raw(&self.raw_upload_current, self.raw_filled);
 
         QoqHeatmapBlocks {
             download_total,
             upload_total,
-            download_current,
-            upload_current,
         }
     }
 
     fn push_summary_block(&mut self) {
         let median_download_total = Self::median_from_raw(&self.raw_download_total, RAW_SAMPLES);
         let median_upload_total = Self::median_from_raw(&self.raw_upload_total, RAW_SAMPLES);
-        let median_download_current =
-            Self::median_from_raw(&self.raw_download_current, RAW_SAMPLES);
-        let median_upload_current = Self::median_from_raw(&self.raw_upload_current, RAW_SAMPLES);
 
         Self::shift_summary(&mut self.summary_download_total, median_download_total);
         Self::shift_summary(&mut self.summary_upload_total, median_upload_total);
-        Self::shift_summary(&mut self.summary_download_current, median_download_current);
-        Self::shift_summary(&mut self.summary_upload_current, median_upload_current);
     }
 
     fn shift_summary(target: &mut [Option<f32>; SUMMARY_BLOCKS], value: Option<f32>) {
@@ -125,8 +91,6 @@ impl TemporalQoqHeatmap {
     fn clear_raw_buffers(&mut self) {
         self.raw_download_total.fill(None);
         self.raw_upload_total.fill(None);
-        self.raw_download_current.fill(None);
-        self.raw_upload_current.fill(None);
         self.raw_index = 0;
         self.raw_filled = 0;
     }
@@ -176,19 +140,14 @@ mod tests {
         let blocks = heatmap.blocks();
         assert!(blocks.download_total.iter().all(|v| v.is_none()));
         assert!(blocks.upload_total.iter().all(|v| v.is_none()));
-        assert!(blocks.download_current.iter().all(|v| v.is_none()));
-        assert!(blocks.upload_current.iter().all(|v| v.is_none()));
     }
 
     #[test]
     fn add_sample_sets_current_block() {
         let mut heatmap = TemporalQoqHeatmap::new();
-        heatmap.add_sample(Some(10.0), Some(20.0), Some(30.0), None);
+        heatmap.add_sample(Some(10.0), Some(20.0));
         let blocks = heatmap.blocks();
         assert_eq!(blocks.download_total[TOTAL_BLOCKS - 1], Some(10.0));
         assert_eq!(blocks.upload_total[TOTAL_BLOCKS - 1], Some(20.0));
-        assert_eq!(blocks.download_current[TOTAL_BLOCKS - 1], Some(30.0));
-        assert_eq!(blocks.upload_current[TOTAL_BLOCKS - 1], None);
     }
 }
-

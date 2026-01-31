@@ -15,20 +15,19 @@ import {
 } from "./executive_heatmap_shared";
 
 function qoqHeatmapRow(blocks, colorFn) {
-    const length = Array.isArray(blocks?.download_total) ? blocks.download_total.length : 15;
+    const length =
+        Array.isArray(blocks?.upload_total) && blocks.upload_total.length
+            ? blocks.upload_total.length
+            : (Array.isArray(blocks?.download_total) && blocks.download_total.length ? blocks.download_total.length : 15);
     const fmt = (v) => formatLatest(v, "", 0);
     let cells = "";
     for (let i = 0; i < length; i++) {
-        const dlTotal = blocks?.download_total?.[i];
         const ulTotal = blocks?.upload_total?.[i];
-        const dlCurrent = blocks?.download_current?.[i];
-        const ulCurrent = blocks?.upload_current?.[i];
+        const dlTotal = blocks?.download_total?.[i];
 
         const allMissing =
             (dlTotal === null || dlTotal === undefined) &&
-            (ulTotal === null || ulTotal === undefined) &&
-            (dlCurrent === null || dlCurrent === undefined) &&
-            (ulCurrent === null || ulCurrent === undefined);
+            (ulTotal === null || ulTotal === undefined);
         if (allMissing) {
             cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
             continue;
@@ -37,33 +36,27 @@ function qoqHeatmapRow(blocks, colorFn) {
         const title = [
             `Block ${i + 1}`,
             `UL Total: ${fmt(ulTotal)}`,
-            `UL Current: ${fmt(ulCurrent)}`,
             `DL Total: ${fmt(dlTotal)}`,
-            `DL Current: ${fmt(dlCurrent)}`,
         ].join(" • ");
 
-        const quad = (v) => {
+        const part = (v) => {
             if (v === null || v === undefined) {
-                return `<div class="exec-quad empty"></div>`;
+                return `<div class="exec-split empty"></div>`;
             }
             const numeric = Number(v);
             if (!Number.isFinite(numeric)) {
-                return `<div class="exec-quad empty"></div>`;
+                return `<div class="exec-split empty"></div>`;
             }
             const color = colorFn(numeric);
-            return `<div class="exec-quad" style="background:${color}"></div>`;
+            return `<div class="exec-split" style="background:${color}"></div>`;
         };
 
-        // Quadrants: upload at top, "total" (global) on the left.
-        //  TL: upload_total   TR: upload_current
-        //  BL: download_total BR: download_current
+        // Top = upload, bottom = download.
         cells += `
-            <div class="exec-heat-cell quad" title="${title}">
-                <div class="exec-quad-grid">
-                    ${quad(ulTotal)}
-                    ${quad(ulCurrent)}
-                    ${quad(dlTotal)}
-                    ${quad(dlCurrent)}
+            <div class="exec-heat-cell split" title="${title}">
+                <div class="exec-split-grid">
+                    ${part(ulTotal)}
+                    ${part(dlTotal)}
                 </div>
             </div>
         `;
@@ -71,22 +64,15 @@ function qoqHeatmapRow(blocks, colorFn) {
     return cells;
 }
 
-function qoqLatest(blocks) {
-    if (!blocks) return null;
-    const values = [
-        latestValue(blocks.download_total),
-        latestValue(blocks.upload_total),
-        latestValue(blocks.download_current),
-        latestValue(blocks.upload_current),
-    ].filter((v) => v !== null && v !== undefined);
-    if (!values.length) return null;
-    const sum = values.reduce((a, b) => a + b, 0);
-    return sum / values.length;
-}
-
 function qoqRow(label, badge, blocks, colorFn) {
-    const latest = qoqLatest(blocks);
-    const formattedLatest = formatLatest(latest, "", 0);
+    const topValues = blocks?.upload_total || [];
+    const bottomValues = blocks?.download_total || [];
+    const latestTop = latestValue(topValues);
+    const latestBottom = latestValue(bottomValues);
+    const formattedLatest = `
+        <div>${formatLatest(latestTop, "", 0)}</div>
+        <div>${formatLatest(latestBottom, "", 0)}</div>
+    `;
     return `
         <div class="exec-heat-row">
             <div class="exec-heat-label text-truncate" title="${label}">
@@ -94,14 +80,20 @@ function qoqRow(label, badge, blocks, colorFn) {
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
             <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorFn)}</div>
-            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
 }
 
 function qoqHeatRow(label, badge, blocks, link = null) {
-    const latest = qoqLatest(blocks);
-    const formattedLatest = formatLatest(latest, "", 0);
+    const topValues = blocks?.upload_total || [];
+    const bottomValues = blocks?.download_total || [];
+    const latestTop = latestValue(topValues);
+    const latestBottom = latestValue(bottomValues);
+    const formattedLatest = `
+        <div>${formatLatest(latestTop, "", 0)}</div>
+        <div>${formatLatest(latestBottom, "", 0)}</div>
+    `;
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
@@ -112,7 +104,7 @@ function qoqHeatRow(label, badge, blocks, link = null) {
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
             <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorByQoqScore)}</div>
-            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
 }
@@ -346,8 +338,6 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             const vals = [
                 latestValue(blocks.download_total),
                 latestValue(blocks.upload_total),
-                latestValue(blocks.download_current),
-                latestValue(blocks.upload_current),
             ].filter((v) => v !== null && v !== undefined);
             if (!vals.length) return null;
             const sum = vals.reduce((x, y) => x + y, 0);
@@ -358,8 +348,6 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             return Math.max(
                 nonNullCount(blocks.download_total),
                 nonNullCount(blocks.upload_total),
-                nonNullCount(blocks.download_current),
-                nonNullCount(blocks.upload_current),
             );
         };
 

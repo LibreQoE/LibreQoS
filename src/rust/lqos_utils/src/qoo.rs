@@ -2,7 +2,6 @@
 //!
 //! This module implements the QoO scoring math described in
 //! draft-ietf-ippm-qoo-06 §7.1 (Latency Component, Packet Loss Component, Overall QoO). It also
-//! provides a LibreQoS-oriented combination mode that includes throughput in the final `min()`.
 //!
 //! Key design points for LibreQoS:
 //! - Profiles are configured with **two thresholds** per metric: a "good/target" threshold and a
@@ -147,14 +146,8 @@ pub enum LossHandling {
 }
 
 /// Whether to compute overall QoO as:
-/// - Draft-defined min(latency, loss), or
-/// - LibreQoS-oriented min(latency, loss, download_throughput, upload_throughput).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CombineMode {
-    IetfLatencyAndLoss,
-    LibreQosLatencyLossThroughput,
-}
-
+/// - Draft-defined min(latency, loss).
+///
 /// Latency bias/normalization options.
 ///
 /// Use cases:
@@ -186,20 +179,12 @@ pub enum Baseline {
 pub struct QooProfile {
     pub name: String,
 
-    /// Whether to use a windowed bucket or lifetime/total bucket.
-    pub rtt_scope: RttBucket,
-
-    /// Throughput thresholds in Mbps (higher is better).
-    pub download_mbps: LowHigh,
-    pub upload_mbps: LowHigh,
-
     /// One or more latency percentiles (lower is better).
     pub latency: Vec<LatencyReq>,
 
     /// Loss thresholds as a FRACTION (0.01 = 1%), lower is better.
     pub loss_fraction: LowHigh,
 
-    pub combine: CombineMode,
     pub loss_handling: LossHandling,
 
     /// Optional baseline/bias handling for latency.
@@ -262,10 +247,6 @@ pub struct QooInput<'a> {
     /// RTT stats for the entity you’re scoring (subscriber / site / etc).
     pub rtt: &'a RttBuffer,
 
-    /// Typically: shaper rate / plan rate in Mbps.
-    pub download_mbps: f64,
-    pub upload_mbps: f64,
-
     /// Loss (or proxy) measurement.
     pub loss: Option<LossMeasurement>,
 }
@@ -280,9 +261,6 @@ pub struct QooComponents {
     pub loss_strict: Option<f64>,
     pub loss_effective: Option<f64>,
     pub loss_confidence: Option<f64>,
-
-    pub throughput_download: Option<f64>,
-    pub throughput_upload: Option<f64>,
 }
 
 /// Measured/raw values (useful for debugging and presenting in the GUI).
@@ -300,9 +278,6 @@ pub struct QooMeasured {
     /// Baseline/offset used for normalization (if any).
     pub latency_baseline_download_ms: Option<f64>,
     pub latency_baseline_upload_ms: Option<f64>,
-
-    pub download_mbps: Option<f64>,
-    pub upload_mbps: Option<f64>,
 
     /// Packet loss fraction (0..1) or proxy.
     pub loss_fraction: Option<f64>,
@@ -323,29 +298,22 @@ pub struct QooResult {
 /// - Latency scoring: compute a score for each latency percentile requirement and take the minimum.
 /// - Download vs upload latency: computed separately; `latency_worst` is `min(dl, ul)`.
 /// - Loss scoring: a single score based on overall loss fraction (or proxy).
-/// - Overall: min of component scores as specified by `profile.combine`.
+/// - Overall: min(latency_worst, loss_effective).
 pub fn compute_qoo(profile: &QooProfile, input: &QooInput<'_>) -> QooResult {
     let mut out = QooResult::default();
-
-    // Throughput components.
-    out.measured.download_mbps = Some(input.download_mbps);
-    out.measured.upload_mbps = Some(input.upload_mbps);
-
-    out.components.throughput_download = Some(profile.download_mbps.score(input.download_mbps));
-    out.components.throughput_upload = Some(profile.upload_mbps.score(input.upload_mbps));
 
     // Latency components from RTT histograms.
     let dl = latency_for_direction(
         profile,
         input.rtt,
         FlowbeeEffectiveDirection::Download,
-        profile.rtt_scope,
+        RttBucket::Total,
     );
     let ul = latency_for_direction(
         profile,
         input.rtt,
         FlowbeeEffectiveDirection::Upload,
-        profile.rtt_scope,
+        RttBucket::Total,
     );
 
     out.components.latency_download = dl.score;
@@ -385,24 +353,9 @@ pub fn compute_qoo(profile: &QooProfile, input: &QooInput<'_>) -> QooResult {
     }
 
     // Combine into overall.
-    out.overall = match profile.combine {
-        CombineMode::IetfLatencyAndLoss => match (out.components.latency_worst, out.components.loss_effective) {
-            (Some(l), Some(p)) => Some(l.min(p)),
-            _ => None,
-        },
-        CombineMode::LibreQosLatencyLossThroughput => {
-            let latency = out.components.latency_worst;
-            let loss = out.components.loss_effective;
-
-            if let (Some(latency), Some(loss)) = (latency, loss) {
-                let td = out.components.throughput_download.unwrap_or(100.0);
-                let tu = out.components.throughput_upload.unwrap_or(100.0);
-
-                Some(latency.min(loss).min(td).min(tu))
-            } else {
-                None
-            }
-        }
+    out.overall = match (out.components.latency_worst, out.components.loss_effective) {
+        (Some(l), Some(p)) => Some(l.min(p)),
+        _ => None,
     };
 
     out
@@ -482,15 +435,13 @@ fn latency_for_direction(
 
 pub const QOQ_UNKNOWN: u8 = 255;
 
-/// QoQ scores for download/upload across both histogram scopes (Total vs Current).
+/// QoO/QoQ scores for download/upload.
 ///
 /// Values are 0..100, with `QOQ_UNKNOWN` meaning "insufficient data".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Allocative)]
 pub struct QoqScores {
     pub download_total: u8,
     pub upload_total: u8,
-    pub download_current: u8,
-    pub upload_current: u8,
 }
 
 impl Default for QoqScores {
@@ -498,8 +449,6 @@ impl Default for QoqScores {
         Self {
             download_total: QOQ_UNKNOWN,
             upload_total: QOQ_UNKNOWN,
-            download_current: QOQ_UNKNOWN,
-            upload_current: QOQ_UNKNOWN,
         }
     }
 }
@@ -513,16 +462,6 @@ impl QoqScores {
     #[inline]
     pub fn upload_total_f32(self) -> Option<f32> {
         (self.upload_total != QOQ_UNKNOWN).then(|| self.upload_total as f32)
-    }
-
-    #[inline]
-    pub fn download_current_f32(self) -> Option<f32> {
-        (self.download_current != QOQ_UNKNOWN).then(|| self.download_current as f32)
-    }
-
-    #[inline]
-    pub fn upload_current_f32(self) -> Option<f32> {
-        (self.upload_current != QOQ_UNKNOWN).then(|| self.upload_current as f32)
     }
 }
 
@@ -544,52 +483,38 @@ fn loss_effective(profile: &QooProfile, loss: LossMeasurement) -> f64 {
     }
 }
 
-fn combine_directional(
-    profile: &QooProfile,
-    latency: Option<f64>,
-    loss: Option<f64>,
-    throughput: f64,
-) -> Option<f64> {
-    match profile.combine {
-        CombineMode::IetfLatencyAndLoss => match (latency, loss) {
-            (Some(l), Some(p)) => Some(l.min(p)),
-            _ => None,
-        },
-        CombineMode::LibreQosLatencyLossThroughput => match (latency, loss) {
-            (Some(l), Some(p)) => Some(l.min(p).min(throughput)),
-            _ => None,
-        },
+fn combine_directional(latency: Option<f64>, loss: Option<f64>) -> Option<f64> {
+    match (latency, loss) {
+        (Some(l), Some(p)) => Some(l.min(p)),
+        _ => None,
     }
 }
 
-/// Compute QoQ scores (0..100) for download/upload directions using both RTT histogram scopes:
-/// `RttBucket::Total` and `RttBucket::Current`.
-///
-/// The only difference between Total vs Current outputs is the RTT bucket scope used for latency.
+/// Compute QoO/QoQ scores (0..100) for download/upload directions using the RTT histogram
+/// `RttBucket::Total`.
 pub fn compute_qoq_scores(
     profile: &QooProfile,
     rtt: &RttBuffer,
-    download_mbps: f64,
-    upload_mbps: f64,
     loss_download: Option<LossMeasurement>,
     loss_upload: Option<LossMeasurement>,
 ) -> QoqScores {
-    let throughput_download = profile.download_mbps.score(download_mbps);
-    let throughput_upload = profile.upload_mbps.score(upload_mbps);
-
     let loss_download = loss_download.map(|l| loss_effective(profile, l));
     let loss_upload = loss_upload.map(|l| loss_effective(profile, l));
 
-    let dl_current = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Download, RttBucket::Current).score;
-    let ul_current = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Current).score;
-    let dl_total = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Download, RttBucket::Total).score;
-    let ul_total = latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total).score;
+    let dl_total = latency_for_direction(
+        profile,
+        rtt,
+        FlowbeeEffectiveDirection::Download,
+        RttBucket::Total,
+    )
+    .score;
+    let ul_total =
+        latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total)
+            .score;
 
     QoqScores {
-        download_total: score_to_u8(combine_directional(profile, dl_total, loss_download, throughput_download)),
-        upload_total: score_to_u8(combine_directional(profile, ul_total, loss_upload, throughput_upload)),
-        download_current: score_to_u8(combine_directional(profile, dl_current, loss_download, throughput_download)),
-        upload_current: score_to_u8(combine_directional(profile, ul_current, loss_upload, throughput_upload)),
+        download_total: score_to_u8(combine_directional(dl_total, loss_download)),
+        upload_total: score_to_u8(combine_directional(ul_total, loss_upload)),
     }
 }
 

@@ -293,8 +293,6 @@ impl NetworkJson {
                 retransmit_up,
             );
 
-            let download_mbps = (node.current_throughput.down as f64 * 8.0) / 1_000_000.0;
-            let upload_mbps = (node.current_throughput.up as f64 * 8.0) / 1_000_000.0;
             let loss_download = tcp_retransmit_loss_proxy(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
@@ -305,8 +303,6 @@ impl NetworkJson {
                 compute_qoq_scores(
                     profile.as_ref(),
                     &node.rtt_buffer,
-                    download_mbps,
-                    upload_mbps,
                     loss_download,
                     loss_upload,
                 )
@@ -317,8 +313,6 @@ impl NetworkJson {
             qoq_heatmap.add_sample(
                 scores.download_total_f32(),
                 scores.upload_total_f32(),
-                scores.download_current_f32(),
-                scores.upload_current_f32(),
             );
         }
     }
