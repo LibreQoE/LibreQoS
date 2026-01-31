@@ -608,6 +608,7 @@ impl ThroughputTracker {
         let enable_asn_heatmaps = lqos_config::load_config()
             .map(|config| config.enable_asn_heatmaps)
             .unwrap_or(true);
+        let qoo_profile = lqos_config::active_qoo_profile().ok();
         let mut asn_aggregates: FxHashMap<u32, AsnAggregate> = FxHashMap::default();
         let mut add_asn_sample = |asn: u32,
                                   bytes: DownUpOrder<u64>,
@@ -702,6 +703,71 @@ impl ThroughputTracker {
 
                             this_flow.0.set_rtt_buffer(rtt_buffer);
                         }
+
+                        // DEBUG: FLOW_QOO_DEBUG - remove when QoO flow scoring is stable.
+                        if key.ip_protocol == 6 {
+                            if let Some(profile) = qoo_profile.as_ref() {
+                                let download_mbps =
+                                    this_flow.0.rate_estimate_bps.down as f64 / 1_000_000.0;
+                                let upload_mbps =
+                                    this_flow.0.rate_estimate_bps.up as f64 / 1_000_000.0;
+                                let loss_download = tcp_retransmit_loss_proxy(
+                                    this_flow.0.tcp_retransmits.down as u64,
+                                    this_flow.0.packets_sent.down,
+                                );
+                                let loss_upload = tcp_retransmit_loss_proxy(
+                                    this_flow.0.tcp_retransmits.up as u64,
+                                    this_flow.0.packets_sent.up,
+                                );
+
+                                let scores = this_flow.0.tcp_info.as_ref().map(|tcp_info| {
+                                    compute_qoq_scores(
+                                        profile.as_ref(),
+                                        &tcp_info.rtt,
+                                        download_mbps,
+                                        upload_mbps,
+                                        loss_download,
+                                        loss_upload,
+                                    )
+                                });
+
+                                if let Some(scores) = scores {
+                                    this_flow.0.set_qoq_scores(scores);
+
+                                    let rtt = this_flow.0.get_rtt_array();
+                                    let has_rtt = rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0;
+                                    let missing_score =
+                                        scores.download_current_f32().is_none()
+                                            || scores.upload_current_f32().is_none();
+                                    if has_rtt && missing_score {
+                                        if let Some(tcp_info) = this_flow.0.tcp_info.as_ref() {
+                                            let dl_samples = tcp_info.rtt.sample_count(
+                                                RttBucket::Current,
+                                                FlowbeeEffectiveDirection::Download,
+                                            );
+                                            let ul_samples = tcp_info.rtt.sample_count(
+                                                RttBucket::Current,
+                                                FlowbeeEffectiveDirection::Upload,
+                                            );
+                                            tracing::warn!(
+                                                "[FLOW_QOO_DEBUG] missing per-flow QoO despite RTT. \
+                                                rtt_samples_current(dl={}, ul={}) packets_total(dl={}, ul={}) \
+                                                flow={}:{:?}->{:?}:{}, proto={}",
+                                                dl_samples,
+                                                ul_samples,
+                                                this_flow.0.packets_sent.down,
+                                                this_flow.0.packets_sent.up,
+                                                key.local_ip,
+                                                key.src_port,
+                                                key.remote_ip,
+                                                key.dst_port,
+                                                key.ip_protocol
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if enable_asn_heatmaps {
                             let flow_rtt = combine_rtt_ms(this_flow.0.get_rtt_array());
                             add_asn_sample(
@@ -746,6 +812,73 @@ impl ThroughputTracker {
                                     rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
                                 ]);
                                 flow_summary.set_rtt_buffer(rtt_buffer);
+                            }
+
+                            // DEBUG: FLOW_QOO_DEBUG - remove when QoO flow scoring is stable.
+                            if key.ip_protocol == 6 {
+                                if let Some(profile) = qoo_profile.as_ref() {
+                                    let download_mbps =
+                                        flow_summary.rate_estimate_bps.down as f64 / 1_000_000.0;
+                                    let upload_mbps =
+                                        flow_summary.rate_estimate_bps.up as f64 / 1_000_000.0;
+                                    let loss_download = tcp_retransmit_loss_proxy(
+                                        flow_summary.tcp_retransmits.down as u64,
+                                        flow_summary.packets_sent.down,
+                                    );
+                                    let loss_upload = tcp_retransmit_loss_proxy(
+                                        flow_summary.tcp_retransmits.up as u64,
+                                        flow_summary.packets_sent.up,
+                                    );
+
+                                    let scores = flow_summary.tcp_info.as_ref().map(|tcp_info| {
+                                        compute_qoq_scores(
+                                            profile.as_ref(),
+                                            &tcp_info.rtt,
+                                            download_mbps,
+                                            upload_mbps,
+                                            loss_download,
+                                            loss_upload,
+                                        )
+                                    });
+
+                                    if let Some(scores) = scores {
+                                        flow_summary.set_qoq_scores(scores);
+
+                                        let rtt = flow_summary.get_rtt_array();
+                                        let has_rtt =
+                                            rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0;
+                                        let missing_score =
+                                            scores.download_current_f32().is_none()
+                                                || scores.upload_current_f32().is_none();
+                                        if has_rtt && missing_score {
+                                            if let Some(tcp_info) = flow_summary.tcp_info.as_ref()
+                                            {
+                                                let dl_samples = tcp_info.rtt.sample_count(
+                                                    RttBucket::Current,
+                                                    FlowbeeEffectiveDirection::Download,
+                                                );
+                                                let ul_samples = tcp_info.rtt.sample_count(
+                                                    RttBucket::Current,
+                                                    FlowbeeEffectiveDirection::Upload,
+                                                );
+                                                tracing::warn!(
+                                                    "[FLOW_QOO_DEBUG] missing per-flow QoO despite RTT. \
+                                                    rtt_samples_current(dl={}, ul={}) packets_total(dl={}, ul={}) \
+                                                    flow={}:{:?}->{:?}:{}, proto={}",
+                                                    dl_samples,
+                                                    ul_samples,
+                                                    flow_summary.packets_sent.down,
+                                                    flow_summary.packets_sent.up,
+                                                    key.local_ip,
+                                                    key.src_port,
+                                                    key.remote_ip,
+                                                    key.dst_port,
+                                                    key.ip_protocol
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             if enable_asn_heatmaps {
                                 let flow_rtt = rtt_for_circuit.and_then(combine_rtt_ms);
