@@ -93,7 +93,7 @@ impl Serialize for FlowbeeLocalData {
         S: Serializer,
     {
         // Note: Keep this wire format stable (UI compatibility) while we refactor internal storage.
-        let mut state = serializer.serialize_struct("FlowbeeLocalData", 12)?;
+        let mut state = serializer.serialize_struct("FlowbeeLocalData", 13)?;
         state.serialize_field("start_time", &self.start_time)?;
         state.serialize_field("last_seen", &self.last_seen)?;
         state.serialize_field("bytes_sent", &self.bytes_sent)?;
@@ -106,6 +106,7 @@ impl Serialize for FlowbeeLocalData {
         // TCP-only fields (default to zero/None if this isn't a TCP flow).
         state.serialize_field("flags", &self.get_flags())?;
         state.serialize_field("rtt", &self.get_rtt_array())?;
+        state.serialize_field("qoq", &self.get_qoq_scores())?;
         let retry_times_down = self.get_retry_times_down_wire();
         let retry_times_up = self.get_retry_times_up_wire();
         state.serialize_field("retry_times_down", &retry_times_down)?;
@@ -224,6 +225,13 @@ impl FlowbeeLocalData {
                 .rtt
                 .median_new_data(FlowbeeEffectiveDirection::Upload),
         ]
+    }
+
+    pub fn get_qoq_scores(&self) -> QoqScores {
+        let Some(tcp_info) = &self.tcp_info else {
+            return QoqScores::default();
+        };
+        tcp_info.qoq
     }
 
     pub fn get_flags(&self) -> u8 {

@@ -2,6 +2,7 @@
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
+import {colorByQoqScore} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
@@ -206,6 +207,20 @@ function diffToNumber(current, previous, fallback = 0) {
     return toNumber(current, fallback) - toNumber(previous, fallback);
 }
 
+function formatQooScore(score0to100, fallback = "-") {
+    if (score0to100 === null || score0to100 === undefined) {
+        return fallback;
+    }
+    const numeric = Number(score0to100);
+    // QoqScores uses 255 for unknown.
+    if (!Number.isFinite(numeric) || numeric === 255) {
+        return fallback;
+    }
+    const clamped = Math.min(100, Math.max(0, Math.round(numeric)));
+    const color = colorByQoqScore(clamped);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + clamped;
+}
+
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
 
@@ -239,6 +254,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
     thead.appendChild(createSortableHeader("TCP Retransmits (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
@@ -334,6 +350,11 @@ function updateTrafficTab(msg) {
         const rttDownNanos = toNumber(flow[1].rtt[0].nanoseconds, 0);
         const rttUpNanos = toNumber(flow[1].rtt[1].nanoseconds, 0);
 
+        const qoq = flow[1].qoq || null;
+        const qooDown = qoq ? qoq.download_current : null;
+        const qooUp = qoq ? qoq.upload_current : null;
+        const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
+
         // Collect row data
         tableRows.push({
             sortKeys: {
@@ -343,6 +364,7 @@ function updateTrafficTab(msg) {
                 packets: packetsSentDown + packetsSentUp,
                 retransmits: retransmitDownPct + retransmitUpPct,
                 rtt: rttDownNanos + rttUpNanos,
+                qoo: qooForSort,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
                 ip: flow[0].remote_ip
@@ -359,6 +381,8 @@ function updateTrafficTab(msg) {
                 retransmitUp,
                 scaleNanos(rttDownNanos),
                 scaleNanos(rttUpNanos),
+                formatQooScore(qooDown),
+                formatQooScore(qooUp),
                 flow[0].asn_name,
                 flow[0].asn_country,
                 flow[0].remote_ip
@@ -396,7 +420,7 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
-            if (index === 1 || index === 2 || index === 7 || index === 8) {
+            if (index === 1 || index === 2 || index === 7 || index === 8 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));
             } else {
