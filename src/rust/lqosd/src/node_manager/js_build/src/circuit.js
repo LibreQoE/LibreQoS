@@ -252,7 +252,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
     thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
     thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
-    thead.appendChild(createSortableHeader("TCP Retransmits (d/u)", "retransmits", 2));
+    thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
     thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("ASN", "asn"));
