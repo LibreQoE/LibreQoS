@@ -4,10 +4,12 @@ import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./he
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
+import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
+import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
@@ -27,6 +29,7 @@ let channelLink = null;
 let pinger = null;
 let flowChannel = null;
 let speedometer = null;
+let qooGauge = null;
 let totalThroughput = null;
 let totalRetransmits = null;
 let deviceGraphs = {};
@@ -94,6 +97,9 @@ function connectPrivateChannel() {
             //console.log(msg.devices);
             fillLiveDevices(msg.devices);
             updateSpeedometer(msg.devices);
+            if (qooGauge !== null) {
+                qooGauge.update(msg.qoo_score);
+            }
         }
     });
 }
@@ -219,6 +225,25 @@ function formatQooScore(score0to100, fallback = "-") {
     const clamped = Math.min(100, Math.max(0, Math.round(numeric)));
     const color = colorByQoqScore(clamped);
     return "<span class='muted' style='color: " + color + "'>■</span>" + clamped;
+}
+
+function formatRttNanos(rttNanos) {
+    const n = toNumber(rttNanos, 0);
+    if (n === 0) {
+        return "<span class='muted' style='color: var(--bs-border-color)'>■</span>-";
+    }
+    const rttInMs = Math.min(200, n / 1000000);
+    const color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + scaleNanos(n);
+}
+
+function formatRttPair(p50Nanos, p95Nanos) {
+    const p50 = toNumber(p50Nanos, 0);
+    const p95 = toNumber(p95Nanos, 0);
+    if (p50 === 0 && p95 === 0) {
+        return "-";
+    }
+    return formatRttNanos(p50) + " / " + scaleNanos(p95);
 }
 
 function updateTrafficTab(msg) {
@@ -379,8 +404,8 @@ function updateTrafficTab(msg) {
                 scaleNumber(packetsSentUp),
                 retransmitDown,
                 retransmitUp,
-                scaleNanos(rttDownNanos),
-                scaleNanos(rttUpNanos),
+                formatRttNanos(rttDownNanos),
+                formatRttNanos(rttUpNanos),
                 formatQooScore(qooDown),
                 formatQooScore(qooUp),
                 flow[0].asn_name,
@@ -420,7 +445,7 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
-            if (index === 1 || index === 2 || index === 7 || index === 8 || index === 11 || index === 12) {
+            if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));
             } else {
@@ -501,15 +526,29 @@ function fillLiveDevices(devices) {
         }
 
         if (rttDown !== null) {
-            if (device.median_latency !== null) {
-                rttDown.innerHTML = formatRtt(device.median_latency);
-            }
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const curP95 = device.rtt_current_p95_nanos || {};
+            const totP50 = device.rtt_total_p50_nanos || {};
+            const totP95 = device.rtt_total_p95_nanos || {};
+            rttDown.innerHTML =
+                "<div class='tiny'>C: " +
+                formatRttPair(curP50.down, curP95.down) +
+                "</div><div class='tiny text-secondary'>T: " +
+                formatRttPair(totP50.down, totP95.down) +
+                "</div>";
         }
 
         if (rttUp !== null) {
-            if (device.median_latency !== null && device.median_latency.up !== null) {
-                rttUp.innerHTML = formatRtt(device.median_latency.up);
-            }
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const curP95 = device.rtt_current_p95_nanos || {};
+            const totP50 = device.rtt_total_p50_nanos || {};
+            const totP95 = device.rtt_total_p95_nanos || {};
+            rttUp.innerHTML =
+                "<div class='tiny'>C: " +
+                formatRttPair(curP50.up, curP95.up) +
+                "</div><div class='tiny text-secondary'>T: " +
+                formatRttPair(totP50.up, totP95.up) +
+                "</div>";
         }
 
         if (tcp_retransmitsDown !== null) {
@@ -519,16 +558,37 @@ function fillLiveDevices(devices) {
         if (tcp_retransmitsUp !== null) {
             tcp_retransmitsUp.innerHTML = formatRetransmit(device.tcp_retransmits.up);
         }
+
+        // Local RTT histogram (5-minute window, p50 samples)
+        let rttHistogram = deviceGraphs["rttHistogramGraph_" + device.device_id];
+        if (rttHistogram !== undefined) {
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const downNanos = toNumber(curP50.down, 0);
+            const upNanos = toNumber(curP50.up, 0);
+            const samples = [];
+            if (downNanos > 0) samples.push(downNanos / 1000000);
+            if (upNanos > 0) samples.push(upNanos / 1000000);
+            rttHistogram.updateManyMs(samples);
+        }
     });
 }
 
 function initialDevices(circuits) {
-    let target = document.getElementById("devices")
+    let target = document.getElementById("devices");
     clearDiv(target);
 
     circuits.forEach((circuit) => {
+        let outer = document.createElement("div");
+        outer.classList.add("col-12", "mb-3");
+        target.appendChild(outer);
+
+        let row = document.createElement("div");
+        row.classList.add("row", "g-2");
+        outer.appendChild(row);
+
         let d = document.createElement("div");
         d.classList.add("col-3");
+        row.appendChild(d);
 
         // Device Information Section
 
@@ -671,12 +731,15 @@ function initialDevices(circuits) {
         // Placeholder for RTT
         let tr6 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>RTT</b>";
+        td.innerHTML = "<b>RTT P50/P95</b>";
         tr6.appendChild(td);
         td = document.createElement("td");
-        td.colSpan = 2;
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = "Sampling...";
+        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        tr6.appendChild(td);
+        td = document.createElement("td");
+        td.id = "rttUp_" + circuit.device_id;
+        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
         tr6.appendChild(td);
         tbody.appendChild(tr6);
 
@@ -697,34 +760,32 @@ function initialDevices(circuits) {
 
         infoTable.appendChild(tbody);
         d.appendChild(infoTable);
-        target.appendChild(d);
 
-        // Graph for Throughput
-        let throughputGraph = document.createElement("div");
-        throughputGraph.classList.add("col-3")
-        throughputGraph.id = "throughputGraph_" + circuit.device_id;
-        throughputGraph.style.height = "250px";
-        throughputGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(throughputGraph);
-        deviceGraphs[throughputGraph.id] = new CircuitTotalGraph(throughputGraph.id, "Throughput");
+        // Graph container (2x2)
+        let graphCol = document.createElement("div");
+        graphCol.classList.add("col-9");
+        row.appendChild(graphCol);
 
-        // Graph for TCP Retransmits
-        let tcpRetransmitsGraph = document.createElement("div");
-        tcpRetransmitsGraph.classList.add("col-3")
-        tcpRetransmitsGraph.id = "tcpRetransmitsGraph_" + circuit.device_id;
-        tcpRetransmitsGraph.style.height = "250px";
-        tcpRetransmitsGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(tcpRetransmitsGraph);
-        deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, "Retransmits");
+        let graphRow = document.createElement("div");
+        graphRow.classList.add("row", "g-2");
+        graphCol.appendChild(graphRow);
 
-        // Ping Graph Section
-        let pingGraph = document.createElement("div");
-        pingGraph.classList.add("col-3");
-        pingGraph.id = "pingGraph_" + circuit.device_id;
-        pingGraph.style.height = "250px";
-        pingGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(pingGraph);
-        deviceGraphs[pingGraph.id] = new DevicePingHistogram(pingGraph.id);
+        function addGraph(divId, graphFactory) {
+            let col = document.createElement("div");
+            col.classList.add("col-6");
+            let div = document.createElement("div");
+            div.id = divId;
+            div.style.height = "250px";
+            div.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+            col.appendChild(div);
+            graphRow.appendChild(col);
+            deviceGraphs[divId] = graphFactory(divId);
+        }
+
+        addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, "Throughput"));
+        addGraph("tcpRetransmitsGraph_" + circuit.device_id, (id) => new CircuitRetransmitGraph(id, "Retransmits"));
+        addGraph("rttHistogramGraph_" + circuit.device_id, (id) => new WindowedLatencyHistogram(id, "RTT Histogram", 300000));
+        addGraph("pingGraph_" + circuit.device_id, (id) => new DevicePingHistogram(id));
 
     });
 }
@@ -790,7 +851,7 @@ function initialFunnel(parentNode) {
             immediateParent.parents.reverse().forEach((parent) => {
                 let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
                 let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
-                let rttGraph = new DevicePingHistogram("funnel_rtt_" + parent);
+                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
                 funnelGraphs[parent] = {
                     tp: tpGraph,
                     rxmit: rxmitGraph,
@@ -830,9 +891,7 @@ function onTreeEvent(msg) {
             rxmit[1] = (retransmitsUp / packetsUp) * 100.0;
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
-        myMessage.rtts.forEach((rtt) => {
-            rttGraph.updateMs(toNumber(rtt, 0));
-        });
+        rttGraph.updateManyMs(myMessage.rtts);
         tpGraph.chart.resize();
         rxmitGraph.chart.resize();
         rttGraph.chart.resize();
@@ -1041,6 +1100,7 @@ function loadInitial() {
         };
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
+        qooGauge = new QooScoreGauge("qooGauge");
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
         flowSankey = new FlowsSankey("flowSankey");

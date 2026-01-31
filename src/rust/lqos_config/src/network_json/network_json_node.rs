@@ -2,7 +2,7 @@ use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
 use lqos_utils::{
     qoq_heatmap::TemporalQoqHeatmap,
-    rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData},
+    rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
 };
@@ -66,20 +66,20 @@ impl NetworkJsonNode {
     /// Make a deep copy of a `NetworkJsonNode`, converting atomics
     /// into concrete values.
     pub fn clone_to_transit(&self) -> NetworkJsonTransport {
-        let download = self
-            .rtt_buffer
-            .median_new_data(FlowbeeEffectiveDirection::Download);
+        let download = self.rtt_buffer.percentile(
+            RttBucket::Current,
+            FlowbeeEffectiveDirection::Download,
+            50,
+        );
         let upload = self
             .rtt_buffer
-            .median_new_data(FlowbeeEffectiveDirection::Upload);
-        let rtts = match (download.as_nanos(), upload.as_nanos()) {
-            (0, 0) => Vec::new(),
-            (d, 0) => vec![RttData::from_nanos(d).as_millis() as f32; 2],
-            (0, u) => vec![RttData::from_nanos(u).as_millis() as f32; 2],
-            (d, u) => vec![
-                RttData::from_nanos(d).as_millis() as f32,
-                RttData::from_nanos(u).as_millis() as f32,
-            ],
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
+
+        let rtts = match (download, upload) {
+            (None, None) => Vec::new(),
+            (Some(d), None) => vec![d.as_millis() as f32; 2],
+            (None, Some(u)) => vec![u.as_millis() as f32; 2],
+            (Some(d), Some(u)) => vec![d.as_millis() as f32, u.as_millis() as f32],
         };
 
         NetworkJsonTransport {

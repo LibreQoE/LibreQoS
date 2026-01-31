@@ -8,6 +8,7 @@ use allocative_derive::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use lqos_utils::qoo::QoqScores;
+use lqos_utils::rtt::RttBucket;
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -148,7 +149,11 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0;
         };
-        tcp_info.rtt.median_new_data(direction).as_nanos()
+        tcp_info
+            .rtt
+            .percentile(RttBucket::Current, direction, 50)
+            .unwrap_or(RttData::from_nanos(0))
+            .as_nanos()
     }
 
     pub fn get_summary_rtt_as_micros(&self, direction: FlowbeeEffectiveDirection) -> f64 {
@@ -158,7 +163,11 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0.0;
         };
-        tcp_info.rtt.median_new_data(direction).as_micros()
+        tcp_info
+            .rtt
+            .percentile(RttBucket::Current, direction, 50)
+            .unwrap_or(RttData::from_nanos(0))
+            .as_micros()
     }
 
     pub fn get_summary_rtt_as_millis(&self, direction: FlowbeeEffectiveDirection) -> f64 {
@@ -168,7 +177,11 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return 0.0;
         };
-        tcp_info.rtt.median_new_data(direction).as_millis()
+        tcp_info
+            .rtt
+            .percentile(RttBucket::Current, direction, 50)
+            .unwrap_or(RttData::from_nanos(0))
+            .as_millis()
     }
 
     pub fn get_retry_times_down(&self) -> &[u64] {
@@ -220,10 +233,16 @@ impl FlowbeeLocalData {
         [
             tcp_info
                 .rtt
-                .median_new_data(FlowbeeEffectiveDirection::Download),
+                .percentile(
+                    RttBucket::Current,
+                    FlowbeeEffectiveDirection::Download,
+                    50,
+                )
+                .unwrap_or(RttData::from_nanos(0)),
             tcp_info
                 .rtt
-                .median_new_data(FlowbeeEffectiveDirection::Upload),
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .unwrap_or(RttData::from_nanos(0)),
         ]
     }
 
@@ -245,7 +264,10 @@ impl FlowbeeLocalData {
         let Some(tcp_info) = &self.tcp_info else {
             return RttData::from_nanos(0);
         };
-        tcp_info.rtt.median_new_data(direction)
+        tcp_info
+            .rtt
+            .percentile(RttBucket::Current, direction, 50)
+            .unwrap_or(RttData::from_nanos(0))
     }
 
     pub fn set_last_seen(&mut self, last_seen: u64) {

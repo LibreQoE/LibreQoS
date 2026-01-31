@@ -436,7 +436,11 @@ pub enum WsResponse {
     StormguardDebug { data: Vec<StormguardDebugEntry> },
     BakeryStatus { data: BakeryStatusData },
     ExecutiveHeatmaps { data: ExecutiveHeatmapsData },
-    CircuitWatcher { circuit_id: String, devices: Vec<Circuit> },
+    CircuitWatcher {
+        circuit_id: String,
+        devices: Vec<Circuit>,
+        qoo_score: Option<f32>,
+    },
     PingMonitor { ip: String, result: PingState },
     FlowsByCircuit {
         circuit_id: String,

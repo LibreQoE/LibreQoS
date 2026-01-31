@@ -1,4 +1,4 @@
-use super::flow_data::RttData;
+use super::flow_data::{RttBuffer, RttData};
 use allocative_derive::Allocative;
 use lqos_bus::TcHandle;
 use lqos_utils::qoo::QoqScores;
@@ -24,6 +24,7 @@ pub(crate) struct ThroughputEntry {
     pub(crate) bytes_per_second: DownUpOrder<u64>,
     pub(crate) packets_per_second: DownUpOrder<u64>,
     pub(crate) tc_handle: TcHandle,
+    pub(crate) rtt_buffer: RttBuffer,
     pub(crate) recent_rtt_data: [RttData; 60],
     pub(crate) last_fresh_rtt_data_cycle: u64,
     pub(crate) last_seen: u64, // Last seen in kernel time since boot

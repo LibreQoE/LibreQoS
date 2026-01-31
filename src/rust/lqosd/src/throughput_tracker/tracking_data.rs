@@ -328,6 +328,7 @@ impl ThroughputTracker {
                 && v.last_fresh_rtt_data_cycle < self_cycle - RETIRE_AFTER_SECONDS
             {
                 v.recent_rtt_data = [RttData::from_nanos(0); 60];
+                v.rtt_buffer.clear();
             }
         });
     }
@@ -516,6 +517,7 @@ impl ThroughputTracker {
                     prev_udp_packets: DownUpOrder::zeroed(),
                     prev_icmp_packets: DownUpOrder::zeroed(),
                     tc_handle: TcHandle::zero(),
+                    rtt_buffer: RttBuffer::default(),
                     recent_rtt_data: [RttData::from_nanos(0); 60],
                     last_fresh_rtt_data_cycle: 0,
                     last_seen: 0,
@@ -830,6 +832,7 @@ impl ThroughputTracker {
 
             // Merge in the per-flow RTT data into the per-circuit tracker
             for (local_ip, rtt_buffer) in rtt_circuit_tracker {
+                let rtt_buffer = std::mem::take(rtt_buffer);
                 let download = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download);
                 let upload = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload);
 
@@ -850,14 +853,15 @@ impl ThroughputTracker {
                             }
                             tracker.recent_rtt_data[0] = rtt_median;
                             tracker.last_fresh_rtt_data_cycle = self_cycle;
+                            tracker.rtt_buffer = rtt_buffer;
                             if let Some(circuit_hash) = tracker.circuit_hash {
                                 rtt_by_circuit
                                     .entry(circuit_hash)
                                     .or_default()
-                                    .accumulate(rtt_buffer);
+                                    .accumulate(&tracker.rtt_buffer);
                             }
                             if let Some(parents) = &tracker.network_json_parents {
-                                net_json_calc.add_rtt_buffer_cycle(parents, rtt_buffer);
+                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
                             }
                         }
                     }
