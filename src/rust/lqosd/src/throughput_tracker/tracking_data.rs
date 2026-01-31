@@ -736,22 +736,21 @@ impl ThroughputTracker {
 
                                     let rtt = this_flow.0.get_rtt_array();
                                     let has_rtt = rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0;
-                                    let missing_score =
-                                        scores.download_current_f32().is_none()
-                                            || scores.upload_current_f32().is_none();
+                                    let missing_score = scores.download_total_f32().is_none()
+                                        || scores.upload_total_f32().is_none();
                                     if has_rtt && missing_score {
                                         if let Some(tcp_info) = this_flow.0.tcp_info.as_ref() {
                                             let dl_samples = tcp_info.rtt.sample_count(
-                                                RttBucket::Current,
+                                                RttBucket::Total,
                                                 FlowbeeEffectiveDirection::Download,
                                             );
                                             let ul_samples = tcp_info.rtt.sample_count(
-                                                RttBucket::Current,
+                                                RttBucket::Total,
                                                 FlowbeeEffectiveDirection::Upload,
                                             );
                                             tracing::warn!(
                                                 "[FLOW_QOO_DEBUG] missing per-flow QoO despite RTT. \
-                                                rtt_samples_current(dl={}, ul={}) packets_total(dl={}, ul={}) \
+                                                rtt_samples_total(dl={}, ul={}) packets_total(dl={}, ul={}) \
                                                 flow={}:{:?}->{:?}:{}, proto={}",
                                                 dl_samples,
                                                 ul_samples,
@@ -847,23 +846,22 @@ impl ThroughputTracker {
                                         let rtt = flow_summary.get_rtt_array();
                                         let has_rtt =
                                             rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0;
-                                        let missing_score =
-                                            scores.download_current_f32().is_none()
-                                                || scores.upload_current_f32().is_none();
+                                        let missing_score = scores.download_total_f32().is_none()
+                                            || scores.upload_total_f32().is_none();
                                         if has_rtt && missing_score {
                                             if let Some(tcp_info) = flow_summary.tcp_info.as_ref()
                                             {
                                                 let dl_samples = tcp_info.rtt.sample_count(
-                                                    RttBucket::Current,
+                                                    RttBucket::Total,
                                                     FlowbeeEffectiveDirection::Download,
                                                 );
                                                 let ul_samples = tcp_info.rtt.sample_count(
-                                                    RttBucket::Current,
+                                                    RttBucket::Total,
                                                     FlowbeeEffectiveDirection::Upload,
                                                 );
                                                 tracing::warn!(
                                                     "[FLOW_QOO_DEBUG] missing per-flow QoO despite RTT. \
-                                                    rtt_samples_current(dl={}, ul={}) packets_total(dl={}, ul={}) \
+                                                    rtt_samples_total(dl={}, ul={}) packets_total(dl={}, ul={}) \
                                                     flow={}:{:?}->{:?}:{}, proto={}",
                                                     dl_samples,
                                                     ul_samples,

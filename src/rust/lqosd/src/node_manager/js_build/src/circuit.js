@@ -351,8 +351,8 @@ function updateTrafficTab(msg) {
         const rttUpNanos = toNumber(flow[1].rtt[1].nanoseconds, 0);
 
         const qoq = flow[1].qoq || null;
-        const qooDown = qoq ? qoq.download_current : null;
-        const qooUp = qoq ? qoq.upload_current : null;
+        const qooDown = qoq ? qoq.download_total : null;
+        const qooUp = qoq ? qoq.upload_total : null;
         const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
 
         // Collect row data
