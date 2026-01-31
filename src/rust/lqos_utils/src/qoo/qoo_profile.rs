@@ -380,7 +380,7 @@ pub enum CombineModeSpec {
 
 impl Default for CombineModeSpec {
     fn default() -> Self {
-        CombineModeSpec::LibreqosLatencyLossThroughput
+        CombineModeSpec::IetfLatencyAndLoss
     }
 }
 

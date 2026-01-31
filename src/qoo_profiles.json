@@ -29,7 +29,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
@@ -59,7 +59,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
@@ -89,7 +89,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
@@ -119,7 +119,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
@@ -149,7 +149,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     },
     {
@@ -179,7 +179,7 @@
       "latency_normalization": {
         "mode": "none"
       },
-      "combine": "libreqos_latency_loss_throughput",
+      "combine": "ietf_latency_and_loss",
       "loss_handling": "confidence_weighted"
     }
   ]
