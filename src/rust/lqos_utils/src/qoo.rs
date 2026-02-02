@@ -32,7 +32,9 @@ fn nanos_to_ms(ns: u64) -> f64 {
 /// Whether larger values are better or worse for a metric.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Better {
+    /// Larger measured values should receive higher scores.
     HigherIsBetter,
+    /// Smaller measured values should receive higher scores.
     LowerIsBetter,
 }
 
@@ -47,8 +49,15 @@ pub enum Better {
 ///   - `high` = target
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct LowHigh {
+    /// The "low" threshold:
+    /// - For `LowerIsBetter` metrics, values >= `low` are treated as "bad/unacceptable".
+    /// - For `HigherIsBetter` metrics, values <= `low` are treated as "bad/unacceptable".
     pub low: f64,
+    /// The "high" threshold:
+    /// - For `LowerIsBetter` metrics, values <= `high` are treated as "good/target".
+    /// - For `HigherIsBetter` metrics, values >= `high` are treated as "good/target".
     pub high: f64,
+    /// Whether higher or lower values are better for this metric.
     pub better: Better,
 }
 
@@ -127,6 +136,7 @@ impl LowHigh {
 /// Latency requirement at a specific percentile (e.g., p95).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LatencyReq {
+    /// Percentile to evaluate (e.g. 95 for p95).
     pub percentile: u8,
     /// RTT in milliseconds; lower is better.
     pub rtt_ms: LowHigh,
@@ -161,22 +171,40 @@ pub enum LatencyNormalization {
     None,
 
     /// Subtract a fixed offset before scoring (equivalent to shifting thresholds upward).
-    ThresholdOffsetMs { ms: f64 },
+    ///
+    /// The offset is applied as: `scored_ms = max(raw_ms - ms, 0)`.
+    ThresholdOffsetMs {
+        /// Offset in milliseconds.
+        ms: f64,
+    },
 
     /// Score “excess RTT” above a baseline.
-    ExcessOverBaseline { baseline: Baseline },
+    ExcessOverBaseline {
+        /// Baseline definition (fixed ms or another RTT percentile).
+        baseline: Baseline,
+    },
 }
 
+/// Baseline definition for `LatencyNormalization::ExcessOverBaseline`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Baseline {
-    FixedMs { ms: f64 },
-    Percentile { percentile: u8 },
+    /// Use a fixed baseline in milliseconds.
+    FixedMs {
+        /// Baseline in milliseconds.
+        ms: f64,
+    },
+    /// Use another RTT percentile (e.g. p50) from the same RTT histogram as baseline.
+    Percentile {
+        /// Percentile to use as baseline (e.g. 50 for p50).
+        percentile: u8,
+    },
 }
 
 /// Profile for computing QoO.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QooProfile {
+    /// Human readable profile name (for UI display).
     pub name: String,
 
     /// One or more latency percentiles (lower is better).
@@ -185,6 +213,7 @@ pub struct QooProfile {
     /// Loss thresholds as a FRACTION (0.01 = 1%), lower is better.
     pub loss_fraction: LowHigh,
 
+    /// How to incorporate confidence when using a loss proxy.
     pub loss_handling: LossHandling,
 
     /// Optional baseline/bias handling for latency.
@@ -205,17 +234,21 @@ impl Default for LatencyNormalization {
 pub enum LossMeasurement {
     /// Loss fraction is known/authoritative (confidence=1).
     Exact {
-        loss_fraction: f64, // 0..1
+        /// Loss fraction in the range 0..1.
+        loss_fraction: f64,
     },
 
     /// Loss fraction is inferred from TCP retransmits (low confidence by nature).
     TcpRetransmitProxy {
-        retransmit_fraction: f64, // 0..1
-        confidence: f64,          // 0..1
+        /// Retransmit fraction in the range 0..1, used as a packet-loss proxy.
+        retransmit_fraction: f64,
+        /// Confidence in the retransmit proxy in the range 0..1.
+        confidence: f64,
     },
 }
 
 impl LossMeasurement {
+    /// Return the (possibly-proxied) loss fraction in the range 0..1.
     pub fn loss_fraction(&self) -> f64 {
         match *self {
             LossMeasurement::Exact { loss_fraction } => loss_fraction.clamp(0.0, 1.0),
@@ -226,6 +259,7 @@ impl LossMeasurement {
         }
     }
 
+    /// Return the confidence of the loss measurement in the range 0..1.
     pub fn confidence(&self) -> f64 {
         match *self {
             LossMeasurement::Exact { .. } => 1.0,
@@ -233,6 +267,7 @@ impl LossMeasurement {
         }
     }
 
+    /// Build a retransmit-based loss proxy from a percent value (0..100) and confidence (0..1).
     pub fn from_tcp_retransmit_percent(retransmit_percent: f64, confidence: f64) -> Self {
         LossMeasurement::TcpRetransmitProxy {
             retransmit_fraction: (retransmit_percent / 100.0).clamp(0.0, 1.0),
@@ -254,12 +289,18 @@ pub struct QooInput<'a> {
 /// Component breakdown (useful for GUI tooltips).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct QooComponents {
+    /// Latency score for download direction (0..100).
     pub latency_download: Option<f64>,
+    /// Latency score for upload direction (0..100).
     pub latency_upload: Option<f64>,
+    /// Worst-of-directions latency score (min of download/upload).
     pub latency_worst: Option<f64>,
 
+    /// Strict loss score (confidence ignored) in the range 0..100.
     pub loss_strict: Option<f64>,
+    /// Effective loss score after applying the profile’s `loss_handling` in the range 0..100.
     pub loss_effective: Option<f64>,
+    /// Confidence used to compute `loss_effective` in the range 0..1.
     pub loss_confidence: Option<f64>,
 }
 
@@ -273,10 +314,12 @@ pub struct QooMeasured {
 
     /// (percentile, ms) after applying latency normalization (the value actually scored)
     pub latency_download_scored_ms: Vec<(u8, f64)>,
+    /// (percentile, ms) after applying latency normalization (the value actually scored)
     pub latency_upload_scored_ms: Vec<(u8, f64)>,
 
     /// Baseline/offset used for normalization (if any).
     pub latency_baseline_download_ms: Option<f64>,
+    /// Baseline/offset used for normalization (if any).
     pub latency_baseline_upload_ms: Option<f64>,
 
     /// Packet loss fraction (0..1) or proxy.
@@ -289,7 +332,9 @@ pub struct QooResult {
     /// Final QoO score (0..100). None if insufficient data.
     pub overall: Option<f64>,
 
+    /// Component scores used to compute `overall`.
     pub components: QooComponents,
+    /// Measured values and intermediate numbers used for scoring.
     pub measured: QooMeasured,
 }
 
@@ -433,6 +478,7 @@ fn latency_for_direction(
     }
 }
 
+/// Sentinel value meaning "insufficient data" for QoO/QoQ scores.
 pub const QOQ_UNKNOWN: u8 = 255;
 
 /// QoO/QoQ scores for download/upload.
@@ -440,7 +486,9 @@ pub const QOQ_UNKNOWN: u8 = 255;
 /// Values are 0..100, with `QOQ_UNKNOWN` meaning "insufficient data".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Allocative)]
 pub struct QoqScores {
+    /// Download-direction QoO/QoQ score (0..100), or `QOQ_UNKNOWN` if insufficient data.
     pub download_total: u8,
+    /// Upload-direction QoO/QoQ score (0..100), or `QOQ_UNKNOWN` if insufficient data.
     pub upload_total: u8,
 }
 
@@ -454,11 +502,13 @@ impl Default for QoqScores {
 }
 
 impl QoqScores {
+    /// Return the download score as `Some(f32)` if present, otherwise `None`.
     #[inline]
     pub fn download_total_f32(self) -> Option<f32> {
         (self.download_total != QOQ_UNKNOWN).then(|| self.download_total as f32)
     }
 
+    /// Return the upload score as `Some(f32)` if present, otherwise `None`.
     #[inline]
     pub fn upload_total_f32(self) -> Option<f32> {
         (self.upload_total != QOQ_UNKNOWN).then(|| self.upload_total as f32)
