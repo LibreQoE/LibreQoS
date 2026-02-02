@@ -23,15 +23,23 @@ use crate::qoo::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QooProfilesFile {
+    /// Schema version for the on-disk JSON file.
+    ///
+    /// LibreQoS currently expects this to be `2`.
     pub schema_version: u32,
 
+    /// Optional default profile id to use when a config does not explicitly specify one.
+    ///
+    /// If omitted, LibreQoS will fall back to the first profile in `profiles`.
     #[serde(default)]
     pub default_profile_id: Option<String>,
 
+    /// List of profiles available in the file.
     pub profiles: Vec<QooProfileSpec>,
 }
 
 impl QooProfilesFile {
+    /// Load, parse, and validate a profile table from JSON.
     pub fn load_json<P: AsRef<Path>>(path: P) -> Result<Self, ProfileIoError> {
         let s = fs::read_to_string(path)?;
         let doc: Self = serde_json::from_str(&s)?;
@@ -39,6 +47,7 @@ impl QooProfilesFile {
         Ok(doc)
     }
 
+    /// Validate and save the profile table to JSON (pretty-printed).
     pub fn save_json_pretty<P: AsRef<Path>>(&self, path: P) -> Result<(), ProfileIoError> {
         self.validate()?;
         let s = serde_json::to_string_pretty(self)?;
@@ -100,10 +109,14 @@ impl QooProfilesFile {
     }
 }
 
+/// Errors that can occur when loading, saving, or validating QoO profile tables.
 #[derive(Debug)]
 pub enum ProfileIoError {
+    /// Underlying filesystem I/O error.
     Io(std::io::Error),
+    /// JSON parse/serialize error.
     Json(serde_json::Error),
+    /// Validation errors (human-readable).
     Validation(Vec<String>),
 }
 
@@ -141,9 +154,12 @@ impl From<serde_json::Error> for ProfileIoError {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QooProfileSpec {
+    /// Stable profile id used for config selection (e.g. `"web_browsing"`).
     pub id: String,
+    /// Human readable name (for UI display).
     pub name: String,
 
+    /// Optional profile description (for UI display).
     #[serde(default)]
     pub description: Option<String>,
 
@@ -157,6 +173,7 @@ pub struct QooProfileSpec {
     #[serde(default)]
     pub latency_normalization: LatencyNormalizationSpec,
 
+    /// How to incorporate confidence when using a loss proxy.
     #[serde(default)]
     pub loss_handling: LossHandlingSpec,
 }
@@ -270,7 +287,9 @@ impl QooProfileSpec {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Range {
+    /// "Bad/minimum/unacceptable" threshold.
     pub low: f64,
+    /// "Good/target/optimal" threshold.
     pub high: f64,
 }
 
@@ -278,6 +297,7 @@ pub struct Range {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LatencySpec {
+    /// Percentile to evaluate (e.g. 95 for p95).
     pub percentile: u8,
 
     /// "Bad/minimum/unacceptable" threshold (ms)
@@ -294,8 +314,11 @@ pub struct LatencySpec {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum LatencyNormalizationSpec {
+    /// Score absolute RTT directly against thresholds.
     None,
+    /// Subtract a fixed offset before scoring.
     ThresholdOffsetMs { ms: f64 },
+    /// Subtract a baseline (fixed or derived from an RTT percentile) before scoring.
     ExcessOverBaseline { baseline: BaselineSpec },
 }
 
@@ -308,14 +331,18 @@ impl Default for LatencyNormalizationSpec {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BaselineSpec {
+    /// Use a fixed baseline in milliseconds.
     FixedMs { ms: f64 },
+    /// Use another RTT percentile (e.g. p50) from the same RTT distribution as baseline.
     Percentile { percentile: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LossHandlingSpec {
+    /// Use loss score directly in the final `min()`.
     Strict,
+    /// Blend loss score toward 100 based on confidence.
     ConfidenceWeighted,
 }
 
