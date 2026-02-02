@@ -490,6 +490,8 @@ fn combine_directional(latency: Option<f64>, loss: Option<f64>) -> Option<f64> {
     }
 }
 
+const MIN_RTT_SAMPLES_FOR_QOO: u32 = 5;
+
 /// Compute QoO/QoQ scores (0..100) for download/upload directions using the RTT histogram
 /// `RttBucket::Total`.
 pub fn compute_qoq_scores(
@@ -501,16 +503,25 @@ pub fn compute_qoq_scores(
     let loss_download = loss_download.map(|l| loss_effective(profile, l));
     let loss_upload = loss_upload.map(|l| loss_effective(profile, l));
 
-    let dl_total = latency_for_direction(
-        profile,
-        rtt,
-        FlowbeeEffectiveDirection::Download,
-        RttBucket::Total,
-    )
-    .score;
-    let ul_total =
-        latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total)
-            .score;
+    let dl_total = (rtt.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Download)
+        >= MIN_RTT_SAMPLES_FOR_QOO)
+        .then(|| {
+            latency_for_direction(
+                profile,
+                rtt,
+                FlowbeeEffectiveDirection::Download,
+                RttBucket::Total,
+            )
+            .score
+        })
+        .flatten();
+    let ul_total = (rtt.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload)
+        >= MIN_RTT_SAMPLES_FOR_QOO)
+        .then(|| {
+            latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total)
+                .score
+        })
+        .flatten();
 
     QoqScores {
         download_total: score_to_u8(combine_directional(dl_total, loss_download)),
