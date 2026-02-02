@@ -13,7 +13,21 @@ use serde::{Deserialize, Serialize};
 /// Heatmap block medians for QoQ (0..100) scores.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Allocative)]
 pub struct QoqHeatmapBlocks {
+    /// Per-minute medians for the download-direction QoO/QoQ score.
+    ///
+    /// This array has 15 blocks:
+    /// - 14 completed minute blocks (oldest → newest)
+    /// - 1 current in-progress minute block
+    ///
+    /// `None` means "no samples available for that block".
     pub download_total: [Option<f32>; TOTAL_BLOCKS],
+    /// Per-minute medians for the upload-direction QoO/QoQ score.
+    ///
+    /// This array has 15 blocks:
+    /// - 14 completed minute blocks (oldest → newest)
+    /// - 1 current in-progress minute block
+    ///
+    /// `None` means "no samples available for that block".
     pub upload_total: [Option<f32>; TOTAL_BLOCKS],
 }
 
@@ -29,6 +43,7 @@ pub struct TemporalQoqHeatmap {
 }
 
 impl TemporalQoqHeatmap {
+    /// Create an empty QoO/QoQ heatmap accumulator.
     pub fn new() -> Self {
         const NONE_F32: Option<f32> = None;
         Self {
@@ -41,6 +56,10 @@ impl TemporalQoqHeatmap {
         }
     }
 
+    /// Add one QoO/QoQ sample (typically called once per second).
+    ///
+    /// After 60 samples are added, the median of that 60-second window is pushed into the
+    /// 14-minute summary, and the raw buffers are cleared for the next minute.
     pub fn add_sample(&mut self, download_total: Option<f32>, upload_total: Option<f32>) {
         self.raw_download_total[self.raw_index] = download_total;
         self.raw_upload_total[self.raw_index] = upload_total;
@@ -56,6 +75,7 @@ impl TemporalQoqHeatmap {
         }
     }
 
+    /// Return heatmap blocks suitable for UI display.
     pub fn blocks(&self) -> QoqHeatmapBlocks {
         let mut download_total = [None; TOTAL_BLOCKS];
         let mut upload_total = [None; TOTAL_BLOCKS];
