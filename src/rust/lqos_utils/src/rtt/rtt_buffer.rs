@@ -397,7 +397,6 @@ impl RttBuffer {
         Some(results.into_iter().map(|r| r.unwrap()).collect())
     }
 
-    #[deprecated(note = "This was a pretty stupid way to do things!")]
     /// Return the median RTT from the current window if fresh data is present.
     ///
     /// If there is no fresh data (or too few samples), this returns a zero RTT.
