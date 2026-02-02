@@ -223,15 +223,25 @@ impl RttBuffer {
         accumulate_bucket(&mut self.upload_bucket, &other.upload_bucket);
     }
 
+    /// Clear the per-direction "fresh data" flags.
+    ///
+    /// This does not clear any histogram counts; it only marks the buffer as having no
+    /// newly-observed RTT samples since the last time freshness was cleared.
     pub fn clear_freshness(&mut self) {
         self.download_bucket.has_new_data = false;
         self.upload_bucket.has_new_data = false;
     }
 
+    /// Returns `true` if either direction has received new RTT samples since the last
+    /// `clear_freshness()`.
     pub fn has_new_data(&self) -> bool {
         self.download_bucket.has_new_data || self.upload_bucket.has_new_data
     }
 
+    /// Clone and return the buffer if it contains fresh data, otherwise return `None`.
+    ///
+    /// This is a convenience for "snapshot and ship" code paths: if the caller sends the cloned
+    /// snapshot elsewhere, the original can later be marked via `clear_freshness()`.
     pub fn snapshot_if_new_data(&self) -> Option<Self> {
         if self.has_new_data() {
             Some(self.clone())
@@ -240,6 +250,11 @@ impl RttBuffer {
         }
     }
 
+    /// Merge in "fresh" directions from an incoming buffer.
+    ///
+    /// For each direction, if the incoming bucket is marked as having new data, it replaces the
+    /// corresponding bucket in `self`. If the incoming direction has no new data, the existing
+    /// bucket is kept.
     pub fn merge_fresh_from(&mut self, incoming: Self) {
         let Self {
             last_seen,
@@ -256,6 +271,7 @@ impl RttBuffer {
         }
     }
 
+    /// Create a new buffer seeded with a single RTT reading.
     pub fn new(
         reading: RttData,
         direction: FlowbeeEffectiveDirection,
@@ -279,6 +295,12 @@ impl RttBuffer {
 
     const BUCKET_TIME_NANOS: u64 = 10_000_000_000; // 10 seconds
 
+    /// Push one RTT reading into the histogram.
+    ///
+    /// - Updates both `RttBucket::Current` (windowed) and `RttBucket::Total` (lifetime) buckets.
+    /// - The current bucket is time-windowed (10s) based on `last_seen` and is cleared/rotated when
+    ///   the window elapses.
+    /// - Bucket counts saturate on overflow.
     pub fn push(
         &mut self,
         reading: RttData,
@@ -376,6 +398,11 @@ impl RttBuffer {
     }
 
     #[deprecated(note = "This was a pretty stupid way to do things!")]
+    /// Return the median RTT from the current window if fresh data is present.
+    ///
+    /// If there is no fresh data (or too few samples), this returns a zero RTT.
+    ///
+    /// Prefer using `percentile()`/`percentiles()` and explicit freshness handling instead.
     pub fn median_new_data(&self, direction: FlowbeeEffectiveDirection) -> RttData {
         let target = self.pick_bucket(direction);
         if !target.has_new_data {
