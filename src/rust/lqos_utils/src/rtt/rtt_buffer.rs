@@ -36,6 +36,39 @@ impl Default for RttBufferBucket {
     }
 }
 
+fn accumulate_bucket(dst: &mut RttBufferBucket, src: &RttBufferBucket) {
+    for (dst, src) in dst.current_bucket.iter_mut().zip(src.current_bucket.iter()) {
+        *dst = dst.saturating_add(*src);
+    }
+    for (dst, src) in dst.total_bucket.iter_mut().zip(src.total_bucket.iter()) {
+        *dst = dst.saturating_add(*src);
+    }
+
+    dst.has_new_data |= src.has_new_data;
+
+    dst.best_rtt = match (dst.best_rtt, src.best_rtt) {
+        (Some(a), Some(b)) => Some(std::cmp::min(a, b)),
+        (None, Some(b)) => Some(b),
+        (Some(a), None) => Some(a),
+        (None, None) => None,
+    };
+    dst.worst_rtt = match (dst.worst_rtt, src.worst_rtt) {
+        (Some(a), Some(b)) => Some(std::cmp::max(a, b)),
+        (None, Some(b)) => Some(b),
+        (Some(a), None) => Some(a),
+        (None, None) => None,
+    };
+
+    dst.current_bucket_start_time_nanos = match (
+        dst.current_bucket_start_time_nanos,
+        src.current_bucket_start_time_nanos,
+    ) {
+        (0, s) => s,
+        (d, 0) => d,
+        (d, s) => u64::min(d, s),
+    };
+}
+
 const NS_PER_MS: u64 = 1_000_000;
 
 // Offsets
@@ -185,42 +218,23 @@ impl RttBuffer {
 
     /// Accumulate another RTT buffer into this one (saturating bucket counts).
     pub fn accumulate(&mut self, other: &Self) {
-        fn accumulate_bucket(dst: &mut RttBufferBucket, src: &RttBufferBucket) {
-            for (dst, src) in dst.current_bucket.iter_mut().zip(src.current_bucket.iter()) {
-                *dst = dst.saturating_add(*src);
-            }
-            for (dst, src) in dst.total_bucket.iter_mut().zip(src.total_bucket.iter()) {
-                *dst = dst.saturating_add(*src);
-            }
-
-            dst.has_new_data |= src.has_new_data;
-
-            dst.best_rtt = match (dst.best_rtt, src.best_rtt) {
-                (Some(a), Some(b)) => Some(std::cmp::min(a, b)),
-                (None, Some(b)) => Some(b),
-                (Some(a), None) => Some(a),
-                (None, None) => None,
-            };
-            dst.worst_rtt = match (dst.worst_rtt, src.worst_rtt) {
-                (Some(a), Some(b)) => Some(std::cmp::max(a, b)),
-                (None, Some(b)) => Some(b),
-                (Some(a), None) => Some(a),
-                (None, None) => None,
-            };
-
-            dst.current_bucket_start_time_nanos = match (
-                dst.current_bucket_start_time_nanos,
-                src.current_bucket_start_time_nanos,
-            ) {
-                (0, s) => s,
-                (d, 0) => d,
-                (d, s) => u64::min(d, s),
-            };
-        }
-
         self.last_seen = u64::max(self.last_seen, other.last_seen);
         accumulate_bucket(&mut self.download_bucket, &other.download_bucket);
         accumulate_bucket(&mut self.upload_bucket, &other.upload_bucket);
+    }
+
+    /// Accumulate another RTT buffer into this one (saturating bucket counts), but only for one
+    /// direction.
+    pub fn accumulate_direction(&mut self, other: &Self, direction: FlowbeeEffectiveDirection) {
+        self.last_seen = u64::max(self.last_seen, other.last_seen);
+        match direction {
+            FlowbeeEffectiveDirection::Download => {
+                accumulate_bucket(&mut self.download_bucket, &other.download_bucket);
+            }
+            FlowbeeEffectiveDirection::Upload => {
+                accumulate_bucket(&mut self.upload_bucket, &other.upload_bucket);
+            }
+        }
     }
 
     /// Clear the per-direction "fresh data" flags.
@@ -442,5 +456,83 @@ impl RttBuffer {
         percentiles: &[u8],
     ) -> Option<smallvec::SmallVec<[RttData; 3]>> {
         self.percentiles_from_bucket(scope, direction, percentiles)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FlowbeeEffectiveDirection, RttBuffer, RttBucket, RttData};
+
+    #[test]
+    fn accumulate_direction_only_affects_selected_direction() {
+        let mut source = RttBuffer::default();
+        source.push(
+            RttData::from_nanos(1_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        source.push(
+            RttData::from_nanos(2_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        source.push(
+            RttData::from_nanos(3_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            1,
+        );
+        source.push(
+            RttData::from_nanos(4_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            1,
+        );
+
+        let mut agg = RttBuffer::default();
+        agg.accumulate_direction(&source, FlowbeeEffectiveDirection::Download);
+
+        assert_eq!(
+            agg.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Download),
+            2
+        );
+        assert_eq!(
+            agg.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload),
+            0
+        );
+        assert_eq!(
+            agg.sample_count(RttBucket::Current, FlowbeeEffectiveDirection::Download),
+            2
+        );
+        assert_eq!(
+            agg.sample_count(RttBucket::Current, FlowbeeEffectiveDirection::Upload),
+            0
+        );
+    }
+
+    #[test]
+    fn accumulate_direction_can_be_applied_twice() {
+        let mut source = RttBuffer::default();
+        source.push(
+            RttData::from_nanos(1_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        source.push(
+            RttData::from_nanos(2_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            1,
+        );
+
+        let mut agg = RttBuffer::default();
+        agg.accumulate_direction(&source, FlowbeeEffectiveDirection::Download);
+        agg.accumulate_direction(&source, FlowbeeEffectiveDirection::Upload);
+
+        assert_eq!(
+            agg.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Download),
+            1
+        );
+        assert_eq!(
+            agg.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload),
+            1
+        );
     }
 }

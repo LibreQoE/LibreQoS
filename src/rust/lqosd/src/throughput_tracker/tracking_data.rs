@@ -25,7 +25,7 @@ use lqos_utils::{
     rtt::RttBucket,
     units::{AtomicDownUp, DownUpOrder},
 };
-use lqos_utils::qoo::{LossMeasurement, QoqScores, compute_qoq_scores};
+use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QoqScores, compute_qoq_scores};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
@@ -36,6 +36,7 @@ use tracing::{debug, info, warn};
 const MAX_FLOWS: usize = 1_000_000;
 
 pub const MAX_RETRY_TIMES: usize = 128;
+const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
 
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
@@ -685,10 +686,20 @@ impl ThroughputTracker {
                                 && data.end_status == 0
                                 && raw_data.contains_key(&key.local_ip)
                             {
-                                rtt_circuit_tracker
-                                    .entry(key.local_ip)
-                                    .or_default()
-                                    .accumulate(&rtt_buffer);
+                                let device_rtt =
+                                    rtt_circuit_tracker.entry(key.local_ip).or_default();
+                                if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
+                                    device_rtt.accumulate_direction(
+                                        &rtt_buffer,
+                                        FlowbeeEffectiveDirection::Download,
+                                    );
+                                }
+                                if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
+                                    device_rtt.accumulate_direction(
+                                        &rtt_buffer,
+                                        FlowbeeEffectiveDirection::Upload,
+                                    );
+                                }
                             }
 
                             this_flow.0.set_rtt_buffer(rtt_buffer);
@@ -713,6 +724,13 @@ impl ThroughputTracker {
                                     loss_download,
                                     loss_upload,
                                 );
+                                let mut scores = scores;
+                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                    scores.download_total = QOQ_UNKNOWN;
+                                }
+                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                    scores.upload_total = QOQ_UNKNOWN;
+                                }
                                 this_flow.0.set_qoq_scores(scores);
                             }
                         }
@@ -750,10 +768,20 @@ impl ThroughputTracker {
                                     && data.end_status == 0
                                     && raw_data.contains_key(&key.local_ip)
                                 {
-                                    rtt_circuit_tracker
-                                        .entry(key.local_ip)
-                                        .or_default()
-                                        .accumulate(&rtt_buffer);
+                                    let device_rtt =
+                                        rtt_circuit_tracker.entry(key.local_ip).or_default();
+                                    if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
+                                        device_rtt.accumulate_direction(
+                                            &rtt_buffer,
+                                            FlowbeeEffectiveDirection::Download,
+                                        );
+                                    }
+                                    if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
+                                        device_rtt.accumulate_direction(
+                                            &rtt_buffer,
+                                            FlowbeeEffectiveDirection::Upload,
+                                        );
+                                    }
                                 }
                                 rtt_for_circuit = Some([
                                     rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
@@ -781,6 +809,13 @@ impl ThroughputTracker {
                                         loss_download,
                                         loss_upload,
                                     );
+                                    let mut scores = scores;
+                                    if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                        scores.download_total = QOQ_UNKNOWN;
+                                    }
+                                    if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                        scores.upload_total = QOQ_UNKNOWN;
+                                    }
                                     flow_summary.set_qoq_scores(scores);
                                 }
                             }
@@ -845,24 +880,21 @@ impl ThroughputTracker {
 
                 if let Some(rtt_median) = rtt_median {
                     if let Some(tracker) = raw_data.get_mut(&local_ip) {
-                        // Only apply if the flow has achieved 1 Mbps or more
-                        if tracker.bytes_per_second.sum_exceeds(125_000) {
-                            // Shift left
-                            for i in 1..60 {
-                                tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-                            }
-                            tracker.recent_rtt_data[0] = rtt_median;
-                            tracker.last_fresh_rtt_data_cycle = self_cycle;
-                            tracker.rtt_buffer = rtt_buffer;
-                            if let Some(circuit_hash) = tracker.circuit_hash {
-                                rtt_by_circuit
-                                    .entry(circuit_hash)
-                                    .or_default()
-                                    .accumulate(&tracker.rtt_buffer);
-                            }
-                            if let Some(parents) = &tracker.network_json_parents {
-                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
-                            }
+                        // Shift left
+                        for i in 1..60 {
+                            tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                        }
+                        tracker.recent_rtt_data[0] = rtt_median;
+                        tracker.last_fresh_rtt_data_cycle = self_cycle;
+                        tracker.rtt_buffer = rtt_buffer;
+                        if let Some(circuit_hash) = tracker.circuit_hash {
+                            rtt_by_circuit
+                                .entry(circuit_hash)
+                                .or_default()
+                                .accumulate(&tracker.rtt_buffer);
+                        }
+                        if let Some(parents) = &tracker.network_json_parents {
+                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
                         }
                     }
                 }
