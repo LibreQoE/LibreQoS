@@ -8,8 +8,8 @@
       "description": "High quality targets responsive page loads; minimum quality defines acceptable interactivity.",
       "latency": [
         {
-          "percentile": 95,
-          "low_ms": 100.0,
+          "percentile": 90,
+          "low_ms": 150.0,
           "high_ms": 50.0
         }
       ],
