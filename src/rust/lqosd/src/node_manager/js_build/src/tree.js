@@ -5,6 +5,7 @@ import {
     formatRtt,
     formatThroughput,
 } from "./helpers/scaling";
+import {colorByQoqScore} from "./helpers/color_scales";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
@@ -15,6 +16,11 @@ var subscribed = false;
 var expandedNodes = new Set();
 var childrenByParentId = new Map();
 const wsClient = get_ws_client();
+const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
+    "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
+    "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
+    "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
         wsClient.off(eventName, wrapped);
@@ -22,6 +28,32 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function initTooltipsWithin(rootEl) {
+    if (!rootEl) return;
+    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
+    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
+    elements.forEach((element) => {
+        if (bootstrap.Tooltip.getOrCreateInstance) {
+            bootstrap.Tooltip.getOrCreateInstance(element);
+        } else {
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
+function formatQooScore(score0to100, fallback = "-") {
+    if (score0to100 === null || score0to100 === undefined) {
+        return fallback;
+    }
+    const numeric = Number(score0to100);
+    if (!Number.isFinite(numeric) || numeric === 255) {
+        return fallback;
+    }
+    const clamped = Math.min(100, Math.max(0, Math.round(numeric)));
+    const color = colorByQoqScore(clamped);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + clamped;
+}
 
 function buildChildrenMap() {
     childrenByParentId = new Map();
@@ -62,6 +94,7 @@ function renderTree() {
     thead.appendChild(theading("⬇️"));
     thead.appendChild(theading("⬆️"));
     thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
+    thead.appendChild(theading("QoO", 2, QOO_TOOLTIP_HTML, "tts_qoo"));
     thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
     thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
     thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
@@ -82,7 +115,7 @@ function renderTree() {
     if (parent !== 0) {
         let row = document.createElement("tr");
         let col = document.createElement("td");
-        col.colSpan = 12;
+        col.colSpan = 14;
         col.classList.add("small", "text-center");
         if (upParent === 0) {
             upParent = tree[parent][1].immediate_parent;
@@ -98,6 +131,7 @@ function renderTree() {
     let target = document.getElementById("tree");
     clearDiv(target)
     target.appendChild(treeTable);
+    initTooltipsWithin(treeTable);
 }
 
 // This runs first and builds the initial structure on the page
@@ -141,6 +175,8 @@ function fillHeader(node) {
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
+    $("#parentQooD").html(formatQooScore(node.qoo ? node.qoo[0] : null));
+    $("#parentQooU").html(formatQooScore(node.qoo ? node.qoo[1] : null));
     let retr = 0;
     const packetsDown = toNumber(node.current_tcp_packets[0], 0);
     if (packetsDown > 0) {
@@ -262,6 +298,18 @@ function buildRow(i, depth=0) {
     row.appendChild(col);
 
     col = document.createElement("td");
+    col.id = "qoo-down-" + nodeId;
+    col.style.width = "6%";
+    col.innerHTML = formatQooScore(node.qoo ? node.qoo[0] : null);
+    row.appendChild(col);
+
+    col = document.createElement("td");
+    col.id = "qoo-up-" + nodeId;
+    col.style.width = "6%";
+    col.innerHTML = formatQooScore(node.qoo ? node.qoo[1] : null);
+    row.appendChild(col);
+
+    col = document.createElement("td");
     col.id = "re-xmit-down-" + nodeId;
     col.style.width = "6%";
     if (node.current_retransmits[0] !== undefined) {
@@ -360,6 +408,14 @@ function treeUpdate(msg) {
         col = document.getElementById("rtt-up-" + nodeId);
         if (col !== null) {
             col.innerHTML = formatRtt(node.rtts[1]);
+        }
+        col = document.getElementById("qoo-down-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatQooScore(node.qoo ? node.qoo[0] : null);
+        }
+        col = document.getElementById("qoo-up-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatQooScore(node.qoo ? node.qoo[1] : null);
         }
         col = document.getElementById("re-xmit-down-" + nodeId);
         if (col !== null) {

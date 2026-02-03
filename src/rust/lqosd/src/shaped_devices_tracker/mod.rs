@@ -151,6 +151,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     current_marks: other_marks,
                     current_drops: other_drops,
                     rtts: Vec::new(),
+                    qoo: (None, None),
                     parents: Vec::new(),
                     immediate_parent: None,
                     node_type: None,

@@ -82,6 +82,16 @@ impl NetworkJsonNode {
             (Some(d), Some(u)) => vec![d.as_millis() as f32, u.as_millis() as f32],
         };
 
+        let qoo = self
+            .qoq_heatmap
+            .as_ref()
+            .map(|heatmap| {
+                let blocks = heatmap.blocks();
+                let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
+                (latest(&blocks.download_total), latest(&blocks.upload_total))
+            })
+            .unwrap_or((None, None));
+
         NetworkJsonTransport {
             name: self.name.clone(),
             max_throughput: self.max_throughput,
@@ -112,6 +122,7 @@ impl NetworkJsonNode {
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
             rtts,
+            qoo,
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,
             node_type: self.node_type.clone(),
