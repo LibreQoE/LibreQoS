@@ -330,6 +330,7 @@ impl ThroughputTracker {
             {
                 v.recent_rtt_data = [RttData::from_nanos(0); 60];
                 v.rtt_buffer.clear();
+                v.qoq = QoqScores::default();
             }
         });
     }
@@ -919,6 +920,34 @@ impl ThroughputTracker {
                     // Send it upstream
                     if let Some(parents) = &tracker.network_json_parents {
                         net_json_calc.add_retransmit_cycle(parents, tracker.tcp_retransmits);
+                    }
+                }
+            }
+
+            // Per-device QoO (stored for UI display via `NetworkTreeClients`).
+            //
+            // NOTE: `compute_qoq_scores` uses the TOTAL RTT histogram bucket, so scores remain
+            // meaningful even when the current RTT window has few samples. We only update scores
+            // when prerequisites are available; otherwise we keep the last known values so the UI
+            // doesn't flap to unknown ("-") on idle seconds.
+            if let Some(profile) = qoo_profile.as_ref() {
+                for tracker in raw_data.values_mut() {
+                    let tcp_packets_delta = tracker.tcp_packets.checked_sub_or_zero(tracker.prev_tcp_packets);
+                    let loss_download =
+                        tcp_retransmit_loss_proxy(tracker.tcp_retransmits.down, tcp_packets_delta.down);
+                    let loss_upload =
+                        tcp_retransmit_loss_proxy(tracker.tcp_retransmits.up, tcp_packets_delta.up);
+                    let scores = compute_qoq_scores(
+                        profile.as_ref(),
+                        &tracker.rtt_buffer,
+                        loss_download,
+                        loss_upload,
+                    );
+                    if scores.download_total != QOQ_UNKNOWN {
+                        tracker.qoq.download_total = scores.download_total;
+                    }
+                    if scores.upload_total != QOQ_UNKNOWN {
+                        tracker.qoq.upload_total = scores.upload_total;
                     }
                 }
             }
