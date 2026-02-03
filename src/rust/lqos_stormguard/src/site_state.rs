@@ -99,7 +99,7 @@ impl SiteStateTracker {
                 }
 
                 // Round-Trip Time
-                if node_info.rtts.len() > 1 {
+                if !node_info.rtts.is_empty() {
                     let mut my_round_trip_times = node_info.rtts.clone();
                     my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
                     let samples = my_round_trip_times.len();

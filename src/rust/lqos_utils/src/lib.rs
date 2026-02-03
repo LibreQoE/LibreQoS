@@ -21,11 +21,17 @@ mod string_table_enum;
 pub mod temporal_heatmap;
 /// Re-export HeatmapBlocks for downstream crates.
 pub use temporal_heatmap::HeatmapBlocks;
+/// RTT histograms and strongly-typed RTT units.
+pub mod rtt;
 /// Helpers for units of measurement
 pub mod units;
 /// Utilities dealing with Unix Timestamps
 pub mod unix_time;
+/// Rolling QoQ (0..100) score heatmap storage.
+pub mod qoq_heatmap;
 mod xdp_ip_address;
+/// Quality-of-Outcome (QoO) scoring utilities and profile loading.
+pub mod qoo;
 
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;

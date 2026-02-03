@@ -52,7 +52,7 @@ impl AsnHeatmapStore {
         self.retain_recent(current_cycle);
 
         for (asn, mut aggregate) in aggregates.drain() {
-            let rtt = median(&mut aggregate.rtts);
+            let (p50, p90) = p50_p90(&mut aggregate.rtts);
             let retransmit_down =
                 retransmit_percent(aggregate.retransmits.down, aggregate.packets.down);
             let retransmit_up = retransmit_percent(aggregate.retransmits.up, aggregate.packets.up);
@@ -64,8 +64,10 @@ impl AsnHeatmapStore {
             entry.heatmap.add_sample(
                 bytes_to_mbps(aggregate.bytes.down),
                 bytes_to_mbps(aggregate.bytes.up),
-                rtt,
-                rtt,
+                p50,
+                p50,
+                p90,
+                p90,
                 retransmit_down,
                 retransmit_up,
             );
@@ -131,15 +133,25 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     Some((retransmits as f32 / packets as f32) * 100.0)
 }
 
-fn median(values: &mut Vec<f32>) -> Option<f32> {
+fn p50_p90(values: &mut Vec<f32>) -> (Option<f32>, Option<f32>) {
     if values.is_empty() {
-        return None;
+        return (None, None);
     }
     values.sort_by(|a, b| a.total_cmp(b));
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        Some(values[mid])
-    } else {
-        Some((values[mid - 1] + values[mid]) / 2.0)
-    }
+    let len = values.len();
+
+    let p50 = {
+        let mid = len / 2;
+        if len % 2 == 1 {
+            Some(values[mid])
+        } else {
+            Some((values[mid - 1] + values[mid]) / 2.0)
+        }
+    };
+    let p90 = {
+        let rank = ((0.90 * len as f32).ceil() as usize).saturating_sub(1);
+        Some(values[rank.min(len - 1)])
+    };
+
+    (p50, p90)
 }

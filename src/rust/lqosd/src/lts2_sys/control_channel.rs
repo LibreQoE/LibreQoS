@@ -15,6 +15,7 @@ use crate::lts2_sys::license_grant;
 
 mod messages;
 pub use messages::{RemoteInsightRequest, WsMessage};
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 
 #[derive(Debug)]
 pub struct HistoryQueryResultPayload {
@@ -1136,8 +1137,8 @@ async fn circuit_snapshot_streaming(
             }
 
             let rtt_ms = (
-                local.rtt[0].as_millis() as f32,
-                local.rtt[1].as_millis() as f32,
+                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,
+                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Upload) as f32,
             );
             flows_out.push(FlowSnapshot {
                 remote_ip: remote_ip_addr,

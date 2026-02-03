@@ -1,5 +1,7 @@
 use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_bus::BusRequest;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
@@ -31,9 +33,33 @@ pub(super) async fn circuit_watcher(
             })
             .collect();
 
+        let qoo_score = {
+            let shaped = SHAPED_DEVICES.load();
+            let circuit_hash = shaped
+                .devices
+                .iter()
+                .find(|d| d.circuit_id == circuit)
+                .map(|d| d.circuit_hash);
+            circuit_hash.and_then(|hash| {
+                let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
+                qoq_heatmaps.get(&hash).and_then(|heatmap| {
+                    let blocks = heatmap.blocks();
+                    let dl = blocks.download_total.last().copied().flatten();
+                    let ul = blocks.upload_total.last().copied().flatten();
+                    match (dl, ul) {
+                        (Some(d), Some(u)) => Some(d.min(u)),
+                        (Some(d), None) => Some(d),
+                        (None, Some(u)) => Some(u),
+                        (None, None) => None,
+                    }
+                })
+            })
+        };
+
         let result = WsResponse::CircuitWatcher {
             circuit_id: circuit.clone(),
             devices: devices_for_circuit,
+            qoo_score,
         };
 
         if let Ok(payload) = encode_ws_message(&result) {

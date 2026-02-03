@@ -3,7 +3,7 @@ use crate::node_manager::ws::publish_subscribe::subscriber::Subscriber;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use allocative::Allocative;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Sender, error::TrySendError};
 
 #[derive(Allocative)]
 pub(super) struct PublisherChannel {
@@ -32,15 +32,27 @@ impl PublisherChannel {
             channel: self.channel_type,
         };
         if let Ok(payload) = encode_ws_message(&welcome) {
-            let _ = sender.send(payload).await;
+            let _ = sender.try_send(payload);
         }
+    }
+
+    pub(super) fn unsubscribe(&mut self, sender: &Sender<Arc<Vec<u8>>>) {
+        self.subscribers
+            .retain(|s| !s.sender.same_channel(sender));
     }
 
     /// Submit a message to an entire channel
     pub(super) async fn send(&mut self, message: Arc<Vec<u8>>) {
         for subscriber in self.subscribers.iter_mut() {
-            if subscriber.sender.send(message.clone()).await.is_err() {
-                subscriber.is_alive = false;
+            match subscriber.sender.try_send(message.clone()) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {
+                    // The subscriber is lagging. Drop this update rather than blocking the entire
+                    // pubsub system (which can deadlock websocket request handling).
+                }
+                Err(TrySendError::Closed(_)) => {
+                    subscriber.is_alive = false;
+                }
             }
         }
     }

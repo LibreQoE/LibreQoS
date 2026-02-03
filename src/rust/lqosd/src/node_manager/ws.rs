@@ -16,7 +16,7 @@ use crate::node_manager::local_api::{
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
-    WsHello, WsHelloReply, WsRequest, WsResponse, encode_ws_message, WS_HANDSHAKE_REQUIREMENT,
+    WsHello, WsRequest, WsResponse, encode_ws_message, WS_HANDSHAKE_REQUIREMENT,
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -33,6 +33,7 @@ use axum::{
     routing::get,
 };
 use lqos_bus::BusRequest;
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc::Sender;
 use serde_cbor::Value as CborValue;
 use tracing::{info, warn};
@@ -55,11 +56,16 @@ pub fn websocket_router(
     shaper_query: Sender<ShaperQueryCommand>,
 ) -> Router {
     let channels = PubSub::new();
-    tokio::spawn(channel_ticker(
+    let ticker_handle = tokio::spawn(channel_ticker(
         channels.clone(),
         bus_tx.clone(),
         system_usage_tx.clone(),
     ));
+    tokio::spawn(async move {
+        if let Err(err) = ticker_handle.await {
+            warn!("Channel ticker task exited: {err}");
+        }
+    });
     Router::new()
         .route("/ws", get(ws_handler))
         .layer(Extension(channels))
@@ -107,7 +113,7 @@ async fn ws_handler(
 }
 
 async fn handle_socket(
-    mut socket: WebSocket,
+    socket: WebSocket,
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
@@ -116,7 +122,18 @@ async fn handle_socket(
 ) {
     info!("Websocket connected");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(128);
+    let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // Larger buffer helps absorb bursts of pubsub updates without stalling
+    // interactive request/response messages.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(1024);
+    let outbound_handle = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if ws_tx.send(Message::Binary((*msg).clone())).await.is_err() {
+                break;
+            }
+        }
+    });
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
     let mut login = LoginResult::Denied;
@@ -131,11 +148,9 @@ async fn handle_socket(
             requirement: WS_HANDSHAKE_REQUIREMENT.to_string(),
         },
     };
-    if let Ok(payload) = encode_ws_message(&hello) {
-        if socket.send(Message::Binary((*payload).clone())).await.is_err() {
-            return;
-        }
-    } else {
+    if send_ws_response(&tx, hello).await {
+        outbound_handle.abort();
+        let _ = outbound_handle.await;
         return;
     }
 
@@ -147,7 +162,7 @@ async fn handle_socket(
                 warn!("Websocket handshake timed out");
                 break;
             }
-            inbound = socket.recv() => {
+            inbound = ws_rx.next() => {
                 // Received a websocket message
                 match inbound {
                     Some(Ok(msg)) => {
@@ -172,24 +187,10 @@ async fn handle_socket(
                     None => break, // The channel has closed
                 }
             }
-            outbound = rx.recv() => {
-                match outbound {
-                    Some(msg) => {
-                        if let Err(_) = socket.send(Message::Binary((*msg).clone())).await {
-                            // The outbound websocket has closed. That's ok, it's not
-                            // an error. We're relying on *this* task terminating to in
-                            // turn close the subscription channel, which will in turn
-                            // cause the subscription to end.
-                            break;
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
         }
     }
+    outbound_handle.abort();
+    let _ = outbound_handle.await;
     info!("Websocket disconnected");
 }
 
@@ -265,6 +266,7 @@ async fn receive_channel_message(
         }
         WsRequest::Unsubscribe { channel } => {
             subscribed_channels.remove(&channel);
+            channels.unsubscribe(channel, tx.clone()).await;
         }
         WsRequest::Private(command) => {
             private_state.handle_request(command).await;
@@ -964,6 +966,46 @@ async fn receive_channel_message(
                 }
             }
         }
+        WsRequest::QooProfiles => {
+            if *login != crate::node_manager::auth::LoginResult::Admin {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            } else {
+                match lqos_config::load_qoo_profiles_file() {
+                    Ok(file) => {
+                        let response = WsResponse::QooProfiles {
+                            data: crate::node_manager::ws::messages::QooProfilesSummary {
+                                default_profile_id: file.default_profile_id.clone(),
+                                profiles: file
+                                    .profiles
+                                    .iter()
+                                    .map(|p| lqos_config::QooProfileInfo {
+                                        id: p.id.clone(),
+                                        name: p.name.clone(),
+                                        description: p.description.clone(),
+                                    })
+                                    .collect(),
+                            },
+                        };
+                        if send_ws_response(&tx, response).await {
+                            return true;
+                        }
+                    }
+                    Err(_) => {
+                        let response = WsResponse::Error {
+                            message: "Unable to load QoO profiles".to_string(),
+                        };
+                        if send_ws_response(&tx, response).await {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
         WsRequest::UpdateConfig { config: cfg } => {
             let result = config::update_lqosd_config_data(*login, cfg).await;
             let (ok, message) = match result {
@@ -1134,7 +1176,14 @@ async fn send_ws_response(tx: &Sender<Arc<Vec<u8>>>, response: WsResponse) -> bo
         Ok(payload) => payload,
         Err(_) => return true,
     };
-    tx.send(payload).await.is_err()
+    match tx.try_send(payload) {
+        Ok(()) => false,
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            warn!("Websocket outbound queue full; closing connection");
+            true
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => true,
+    }
 }
 
 fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {

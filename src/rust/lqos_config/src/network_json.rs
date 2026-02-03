@@ -2,11 +2,16 @@ mod network_json_node;
 mod network_json_transport;
 
 use allocative_derive::Allocative;
-use lqos_utils::{temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
+use lqos_utils::{
+    qoq_heatmap::TemporalQoqHeatmap,
+    qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
+    rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
+    temporal_heatmap::TemporalHeatmap,
+    units::DownUpOrder,
+};
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -84,9 +89,10 @@ impl NetworkJson {
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
             immediate_parent: None,
-            rtts: HashSet::new(),
+            rtt_buffer: RttBuffer::default(),
             node_type: None,
             heatmap: None,
+            qoq_heatmap: None,
         }];
         if !Self::exists() {
             return Err(NetworkJsonError::FileNotFound);
@@ -159,7 +165,7 @@ impl NetworkJson {
             n.current_udp_packets.set_to_zero();
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
-            n.rtts.clear();
+            n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
         });
@@ -191,13 +197,12 @@ impl NetworkJson {
         }
     }
 
-    /// Record RTT time in the tree. Note that due to interior mutability,
-    /// this does not require mutable access.
-    pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
+    /// Record RTT histogram data in the tree for this cycle.
+    pub fn add_rtt_buffer_cycle(&mut self, targets: &[usize], rtt: &RttBuffer) {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
-                node.rtts.insert((rtt * 100.0) as u16);
+                node.rtt_buffer.accumulate(rtt);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -237,9 +242,14 @@ impl NetworkJson {
     /// Record a heatmap sample for each site based on the current per-cycle data.
     pub fn record_site_heatmaps(&mut self, enable: bool) {
         if !enable {
-            self.nodes.iter_mut().for_each(|node| node.heatmap = None);
+            self.nodes.iter_mut().for_each(|node| {
+                node.heatmap = None;
+                node.qoq_heatmap = None;
+            });
             return;
         }
+
+        let qoo_profile = crate::active_qoo_profile().ok();
 
         for node in self.nodes.iter_mut() {
             let download_util =
@@ -248,8 +258,22 @@ impl NetworkJson {
             let upload_util =
                 utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
                     .unwrap_or(0.0);
-            let mut rtts: Vec<f32> = node.rtts.iter().map(|n| *n as f32 / 100.0).collect();
-            let median_rtt = median_rtt(&mut rtts);
+            let rtt_p50_down = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p50_up = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_down = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_up = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+                .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down = retransmit_percent(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
@@ -261,10 +285,34 @@ impl NetworkJson {
             heatmap.add_sample(
                 download_util,
                 upload_util,
-                median_rtt,
-                median_rtt,
+                rtt_p50_down,
+                rtt_p50_up,
+                rtt_p90_down,
+                rtt_p90_up,
                 retransmit_down,
                 retransmit_up,
+            );
+
+            let loss_download = tcp_retransmit_loss_proxy(
+                node.current_tcp_retransmits.down,
+                node.current_tcp_packets.down,
+            );
+            let loss_upload =
+                tcp_retransmit_loss_proxy(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+            let scores = if let Some(profile) = qoo_profile.as_ref() {
+                compute_qoq_scores(
+                    profile.as_ref(),
+                    &node.rtt_buffer,
+                    loss_download,
+                    loss_upload,
+                )
+            } else {
+                QoqScores::default()
+            };
+            let qoq_heatmap = node.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
+            qoq_heatmap.add_sample(
+                scores.download_total_f32(),
+                scores.upload_total_f32(),
             );
         }
     }
@@ -313,11 +361,12 @@ fn recurse_node(
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
-        rtts: HashSet::new(),
+        rtt_buffer: RttBuffer::default(),
         node_type: json
             .get("type")
             .map(|v| v.as_str().unwrap_or_default().to_string()),
         heatmap: None,
+        qoq_heatmap: None,
     };
 
     if node.name != "children" {
@@ -353,17 +402,18 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     Some((retransmits as f32 / packets as f32) * 100.0)
 }
 
-fn median_rtt(values: &mut Vec<f32>) -> Option<f32> {
-    if values.is_empty() {
+fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
+    if packets == 0 {
         return None;
     }
-    values.sort_by(|a, b| a.total_cmp(b));
-    let mid = values.len() / 2;
-    if values.len() % 2 == 1 {
-        Some(values[mid])
-    } else {
-        Some((values[mid - 1] + values[mid]) / 2.0)
-    }
+
+    let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
+    const TCP_RETRANSMIT_CONFIDENCE_MAX: f64 = 0.05;
+    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0) * TCP_RETRANSMIT_CONFIDENCE_MAX;
+    Some(LossMeasurement::TcpRetransmitProxy {
+        retransmit_fraction,
+        confidence,
+    })
 }
 
 #[derive(Error, Debug)]

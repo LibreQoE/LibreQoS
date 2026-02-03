@@ -98,29 +98,59 @@ where
             }
             Ok(bytes) => {
                 if bytes == 0 {
-                    // Not having any data is not an error
                     return Ok(());
                 }
-                let first_four_bytes: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
+                if bytes < 8 {
+                    error!("Kernel iterator buffer too small ({bytes} bytes)");
+                    return Err(BpfIteratorError::UnableToCreateIterator);
+                }
+
+                let Ok(first_four_bytes): Result<[u8; 4], _> = buf[0..4].try_into() else {
+                    return Err(BpfIteratorError::UnableToCreateIterator);
+                };
                 let num_cpus = u32::from_ne_bytes(first_four_bytes) as usize;
+                if num_cpus == 0 || num_cpus > 4096 {
+                    error!("Invalid NUM_CPUS value from iterator: {num_cpus}");
+                    return Err(BpfIteratorError::UnableToCreateIterator);
+                }
+
                 let mut index = 8;
-                while index + Self::TOTAL_SIZE <= buf.len() {
+                while index + Self::KEY_SIZE <= buf.len() {
                     let key_start = index;
                     let key_end = key_start + Self::KEY_SIZE;
                     let key_slice = &buf[key_start..key_end];
-                    //println!("{:?}", unsafe { &key_slice.align_to::<KEY>() });
-                    let (_head, key, _tail) = unsafe { &key_slice.align_to::<KEY>() };
+                    index = key_end;
 
-                    let value_start = key_end;
-                    let value_end = value_start + (num_cpus * Self::VALUE_SIZE);
-                    let value_slice = &buf[value_start..value_end];
-                    //println!("{:?}", unsafe { &value_slice.align_to::<VALUE>() });
-                    let (_head, values, _tail) = unsafe { &value_slice.align_to::<VALUE>() };
-                    debug_assert_eq!(values.len(), num_cpus);
+                    let values_len = num_cpus * Self::VALUE_SIZE;
+                    if index + values_len > buf.len() {
+                        error!(
+                            "Truncated iterator buffer (need {} bytes, have {})",
+                            index + values_len,
+                            buf.len()
+                        );
+                        break;
+                    }
+                    let value_slice = &buf[index..index + values_len];
+                    index += values_len;
 
-                    callback(&key[0], values);
+                    let Ok(key) = KEY::read_from_bytes(key_slice) else {
+                        error!("Failed to decode iterator key");
+                        continue;
+                    };
 
-                    index += Self::KEY_SIZE + (num_cpus * Self::VALUE_SIZE);
+                    let mut values: Vec<VALUE> = Vec::with_capacity(num_cpus);
+                    for cpu in 0..num_cpus {
+                        let start = cpu * Self::VALUE_SIZE;
+                        let end = start + Self::VALUE_SIZE;
+                        let chunk = &value_slice[start..end];
+                        let Ok(value) = VALUE::read_from_bytes(chunk) else {
+                            error!("Failed to decode iterator value (cpu={cpu})");
+                            continue;
+                        };
+                        values.push(value);
+                    }
+
+                    callback(&key, &values);
                 }
                 Ok(())
             }
@@ -143,24 +173,22 @@ where
                     let key_start = index;
                     let key_end = key_start + Self::KEY_SIZE;
                     let key_slice = &buf[key_start..key_end];
-                    let (_head, key, _tail) = unsafe { &key_slice.align_to::<KEY>() };
 
                     let value_start = key_end;
                     let value_end = value_start + Self::VALUE_SIZE;
                     let value_slice = &buf[value_start..value_end];
-                    let (_head, values, _tail) = unsafe { &value_slice.align_to::<VALUE>() };
+                    let Ok(key) = KEY::read_from_bytes(key_slice) else {
+                        error!("Failed to decode iterator key");
+                        index += Self::TOTAL_SIZE;
+                        continue;
+                    };
+                    let Ok(value) = VALUE::read_from_bytes(value_slice) else {
+                        error!("Failed to decode iterator value");
+                        index += Self::TOTAL_SIZE;
+                        continue;
+                    };
 
-                    if !key.is_empty() && !values.is_empty() {
-                        callback(&key[0], &values[0]);
-                    } else {
-                        error!("Empty key or value found in iterator");
-                        if key.is_empty() {
-                            error!("Empty key");
-                        }
-                        if values.is_empty() {
-                            error!("Empty value");
-                        }
-                    }
+                    callback(&key, &value);
 
                     index += Self::KEY_SIZE + Self::VALUE_SIZE;
                 }
@@ -190,31 +218,35 @@ enum BpfIteratorError {
     UnableToCreateIterator,
 }
 
-static MAP_TRAFFIC: OnceLock<Mutex<BpfMapIterator<XdpIpAddress, HostCounter>>> = OnceLock::new();
+static MAP_TRAFFIC: OnceLock<
+    Mutex<Result<BpfMapIterator<XdpIpAddress, HostCounter>, BpfIteratorError>>,
+> = OnceLock::new();
 
-static FLOWBEE_TRACKER: OnceLock<Mutex<BpfMapIterator<FlowbeeKey, FlowbeeData>>> = OnceLock::new();
+static FLOWBEE_TRACKER: OnceLock<
+    Mutex<Result<BpfMapIterator<FlowbeeKey, FlowbeeData>, BpfIteratorError>>,
+> = OnceLock::new();
 
 pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
     let traffic_map = MAP_TRAFFIC.get_or_init(|| {
         let lock = BPF_SKELETON.lock();
-        let Some(skeleton) = lock.as_ref() else {
-            panic!("Failed to create throughput iterator");
-        };
+        let Some(skeleton) = lock.as_ref() else { return Mutex::new(Err(BpfIteratorError::FailedToLink)) };
         let skeleton = skeleton.get_ptr();
-        let Ok(iter) = (unsafe {
-            BpfMapIterator::new(
-                (*skeleton).progs.throughput_reader,
-                (*skeleton).maps.map_traffic,
-            )
-        }) else {
-            panic!("Failed to create throughput iterator");
+        let iter = unsafe {
+            BpfMapIterator::new((*skeleton).progs.throughput_reader, (*skeleton).maps.map_traffic)
         };
         Mutex::new(iter)
     });
 
     {
         let iter = traffic_map.lock();
-        let _ = iter.for_each_per_cpu(callback);
+        match &*iter {
+            Ok(iter) => {
+                if let Err(e) = iter.for_each_per_cpu(callback) {
+                    error!("Throughput iterator error: {e:?}");
+                }
+            }
+            Err(e) => error!("Throughput iterator unavailable: {e:?}"),
+        }
     }
 }
 
@@ -222,21 +254,22 @@ pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostC
 pub fn iterate_flows(callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)) {
     let flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
         let lock = BPF_SKELETON.lock();
-        let Some(skeleton) = lock.as_ref() else {
-            panic!("Failed to create flowbee iterator");
-        };
+        let Some(skeleton) = lock.as_ref() else { return Mutex::new(Err(BpfIteratorError::FailedToLink)) };
         let skeleton = skeleton.get_ptr();
-        let Ok(iter) = (unsafe {
-            BpfMapIterator::new((*skeleton).progs.flow_reader, (*skeleton).maps.flowbee)
-        }) else {
-            panic!("Failed to create flowbee iterator");
-        };
+        let iter = unsafe { BpfMapIterator::new((*skeleton).progs.flow_reader, (*skeleton).maps.flowbee) };
         Mutex::new(iter)
     });
 
     {
         let iter = flowbee_tracker.lock();
-        let _ = iter.for_each(callback);
+        match &*iter {
+            Ok(iter) => {
+                if let Err(e) = iter.for_each(callback) {
+                    error!("Flowbee iterator error: {e:?}");
+                }
+            }
+            Err(e) => error!("Flowbee iterator unavailable: {e:?}"),
+        }
     }
 }
 

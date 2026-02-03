@@ -7,7 +7,7 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::{HeatmapBlocks, units::DownUpOrder};
+use lqos_utils::{HeatmapBlocks, qoq_heatmap::QoqHeatmapBlocks, units::DownUpOrder};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -49,6 +49,9 @@ pub struct CircuitHeatmapData {
     pub circuit_name: String,
     /// Heatmap blocks for the circuit.
     pub blocks: HeatmapBlocks,
+    /// QoO/QoQ score heatmap blocks (optional; UI-only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qoq_blocks: Option<QoqHeatmapBlocks>,
 }
 
 /// Site-level TemporalHeatmap data for the executive summary.
@@ -64,6 +67,9 @@ pub struct SiteHeatmapData {
     pub depth: usize,
     /// Heatmap blocks for the site.
     pub blocks: HeatmapBlocks,
+    /// QoO/QoQ score heatmap blocks (optional; UI-only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qoq_blocks: Option<QoqHeatmapBlocks>,
 }
 
 /// ASN-level TemporalHeatmap data for the executive summary.

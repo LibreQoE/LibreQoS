@@ -58,6 +58,17 @@ impl PubSub {
         }
     }
 
+    pub(super) async fn unsubscribe(
+        &self,
+        channel: PublishedChannels,
+        sender: Sender<Arc<Vec<u8>>>,
+    ) {
+        let mut channels = self.channels.lock().await;
+        if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
+            channel.unsubscribe(&sender);
+        }
+    }
+
     /// Provide a set of channels that have subscribers.
     pub(super) async fn update_living_channel_list(&self) {
         let channels = self.channels.lock().await;

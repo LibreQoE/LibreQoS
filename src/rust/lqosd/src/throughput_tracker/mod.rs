@@ -7,8 +7,10 @@ use self::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
     snapshot_asn_heatmaps,
 };
+pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::RttData;
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use arc_swap::ArcSwap;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
@@ -28,6 +30,7 @@ use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::sync::Arc;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, info, warn};
@@ -35,6 +38,8 @@ use tracing::{debug, info, warn};
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
+pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
 
 /// Create the throughput monitor thread, and begin polling for
 /// throughput data every second.
@@ -151,7 +156,8 @@ fn throughput_task(
     let mut timer_metrics = ThroughputTaskTimeMetrics::new();
 
     // Preallocate some buffers to avoid allocations in the loop
-    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
+    let mut rtt_by_circuit: FxHashMap<i64, RttBuffer> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
@@ -180,9 +186,11 @@ fn throughput_task(
                 netflow_sender.clone(),
                 &mut net_json_calc,
                 &mut rtt_circuit_tracker,
+                &mut rtt_by_circuit,
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+            CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
             let enable_site_heatmaps = lqos_config::load_config()
                 .map(|config| config.enable_site_heatmaps)
@@ -191,9 +199,11 @@ fn throughput_task(
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
+            rtt_by_circuit.clear();
             tcp_retries.clear();
             expired_flows.clear();
             rtt_circuit_tracker.shrink_to_fit();
+            rtt_by_circuit.shrink_to_fit();
             tcp_retries.shrink_to_fit();
             expired_flows.shrink_to_fit();
 
@@ -426,6 +436,7 @@ pub fn circuit_heatmaps() -> BusResponse {
     });
 
     let heatmaps = THROUGHPUT_TRACKER.circuit_heatmaps.lock();
+    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
     let mut rows: Vec<CircuitHeatmapData> = heatmaps
         .iter()
         .map(|(hash, heatmap)| {
@@ -438,6 +449,7 @@ pub fn circuit_heatmaps() -> BusResponse {
                 circuit_id,
                 circuit_name,
                 blocks: heatmap.blocks(),
+                qoq_blocks: qoq_heatmaps.get(hash).map(|heatmap| heatmap.blocks()),
             }
         })
         .collect();
@@ -467,6 +479,7 @@ pub fn site_heatmaps() -> BusResponse {
                 node_type: node.node_type.clone(),
                 depth: node.parents.len().saturating_sub(1),
                 blocks: heatmap.blocks(),
+                qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
             })
         })
         .collect();
@@ -970,14 +983,14 @@ pub fn dump_active_flows() -> BusResponse {
                 tcp_retransmits: row.0.tcp_retransmits,
                 end_status: row.0.end_status,
                 tos: row.0.tos,
-                flags: row.0.flags,
+                flags: row.0.get_flags(),
                 remote_asn: row.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -1034,8 +1047,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_total = a.1.0.rtt;
-                let b_total = b.1.0.rtt;
+                let a_total = a.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
+                let b_total = b.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
                 a_total.cmp(&b_total)
             });
         }
@@ -1065,14 +1078,14 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 tcp_retransmits: flow.0.tcp_retransmits,
                 end_status: flow.0.end_status,
                 tos: flow.0.tos,
-                flags: flow.0.flags,
+                flags: flow.0.get_flags(),
                 remote_asn: flow.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -1111,14 +1124,14 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     tcp_retransmits: row.0.tcp_retransmits,
                     end_status: row.0.end_status,
                     tos: row.0.tos,
-                    flags: row.0.flags,
+                    flags: row.0.get_flags(),
                     remote_asn: row.1.asn_id.0,
                     remote_asn_name: geo.name,
                     remote_asn_country: geo.country,
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                    rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                     circuit_id,
                     circuit_name,
                 }

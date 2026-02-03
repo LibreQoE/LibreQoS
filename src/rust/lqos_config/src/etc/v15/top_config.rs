@@ -30,6 +30,10 @@ pub struct Config {
     /// Node name - human-readable name for this shaper.
     pub node_name: String,
 
+    /// Optional QoO profile id (loaded from `qoo_profiles.json`) used for QoO/QoQ scoring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qoo_profile_id: Option<String>,
+
     /// Packet capture time
     pub packet_capture_time: usize,
 
@@ -204,6 +208,7 @@ impl Default for Config {
             lqos_directory: "/opt/libreqos/src".to_string(),
             node_id: Self::calculate_node_id(),
             node_name: "LibreQoS".to_string(),
+            qoo_profile_id: None,
             tuning: Tunables::default(),
             bridge: Some(super::bridge::BridgeConfig::default()),
             single_interface: None,
