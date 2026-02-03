@@ -61,6 +61,74 @@ Next, you will want to configure your [CRM or NMS integration](integrations.md) 
 
 Most LibreQoS shaper settings can be modified via the Configuration page on the WebUI (http://your_shaper_ip:9123/config_general.html).
 
+### QoO (Quality of Outcome) profiles (`qoo_profiles.json`)
+
+LibreQoS displays **QoO** (Quality of Outcome) as an estimate of “Internet Quality” based on latency and loss, aligned with the IETF IPPM QoO draft:
+https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/
+
+LibreQoS uses a **QoO profile** to define what “good” and “bad” look like for your network. Profiles are configured in `qoo_profiles.json`.
+
+#### Where the file lives
+
+LibreQoS loads profiles from:
+
+`<lqos_directory>/qoo_profiles.json`
+
+This is the same directory where LibreQoS reads/writes `network.json` and `ShapedDevices.csv` (your `lqos_directory` is set in `/etc/lqos.conf`). The WebUI also displays the resolved path on the Configuration → General page.
+
+#### Selecting a profile
+
+You can select the active profile in either place:
+
+- **WebUI**: Configuration → General → “QoO Profile”
+- **Config file**: set `qoo_profile_id` in `/etc/lqos.conf` (top-level key)
+
+Example:
+
+```toml
+# /etc/lqos.conf
+qoo_profile_id = "web_browsing"
+```
+
+If `qoo_profile_id` is not set, LibreQoS uses the default profile from `qoo_profiles.json` (and otherwise falls back to `web_browsing` / first available profile).
+
+#### File format (schema v2)
+
+`qoo_profiles.json` is strictly validated. It must contain `schema_version: 2`, an optional `default_profile_id`, and a `profiles` list. Each profile defines:
+
+- `latency`: one or more RTT percentiles with thresholds in **milliseconds**
+  - `high_ms` = good/target
+  - `low_ms` = bad/unacceptable
+- `loss_percent`: thresholds in **percent** (0..100) (LibreQoS uses TCP retransmit fraction as a loss proxy)
+  - `high` = good/target
+  - `low` = bad/unacceptable
+
+Minimal example (one profile):
+
+```json
+{
+  "schema_version": 2,
+  "default_profile_id": "web_browsing",
+  "profiles": [
+    {
+      "id": "web_browsing",
+      "name": "Web browsing",
+      "description": "Targets responsive page loads; defines acceptable interactivity.",
+      "latency": [{ "percentile": 95, "low_ms": 150.0, "high_ms": 50.0 }],
+      "loss_percent": { "low": 1.0, "high": 0.5 },
+      "latency_normalization": { "mode": "none" },
+      "loss_handling": "confidence_weighted"
+    }
+  ]
+}
+```
+
+#### Applying changes
+
+- Changes to `qoo_profiles.json` are picked up automatically (no restart required).
+- If you change `/etc/lqos.conf` (including `qoo_profile_id`), restart with `sudo systemctl restart lqosd`.
+- If the profile file is missing/invalid, QoO may show as unknown (and errors will appear in `journalctl -u lqosd`).
+
 ## Configuration via Command Line
 
 You can also modify settings using the command line.
