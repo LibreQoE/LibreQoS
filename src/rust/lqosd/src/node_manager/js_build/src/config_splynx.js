@@ -15,7 +15,7 @@ function validateConfig() {
             return false;
         }
 
-        const url = document.getElementById("spylnxUrl").value.trim();
+        const url = document.getElementById("splynxUrl").value.trim();
         if (!url) {
             alert("Splynx URL is required when Splynx integration is enabled");
             return false;
@@ -31,38 +31,38 @@ function validateConfig() {
 }
 
 function updateConfig() {
-    // Update only the spylnx_integration section
-    window.config.spylnx_integration = {
-        enable_spylnx: document.getElementById("enableSplynx").checked,
+    // Update only the splynx_integration section
+    window.config.splynx_integration = {
+        enable_splynx: document.getElementById("enableSplynx").checked,
         api_key: document.getElementById("apiKey").value.trim(),
         api_secret: document.getElementById("apiSecret").value.trim(),
-        url: document.getElementById("spylnxUrl").value.trim(),
+        url: document.getElementById("splynxUrl").value.trim(),
         strategy: document.getElementById("topologyStrategy").value
     };
 }
 
 // Render the configuration menu
-renderConfigMenu('spylnx');
+renderConfigMenu('splynx');
 
 loadConfig(() => {
     // window.config now contains the configuration.
     // Populate form fields with config values
-    if (window.config && window.config.spylnx_integration) {
-        const spylnx = window.config.spylnx_integration;
+    if (window.config && window.config.splynx_integration) {
+        const splynx = window.config.splynx_integration;
         
         // Boolean field
         document.getElementById("enableSplynx").checked = 
-            spylnx.enable_spylnx ?? false;
+            splynx.enable_splynx ?? false;
 
         // String fields
         document.getElementById("apiKey").value =
-            spylnx.api_key ?? "";
+            splynx.api_key ?? "";
         document.getElementById("apiSecret").value =
-            spylnx.api_secret ?? "";
-        document.getElementById("spylnxUrl").value = 
-            spylnx.url ?? "";
+            splynx.api_secret ?? "";
+        document.getElementById("splynxUrl").value = 
+            splynx.url ?? "";
         document.getElementById("topologyStrategy").value = 
-            spylnx.strategy ?? "ap_only";
+            splynx.strategy ?? "ap_only";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

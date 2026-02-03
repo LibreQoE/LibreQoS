@@ -113,7 +113,7 @@ ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración con 
 Para asegurarse de que network.json siempre se sobrescriba con la versión más reciente obtenida por la integración, edite `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor `always_overwrite_network_json` a `true`.
 Luego ejecute `sudo systemctl restart lqosd`.
 
-Tiene la opción de ejecutar integrationSplynx.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_spylnx = true``` en `/etc/lqos.conf`.
+Tiene la opción de ejecutar integrationSplynx.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_splynx = true``` bajo la sección ```[splynx_integration]``` en `/etc/lqos.conf`.
 Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
 ### Sobrescrituras de Splynx

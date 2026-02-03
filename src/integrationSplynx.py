@@ -155,13 +155,13 @@ def run_splynx_pipeline(strategy_name: str):
 	"""
 	net = NetworkGraph()
 	print(f"Using {strategy_name.upper()} strategy - unified pipeline")
-	print("Fetching data from Spylnx")
+	print("Fetching data from Splynx")
 	headers = buildHeaders()
-	print("Fetching tariffs from Spylnx")
+	print("Fetching tariffs from Splynx")
 	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
-	print("Fetching all customers from Spylnx")
+	print("Fetching all customers from Splynx")
 	customers = getCustomers(headers)
-	print("Fetching online customers from Spylnx")
+	print("Fetching online customers from Splynx")
 	customersOnline = getCustomersOnline(headers)
 
 	ipForRouter = {}
@@ -173,19 +173,19 @@ def run_splynx_pipeline(strategy_name: str):
 	allServices = []
 
 	if strategy_name in ("ap_only", "ap_site", "full"):
-		print("Fetching routers from Spylnx")
+		print("Fetching routers from Splynx")
 		ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
-		print("Fetching sectors from Spylnx")
+		print("Fetching sectors from Splynx")
 		sectorForRouter = getSectors(headers)
-		print("Fetching services from Spylnx")
+		print("Fetching services from Splynx")
 		allServices = getAllServices(headers)
-		print("Fetching hardware monitoring from Spylnx")
+		print("Fetching hardware monitoring from Splynx")
 		monitoring = getMonitoring(headers)
 	else:
-		print("Fetching services from Spylnx")
+		print("Fetching services from Splynx")
 		allServices = getAllServices(headers)
 
-	print("Successfully fetched data from Spylnx")
+	print("Successfully fetched data from Splynx")
 	# Build basic customer map
 	cust_id_to_name = {c['id']: c['name'] for c in customers}
 
@@ -298,7 +298,7 @@ def buildHeaders():
 	credentials = base64.b64encode(credentials.encode()).decode()
 	return {'Authorization': "Basic %s" % credentials}
 
-def spylnxRequest(target, headers):
+def splynx_request(target, headers):
 	"""
 	Send a GET request to the Splynx API and return the JSON response.
 	"""
@@ -316,7 +316,7 @@ def getTariffs(headers):
 	"""
 	Retrieve tariff data from Splynx API and calculate download/upload speeds for each tariff.
 	"""
-	data = spylnxRequest("admin/tariffs/internet", headers)
+	data = splynx_request("admin/tariffs/internet", headers)
 	downloadForTariffID = {}
 	uploadForTariffID = {}
 	try:
@@ -358,19 +358,19 @@ def getCustomers(headers):
 	"""
 	Retrieve all customer data from Splynx API.
 	"""
-	return spylnxRequest("admin/customers/customer", headers)
+	return splynx_request("admin/customers/customer", headers)
 
 def getCustomersOnline(headers):
 	"""
 	Retrieve data of currently online customers from Splynx API.
 	"""
-	return spylnxRequest("admin/customers/customers-online", headers)
+	return splynx_request("admin/customers/customers-online", headers)
 
 def getRouters(headers):
 	"""
 	Retrieve router data from Splynx API and build dictionaries for router IPs and names.
 	"""
-	data = spylnxRequest("admin/networking/routers", headers)
+	data = splynx_request("admin/networking/routers", headers)
 	routerIdList = []
 	ipForRouter = {}
 	nameForRouterID = {}
@@ -387,7 +387,7 @@ def getSectors(headers):
 	"""
 	Retrieve sector data from Splynx API and build a dictionary mapping routers to their sectors.
 	"""
-	data = spylnxRequest("admin/networking/routers-sectors", headers)
+	data = splynx_request("admin/networking/routers-sectors", headers)
 	sectorForRouter = {}
 	for sector in data:
 		routerID = sector['router_id']
@@ -419,7 +419,7 @@ def getAllServices(headers):
 	"""
 	Retrieve all active internet services from Splynx API.
 	"""
-	return spylnxRequest("admin/customers/customer/0/internet-services?main_attributes%5Bstatus%5D=active", headers)
+	return splynx_request("admin/customers/customer/0/internet-services?main_attributes%5Bstatus%5D=active", headers)
 
 def getAllIPs(headers):
 	"""
@@ -427,8 +427,8 @@ def getAllIPs(headers):
 	"""
 	ipv4ByCustomerID = {}
 	ipv6ByCustomerID = {}
-	allIPv4 = spylnxRequest("admin/networking/ipv4-ip?main_attributes%5Bis_used%5D=1", headers)
-	allIPv6 = spylnxRequest("admin/networking/ipv6-ip", headers)
+	allIPv4 = splynx_request("admin/networking/ipv4-ip?main_attributes%5Bis_used%5D=1", headers)
+	allIPv6 = splynx_request("admin/networking/ipv6-ip", headers)
 	for ipv4 in allIPv4:
 		if ipv4['customer_id'] not in ipv4ByCustomerID:
 			ipv4ByCustomerID[ipv4['customer_id']] = []
@@ -445,13 +445,13 @@ def getAllIPs(headers):
 	return (ipv4ByCustomerID, ipv6ByCustomerID)
 
 def getMonitoring(headers):
-	return spylnxRequest("admin/networking/monitoring", headers)
+	return splynx_request("admin/networking/monitoring", headers)
 
 def getNetworkSites(headers):
 	"""
 	Retrieve network sites data from Splynx API for better topology mapping.
 	"""
-	return spylnxRequest("admin/networking/network-sites", headers)
+	return splynx_request("admin/networking/network-sites", headers)
 
 def extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_ipv6s):
 	"""
