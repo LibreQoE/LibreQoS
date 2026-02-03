@@ -270,6 +270,10 @@ pub fn get_all_circuits() -> BusResponse {
                             .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
                             .map(|rtt| rtt.as_nanos()),
                     },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
+                    },
                     tcp_retransmits: v.tcp_retransmits,
                     tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
                     circuit_id,
@@ -367,6 +371,10 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
                         up: v.rtt_buffer
                             .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
                             .map(|rtt| rtt.as_nanos()),
+                    },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
                     },
                     tcp_retransmits: v.tcp_retransmits,
                     tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),

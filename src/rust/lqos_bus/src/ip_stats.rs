@@ -209,6 +209,9 @@ pub struct Circuit {
     /// Total (lifetime) RTT p95 (nanoseconds), per direction.
     #[serde(default)]
     pub rtt_total_p95_nanos: DownUpOrder<Option<u64>>,
+    /// QoO score (0..100), per direction.
+    #[serde(default)]
+    pub qoo: DownUpOrder<Option<f32>>,
     /// TCP Retransmits for this host at the current time.
     pub tcp_retransmits: DownUpOrder<u64>,
     /// The number of TCP packets per second.
