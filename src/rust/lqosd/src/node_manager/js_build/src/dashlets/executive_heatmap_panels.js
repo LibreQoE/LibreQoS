@@ -14,6 +14,46 @@ import {
     MAX_HEATMAP_ROWS,
 } from "./executive_heatmap_shared";
 
+const QOO_TOOLTIP_HTML = [
+    `Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).`,
+    `https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/`,
+    `LibreQoS implements a latency- and loss-based model to estimate Quality of Outcome.`,
+].join("<br>");
+
+function escapeAttr(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function qooInfoIconHtml() {
+    const title = escapeAttr(QOO_TOOLTIP_HTML);
+    return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoO information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
+}
+
+function initTooltipsWithin(rootEl) {
+    if (!rootEl) return;
+    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
+    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
+    elements.forEach((element) => {
+        if (bootstrap.Tooltip.getOrCreateInstance) {
+            bootstrap.Tooltip.getOrCreateInstance(element);
+        } else {
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
 function qoqHeatmapRow(blocks, colorFn) {
     const length =
         Array.isArray(blocks?.upload_total) && blocks.upload_total.length
@@ -64,7 +104,7 @@ function qoqHeatmapRow(blocks, colorFn) {
     return cells;
 }
 
-function qoqRow(label, badge, blocks, colorFn) {
+function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     const topValues = blocks?.upload_total || [];
     const bottomValues = blocks?.download_total || [];
     const latestTop = latestValue(topValues);
@@ -73,10 +113,12 @@ function qoqRow(label, badge, blocks, colorFn) {
         <div>${formatLatest(latestTop, "", 0)}</div>
         <div>${formatLatest(latestBottom, "", 0)}</div>
     `;
+    const labelTitle = escapeAttr(labelText);
+    const visibleLabel = labelHtml ?? escapeHtml(labelText);
     return `
         <div class="exec-heat-row">
-            <div class="exec-heat-label text-truncate" title="${label}">
-                <div class="fw-semibold text-truncate">${label}</div>
+            <div class="exec-heat-label text-truncate" title="${labelTitle}">
+                <div class="fw-semibold text-truncate">${visibleLabel}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
             <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorFn)}</div>
@@ -166,7 +208,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             return;
         }
         const rows = [
-            { kind: "qoo", label: "Overall QoO", badge: "Global", blocks: globalQoq },
+            { kind: "qoo", label: "Overall QoO", labelHtml: `Overall QoO${qooInfoIconHtml()}`, badge: "Global", blocks: globalQoq },
             { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
             { kind: "retransmit", label: "TCP Retransmits", badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
             { kind: "utilization", label: "Utilization", badge: "Global", blocks: global, color: colorByCapacity, format: (v) => formatLatest(v, "%") },
@@ -174,7 +216,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
         const body = rows
             .map((row) => {
                 if (row.kind === "qoo") {
-                    return qoqRow(row.label, row.badge, row.blocks, colorByQoqScore);
+                    return qoqRow(row.label, row.badge, row.blocks, colorByQoqScore, row.labelHtml);
                 }
                 if (row.kind === "rtt") {
                     return rttHeatRow(
@@ -207,7 +249,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             })
             .join("");
         target.innerHTML = `
-            <div class="card shadow-sm border-0">
+                <div class="card shadow-sm border-0">
                 <div class="card-body py-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div class="exec-section-title mb-0"><i class="fas fa-thermometer-half me-2 text-warning"></i>Global Heatmap</div>
@@ -217,6 +259,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
+        initTooltipsWithin(target);
     }
 }
 
@@ -305,9 +348,13 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             const linkIcon = this.config.link
                 ? `<i class="fas fa-external-link-alt ms-2 small text-muted"></i>`
                 : "";
+            const isQooMetric = this.config.metricKey === "qoo";
+            const titleLabel = isQooMetric
+                ? `QoO${qooInfoIconHtml()} Heatmap`
+                : this.config.title;
             const titleHtml = this.config.link
-                ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}${linkIcon}</a>`
-                : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${this.config.title}`;
+                ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
+                : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
             activeTarget.innerHTML = `
                 <div class="card shadow-sm border-0 h-100">
                     <div class="card-body py-3">
@@ -318,6 +365,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                     </div>
                 </div>
             `;
+            initTooltipsWithin(activeTarget);
         });
     }
 
