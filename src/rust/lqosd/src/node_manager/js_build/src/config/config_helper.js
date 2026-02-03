@@ -157,6 +157,17 @@ export function listNics(onComplete, onError) {
     );
 }
 
+export function loadQooProfiles(onComplete, onError) {
+    sendWsRequest(
+        "QooProfiles",
+        { QooProfiles: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || null);
+        },
+        onError,
+    );
+}
+
 export function loadNetworkJson(onComplete, onError) {
     sendWsRequest(
         "NetworkJson",
