@@ -105,7 +105,7 @@ fn do_migration_14_to_15(
     migrate_lts(old_config, &mut new_config)?;
     migrate_ip_ranges(python_config, &mut new_config)?;
     migrate_integration_common(python_config, &mut new_config)?;
-    migrate_spylnx(python_config, &mut new_config)?;
+    migrate_splynx(python_config, &mut new_config)?;
     migrate_uisp(python_config, &mut new_config)?;
     migrate_powercode(python_config, &mut new_config)?;
     migrate_sonar(python_config, &mut new_config)?;
@@ -237,14 +237,14 @@ fn migrate_integration_common(
     Ok(())
 }
 
-fn migrate_spylnx(
+fn migrate_splynx(
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
-    new_config.spylnx_integration.enable_spylnx = python_config.automatic_import_splynx;
-    new_config.spylnx_integration.api_key = python_config.splynx_api_key.clone();
-    new_config.spylnx_integration.api_secret = python_config.splynx_api_secret.clone();
-    new_config.spylnx_integration.url = python_config.splynx_api_url.clone();
+    new_config.splynx_integration.enable_splynx = python_config.automatic_import_splynx;
+    new_config.splynx_integration.api_key = python_config.splynx_api_key.clone();
+    new_config.splynx_integration.api_secret = python_config.splynx_api_secret.clone();
+    new_config.splynx_integration.url = python_config.splynx_api_url.clone();
     Ok(())
 }
 

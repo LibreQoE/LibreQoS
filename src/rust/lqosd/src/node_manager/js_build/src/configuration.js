@@ -100,10 +100,10 @@ const bindings = [
     { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
 
     // Splynx
-    { field: "bindSplynxEnable", path: ".spylnx_integration.enable_spylnx", data: "bool", editable: true },
-    { field: "bindSplynxApiKey", path: ".spylnx_integration.api_key", data: "string", editable: true },
-    { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
-    { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
+    { field: "bindSplynxEnable", path: ".splynx_integration.enable_splynx", data: "bool", editable: true },
+    { field: "bindSplynxApiKey", path: ".splynx_integration.api_key", data: "string", editable: true },
+    { field: "bindSplynxApiSecret", path: ".splynx_integration.api_secret", data: "string", editable: true },
+    { field: "bindSplynxApiUrl", path: ".splynx_integration.url", data: "string", editable: true },
 
     // Netzur
     { field: "bindNetzurEnable", path: ".netzur_integration.enable_netzur", data: "bool", editable: true },

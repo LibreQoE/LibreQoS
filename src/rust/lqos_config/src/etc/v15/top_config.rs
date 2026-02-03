@@ -6,6 +6,7 @@ use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
+use toml_edit::DocumentMut;
 use uuid::Uuid;
 
 fn default_true() -> bool {
@@ -63,8 +64,8 @@ pub struct Config {
     /// Integration Common Variables
     pub integration_common: super::integration_common::IntegrationConfig,
 
-    /// Spylnx Integration
-    pub spylnx_integration: super::spylnx_integration::SplynxIntegration,
+    /// Splynx Integration
+    pub splynx_integration: super::splynx_integration::SplynxIntegration,
 
     /// Netzur Integration configuration. Optional so older configs without this
     /// section still deserialize cleanly.
@@ -149,11 +150,55 @@ impl Config {
     /// Loads a config file from a string (used for testing only)
     #[allow(dead_code)]
     pub fn load_from_string(s: &str) -> Result<Self, String> {
+        let normalized = normalize_splynx_compat_keys(s)?;
         let config: Config =
-            toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
+            toml::from_str(&normalized).map_err(|e| format!("Error parsing config: {}", e))?;
         config.validate()?;
         Ok(config)
     }
+}
+
+/// Normalizes historical misspellings of Splynx keys in the TOML configuration.
+///
+/// This operates purely in-memory so existing installations don't have their `/etc/lqos.conf`
+/// rewritten just by upgrading. The canonical schema uses:
+/// - `[splynx_integration]`
+/// - `enable_splynx = true/false`
+///
+/// Compatibility shims accepted:
+/// - `[spylnx_integration]`
+/// - `enable_spylnx = true/false`
+fn normalize_splynx_compat_keys(raw: &str) -> Result<String, String> {
+    let mut doc = raw
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("Error parsing config: {}", e))?;
+
+    // Section rename: [spylnx_integration] -> [splynx_integration]
+    if doc.get("splynx_integration").is_none() {
+        if let Some(item) = doc.remove("spylnx_integration") {
+            doc.insert("splynx_integration", item);
+        }
+    } else if doc.get("spylnx_integration").is_some() {
+        // If both exist, prefer the canonical section.
+        doc.remove("spylnx_integration");
+    }
+
+    // Key rename inside the section: enable_spylnx -> enable_splynx
+    if let Some(table) = doc
+        .get_mut("splynx_integration")
+        .and_then(|item| item.as_table_mut())
+    {
+        if table.get("enable_splynx").is_none() {
+            if let Some(item) = table.remove("enable_spylnx") {
+                table.insert("enable_splynx", item);
+            }
+        } else if table.get("enable_spylnx").is_some() {
+            // If both exist, prefer the canonical key.
+            table.remove("enable_spylnx");
+        }
+    }
+
+    Ok(doc.to_string())
 }
 
 impl Default for Config {
@@ -171,7 +216,7 @@ impl Default for Config {
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
-            spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
+            splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
@@ -239,5 +284,26 @@ mod test {
         let config = Config::load_from_string(include_str!("example.toml"))
             .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
+    }
+
+    #[test]
+    fn load_example_legacy_spylnx() {
+        let legacy = include_str!("example.toml")
+            .replace("[splynx_integration]", "[spylnx_integration]")
+            .replace("enable_splynx", "enable_spylnx");
+        let config =
+            Config::load_from_string(&legacy).expect("Cannot read legacy spylnx example toml");
+        assert_eq!(config.version, "1.5");
+    }
+
+    #[test]
+    fn serialize_uses_splynx_keys() {
+        let config =
+            Config::load_from_string(include_str!("example.toml")).expect("Cannot read example");
+        let serialized = toml::to_string_pretty(&config).expect("Cannot serialize config");
+        assert!(serialized.contains("splynx_integration"));
+        assert!(!serialized.contains("spylnx_integration"));
+        assert!(serialized.contains("enable_splynx"));
+        assert!(!serialized.contains("enable_spylnx"));
     }
 }
