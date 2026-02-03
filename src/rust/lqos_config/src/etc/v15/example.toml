@@ -58,8 +58,8 @@ always_overwrite_network_json = false
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
 
-[spylnx_integration]
-enable_spylnx = false
+[splynx_integration]
+enable_splynx = false
 api_key = ""
 api_secret = ""
 url = ""

@@ -60,7 +60,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_iprange.html",
         "config_flows.html",
         "config_integration.html",
-        "config_spylnx.html",
+        "config_splynx.html",
         "config_netzur.html",
         "config_uisp.html",
         "config_powercode.html",
@@ -90,6 +90,15 @@ pub(super) fn static_routes() -> Result<Router> {
 
         router = router.route_service(&format!("/{page}"), ServeFile::new(path));
     }
+
+    // Backwards compatible alias for historical misspelling.
+    // This route is included in the templated/authenticated router so bookmarks keep working.
+    let splynx_path = Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join("config_splynx.html");
+    router = router.route_service("/config_spylnx.html", ServeFile::new(splynx_path));
+
     router = router
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

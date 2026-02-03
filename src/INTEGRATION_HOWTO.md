@@ -1,6 +1,6 @@
 # LibreQoS Integrations
 
-If you need to create an integration for your network, we've tried to give you the tools you need. We currently ship integrations for UISP and Spylnx. We'd love to include more.
+If you need to create an integration for your network, we've tried to give you the tools you need. We currently ship integrations for UISP and Splynx. We'd love to include more.
 
 ### Overall Concept
 

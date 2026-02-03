@@ -1261,21 +1261,21 @@ fn uisp_auth_token() -> PyResult<String> {
 #[pyfunction]
 fn splynx_api_key() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let key = config.spylnx_integration.api_key.clone();
+    let key = config.splynx_integration.api_key.clone();
     Ok(key)
 }
 
 #[pyfunction]
 fn splynx_api_secret() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let secret = config.spylnx_integration.api_secret.clone();
+    let secret = config.splynx_integration.api_secret.clone();
     Ok(secret)
 }
 
 #[pyfunction]
 fn splynx_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let url = config.spylnx_integration.url.clone();
+    let url = config.splynx_integration.url.clone();
     Ok(url)
 }
 
@@ -1283,7 +1283,7 @@ fn splynx_api_url() -> PyResult<String> {
 fn splynx_strategy() -> PyResult<String> {
     let config = lqos_config::load_config();
     match config {
-        Ok(config) => Ok(config.spylnx_integration.strategy.clone()),
+        Ok(config) => Ok(config.splynx_integration.strategy.clone()),
         Err(_) => Ok("ap_only".to_string()), // Default value when config can't be loaded
     }
 }
@@ -1327,7 +1327,7 @@ fn automatic_import_uisp() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.spylnx_integration.enable_spylnx)
+    Ok(config.splynx_integration.enable_splynx)
 }
 
 #[pyfunction]
