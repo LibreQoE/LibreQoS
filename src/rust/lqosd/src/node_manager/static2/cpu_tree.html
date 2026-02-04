@@ -8,9 +8,23 @@
             <div class="col-12 col-lg-4">
                 <div class="d-flex flex-wrap justify-content-lg-end align-items-end gap-2 mt-2 mt-lg-0">
                     <div>
+                        <label for="treeDepth" class="form-label mb-0">Depth</label>
+                        <select id="treeDepth" class="form-select form-select-sm">
+                            <option value="2">2 (CPUs)</option>
+                            <option value="3" selected>3 (Top-level sites)</option>
+                            <option value="4">4</option>
+                            <option value="-1">All</option>
+                        </select>
+                    </div>
+                    <div>
                         <a class="btn btn-sm btn-outline-secondary" href="cpu_weights.html">
                             <i class="fa fa-table"></i> Table View
                         </a>
+                    </div>
+                    <div class="ms-auto ms-lg-0">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnReset">
+                            <i class="fa fa-rotate-left"></i> Reset
+                        </button>
                     </div>
                     <div class="ms-auto ms-lg-0">
                         <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">

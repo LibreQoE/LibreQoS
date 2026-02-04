@@ -5,6 +5,11 @@ import { get_ws_client } from "./pubsub/ws";
 const wsClient = get_ws_client();
 
 let treeGraph = null;
+let lastRoot = null;
+
+const DEPTH_STORAGE_KEY = "cpu_tree_depth_levels";
+const DEFAULT_DEPTH_LEVELS = 3;
+let depthLevels = DEFAULT_DEPTH_LEVELS;
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -32,7 +37,15 @@ function requestCpuSiteTree() {
     });
 }
 
-function buildTreeOption(root) {
+function toInitialTreeDepth(levels) {
+    if (levels === -1) return -1;
+    const n = Number(levels);
+    if (!Number.isFinite(n) || n < 1) return DEFAULT_DEPTH_LEVELS - 1;
+    // ECharts uses 0-based depth (root=0). Our UI uses "levels" (root=1).
+    return Math.max(0, Math.floor(n) - 1);
+}
+
+function buildTreeOption(root, levels) {
     return {
         tooltip: {
             trigger: "item",
@@ -50,7 +63,7 @@ function buildTreeOption(root) {
                 symbolSize: 10,
                 edgeShape: "polyline",
                 expandAndCollapse: true,
-                initialTreeDepth: -1,
+                initialTreeDepth: toInitialTreeDepth(levels),
                 lineStyle: {
                     width: 1.25,
                     curveness: 0.5,
@@ -87,7 +100,7 @@ function renderTree(root) {
     if (!treeGraph) {
         treeGraph = new DashboardGraph("cpuTreeChart");
     }
-    treeGraph.option = buildTreeOption(root);
+    treeGraph.option = buildTreeOption(root, depthLevels);
     try {
         treeGraph.chart.setOption(treeGraph.option, true);
         treeGraph.chart.hideLoading();
@@ -105,14 +118,73 @@ async function refresh() {
         if (chartDom) clearDiv(chartDom);
         return;
     }
+    lastRoot = root;
     setStatus("Pan/zoom with mouse. Click nodes to expand/collapse.");
     renderTree(root);
+}
+
+function loadDepthSetting() {
+    try {
+        const stored = window.localStorage ? window.localStorage.getItem(DEPTH_STORAGE_KEY) : null;
+        const n = stored !== null ? parseInt(stored, 10) : DEFAULT_DEPTH_LEVELS;
+        if (Number.isFinite(n)) {
+            depthLevels = n;
+        }
+    } catch (_) {}
+}
+
+function saveDepthSetting() {
+    try {
+        if (window.localStorage) {
+            window.localStorage.setItem(DEPTH_STORAGE_KEY, String(depthLevels));
+        }
+    } catch (_) {}
 }
 
 // Wire up controls
 const btnRefresh = document.getElementById("btnRefresh");
 if (btnRefresh) {
     btnRefresh.onclick = () => refresh();
+}
+
+loadDepthSetting();
+
+const depthSelect = document.getElementById("treeDepth");
+if (depthSelect) {
+    depthSelect.value = String(depthLevels);
+    depthSelect.onchange = () => {
+        const n = parseInt(depthSelect.value, 10);
+        if (Number.isFinite(n)) {
+            depthLevels = n;
+            saveDepthSetting();
+        }
+        if (lastRoot) {
+            renderTree(lastRoot);
+        }
+    };
+}
+
+const btnReset = document.getElementById("btnReset");
+if (btnReset) {
+    btnReset.onclick = () => {
+        depthLevels = DEFAULT_DEPTH_LEVELS;
+        try {
+            if (window.localStorage) {
+                window.localStorage.removeItem(DEPTH_STORAGE_KEY);
+            }
+        } catch (_) {}
+        if (depthSelect) {
+            depthSelect.value = String(depthLevels);
+        }
+        if (treeGraph && treeGraph.chart) {
+            try {
+                treeGraph.chart.dispatchAction({ type: "restore" });
+            } catch (_) {}
+        }
+        if (lastRoot) {
+            renderTree(lastRoot);
+        }
+    };
 }
 
 window.addEventListener("resize", () => {
