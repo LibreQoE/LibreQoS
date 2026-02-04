@@ -26,40 +26,40 @@ pub async fn build_ap_only_network(
         warn!(
             "Network.json exists, and always overwrite network json is not true - not writing network.json"
         );
-        return Ok(());
-    }
-    let mut root = serde_json::Map::new();
-    for ap in mappings.keys() {
-        if let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap) {
-            let mut ap_object = serde_json::Map::new();
-            // Empy children
-            ap_object.insert("children".to_string(), serde_json::Map::new().into());
+    } else {
+        let mut root = serde_json::Map::new();
+        for ap in mappings.keys() {
+            if let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap) {
+                let mut ap_object = serde_json::Map::new();
+                // Empy children
+                ap_object.insert("children".to_string(), serde_json::Map::new().into());
 
-            // Limits
-            ap_object.insert(
-                "downloadBandwidthMbps".to_string(),
-                serde_json::Value::Number(ap_device.download.into()),
-            );
-            ap_object.insert(
-                "uploadBandwidthMbps".to_string(),
-                serde_json::Value::Number(ap_device.upload.into()),
-            );
+                // Limits
+                ap_object.insert(
+                    "downloadBandwidthMbps".to_string(),
+                    serde_json::Value::Number(ap_device.download.into()),
+                );
+                ap_object.insert(
+                    "uploadBandwidthMbps".to_string(),
+                    serde_json::Value::Number(ap_device.upload.into()),
+                );
 
-            // Metadata
-            ap_object.insert("type".to_string(), "AP".to_string().into());
-            ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
+                // Metadata
+                ap_object.insert("type".to_string(), "AP".to_string().into());
+                ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
 
-            // Save the entry
-            root.insert(ap.to_string(), ap_object.into());
+                // Save the entry
+                root.insert(ap.to_string(), ap_object.into());
+            }
         }
+        let json = serde_json::to_string_pretty(&root).unwrap();
+        write(network_path, json).map_err(|e| {
+            error!("Unable to write network.json");
+            error!("{e:?}");
+            UispIntegrationError::WriteNetJson
+        })?;
+        info!("Written network.json");
     }
-    let json = serde_json::to_string_pretty(&root).unwrap();
-    write(network_path, json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");
 
     // Write ShapedDevices.csv
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
