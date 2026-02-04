@@ -13,6 +13,10 @@ pub struct NetworkJsonNode {
     /// The node name, as it appears in `network.json`
     pub name: String,
 
+    /// If true, this node is "virtual" (logical only): it exists for monitoring/aggregation
+    /// but should be omitted from the physical HTB tree.
+    pub virtual_node: bool,
+
     /// The maximum throughput allowed per `network.json` for this node
     pub max_throughput: (u32, u32), // In mbps
 
@@ -94,6 +98,7 @@ impl NetworkJsonNode {
 
         NetworkJsonTransport {
             name: self.name.clone(),
+            is_virtual: self.virtual_node,
             max_throughput: self.max_throughput,
             current_throughput: (
                 self.current_throughput.get_down(),

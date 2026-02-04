@@ -74,6 +74,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "stormguard_debug.html",
         "api.html",
         "cpu_weights.html",
+        "cpu_tree.html",
     ];
 
     // Iterate through pages and construct the router

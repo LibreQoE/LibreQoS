@@ -464,6 +464,7 @@ function saveConfig() {
 function iterateNetJson(level, depth) {
     let html = "<div style='margin-left: " + depth * 30 + "px; margin-top: 4px;'>";
     for (const [key, value] of Object.entries(level)) {
+        const isVirtual = value && value.virtual === true;
         html += "<div>";
         html += "<strong>" + key + "</strong>";
         if (depth > 0) {
@@ -474,6 +475,8 @@ function iterateNetJson(level, depth) {
         html += "<br />";
         html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
         html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
+        html += "Virtual: " + (isVirtual ? "<span class='badge bg-secondary'><i class='fa fa-ghost'></i> Yes</span>" : "<span class='badge bg-light text-dark'>No</span>") +
+            " <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.toggleVirtualNode(\"" + key + "\")'><i class='fa " + (isVirtual ? "fa-toggle-on" : "fa-toggle-off") + "'></i> Toggle</button><br />";
         let num_children = 0;
         for (let i=0; i<shaped_devices.length; i++) {
             if (shaped_devices[i].parent_node === key) {
@@ -517,6 +520,7 @@ function addNetworkNode() {
         network_json[newName] = {
             downloadBandwidthMbps: newDown,
             uploadBandwidthMbps: newUp,
+            virtual: false,
             children: {}
         }
     }
@@ -574,6 +578,22 @@ function nodeSpeedChange(nodeId, direction) {
 
             if (value.children != null) {
                 iterate(value.children, depth+1);
+            }
+        }
+    }
+
+    iterate(network_json);
+    RenderNetworkJson();
+}
+
+function toggleVirtualNode(nodeId) {
+    function iterate(tree) {
+        for (const [key, value] of Object.entries(tree)) {
+            if (key === nodeId) {
+                value.virtual = !(value && value.virtual === true);
+            }
+            if (value.children != null) {
+                iterate(value.children);
             }
         }
     }
@@ -1257,6 +1277,7 @@ function start() {
     window.renameNode = renameNode;
     window.deleteNode = deleteNode;
     window.nodeSpeedChange = nodeSpeedChange;
+    window.toggleVirtualNode = toggleVirtualNode;
     window.deleteSdRow = deleteSdRow;
 
     // Old

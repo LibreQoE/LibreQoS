@@ -72,6 +72,10 @@ enum AdjustmentsCommand {
 enum NetworkAdjustmentsCommand {
     /// Add site speed adjustment
     AddSiteSpeed(AddSiteSpeedArgs),
+    /// Set whether a node is virtual (logical-only) in network.json
+    SetVirtual { node_name: String, #[arg(value_name = "VIRTUAL")] virtual_node: bool },
+    /// Remove any virtual-node override for a specific node name
+    DeleteVirtual { node_name: String },
     /// Remove a network adjustment by index (see list)
     DeleteIndex { #[arg(long)] index: usize },
     /// List current network adjustments
@@ -365,6 +369,20 @@ fn main() -> Result<()> {
                 overrides.add_network_adjustment(adj);
                 overrides.save()?;
                 println!("Added site speed adjustment; overrides saved.");
+            }
+            NetworkAdjustmentsCommand::SetVirtual { node_name, virtual_node } => {
+                overrides.set_network_node_virtual(node_name, virtual_node);
+                overrides.save()?;
+                println!("Set node virtual flag; overrides saved.");
+            }
+            NetworkAdjustmentsCommand::DeleteVirtual { node_name } => {
+                let removed = overrides.remove_network_node_virtual_by_name_count(&node_name);
+                if removed > 0 {
+                    overrides.save()?;
+                    println!("Removed {removed} virtual override(s) for node '{node_name}'; overrides saved.");
+                } else {
+                    println!("No virtual override found for node '{node_name}'.");
+                }
             }
             NetworkAdjustmentsCommand::DeleteIndex { index } => {
                 let ok = overrides.remove_network_adjustment_by_index(index);

@@ -8,7 +8,10 @@ use crate::node_manager::local_api::unknown_ips::{ClearUnknownIpsResponse, Unkno
 use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
 use crate::node_manager::local_api::{
     circuit_count::CircuitCount,
-    cpu_affinity::{CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySummaryEntry, PreviewWeightItem},
+    cpu_affinity::{
+        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySiteTreeNode, CpuAffinitySummaryEntry,
+        PreviewWeightItem,
+    },
     flow_explorer::FlowTimeline,
     lts::{
         AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, LtsTrialConfig,
@@ -135,6 +138,7 @@ pub enum WsRequest {
         direction: Option<String>,
         search: Option<String>,
     },
+    CpuAffinitySiteTree,
     AsnList,
     CountryList,
     ProtocolList,
@@ -372,6 +376,7 @@ pub enum WsResponse {
     CpuAffinityCircuits { data: CpuAffinityCircuitsPage },
     CpuAffinityCircuitsAll { data: Vec<CircuitBrief> },
     CpuAffinityPreviewWeights { data: Vec<PreviewWeightItem> },
+    CpuAffinitySiteTree { data: Option<CpuAffinitySiteTreeNode> },
     AsnList { data: Vec<AsnListEntry> },
     CountryList { data: Vec<AsnCountryListEntry> },
     ProtocolList { data: Vec<AsnProtocolListEntry> },

@@ -346,7 +346,8 @@ def apply_network_adjustments(network: dict) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
     Currently supports: adjust_site_speed (by site_name) updating
-    downloadBandwidthMbps and uploadBandwidthMbps at the matching node.
+    downloadBandwidthMbps and uploadBandwidthMbps at the matching node, and
+    set_node_virtual (by node_name) updating the boolean 'virtual' flag.
     Returns True if any changes were applied.
     """
     try:
@@ -382,6 +383,28 @@ def apply_network_adjustments(network: dict) -> bool:
                         changed_local = True
         return changed_local
 
+    def set_virtual_flag(tree: dict, node_name: str, virtual_val) -> bool:
+        changed_local = False
+        v = bool(virtual_val)
+        for key in list(tree.keys()):
+            if key == 'children':
+                child = tree.get('children')
+                if isinstance(child, dict):
+                    if set_virtual_flag(child, node_name, v):
+                        changed_local = True
+                continue
+            node = tree.get(key)
+            if isinstance(node, dict):
+                if key == node_name:
+                    prev = bool(node.get('virtual', False))
+                    if prev != v:
+                        node['virtual'] = v
+                        changed_local = True
+                if 'children' in node and isinstance(node['children'], dict):
+                    if set_virtual_flag(node['children'], node_name, v):
+                        changed_local = True
+        return changed_local
+
     net_changed = False
     for adj in adjustments:
         if adj.get('type') == 'adjust_site_speed':
@@ -390,6 +413,12 @@ def apply_network_adjustments(network: dict) -> bool:
             ul = adj.get('upload_bandwidth_mbps', None)
             if site:
                 if adjust_node(network, site, dl, ul):
+                    net_changed = True
+        elif adj.get('type') == 'set_node_virtual':
+            node_name = adj.get('node_name', '')
+            v = adj.get('virtual', None)
+            if node_name and v is not None:
+                if set_virtual_flag(network, node_name, v):
                     net_changed = True
 
     return net_changed

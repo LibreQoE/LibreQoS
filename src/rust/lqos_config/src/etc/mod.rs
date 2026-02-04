@@ -9,7 +9,6 @@ pub use etclqos_migration::*;
 use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::Once;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
@@ -21,27 +20,19 @@ mod v15;
 pub use v15::{BridgeConfig, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, Tunables};
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
-static INIT_ONCE: Once = Once::new();
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
-    // Ensure first load happens only once
-    INIT_ONCE.call_once(|| match actually_load_from_disk() {
-        Ok(config) => {
-            CONFIG.store(Some(config).into());
-        }
-        Err(e) => {
-            error!("Initial config load failed: {:?}", e);
-        }
-    });
-
     // Fast path - just load the Arc
-    CONFIG
-        .load()
-        .as_ref()
-        .as_ref()
-        .cloned()
-        .ok_or(LibreQoSConfigError::FileNotFound)
+    if let Some(config) = CONFIG.load().as_ref().as_ref().cloned() {
+        return Ok(config);
+    }
+
+    // Config wasn't cached (or a previous load failed). Attempt to load again so
+    // transient problems (e.g. config created after process start) can recover.
+    let config = actually_load_from_disk()?;
+    CONFIG.store(Some(config.clone()).into());
+    Ok(config)
 }
 
 fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
@@ -55,28 +46,42 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     debug!("Loading configuration file {config_location}");
     migrate_if_needed(&config_location).map_err(|e| {
         error!("Unable to migrate configuration: {:?}", e);
-        LibreQoSConfigError::FileNotFound
+        match &e {
+            migration::MigrationError::ReadError(io)
+                if io.kind() == std::io::ErrorKind::NotFound =>
+            {
+                LibreQoSConfigError::NotFound {
+                    path: config_location.clone(),
+                }
+            }
+            _ => LibreQoSConfigError::MigrationFailed {
+                path: config_location.clone(),
+                details: e.to_string(),
+            },
+        }
     })?;
 
-    let file_result = std::fs::read_to_string(&config_location);
-    let Ok(raw) = file_result else {
-        if file_result.is_err() {
-            error!("Unable to open {config_location}");
+    let raw = std::fs::read_to_string(&config_location).map_err(|e| {
+        error!("Unable to read {config_location}: {e:?}");
+        if e.kind() == std::io::ErrorKind::NotFound {
+            LibreQoSConfigError::NotFound {
+                path: config_location.clone(),
+            }
+        } else {
+            LibreQoSConfigError::CannotRead {
+                path: config_location.clone(),
+                source: e,
+            }
         }
-        return Err(LibreQoSConfigError::FileNotFound);
-    };
+    })?;
 
-    let config_result = Config::load_from_string(&raw);
-    let Ok(mut final_config) = config_result else {
-        if config_result.is_err() {
-            error!("Unable to parse /etc/lqos.conf");
-            error!("Error: {:?}", config_result);
+    let mut final_config = Config::load_from_string(&raw).map_err(|e| {
+        error!("Unable to parse {config_location}");
+        LibreQoSConfigError::ParseError {
+            path: config_location.clone(),
+            details: e,
         }
-        return Err(LibreQoSConfigError::ParseError(format!(
-            "{:?}",
-            config_result
-        )));
-    };
+    })?;
 
     // Check for environment variable overrides
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
@@ -133,7 +138,10 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     })?;
     std::fs::write(config_path, serialized).map_err(|e| {
         error!("Unable to write new configuration: {e:?}");
-        LibreQoSConfigError::CannotWrite
+        LibreQoSConfigError::CannotWrite {
+            path: config_path.display().to_string(),
+            source: e,
+        }
     })?;
 
     Ok(())
@@ -159,26 +167,26 @@ pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
 
 #[derive(Debug, Error)]
 pub enum LibreQoSConfigError {
-    #[error("Unable to read /etc/lqos.conf. See other errors for details.")]
-    CannotOpenEtcLqos,
-    #[error(
-        "Unable to locate (path to LibreQoS)/ispConfig.py. Check your path and that you have configured it."
-    )]
-    FileNotFound,
-    #[error("Unable to read the contents of ispConfig.py. Check file permissions.")]
-    CannotReadFile,
-    #[error("Unable to parse ispConfig.py")]
-    ParseError(String),
+    #[error("Unable to locate LibreQoS configuration at {path}. Set `LQOS_CONFIG` to override the path.")]
+    NotFound { path: String },
+    #[error("Unable to read LibreQoS configuration at {path}: {source}")]
+    CannotRead {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Configuration migration failed for {path}: {details}")]
+    MigrationFailed { path: String, details: String },
+    #[error("Unable to parse LibreQoS configuration at {path}: {details}")]
+    ParseError { path: String, details: String },
     #[error("Could not backup configuration")]
     CannotCopy,
-    #[error("Could not remove the previous configuration.")]
-    CannotRemove,
-    #[error("Could not open ispConfig.py for write")]
-    CannotOpenForWrite,
-    #[error("Unable to write to ispConfig.py")]
-    CannotWrite,
-    #[error("Unable to read IP")]
-    CannotReadIP,
     #[error("Unable to serialize config")]
     SerializeError,
+    #[error("Could not write LibreQoS configuration to {path}: {source}")]
+    CannotWrite {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
