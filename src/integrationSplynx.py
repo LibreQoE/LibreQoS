@@ -169,8 +169,10 @@ def run_splynx_pipeline(strategy_name: str):
 	routerIdList = []
 	sectorForRouter = {}
 	monitoring = []
+	network_sites = []
 	siteBandwidth = buildSiteBandwidths()
 	allServices = []
+	access_device_ids = set()
 
 	if strategy_name in ("ap_only", "ap_site", "full"):
 		print("Fetching routers from Splynx")
@@ -181,11 +183,21 @@ def run_splynx_pipeline(strategy_name: str):
 		allServices = getAllServices(headers)
 		print("Fetching hardware monitoring from Splynx")
 		monitoring = getMonitoring(headers)
+		print("Fetching network sites from Splynx")
+		network_sites = getNetworkSites(headers)
+		if not isinstance(network_sites, list):
+			print("Warning: network sites response was not a list. Falling back to legacy topology.")
+			network_sites = []
 	else:
 		print("Fetching services from Splynx")
 		allServices = getAllServices(headers)
 
 	print("Successfully fetched data from Splynx")
+	# Precompute access_device IDs from services to improve AP detection
+	for service in allServices:
+		ad = service.get('access_device')
+		if ad not in (None, 0, "0", ""):
+			access_device_ids.add(ad)
 	# Build basic customer map
 	cust_id_to_name = {c['id']: c['name'] for c in customers}
 
@@ -197,31 +209,108 @@ def run_splynx_pipeline(strategy_name: str):
 	ap_nodes = {}
 	if monitoring:
 		for dev in monitoring:
-			hardware_name[dev['id']] = dev['title']
+			dev_id = dev.get('id')
+			if dev_id is None:
+				continue
+			dev_name = dev.get('title') or dev.get('name') or dev.get('address') or dev.get('ip') or str(dev_id)
+			hardware_name[dev_id] = dev_name
 			if 'parent_id' in dev:
-				hardware_parent[dev['id']] = dev['parent_id']
-			if 'type' in dev:
-				if dev['type'] == 5:
-					hardware_type[dev['id']] = 'AP'
-					ap_nodes[dev['id']] = dev
-				else:
-					hardware_type[dev['id']] = 'Site'
+				hardware_parent[dev_id] = dev['parent_id']
+			# Determine AP vs Site: prefer access_device flag, fall back to legacy type
+			is_ap = False
+			if 'access_device' in dev:
+				is_ap = dev['access_device'] in (1, True, "1", "true", "True")
+			elif 'type' in dev:
+				is_ap = (dev['type'] == 5)
+			# If services reference this device as an access_device, treat as AP
+			if not is_ap and dev_id in access_device_ids:
+				is_ap = True
+			if is_ap:
+				hardware_type[dev_id] = 'AP'
+				ap_nodes[dev_id] = dev
+			else:
+				hardware_type[dev_id] = 'Site'
 		for dev in monitoring:
-			if 'parent_id' in dev and dev['id'] in hardware_parent and hardware_parent[dev['id']] in hardware_name:
-				hardware_name_extended[dev['id']] = hardware_name[hardware_parent[dev['id']]] + "_" + dev['title']
-			if dev['id'] not in hardware_name_extended:
-				hardware_name_extended[dev['id']] = dev['title']
+			dev_id = dev.get('id')
+			if dev_id is None:
+				continue
+			dev_title = hardware_name.get(dev_id, str(dev_id))
+			if 'parent_id' in dev and dev_id in hardware_parent and hardware_parent[dev_id] in hardware_name:
+				hardware_name_extended[dev_id] = hardware_name[hardware_parent[dev_id]] + "_" + dev_title
+			if dev_id not in hardware_name_extended:
+				hardware_name_extended[dev_id] = dev_title
+
+	# Network sites mappings (new Splynx model)
+	site_id_to_node_id = {}
+	site_id_to_name = {}
+	site_id_to_address = {}
+	if network_sites:
+		for site in network_sites:
+			site_id = site.get('id')
+			if site_id is None:
+				continue
+			node_id = f"ns_{site_id}"
+			name = site.get('title') or site.get('description') or str(site_id)
+			address = site.get('address') or name
+			site_id_to_node_id[site_id] = node_id
+			site_id_to_name[site_id] = name
+			site_id_to_address[site_id] = address
+
+	def ap_node_id(raw_id):
+		return f"ap_{raw_id}"
+
+	def has_network_sites():
+		if not network_sites:
+			return False
+		for dev in monitoring:
+			if dev.get('network_site_id') not in (None, 0, "0", ""):
+				return True
+		return False
+	
+	use_network_sites = strategy_name in ('ap_site', 'full') and has_network_sites()
 
 	# Infrastructure builder
 	def build_infrastructure():
 		if strategy_name == 'flat':
+			return
+		# Prefer network sites when available (ap_site/full)
+		if use_network_sites:
+			print(f"Creating site and AP infrastructure using Network Sites ({len(network_sites)} sites)")
+			for site_id, node_id in site_id_to_node_id.items():
+				nodeName = site_id_to_name.get(site_id, str(site_id))
+				address = site_id_to_address.get(site_id, nodeName)
+				download = 10000
+				upload = 10000
+				if nodeName in siteBandwidth:
+					download = siteBandwidth[nodeName]["download"]
+					upload = siteBandwidth[nodeName]["upload"]
+				node = NetworkNode(id=node_id, displayName=nodeName, type=NodeType.site,
+					parentId=None, download=download, upload=upload, address=address)
+				net.addRawNode(node)
+			created_ap = 0
+			for ap_id, ap_device in ap_nodes.items():
+				nodeName = hardware_name_extended.get(ap_id, hardware_name.get(ap_id, str(ap_id)))
+				download = 10000
+				upload = 10000
+				if nodeName in siteBandwidth:
+					download = siteBandwidth[nodeName]["download"]
+					upload = siteBandwidth[nodeName]["upload"]
+				parent_id = None
+				site_id = ap_device.get('network_site_id')
+				if site_id in site_id_to_node_id:
+					parent_id = site_id_to_node_id[site_id]
+				node = NetworkNode(id=ap_node_id(ap_id), displayName=nodeName, type=NodeType.ap,
+					parentId=parent_id, download=download, upload=upload, address=None)
+				net.addRawNode(node)
+				created_ap += 1
+			print(f"Created {created_ap} AP nodes (Network Sites mode)")
 			return
 		if strategy_name == 'ap_only':
 			print(f"Creating {len(ap_nodes)} AP nodes")
 			for ap_id, ap_device in ap_nodes.items():
 				download = 10000
 				upload = 10000
-				nodeName = ap_device['title']
+				nodeName = hardware_name_extended.get(ap_id, hardware_name.get(ap_id, str(ap_id)))
 				if nodeName in siteBandwidth:
 					download = siteBandwidth[nodeName]["download"]
 					upload = siteBandwidth[nodeName]["upload"]
@@ -237,6 +326,11 @@ def run_splynx_pipeline(strategy_name: str):
 		if strategy_name == 'flat':
 			return None
 		parent_node_id, _ = findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter)
+		if use_network_sites and parent_node_id is not None:
+			# In Network Sites mode, AP IDs are prefixed to avoid collisions
+			if parent_node_id in ap_nodes:
+				return ap_node_id(parent_node_id)
+			return None
 		if strategy_name == 'ap_only':
 			return parent_node_id if (parent_node_id in ap_nodes) else None
 		return parent_node_id
@@ -322,11 +416,11 @@ def getTariffs(headers):
 	try:
 		for tariff in data:
 			tariffID = tariff['id']
-			speed_download = float(tariff['speed_download']) / 1024
-			speed_upload = float(tariff['speed_upload']) / 1024
+			speed_download = float(tariff['speed_download']) / 1000
+			speed_upload = float(tariff['speed_upload']) / 1000
 			if ('burst_limit_fixed_down' in tariff) and ('burst_limit_fixed_up' in tariff):
-				burstable_down = float(tariff['burst_limit_fixed_down']) / 1024
-				burstable_up = float(tariff['burst_limit_fixed_up']) / 1024
+				burstable_down = float(tariff['burst_limit_fixed_down']) / 1000
+				burstable_up = float(tariff['burst_limit_fixed_up']) / 1000
 				if burstable_down > speed_download:
 					speed_download = burstable_down
 				if burstable_up > speed_upload:
