@@ -45,6 +45,46 @@ function toInitialTreeDepth(levels) {
     return Math.max(0, Math.floor(n) - 1);
 }
 
+function allowedDepthLevelsFromSelect(selectEl) {
+    const allowed = new Set();
+    if (!selectEl || !selectEl.options) return allowed;
+    for (const opt of Array.from(selectEl.options)) {
+        const n = parseInt(opt.value, 10);
+        if (Number.isFinite(n)) {
+            allowed.add(n);
+        }
+    }
+    return allowed;
+}
+
+function normalizeDepthLevels(levels, allowed) {
+    let n = Number(levels);
+    if (!Number.isFinite(n)) {
+        n = DEFAULT_DEPTH_LEVELS;
+    }
+    n = Math.trunc(n);
+
+    // Migration: removed depth level 2 (CPU-only view).
+    if (n === 2) {
+        n = DEFAULT_DEPTH_LEVELS;
+    }
+
+    if (n !== -1 && n < 1) {
+        n = DEFAULT_DEPTH_LEVELS;
+    }
+
+    if (allowed && allowed.size > 0 && !allowed.has(n)) {
+        if (allowed.has(DEFAULT_DEPTH_LEVELS)) {
+            n = DEFAULT_DEPTH_LEVELS;
+        } else {
+            const sorted = Array.from(allowed).sort((a, b) => a - b);
+            n = sorted.length > 0 ? sorted[0] : DEFAULT_DEPTH_LEVELS;
+        }
+    }
+
+    return n;
+}
+
 function buildTreeOption(root, levels) {
     return {
         tooltip: {
@@ -151,6 +191,12 @@ loadDepthSetting();
 
 const depthSelect = document.getElementById("treeDepth");
 if (depthSelect) {
+    const allowed = allowedDepthLevelsFromSelect(depthSelect);
+    const normalized = normalizeDepthLevels(depthLevels, allowed);
+    if (normalized !== depthLevels) {
+        depthLevels = normalized;
+        saveDepthSetting();
+    }
     depthSelect.value = String(depthLevels);
     depthSelect.onchange = () => {
         const n = parseInt(depthSelect.value, 10);
@@ -162,6 +208,12 @@ if (depthSelect) {
             renderTree(lastRoot);
         }
     };
+} else {
+    const normalized = normalizeDepthLevels(depthLevels, null);
+    if (normalized !== depthLevels) {
+        depthLevels = normalized;
+        saveDepthSetting();
+    }
 }
 
 const btnReset = document.getElementById("btnReset");
