@@ -356,15 +356,15 @@ pub async fn build_full_network_v2(
         warn!(
             "Network.json exists, and always overwrite network json is not true - not writing network.json"
         );
-        return Ok(());
+    } else {
+        let json = serde_json::to_string_pretty(&network_json).unwrap();
+        write(network_path, json).map_err(|e| {
+            error!("Unable to write network.json");
+            error!("{e:?}");
+            UispIntegrationError::WriteNetJson
+        })?;
+        info!("Written network.json");
     }
-    let json = serde_json::to_string_pretty(&network_json).unwrap();
-    write(network_path, json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
