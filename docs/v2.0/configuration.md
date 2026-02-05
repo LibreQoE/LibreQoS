@@ -191,6 +191,41 @@ For networks with no Parent Nodes (no strictly defined Access Points or Sites) e
 echo "{}" > network.json
 ```
 
+##### Virtual (logical-only) nodes
+
+LibreQoS supports **virtual nodes** in `network.json` for organizational grouping and monitoring/aggregation in the WebUI/Insight. Virtual nodes are **not** included in the physical HTB shaping tree (they won’t create HTB classes and won’t enforce bandwidth limits).
+
+To mark a node as virtual, set `"virtual": true` on that node. (Legacy compatibility: `"type": "virtual"` is also recognized, but `"virtual": true` is recommended so you can keep a real `"type"` like `"Site"` or `"AP"`.)
+
+Example:
+
+```json
+{
+  "Region": {
+    "downloadBandwidthMbps": 1000,
+    "uploadBandwidthMbps": 1000,
+    "children": {
+      "Town": {
+        "virtual": true,
+        "downloadBandwidthMbps": 500,
+        "uploadBandwidthMbps": 500,
+        "children": {
+          "AP_A": {
+            "downloadBandwidthMbps": 200,
+            "uploadBandwidthMbps": 200
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Notes:
+- During shaping, virtual nodes are removed and their children are promoted to the nearest non-virtual ancestor (see `queuingStructure.json` for the active physical plan).
+- `ShapedDevices.csv` can still use a virtual node as a `Parent Node` for display/grouping; LibreQoS will attach those circuits for shaping to the nearest non-virtual ancestor (top-level virtual nodes will be treated as unparented for shaping).
+- Avoid name collisions after promotion (two nodes with the same name ending up at the same level).
+
 #### CPU Considerations
 
 <img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
