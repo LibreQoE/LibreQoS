@@ -1,4 +1,5 @@
 import { clearDiv } from "./helpers/builders";
+import { isDarkMode } from "./helpers/dark_mode";
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import { get_ws_client } from "./pubsub/ws";
 
@@ -85,11 +86,59 @@ function normalizeDepthLevels(levels, allowed) {
     return n;
 }
 
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (c) => {
+        switch (c) {
+            case "&":
+                return "&amp;";
+            case "<":
+                return "&lt;";
+            case ">":
+                return "&gt;";
+            case '"':
+                return "&quot;";
+            case "'":
+                return "&#39;";
+            default:
+                return c;
+        }
+    });
+}
+
 function buildTreeOption(root, levels) {
+    const dark = isDarkMode();
+    const accent = dark ? "#4992ff" : "#61a0a8";
+    const lineColor = dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.18)";
+    const lineEmphasisColor = dark ? "rgba(255,255,255,0.42)" : "rgba(0,0,0,0.32)";
+    const labelColor = dark ? "rgba(235, 240, 250, 0.95)" : "#1f2937";
+    const labelBg = dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.85)";
+    const labelBorder = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.06)";
+    const nodeFill = dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.06)";
+    const nodeBorder = dark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.18)";
+
     return {
         tooltip: {
             trigger: "item",
             triggerOn: "mousemove",
+            confine: true,
+            borderWidth: 1,
+            borderColor: labelBorder,
+            backgroundColor: dark ? "rgba(15, 15, 20, 0.92)" : "rgba(255,255,255,0.98)",
+            textStyle: {
+                color: labelColor,
+                fontSize: 12,
+            },
+            formatter: (params) => {
+                const data = params && params.data ? params.data : null;
+                const name = escapeHtml((data && data.name) || (params && params.name) || "");
+                const childCount =
+                    data && Array.isArray(data.children) ? data.children.length : 0;
+                const childLine =
+                    childCount > 0
+                        ? `<div style="opacity:0.75; margin-top:2px;">Children: ${childCount}</div>`
+                        : "";
+                return `<div style="font-size:12px;"><div style="font-weight:600;">${name}</div>${childLine}</div>`;
+            },
         },
         series: [
             {
@@ -98,21 +147,34 @@ function buildTreeOption(root, levels) {
                 top: "2%",
                 left: "2%",
                 bottom: "2%",
-                right: "18%",
+                right: "20%",
                 roam: true,
-                symbolSize: 10,
+                symbolSize: 9,
                 edgeShape: "polyline",
                 expandAndCollapse: true,
                 initialTreeDepth: toInitialTreeDepth(levels),
+                itemStyle: {
+                    color: nodeFill,
+                    borderColor: nodeBorder,
+                    borderWidth: 1,
+                },
                 lineStyle: {
-                    width: 1.25,
-                    curveness: 0.5,
+                    color: lineColor,
+                    width: 1.15,
+                    opacity: 0.75,
+                    curveness: 0.35,
                 },
                 label: {
                     position: "left",
                     verticalAlign: "middle",
                     align: "right",
                     fontSize: 12,
+                    color: labelColor,
+                    backgroundColor: labelBg,
+                    borderColor: labelBorder,
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    padding: [3, 6],
                 },
                 leaves: {
                     label: {
@@ -120,10 +182,30 @@ function buildTreeOption(root, levels) {
                         verticalAlign: "middle",
                         align: "left",
                         fontSize: 12,
+                        color: labelColor,
+                        backgroundColor: labelBg,
+                        borderColor: labelBorder,
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        padding: [3, 6],
                     },
                 },
                 emphasis: {
                     focus: "descendant",
+                    itemStyle: {
+                        borderColor: accent,
+                        borderWidth: 1.5,
+                        shadowBlur: 10,
+                        shadowColor: accent,
+                    },
+                    lineStyle: {
+                        color: lineEmphasisColor,
+                        width: 2,
+                        opacity: 1,
+                    },
+                    label: {
+                        borderColor: accent,
+                    },
                 },
                 animationDuration: 550,
                 animationDurationUpdate: 750,
