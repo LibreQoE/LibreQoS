@@ -73,7 +73,13 @@ enum NetworkAdjustmentsCommand {
     /// Add site speed adjustment
     AddSiteSpeed(AddSiteSpeedArgs),
     /// Set whether a node is virtual (logical-only) in network.json
-    SetVirtual { node_name: String, #[arg(value_name = "VIRTUAL")] virtual_node: bool },
+    SetVirtual {
+        node_name: String,
+        /// `true` marks the node as logical-only (omitted from the physical HTB tree).
+        /// If omitted, defaults to `true`.
+        #[arg(value_name = "VIRTUAL", default_value_t = true, action = clap::ArgAction::Set)]
+        virtual_node: bool,
+    },
     /// Remove any virtual-node override for a specific node name
     DeleteVirtual { node_name: String },
     /// Remove a network adjustment by index (see list)
@@ -445,4 +451,60 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_virtual_defaults_to_true() {
+        let cli = Cli::try_parse_from([
+            "lqos_overrides",
+            "network-adjustments",
+            "set-virtual",
+            "CALVIN",
+        ])
+        .expect("CLI parse must succeed");
+
+        match cli.command {
+            Commands::NetworkAdjustments { command } => match command {
+                NetworkAdjustmentsCommand::SetVirtual {
+                    node_name,
+                    virtual_node,
+                } => {
+                    assert_eq!(node_name, "CALVIN");
+                    assert!(virtual_node);
+                }
+                other => panic!("unexpected network-adjustments command: {other:?}"),
+            },
+            other => panic!("unexpected top-level command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_virtual_accepts_explicit_false() {
+        let cli = Cli::try_parse_from([
+            "lqos_overrides",
+            "network-adjustments",
+            "set-virtual",
+            "CALVIN",
+            "false",
+        ])
+        .expect("CLI parse must succeed");
+
+        match cli.command {
+            Commands::NetworkAdjustments { command } => match command {
+                NetworkAdjustmentsCommand::SetVirtual {
+                    node_name,
+                    virtual_node,
+                } => {
+                    assert_eq!(node_name, "CALVIN");
+                    assert!(!virtual_node);
+                }
+                other => panic!("unexpected network-adjustments command: {other:?}"),
+            },
+            other => panic!("unexpected top-level command: {other:?}"),
+        }
+    }
 }
