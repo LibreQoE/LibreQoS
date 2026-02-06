@@ -309,18 +309,17 @@ class NetworkGraph:
 						type=NodeType.site
 					)
 					siteNode.parentIndex = node.parentIndex
-				node.parentId = siteNode.id
-				if node.type == NodeType.clientWithChildren:
+					node.parentId = siteNode.id
 					node.type = NodeType.client
-				
-				# Store reparenting operations for batch processing
-				children = self._children_cache.get(i, [])
-				for child_idx in children:
-					child = self.nodes[child_idx]
-					if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
-						reparent_map[child_idx] = siteNode.id
-				
-				toAdd.append(siteNode)
+					
+					# Store reparenting operations for batch processing
+					children = self._children_cache.get(i, [])
+					for child_idx in children:
+						child = self.nodes[child_idx]
+						if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
+							reparent_map[child_idx] = siteNode.id
+					
+					toAdd.append(siteNode)
 		
 		# Batch add new nodes
 		for n in toAdd:
@@ -542,8 +541,8 @@ class NetworkGraph:
 						device["ipv6"],
 						int(1),
 						int(1),
-						int(float(circuit["download"]) * client_bandwidth_multiplier()),
-						int(float(circuit["upload"]) * client_bandwidth_multiplier()),
+						max(1.0, round(float(circuit["download"]), 2)),
+						max(1.0, round(float(circuit["upload"]), 2)),
 						""
 					]
 					wr.writerow(row)
