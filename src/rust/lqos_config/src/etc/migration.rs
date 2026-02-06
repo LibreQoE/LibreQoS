@@ -63,11 +63,25 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
             ));
         }
     } else {
+        // If the file otherwise looks like a v1.5 config but is missing the `version` key,
+        // add it in-place. This avoids triggering 1.4->1.5 migration (which requires
+        // legacy `ispConfig.py`) for modern installs with a versionless config.
+        info!("No version found in configuration file; attempting to treat it as version 1.5 without an explicit version key");
+        let mut with_version = doc.clone();
+        with_version.insert("version", toml_edit::value("1.5"));
+        if Config::load_from_string(&with_version.to_string()).is_ok() {
+            let backup_path = format!("{config_location}.backup_noversion");
+            std::fs::copy(config_location, &backup_path).map_err(MigrationError::ReadError)?;
+            std::fs::write(config_location, with_version.to_string()).map_err(MigrationError::ReadError)?;
+            info!("Added missing `version = \"1.5\"` to {config_location}; backup written to {backup_path}");
+            return Ok(());
+        }
+
         info!("No version found in configuration file, assuming 1.4x and migration is needed");
         let new_config = migrate_14_to_15()?;
         // Back up the old configuration
-        std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
-            .map_err(MigrationError::ReadError)?;
+        let backup_path = format!("{config_location}.backup14");
+        std::fs::rename(config_location, &backup_path).map_err(MigrationError::ReadError)?;
 
         // Rename the old Python configuration
         let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
@@ -78,7 +92,7 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
         // Save the configuration
         let raw =
             toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
-        std::fs::write("/etc/lqos.conf", raw).map_err(MigrationError::ReadError)?;
+        std::fs::write(config_location, raw).map_err(MigrationError::ReadError)?;
     }
 
     Ok(())

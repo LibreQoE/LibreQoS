@@ -983,6 +983,11 @@ fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
                 if let Some(v) = download_bandwidth_mbps { d.set_item("download_bandwidth_mbps", *v)?; }
                 if let Some(v) = upload_bandwidth_mbps { d.set_item("upload_bandwidth_mbps", *v)?; }
             }
+            lqos_overrides::NetworkAdjustment::SetNodeVirtual { node_name, virtual_node } => {
+                d.set_item("type", "set_node_virtual")?;
+                d.set_item("node_name", node_name.clone())?;
+                d.set_item("virtual", *virtual_node)?;
+            }
         }
         let obj: PyObject = d.unbind().into();
         out.push(obj);

@@ -26,8 +26,12 @@ export class TopTreeSummary extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+
+        // Match the height of adjacent graph dashlets (e.g. Top Level Sankey)
+        // by keeping the dashlet chrome (title) outside the scroll area.
+        const scroll = document.createElement("div");
+        scroll.style.height = "250px";
+        scroll.style.overflow = "auto";
 
         let t = document.createElement("table");
         t.id = this.id + "_table";
@@ -43,7 +47,8 @@ export class TopTreeSummary extends DashletBaseInsight {
         th.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
         t.appendChild(th);
 
-        base.appendChild(t);
+        scroll.appendChild(t);
+        base.appendChild(scroll);
 
         return base;
     }

@@ -40,6 +40,13 @@ pub struct CpuAffinityCircuitsPage {
     pub items: Vec<CircuitBrief>,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct CpuAffinitySiteTreeNode {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<CpuAffinitySiteTreeNode>,
+}
+
 #[derive(Debug, Default, Clone)]
 struct CircuitRecord {
     cpu_down: Option<u32>,
@@ -246,6 +253,154 @@ fn load_all_circuits() -> Vec<CircuitRecord> {
         }
     }
     circuits
+}
+
+fn trailing_u32(s: &str) -> Option<u32> {
+    let digits: String = s
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<u32>().ok()
+    }
+}
+
+fn is_network_node(node: &serde_json::Map<String, Value>) -> bool {
+    // Prefer explicit type checks where present
+    if node
+        .get("type")
+        .and_then(|v| v.as_str())
+        .is_some_and(|t| t.eq_ignore_ascii_case("site") || t.eq_ignore_ascii_case("ap"))
+    {
+        return true;
+    }
+
+    // Some production `network.json` files omit `type`. In `queuingStructure.json`,
+    // network nodes always include bandwidth keys (circuits do not).
+    node.contains_key("downloadBandwidthMbps")
+        || node.contains_key("uploadBandwidthMbps")
+        || node.contains_key("children")
+}
+
+fn build_site_tree(name: &str, node: &serde_json::Map<String, Value>) -> CpuAffinitySiteTreeNode {
+    let mut children = Vec::new();
+    if let Some(Value::Object(child_map)) = node.get("children") {
+        for (child_name, child_value) in child_map.iter() {
+            if let Value::Object(child_node) = child_value {
+                if is_network_node(child_node) {
+                    children.push(build_site_tree(child_name, child_node));
+                }
+            }
+        }
+    }
+    children.sort_by(|a, b| a.name.cmp(&b.name));
+    CpuAffinitySiteTreeNode {
+        name: name.to_string(),
+        children,
+    }
+}
+
+pub fn cpu_affinity_site_tree_data() -> Option<CpuAffinitySiteTreeNode> {
+    let path = queuing_structure_path()?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let json: Value = serde_json::from_str(&raw).ok()?;
+    let net = json.get("Network")?.as_object()?;
+
+    let looks_binned = net.keys().any(|k| k.starts_with("CpueQueue"));
+
+    let mut cpus: Vec<(Option<u32>, String, CpuAffinitySiteTreeNode)> = Vec::new();
+
+    if looks_binned {
+        for (cpu_key, cpu_value) in net.iter() {
+            let Some(cpu_node) = cpu_value.as_object() else {
+                continue;
+            };
+            let mut site_children: Vec<CpuAffinitySiteTreeNode> = Vec::new();
+            if let Some(Value::Object(child_map)) = cpu_node.get("children") {
+                for (child_name, child_value) in child_map.iter() {
+                    if let Value::Object(child_node) = child_value {
+                        if is_network_node(child_node) {
+                            site_children.push(build_site_tree(child_name, child_node));
+                        }
+                    }
+                }
+            }
+            site_children.sort_by(|a, b| a.name.cmp(&b.name));
+
+            let cpu_idx = trailing_u32(cpu_key);
+            let cpu_label = cpu_idx
+                .map(|n| format!("CPU {n}"))
+                .unwrap_or_else(|| cpu_key.to_string());
+
+            cpus.push((
+                cpu_idx,
+                cpu_key.to_string(),
+                CpuAffinitySiteTreeNode {
+                    name: cpu_label,
+                    children: site_children,
+                },
+            ));
+        }
+    } else {
+        // Non-binned network: nodes are top-level and each contains cpuNum/classMajor.
+        let mut by_cpu: HashMap<Option<u32>, Vec<CpuAffinitySiteTreeNode>> = HashMap::new();
+        for (child_name, child_value) in net.iter() {
+            let Some(child_node) = child_value.as_object() else {
+                continue;
+            };
+            if !is_network_node(child_node) {
+                continue;
+            }
+            let cpu_idx = child_node
+                .get("cpuNum")
+                .and_then(|v| v.as_str())
+                .and_then(parse_hex_u32)
+                .or_else(|| {
+                    child_node
+                        .get("classMajor")
+                        .and_then(|v| v.as_str())
+                        .and_then(parse_hex_u32)
+                        .map(|v| v.saturating_sub(1))
+                });
+            by_cpu
+                .entry(cpu_idx)
+                .or_default()
+                .push(build_site_tree(child_name, child_node));
+        }
+
+        for (cpu_idx, mut nodes) in by_cpu.into_iter() {
+            nodes.sort_by(|a, b| a.name.cmp(&b.name));
+            let cpu_label = cpu_idx
+                .map(|n| format!("CPU {n}"))
+                .unwrap_or_else(|| "Unknown CPU".to_string());
+            cpus.push((
+                cpu_idx,
+                cpu_label.clone(),
+                CpuAffinitySiteTreeNode {
+                    name: cpu_label,
+                    children: nodes,
+                },
+            ));
+        }
+    }
+
+    cpus.sort_by(|a, b| match (a.0, b.0) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.1.cmp(&b.1),
+    });
+
+    Some(CpuAffinitySiteTreeNode {
+        name: "CPUs".to_string(),
+        children: cpus.into_iter().map(|(_, _, n)| n).collect(),
+    })
 }
 
 pub fn cpu_affinity_summary_data() -> Vec<CpuAffinitySummaryEntry> {

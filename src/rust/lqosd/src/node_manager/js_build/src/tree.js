@@ -239,6 +239,14 @@ function buildRow(i, depth=0) {
         spacer.style.visibility = "hidden";
         nameWrap.appendChild(spacer);
     }
+    if (node.virtual === true) {
+        let virtualIcon = document.createElement("i");
+        virtualIcon.classList.add("fa", "fa-fw", "fa-ghost", "text-secondary");
+        virtualIcon.setAttribute("data-bs-toggle", "tooltip");
+        virtualIcon.setAttribute("data-bs-placement", "top");
+        virtualIcon.setAttribute("title", "Virtual node (logical only; not shaped in HTB).");
+        nameWrap.appendChild(virtualIcon);
+    }
     let link = document.createElement("a");
     link.href = "/tree.html?parent=" + nodeId + "&upParent=" + parent;
     link.classList.add("redactable");

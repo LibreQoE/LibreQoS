@@ -78,6 +78,7 @@ impl NetworkJson {
     pub fn load() -> Result<Self, NetworkJsonError> {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            virtual_node: false,
             max_throughput: (0, 0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -345,6 +346,16 @@ fn recurse_node(
     } else {
         nodes.len() - 1
     };
+    let virtual_node = json
+        .get("virtual")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        || json
+            .get("type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.eq_ignore_ascii_case("virtual"))
+            .unwrap_or(false);
+
     let node = NetworkJsonNode {
         parents: parents.to_vec(),
         max_throughput: (
@@ -360,6 +371,7 @@ fn recurse_node(
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
+        virtual_node,
         immediate_parent: Some(immediate_parent),
         rtt_buffer: RttBuffer::default(),
         node_type: json
@@ -422,4 +434,100 @@ pub enum NetworkJsonError {
     ConfigLoadError,
     #[error("network.json not found or does not exist")]
     FileNotFound,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_json::Value;
+
+    fn parse_network_json_from_value(value: Value) -> NetworkJson {
+        let mut nodes = vec![NetworkJsonNode {
+            name: "Root".to_string(),
+            virtual_node: false,
+            max_throughput: (0, 0),
+            current_throughput: DownUpOrder::zeroed(),
+            current_packets: DownUpOrder::zeroed(),
+            current_tcp_packets: DownUpOrder::zeroed(),
+            current_udp_packets: DownUpOrder::zeroed(),
+            current_icmp_packets: DownUpOrder::zeroed(),
+            current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_drops: DownUpOrder::zeroed(),
+            current_marks: DownUpOrder::zeroed(),
+            parents: Vec::new(),
+            immediate_parent: None,
+            rtt_buffer: RttBuffer::default(),
+            node_type: None,
+            heatmap: None,
+            qoq_heatmap: None,
+        }];
+
+        let parents = vec![0];
+        if let Value::Object(map) = &value {
+            for (key, value) in map.iter() {
+                if let Value::Object(inner_map) = value {
+                    recurse_node(&mut nodes, key, inner_map, &parents, 0);
+                }
+            }
+        }
+
+        NetworkJson { nodes }
+    }
+
+    #[test]
+    fn parses_virtual_and_legacy_virtual_type() {
+        let raw = serde_json::json!({
+            "Site_1": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "type": "Site",
+                "children": {
+                    "VirtNode": {
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500,
+                        "type": "AP",
+                        "virtual": true,
+                        "children": {}
+                    },
+                    "LegacyVirt": {
+                        "downloadBandwidthMbps": 400,
+                        "uploadBandwidthMbps": 400,
+                        "type": "virtual",
+                        "children": {}
+                    },
+                    "RealNode": {
+                        "downloadBandwidthMbps": 300,
+                        "uploadBandwidthMbps": 300,
+                        "children": {}
+                    }
+                }
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+
+        let virt = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "VirtNode")
+            .expect("VirtNode must be present");
+        assert!(virt.virtual_node);
+        assert!(virt.clone_to_transit().is_virtual);
+
+        let legacy = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "LegacyVirt")
+            .expect("LegacyVirt must be present");
+        assert!(legacy.virtual_node);
+        assert!(legacy.clone_to_transit().is_virtual);
+
+        let real = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "RealNode")
+            .expect("RealNode must be present");
+        assert!(!real.virtual_node);
+        assert!(!real.clone_to_transit().is_virtual);
+    }
 }

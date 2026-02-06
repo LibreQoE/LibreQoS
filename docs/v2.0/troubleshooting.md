@@ -103,6 +103,12 @@ Once you have identified the error and fixed ShapedDevices.csv and/or Network.js
 
 ```sudo systemctl start lqos_scheduler```
 
+### Virtual node promotion collision (network.json)
+
+If LibreQoS.py fails with an error like `Virtual node promotion collision: 'AP_A' already exists at this level.`, you have a `"virtual": true` node whose children get promoted into a parent level where a node with the same name already exists.
+
+Rename one of the colliding nodes (names must be unique among siblings after virtual-node promotion), or restructure the hierarchy so promoted children won’t collide.
+
 ### Systemd segfault
 
 If you experience a segfault in systemd, this is a known issue in systemd [1](https://github.com/systemd/systemd/issues/36031) [2](https://github.com/systemd/systemd/issues/33643).

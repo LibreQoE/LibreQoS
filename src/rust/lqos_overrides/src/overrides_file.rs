@@ -38,6 +38,11 @@ pub enum NetworkAdjustment {
         download_bandwidth_mbps: Option<u32>,
         upload_bandwidth_mbps: Option<u32>,
     },
+    SetNodeVirtual {
+        node_name: String,
+        #[serde(rename = "virtual")]
+        virtual_node: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -171,6 +176,28 @@ impl OverrideFile {
     /// Add a network adjustment entry.
     pub fn add_network_adjustment(&mut self, adj: NetworkAdjustment) {
         self.network_adjustments.push(adj);
+    }
+
+    /// Add or replace a virtual-node flag for a specific network.json node name.
+    pub fn set_network_node_virtual(&mut self, node_name: String, virtual_node: bool) {
+        self.network_adjustments.retain(|adj| match adj {
+            NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != &node_name,
+            _ => true,
+        });
+        self.network_adjustments.push(NetworkAdjustment::SetNodeVirtual {
+            node_name,
+            virtual_node,
+        });
+    }
+
+    /// Remove any virtual-node overrides for `node_name`. Returns number removed.
+    pub fn remove_network_node_virtual_by_name_count(&mut self, node_name: &str) -> usize {
+        let before = self.network_adjustments.len();
+        self.network_adjustments.retain(|adj| match adj {
+            NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != node_name,
+            _ => true,
+        });
+        before.saturating_sub(self.network_adjustments.len())
     }
 
     /// Remove a network adjustment by index. Returns true if removed.

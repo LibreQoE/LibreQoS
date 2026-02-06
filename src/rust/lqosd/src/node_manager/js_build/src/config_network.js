@@ -13,15 +13,19 @@ function renderNetworkNode(level, depth) {
     html += `<div class="card-body">`;
     
     for (const [key, value] of Object.entries(level)) {
+        const isVirtual = value && value.virtual === true;
         // Node header with actions
         html += `<div class="d-flex justify-content-between align-items-center mb-2">`;
-        html += `<h5 class="card-title mb-0">${key}</h5>`;
+        html += `<h5 class="card-title mb-0">${key}${isVirtual ? ' <span class="badge bg-secondary ms-2"><i class="fa fa-ghost"></i> Virtual</span>' : ''}</h5>`;
         html += `<div>`;
         if (depth > 0) {
             html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')">
                         <i class="fas fa-arrow-up"></i> Promote
                      </button>`;
         }
+        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')">
+                    <i class="fas ${isVirtual ? 'fa-toggle-on' : 'fa-toggle-off'}"></i> Virtual
+                 </button>`;
         html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')">
                     <i class="fas fa-pencil-alt"></i> Rename
                  </button>`;
@@ -103,6 +107,23 @@ function nodeSpeedChange(nodeId, direction) {
                 } else {
                     value.uploadBandwidthMbps = newVal;
                 }
+            }
+
+            if (value.children != null) {
+                iterate(value.children);
+            }
+        }
+    }
+
+    iterate(network_json);
+    renderNetwork();
+}
+
+function toggleVirtualNode(nodeId) {
+    function iterate(tree) {
+        for (const [key, value] of Object.entries(tree)) {
+            if (key === nodeId) {
+                value.virtual = !(value && value.virtual === true);
             }
 
             if (value.children != null) {
@@ -248,6 +269,7 @@ function start() {
     window.renameNode = renameNode;
     window.deleteNode = deleteNode;
     window.nodeSpeedChange = nodeSpeedChange;
+    window.toggleVirtualNode = toggleVirtualNode;
 
     // Add save button handler
     // Add network save button handler

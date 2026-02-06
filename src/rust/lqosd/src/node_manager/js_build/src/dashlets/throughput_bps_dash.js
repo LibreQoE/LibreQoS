@@ -26,8 +26,12 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "270px";
-        base.style.overflow = "hidden";
+        this._bodyId = `${this.id}_body`;
+        const body = document.createElement("div");
+        body.id = this._bodyId;
+        body.style.height = "250px";
+        body.style.overflow = "hidden";
+        base.appendChild(body);
         return base;
     }
 
@@ -39,12 +43,12 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         this.upRing = [];
         this.dlRing = [];
 
-        let target = document.getElementById(this.id);
+        let target = document.getElementById(this._bodyId);
+        if (!target) return;
 
         // Create row
         const row = document.createElement("div");
         row.classList.add("row");
-        row.style.height = "100%";
 
         // ---------------------
         // LEFT COLUMN

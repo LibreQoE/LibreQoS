@@ -184,8 +184,7 @@ impl EtcLqos {
                     Err(e) => {
                         error!("Unable to parse TOML from /etc/lqos.conf");
                         error!("Full error: {:?}", e);
-                        panic!();
-                        //Err(EtcLqosError::CannotParseToml)
+                        Err(EtcLqosError::CannotParseToml)
                     }
                 }
             }

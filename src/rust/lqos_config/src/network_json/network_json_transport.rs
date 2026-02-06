@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkJsonTransport {
     /// Display name
     pub name: String,
+    /// True if this node is a "virtual" (logical-only) node.
+    #[serde(rename = "virtual", default)]
+    pub is_virtual: bool,
     /// Max throughput for node (not clamped)
     pub max_throughput: (u32, u32),
     /// Current node throughput

@@ -441,6 +441,14 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::CpuAffinitySiteTree => {
+            let response = WsResponse::CpuAffinitySiteTree {
+                data: cpu_affinity::cpu_affinity_site_tree_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::AsnList => {
             let response = WsResponse::AsnList {
                 data: flow_explorer::asn_list_data(),
