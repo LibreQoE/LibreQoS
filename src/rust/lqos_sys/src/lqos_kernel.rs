@@ -5,12 +5,12 @@
 
 use crate::cpu_map::CpuMapping;
 use anyhow::{Error, Result};
-use lqos_utils::XdpIpAddress;
 use libbpf_sys::{
     LIBBPF_STRICT_ALL, XDP_FLAGS_DRV_MODE, XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE,
     XDP_FLAGS_UPDATE_IF_NOEXIST, bpf_map_info, bpf_obj_get, bpf_obj_get_info_by_fd, bpf_xdp_attach,
     libbpf_set_strict_mode,
 };
+use lqos_utils::XdpIpAddress;
 use nix::libc::{close, geteuid, if_nametoindex};
 use std::{
     ffi::{CString, c_void},
@@ -78,11 +78,7 @@ fn remove_incompatible_pinned_map(
     if info.key_size != expected_key_size || info.value_size != expected_value_size {
         warn!(
             "Pinned BPF map '{}' ABI mismatch (key_size={}, value_size={}) expected (key_size={}, value_size={}). Removing pin to force recreation.",
-            path,
-            info.key_size,
-            info.value_size,
-            expected_key_size,
-            expected_value_size
+            path, info.key_size, info.value_size, expected_key_size, expected_value_size
         );
         fs::remove_file(path).map_err(|e| {
             Error::msg(format!(
@@ -111,6 +107,11 @@ fn ensure_ip_mapping_maps_abi() -> Result<()> {
         "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
         std::mem::size_of::<XdpIpAddress>() as u32,
         expected_value_size,
+    )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/map_traffic",
+        std::mem::size_of::<XdpIpAddress>() as u32,
+        std::mem::size_of::<crate::HostCounter>() as u32,
     )?;
     Ok(())
 }

@@ -21,6 +21,8 @@ struct host_counter {
     __u64 icmp_download_packets;
     __u64 icmp_upload_packets;
     __u32 tc_handle;
+    __u64 circuit_id;
+    __u64 device_id;
     __u64 last_seen;
 };
 
@@ -48,6 +50,8 @@ static __always_inline void track_traffic(
     struct in6_addr * key, 
     __u32 size, 
     __u32 tc_handle,
+    __u64 circuit_id,
+    __u64 device_id,
     struct dissector_t * dissector
 ) {
     // Count the bits. It's per-CPU, so we can't be interrupted - no sync required
@@ -56,6 +60,8 @@ static __always_inline void track_traffic(
     if (counter) {
         counter->last_seen = dissector->now;
         counter->tc_handle = tc_handle;
+        counter->circuit_id = circuit_id;
+        counter->device_id = device_id;
         if (direction == 1) {
             // Download
             counter->download_packets += 1;
@@ -93,6 +99,8 @@ static __always_inline void track_traffic(
         if (!new_host) return;
         __builtin_memset(new_host, 0, sizeof(*new_host));
         new_host->tc_handle = tc_handle;
+        new_host->circuit_id = circuit_id;
+        new_host->device_id = device_id;
         new_host->last_seen = dissector->now;
         if (direction == 1) {
             new_host->download_packets = 1;

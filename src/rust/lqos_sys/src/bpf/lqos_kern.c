@@ -139,9 +139,13 @@ int xdp_prog(struct xdp_md *ctx)
     // Find the desired TC handle and CPU target
     __u32 tc_handle = 0;
     __u32 cpu = 0;
+    __u64 circuit_id = 0;
+    __u64 device_id = 0;
     if (ip_info) {
         tc_handle = ip_info->tc_handle;
         cpu = ip_info->cpu;
+        circuit_id = ip_info->circuit_id;
+        device_id = ip_info->device_id;
     }
 
     // Per-Flow RTT Tracking
@@ -153,6 +157,8 @@ int xdp_prog(struct xdp_md *ctx)
         &lookup_key.address, 
         ctx->data_end - ctx->data, // end - data = length
         tc_handle,
+        circuit_id,
+        device_id,
         &dissector
     );
 
