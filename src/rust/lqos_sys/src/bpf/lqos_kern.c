@@ -257,11 +257,11 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     } // Scope to remove tcq_cfg when done with it
 
     // Do we have metadata?
-    if (skb->data != skb->data_meta) {
+    if (skb->data_meta < skb->data) {
         #ifdef VERBOSE
         bpf_debug("(TC) Metadata is present");
         #endif
-        int size = skb->data_meta - skb->data;
+        int size = skb->data - skb->data_meta;
         if (size < sizeof(struct metadata_pass_t)) {
             bpf_debug("(TC) Metadata too small");
         } else {
@@ -278,7 +278,7 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
 
             struct metadata_pass_t *meta = (struct metadata_pass_t *)data_meta;
             #ifdef VERBOSE
-            bpf_debug("(TC) Metadata: CPU: %u, TC: %u", meta->cpu, meta->tc_handle);
+            bpf_debug("(TC) Metadata: TC: %u", meta->tc_handle);
             #endif
             if (meta->tc_handle != 0) {
                 // We can short-circuit the redirect and bypass the second
