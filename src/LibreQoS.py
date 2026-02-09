@@ -1765,17 +1765,45 @@ def refreshShapers():
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:
-                                    ipMapBatch.add_ip_mapping(str(ipv4), circuit['classid'], data[node]['cpuNum'], False)
+                                    ipMapBatch.add_ip_mapping(
+                                        str(ipv4),
+                                        circuit['classid'],
+                                        data[node]['cpuNum'],
+                                        False,
+                                        circuit.get('circuitID', ''),
+                                        device.get('deviceID', ''),
+                                    )
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
-                                        ipMapBatch.add_ip_mapping(str(ipv4), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        ipMapBatch.add_ip_mapping(
+                                            str(ipv4),
+                                            circuit['up_classid'],
+                                            data[node]['up_cpuNum'],
+                                            True,
+                                            circuit.get('circuitID', ''),
+                                            device.get('deviceID', ''),
+                                        )
                                         #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
                             if device['ipv6s']:
                                 for ipv6 in device['ipv6s']:
-                                    ipMapBatch.add_ip_mapping(str(ipv6), circuit['classid'], data[node]['cpuNum'], False)
+                                    ipMapBatch.add_ip_mapping(
+                                        str(ipv6),
+                                        circuit['classid'],
+                                        data[node]['cpuNum'],
+                                        False,
+                                        circuit.get('circuitID', ''),
+                                        device.get('deviceID', ''),
+                                    )
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
-                                        ipMapBatch.add_ip_mapping(str(ipv6), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        ipMapBatch.add_ip_mapping(
+                                            str(ipv6),
+                                            circuit['up_classid'],
+                                            data[node]['up_cpuNum'],
+                                            True,
+                                            circuit.get('circuitID', ''),
+                                            device.get('deviceID', ''),
+                                        )
                                         #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
                             if device['deviceName'] not in devicesShaped:
                                 devicesShaped.append(device['deviceName'])

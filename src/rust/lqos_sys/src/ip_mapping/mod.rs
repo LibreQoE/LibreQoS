@@ -6,8 +6,8 @@ use std::net::IpAddr;
 mod ip_hash_data;
 mod ip_hash_key;
 mod ip_to_map;
-use ip_hash_data::IpHashData;
-use ip_hash_key::IpHashKey;
+pub(crate) use ip_hash_data::IpHashData;
+pub(crate) use ip_hash_key::IpHashKey;
 use ip_to_map::IpToMap;
 
 /// Adds an IP address to the underlying TC map.
@@ -17,7 +17,14 @@ use ip_to_map::IpToMap;
 /// * `address` - a string containing an IPv4 or IPv6 address, with or without a prefix-length.
 /// * `tc_handle` - the TC classifier handle to associate with the IP address, in (major,minor) format.
 /// * `cpu` - the CPU index on which the TC class should be handled.
-pub fn add_ip_to_tc(address: &str, tc_handle: TcHandle, cpu: u32, upload: bool) -> Result<()> {
+pub fn add_ip_to_tc(
+    address: &str,
+    tc_handle: TcHandle,
+    cpu: u32,
+    upload: bool,
+    circuit_id: u64,
+    device_id: u64,
+) -> Result<()> {
     let bpf_path = if upload {
         "/sys/fs/bpf/map_ip_to_cpu_and_tc_recip"
     } else {
@@ -31,9 +38,23 @@ pub fn add_ip_to_tc(address: &str, tc_handle: TcHandle, cpu: u32, upload: bool) 
         prefixlen: ip_to_add.prefix,
         address: address.0,
     };
+    let mut circuit_id = circuit_id;
+    let mut device_id = device_id;
+    if circuit_id == 0 || device_id == 0 {
+        if let Some(existing) = bpf_map.lookup(&mut key)? {
+            if circuit_id == 0 {
+                circuit_id = existing.circuit_id;
+            }
+            if device_id == 0 {
+                device_id = existing.device_id;
+            }
+        }
+    }
     let mut value = IpHashData {
         cpu: ip_to_add.cpu,
         tc_handle: ip_to_add.handle(),
+        circuit_id,
+        device_id,
     };
     bpf_map.insert_or_update(&mut key, &mut value)?;
     // Removed because it should be cleared explicitly at the end of a batch operation

@@ -49,6 +49,18 @@ pub struct IpMapping {
 
     /// The CPU index associated with this IP mapping.
     pub cpu: u32,
+
+    /// Hashed circuit identifier (from ShapedDevices.csv).
+    ///
+    /// Defaults to `0` for backward compatibility.
+    #[serde(default)]
+    pub circuit_id: u64,
+
+    /// Hashed device identifier (from ShapedDevices.csv).
+    ///
+    /// Defaults to `0` for backward compatibility.
+    #[serde(default)]
+    pub device_id: u64,
 }
 
 /// Provided for backwards compatibility with `xdp_pping`, with the intent

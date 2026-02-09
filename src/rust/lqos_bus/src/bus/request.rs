@@ -114,6 +114,18 @@ pub enum BusRequest {
         /// The CPU on which the TC handle should be shaped.
         cpu: u32,
 
+        /// Hashed circuit identifier (from ShapedDevices.csv).
+        ///
+        /// Defaults to `0` for backward compatibility.
+        #[serde(default)]
+        circuit_id: u64,
+
+        /// Hashed device identifier (from ShapedDevices.csv).
+        ///
+        /// Defaults to `0` for backward compatibility.
+        #[serde(default)]
+        device_id: u64,
+
         /// If true, this is a *second* flow for the same IP range on
         /// the same NIC. Used for handling "on a stick" configurations.
         upload: bool,

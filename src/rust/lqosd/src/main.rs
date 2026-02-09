@@ -377,9 +377,11 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 ip_address,
                 tc_handle,
                 cpu,
+                circuit_id,
+                device_id,
                 upload,
             } => {
-                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload);
+                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload, *circuit_id, *device_id);
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
                         ip_address: ip_address.clone(),

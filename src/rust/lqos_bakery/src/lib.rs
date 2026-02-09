@@ -672,7 +672,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                             mig.shadow_minor,
                                         )
                                     };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload);
+                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload, 0, 0);
                                     // Update local mapping view
                                     mapping_current.insert(key.clone(), MappingVal { handle, cpu });
                                 }
@@ -787,7 +787,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     } else {
                                         tc_handle_from_major_minor(mig.class_major, mig.final_minor)
                                     };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload);
+                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload, 0, 0);
                                     mapping_current.insert(key.clone(), MappingVal { handle, cpu });
                                 }
                             }

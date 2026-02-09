@@ -15,6 +15,8 @@
 struct ip_hash_info {
 	__u32 cpu;
 	__u32 tc_handle; // TC handle MAJOR:MINOR combined in __u32
+	__u64 circuit_id;
+	__u64 device_id;
 };
 
 // Key type used for map_ip_hash trie
@@ -128,7 +130,9 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
         // of repeatedly hitting queries for IPs that ARE NOT shaped.
         struct ip_hash_info negative_hit = {
             .cpu = NEGATIVE_HIT,
-            .tc_handle = NEGATIVE_HIT
+            .tc_handle = NEGATIVE_HIT,
+            .circuit_id = 0,
+            .device_id = 0,
         };
         bpf_map_update_elem(
             &ip_to_cpu_and_tc_hotcache,
