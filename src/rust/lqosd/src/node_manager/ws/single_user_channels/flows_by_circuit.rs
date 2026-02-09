@@ -1,6 +1,5 @@
 use crate::node_manager::ws::messages::{FlowbeeKeyTransit, WsResponse, encode_ws_message};
 use crate::shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use crate::throughput_tracker::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country,
 };
@@ -24,7 +23,6 @@ fn recent_flows_by_circuit(
 
         {
             let all_flows = ALL_FLOWS.lock();
-            let throughput = THROUGHPUT_TRACKER.raw_data.lock();
             let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
                 .flow_data
                 .iter()
@@ -34,48 +32,24 @@ fn recent_flows_by_circuit(
                         return None;
                     }
 
-                    let (local_ip_str, remote_ip_str, device_name, asn_name, asn_country) =
-                        if throughput
-                            .get(&key.local_ip)
-                            .is_some_and(|te| te.circuit_hash == Some(circuit_hash))
-                        {
-                            let device_name = throughput
-                                .get(&key.local_ip)
-                                .and_then(|te| te.device_hash)
-                                .and_then(|hash| cache.index_by_device_hash(&shaped, hash))
-                                .and_then(|idx| shaped.devices.get(idx))
-                                .map(|d| d.device_name.clone())
-                                .unwrap_or_else(|| "Unknown".to_string());
-                            let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                            (
-                                key.local_ip.to_string(),
-                                key.remote_ip.to_string(),
-                                device_name,
-                                geo.name,
-                                geo.country,
-                            )
-                        } else if throughput
-                            .get(&key.remote_ip)
-                            .is_some_and(|te| te.circuit_hash == Some(circuit_hash))
-                        {
-                            let device_name = throughput
-                                .get(&key.remote_ip)
-                                .and_then(|te| te.device_hash)
-                                .and_then(|hash| cache.index_by_device_hash(&shaped, hash))
-                                .and_then(|idx| shaped.devices.get(idx))
-                                .map(|d| d.device_name.clone())
-                                .unwrap_or_else(|| "Unknown".to_string());
-                            let geo = get_asn_name_and_country(key.local_ip.as_ip());
-                            (
-                                key.remote_ip.to_string(),
-                                key.local_ip.to_string(),
-                                device_name,
-                                geo.name,
-                                geo.country,
-                            )
-                        } else {
-                            return None;
-                        };
+                    if local.circuit_hash != Some(circuit_hash) {
+                        return None;
+                    }
+
+                    let device_name = local
+                        .device_hash
+                        .and_then(|hash| cache.index_by_device_hash(&shaped, hash))
+                        .and_then(|idx| shaped.devices.get(idx))
+                        .map(|d| d.device_name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+
+                    let geo = get_asn_name_and_country(key.remote_ip.as_ip());
+                    let (local_ip_str, remote_ip_str, asn_name, asn_country) = (
+                        key.local_ip.to_string(),
+                        key.remote_ip.to_string(),
+                        geo.name,
+                        geo.country,
+                    );
 
                     Some((
                         FlowbeeKeyTransit {

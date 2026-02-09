@@ -469,16 +469,14 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
     let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
-    let circuit_hash = crate::throughput_tracker::THROUGHPUT_TRACKER
-        .raw_data
-        .lock()
-        .get(&key.local_ip)
-        .and_then(|te| te.circuit_hash)
-        .or_else(|| {
-            SHAPED_DEVICES
-                .load()
-                .get_circuit_hash_from_ip(&key.local_ip)
-        });
+    let circuit_hash = data.circuit_hash.or_else(|| {
+        crate::throughput_tracker::THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .get(&key.local_ip)
+            .and_then(|te| te.circuit_hash)
+            .or_else(|| SHAPED_DEVICES.load().get_circuit_hash_from_ip(&key.local_ip))
+    });
 
     if !one_way {
         //data.trim(); // Remove the trailing 30 seconds of zeroes

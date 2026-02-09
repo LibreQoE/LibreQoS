@@ -149,7 +149,14 @@ int xdp_prog(struct xdp_md *ctx)
     }
 
     // Per-Flow RTT Tracking
-    track_flows(&dissector, effective_direction);
+    track_flows(
+        &dissector,
+        effective_direction,
+        tc_handle,
+        cpu,
+        circuit_id,
+        device_id
+    );
 
     // Update the traffic tracking buffers
     track_traffic(

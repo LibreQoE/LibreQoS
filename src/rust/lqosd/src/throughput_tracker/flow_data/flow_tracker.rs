@@ -84,6 +84,14 @@ pub struct FlowbeeLocalData {
     pub end_status: u8,
     /// Raw IP TOS
     pub tos: u8,
+    /// TC handle from the `ip_info` match (0 if unshaped).
+    pub tc_handle: u32,
+    /// CPU mapping from the `ip_info` match (0 if unshaped).
+    pub cpu: u32,
+    /// Hashed circuit identifier (bit-pattern of `hash_to_i64` stored as `u64`).
+    pub circuit_hash: Option<i64>,
+    /// Hashed device identifier (bit-pattern of `hash_to_i64` stored as `u64`).
+    pub device_hash: Option<i64>,
     /// TCP-only data. Boxed for now; TODO: use a slab/slot type setup for coherence in the future.
     pub tcp_info: Option<Box<FlowbeeLocalDataTcp>>,
 }
@@ -128,6 +136,18 @@ impl FlowbeeLocalData {
             tcp_retransmits: data.tcp_retransmits,
             end_status: data.end_status,
             tos: data.tos,
+            tc_handle: data.tc_handle,
+            cpu: data.cpu,
+            circuit_hash: if data.circuit_hash == 0 {
+                None
+            } else {
+                Some(data.circuit_hash as i64)
+            },
+            device_hash: if data.device_hash == 0 {
+                None
+            } else {
+                Some(data.device_hash as i64)
+            },
             tcp_info: if key.ip_protocol == 6 {
                 Some(Box::new(FlowbeeLocalDataTcp {
                     flags: data.flags,

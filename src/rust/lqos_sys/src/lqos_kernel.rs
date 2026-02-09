@@ -113,6 +113,11 @@ fn ensure_ip_mapping_maps_abi() -> Result<()> {
         std::mem::size_of::<XdpIpAddress>() as u32,
         std::mem::size_of::<crate::HostCounter>() as u32,
     )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/flowbee",
+        std::mem::size_of::<crate::flowbee_data::FlowbeeKey>() as u32,
+        std::mem::size_of::<crate::flowbee_data::FlowbeeData>() as u32,
+    )?;
     Ok(())
 }
 

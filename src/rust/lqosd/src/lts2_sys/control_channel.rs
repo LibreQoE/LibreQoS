@@ -1098,28 +1098,16 @@ async fn circuit_snapshot_streaming(
         let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        let throughput = crate::throughput_tracker::THROUGHPUT_TRACKER
-            .raw_data
-            .lock();
         for (key, (local, ..)) in all_flows.flow_data.iter() {
             if local.last_seen < five_minutes_ago {
                 continue;
             }
-            // Identify if this flow belongs to our circuit via local or remote mapping
-            let (local_ip_addr, remote_ip_addr) = if throughput
-                .get(&key.local_ip)
-                .is_some_and(|te| te.circuit_hash == Some(circuit_hash))
-            {
-                (key.local_ip.as_ip(), key.remote_ip.as_ip())
-            } else if throughput
-                .get(&key.remote_ip)
-                .is_some_and(|te| te.circuit_hash == Some(circuit_hash))
-            {
-                // swap orientation so local is on-circuit side
-                (key.remote_ip.as_ip(), key.local_ip.as_ip())
-            } else {
+            if local.circuit_hash != Some(circuit_hash) {
                 continue;
-            };
+            }
+
+            let local_ip_addr = key.local_ip.as_ip();
+            let remote_ip_addr = key.remote_ip.as_ip();
 
             let rtt_ms = (
                 local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,

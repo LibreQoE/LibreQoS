@@ -91,6 +91,16 @@ struct flow_data_t {
     __u8 ip_flags;
     // Padding
     __u8 pad2[5];
+
+    // Mapped TC handle and CPU from ip_info.
+    // NOTE: These are not currently used for shaping decisions in userspace,
+    // but are stored for future use and to avoid repeated lookups.
+    __u32 tc_handle;
+    __u32 cpu;
+
+    // Hashed circuit/device identifiers (from ShapedDevices.csv) as stored in ip_info.
+    __u64 circuit_hash;
+    __u64 device_hash;
 };
 
 // Map for tracking TCP flow progress.
@@ -204,12 +214,29 @@ static __always_inline void update_flow_rates(
     }
 }
 
+static __always_inline void update_flow_metadata(
+    struct flow_data_t *data,
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash
+) {
+    data->tc_handle = tc_handle;
+    data->cpu = cpu;
+    data->circuit_hash = circuit_hash;
+    data->device_hash = device_hash;
+}
+
 // Handle Per-Flow ICMP Analysis
 static __always_inline void process_icmp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    u_int8_t other_rate_index,
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash
 ) {
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
@@ -218,6 +245,7 @@ static __always_inline void process_icmp(
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_metadata(new_data, tc_handle, cpu, circuit_hash, device_hash);
         update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
@@ -226,6 +254,7 @@ static __always_inline void process_icmp(
         return;
     }
     update_flow_rates(dissector, rate_index, data);
+    update_flow_metadata(data, tc_handle, cpu, circuit_hash, device_hash);
 }
 
 // Handle Per-Flow UDP Analysis
@@ -233,7 +262,11 @@ static __always_inline void process_udp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    u_int8_t other_rate_index,
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash
 ) {
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
@@ -242,6 +275,7 @@ static __always_inline void process_udp(
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_metadata(new_data, tc_handle, cpu, circuit_hash, device_hash);
         update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
@@ -250,6 +284,7 @@ static __always_inline void process_udp(
         return;
     }
     update_flow_rates(dissector, rate_index, data);
+    update_flow_metadata(data, tc_handle, cpu, circuit_hash, device_hash);
 }
 
 // Store the most recent sequence and ack numbers, and detect retransmissions.
@@ -413,7 +448,11 @@ static __always_inline void process_tcp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    u_int8_t other_rate_index,
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash
 ) {
     // SYN packet indicating the start of a conversation. We are explicitly ignoring
     // SYN-ACK packets, we just want to catch the opening of a new connection.
@@ -433,6 +472,7 @@ static __always_inline void process_tcp(
         }
         init_flow_data(dissector, data);
         data->ip_flags = 0; // Obtain these
+        update_flow_metadata(data, tc_handle, cpu, circuit_hash, device_hash);
         if (bpf_map_update_elem(&flowbee, &key, data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
         }
@@ -449,6 +489,8 @@ static __always_inline void process_tcp(
         #endif
         return;
     }
+
+    update_flow_metadata(data, tc_handle, cpu, circuit_hash, device_hash);
 
     // Update the flow data with the current packet's information
     update_flow_rates(dissector, rate_index, data);
@@ -471,7 +513,11 @@ static __always_inline void process_tcp(
 // to replace both it and the old RTT system.
 static __always_inline void track_flows(
     struct dissector_t *dissector, // The packet dissector from the previous step
-    u_int8_t direction // The direction of the packet (1 = to internet, 2 = to local network)
+    u_int8_t direction, // The direction of the packet (1 = to internet, 2 = to local network)
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash
 ) {
     u_int8_t rate_index;
     u_int8_t other_rate_index;
@@ -487,9 +533,9 @@ static __always_inline void track_flows(
     // Pass to the appropriate protocol handler
     switch (dissector->ip_protocol)
     {
-        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index); break;
-        case IPPROTO_UDP: process_udp(dissector, direction, rate_index, other_rate_index); break;
-        case IPPROTO_ICMP: process_icmp(dissector, direction, rate_index, other_rate_index); break;
+        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index, tc_handle, cpu, circuit_hash, device_hash); break;
+        case IPPROTO_UDP: process_udp(dissector, direction, rate_index, other_rate_index, tc_handle, cpu, circuit_hash, device_hash); break;
+        case IPPROTO_ICMP: process_icmp(dissector, direction, rate_index, other_rate_index, tc_handle, cpu, circuit_hash, device_hash); break;
         default: {
             #ifdef VERBOSE
             bpf_debug("[FLOWS] Unsupported protocol: %d", dissector->ip_protocol);
