@@ -19,6 +19,17 @@ struct ip_hash_info {
 	__u64 device_id;
 };
 
+// Epoch used to notify the dataplane that IP->TC/CPU mappings have changed.
+// Userspace bumps this (and clears the hot cache) after applying mapping updates.
+// Flowbee uses it to refresh per-flow cached mapping metadata only when needed.
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, __u32);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} ip_mapping_epoch SEC(".maps");
+
 // Key type used for map_ip_hash trie
 struct ip_hash_key {
 	__u32 prefixlen; // Length of the prefix to match

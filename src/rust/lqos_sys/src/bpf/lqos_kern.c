@@ -128,40 +128,24 @@ int xdp_prog(struct xdp_md *ctx)
     bpf_debug("(XDP) Spotted VLAN: %u", dissector.current_vlan);
 #endif
 
-    // Determine the lookup key by direction
-    struct ip_hash_key lookup_key;
-    struct ip_hash_info * ip_info = setup_lookup_key_and_tc_cpu(
-        effective_direction, 
-        &lookup_key, 
-        &dissector
-    );
+    // Per-Flow RTT Tracking (also resolves mapping using flowbee first, falling
+    // back to hotcache/LPM for new flows).
+    struct ip_hash_info ip_info = {0};
+    track_flows(&dissector, effective_direction, &ip_info);
 
     // Find the desired TC handle and CPU target
-    __u32 tc_handle = 0;
-    __u32 cpu = 0;
-    __u64 circuit_id = 0;
-    __u64 device_id = 0;
-    if (ip_info) {
-        tc_handle = ip_info->tc_handle;
-        cpu = ip_info->cpu;
-        circuit_id = ip_info->circuit_id;
-        device_id = ip_info->device_id;
-    }
+    __u32 tc_handle = ip_info.tc_handle;
+    __u32 cpu = ip_info.cpu;
+    __u64 circuit_id = ip_info.circuit_id;
+    __u64 device_id = ip_info.device_id;
 
-    // Per-Flow RTT Tracking
-    track_flows(
-        &dissector,
-        effective_direction,
-        tc_handle,
-        cpu,
-        circuit_id,
-        device_id
-    );
+    // Host key used for throughput tracking (customer-side IP).
+    struct in6_addr host_key = (effective_direction == 1) ? dissector.dst_ip : dissector.src_ip;
 
     // Update the traffic tracking buffers
     track_traffic(
         effective_direction, 
-        &lookup_key.address, 
+        &host_key, 
         ctx->data_end - ctx->data, // end - data = length
         tc_handle,
         circuit_id,

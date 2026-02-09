@@ -121,5 +121,13 @@ pub fn clear_hot_cache() -> Result<()> {
     let mut bpf_map =
         BpfMap::<XdpIpAddress, IpHashData>::from_path("/sys/fs/bpf/ip_to_cpu_and_tc_hotcache")?;
     bpf_map.clear_bulk()?;
+
+    // Bump the mapping epoch so the dataplane refreshes per-flow cached mapping metadata.
+    let mut epoch_map = BpfMap::<u32, u32>::from_path("/sys/fs/bpf/ip_mapping_epoch")?;
+    let mut key = 0u32;
+    let mut epoch = epoch_map.lookup(&mut key)?.unwrap_or(0);
+    epoch = epoch.wrapping_add(1);
+    epoch_map.insert_or_update(&mut key, &mut epoch)?;
+
     Ok(())
 }

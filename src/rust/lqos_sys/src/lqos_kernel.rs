@@ -109,6 +109,11 @@ fn ensure_ip_mapping_maps_abi() -> Result<()> {
         expected_value_size,
     )?;
     remove_incompatible_pinned_map(
+        "/sys/fs/bpf/ip_mapping_epoch",
+        std::mem::size_of::<u32>() as u32,
+        std::mem::size_of::<u32>() as u32,
+    )?;
+    remove_incompatible_pinned_map(
         "/sys/fs/bpf/map_traffic",
         std::mem::size_of::<XdpIpAddress>() as u32,
         std::mem::size_of::<crate::HostCounter>() as u32,
