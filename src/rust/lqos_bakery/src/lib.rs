@@ -28,7 +28,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
@@ -38,7 +38,10 @@ use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient, TcHandle};
+use lqos_bus::{
+    BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
+    UrgentSource,
+};
 use lqos_config::{Config, LazyQueueMode};
 use lqos_sys; // direct mapping control for live-move to avoid bus full-sync side-effects
 
@@ -199,6 +202,12 @@ fn build_temp_add_cmd(
 
 /// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
+/// Maximum number of mapped circuits allowed without Insight.
+const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
+/// Minimum interval between repeated mapped-circuit-limit urgent issues.
+const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
+/// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
+static LAST_CIRCUIT_LIMIT_URGENT_TS: AtomicU64 = AtomicU64::new(0);
 
 /// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
@@ -206,6 +215,226 @@ static MQ_CREATED: AtomicBool = AtomicBool::new(false);
 /// Indicates that at least one command batch has been processed and applied.
 /// Used to avoid racing live activation against initial class creation.
 static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Default, Clone, Copy)]
+struct MappedLimitStats {
+    enforced_limit: usize,
+    requested_mapped: usize,
+    allowed_mapped: usize,
+    dropped_mapped: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedMappedLimit {
+    licensed: bool,
+    max_circuits: Option<usize>,
+    effective_limit: usize,
+}
+
+fn is_mapped_add_circuit(cmd: &BakeryCommands) -> bool {
+    let BakeryCommands::AddCircuit { ip_addresses, .. } = cmd else {
+        return false;
+    };
+    !parse_ip_list(ip_addresses).is_empty()
+}
+
+fn mapped_circuit_hash(cmd: &BakeryCommands) -> Option<i64> {
+    let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd else {
+        return None;
+    };
+    if is_mapped_add_circuit(cmd) {
+        Some(*circuit_hash)
+    } else {
+        None
+    }
+}
+
+fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn!("Bakery: failed to build runtime for Insight license summary: {e:?}");
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+            };
+        }
+    };
+
+    rt.block_on(async {
+        let Ok(mut bus) = LibreqosBusClient::new().await else {
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+            };
+        };
+        let Ok(reply) = bus.request(vec![BusRequest::GetInsightLicenseSummary]).await else {
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+            };
+        };
+
+        for r in reply {
+            if let BusResponse::InsightLicenseSummary(InsightLicenseSummary {
+                licensed,
+                max_circuits,
+            }) = r
+            {
+                let max_circuits_usize = max_circuits.map(|n| {
+                    let clamped = std::cmp::min(n, usize::MAX as u64);
+                    clamped as usize
+                });
+                let effective_limit = if licensed {
+                    max_circuits_usize.unwrap_or(DEFAULT_MAPPED_CIRCUITS_LIMIT)
+                } else {
+                    DEFAULT_MAPPED_CIRCUITS_LIMIT
+                };
+                return ResolvedMappedLimit {
+                    licensed,
+                    max_circuits: max_circuits_usize,
+                    effective_limit,
+                };
+            }
+        }
+        ResolvedMappedLimit {
+            licensed: false,
+            max_circuits: None,
+            effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+        }
+    })
+}
+
+fn filter_batch_by_mapped_circuit_limit(
+    batch: Vec<Arc<BakeryCommands>>,
+    existing_circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    effective_limit: usize,
+) -> (Vec<Arc<BakeryCommands>>, MappedLimitStats) {
+    let mut mapped_candidates: Vec<i64> = Vec::new();
+    let mut seen = HashSet::new();
+
+    for cmd in &batch {
+        if let Some(hash) = mapped_circuit_hash(cmd.as_ref()) {
+            if seen.insert(hash) {
+                mapped_candidates.push(hash);
+            }
+        }
+    }
+
+    let requested = mapped_candidates.len();
+    if requested <= effective_limit {
+        return (
+            batch,
+            MappedLimitStats {
+                enforced_limit: effective_limit,
+                requested_mapped: requested,
+                allowed_mapped: requested,
+                dropped_mapped: 0,
+            },
+        );
+    }
+
+    let mut keep_set: HashSet<i64> = HashSet::new();
+
+    // Preserve existing mapped circuits first to minimize churn.
+    for hash in &mapped_candidates {
+        if keep_set.len() >= effective_limit {
+            break;
+        }
+        if existing_circuits
+            .get(hash)
+            .is_some_and(|existing| is_mapped_add_circuit(existing.as_ref()))
+        {
+            keep_set.insert(*hash);
+        }
+    }
+
+    // Fill remaining slots in deterministic batch order.
+    for hash in &mapped_candidates {
+        if keep_set.len() >= effective_limit {
+            break;
+        }
+        keep_set.insert(*hash);
+    }
+
+    let filtered = batch
+        .into_iter()
+        .filter(|cmd| match mapped_circuit_hash(cmd.as_ref()) {
+            Some(hash) => keep_set.contains(&hash),
+            None => true,
+        })
+        .collect::<Vec<_>>();
+
+    let allowed = keep_set.len();
+    (
+        filtered,
+        MappedLimitStats {
+            enforced_limit: effective_limit,
+            requested_mapped: requested,
+            allowed_mapped: allowed,
+            dropped_mapped: requested.saturating_sub(allowed),
+        },
+    )
+}
+
+fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
+    if stats.dropped_mapped == 0 {
+        return;
+    }
+
+    let now = current_timestamp();
+    let last = LAST_CIRCUIT_LIMIT_URGENT_TS.load(Ordering::Relaxed);
+    if last != 0 && now.saturating_sub(last) < CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS {
+        return;
+    }
+    LAST_CIRCUIT_LIMIT_URGENT_TS.store(now, Ordering::Relaxed);
+
+    let message = format!(
+        "Mapped circuit limit reached: requested {} mapped circuits, allowed {}, dropped {}.",
+        stats.requested_mapped,
+        stats.allowed_mapped,
+        stats.dropped_mapped
+    );
+
+    let context = Some(format!(
+        "{{\"requested_mapped\":{},\"allowed_mapped\":{},\"dropped_mapped\":{},\"enforced_limit\":{}}}",
+        stats.requested_mapped,
+        stats.allowed_mapped,
+        stats.dropped_mapped,
+        stats.enforced_limit
+    ));
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn!("Bakery: failed to build runtime for urgent issue submission: {e:?}");
+            return;
+        }
+    };
+    rt.block_on(async {
+        if let Ok(mut bus) = LibreqosBusClient::new().await {
+            let _ = bus
+                .request(vec![BusRequest::SubmitUrgentIssue {
+                    source: UrgentSource::System,
+                    severity: UrgentSeverity::Warning,
+                    code: "MAPPED_CIRCUIT_LIMIT".to_string(),
+                    message,
+                    context,
+                    dedupe_key: Some("mapped_circuit_limit".to_string()),
+                }])
+                .await;
+        }
+    });
+}
 
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
 pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
@@ -873,8 +1102,25 @@ fn handle_commit_batch(
         return;
     };
 
+    let mapped_limit = resolve_mapped_circuit_limit();
+    let effective_limit = mapped_limit.effective_limit;
+
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (full reload): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                effective_limit,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
         info!("MQ not created, performing full reload.");
         full_reload(
@@ -892,6 +1138,20 @@ fn handle_commit_batch(
 
     let site_change_mode = diff_sites(&new_batch, sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (site-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                effective_limit,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
         // If the site structure has changed, we need to rebuild everything.
         info!("Bakery full reload: site_struct=1, circuit_struct=0");
         full_reload(
@@ -921,6 +1181,20 @@ fn handle_commit_batch(
     // If any structural changes occurred, do a full reload
     if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode {
         if !categories.structural_changed.is_empty() {
+            let (new_batch, mapped_limit_stats) =
+                filter_batch_by_mapped_circuit_limit(new_batch.clone(), circuits, effective_limit);
+            if mapped_limit_stats.dropped_mapped > 0 {
+                warn!(
+                    "Bakery mapped circuit cap enforced (circuit-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                    mapped_limit_stats.requested_mapped,
+                    mapped_limit_stats.allowed_mapped,
+                    mapped_limit_stats.dropped_mapped,
+                    effective_limit,
+                    mapped_limit.licensed,
+                    mapped_limit.max_circuits
+                );
+                maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+            }
             info!(
                 "Bakery full reload: site_struct=0, circuit_struct={}",
                 categories.structural_changed.len()
@@ -1149,8 +1423,48 @@ fn handle_commit_batch(
 
         // 3) Additions
         if !categories.newly_added.is_empty() {
-            let commands: Vec<Vec<String>> = categories
-                .newly_added
+            let mut accepted_additions: Vec<&Arc<BakeryCommands>> = Vec::new();
+            let mut dropped_mapped_additions = 0usize;
+            let mut requested_mapped_additions = 0usize;
+
+            let mut mapped_in_state = circuits
+                .values()
+                .filter(|c| is_mapped_add_circuit(c.as_ref()))
+                .count();
+
+            for command in &categories.newly_added {
+                if is_mapped_add_circuit(command.as_ref()) {
+                    requested_mapped_additions += 1;
+                    if mapped_in_state >= effective_limit {
+                        dropped_mapped_additions += 1;
+                        continue;
+                    }
+                    mapped_in_state += 1;
+                }
+                accepted_additions.push(*command);
+            }
+
+            if dropped_mapped_additions > 0 {
+                let stats = MappedLimitStats {
+                    enforced_limit: effective_limit,
+                    requested_mapped: requested_mapped_additions,
+                    allowed_mapped: requested_mapped_additions
+                        .saturating_sub(dropped_mapped_additions),
+                    dropped_mapped: dropped_mapped_additions,
+                };
+                warn!(
+                    "Bakery mapped circuit cap enforced (incremental additions): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                    stats.requested_mapped,
+                    stats.allowed_mapped,
+                    stats.dropped_mapped,
+                    effective_limit,
+                    mapped_limit.licensed,
+                    mapped_limit.max_circuits
+                );
+                maybe_emit_mapped_circuit_limit_urgent(&stats);
+            }
+
+            let commands: Vec<Vec<String>> = accepted_additions
                 .iter()
                 .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
@@ -1158,7 +1472,7 @@ fn handle_commit_batch(
             if !commands.is_empty() {
                 execute_in_memory(&commands, "adding new circuits");
             }
-            for command in categories.newly_added {
+            for command in accepted_additions {
                 if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
                     circuits.insert(*circuit_hash, Arc::clone(command));
                 }
@@ -1514,4 +1828,109 @@ fn apply_stormguard_overrides(
         ]);
     }
     execute_in_memory(&commands, "replaying StormGuard overrides");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
+        Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: hash,
+            parent_class_id: TcHandle::from_u32(0x1),
+            up_parent_class_id: TcHandle::from_u32(0x2),
+            class_minor: 0x10,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            ip_addresses: ip_addresses.to_string(),
+            sqm_override: None,
+        })
+    }
+
+    fn has_hash(batch: &[Arc<BakeryCommands>], hash: i64) -> bool {
+        batch.iter().any(|cmd| {
+            matches!(
+                cmd.as_ref(),
+                BakeryCommands::AddCircuit {
+                    circuit_hash,
+                    ..
+                } if *circuit_hash == hash
+            )
+        })
+    }
+
+    #[test]
+    fn mapped_circuit_predicate_works() {
+        let mapped = mk_add_circuit(1, "192.0.2.1/32");
+        let unmapped = mk_add_circuit(2, "");
+        assert!(is_mapped_add_circuit(mapped.as_ref()));
+        assert!(!is_mapped_add_circuit(unmapped.as_ref()));
+    }
+
+    #[test]
+    fn mapped_circuit_limit_preserves_existing_first() {
+        let mut existing = HashMap::new();
+        let mut batch = Vec::new();
+
+        for h in 1..=1000 {
+            let c = mk_add_circuit(h, &format!("10.0.{}.1/32", h % 255));
+            existing.insert(h, Arc::clone(&c));
+            batch.push(c);
+        }
+        batch.push(mk_add_circuit(1001, "10.0.0.200/32"));
+
+        let (filtered, stats) =
+            filter_batch_by_mapped_circuit_limit(batch, &existing, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+        assert_eq!(stats.enforced_limit, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+        assert_eq!(stats.requested_mapped, 1001);
+        assert_eq!(stats.allowed_mapped, 1000);
+        assert_eq!(stats.dropped_mapped, 1);
+        assert_eq!(filtered.len(), 1000);
+        assert!(!has_hash(&filtered, 1001));
+        assert!(has_hash(&filtered, 1));
+        assert!(has_hash(&filtered, 1000));
+    }
+
+    #[test]
+    fn unmapped_additions_are_not_limited() {
+        let mut existing = HashMap::new();
+        let mut batch = Vec::new();
+
+        for h in 1..=1000 {
+            let c = mk_add_circuit(h, &format!("10.1.{}.1/32", h % 255));
+            existing.insert(h, c);
+            batch.push(mk_add_circuit(h, &format!("10.1.{}.1/32", h % 255)));
+        }
+        batch.push(mk_add_circuit(9001, ""));
+
+        let (filtered, stats) =
+            filter_batch_by_mapped_circuit_limit(batch, &existing, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+        assert_eq!(stats.enforced_limit, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+        assert_eq!(stats.requested_mapped, 1000);
+        assert_eq!(stats.allowed_mapped, 1000);
+        assert_eq!(stats.dropped_mapped, 0);
+        assert!(has_hash(&filtered, 9001));
+        assert_eq!(filtered.len(), 1001);
+    }
+
+    #[test]
+    fn mapped_circuit_limit_uses_custom_limit() {
+        let existing = HashMap::new();
+        let batch = vec![
+            mk_add_circuit(1, "10.2.0.1/32"),
+            mk_add_circuit(2, "10.2.0.2/32"),
+            mk_add_circuit(3, "10.2.0.3/32"),
+        ];
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, 2);
+        assert_eq!(stats.enforced_limit, 2);
+        assert_eq!(stats.requested_mapped, 3);
+        assert_eq!(stats.allowed_mapped, 2);
+        assert_eq!(stats.dropped_mapped, 1);
+        assert_eq!(filtered.len(), 2);
+    }
 }

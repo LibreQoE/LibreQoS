@@ -27,8 +27,8 @@ mod tc_handle;
 pub use bus::response::{
     AsnHeatmapData, AsnListEntry, BakeryStatsSnapshot, CircuitCount, CircuitHeatmapData,
     CircuitCapacityRow, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader, FlowMapPoint,
-    FlowTimelineEntry, NodeCapacity, ProtocolListEntry, QueueStatsTotal, RetransmitSummary,
-    SchedulerDetails, SearchResultEntry, SiteHeatmapData, StormguardDebugDirection,
+    FlowTimelineEntry, InsightLicenseSummary, NodeCapacity, ProtocolListEntry, QueueStatsTotal,
+    RetransmitSummary, SchedulerDetails, SearchResultEntry, SiteHeatmapData, StormguardDebugDirection,
     StormguardDebugEntry, UrgentIssue, WarningLevel,
 };
 pub use bus::{

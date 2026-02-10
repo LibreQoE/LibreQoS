@@ -213,6 +213,21 @@ pub fn current_license_summary() -> (Option<Uuid>, Option<u64>) {
     (grant.license_uuid, grant.max_circuits)
 }
 
+pub fn current_license_limits() -> (bool, Option<u64>) {
+    let Some(state) = GRANT_STATE.get() else {
+        return (false, None);
+    };
+    let guard = state.lock();
+    let Some(grant) = guard.as_ref() else {
+        return (false, None);
+    };
+    let now = unix_now().unwrap_or(0) as i64;
+    if grant.grant_expires <= now {
+        return (false, None);
+    }
+    (true, grant.max_circuits)
+}
+
 fn store_grant_state(grant: Option<LicenseGrant>) {
     let state = GRANT_STATE.get_or_init(|| Mutex::new(None));
     *state.lock() = grant;
@@ -393,4 +408,3 @@ mod tests {
         .is_err());
     }
 }
-

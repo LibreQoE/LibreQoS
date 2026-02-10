@@ -38,7 +38,7 @@ use crate::{
 #[cfg(feature = "flamegraphs")]
 use allocative::Allocative;
 use anyhow::Result;
-use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
+use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
@@ -891,6 +891,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     LtsStatus::Invalid | LtsStatus::NotChecked => BusResponse::InsightStatus(false),
                     _ => BusResponse::InsightStatus(true)
                 }
+            }
+            BusRequest::GetInsightLicenseSummary => {
+                let (licensed, max_circuits) =
+                    crate::lts2_sys::license_grant::current_license_limits();
+                BusResponse::InsightLicenseSummary(InsightLicenseSummary {
+                    licensed,
+                    max_circuits,
+                })
             }
         });
     }

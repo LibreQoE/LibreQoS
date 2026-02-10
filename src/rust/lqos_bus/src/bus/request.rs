@@ -481,6 +481,9 @@ pub enum BusRequest {
 
     /// Is Insight Enabled?
     CheckInsight,
+
+    /// Retrieve current Insight license summary (licensed + optional max circuits).
+    GetInsightLicenseSummary,
 }
 
 /// Defines the parts of the blackboard
