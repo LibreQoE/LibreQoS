@@ -19,6 +19,10 @@ struct ip_hash_info {
 	__u64 device_id;
 };
 
+// In on-a-stick mode, upload classes/CPUs are offset by this amount.
+// This is configured by userspace at load time.
+extern __u32 stick_offset;
+
 // Epoch used to notify the dataplane that IP->TC/CPU mappings have changed.
 // Userspace bumps this (and clears the hot cache) after applying mapping updates.
 // Flowbee uses it to refresh per-flow cached mapping metadata only when needed.
@@ -63,18 +67,6 @@ struct {
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 } map_ip_to_cpu_and_tc SEC(".maps");
 
-// RECIPROCAL Map describing IP to CPU/TC mappings
-// If in "on a stick" mode, this is used to
-// fetch the UPLOAD mapping.
-struct {
-	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
-	__uint(max_entries, IP_HASH_ENTRIES_MAX);
-	__type(key, struct ip_hash_key);
-	__type(value, struct ip_hash_info);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(map_flags, BPF_F_NO_PREALLOC);
-} map_ip_to_cpu_and_tc_recip SEC(".maps");
-
 // Determine the effective direction of a packet
 static __always_inline u_int8_t determine_effective_direction(int direction, __be16 internet_vlan, struct dissector_t * dissector) {
     if (direction < 3) {
@@ -86,6 +78,27 @@ static __always_inline u_int8_t determine_effective_direction(int direction, __b
             return 2;
         }
     }
+}
+
+static __always_inline void apply_stick_offset_to_mapping(
+    u_int8_t effective_direction,
+    struct ip_hash_info *mapping
+) {
+    // Only applies to on-a-stick mode, where upload direction is derived
+    // by offsetting CPU and TC major.
+    if (stick_offset == 0) {
+        return;
+    }
+    if (effective_direction != 2) {
+        return;
+    }
+    // If it isn't shaped, don't transform it.
+    if (mapping->tc_handle == 0) {
+        return;
+    }
+
+    mapping->cpu += stick_offset;
+    mapping->tc_handle += stick_offset << 16;
 }
 
 // Performs an LPM lookup for an `ip_hash.h` encoded address, taking
@@ -159,7 +172,7 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
 // For the TC side, the dissector is different. Operates similarly to
 // `setup_lookup_key_and_tc_cpu`. Performs an LPM lookup for an `ip_hash.h` 
 // encoded address, taking into account redirection and "on a stick" setup.
-static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
+static __always_inline struct ip_hash_info tc_setup_lookup_key_and_tc_cpu(
     // The "direction" constant from the main program. 1 = Internet,
     // 2 = LAN, 3 = Figure it out from VLAN tags
     int direction,
@@ -176,6 +189,7 @@ static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
     int * out_effective_direction
 ) 
 {
+    struct ip_hash_info out = {0};
     lookup_key->prefixlen = 128;
 	// Direction is reversed because we are operating on egress
     if (direction < 3) {
@@ -187,7 +201,11 @@ static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
             &map_ip_to_cpu_and_tc, 
             lookup_key
         );
-        return ip_info;
+        if (ip_info) {
+            out = *ip_info;
+        }
+        apply_stick_offset_to_mapping(*out_effective_direction, &out);
+        return out;
     } else {
         //bpf_debug("Current VLAN (TC): %d", dissector->current_vlan);
         //bpf_debug("Source: %x", dissector->src_ip.in6_u.u6_addr32[3]);
@@ -197,28 +215,23 @@ static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
             // Therefore, it is UPLOAD.
             lookup_key->address = dissector->src_ip;
             *out_effective_direction = 2;
-            //bpf_debug("Reciprocal lookup");
-            struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-                &map_ip_to_cpu_and_tc_recip, 
-                lookup_key
-            );
-            return ip_info;
         } else {
             // Packet is going OUT to the LAN.
             // Therefore, it is DOWNLOAD.
             lookup_key->address = dissector->dst_ip;
             *out_effective_direction = 1;
-            //bpf_debug("Forward lookup");
-            struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-                &map_ip_to_cpu_and_tc, 
-                lookup_key
-            );
-            return ip_info;
         }
+
+        // Regardless of effective direction, we look up the base mapping in the
+        // primary map. Upload mapping is derived via stick_offset.
+        struct ip_hash_info * ip_info = bpf_map_lookup_elem(
+            &map_ip_to_cpu_and_tc, 
+            lookup_key
+        );
+        if (ip_info) {
+            out = *ip_info;
+        }
+        apply_stick_offset_to_mapping(*out_effective_direction, &out);
+        return out;
     }
-    struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-        &map_ip_to_cpu_and_tc, 
-        lookup_key
-    );
-    return ip_info;
 }

@@ -237,7 +237,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     struct MappingKey {
         ip: String,
         prefix: u32,
-        upload: bool,
     }
     #[derive(Clone, Debug)]
     struct MappingVal {
@@ -275,11 +274,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         ip_address: &str,
         tc_handle: TcHandle,
         cpu: u32,
-        upload: bool,
         mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
     ) {
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
-        let key = MappingKey { ip, prefix, upload };
+        let key = MappingKey { ip, prefix };
         let val = MappingVal {
             handle: tc_handle,
             cpu,
@@ -294,45 +292,33 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
 
     fn handle_del_ip(
         ip_address: &str,
-        upload: bool,
         mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
         mapping_current: &mut HashMap<MappingKey, MappingVal>,
     ) {
         // Best-effort deletion: if exact prefix was provided, remove that, else try common host prefixes
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
-        let key = MappingKey {
-            ip: ip.clone(),
-            prefix,
-            upload,
-        };
+        let key = MappingKey { ip: ip.clone(), prefix };
         if let Some(stage) = mapping_staged.as_mut() {
             stage.remove(&key);
         }
         mapping_current.remove(&key);
     }
 
-    fn build_handle_sets(
-        circuits: &HashMap<i64, Arc<BakeryCommands>>,
-    ) -> (HashSet<TcHandle>, HashSet<TcHandle>) {
+    fn build_known_handle_set(circuits: &HashMap<i64, Arc<BakeryCommands>>) -> HashSet<TcHandle> {
         let mut down = HashSet::new();
-        let mut up = HashSet::new();
         for (_k, v) in circuits.iter() {
             if let BakeryCommands::AddCircuit {
                 class_minor,
                 class_major,
-                up_class_major,
                 ..
             } = v.as_ref()
             {
                 let down_tc =
                     TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
-                let up_tc =
-                    TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
                 down.insert(down_tc);
-                up.insert(up_tc);
             }
         }
-        (down, up)
+        down
     }
 
     fn attempt_seed_mappings(
@@ -340,8 +326,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         mapping_current: &mut HashMap<MappingKey, MappingVal>,
         mapping_unknown: &mut HashSet<MappingKey>,
     ) -> anyhow::Result<()> {
-        // Build classification sets
-        let (down_set, up_set) = build_handle_sets(circuits);
+        // Build classification set (known circuit handles)
+        let known_set = build_known_handle_set(circuits);
 
         // Create a small runtime to make a one-shot bus request
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -357,35 +343,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         let key = MappingKey {
                             ip: m.ip_address.clone(),
                             prefix: m.prefix_length,
-                            upload: if up_set.contains(&m.tc_handle) {
-                                true
-                            } else if down_set.contains(&m.tc_handle) {
-                                false
-                            } else {
-                                // Unknown mapping (do not delete automatically)
-                                let k = MappingKey {
-                                    ip: m.ip_address.clone(),
-                                    prefix: m.prefix_length,
-                                    upload: false, // default; upload is unknown
-                                };
-                                mapping_unknown.insert(k.clone());
-                                mapping_current.insert(
-                                    k,
-                                    MappingVal {
-                                        handle: m.tc_handle,
-                                        cpu: m.cpu,
-                                    },
-                                );
-                                continue;
-                            },
                         };
-                        mapping_current.insert(
-                            key,
-                            MappingVal {
-                                handle: m.tc_handle,
-                                cpu: m.cpu,
-                            },
-                        );
+                        if !known_set.contains(&m.tc_handle) {
+                            // Unknown mapping (do not delete automatically)
+                            mapping_unknown.insert(key.clone());
+                        }
+                        mapping_current.insert(key, MappingVal { handle: m.tc_handle, cpu: m.cpu });
                     }
                 }
             }
@@ -414,9 +377,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 ip_address,
                 tc_handle,
                 cpu,
-                upload,
+                ..
             } => {
-                handle_map_ip(&ip_address, tc_handle, cpu, upload, &mut mapping_staged);
+                handle_map_ip(&ip_address, tc_handle, cpu, &mut mapping_staged);
             }
             BakeryCommands::BusReady => {
                 if !mapping_seeded {
@@ -438,13 +401,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     }
                 }
             }
-            BakeryCommands::DelIp { ip_address, upload } => {
-                handle_del_ip(
-                    &ip_address,
-                    upload,
-                    &mut mapping_staged,
-                    &mut mapping_current,
-                );
+            BakeryCommands::DelIp { ip_address, .. } => {
+                handle_del_ip(&ip_address, &mut mapping_staged, &mut mapping_current);
             }
             BakeryCommands::ClearIpAll => {
                 mapping_current.clear();
@@ -506,7 +464,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                             };
                                             reqs.push(BusRequest::DelIpFlow {
                                                 ip_address: ip,
-                                                upload: k.upload,
+                                                upload: false,
                                             });
                                         }
                                         let _ = bus.request(reqs).await;
@@ -651,31 +609,20 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             }
                         }
                         MigrationStage::SwapToShadow => {
-                            // Remap all IPs to shadow handles using existing CPU
+                            // Remap all IPs to shadow handles using existing CPU.
+                            // Upload mapping is derived in the dataplane for on-a-stick mode.
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                                for &upload in &[false, true] {
-                                    let key = MappingKey {
-                                        ip: ip_s.clone(),
-                                        prefix,
-                                        upload,
-                                    };
-                                    let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                                    let handle = if upload {
-                                        tc_handle_from_major_minor(
-                                            mig.up_class_major,
-                                            mig.shadow_minor,
-                                        )
-                                    } else {
-                                        tc_handle_from_major_minor(
-                                            mig.class_major,
-                                            mig.shadow_minor,
-                                        )
-                                    };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload, 0, 0);
-                                    // Update local mapping view
-                                    mapping_current.insert(key.clone(), MappingVal { handle, cpu });
-                                }
+                                let key = MappingKey {
+                                    ip: ip_s.clone(),
+                                    prefix,
+                                };
+                                let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
+                                let handle =
+                                    tc_handle_from_major_minor(mig.class_major, mig.shadow_minor);
+                                let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
+                                // Update local mapping view
+                                mapping_current.insert(key, MappingVal { handle, cpu });
                             }
                             // Clear the hot cache directly
                             let _ = lqos_sys::clear_hot_cache();
@@ -772,24 +719,15 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         MigrationStage::SwapToFinal => {
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                                for &upload in &[false, true] {
-                                    let key = MappingKey {
-                                        ip: ip_s.clone(),
-                                        prefix,
-                                        upload,
-                                    };
-                                    let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                                    let handle = if upload {
-                                        tc_handle_from_major_minor(
-                                            mig.up_class_major,
-                                            mig.final_minor,
-                                        )
-                                    } else {
-                                        tc_handle_from_major_minor(mig.class_major, mig.final_minor)
-                                    };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload, 0, 0);
-                                    mapping_current.insert(key.clone(), MappingVal { handle, cpu });
-                                }
+                                let key = MappingKey {
+                                    ip: ip_s.clone(),
+                                    prefix,
+                                };
+                                let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
+                                let handle =
+                                    tc_handle_from_major_minor(mig.class_major, mig.final_minor);
+                                let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
+                                mapping_current.insert(key, MappingVal { handle, cpu });
                             }
                             let _ = lqos_sys::clear_hot_cache();
                             mig.stage = MigrationStage::TeardownShadow;

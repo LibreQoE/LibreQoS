@@ -16,6 +16,7 @@ mod remote_commands;
 mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
+mod stick;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
@@ -110,6 +111,50 @@ pub fn set_console_logging() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn normalize_mapping_request(
+    tc_handle: lqos_bus::TcHandle,
+    cpu: u32,
+    upload: bool,
+) -> anyhow::Result<(lqos_bus::TcHandle, u32, bool)> {
+    let config = lqos_config::load_config()?;
+
+    // With derived upload mapping, we only store one mapping in the kernel.
+    // In non-stick mode, `upload` is meaningless; treat it as false.
+    if !config.on_a_stick_mode() {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    let stick_offset = stick::stick_offset();
+    if stick_offset == 0 {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    if !upload {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    let base_cpu = cpu.checked_sub(stick_offset).ok_or_else(|| {
+        anyhow::anyhow!(
+            "On-a-stick upload mapping CPU ({cpu}) is less than stick_offset ({stick_offset})."
+        )
+    })?;
+
+    let (major, minor) = tc_handle.get_major_minor();
+    let stick_offset_u16 = u16::try_from(stick_offset).map_err(|_| {
+        anyhow::anyhow!(
+            "stick_offset ({stick_offset}) exceeds u16 range; cannot normalize tc_handle."
+        )
+    })?;
+    let base_major = major.checked_sub(stick_offset_u16).ok_or_else(|| {
+        anyhow::anyhow!(
+            "On-a-stick upload mapping tc_handle major ({major}) is less than stick_offset ({stick_offset})."
+        )
+    })?;
+
+    let base_tc_handle = lqos_bus::TcHandle::from_u32(((base_major as u32) << 16) | minor as u32);
+    Ok((base_tc_handle, base_cpu, false))
+}
+
 fn main() -> Result<()> {
     // Set up logging
     set_console_logging()?;
@@ -138,6 +183,7 @@ fn main() -> Result<()> {
 
     // Load config
     let config = lqos_config::load_config()?;
+    let stick_offset = stick::recompute_stick_offset(&config)?;
 
     if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
         warn!("Failed to initialize Insight license storage: {e:?}");
@@ -156,6 +202,7 @@ fn main() -> Result<()> {
             &config.internet_interface(),
             config.stick_vlans().1 as u16,
             config.stick_vlans().0 as u16,
+            stick_offset,
             Some(heimdall_handle_events),
             Some(flowbee_handle_events),
         )?
@@ -381,16 +428,28 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 device_id,
                 upload,
             } => {
-                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload, *circuit_id, *device_id);
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
-                        ip_address: ip_address.clone(),
-                        tc_handle: *tc_handle,
-                        cpu: *cpu,
-                        upload: *upload,
-                    });
+                match normalize_mapping_request(*tc_handle, *cpu, *upload) {
+                    Ok((tc_handle, cpu, upload)) => {
+                        let resp = map_ip_to_flow(
+                            ip_address,
+                            &tc_handle,
+                            cpu,
+                            upload,
+                            *circuit_id,
+                            *device_id,
+                        );
+                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                            let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
+                                ip_address: ip_address.clone(),
+                                tc_handle,
+                                cpu,
+                                upload,
+                            });
+                        }
+                        resp
+                    }
+                    Err(e) => BusResponse::Fail(e.to_string()),
                 }
-                resp
             }
             BusRequest::ClearHotCache => {
                 // Let the bakery finalize staged mapping changes, then clear hot cache.
@@ -399,12 +458,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 clear_hot_cache()
             }
-            BusRequest::DelIpFlow { ip_address, upload } => {
-                let resp = del_ip_flow(ip_address, *upload);
+            BusRequest::DelIpFlow { ip_address, upload: _ } => {
+                // With derived upload mapping, both directions share a single mapping entry.
+                // Always delete from the base mapping set.
+                let resp = del_ip_flow(ip_address, false);
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
                         ip_address: ip_address.clone(),
-                        upload: *upload,
+                        upload: false,
                     });
                 }
                 resp
@@ -432,6 +493,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let result = lqos_config::update_config(config);
                 if result.is_err() {
                     error!("Error updating config: {:?}", result);
+                }
+                if let Ok(cfg) = lqos_config::load_config() {
+                    let _ = stick::recompute_stick_offset(&cfg);
                 }
                 BusResponse::Ack
             }

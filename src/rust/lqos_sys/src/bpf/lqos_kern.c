@@ -56,6 +56,10 @@ int direction = 255;
 __be16 internet_vlan = 0; // Note: turn these into big-endian
 __be16 isp_vlan = 0;
 
+// In on-a-stick mode, upload classes/CPUs are offset by this amount.
+// Userspace computes this from NIC queues / CPU count and sets it at load time.
+__u32 stick_offset = 0;
+
 // Helpers from https://elixir.bootlin.com/linux/v5.4.153/source/tools/testing/selftests/bpf/progs/test_xdp_meta.c#L37
 #define __round_mask(x, y) ((__typeof__(x))((y) - 1))
 #define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
@@ -315,7 +319,7 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     // Determine the lookup key by direction
     struct ip_hash_key lookup_key;
     int effective_direction = 0;
-    struct ip_hash_info * ip_info = tc_setup_lookup_key_and_tc_cpu(
+    struct ip_hash_info ip_info = tc_setup_lookup_key_and_tc_cpu(
         direction, 
         &lookup_key, 
         &dissector, 
@@ -326,12 +330,12 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     bpf_debug("(TC) effective direction: %d", effective_direction);
 #endif
 
-    if (ip_info && ip_info->tc_handle != 0) {
+    if (ip_info.tc_handle != 0) {
         // We found a matching mapped TC flow
 #ifdef VERBOSE
-        bpf_debug("(TC) Mapped to TC handle %x", ip_info->tc_handle);
+        bpf_debug("(TC) Mapped to TC handle %x", ip_info.tc_handle);
 #endif
-        skb->priority = ip_info->tc_handle;
+        skb->priority = ip_info.tc_handle;
         #ifdef TRACING
         {
             __u64 now = bpf_ktime_get_ns();

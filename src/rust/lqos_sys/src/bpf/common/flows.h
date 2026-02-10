@@ -594,6 +594,7 @@ static __always_inline void track_flows(
             out_mapping->circuit_id = ip_info->circuit_id;
             out_mapping->device_id = ip_info->device_id;
         }
+        apply_stick_offset_to_mapping(direction, out_mapping);
         return;
     }
 
@@ -661,4 +662,9 @@ static __always_inline void track_flows(
             #endif
         }
     }
+
+    // Derive the upload-side mapping in on-a-stick mode by applying the
+    // configured stick offset. We do this after flow processing so we only
+    // cache the base mapping inside flowbee.
+    apply_stick_offset_to_mapping(direction, out_mapping);
 }

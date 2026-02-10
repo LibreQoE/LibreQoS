@@ -25,11 +25,10 @@ pub fn add_ip_to_tc(
     circuit_id: u64,
     device_id: u64,
 ) -> Result<()> {
-    let bpf_path = if upload {
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc_recip"
-    } else {
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc"
-    };
+    // Upload mapping is derived in the dataplane for on-a-stick mode. We only
+    // store a single base mapping set in the kernel.
+    let _ = upload;
+    let bpf_path = "/sys/fs/bpf/map_ip_to_cpu_and_tc";
 
     let ip_to_add = IpToMap::new(address, tc_handle, cpu)?;
     let mut bpf_map = BpfMap::<IpHashKey, IpHashData>::from_path(bpf_path)?;
@@ -68,11 +67,10 @@ pub fn add_ip_to_tc(
 ///
 /// * `address` - the IP address to remove. If no prefix (e.g. `/24`) is provided, the longest prefix to match a single IP address will be assumed.
 pub fn del_ip_from_tc(address: &str, upload: bool) -> Result<()> {
-    let bpf_path = if upload {
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc_recip"
-    } else {
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc"
-    };
+    // Upload mapping is derived in the dataplane for on-a-stick mode. We only
+    // store a single base mapping set in the kernel.
+    let _ = upload;
+    let bpf_path = "/sys/fs/bpf/map_ip_to_cpu_and_tc";
     let ip_to_add = IpToMap::new(address, TcHandle::from_string("0:0")?, 0)?;
     let mut bpf_map = BpfMap::<IpHashKey, IpHashData>::from_path(bpf_path)?;
     let ip = address.parse::<IpAddr>()?;
@@ -92,9 +90,12 @@ pub fn clear_ips_from_tc() -> Result<()> {
         BpfMap::<IpHashKey, IpHashData>::from_path("/sys/fs/bpf/map_ip_to_cpu_and_tc")?;
     bpf_map.clear()?;
 
-    let mut bpf_map =
-        BpfMap::<IpHashKey, IpHashData>::from_path("/sys/fs/bpf/map_ip_to_cpu_and_tc_recip")?;
-    bpf_map.clear()?;
+    // Best-effort cleanup of legacy reciprocal map pins from older versions.
+    if let Ok(mut legacy) =
+        BpfMap::<IpHashKey, IpHashData>::from_path("/sys/fs/bpf/map_ip_to_cpu_and_tc_recip")
+    {
+        let _ = legacy.clear();
+    }
 
     clear_hot_cache()?;
 
@@ -104,14 +105,7 @@ pub fn clear_ips_from_tc() -> Result<()> {
 /// Query the underlying IP address to TC map and return the currently active dataset.
 pub fn list_mapped_ips() -> Result<Vec<(IpHashKey, IpHashData)>> {
     let bpf_map = BpfMap::<IpHashKey, IpHashData>::from_path("/sys/fs/bpf/map_ip_to_cpu_and_tc")?;
-    let mut raw = bpf_map.dump_vec();
-
-    let bpf_map2 =
-        BpfMap::<IpHashKey, IpHashData>::from_path("/sys/fs/bpf/map_ip_to_cpu_and_tc_recip")?;
-    let raw2 = bpf_map2.dump_vec();
-    raw.extend_from_slice(&raw2);
-
-    Ok(raw)
+    Ok(bpf_map.dump_vec())
 }
 
 /// Clears the "hot cache", which should be done whenever you change the IP

@@ -99,11 +99,6 @@ fn ensure_ip_mapping_maps_abi() -> Result<()> {
         expected_value_size,
     )?;
     remove_incompatible_pinned_map(
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc_recip",
-        expected_key_size,
-        expected_value_size,
-    )?;
-    remove_incompatible_pinned_map(
         "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
         std::mem::size_of::<XdpIpAddress>() as u32,
         expected_value_size,
@@ -240,7 +235,7 @@ unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
 pub enum InterfaceDirection {
     Internet,
     IspNetwork,
-    OnAStick(u16, u16),
+    OnAStick(u16, u16, u32),
 }
 
 pub fn attach_xdp_and_tc_to_interface(
@@ -264,9 +259,10 @@ pub fn attach_xdp_and_tc_to_interface(
             InterfaceDirection::IspNetwork => 2,
             InterfaceDirection::OnAStick(..) => 3,
         };
-        if let InterfaceDirection::OnAStick(internet, isp) = direction {
+        if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
             (*(*skeleton).bss).internet_vlan = internet.to_be();
             (*(*skeleton).bss).isp_vlan = isp.to_be();
+            (*(*skeleton).bss).stick_offset = stick_offset;
         }
         // Ensure no lingering XDP programs before loading/attaching
         let _ = unload_xdp_from_interface(interface_name);
