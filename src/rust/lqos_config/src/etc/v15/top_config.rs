@@ -64,7 +64,9 @@ pub struct Config {
     /// Integration Common Variables
     pub integration_common: super::integration_common::IntegrationConfig,
 
-    /// Splynx Integration
+    /// Splynx Integration configuration. Optional so older configs without this
+    /// section still deserialize cleanly.
+    #[serde(default)]
     pub splynx_integration: super::splynx_integration::SplynxIntegration,
 
     /// Netzur Integration configuration. Optional so older configs without this
@@ -294,6 +296,33 @@ mod test {
         let config =
             Config::load_from_string(&legacy).expect("Cannot read legacy spylnx example toml");
         assert_eq!(config.version, "1.5");
+    }
+
+    #[test]
+    fn load_example_without_splynx_section() {
+        let no_splynx = include_str!("example.toml")
+            .lines()
+            .scan(false, |in_section, line| {
+                if line.trim() == "[splynx_integration]" {
+                    *in_section = true;
+                    return Some(None);
+                }
+                if *in_section && line.starts_with('[') && line.ends_with(']') {
+                    *in_section = false;
+                }
+                if *in_section {
+                    Some(None)
+                } else {
+                    Some(Some(line))
+                }
+            })
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let config = Config::load_from_string(&no_splynx)
+            .expect("Config without splynx section should still deserialize");
+        assert!(!config.splynx_integration.enable_splynx);
     }
 
     #[test]

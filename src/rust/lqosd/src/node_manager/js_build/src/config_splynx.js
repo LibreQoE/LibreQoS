@@ -45,35 +45,27 @@ function updateConfig() {
 renderConfigMenu('splynx');
 
 loadConfig(() => {
+    if (!window.config) {
+        console.error("Configuration not loaded");
+        return;
+    }
+
     // window.config now contains the configuration.
     // Populate form fields with config values
-    if (window.config && window.config.splynx_integration) {
-        const splynx = window.config.splynx_integration;
-        
-        // Boolean field
-        document.getElementById("enableSplynx").checked = 
-            splynx.enable_splynx ?? false;
+    const splynx = window.config.splynx_integration;
+    document.getElementById("enableSplynx").checked = splynx.enable_splynx ?? false;
+    document.getElementById("apiKey").value = splynx.api_key ?? "";
+    document.getElementById("apiSecret").value = splynx.api_secret ?? "";
+    document.getElementById("splynxUrl").value = splynx.url ?? "";
+    document.getElementById("topologyStrategy").value = splynx.strategy ?? "ap_only";
 
-        // String fields
-        document.getElementById("apiKey").value =
-            splynx.api_key ?? "";
-        document.getElementById("apiSecret").value =
-            splynx.api_secret ?? "";
-        document.getElementById("splynxUrl").value = 
-            splynx.url ?? "";
-        document.getElementById("topologyStrategy").value = 
-            splynx.strategy ?? "ap_only";
-
-        // Add save button click handler
-        document.getElementById('saveButton').addEventListener('click', () => {
-            if (validateConfig()) {
-                updateConfig();
-                saveConfig(() => {
-                    alert("Configuration saved successfully!");
-                });
-            }
-        });
-    } else {
-        console.error("Splynx integration configuration not found in window.config");
-    }
+    // Add save button click handler
+    document.getElementById('saveButton').addEventListener('click', () => {
+        if (validateConfig()) {
+            updateConfig();
+            saveConfig(() => {
+                alert("Configuration saved successfully!");
+            });
+        }
+    });
 });

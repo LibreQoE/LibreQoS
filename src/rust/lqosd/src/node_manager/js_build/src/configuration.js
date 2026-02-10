@@ -171,6 +171,27 @@ function getConfigPath(path) {
     return { found: true, value: current };
 }
 
+function ensureSplynxSection(config) {
+    if (!config || typeof config !== "object") {
+        return config;
+    }
+
+    if (!config.splynx_integration || typeof config.splynx_integration !== "object") {
+        config.splynx_integration = {};
+    }
+
+    const splynx = config.splynx_integration;
+    if (typeof splynx.enable_splynx !== "boolean") splynx.enable_splynx = false;
+    if (typeof splynx.api_key !== "string") splynx.api_key = "";
+    if (typeof splynx.api_secret !== "string") splynx.api_secret = "";
+    if (typeof splynx.url !== "string") splynx.url = "";
+    if (typeof splynx.strategy !== "string" || splynx.strategy.length === 0) {
+        splynx.strategy = "ap_only";
+    }
+
+    return config;
+}
+
 function doBindings() {
     let active = true;
 
@@ -1304,7 +1325,7 @@ function start() {
                 "GetConfig",
                 { GetConfig: {} },
                 (cfgMsg) => {
-                    lqosd_config = cfgMsg.data;
+                    lqosd_config = ensureSplynxSection(cfgMsg.data);
                     console.log("Bindings Done");
                     sendWsRequest(
                         "ListNics",
