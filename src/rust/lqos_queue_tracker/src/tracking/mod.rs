@@ -78,6 +78,18 @@ pub struct TrackedQueue {
     marks: u64,
 }
 
+fn count_queue_types(queues: &[QueueType]) -> QueueCounts {
+    let mut counts = QueueCounts::default();
+    for queue in queues.iter() {
+        match queue {
+            QueueType::Cake(_) => counts.cake += 1,
+            QueueType::Htb(_) => counts.htb += 1,
+            _ => {}
+        }
+    }
+    counts
+}
+
 fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> Vec<TrackedQueue> {
     queues
         .iter()
@@ -146,35 +158,47 @@ fn all_queue_reader() {
     if let Some(structure) = &structure.maybe_queues {
         if let Ok(config) = lqos_config::load_config() {
             // Get all the queues
-            let (download, upload) = if config.on_a_stick_mode() {
+            let (download, upload, queue_counts) = if config.on_a_stick_mode() {
                 let all_queues = read_all_queues_from_interface(&config.internet_interface());
-                let (download, upload) = if let Ok(q) = all_queues {
+                let (download, upload, counts) = if let Ok(q) = all_queues {
                     let download = connect_queues_to_circuit(&structure, &q);
                     let upload = connect_queues_to_circuit_up(&structure, &q);
-                    (download, upload)
+                    (download, upload, count_queue_types(&q))
                 } else {
-                    (Vec::new(), Vec::new())
+                    (Vec::new(), Vec::new(), QueueCounts::default())
                 };
-                (download, upload)
+                (download, upload, counts)
             } else {
                 let all_queues_down = read_all_queues_from_interface(&config.internet_interface());
                 let all_queues_up = read_all_queues_from_interface(&config.isp_interface());
 
-                let download = if let Ok(q) = all_queues_down {
-                    connect_queues_to_circuit(&structure, &q)
+                let download = if let Ok(q) = &all_queues_down {
+                    connect_queues_to_circuit(&structure, q)
                 } else {
                     Vec::new()
                 };
-                let upload = if let Ok(q) = all_queues_up {
-                    connect_queues_to_circuit(&structure, &q)
+                let upload = if let Ok(q) = &all_queues_up {
+                    connect_queues_to_circuit(&structure, q)
                 } else {
                     Vec::new()
                 };
-                (download, upload)
+                let counts_down = all_queues_down
+                    .as_ref()
+                    .map(|queues| count_queue_types(queues))
+                    .unwrap_or_default();
+                let counts_up = all_queues_up
+                    .as_ref()
+                    .map(|queues| count_queue_types(queues))
+                    .unwrap_or_default();
+                let counts = QueueCounts {
+                    cake: counts_down.cake + counts_up.cake,
+                    htb: counts_down.htb + counts_up.htb,
+                };
+                (download, upload, counts)
             };
 
             //println!("{}", download.len() + upload.len());
-            ALL_QUEUE_SUMMARY.ingest_batch(download, upload);
+            ALL_QUEUE_SUMMARY.ingest_batch(download, upload, queue_counts);
         } else {
             warn!("(TC monitor) Unable to read configuration");
         }

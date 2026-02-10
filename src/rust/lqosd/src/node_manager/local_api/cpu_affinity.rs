@@ -1,4 +1,3 @@
-use axum::{extract::Path, extract::Query, Json};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -20,9 +19,6 @@ pub struct CpuAffinitySummaryEntry {
 }
 
 #[derive(Serialize, Clone, Debug)]
-pub struct CpuAffinitySummaryResponse(pub Vec<CpuAffinitySummaryEntry>);
-
-#[derive(Serialize, Clone, Debug)]
 pub struct CircuitBrief {
     pub circuit_id: Option<String>,
     pub circuit_name: Option<String>,
@@ -42,6 +38,13 @@ pub struct CpuAffinityCircuitsPage {
     pub page: usize,
     pub page_size: usize,
     pub items: Vec<CircuitBrief>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct CpuAffinitySiteTreeNode {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<CpuAffinitySiteTreeNode>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -133,20 +136,28 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("cpuNum") {
             rec.cpu_down = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("classMajor") {
-            if let Some(v) = parse_hex_u32(s) { rec.cpu_down = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) {
+                rec.cpu_down = Some(v.saturating_sub(1));
+            }
         } else if let Some(Value::String(s)) = cm.get("classid") {
             // Fallback: parse major from TC handle like "0x1:0x51"
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) { rec.cpu_down = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) {
+                    rec.cpu_down = Some(v.saturating_sub(1));
+                }
             }
         }
         if let Some(Value::String(s)) = cm.get("up_cpuNum") {
             rec.cpu_up = parse_hex_u32(s);
         } else if let Some(Value::String(s)) = cm.get("up_classMajor") {
-            if let Some(v) = parse_hex_u32(s) { rec.cpu_up = Some(v.saturating_sub(1)); }
+            if let Some(v) = parse_hex_u32(s) {
+                rec.cpu_up = Some(v.saturating_sub(1));
+            }
         } else if let Some(Value::String(s)) = cm.get("up_classid") {
             if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) { rec.cpu_up = Some(v.saturating_sub(1)); }
+                if let Some(v) = parse_hex_u32(maj) {
+                    rec.cpu_up = Some(v.saturating_sub(1));
+                }
             }
         }
         // classids
@@ -156,30 +167,34 @@ fn add_circuit_records(
         if let Some(Value::String(s)) = cm.get("up_classid") {
             rec.classid_up = Some(s.clone());
         }
-    // bandwidths
-    if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
-        rec.min_down = v;
-    }
-    if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
-        rec.max_down = v;
-    }
-    if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
-        rec.min_up = v;
-    }
-    if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
-        rec.max_up = v;
-    }
-    // planner weight if present
-    if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
-        rec.planner_weight = v;
-        rec.has_planner_weight = true;
-    }
+        // bandwidths
+        if let Some(v) = cm.get("minDownload").and_then(val_as_f64) {
+            rec.min_down = v;
+        }
+        if let Some(v) = cm.get("maxDownload").and_then(val_as_f64) {
+            rec.max_down = v;
+        }
+        if let Some(v) = cm.get("minUpload").and_then(val_as_f64) {
+            rec.min_up = v;
+        }
+        if let Some(v) = cm.get("maxUpload").and_then(val_as_f64) {
+            rec.max_up = v;
+        }
+        // planner weight if present
+        if let Some(v) = cm.get("planner_weight").and_then(val_as_f64) {
+            rec.planner_weight = v;
+            rec.has_planner_weight = true;
+        }
         // identity
         if let Some(Value::String(s)) = cm.get("circuitID") {
-            if !s.is_empty() { rec.circuit_id = Some(s.clone()); }
+            if !s.is_empty() {
+                rec.circuit_id = Some(s.clone());
+            }
         }
         if let Some(Value::String(s)) = cm.get("circuitName") {
-            if !s.is_empty() { rec.circuit_name = Some(s.clone()); }
+            if !s.is_empty() {
+                rec.circuit_name = Some(s.clone());
+            }
         }
         if rec.circuit_name.is_none() {
             // Fallback to the JSON key is not available here; leave empty
@@ -240,7 +255,155 @@ fn load_all_circuits() -> Vec<CircuitRecord> {
     circuits
 }
 
-pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
+fn trailing_u32(s: &str) -> Option<u32> {
+    let digits: String = s
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<char>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<u32>().ok()
+    }
+}
+
+fn is_network_node(node: &serde_json::Map<String, Value>) -> bool {
+    // Prefer explicit type checks where present
+    if node
+        .get("type")
+        .and_then(|v| v.as_str())
+        .is_some_and(|t| t.eq_ignore_ascii_case("site") || t.eq_ignore_ascii_case("ap"))
+    {
+        return true;
+    }
+
+    // Some production `network.json` files omit `type`. In `queuingStructure.json`,
+    // network nodes always include bandwidth keys (circuits do not).
+    node.contains_key("downloadBandwidthMbps")
+        || node.contains_key("uploadBandwidthMbps")
+        || node.contains_key("children")
+}
+
+fn build_site_tree(name: &str, node: &serde_json::Map<String, Value>) -> CpuAffinitySiteTreeNode {
+    let mut children = Vec::new();
+    if let Some(Value::Object(child_map)) = node.get("children") {
+        for (child_name, child_value) in child_map.iter() {
+            if let Value::Object(child_node) = child_value {
+                if is_network_node(child_node) {
+                    children.push(build_site_tree(child_name, child_node));
+                }
+            }
+        }
+    }
+    children.sort_by(|a, b| a.name.cmp(&b.name));
+    CpuAffinitySiteTreeNode {
+        name: name.to_string(),
+        children,
+    }
+}
+
+pub fn cpu_affinity_site_tree_data() -> Option<CpuAffinitySiteTreeNode> {
+    let path = queuing_structure_path()?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let json: Value = serde_json::from_str(&raw).ok()?;
+    let net = json.get("Network")?.as_object()?;
+
+    let looks_binned = net.keys().any(|k| k.starts_with("CpueQueue"));
+
+    let mut cpus: Vec<(Option<u32>, String, CpuAffinitySiteTreeNode)> = Vec::new();
+
+    if looks_binned {
+        for (cpu_key, cpu_value) in net.iter() {
+            let Some(cpu_node) = cpu_value.as_object() else {
+                continue;
+            };
+            let mut site_children: Vec<CpuAffinitySiteTreeNode> = Vec::new();
+            if let Some(Value::Object(child_map)) = cpu_node.get("children") {
+                for (child_name, child_value) in child_map.iter() {
+                    if let Value::Object(child_node) = child_value {
+                        if is_network_node(child_node) {
+                            site_children.push(build_site_tree(child_name, child_node));
+                        }
+                    }
+                }
+            }
+            site_children.sort_by(|a, b| a.name.cmp(&b.name));
+
+            let cpu_idx = trailing_u32(cpu_key);
+            let cpu_label = cpu_idx
+                .map(|n| format!("CPU {n}"))
+                .unwrap_or_else(|| cpu_key.to_string());
+
+            cpus.push((
+                cpu_idx,
+                cpu_key.to_string(),
+                CpuAffinitySiteTreeNode {
+                    name: cpu_label,
+                    children: site_children,
+                },
+            ));
+        }
+    } else {
+        // Non-binned network: nodes are top-level and each contains cpuNum/classMajor.
+        let mut by_cpu: HashMap<Option<u32>, Vec<CpuAffinitySiteTreeNode>> = HashMap::new();
+        for (child_name, child_value) in net.iter() {
+            let Some(child_node) = child_value.as_object() else {
+                continue;
+            };
+            if !is_network_node(child_node) {
+                continue;
+            }
+            let cpu_idx = child_node
+                .get("cpuNum")
+                .and_then(|v| v.as_str())
+                .and_then(parse_hex_u32)
+                .or_else(|| {
+                    child_node
+                        .get("classMajor")
+                        .and_then(|v| v.as_str())
+                        .and_then(parse_hex_u32)
+                        .map(|v| v.saturating_sub(1))
+                });
+            by_cpu
+                .entry(cpu_idx)
+                .or_default()
+                .push(build_site_tree(child_name, child_node));
+        }
+
+        for (cpu_idx, mut nodes) in by_cpu.into_iter() {
+            nodes.sort_by(|a, b| a.name.cmp(&b.name));
+            let cpu_label = cpu_idx
+                .map(|n| format!("CPU {n}"))
+                .unwrap_or_else(|| "Unknown CPU".to_string());
+            cpus.push((
+                cpu_idx,
+                cpu_label.clone(),
+                CpuAffinitySiteTreeNode {
+                    name: cpu_label,
+                    children: nodes,
+                },
+            ));
+        }
+    }
+
+    cpus.sort_by(|a, b| match (a.0, b.0) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.1.cmp(&b.1),
+    });
+
+    Some(CpuAffinitySiteTreeNode {
+        name: "CPUs".to_string(),
+        children: cpus.into_iter().map(|(_, _, n)| n).collect(),
+    })
+}
+
+pub fn cpu_affinity_summary_data() -> Vec<CpuAffinitySummaryEntry> {
     let circuits = load_all_circuits();
     let mut down: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
     let mut up: HashMap<u32, (usize, f64, f64, f64)> = HashMap::new();
@@ -293,17 +456,20 @@ pub async fn cpu_affinity_summary() -> Json<CpuAffinitySummaryResponse> {
         });
     }
 
-    Json(CpuAffinitySummaryResponse(entries))
+    entries
 }
 
-pub async fn cpu_affinity_circuits(
-    Path(cpu): Path<u32>,
-    Query(q): Query<CircuitsQuery>,
-) -> Json<CpuAffinityCircuitsPage> {
+pub fn cpu_affinity_circuits_data(cpu: u32, q: CircuitsQuery) -> CpuAffinityCircuitsPage {
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
 
     let page = q.page.unwrap_or(1).max(1);
@@ -335,7 +501,11 @@ pub async fn cpu_affinity_circuits(
             } else {
                 c.classid_down
             },
-            max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            max_mbps: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
             weight: c.planner_weight,
             ip_count: c.ip_count,
             ignored: c.has_planner_weight && c.planner_weight <= 0.0,
@@ -366,24 +536,28 @@ pub async fn cpu_affinity_circuits(
         Vec::new()
     };
 
-    Json(CpuAffinityCircuitsPage {
+    CpuAffinityCircuitsPage {
         cpu,
         direction: direction.to_string(),
         total,
         page,
         page_size,
         items: page_items,
-    })
+    }
 }
 
 // Return all circuits (direction-filtered) without pagination to support client-side previews.
-pub async fn cpu_affinity_circuits_all(
-    Query(q): Query<CircuitsQuery>,
-) -> Json<Vec<CircuitBrief>> {
+pub fn cpu_affinity_circuits_all_data(q: CircuitsQuery) -> Vec<CircuitBrief> {
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
     let search = q.search.as_deref().map(|s| s.to_lowercase());
 
@@ -408,7 +582,11 @@ pub async fn cpu_affinity_circuits_all(
             } else {
                 c.classid_down
             },
-            max_mbps: if direction == "up" { c.max_up } else { c.max_down },
+            max_mbps: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
             weight: c.planner_weight,
             ip_count: c.ip_count,
             ignored: c.has_planner_weight && c.planner_weight <= 0.0,
@@ -430,7 +608,7 @@ pub async fn cpu_affinity_circuits_all(
         }
     });
 
-    Json(items)
+    items
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -440,13 +618,17 @@ pub struct PreviewWeightItem {
 }
 
 // Minimal payload for preview: just (key, weight) for each circuit in a direction.
-pub async fn cpu_affinity_preview_weights(
-    Query(q): Query<CircuitsQuery>,
-) -> Json<Vec<PreviewWeightItem>> {
+pub fn cpu_affinity_preview_weights_data(q: CircuitsQuery) -> Vec<PreviewWeightItem> {
     let direction = q
         .direction
         .as_deref()
-        .map(|s| if s.eq_ignore_ascii_case("up") { "up" } else { "down" })
+        .map(|s| {
+            if s.eq_ignore_ascii_case("up") {
+                "up"
+            } else {
+                "down"
+            }
+        })
         .unwrap_or("down");
     let search = q.search.as_deref().map(|s| s.to_lowercase());
 
@@ -468,13 +650,20 @@ pub async fn cpu_affinity_preview_weights(
                 .clone()
                 .or(c.circuit_name.clone())
                 .unwrap_or_default(),
-            weight: if direction == "up" { c.max_up } else { c.max_down },
+            weight: if direction == "up" {
+                c.max_up
+            } else {
+                c.max_down
+            },
         })
         .collect();
 
     // Deterministic ordering for ties
     items.sort_by(|a, b| {
-        let ow = b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal);
+        let ow = b
+            .weight
+            .partial_cmp(&a.weight)
+            .unwrap_or(std::cmp::Ordering::Equal);
         if ow == std::cmp::Ordering::Equal {
             a.key.cmp(&b.key)
         } else {
@@ -482,5 +671,5 @@ pub async fn cpu_affinity_preview_weights(
         }
     });
 
-    Json(items)
+    items
 }

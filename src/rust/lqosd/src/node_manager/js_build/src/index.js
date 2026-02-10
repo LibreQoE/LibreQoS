@@ -6,9 +6,21 @@ import {showTimeControls} from "./components/timescale";
 import {DashletMenu, widgetFactory} from "./dashlets/dashlet_index";
 
 const defaultLayout = {
-    version: 2,
+    version: 3,
     activeTab: 0,
     tabs: [
+        {
+            name: "Executive Summary",
+            dashlets: [
+                { tag: "executiveSnapshot", size: 12 },
+                { tag: "executiveHelpers", size: 12 },
+                { tag: "executiveGlobalHeatmap", size: 12 },
+                { tag: "executiveHeatmapDownload", size: 6 },
+                { tag: "executiveHeatmapUpload", size: 6 },
+                { tag: "executiveHeatmapRtt", size: 6 },
+                { tag: "executiveHeatmapRetrans", size: 6 }
+            ]
+        },
         {
             name: "Overview",
             dashlets: [
@@ -37,9 +49,7 @@ const defaultLayout = {
             name: "Network",
             dashlets: [
                 { tag: "networkTreeSankey", size: 6 },
-                { tag: "treeSummary", size: 6 },
-                { tag: "circuitCapacity", size: 6 },
-                { tag: "treeCapacity", size: 6 }
+                { tag: "treeSummary", size: 6 }
             ]
         },
         {

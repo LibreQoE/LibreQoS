@@ -1,26 +1,60 @@
-export function loadConfig(onComplete) {
-    $.get("/local-api/getConfig", (data) => {
-        window.config = data;
-        onComplete();
-    });
-}
+import { get_ws_client } from "../pubsub/ws";
 
-export function saveConfig(onComplete) {
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateConfig",
-        data: JSON.stringify(window.config),
-        contentType: 'application/json',
-        success: () => {
-            onComplete();
-        },
-        error: () => {
-            alert("That didn't work");
+const wsClient = get_ws_client();
+
+function sendWsRequest(responseEvent, request, onComplete, onError) {
+    let done = false;
+    const responseHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        onComplete(msg);
+    };
+    const errorHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        if (onError) {
+            onError(msg);
         }
-    });
+    };
+    wsClient.on(responseEvent, responseHandler);
+    wsClient.on("Error", errorHandler);
+    wsClient.send(request);
 }
 
-export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) {
+export function loadConfig(onComplete, onError) {
+    sendWsRequest(
+        "GetConfig",
+        { GetConfig: {} },
+        (msg) => {
+            window.config = msg.data;
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function saveConfig(onComplete, onError) {
+    sendWsRequest(
+        "UpdateConfigResult",
+        { UpdateConfig: { config: window.config } },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        (msg) => {
+            if (onError) {
+                onError(msg);
+            } else {
+                alert("That didn't work");
+            }
+        },
+    );
+}
+
+export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {
     // Validate network_json structure
     if (!network_json || typeof network_json !== 'object') {
         alert("Invalid network configuration");
@@ -83,26 +117,121 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
     };
     console.log(submission);
 
-    // Send to server and handle plain-text "Ok" response
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateNetworkAndDevices",
-        contentType: 'application/json',
-        data: JSON.stringify(submission),
-        success: (data) => {
-            if (onComplete) onComplete(data === "Ok", data);
+    sendWsRequest(
+        "UpdateNetworkAndDevicesResult",
+        { UpdateNetworkAndDevices: submission },
+        (msg) => {
+            if (onComplete) onComplete(!!msg.ok, msg.message);
         },
-        error: (xhr) => {
-            const errorMsg = xhr.responseText || xhr.statusText || "Request failed";
-            console.error("AJAX Error:", {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                response: xhr.responseText
-            });
+        (msg) => {
+            const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
             if (onComplete) onComplete(false, errorMsg);
-            alert("Error saving configuration: " + errorMsg);
-        }
-    });
+            if (onError) {
+                onError(msg);
+            } else {
+                alert("Error saving configuration: " + errorMsg);
+            }
+        },
+    );
+}
+
+export function adminCheck(onComplete, onError) {
+    sendWsRequest(
+        "AdminCheck",
+        { AdminCheck: {} },
+        (msg) => {
+            if (onComplete) onComplete(!!msg.ok);
+        },
+        onError,
+    );
+}
+
+export function listNics(onComplete, onError) {
+    sendWsRequest(
+        "ListNics",
+        { ListNics: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || []);
+        },
+        onError,
+    );
+}
+
+export function loadQooProfiles(onComplete, onError) {
+    sendWsRequest(
+        "QooProfiles",
+        { QooProfiles: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || null);
+        },
+        onError,
+    );
+}
+
+export function loadNetworkJson(onComplete, onError) {
+    sendWsRequest(
+        "NetworkJson",
+        { NetworkJson: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data);
+        },
+        onError,
+    );
+}
+
+export function loadAllShapedDevices(onComplete, onError) {
+    sendWsRequest(
+        "AllShapedDevices",
+        { AllShapedDevices: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || []);
+        },
+        onError,
+    );
+}
+
+export function getUsers(onComplete, onError) {
+    sendWsRequest(
+        "GetUsers",
+        { GetUsers: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || []);
+        },
+        onError,
+    );
+}
+
+export function addUser(payload, onComplete, onError) {
+    sendWsRequest(
+        "AddUserResult",
+        { AddUser: payload },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function updateUser(payload, onComplete, onError) {
+    sendWsRequest(
+        "UpdateUserResult",
+        { UpdateUser: payload },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function deleteUser(payload, onComplete, onError) {
+    sendWsRequest(
+        "DeleteUserResult",
+        { DeleteUser: payload },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
 }
 
 export function validNodeList(network_json) {
@@ -132,7 +261,7 @@ export function renderConfigMenu(currentPage) {
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
-        { href: "config_spylnx.html", icon: "fa-link", text: "Splynx", id: "spylnx" },
+        { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
         { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },

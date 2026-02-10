@@ -1,22 +1,24 @@
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
-use axum::Json;
 use lqos_utils::unix_time::time_since_boot;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::time::Duration;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CircuitCount {
     pub count: usize,
     pub configured_count: usize,
 }
 
-pub async fn get_circuit_count() -> Json<CircuitCount> {
+pub fn circuit_count_data() -> CircuitCount {
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
 
     let Ok(time_since_boot) = time_since_boot() else {
-        return Json(CircuitCount { count: 0, configured_count: 0 });
+        return CircuitCount {
+            count: 0,
+            configured_count: 0,
+        };
     };
     let now = Duration::from(time_since_boot).as_nanos() as u64;
 
@@ -48,8 +50,8 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
         configured_circuits.len()
     };
 
-    Json(CircuitCount {
+    CircuitCount {
         count,
         configured_count: configured_circuits.len(),
-    })
+    }
 }

@@ -64,9 +64,15 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
         if let Ok(mut f) = File::create(&path_ts) {
             let _ = f.write_all(detailed.as_bytes());
             let _ = f.flush();
-            error!("Bakery wrote numbered command failure to {}", path_ts.display());
+            error!(
+                "Bakery wrote numbered command failure to {}",
+                path_ts.display()
+            );
         } else {
-            error!("Bakery failed to write numbered command failure file: {}", path_ts.display());
+            error!(
+                "Bakery failed to write numbered command failure file: {}",
+                path_ts.display()
+            );
         }
         // Convenience: keep a rolling 'last error' file
         let path_last = Path::new("/tmp/lqos_bakery_last_error.txt");

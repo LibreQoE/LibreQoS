@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
 pub async fn endpoint_latlon(
@@ -36,15 +36,10 @@ pub async fn endpoint_latlon(
 
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentLatLon(points) = reply {
-            let message = json!({
-                "event": PublishedChannels::EndpointLatLon.to_string(),
-                "data": points,
-            })
-            .to_string();
+            let message = WsResponse::EndpointLatLon { data: points };
             channels
                 .send(PublishedChannels::EndpointLatLon, message)
                 .await;
         }
     }
 }
-

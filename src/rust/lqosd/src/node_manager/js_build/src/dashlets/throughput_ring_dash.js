@@ -13,7 +13,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
     }
 
     tooltip() {
-        return "<h5>Last 5 Minutes Throughput</h5><p>Shaped (AQM controlled and limited) and Unshaped (not found in your Shaped Devices file) traffic over the last five minutes.</p>"
+        return "<h5>Last 5 Minutes Throughput</h5><p>Mapped (AQM controlled and limited) and Unmapped (not found in your Shaped Devices file) traffic over the last five minutes.</p>"
     }
 
     subscribeTo() {

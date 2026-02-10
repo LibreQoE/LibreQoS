@@ -1,4 +1,37 @@
 import {PLACEHOLDER_TEASERS} from "./lts_teasers_shared";
+import {get_ws_client} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function sendWsRequest(responseEvent, request) {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const onResponse = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            resolve(msg);
+        };
+        const onError = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            reject(msg);
+        };
+        wsClient.on(responseEvent, onResponse);
+        wsClient.on("Error", onError);
+        wsClient.send(request);
+    });
+}
 
 // Paddle-compatible countries (excluding embargoed nations)
 const ALLOWED_COUNTRIES = [
@@ -433,12 +466,13 @@ function getLtsUrl(endpoint) {
 // Fetch node ID and LTS URL from configuration
 async function fetchNodeId() {
     try {
-        const response = await $.get('/local-api/getConfig');
-        nodeId = response.node_id || null;
+        const response = await sendWsRequest("LtsTrialConfigResult", { LtsTrialConfig: {} });
+        const data = response && response.data ? response.data : {};
+        nodeId = data.node_id || null;
         
         // Extract LTS URL from config, defaulting to the standard URL
-        if (response.long_term_stats && response.long_term_stats.lts_url) {
-            ltsBaseUrl = response.long_term_stats.lts_url;
+        if (data.lts_url) {
+            ltsBaseUrl = data.lts_url;
             // Ensure the URL ends with a slash
             if (!ltsBaseUrl.endsWith('/')) {
                 ltsBaseUrl += '/';
@@ -453,9 +487,10 @@ async function fetchNodeId() {
 // Fetch circuit count
 async function fetchCircuitCount() {
     try {
-        const response = await $.get('/local-api/circuits/count');
-        const count = response.count || 0;
-        const configuredCount = response.configured_count || 0;
+        const response = await sendWsRequest("CircuitCountResult", { CircuitCount: {} });
+        const data = response && response.data ? response.data : {};
+        const count = data.count || 0;
+        const configuredCount = data.configured_count || 0;
         
         // Always show circuit count if we have any circuits (active or configured)
         if (count > 0 || configuredCount > 0) {
@@ -584,14 +619,7 @@ function attachEventHandlers() {
                 `);
                 $('#configStatus').text('Saving configuration...');
 
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/ltsSignUp",
-                    data: JSON.stringify({
-                        license_key: licenseKey,
-                    }),
-                    contentType: 'application/json',
-                });
+                wsClient.send({ LtsSignUp: { license_key: licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
                 $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {
@@ -697,14 +725,7 @@ function attachEventHandlers() {
                 `);
                 $('#configStatus').text('Saving configuration...');
 
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/ltsSignUp",
-                    data: JSON.stringify({
-                        license_key: response.licenseKey,
-                    }),
-                    contentType: 'application/json',
-                });
+                wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
                 $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
                 setTimeout(() => {

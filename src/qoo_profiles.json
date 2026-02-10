@@ -1,0 +1,126 @@
+{
+  "schema_version": 2,
+  "default_profile_id": "web_browsing",
+  "profiles": [
+    {
+      "id": "web_browsing",
+      "name": "Web browsing",
+      "description": "High quality targets responsive page loads; minimum quality defines acceptable interactivity.",
+      "latency": [
+        {
+          "percentile": 90,
+          "low_ms": 150.0,
+          "high_ms": 50.0
+        }
+      ],
+      "loss_percent": {
+        "low": 1.0,
+        "high": 0.5
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    },
+    {
+      "id": "video_streaming",
+      "name": "Video streaming",
+      "description": "Throughput dominates; high quality down target uses 50 Mbps (table range is 50-100).",
+      "latency": [
+        {
+          "percentile": 95,
+          "low_ms": 100.0,
+          "high_ms": 50.0
+        }
+      ],
+      "loss_percent": {
+        "low": 1.0,
+        "high": 0.1
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    },
+    {
+      "id": "video_conferencing",
+      "name": "Video conferencing",
+      "description": "Interactive calls need low latency and loss with substantial upstream capacity.",
+      "latency": [
+        {
+          "percentile": 95,
+          "low_ms": 100.0,
+          "high_ms": 50.0
+        }
+      ],
+      "loss_percent": {
+        "low": 0.5,
+        "high": 0.1
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    },
+    {
+      "id": "audio_streaming",
+      "name": "Audio streaming",
+      "description": "Consistent throughput with moderate latency and loss sensitivity.",
+      "latency": [
+        {
+          "percentile": 95,
+          "low_ms": 100.0,
+          "high_ms": 50.0
+        }
+      ],
+      "loss_percent": {
+        "low": 1.0,
+        "high": 0.1
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    },
+    {
+      "id": "online_backup",
+      "name": "Online backup",
+      "description": "Upload-heavy use case; download needs are minimal while upstream benefits greatly.",
+      "latency": [
+        {
+          "percentile": 95,
+          "low_ms": 150.0,
+          "high_ms": 100.0
+        }
+      ],
+      "loss_percent": {
+        "low": 1.0,
+        "high": 0.1
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    },
+    {
+      "id": "real_time_gaming",
+      "name": "Real-time gaming",
+      "description": "Low latency and low loss are key; throughput targets mirror general interactive needs.",
+      "latency": [
+        {
+          "percentile": 95,
+          "low_ms": 100.0,
+          "high_ms": 50.0
+        }
+      ],
+      "loss_percent": {
+        "low": 1.0,
+        "high": 0.5
+      },
+      "latency_normalization": {
+        "mode": "none"
+      },
+      "loss_handling": "confidence_weighted"
+    }
+  ]
+}

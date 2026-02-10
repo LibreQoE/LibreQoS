@@ -42,7 +42,7 @@ oldConfig = {
     'excludeSites': getIspConfigValue('excludeSites', []),
     'findIPv6usingMikrotikAPI': getIspConfigValue('findIPv6usingMikrotikAPI', False),
 
-    # Spylnx
+    # Splynx
     'automaticImportSplynx': getIspConfigValue('automaticImportSplynx', False),
     'splynx_api_key': getIspConfigValue('splynx_api_key', ''),
     'splynx_api_secret': getIspConfigValue('splynx_api_secret', ''),

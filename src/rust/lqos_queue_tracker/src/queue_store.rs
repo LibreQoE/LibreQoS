@@ -113,7 +113,12 @@ impl Into<CakeDiffTransit> for QueueDiff {
                 for _ in 0..3 {
                     tins.push(CakeDiffTinTransit::default());
                 }
-                CakeDiffTransit { bytes: c.bytes, packets: c.packets, qlen: c.backlog, tins }
+                CakeDiffTransit {
+                    bytes: c.bytes,
+                    packets: c.packets,
+                    qlen: c.backlog,
+                    tins,
+                }
             }
             _ => CakeDiffTransit::default(),
         }

@@ -2,6 +2,7 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 
 /**
  * Viridis color scale interpolation (0-1 input).
@@ -128,7 +129,7 @@ export class TopTreeSankey extends BaseDashlet {
         const nodeStyleFromRtt = (name, rttsArr) => {
             let rtt = 0;
             if (rttsArr && rttsArr.length > 0) {
-                rtt = rttsArr[0];
+                rtt = toNumber(rttsArr[0], 0);
             } else if (lastRtt[name] !== undefined) {
                 rtt = lastRtt[name];
             }
@@ -157,8 +158,8 @@ export class TopTreeSankey extends BaseDashlet {
                 // Compute Root->Parent value as sum of included child totals (down + up)
                 let parentSum = 0;
                 // Compute link color from parent's capacity percent (as before)
-                const bytesAsMegabits = p.current_throughput[0] / 1000000;
-                const maxBytes = p.max_throughput[0] / 8;
+                const bytesAsMegabits = toNumber(p.current_throughput[0], 0) / 1000000;
+                const maxBytes = toNumber(p.max_throughput[0], 0) / 8;
                 const percent = Math.min(100, maxBytes > 0 ? (bytesAsMegabits / maxBytes) * 100 : 0);
                 const capacityColor = isColorBlindMode()
                     ? lerpViridis(percent / 100)
@@ -166,7 +167,9 @@ export class TopTreeSankey extends BaseDashlet {
 
                 for (const [, child] of children) {
                     const cName = child.name;
-                    const cTotal = (child.current_throughput?.[0] || 0) + (child.current_throughput?.[1] || 0);
+                    const cTotal =
+                        toNumber(child.current_throughput?.[0], 0) +
+                        toNumber(child.current_throughput?.[1], 0);
                     if (cTotal <= 0) continue;
                     parentSum += cTotal;
 
@@ -177,8 +180,8 @@ export class TopTreeSankey extends BaseDashlet {
                     nodes.push({ name: cName, label: cLabel, ...cStyle });
 
                     // Link color for child can use child's capacity percent
-                    const cBytesAsMegabits = (child.current_throughput?.[0] || 0) / 1000000;
-                    const cMaxBytes = (child.max_throughput?.[0] || 0) / 8;
+                    const cBytesAsMegabits = toNumber(child.current_throughput?.[0], 0) / 1000000;
+                    const cMaxBytes = toNumber(child.max_throughput?.[0], 0) / 8;
                     const cPercent = Math.min(100, cMaxBytes > 0 ? (cBytesAsMegabits / cMaxBytes) * 100 : 0);
                     const cCapacityColor = isColorBlindMode()
                         ? lerpViridis(cPercent / 100)
@@ -211,16 +214,16 @@ export class TopTreeSankey extends BaseDashlet {
             if (redact) label.fontFamily = "Illegible";
 
             let name = r[1].name;
-            let bytes = r[1].current_throughput[0];
+            let bytes = toNumber(r[1].current_throughput[0], 0);
             let bytesAsMegabits = bytes / 1000000;
-            let maxBytes = r[1].max_throughput[0] / 8;
+            let maxBytes = toNumber(r[1].max_throughput[0], 0) / 8;
             let percent = Math.min(100, maxBytes > 0 ? (bytesAsMegabits / maxBytes) * 100 : 0);
             let capacityColor = isColorBlindMode()
                 ? lerpViridis(percent / 100)
                 : lerpGreenToRedViaOrange(100 - percent, 100);
 
             if (r[1].rtts.length > 0) {
-                lastRtt[name] = r[1].rtts[0];
+                lastRtt[name] = toNumber(r[1].rtts[0], 0);
             } else {
                 lastRtt[name] = 0;
             }
@@ -234,7 +237,7 @@ export class TopTreeSankey extends BaseDashlet {
                 links.push({
                     source: "Root",
                     target: r[1].name,
-                    value: r[1].current_throughput[0] + r[1].current_throughput[1],
+                    value: toNumber(r[1].current_throughput[0], 0) + toNumber(r[1].current_throughput[1], 0),
                     lineStyle: { color: capacityColor },
                 });
             }

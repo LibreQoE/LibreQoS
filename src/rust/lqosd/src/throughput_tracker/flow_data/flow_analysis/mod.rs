@@ -15,10 +15,9 @@ pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
 mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
-mod rtt_types;
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 pub use finished_flows::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry};
-pub use rtt_types::RttData;
+pub use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData};
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 
@@ -51,6 +50,7 @@ impl FlowAnalysisSystem {
         }
     }
 
+    #[allow(dead_code)]
     pub fn len_and_capacity() -> (usize, usize, usize, usize) {
         let lock = ANALYSIS.asn_table.lock();
         if let Some(table) = lock.as_ref() {

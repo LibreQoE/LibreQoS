@@ -1,0 +1,204 @@
+<div class="row">
+    <div class="col-12 col-xxl-10">
+        <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+            <h5 class="mb-0">
+                <i class="fa fa-cloud-bolt me-2 text-primary"></i>StormGuard Debug
+            </h5>
+            <span class="badge bg-secondary" id="sg-status">Connecting…</span>
+            <span class="text-muted small" id="sg-updated">Waiting for data</span>
+        </div>
+        <p class="text-muted mb-3">
+            Live HTB limits and the metrics StormGuard is evaluating (throughput, loss, RTT, saturation, state).
+            Data streams from <code>StormguardStatus</code> (rates) and <code>StormguardDebug</code> (inputs).
+        </p>
+
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0 text-secondary"><i class="fa fa-tachometer-alt me-2 text-primary"></i>Current limits</h6>
+                    <small class="text-muted">StormguardStatus</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col"><i class="fa fa-sitemap me-1"></i>Site</th>
+                                <th scope="col"><i class="fa fa-arrow-down me-1 text-primary"></i>Download (Mbps)</th>
+                                <th scope="col"><i class="fa fa-arrow-up me-1 text-success"></i>Upload (Mbps)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sg-table">
+                            <tr>
+                                <td colspan="3" class="text-muted">Waiting for StormGuardStatus feed…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0 text-secondary"><i class="fa fa-microscope me-2 text-warning"></i>Evaluation data</h6>
+                    <small class="text-muted">StormguardDebug</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Site</th>
+                                <th scope="col">Dir</th>
+                                <th scope="col">State</th>
+                                <th scope="col">Queue (min/max)</th>
+                                <th scope="col">Sat (cur/max)</th>
+                                <th scope="col">Throughput</th>
+                                <th scope="col">Retrans</th>
+                                <th scope="col">RTT</th>
+                                <th scope="col">Cooldown</th>
+                                <th scope="col">Can +/-</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sg-debug">
+                            <tr>
+                                <td colspan="10" class="text-muted">Waiting for StormGuardDebug feed…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const statusBadge = document.getElementById("sg-status");
+    const updated = document.getElementById("sg-updated");
+    const table = document.getElementById("sg-table");
+    const debugTable = document.getElementById("sg-debug");
+
+    function wsProto() {
+        return window.location.protocol.startsWith("https") ? "wss://" : "ws://";
+    }
+
+    function setStatus(label, cls) {
+        statusBadge.textContent = label;
+        statusBadge.className = "badge " + cls;
+    }
+
+    function formatMbps(v) {
+        if (v === null || v === undefined) return "—";
+        return Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+    }
+
+    function formatPct(v) {
+        if (v === null || v === undefined) return "—";
+        return (v * 100).toFixed(2) + "%";
+    }
+
+    function formatRtt(v) {
+        if (v === null || v === undefined) return "—";
+        return Number(v).toFixed(2);
+    }
+
+    function formatCooldown(v) {
+        if (v === null || v === undefined) return "—";
+        return v.toFixed(1) + "s";
+    }
+
+    function renderStatusRows(rows) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+            table.innerHTML = '<tr><td colspan="3" class="text-muted">No StormGuard data available.</td></tr>';
+            return;
+        }
+
+        table.innerHTML = rows
+            .map((row) => {
+                const site = row[0] ?? "Unknown";
+                const down = row[1] ?? 0;
+                const up = row[2] ?? 0;
+                return `
+                    <tr>
+                        <td class="fw-semibold">${site}</td>
+                        <td>${formatMbps(down)}</td>
+                        <td>${formatMbps(up)}</td>
+                    </tr>
+                `;
+            })
+            .join("");
+    }
+
+    function renderDebugRows(data) {
+        if (!Array.isArray(data) || data.length === 0) {
+            debugTable.innerHTML = '<tr><td colspan="10" class="text-muted">No debug data available.</td></tr>';
+            return;
+        }
+
+        const rows = [];
+        data.forEach((entry) => {
+            ["download", "upload"].forEach((dir) => {
+                const d = entry[dir] || {};
+                rows.push(`
+                    <tr>
+                        <td class="fw-semibold">${entry.site || "?"}</td>
+                        <td>${dir === "download" ? "<i class='fa fa-arrow-down text-primary'></i> Down" : "<i class='fa fa-arrow-up text-success'></i> Up"}</td>
+                        <td>${d.state || "?"}</td>
+                        <td>${formatMbps(d.queue_mbps)} (${formatMbps(d.min_mbps)} / ${formatMbps(d.max_mbps)})</td>
+                        <td>${d.saturation_current || "?"} / ${d.saturation_max || "?"}</td>
+                        <td>${formatMbps(d.throughput_mbps)} / ${formatMbps(d.throughput_ma_mbps)}</td>
+                        <td>${formatPct(d.retrans)} / ${formatPct(d.retrans_ma)}</td>
+                        <td>${formatRtt(d.rtt)} / ${formatRtt(d.rtt_ma)}</td>
+                        <td>${formatCooldown(d.cooldown_remaining_secs)}</td>
+                        <td>
+                            <span class="badge ${d.can_increase ? "bg-success-subtle text-success" : "bg-light text-muted"}">+</span>
+                            <span class="badge ${d.can_decrease ? "bg-danger-subtle text-danger" : "bg-light text-muted"}">−</span>
+                        </td>
+                    </tr>
+                `);
+            });
+        });
+
+        debugTable.innerHTML = rows.join("");
+    }
+
+    function connect() {
+        setStatus("Connecting…", "bg-secondary");
+        const ws = new WebSocket(wsProto() + window.location.host + "/websocket/ws");
+
+        ws.onopen = () => {
+            setStatus("Live", "bg-success");
+            ws.send('{ "channel" : "StormguardStatus"}');
+            ws.send('{ "channel" : "StormguardDebug"}');
+        };
+
+        ws.onclose = () => {
+            setStatus("Disconnected", "bg-warning");
+            setTimeout(connect, 3000);
+        };
+
+        ws.onerror = () => {
+            setStatus("Error", "bg-danger");
+            ws.close();
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg && msg.event === "StormguardStatus") {
+                    renderStatusRows(msg.data || []);
+                    updated.textContent = "Updated " + new Date().toLocaleTimeString();
+                }
+                if (msg && msg.event === "StormguardDebug") {
+                    renderDebugRows(msg.data || []);
+                    updated.textContent = "Updated " + new Date().toLocaleTimeString();
+                }
+            } catch (err) {
+                console.error("Failed to parse StormGuard message", err);
+            }
+        };
+    }
+
+    connect();
+})();
+</script>

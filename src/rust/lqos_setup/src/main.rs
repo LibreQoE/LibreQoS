@@ -17,6 +17,8 @@ use cursive::{
 };
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
+const DEFAULT_NETWORK_JSON: &str = include_str!("../../../network.example.json");
+const DEFAULT_SHAPED_DEVICES: &str = include_str!("../../../ShapedDevices.example.csv");
 
 fn config_exists() -> bool {
     let config_path = Path::new("/etc/lqos.conf");
@@ -269,8 +271,7 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
     // Does network.json exist?
     if !network_json_exists() {
         let path = Path::new(&config.lqos_directory).join("network.json");
-        let output = "{}\n";
-        std::fs::write(path, output).expect("Unable to write file");
+        std::fs::write(path, DEFAULT_NETWORK_JSON).expect("Unable to write file");
         event_log.push("Network.json created.".to_string());
     } else {
         event_log.push("Network.json already exists - not updated.".to_string());
@@ -278,11 +279,8 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
 
     // Does ShapedDevices.csv exist?
     if !shaped_devices_exists() {
-        const EMPTY_SHAPED_DEVICES: &str = r#"Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
-\"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,"#;
-
         let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-        std::fs::write(path, EMPTY_SHAPED_DEVICES).expect("Unable to write file");
+        std::fs::write(path, DEFAULT_SHAPED_DEVICES).expect("Unable to write file");
         event_log.push("ShapedDevices.csv created.".to_string());
     } else {
         event_log.push("ShapedDevices.csv already exists - not updated.".to_string());

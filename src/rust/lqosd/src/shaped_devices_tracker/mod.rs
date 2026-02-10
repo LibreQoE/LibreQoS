@@ -2,6 +2,7 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
+use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
@@ -84,8 +85,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn get_full_network_map() -> BusResponse {
     let nj = NETWORK_JSON.read();
     let data = {
-        nj
-            .get_nodes_when_ready()
+        nj.get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(i, n)| (i, n.clone_to_transit()))
@@ -141,6 +141,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 0,
                 NetworkJsonTransport {
                     name: "Others".into(),
+                    is_virtual: false,
                     max_throughput: (0, 0),
                     current_throughput: other_bw,
                     current_packets: other_packets,
@@ -151,6 +152,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     current_marks: other_marks,
                     current_drops: other_drops,
                     rtts: Vec::new(),
+                    qoo: (None, None),
                     parents: Vec::new(),
                     immediate_parent: None,
                     node_type: None,
@@ -237,6 +239,42 @@ pub fn get_all_circuits() -> BusResponse {
                     ip: k.as_ip(),
                     bytes_per_second: v.bytes_per_second,
                     median_latency: v.median_latency(),
+                    rtt_current_p50_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_current_p95_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p50_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p95_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
+                    },
                     tcp_retransmits: v.tcp_retransmits,
                     tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
                     circuit_id,
@@ -255,4 +293,104 @@ pub fn get_all_circuits() -> BusResponse {
     }
 }
 
-// Tests removed - rate_for_plan() function no longer needed with f32 plan structures
+pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
+    if let Ok(kernel_now) = time_since_boot() {
+        let devices = SHAPED_DEVICES.load();
+        let data = THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .iter()
+            .filter_map(|(k, v)| {
+                let ip = k.as_ip();
+                let last_seen_nanos = if v.last_seen > 0 {
+                    let last_seen_nanos = v.last_seen as u128;
+                    let since_boot = Duration::from(kernel_now).as_nanos();
+                    //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
+                    since_boot.saturating_sub(last_seen_nanos) as u64
+                } else {
+                    u64::MAX
+                };
+
+                // Map to circuit et al
+                let mut circuit_id = None;
+                let mut circuit_name = None;
+                let mut device_id = None;
+                let mut device_name = None;
+                let mut parent_node = None;
+                // Plan is expressed in Mbps as f32
+                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
+                let lookup = match ip {
+                    IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                    IpAddr::V6(ip) => ip,
+                };
+                if let Some(c) = devices.trie.longest_match(lookup) {
+                    circuit_id = Some(devices.devices[*c.1].circuit_id.clone());
+                    circuit_name = Some(devices.devices[*c.1].circuit_name.clone());
+                    device_id = Some(devices.devices[*c.1].device_id.clone());
+                    device_name = Some(devices.devices[*c.1].device_name.clone());
+                    parent_node = Some(devices.devices[*c.1].parent_node.clone());
+                    plan.down = devices.devices[*c.1].download_max_mbps.round();
+                    plan.up = devices.devices[*c.1].upload_max_mbps.round();
+                }
+
+                let Some(found_circuit_id) = circuit_id else { return None };
+                if found_circuit_id != desired_circuit_id.as_str() {
+                    return None;
+                }
+                Some(Circuit {
+                    ip: k.as_ip(),
+                    bytes_per_second: v.bytes_per_second,
+                    median_latency: v.median_latency(),
+                    rtt_current_p50_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_current_p95_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p50_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p95_nanos: DownUpOrder {
+                        down: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v.rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
+                    },
+                    tcp_retransmits: v.tcp_retransmits,
+                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
+                    circuit_id: Some(found_circuit_id),
+                    device_id,
+                    circuit_name,
+                    device_name,
+                    parent_node,
+                    plan,
+                    last_seen_nanos,
+                })
+            })
+            .collect();
+        BusResponse::CircuitData(data)
+    } else {
+        BusResponse::CircuitData(Vec::new())
+    }
+}

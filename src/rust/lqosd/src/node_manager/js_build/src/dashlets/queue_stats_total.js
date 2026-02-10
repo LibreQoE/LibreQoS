@@ -2,6 +2,27 @@ import {QueueStatsTotalGraph} from "../graphs/queue_stats_total_graph";
 import {LtsCakeGraph} from "../graphs/lts_cake_stats_graph";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {periodNameToSeconds} from "../helpers/time_periods";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+
+const listenOnceForSeconds = (eventName, seconds, onSuccess, onError) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        wsClient.off("Error", errorHandler);
+        onSuccess(msg);
+    };
+    const errorHandler = (msg) => {
+        wsClient.off(eventName, wrapped);
+        wsClient.off("Error", errorHandler);
+        if (onError) {
+            onError(msg);
+        }
+    };
+    wsClient.on(eventName, wrapped);
+    wsClient.on("Error", errorHandler);
+};
 
 export class QueueStatsTotalDash extends DashletBaseInsight {
     constructor(slot) {
@@ -90,27 +111,34 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
             this.historyGraph.chart.showLoading();
         }
 
-        $.get("/local-api/ltsCake/" + seconds, (data) => {
-            if (this.historyPeriod !== periodName) {
-                return;
-            }
-            if (this.historyGraph === null) {
-                this.historyGraph = new LtsCakeGraph(this.historyGraphDivId(), seconds);
-            }
-            this.historyGraph.update(data);
-            if (data.length === 0) {
-                this.historyGraph.chart.showLoading("No historical data available.");
-            } else {
-                this.historyGraph.chart.hideLoading();
-            }
-        }).fail(() => {
-            if (this.historyPeriod === periodName) {
-                if (this.historyGraph !== null && this.historyGraph.chart) {
-                    this.historyGraph.chart.showLoading("Failed to load cake stats.");
-                } else {
-                    historyGraph.innerHTML = "<p class='text-danger small'>Failed to load cake stats.</p>";
+        listenOnceForSeconds(
+            "LtsCake",
+            seconds,
+            (msg) => {
+                if (this.historyPeriod !== periodName) {
+                    return;
                 }
-            }
-        });
+                const data = msg && msg.data ? msg.data : [];
+                if (this.historyGraph === null) {
+                    this.historyGraph = new LtsCakeGraph(this.historyGraphDivId(), seconds);
+                }
+                this.historyGraph.update(data);
+                if (data.length === 0) {
+                    this.historyGraph.chart.showLoading("No historical data available.");
+                } else {
+                    this.historyGraph.chart.hideLoading();
+                }
+            },
+            () => {
+                if (this.historyPeriod === periodName) {
+                    if (this.historyGraph !== null && this.historyGraph.chart) {
+                        this.historyGraph.chart.showLoading("Failed to load cake stats.");
+                    } else {
+                        historyGraph.innerHTML = "<p class='text-danger small'>Failed to load cake stats.</p>";
+                    }
+                }
+            },
+        );
+        wsClient.send({ LtsCake: { seconds } });
     }
 }

@@ -1,6 +1,3 @@
-use axum::extract::Path;
-use axum::http::StatusCode;
-use axum::Json;
 use serde::Serialize;
 
 use crate::urgent;
@@ -61,13 +58,13 @@ fn strip_ansi(input: &str) -> String {
     out
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UrgentStatus {
     pub has_urgent: bool,
     pub count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UrgentItem {
     pub id: u64,
     pub ts: u64,
@@ -78,20 +75,20 @@ pub struct UrgentItem {
     pub context: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UrgentList {
     pub items: Vec<UrgentItem>,
 }
 
-pub async fn urgent_status() -> (StatusCode, Json<UrgentStatus>) {
+pub fn urgent_status_data() -> UrgentStatus {
     let items = urgent::list();
-    (
-        StatusCode::OK,
-        Json(UrgentStatus { has_urgent: !items.is_empty(), count: items.len() }),
-    )
+    UrgentStatus {
+        has_urgent: !items.is_empty(),
+        count: items.len(),
+    }
 }
 
-pub async fn urgent_list() -> (StatusCode, Json<UrgentList>) {
+pub fn urgent_list_data() -> UrgentList {
     let items = urgent::list();
     let items: Vec<UrgentItem> = items
         .into_iter()
@@ -105,19 +102,13 @@ pub async fn urgent_list() -> (StatusCode, Json<UrgentList>) {
             context: i.context,
         })
         .collect();
-    (StatusCode::OK, Json(UrgentList { items }))
+    UrgentList { items }
 }
 
-pub async fn urgent_clear(Path(id): Path<u64>) -> (StatusCode, &'static str) {
-    let ok = urgent::clear(id);
-    if ok {
-        (StatusCode::OK, "OK")
-    } else {
-        (StatusCode::NOT_FOUND, "NOT_FOUND")
-    }
+pub fn urgent_clear_id(id: u64) -> bool {
+    urgent::clear(id)
 }
 
-pub async fn urgent_clear_all() -> (StatusCode, &'static str) {
+pub fn urgent_clear_all_data() {
     urgent::clear_all();
-    (StatusCode::OK, "OK")
 }

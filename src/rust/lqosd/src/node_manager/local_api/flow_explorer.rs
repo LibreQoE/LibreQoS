@@ -3,44 +3,42 @@ use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
     RECENT_FLOWS, RttData,
 };
-use axum::Json;
-use axum::extract::Path;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use serde::Serialize;
 use std::time::Duration;
 
-pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
-    Json(RECENT_FLOWS.asn_list())
+pub fn asn_list_data() -> Vec<AsnListEntry> {
+    RECENT_FLOWS.asn_list()
 }
 
-pub async fn country_list() -> Json<Vec<AsnCountryListEntry>> {
-    Json(RECENT_FLOWS.country_list())
+pub fn country_list_data() -> Vec<AsnCountryListEntry> {
+    RECENT_FLOWS.country_list()
 }
 
-pub async fn protocol_list() -> Json<Vec<AsnProtocolListEntry>> {
-    Json(RECENT_FLOWS.protocol_list())
+pub fn protocol_list_data() -> Vec<AsnProtocolListEntry> {
+    RECENT_FLOWS.protocol_list()
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct FlowTimeline {
-    start: u64,
-    end: u64,
-    duration_nanos: u64,
-    throughput: Vec<DownUpOrder<u64>>,
-    tcp_retransmits: DownUpOrder<u16>,
-    rtt: [RttData; 2],
-    retransmit_times_down: Vec<u64>,
-    retransmit_times_up: Vec<u64>,
-    total_bytes: DownUpOrder<u64>,
-    protocol: String,
-    circuit_id: String,
-    circuit_name: String,
-    remote_ip: String,
+    pub start: u64,
+    pub end: u64,
+    pub duration_nanos: u64,
+    pub throughput: Vec<DownUpOrder<u64>>,
+    pub tcp_retransmits: DownUpOrder<u16>,
+    pub rtt: [RttData; 2],
+    pub retransmit_times_down: Vec<u64>,
+    pub retransmit_times_up: Vec<u64>,
+    pub total_bytes: DownUpOrder<u64>,
+    pub protocol: String,
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub remote_ip: String,
 }
 
-pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
+pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
     let boot_time = unix_now()
@@ -51,7 +49,7 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }
 
 fn all_flows_to_transport(
@@ -74,22 +72,20 @@ fn all_flows_to_transport(
                 circuit_name = flow.0.local_ip.as_ip().to_string();
             }
 
-            let retransmit_times_down = if let Some(v) = &flow.1.retry_times_down {
-                v.1.iter()
-                    .filter(|n| **n > 0)
-                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            let retransmit_times_up = if let Some(v) = &flow.1.retry_times_up {
-                v.1.iter()
-                    .filter(|n| **n > 0)
-                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            let retransmit_times_down = flow
+                .1
+                .get_retry_times_down()
+                .iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
+                .collect();
+            let retransmit_times_up = flow
+                .1
+                .get_retry_times_up()
+                .iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
+                .collect();
 
             FlowTimeline {
                 start: boot_time + Duration::from_nanos(flow.1.start_time).as_secs(),
@@ -97,7 +93,7 @@ fn all_flows_to_transport(
                 duration_nanos: flow.1.last_seen - flow.1.start_time,
                 tcp_retransmits: flow.1.tcp_retransmits.clone(),
                 throughput: vec![],
-                rtt: flow.1.rtt.clone(),
+                rtt: flow.1.get_rtt_array(),
                 retransmit_times_down,
                 retransmit_times_up,
                 total_bytes: flow.1.bytes_sent.clone(),
@@ -110,21 +106,21 @@ fn all_flows_to_transport(
         .collect::<Vec<_>>()
 }
 
-pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
+pub fn country_timeline_data(iso_code: &str) -> Vec<FlowTimeline> {
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
     let boot_time = unix_now()
         .expect("failed to retrieve current unix time")
         .saturating_sub(since_boot.as_secs());
 
-    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
+    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(iso_code);
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }
 
-pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<FlowTimeline>> {
+pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
     let protocol_name = protocol_name.replace("_", "/");
     let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
     let since_boot = Duration::from(time_since_boot);
@@ -136,5 +132,5 @@ pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<Fl
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
-    Json(flows)
+    flows
 }

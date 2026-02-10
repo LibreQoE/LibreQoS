@@ -16,7 +16,6 @@ lqos_sys = { path = "../lqos_sys" }
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_heimdall = { path = "../lqos_heimdall" }
-lqos_support_tool = { path = "../lqos_support_tool" }
 lqos_stormguard = { path = "../lqos_stormguard" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
@@ -59,6 +58,7 @@ native-tls = "0.2"
 ureq = { version = "2.12.1", features = ["json", "native-tls"] }
 csv = { workspace = true }
 parking_lot = { workspace = true }
+smallvec = "1"
 
 # For memory debugging
 allocative.workspace = true

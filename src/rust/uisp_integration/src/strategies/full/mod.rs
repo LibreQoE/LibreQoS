@@ -72,7 +72,8 @@ pub async fn build_full_network(
     .await;
 
     // Obtain the UISP data and transform it into easier to work with types
-    let (sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
+    let (sites_raw, devices_raw, data_links_raw, devices_as_json) =
+        load_uisp_data(config.clone()).await?;
 
     if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
         warn!("Unable to write sites to blackboard: {e:?}");

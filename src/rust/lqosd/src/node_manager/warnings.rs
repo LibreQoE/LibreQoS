@@ -1,10 +1,10 @@
-//! A place to store warnings from sanity checks, the need to reload LibreQoS and similar.
+//! A place to store warnings from system checks, the need to reload LibreQoS and similar.
 
 use parking_lot::Mutex;
 use serde::Serialize;
 
 #[allow(dead_code)]
-#[derive(Serialize, Copy, Clone)]
+#[derive(Serialize, Debug, Copy, Clone)]
 pub enum WarningLevel {
     Info,
     Warning,

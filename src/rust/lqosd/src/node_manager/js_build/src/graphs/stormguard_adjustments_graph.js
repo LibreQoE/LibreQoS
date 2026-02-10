@@ -1,6 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -252,8 +252,8 @@ class StormguardRingBuffer {
                 const [name, downloadMbps, uploadMbps] = site;
                 // Convert from Mbps to bps
                 siteMap.set(name, { 
-                    download: downloadMbps * 1000000, 
-                    upload: uploadMbps * 1000000 
+                    download: toNumber(downloadMbps, 0) * 1000000, 
+                    upload: toNumber(uploadMbps, 0) * 1000000 
                 });
                 this.allSites.add(name);
             }

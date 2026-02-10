@@ -3,8 +3,9 @@ use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatu
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::ALL_FLOWS;
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::throughput_tracker::{
-    Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
+    CIRCUIT_RTT_BUFFERS, Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
     min_max_median_tcp_retransmits,
 };
 use csv::ReaderBuilder;
@@ -254,7 +255,6 @@ pub(crate) fn submit_throughput_stats(
         let mut crazy_values: FxHashSet<i64> = FxHashSet::default(); // Circuits to skip because the numbers are too high
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
-        let mut circuit_rtt: FxHashMap<i64, Vec<f32>> = FxHashMap::default();
 
         let shaped_devices = SHAPED_DEVICES.load();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
@@ -330,23 +330,6 @@ pub(crate) fn submit_throughput_stats(
                 }
             });
 
-        THROUGHPUT_TRACKER
-            .raw_data
-            .lock()
-            .iter()
-            .filter(|(_k, h)| {
-                h.circuit_id.is_some()
-                    && h.median_latency().is_some()
-                    && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
-            })
-            .for_each(|(_k, h)| {
-                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.push(h.median_latency().unwrap_or(0.0));
-                } else {
-                    circuit_rtt.insert(h.circuit_hash.unwrap_or(0), vec![h.median_latency().unwrap_or(0.0)]);
-                }
-            });
-
         // And now we send it
         let circuit_throughput_batch = circuit_throughput
             .into_iter()
@@ -382,12 +365,30 @@ pub(crate) fn submit_throughput_stats(
             warn!("Error sending message to LTS2.");
         }
 
-        let circuit_rtt_batch = circuit_rtt
-            .into_iter()
-            .map(|(k, v)| crate::lts2_sys::shared_types::CircuitRtt {
-                timestamp: now,
-                circuit_hash: k,
-                median_rtt: v.iter().sum::<f32>() / v.len() as f32,
+        let circuit_rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
+        let circuit_rtt_batch = circuit_rtt_snapshot
+            .iter()
+            .filter(|(circuit_hash, _)| !crazy_values.contains(circuit_hash))
+            .filter_map(|(circuit_hash, rtt_buffer)| {
+                let download = rtt_buffer
+                    .median_new_data(FlowbeeEffectiveDirection::Download)
+                    .as_nanos();
+                let upload = rtt_buffer
+                    .median_new_data(FlowbeeEffectiveDirection::Upload)
+                    .as_nanos();
+
+                let median_nanos = match (download, upload) {
+                    (0, 0) => return None,
+                    (d, 0) => d,
+                    (0, u) => u,
+                    (d, u) => d.saturating_add(u) / 2,
+                };
+
+                Some(crate::lts2_sys::shared_types::CircuitRtt {
+                    timestamp: now,
+                    circuit_hash: *circuit_hash,
+                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
+                })
             })
             .collect::<Vec<_>>();
         if crate::lts2_sys::circuit_rtt(&circuit_rtt_batch).is_err() {
@@ -478,15 +479,26 @@ pub(crate) fn submit_throughput_stats(
                     cake_marks_up: node.current_marks.get_up() as u32,
                 });
             }
-            if !node.rtts.is_empty() {
-                let mut rtts: Vec<u16> = node.rtts.iter().map(|n| *n).collect();
-                rtts.sort();
-                let median = rtts[rtts.len() / 2];
+            let download = node
+                .rtt_buffer
+                .median_new_data(FlowbeeEffectiveDirection::Download)
+                .as_nanos();
+            let upload = node
+                .rtt_buffer
+                .median_new_data(FlowbeeEffectiveDirection::Upload)
+                .as_nanos();
+            let median_nanos = match (download, upload) {
+                (0, 0) => None,
+                (d, 0) => Some(d),
+                (0, u) => Some(u),
+                (d, u) => Some(d.saturating_add(u) / 2),
+            };
 
+            if let Some(median_nanos) = median_nanos {
                 site_rtt.push(crate::lts2_sys::shared_types::SiteRtt {
                     timestamp: now,
                     site_hash,
-                    median_rtt: median as f32 / 10.0,
+                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
                 });
             }
         });

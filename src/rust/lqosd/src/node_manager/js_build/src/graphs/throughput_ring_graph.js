@@ -26,13 +26,13 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
             selectMode: false,
             data: [
                 {
-                    name: "Shaped Traffic",
+                    name: "Mapped Traffic",
                     icon: 'circle',
                     itemStyle: {
                         color: window.graphPalette[0]
                     }
                 }, {
-                    name: "Unshaped Traffic",
+                    name: "Unmapped Traffic",
                     icon: 'circle',
                     itemStyle: {
                         color: window.graphPalette[1]
@@ -59,7 +59,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 },
             },
             {
-                name: 'Shaped Traffic',
+                name: 'Mapped Traffic',
                 data: [],
                 type: 'line',
                 stack: 'shaped',
@@ -83,7 +83,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 symbol: 'none',
             },
             {
-                name: 'Unshaped Traffic',
+                name: 'Unmapped Traffic',
                 data: [],
                 type: 'line',
                 lineStyle: {

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use lqos_bus::{BusReply, BusRequest, BusResponse, TopFlowType};
-use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 
@@ -30,19 +30,16 @@ pub async fn top_flows_bytes(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TopFlowsBytes: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TopFlowsBytes: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {
-            let message = json!(
-                {
-                    "event": PublishedChannels::TopFlowsBytes.to_string(),
-                    "data": flows,
-                }
-            )
-            .to_string();
+            let message = WsResponse::TopFlowsBytes { data: flows };
             channels
                 .send(PublishedChannels::TopFlowsBytes, message)
                 .await;
@@ -73,19 +70,16 @@ pub async fn top_flows_rate(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("TopFlowsRate: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "TopFlowsRate: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {
-            let message = json!(
-                {
-                    "event": PublishedChannels::TopFlowsRate.to_string(),
-                    "data": flows,
-                }
-            )
-            .to_string();
+            let message = WsResponse::TopFlowsRate { data: flows };
             channels
                 .send(PublishedChannels::TopFlowsRate, message)
                 .await;

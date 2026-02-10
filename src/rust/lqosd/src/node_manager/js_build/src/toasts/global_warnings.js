@@ -1,11 +1,44 @@
 import {createBootstrapToast} from "../lq_js_common/helpers/toasts";
 import {PLACEHOLDER_TEASERS} from "../lts_teasers_shared";
+import {get_ws_client} from "../pubsub/ws";
 
 let insightModalShown = false;
 
 let modalTeasers = [];
 let modalTeasersLoaded = false;
 let modalLtsBaseUrl = "https://insight.libreqos.com/";
+const wsClient = get_ws_client();
+
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function sendWsRequest(responseEvent, request) {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const onResponse = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            resolve(msg);
+        };
+        const onError = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, onResponse);
+            wsClient.off("Error", onError);
+            reject(msg);
+        };
+        wsClient.on(responseEvent, onResponse);
+        wsClient.on("Error", onError);
+        wsClient.send(request);
+    });
+}
 
 function getModalLtsUrl(endpoint) {
     let baseUrl = modalLtsBaseUrl;
@@ -25,14 +58,10 @@ async function loadModalTeasers() {
     }
 
     try {
-        // Try to respect configured LTS URL if available
-        const config = await $.get("/local-api/getConfig");
-        if (
-            config.long_term_stats &&
-            config.long_term_stats.lts_url &&
-            typeof config.long_term_stats.lts_url === "string"
-        ) {
-            modalLtsBaseUrl = config.long_term_stats.lts_url;
+        const response = await sendWsRequest("LtsTrialConfigResult", { LtsTrialConfig: {} });
+        const data = response && response.data ? response.data : {};
+        if (data.lts_url && typeof data.lts_url === "string") {
+            modalLtsBaseUrl = data.lts_url;
         }
     } catch (e) {
         // If this fails, we just fall back to the default base URL.
@@ -170,7 +199,9 @@ export function globalWarningToasts() {
     if (window.sm) {
         showInsightTrialModal();
     }
-    $.get("/local-api/globalWarnings", (warnings) => {
+    const handler = (msg) => {
+        wsClient.off("GlobalWarnings", handler);
+        const warnings = msg && msg.data ? msg.data : [];
         let parent = document.getElementById("toasts");
         let i = 0;
         warnings.forEach(warning => {
@@ -205,5 +236,7 @@ export function globalWarningToasts() {
             createBootstrapToast("global-warning-" + i, headerSpan, bodyDiv);
             i++;
         });
-    })
+    };
+    wsClient.on("GlobalWarnings", handler);
+    wsClient.send({ GlobalWarnings: {} });
 }

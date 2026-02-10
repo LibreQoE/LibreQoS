@@ -37,7 +37,7 @@ pub(crate) struct TcFqCodelOptions {
     pub(crate) limit: u32,
     pub(crate) flows: u16,
     pub(crate) quantum: u16,
-    pub(crate) target: u64,   // FIXME target and interval within fq_codel are scaled to ns >> 1024
+    pub(crate) target: u64, // FIXME target and interval within fq_codel are scaled to ns >> 1024
     pub(crate) interval: u64, // tc scales them back up to us. Ideally ns would make sense throughout.
     pub(crate) memory_limit: u32,
     pub(crate) ecn: bool,

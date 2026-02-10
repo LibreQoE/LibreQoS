@@ -5,6 +5,7 @@ mod site;
 mod stormguard_state;
 
 use crate::config::StormguardConfig;
+use crate::site_state::analysis::SaturationLevel;
 use crate::datalog::LogCommand;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
@@ -15,7 +16,9 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse};
+use lqos_bus::{
+    BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle,
+};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -96,7 +99,7 @@ impl SiteStateTracker {
                 }
 
                 // Round-Trip Time
-                if node_info.rtts.len() > 1 {
+                if !node_info.rtts.is_empty() {
                     let mut my_round_trip_times = node_info.rtts.clone();
                     my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
                     let samples = my_round_trip_times.len();
@@ -117,6 +120,109 @@ impl SiteStateTracker {
             .iter_mut()
             .for_each(|(_, s)| s.recommendations(&mut recommendations));
         recommendations
+    }
+
+    pub fn debug_snapshot(&self, config: &StormguardConfig) -> Vec<StormguardDebugEntry> {
+        self.sites
+            .iter()
+            .filter_map(|(name, site)| {
+                let Some(site_config) = config.sites.get(name) else {
+                    return None;
+                };
+
+                let make_direction =
+                    |direction: RecommendationDirection| -> StormguardDebugDirection {
+                        let (queue_mbps, min_mbps, max_mbps, throughput_mbps, throughput_ma_mbps, retrans, retrans_ma) = match direction {
+                            RecommendationDirection::Download => (
+                                site.queue_download_mbps,
+                                site_config.min_download_mbps,
+                                site_config.max_download_mbps,
+                                site.current_throughput.0,
+                                site.throughput_down_moving_average.average(),
+                                site.retransmits_down.average(),
+                                site.retransmits_down_moving_average.average(),
+                            ),
+                            RecommendationDirection::Upload => (
+                                site.queue_upload_mbps,
+                                site_config.min_upload_mbps,
+                                site_config.max_upload_mbps,
+                                site.current_throughput.1,
+                                site.throughput_up_moving_average.average(),
+                                site.retransmits_up.average(),
+                                site.retransmits_up_moving_average.average(),
+                            ),
+                        };
+
+                        let (state, cooldown_remaining_secs) = match direction {
+                            RecommendationDirection::Download => match &site.download_state {
+                                StormguardState::Warmup => ("Warmup".to_string(), None),
+                                StormguardState::Running => ("Running".to_string(), None),
+                                StormguardState::Cooldown {
+                                    start,
+                                    duration_secs,
+                                } => {
+                                    let elapsed = start.elapsed().as_secs_f32();
+                                    let remaining = (duration_secs - elapsed).max(0.0);
+                                    ("Cooldown".to_string(), Some(remaining))
+                                }
+                            },
+                            RecommendationDirection::Upload => match &site.upload_state {
+                                StormguardState::Warmup => ("Warmup".to_string(), None),
+                                StormguardState::Running => ("Running".to_string(), None),
+                                StormguardState::Cooldown {
+                                    start,
+                                    duration_secs,
+                                } => {
+                                    let elapsed = start.elapsed().as_secs_f32();
+                                    let remaining = (duration_secs - elapsed).max(0.0);
+                                    ("Cooldown".to_string(), Some(remaining))
+                                }
+                            },
+                        };
+
+                        let saturation_max = SaturationLevel::from_throughput(
+                            throughput_mbps,
+                            match direction {
+                                RecommendationDirection::Download => {
+                                    site_config.max_download_mbps as f64
+                                }
+                                RecommendationDirection::Upload => site_config.max_upload_mbps as f64,
+                            },
+                        );
+                        let saturation_current = SaturationLevel::from_throughput(
+                            throughput_mbps,
+                            queue_mbps as f64,
+                        );
+
+                        let can_increase = queue_mbps < max_mbps;
+                        let can_decrease = queue_mbps > min_mbps;
+
+                        StormguardDebugDirection {
+                            queue_mbps,
+                            min_mbps,
+                            max_mbps,
+                            throughput_mbps,
+                            throughput_ma_mbps,
+                            retrans,
+                            retrans_ma,
+                            rtt: site.round_trip_time.average(),
+                            rtt_ma: site.round_trip_time_moving_average.average(),
+                            state,
+                            cooldown_remaining_secs,
+                            saturation_current: saturation_current.to_string(),
+                            saturation_max: saturation_max.to_string(),
+                            can_increase,
+                            can_decrease,
+                        }
+                    };
+
+                Some(StormguardDebugEntry {
+                    site: name.clone(),
+                    download: make_direction(RecommendationDirection::Download),
+                    upload: make_direction(RecommendationDirection::Upload),
+                })
+            })
+            .collect()
     }
 
     pub fn apply_recommendations(
@@ -153,6 +259,15 @@ impl SiteStateTracker {
                 info!("Queue {} not found in queue structure", recommendation.site);
                 continue;
             };
+            // Skip circuit-level queues that host a qdisc (CAKE/fq_codel). Changing HTB at that
+            // level can deadlock the kernel; only adjust parent branch nodes.
+            if queue.circuit_id.is_some() {
+                warn!(
+                    "StormGuard skipped {} because it resolves to a circuit queue (qdisc host).",
+                    recommendation.site
+                );
+                continue;
+            }
 
             // Find the interface
             let interface_name = match recommendation.direction {
@@ -161,7 +276,7 @@ impl SiteStateTracker {
             };
 
             // Find the TC class
-            let class_id = queue.class_id.to_string();
+            let class_handle = queue.class_id;
 
             // Find the new bandwidth
             let current_rate = match recommendation.direction {
@@ -179,8 +294,8 @@ impl SiteStateTracker {
             } as f64;
 
             let new_rate_multiplier = match recommendation.action {
-                RecommendationAction::Increase => 1.05,
-                RecommendationAction::IncreaseFast => 1.12,
+                RecommendationAction::Increase => 1.15,
+                RecommendationAction::IncreaseFast => 1.30,
                 RecommendationAction::Decrease => 0.95,
                 RecommendationAction::DecreaseFast => 0.88,
             };
@@ -208,11 +323,14 @@ impl SiteStateTracker {
 
             let cooldown_secs = match recommendation.action {
                 RecommendationAction::IncreaseFast => {
-                    (READING_ACCUMULATOR_SIZE as f32 * 0.1).max(2.0)
+                    // Halved to allow quicker follow-up increases.
+                    (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(2.0)
                 }
-                RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(1.0),
-                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
-                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
+                RecommendationAction::Increase => {
+                    (READING_ACCUMULATOR_SIZE as f32 * 0.025).max(1.0)
+                }
+                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.25,
+                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32 * 0.5,
             };
             debug!(
                 "Cooldown for {:?} set to {:.1}s",
@@ -250,7 +368,6 @@ impl SiteStateTracker {
                 if max_rate < new_rate {
                     continue;
                 }
-                let class_id = dependent.class_id.to_string();
                 info!(
                     "Applying rate change to dependent {}: {} -> {}",
                     dependent.name, dependent.original_max_download_mbps, new_rate
@@ -258,7 +375,7 @@ impl SiteStateTracker {
                 Self::apply_htb_change(
                     config,
                     &interface_name,
-                    class_id,
+                    dependent.class_id,
                     new_rate,
                     bakery_sender.clone(),
                 );
@@ -268,7 +385,7 @@ impl SiteStateTracker {
             Self::apply_htb_change(
                 config,
                 &interface_name,
-                class_id,
+                class_handle,
                 new_rate,
                 bakery_sender.clone(),
             );
@@ -303,14 +420,14 @@ impl SiteStateTracker {
     fn apply_htb_change(
         config: &StormguardConfig,
         interface_name: &str,
-        class_id: String,
+        class_handle: TcHandle,
         new_rate: u64,
         bakery_sender: Sender<BakeryCommands>,
     ) {
         if let Err(e) = bakery_sender.send(BakeryCommands::StormGuardAdjustment {
             dry_run: config.dry_run,
             interface_name: interface_name.to_owned(),
-            class_id,
+            class_id: class_handle.as_tc_string(),
             new_rate,
         }) {
             warn!("Failed to send StormGuard adjustment command: {}", e);

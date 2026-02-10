@@ -1,5 +1,6 @@
 import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
 export class TopTreeSummary extends DashletBaseInsight {
@@ -25,8 +26,12 @@ export class TopTreeSummary extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+
+        // Match the height of adjacent graph dashlets (e.g. Top Level Sankey)
+        // by keeping the dashlet chrome (title) outside the scroll area.
+        const scroll = document.createElement("div");
+        scroll.style.height = "250px";
+        scroll.style.overflow = "auto";
 
         let t = document.createElement("table");
         t.id = this.id + "_table";
@@ -42,7 +47,8 @@ export class TopTreeSummary extends DashletBaseInsight {
         th.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
         t.appendChild(th);
 
-        base.appendChild(t);
+        scroll.appendChild(t);
+        base.appendChild(scroll);
 
         return base;
     }
@@ -69,15 +75,23 @@ export class TopTreeSummary extends DashletBaseInsight {
                 nameCol.appendChild(link);
 
                 row.appendChild(nameCol);
-                row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[0] * 8, r[1].max_throughput[0])));
-                row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[1] * 8, r[1].max_throughput[1])));
-                if (r[1].current_tcp_packets[0] > 0) {
-                    row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[0] / r[1].current_tcp_packets[0])))
+                const tpDown = toNumber(r[1].current_throughput[0], 0) * 8;
+                const tpUp = toNumber(r[1].current_throughput[1], 0) * 8;
+                row.appendChild(simpleRowHtml(formatThroughput(tpDown, r[1].max_throughput[0])));
+                row.appendChild(simpleRowHtml(formatThroughput(tpUp, r[1].max_throughput[1])));
+
+                const tcpPacketsDown = toNumber(r[1].current_tcp_packets[0], 0);
+                const tcpPacketsUp = toNumber(r[1].current_tcp_packets[1], 0);
+                const retransmitsDown = toNumber(r[1].current_retransmits[0], 0);
+                const retransmitsUp = toNumber(r[1].current_retransmits[1], 0);
+
+                if (tcpPacketsDown > 0) {
+                    row.appendChild(simpleRowHtml(formatRetransmit(retransmitsDown / tcpPacketsDown)))
                 } else {
                     row.appendChild(simpleRowHtml(""));
                 }
-                if (r[1].current_tcp_packets[1] > 0) {
-                    row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[1] / r[1].current_tcp_packets[1])))
+                if (tcpPacketsUp > 0) {
+                    row.appendChild(simpleRowHtml(formatRetransmit(retransmitsUp / tcpPacketsUp)))
                 } else {
                     row.appendChild(simpleRowHtml(""));
                 }

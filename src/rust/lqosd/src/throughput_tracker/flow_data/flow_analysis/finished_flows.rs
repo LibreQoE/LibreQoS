@@ -1,4 +1,4 @@
-use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id};
+use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id, FlowbeeEffectiveDirection};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use allocative_derive::Allocative;
@@ -20,7 +20,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Copy, Debug, Allocative)]
+#[derive(Clone, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -34,22 +34,22 @@ pub struct FlowDurationSummary {
 
 #[derive(Debug, Serialize)]
 pub struct AsnListEntry {
-    count: usize,
-    asn: u32,
-    name: String,
+    pub count: usize,
+    pub asn: u32,
+    pub name: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AsnCountryListEntry {
-    count: usize,
-    name: String,
-    iso_code: String,
+    pub count: usize,
+    pub name: String,
+    pub iso_code: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AsnProtocolListEntry {
-    count: usize,
-    protocol: String,
+    pub count: usize,
+    pub protocol: String,
 }
 
 impl TimeBuffer {
@@ -86,7 +86,7 @@ impl TimeBuffer {
                     lon,
                     geo.country,
                     data.bytes_sent.down,
-                    data.rtt[0].as_nanos() as f32,
+                    data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32, // TODO: Fix this type
                 )
             })
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
@@ -108,7 +108,7 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                let rtt = [data.rtt[0].as_nanos() as f32, data.rtt[1].as_nanos() as f32];
+                let rtt = [data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32, data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32]; // TODO: Fix these types
                 (geo.country, data.bytes_sent, rtt, geo.flag)
             })
             .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
@@ -210,21 +210,23 @@ impl TimeBuffer {
                 // It's V4
                 v4_bytes_sent.checked_add(data.bytes_sent);
                 v4_packets_sent.checked_add(data.packets_sent);
-                if data.rtt[0].as_nanos() > 0 {
-                    v4_rtt[0].push(data.rtt[0].as_nanos());
+                // TODO: This is awful code, fix it.
+                if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
+                    v4_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
-                if data.rtt[1].as_nanos() > 0 {
-                    v4_rtt[1].push(data.rtt[1].as_nanos());
+                if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
+                    v4_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             } else {
                 // It's V6
                 v6_bytes_sent.checked_add(data.bytes_sent);
                 v6_packets_sent.checked_add(data.packets_sent);
-                if data.rtt[0].as_nanos() > 0 {
-                    v6_rtt[0].push(data.rtt[0].as_nanos());
+                // TODO: This is awful code, fix it.
+                if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
+                    v6_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
-                if data.rtt[1].as_nanos() > 0 {
-                    v6_rtt[1].push(data.rtt[1].as_nanos());
+                if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
+                    v6_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             }
         });
@@ -413,6 +415,7 @@ impl TimeBuffer {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn len_and_capacity(&self) -> (usize, usize) {
         let buffer = self.buffer.lock();
         (buffer.len(), buffer.capacity())
@@ -464,22 +467,18 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
 
-        let retransmit_times_down = if let Some(v) = &data.retry_times_down {
-            v.1.iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let retransmit_times_up = if let Some(v) = &data.retry_times_up {
-            v.1.iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let retransmit_times_down = data
+            .get_retry_times_down()
+            .iter()
+            .filter(|n| **n > 0)
+            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+            .collect();
+        let retransmit_times_up = data
+            .get_retry_times_up()
+            .iter()
+            .filter(|n| **n > 0)
+            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+            .collect();
 
         if let Err(e) = crate::lts2_sys::two_way_flow(
             start_time,
@@ -495,8 +494,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             data.packets_sent.up as i64,
             retransmit_times_down,
             retransmit_times_up,
-            data.rtt[0].as_micros() as f32,
-            data.rtt[1].as_micros() as f32,
+            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
+            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
             circuit_hash,
         ) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");

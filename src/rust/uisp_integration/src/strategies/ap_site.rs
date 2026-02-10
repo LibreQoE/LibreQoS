@@ -59,15 +59,15 @@ pub async fn build_ap_site_network(
         warn!(
             "Network.json exists, and always overwrite network json is not true - not writing network.json"
         );
-        return Ok(());
+    } else {
+        let json = serde_json::to_string_pretty(&net_json).unwrap();
+        write(network_path, json).map_err(|e| {
+            error!("Unable to write network.json");
+            error!("{e:?}");
+            UispIntegrationError::WriteNetJson
+        })?;
+        info!("Written network.json");
     }
-    let json = serde_json::to_string_pretty(&net_json).unwrap();
-    write(network_path, json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");
 
     let _ = write_shaped_devices(&config, &mut shaped_devices);
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());

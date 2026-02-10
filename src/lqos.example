@@ -4,6 +4,9 @@ node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
 queue_check_period_ms = 1000
+enable_circuit_heatmaps = true
+enable_site_heatmaps = true
+enable_asn_heatmaps = true
 
 [tuning]
 stop_irq_balance = true
@@ -30,7 +33,7 @@ to_network = "eth1"
 [queues]
 # Global default SQM is a single token list applied to both directions.
 # Per-circuit overrides in ShapedDevices.csv may specify directional tokens
-# as "down/up" (see ShapedDevices.example.csv and INTEGRATION_HOWTO.md).
+# as "down_sqm/up_sqm" (see ShapedDevices.example.csv and INTEGRATION_HOWTO.md).
 default_sqm = "cake diffserv4"
 monitor_only = false
 uplink_bandwidth_mbps = 100000
@@ -69,8 +72,8 @@ always_overwrite_network_json = true
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
 
-[spylnx_integration]
-enable_spylnx = false
+[splynx_integration]
+enable_splynx = false
 api_key = ""
 api_secret = ""
 url = ""

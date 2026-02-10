@@ -76,9 +76,8 @@
             <div class="card-body">
                 <h5 class="card-title"><i class="fa fa-wrench"></i> Tools</h5>
                 <p>
-                    <strong>Sanity check</strong> reads your configuration and looks for common issues. This should be
-                    your first step when troubleshooting the system.<br />
-                    <button id="btnSanity" class="btn btn-primary"><i class="fa fa-info"></i> Sanity Check Your Installation</button>
+                    <strong>Support tool retired.</strong> The legacy support tool and sanity checks are no longer
+                    available in the UI. Use the configuration pages and logs when troubleshooting.
                 </p>
                 <!-- Support dump download/submission removed; server discontinued -->
 
@@ -87,23 +86,6 @@
     </div>
 </div>
 
-<div class="modal" tabindex="-1" id="sanityModal">
-    <div class="modal-dialog modal-fullscreen">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Configuration Check Results</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" style="overflow: auto;">
-                <p id="configCheck"></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Removed support dump modals: downloadDump and submitDump -->
+<!-- Removed support modals: sanity + support dump -->
 
 <script src="help.js%CACHEBUSTERS%"></script>

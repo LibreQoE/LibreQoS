@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 export class LtsThroughputPeriodGraph extends DashboardGraph {
     constructor(id, period) {
@@ -125,15 +125,22 @@ export class LtsThroughputPeriodGraph extends DashboardGraph {
         this.option.series[4].data = [];
         this.option.series[5].data = [];
         for (let x=0; x<data.length; x++) {
+            const minDown = toNumber(data[x].min_down, 0);
+            const maxDown = toNumber(data[x].max_down, 0);
+            const minUp = toNumber(data[x].min_up, 0);
+            const maxUp = toNumber(data[x].max_up, 0);
+            const medianDown = toNumber(data[x].median_down, 0);
+            const medianUp = toNumber(data[x].median_up, 0);
+
             this.option.xAxis.data.push(data[x].time);
-            this.option.series[0].data.push(data[x].min_down * 8);
-            this.option.series[1].data.push((data[x].max_down - data[x].min_down) * 8);
-            this.option.series[2].data.push((0.0 - data[x].max_up) * 8);
-            this.option.series[3].data.push((0.0 - (data[x].max_up - data[x].min_up)) * 8);
+            this.option.series[0].data.push(minDown * 8);
+            this.option.series[1].data.push((maxDown - minDown) * 8);
+            this.option.series[2].data.push((0.0 - maxUp) * 8);
+            this.option.series[3].data.push((0.0 - (maxUp - minUp)) * 8);
             //console.log(0.0 - data[x].min_up, 0.0 - data[x].max_up);
 
-            this.option.series[4].data.push(data[x].median_down * 8);
-            this.option.series[5].data.push((0.0 - data[x].median_up) * 8);
+            this.option.series[4].data.push(medianDown * 8);
+            this.option.series[5].data.push((0.0 - medianUp) * 8);
         }
         this.chart.setOption(this.option);
     }

@@ -9,8 +9,8 @@ export class ShapedUnshapedPie extends DashboardGraph {
                     type: 'pie',
                     radius: '50%',
                     data: [
-                        { name: 'Unshaped', value: 0 },
-                        { name: 'Shaped', value: 0 },
+                        { name: 'Unmapped', value: 0 },
+                        { name: 'Mapped', value: 0 },
                     ],
                 }
             ],

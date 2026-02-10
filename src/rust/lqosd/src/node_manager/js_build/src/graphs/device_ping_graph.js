@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 
 export class DevicePingHistogram extends DashboardGraph {
     constructor(id) {
@@ -37,7 +38,7 @@ export class DevicePingHistogram extends DashboardGraph {
 
     update(ping_time_nanos) {
         this.chart.hideLoading();
-        let ping_time_ms = ping_time_nanos / 1000000;
+        let ping_time_ms = toNumber(ping_time_nanos, 0) / 1000000;
         let bucket = Math.floor(ping_time_ms / 10);
         bucket = Math.min(bucket, 19);
         this.option.series.data[bucket].value += 1;
@@ -46,10 +47,10 @@ export class DevicePingHistogram extends DashboardGraph {
 
     updateMs(ping_time_ms) {
         this.chart.hideLoading();
+        ping_time_ms = toNumber(ping_time_ms, 0);
         let bucket = Math.floor(ping_time_ms / 10);
         bucket = Math.min(bucket, 19);
         this.option.series.data[bucket].value += 1;
         this.chart.setOption(this.option);
     }
 }
-

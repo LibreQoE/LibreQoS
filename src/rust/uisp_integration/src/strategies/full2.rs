@@ -1,4 +1,5 @@
 mod dot;
+mod directionality;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
@@ -10,6 +11,7 @@ use crate::strategies::common::UispData;
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use crate::strategies::full2::dot::save_dot_file;
+use crate::strategies::full2::directionality::{build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps};
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
@@ -356,15 +358,15 @@ pub async fn build_full_network_v2(
         warn!(
             "Network.json exists, and always overwrite network json is not true - not writing network.json"
         );
-        return Ok(());
+    } else {
+        let json = serde_json::to_string_pretty(&network_json).unwrap();
+        write(network_path, json).map_err(|e| {
+            error!("Unable to write network.json");
+            error!("{e:?}");
+            UispIntegrationError::WriteNetJson
+        })?;
+        info!("Written network.json");
     }
-    let json = serde_json::to_string_pretty(&network_json).unwrap();
-    write(network_path, json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
@@ -488,6 +490,9 @@ fn add_device_links_to_graph(
     device_map: &mut HashMap<String, NodeIndex>,
     config: &Arc<Config>,
 ) {
+    let meta_by_id = build_device_link_meta_map(&uisp_data.devices_raw);
+    let caps_by_id = build_device_capacity_map(&uisp_data.devices);
+
     for link in uisp_data.data_links_raw.iter() {
         let Some(from_device) = &link.from.device else {
             continue;
@@ -532,27 +537,38 @@ fn add_device_links_to_graph(
             continue;
         }
 
-        let (down, up) = get_capacity_from_datalink_device(
-            &from_device.identification.id,
-            &uisp_data.devices,
-            &config,
-        );
+        let id_a = from_device.identification.id.as_str();
+        let id_b = to_device.identification.id.as_str();
+        let (cap_ab, cap_ba) =
+            if let Some((cap_ab, cap_ba)) = directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b) {
+                (cap_ab, cap_ba)
+            } else {
+                warn!(
+                    link_id = %link.id,
+                    from_id = %id_a,
+                    to_id = %id_b,
+                    from_name = %from_device.identification.name,
+                    to_name = %to_device.identification.name,
+                    "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
+                );
+                get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
+            };
         graph.add_edge(
             *a_ref,
             *b_ref,
             LinkMapping::DevicePair {
-                device_a: from_device.identification.id.clone(),
-                device_b: to_device.identification.id.clone(),
-                speed_mbps: down,
+                device_a: id_a.to_string(),
+                device_b: id_b.to_string(),
+                speed_mbps: cap_ab,
             },
         );
         graph.add_edge(
             *b_ref,
             *a_ref,
             LinkMapping::DevicePair {
-                device_b: from_device.identification.id.clone(),
-                device_a: to_device.identification.id.clone(),
-                speed_mbps: up,
+                device_a: id_b.to_string(),
+                device_b: id_a.to_string(),
+                speed_mbps: cap_ba,
             },
         );
     }

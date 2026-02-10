@@ -11,6 +11,7 @@ pub mod authentication;
 mod etc;
 mod network_json;
 mod program_control;
+mod qoo_profiles;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUser, WebUsers};
@@ -20,6 +21,10 @@ pub use etc::{
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;
+pub use qoo_profiles::{
+    DEFAULT_QOO_PROFILE_ID, QooProfileInfo, QooProfilesError, active_qoo_profile,
+    list_qoo_profiles, load_qoo_profiles_file,
+};
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 
 /// Used as a constant in determining buffer preallocation

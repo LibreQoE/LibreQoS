@@ -8,7 +8,7 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -49,7 +49,7 @@ pub enum ExecutionMode {
 
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
-    pub enum BakeryCommands {
+pub enum BakeryCommands {
     /// Notification that the bus socket is ready; bakery can seed mappings
     BusReady,
     /// Add or update an IP mapping (mirrors `MapIpToFlow` from the bus)
@@ -641,7 +641,7 @@ impl BakeryCommands {
         }
 
         // Parse per-direction override tokens: single token applies to both;
-        // directional form is "down/up" with either side optionally empty.
+        // directional form is "down_sqm/up_sqm" with either side optionally empty.
         let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
             match &params.sqm_override {
                 None => (None, None),
@@ -651,7 +651,11 @@ impl BakeryCommands {
                         let down = it.next().unwrap_or("").trim();
                         let up = it.next().unwrap_or("").trim();
                         let map = |t: &str| -> Option<String> {
-                            if t.is_empty() { None } else { Some(t.to_string()) }
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
                         };
                         (map(down), map(up))
                     } else {
@@ -756,7 +760,8 @@ impl BakeryCommands {
 
         if !config.queues.monitor_only && do_sqm {
             if !config.on_a_stick_mode() {
-                if !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")) {
+                if !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
+                {
                     let mut sqm_command = vec![
                         "qdisc".to_string(),
                         "replace".to_string(),
@@ -849,7 +854,11 @@ impl BakeryCommands {
                         let down = it.next().unwrap_or("").trim();
                         let up = it.next().unwrap_or("").trim();
                         let map = |t: &str| -> Option<String> {
-                            if t.is_empty() { None } else { Some(t.to_string()) }
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
                         };
                         (map(down), map(up))
                     } else {
@@ -858,8 +867,10 @@ impl BakeryCommands {
                 }
             };
 
-            let prune_down = !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
-            let prune_up = !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+            let prune_down =
+                !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
+            let prune_up =
+                !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
 
             if prune_up && !config.on_a_stick_mode() {
                 result.push(vec![

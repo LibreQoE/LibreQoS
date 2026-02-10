@@ -51,7 +51,8 @@ mod test {
     fn test_serialize_keypair() {
         let keypair = KeyPair::r#gen();
         let serialized = serde_cbor::to_vec(&keypair).expect("Cannot serialize keypair");
-        let deserialized: KeyPair = serde_cbor::from_slice(&serialized).expect("Cannot deserialize keypair");
+        let deserialized: KeyPair =
+            serde_cbor::from_slice(&serialized).expect("Cannot deserialize keypair");
         assert_eq!(keypair, deserialized);
     }
 }

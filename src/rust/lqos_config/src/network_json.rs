@@ -2,17 +2,22 @@ mod network_json_node;
 mod network_json_transport;
 
 use allocative_derive::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::{
+    qoq_heatmap::TemporalQoqHeatmap,
+    qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
+    rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
+    temporal_heatmap::TemporalHeatmap,
+    units::DownUpOrder,
+};
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
@@ -73,6 +78,7 @@ impl NetworkJson {
     pub fn load() -> Result<Self, NetworkJsonError> {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            virtual_node: false,
             max_throughput: (0, 0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -84,8 +90,10 @@ impl NetworkJson {
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
             immediate_parent: None,
-            rtts: HashSet::new(),
+            rtt_buffer: RttBuffer::default(),
             node_type: None,
+            heatmap: None,
+            qoq_heatmap: None,
         }];
         if !Self::exists() {
             return Err(NetworkJsonError::FileNotFound);
@@ -158,7 +166,7 @@ impl NetworkJson {
             n.current_udp_packets.set_to_zero();
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
-            n.rtts.clear();
+            n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
         });
@@ -190,13 +198,12 @@ impl NetworkJson {
         }
     }
 
-    /// Record RTT time in the tree. Note that due to interior mutability,
-    /// this does not require mutable access.
-    pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
+    /// Record RTT histogram data in the tree for this cycle.
+    pub fn add_rtt_buffer_cycle(&mut self, targets: &[usize], rtt: &RttBuffer) {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
-                node.rtts.insert((rtt * 100.0) as u16);
+                node.rtt_buffer.accumulate(rtt);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -232,6 +239,84 @@ impl NetworkJson {
             }
         }
     }
+
+    /// Record a heatmap sample for each site based on the current per-cycle data.
+    pub fn record_site_heatmaps(&mut self, enable: bool) {
+        if !enable {
+            self.nodes.iter_mut().for_each(|node| {
+                node.heatmap = None;
+                node.qoq_heatmap = None;
+            });
+            return;
+        }
+
+        let qoo_profile = crate::active_qoo_profile().ok();
+
+        for node in self.nodes.iter_mut() {
+            let download_util =
+                utilization_percent_bytes(node.current_throughput.down, node.max_throughput.0)
+                    .unwrap_or(0.0);
+            let upload_util =
+                utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
+                    .unwrap_or(0.0);
+            let rtt_p50_down = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p50_up = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_down = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+                .map(|rtt| rtt.as_millis() as f32);
+            let rtt_p90_up = node
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+                .map(|rtt| rtt.as_millis() as f32);
+            let retransmit_down = retransmit_percent(
+                node.current_tcp_retransmits.down,
+                node.current_tcp_packets.down,
+            );
+            let retransmit_up =
+                retransmit_percent(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+
+            let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
+            heatmap.add_sample(
+                download_util,
+                upload_util,
+                rtt_p50_down,
+                rtt_p50_up,
+                rtt_p90_down,
+                rtt_p90_up,
+                retransmit_down,
+                retransmit_up,
+            );
+
+            let loss_download = tcp_retransmit_loss_proxy(
+                node.current_tcp_retransmits.down,
+                node.current_tcp_packets.down,
+            );
+            let loss_upload =
+                tcp_retransmit_loss_proxy(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+            let scores = if let Some(profile) = qoo_profile.as_ref() {
+                compute_qoq_scores(
+                    profile.as_ref(),
+                    &node.rtt_buffer,
+                    loss_download,
+                    loss_upload,
+                )
+            } else {
+                QoqScores::default()
+            };
+            let qoq_heatmap = node.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
+            qoq_heatmap.add_sample(
+                scores.download_total_f32(),
+                scores.upload_total_f32(),
+            );
+        }
+    }
 }
 
 fn json_to_u32(val: Option<&Value>) -> u32 {
@@ -261,6 +346,16 @@ fn recurse_node(
     } else {
         nodes.len() - 1
     };
+    let virtual_node = json
+        .get("virtual")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        || json
+            .get("type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.eq_ignore_ascii_case("virtual"))
+            .unwrap_or(false);
+
     let node = NetworkJsonNode {
         parents: parents.to_vec(),
         max_throughput: (
@@ -276,9 +371,14 @@ fn recurse_node(
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
+        virtual_node,
         immediate_parent: Some(immediate_parent),
-        rtts: HashSet::new(),
-        node_type: json.get("type").map(|v| v.as_str().unwrap_or_default().to_string()),
+        rtt_buffer: RttBuffer::default(),
+        node_type: json
+            .get("type")
+            .map(|v| v.as_str().unwrap_or_default().to_string()),
+        heatmap: None,
+        qoq_heatmap: None,
     };
 
     if node.name != "children" {
@@ -297,10 +397,137 @@ fn recurse_node(
     }
 }
 
+fn utilization_percent_bytes(bytes: u64, max_mbps: u32) -> Option<f32> {
+    if max_mbps == 0 {
+        return None;
+    }
+    let bits_per_second = bytes.saturating_mul(8) as f64;
+    let capacity_bps = max_mbps as f64 * 1_000_000.0;
+    Some(((bits_per_second / capacity_bps) * 100.0) as f32)
+}
+
+fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
+    // Ignore very small samples to avoid extreme ratios from tiny flows.
+    if retransmits == 0 || packets < 1_000 {
+        return None;
+    }
+    Some((retransmits as f32 / packets as f32) * 100.0)
+}
+
+fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
+    if packets == 0 {
+        return None;
+    }
+
+    let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
+    const TCP_RETRANSMIT_CONFIDENCE_MAX: f64 = 0.05;
+    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0) * TCP_RETRANSMIT_CONFIDENCE_MAX;
+    Some(LossMeasurement::TcpRetransmitProxy {
+        retransmit_fraction,
+        confidence,
+    })
+}
+
 #[derive(Error, Debug)]
 pub enum NetworkJsonError {
     #[error("Unable to find or load network.json")]
     ConfigLoadError,
     #[error("network.json not found or does not exist")]
     FileNotFound,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_json::Value;
+
+    fn parse_network_json_from_value(value: Value) -> NetworkJson {
+        let mut nodes = vec![NetworkJsonNode {
+            name: "Root".to_string(),
+            virtual_node: false,
+            max_throughput: (0, 0),
+            current_throughput: DownUpOrder::zeroed(),
+            current_packets: DownUpOrder::zeroed(),
+            current_tcp_packets: DownUpOrder::zeroed(),
+            current_udp_packets: DownUpOrder::zeroed(),
+            current_icmp_packets: DownUpOrder::zeroed(),
+            current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_drops: DownUpOrder::zeroed(),
+            current_marks: DownUpOrder::zeroed(),
+            parents: Vec::new(),
+            immediate_parent: None,
+            rtt_buffer: RttBuffer::default(),
+            node_type: None,
+            heatmap: None,
+            qoq_heatmap: None,
+        }];
+
+        let parents = vec![0];
+        if let Value::Object(map) = &value {
+            for (key, value) in map.iter() {
+                if let Value::Object(inner_map) = value {
+                    recurse_node(&mut nodes, key, inner_map, &parents, 0);
+                }
+            }
+        }
+
+        NetworkJson { nodes }
+    }
+
+    #[test]
+    fn parses_virtual_and_legacy_virtual_type() {
+        let raw = serde_json::json!({
+            "Site_1": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "type": "Site",
+                "children": {
+                    "VirtNode": {
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500,
+                        "type": "AP",
+                        "virtual": true,
+                        "children": {}
+                    },
+                    "LegacyVirt": {
+                        "downloadBandwidthMbps": 400,
+                        "uploadBandwidthMbps": 400,
+                        "type": "virtual",
+                        "children": {}
+                    },
+                    "RealNode": {
+                        "downloadBandwidthMbps": 300,
+                        "uploadBandwidthMbps": 300,
+                        "children": {}
+                    }
+                }
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+
+        let virt = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "VirtNode")
+            .expect("VirtNode must be present");
+        assert!(virt.virtual_node);
+        assert!(virt.clone_to_transit().is_virtual);
+
+        let legacy = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "LegacyVirt")
+            .expect("LegacyVirt must be present");
+        assert!(legacy.virtual_node);
+        assert!(legacy.clone_to_transit().is_virtual);
+
+        let real = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "RealNode")
+            .expect("RealNode must be present");
+        assert!(!real.virtual_node);
+        assert!(!real.clone_to_transit().is_virtual);
+    }
 }

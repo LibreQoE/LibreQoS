@@ -141,6 +141,48 @@ pub async fn auth_layer(
     Err(Html(BOUNCE))
 }
 
+pub async fn login_from_token(token: &str) -> LoginResult {
+    let mut lock = WEB_USERS.lock().await;
+    if lock.is_none() {
+        match WebUsers::does_users_file_exist() {
+            Ok(true) => {
+                match WebUsers::load_or_create() {
+                    Ok(users) => {
+                        *lock = Some(users);
+                    }
+                    Err(e) => {
+                        warn!("Unable to load users file for websocket auth: {e}");
+                        return LoginResult::Denied;
+                    }
+                }
+            }
+            Ok(false) => {
+                return LoginResult::Denied;
+            }
+            Err(e) => {
+                warn!("Unable to check users file for websocket auth: {e}");
+                return LoginResult::Denied;
+            }
+        }
+    }
+
+    let Some(users) = &*lock else {
+        return LoginResult::Denied;
+    };
+
+    let login_result = match users.get_role_from_token(token) {
+        Ok(UserRole::ReadOnly) => LoginResult::ReadOnly,
+        Ok(UserRole::Admin) => LoginResult::Admin,
+        Err(_) => LoginResult::Denied,
+    };
+
+    if login_result != LoginResult::Denied {
+        record_first_login_timestamp_if_needed();
+    }
+
+    login_result
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct LoginAttempt {
     pub username: String,
@@ -183,7 +225,9 @@ pub async fn first_user(
     Json(new_user): Json<FirstUser>,
 ) -> (CookieJar, StatusCode) {
     let mut users = WebUsers::load_or_create().expect("Could not load users file");
-    users.allow_anonymous(new_user.allow_anonymous).expect("Unable to set property");
+    users
+        .allow_anonymous(new_user.allow_anonymous)
+        .expect("Unable to set property");
     let token = users
         .add_or_update_user(&new_user.username, &new_user.password, UserRole::Admin)
         .expect("Unable to add or update user");

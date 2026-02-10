@@ -1,6 +1,7 @@
 //! Provides tracking and data-services for per-flow data. Includes implementations
 //! of netflow protocols.
 
+mod asn_heatmap;
 mod flow_analysis;
 mod flow_tracker;
 mod netflow5;
@@ -10,12 +11,14 @@ use crate::throughput_tracker::flow_data::{
     flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9,
 };
 use anyhow::Result;
+pub(crate) use asn_heatmap::{AsnAggregate, snapshot_asn_heatmaps, update_asn_heatmaps};
 use crossbeam_channel::Sender;
 pub(crate) use flow_analysis::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysis,
-    FlowAnalysisSystem, RECENT_FLOWS, RttData, expire_rtt_flows, flowbee_handle_events,
+    RECENT_FLOWS, RttData, expire_rtt_flows, flowbee_handle_events,
     flowbee_rtt_map, get_asn_name_and_country, get_flowbee_event_count_and_reset,
-    get_rtt_events_per_second, setup_flow_analysis,
+    get_asn_name_by_id, get_rtt_events_per_second, setup_flow_analysis,
+    FlowbeeEffectiveDirection, RttBuffer,
 };
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;
@@ -48,12 +51,14 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
                     let target = format!("{ip}:{port}", ip = ip, port = port);
                     match version {
                         5 => {
-                            let endpoint = Netflow5::new(target).expect("Cannot parse endpoint for netflow v5");
+                            let endpoint = Netflow5::new(target)
+                                .expect("Cannot parse endpoint for netflow v5");
                             endpoints.push(endpoint);
                             info!("Netflow 5 endpoint added");
                         }
                         9 => {
-                            let endpoint = Netflow9::new(target).expect("Cannot parse endpoint for netflow v9");
+                            let endpoint = Netflow9::new(target)
+                                .expect("Cannot parse endpoint for netflow v9");
                             endpoints.push(endpoint);
                             info!("Netflow 9 endpoint added");
                         }

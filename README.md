@@ -15,7 +15,8 @@ LibreQoS code is Open Source. It improves Quality of Experience by implementing 
 
 To learn more, please visit [LibreQoS.io](https://libreqos.io/).
 
-<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2024/12/v1.5-BETA-4-3.jpg?w=3698&ssl=1"></a></a>
+<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://github.com/user-attachments/assets/80c652d6-bd1d-4ccd-86e4-96a508005d22"></a></a>
+
 
 ## Sponsors
 
@@ -49,7 +50,8 @@ Insight allows you to thoroughly monitor your network both at high-level, as wel
 
 Insight provides a free 30-day trial to allow network operators to see its powerful capabilities firsthand. Learn more about Insight [here](https://libreqos.io/insight).
 
-<a href="https://libreqos.io/insight"><img alt="LibreQoS Long Term Stats" src="https://github.com/user-attachments/assets/a53ef7ac-fcf6-4e87-bf05-ad5f0adc3ca0"></a></a>
+<a href="https://libreqos.io/insight"><img alt="LibreQoS Long Term Stats" src="https://github.com/user-attachments/assets/efff88ad-fa30-4802-aaf7-4054fb617359"></a></a>
+
 
 ## In Loving Memory of Dave Täht
 Dave served as LibreQoS' Chief Science Officer and championed the global fight against bufferbloat. You can learn more about [Dave's incredible legacy here](https://libreqos.io/2025/04/01/in-loving-memory-of-dave/), and learn how our team is working to [carry on his mission](https://libreqos.io/company/).

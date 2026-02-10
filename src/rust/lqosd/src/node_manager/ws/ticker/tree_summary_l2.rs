@@ -1,8 +1,8 @@
+use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_config::NetworkJsonTransport;
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -58,13 +58,8 @@ pub async fn tree_summary_l2(channels: Arc<PubSub>) {
         map.into_iter().collect()
     };
 
-    let message = json!({
-        "event": PublishedChannels::TreeSummaryL2.to_string(),
-        "data": grouped,
-    })
-    .to_string();
+    let message = WsResponse::TreeSummaryL2 { data: grouped };
     channels
         .send(PublishedChannels::TreeSummaryL2, message)
         .await;
 }
-

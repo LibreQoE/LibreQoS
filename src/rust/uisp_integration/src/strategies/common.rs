@@ -57,7 +57,8 @@ impl UispData {
         ip_ranges: IpRanges,
     ) -> std::result::Result<Self, UispIntegrationError> {
         // Obtain the UISP data and transform it into easier to work with types
-        let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) = load_uisp_data(config.clone()).await?;
+        let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) =
+            load_uisp_data(config.clone()).await?;
 
         // Deduplicate site names so downstream graph building has unique keys
         dedup_site_names(&mut sites_raw);

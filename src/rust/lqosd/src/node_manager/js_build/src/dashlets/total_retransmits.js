@@ -72,15 +72,10 @@ export class TcpRetransmitsDash extends DashletBaseInsight{
         if (msg.event === "Retransmits") {
             this.graph.update(msg.data.down, msg.data.up, msg.data.tcp_down, msg.data.tcp_up);
             if (!this.ltsLoaded && window.hasLts) {
-                //console.log("Loading LTS data");
                 this.graphs.forEach((g) => {
-                    //console.log("Loading " + g.period);
-                    let url = "/local-api/ltsRetransmits/" + g.period;
-                    //console.log(url);
-                    $.get(url, (data) => {
-                        //console.log(data);
-                        g.update(data);
-                    });
+                    if (g && g.chart) {
+                        g.chart.showLoading("Insight retransmit history not available.");
+                    }
                 });
                 this.ltsLoaded = true;
             }

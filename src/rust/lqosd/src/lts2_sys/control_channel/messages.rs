@@ -32,6 +32,9 @@ pub enum WsMessage {
         node_id: String,
         node_name: String,
     },
+    LicenseGrantRequest {
+        public_key: Vec<u8>,
+    },
     HeartbeatReply {
         insight_time: i64,
     },
@@ -70,6 +73,13 @@ pub enum WsMessage {
         valid: bool,
         license_state: i32,
         expiration_date: i64,
+    },
+    InsightPublicKey {
+        public_key: Vec<u8>,
+    },
+    LicenseGrant {
+        payload: Vec<u8>,
+        signature: Vec<u8>,
     },
     YouMaySubmit {
         ingestion_id: u64,
@@ -129,8 +139,7 @@ pub enum WsMessage {
         method: ApiRequestType,
         url_suffix: String,
         body: Option<String>,
-    }
-    ,
+    },
     // Chatbot (Ask Libby) streaming via Insight chatbot service
     // From Shaper -> Insight
     ChatbotStart {

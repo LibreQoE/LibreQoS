@@ -25,5 +25,5 @@ pub use queue_structure::{
 };
 pub use queue_types::deserialize_tc_tree; // Exported for the benchmarker
 pub use tracking::spawn_queue_monitor;
-pub use tracking::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
+pub use tracking::{ALL_QUEUE_SUMMARY, QueueCounts, TOTAL_QUEUE_STATS};
 pub use tracking::{add_watched_queue, still_watching};

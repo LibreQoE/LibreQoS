@@ -46,19 +46,22 @@ struct RecommendationParams {
     saturation_current: SaturationLevel,
     retransmit_state: RetransmitState,
     rtt_state: RttState,
+    /// Absolute retransmit fraction (0.10 = 10%)
+    abs_retransmit: Option<f64>,
 }
 
 impl RecommendationParams {
     fn summary_string(&self) -> String {
         format!(
-            "{},{:?},{:?},{},{},{},{}",
+            "{},{:?},{:?},{},{},{},{},abs_retx={:?}",
             self.direction,
             self.can_increase,
             self.can_decrease,
             self.saturation_max,
             self.saturation_current,
             self.retransmit_state,
-            self.rtt_state
+            self.rtt_state,
+            self.abs_retransmit
         )
     }
 }
@@ -183,6 +186,12 @@ impl SiteState {
             RetransmitState::FallingFast => -1.5 * retransmit_weight,
         };
 
+        // Absolute retransmit penalty: if loss > 10%, push toward decrease even if stable.
+        let high_loss_penalty = params
+            .abs_retransmit
+            .and_then(|p| if p >= 0.10 { Some(3.0) } else { None })
+            .unwrap_or(0.0);
+
         // Tick Bias
         /*let tick_bias = match params.direction {
             RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
@@ -210,10 +219,15 @@ impl SiteState {
                 0.0
             };
 
-        let score = score_base + score_rtt + score_retransmit + score_stability_bonus + score_tick;
+        let score = score_base
+            + score_rtt
+            + score_retransmit
+            + score_stability_bonus
+            + score_tick
+            + high_loss_penalty;
         debug!("{} : {}", params.direction, params.summary_string());
         debug!(
-            "Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick) = {score:.1}",
+            "Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick) + {high_loss_penalty:.1}(abs_retx) = {score:.1}",
             params.direction
         );
 
@@ -270,6 +284,7 @@ impl SiteState {
             &self.retransmits_down_moving_average,
             &self.retransmits_down,
         );
+        let abs_retransmit = self.retransmits_down_moving_average.average();
         let rtt_state = RttState::new(&self.round_trip_time_moving_average, &self.round_trip_time);
 
         let params = RecommendationParams {
@@ -280,6 +295,7 @@ impl SiteState {
             saturation_current,
             retransmit_state,
             rtt_state,
+            abs_retransmit,
         };
 
         self.recommendation_matrix(recommendations, &params);
@@ -296,6 +312,7 @@ impl SiteState {
         );
         let retransmit_state =
             RetransmitState::new(&self.retransmits_up_moving_average, &self.retransmits_up);
+        let abs_retransmit = self.retransmits_up_moving_average.average();
         let rtt_state = RttState::new(&self.round_trip_time_moving_average, &self.round_trip_time);
 
         let params = RecommendationParams {
@@ -306,6 +323,7 @@ impl SiteState {
             saturation_current,
             retransmit_state,
             rtt_state,
+            abs_retransmit,
         };
 
         self.recommendation_matrix(recommendations, &params);

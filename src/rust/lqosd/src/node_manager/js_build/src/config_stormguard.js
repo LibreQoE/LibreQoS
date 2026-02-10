@@ -1,37 +1,36 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    loadConfig,
+    loadNetworkJson,
+    renderConfigMenu,
+    saveConfig,
+} from "./config/config_helper";
 
 let networkData = null;
 let selectedTargets = [];
 
 // Load network.json for site dropdown
 function loadNetworkData() {
-    return fetch('/local-api/networkJson', {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json',
-        },
-        credentials: 'same-origin'
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        // Check if we got the "Not done yet" response
-        if (typeof data === 'string' && data === 'Not done yet') {
-            console.error('Network.json file not found on server');
-            alert('Network configuration not found. Please ensure network.json exists.');
-            return;
-        }
-        networkData = data;
-        console.log('Network data loaded:', networkData);
-        populateSiteSelector();
-    })
-    .catch(error => {
-        console.error('Error loading network data:', error);
-        alert('Failed to load network sites. Please refresh the page.');
+    return new Promise((resolve, reject) => {
+        loadNetworkJson(
+            (data) => {
+                // Check if we got the "Not done yet" response
+                if (typeof data === 'string' && data === 'Not done yet') {
+                    console.error('Network.json file not found on server');
+                    alert('Network configuration not found. Please ensure network.json exists.');
+                    resolve();
+                    return;
+                }
+                networkData = data;
+                console.log('Network data loaded:', networkData);
+                populateSiteSelector();
+                resolve();
+            },
+            (err) => {
+                console.error('Error loading network data:', err);
+                alert('Failed to load network sites. Please refresh the page.');
+                reject(err);
+            },
+        );
     });
 }
 

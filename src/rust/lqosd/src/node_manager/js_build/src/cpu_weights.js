@@ -1,5 +1,6 @@
 import { clearDiv, theading, simpleRow, simpleRowHtml, enableTooltips } from "./helpers/builders";
 import { DashboardGraph } from "./graphs/dashboard_graph";
+import { get_ws_client } from "./pubsub/ws";
 
 let state = {
     selectedCpu: null,
@@ -10,6 +11,33 @@ let state = {
 };
 
 let dlMaxPie = null; // dashboard-graph wrapped chart for DL Max distribution
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function requestConfig() {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (cfg) => {
+            if (done) return;
+            done = true;
+            resolve(cfg);
+        };
+        const timeout = setTimeout(() => {
+            finish(null);
+        }, 5000);
+        listenOnce("GetConfig", (msg) => {
+            clearTimeout(timeout);
+            finish(msg && msg.data ? msg.data : null);
+        });
+        wsClient.send({ GetConfig: {} });
+    });
+}
 
 function fmtMbps(x) {
     if (x === null || x === undefined) return "-";
@@ -224,28 +252,35 @@ function renderCircuits(page) {
     target.appendChild(table);
 }
 
-async function fetchSummary() {
-    try {
-        const r = await fetch("/local-api/cpuAffinity/summary");
-        if (!r.ok) throw new Error(`${r.status}`);
-        const data = await r.json();
-        // data is { entries: [...] } or just array depending on server; we returned a tuple-like wrapper
-        const entries = Array.isArray(data) ? data : (data["0"] ? data : (data["entries"] || data));
-        // Get planner enabled flag from config
-        try {
-            const c = await fetch("/local-api/getConfig");
-            if (c.ok) {
-                const cfg = await c.json();
-                state.plannerEnabled = !!(cfg.queues && cfg.queues.use_binpacking);
-            }
-        } catch (_) {}
-        renderSummary(entries); // In our implementation: array
-    } catch (e) {
-        document.getElementById("cpuSummary").innerHTML = `<div class="text-danger">Failed to load summary: ${e}</div>`;
+function fetchSummary() {
+    const target = document.getElementById("cpuSummary");
+    if (target) {
+        target.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Loading summary...';
     }
+    const configPromise = requestConfig().then((cfg) => {
+        state.plannerEnabled = !!(cfg && cfg.queues && cfg.queues.use_binpacking);
+    });
+
+    return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+            if (target) {
+                target.innerHTML = '<div class="text-danger">Failed to load summary: timeout</div>';
+            }
+            resolve();
+        }, 10000);
+
+        listenOnce("CpuAffinitySummary", async (msg) => {
+            clearTimeout(timeout);
+            await configPromise;
+            const data = msg && msg.data ? msg.data : [];
+            renderSummary(data);
+            resolve();
+        });
+        wsClient.send({ CpuAffinitySummary: {} });
+    });
 }
 
-async function fetchCircuits() {
+function fetchCircuits() {
     const target = document.getElementById("circuitsTable");
     target.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Loading circuits...';
     const dir = state.direction;
@@ -254,19 +289,26 @@ async function fetchCircuits() {
         target.innerHTML = '<i class="fa fa-info-circle"></i> <span class="text-secondary">Select a CPU from the table above.</span>';
         return;
     }
-    const params = new URLSearchParams();
-    params.set("direction", dir);
-    params.set("page", String(state.page));
-    params.set("page_size", String(state.pageSize));
-    // no search param
-    try {
-        const r = await fetch(`/local-api/cpuAffinity/circuits/${cpu}?` + params.toString());
-        if (!r.ok) throw new Error(`${r.status}`);
-        const data = await r.json();
-        renderCircuits(data);
-    } catch (e) {
-        target.innerHTML = `<div class="text-danger">Failed to load circuits: ${e}</div>`;
-    }
+    const timeout = setTimeout(() => {
+        target.innerHTML = '<div class="text-danger">Failed to load circuits: timeout</div>';
+    }, 10000);
+    listenOnce("CpuAffinityCircuits", (msg) => {
+        clearTimeout(timeout);
+        if (!msg || !msg.data) {
+            target.innerHTML = '<div class="text-danger">Failed to load circuits.</div>';
+            return;
+        }
+        renderCircuits(msg.data);
+    });
+    wsClient.send({
+        CpuAffinityCircuits: {
+            cpu: cpu,
+            direction: dir,
+            page: state.page,
+            page_size: state.pageSize,
+            search: null,
+        }
+    });
 }
 
 // Wire up controls

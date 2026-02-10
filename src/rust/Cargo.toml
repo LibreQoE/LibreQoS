@@ -30,9 +30,9 @@ members = [
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
-    "lqos_support_tool", # A Helper tool to make it easier to request/receive support
     "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
+    "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
 ]
 
 [dependencies]

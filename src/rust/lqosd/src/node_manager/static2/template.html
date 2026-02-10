@@ -18,12 +18,13 @@
 </head>
 <body>
 %%%LTS_SCRIPT%%%
+<script>window.LQOS_UI_VERSION = "%%VERSION%%";</script>
 <script>window.sm = %%MODAL%%; window.smn = "%%MODAL_NUM%%"</script>
-<div id="wrapper"> <!-- Whole Page Wrapper -->
+<div id="wrapper" class="lqos-shell"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
     <!-- Sidebar -->
-    <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar">
+    <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar lqos-sidebar">
         <div class="container-fluid">            
             <button class="navbar-toggler navbar-dark" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -139,6 +140,8 @@
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode">
                             <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye"></i></label>
+                        </div>
+                    </li>
                     <!-- Klingon switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
@@ -165,10 +168,10 @@
     </nav>
 
     <!-- Content Wrapper -->
-    <div id="content-wrapper" class="d-flex flex-column flex-fill mt-2">
+    <div id="content-wrapper" class="d-flex flex-column flex-fill lqos-content-wrapper">
         <!-- Main Content -->
 
-        <div id="content" class="container-fluid flex-fill">
+        <div id="content" class="container-fluid flex-fill lqos-content">
             %%BODY%%
         </div> <!-- End Main Content -->
     </div> <!-- End Content Wrapper -->
@@ -258,102 +261,9 @@
     document.getElementById('year').textContent = new Date().getFullYear();
         
 
-    // Urgent Issues: poll status, update badge, and show modal with details
-    (function(){
-        const containerId = 'urgentStatus';
-        const linkId = 'urgentStatusLink';
-        const badgeId = 'urgentBadge';
-
-        function ensurePlaceholder(){
-            // no-op: server injects a placeholder; if not present, skip
-            return document.getElementById(containerId) !== null;
-        }
-
-        function renderStatus(count){
-            const cont = document.getElementById(containerId);
-            if (!cont) return;
-            const cls = count > 0 ? 'text-danger' : 'text-secondary';
-            const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
-            cont.innerHTML = `
-                <a class="nav-link ${cls}" href="#" id="${linkId}">
-                    <i class="fa fa-fw fa-centerline ${icon}"></i> Urgent Issues
-                    <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
-                </a>`;
-            $("#"+containerId).off("click").on("click", `#${linkId}`, (e)=>{
-                e.preventDefault();
-                showModal();
-            });
-        }
-
-        function poll(){
-            if (!ensurePlaceholder()) return;
-            $.get('/local-api/urgent/status', (res)=>{
-                renderStatus(res.count||0);
-            });
-        }
-
-        function showModal(){
-            const modalEl = document.getElementById('urgentModal');
-            if (!modalEl) return;
-            new bootstrap.Modal(modalEl,{focus:true}).show();
-            const holder = document.getElementById('urgentListContainer');
-            holder.innerHTML = `<div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>`;
-            $.get('/local-api/urgent/list', (res)=>{
-                const items = res.items||[];
-                if (items.length===0){ holder.innerHTML = '<div class="text-center text-success">No urgent issues.</div>'; return; }
-                const table = document.createElement('table');
-                table.className = 'table table-sm table-striped';
-                const tbody = document.createElement('tbody');
-                items.forEach(it=>{
-                    const tr = document.createElement('tr');
-                    const td = document.createElement('td');
-                    const when = new Date(it.ts*1000).toLocaleString();
-                    const sev = it.severity === 'Error' ? 'danger' : 'warning';
-                    td.innerHTML = `
-                        <div>
-                            <span class="badge bg-${sev}">${it.severity}</span>
-                            <strong class="ms-2">${it.code}</strong>
-                            <span class="text-muted ms-2">(${it.source})</span>
-                            <span class="text-muted float-end">${when}</span>
-                            <a href="#" class="text-secondary float-end ms-3 urgent-clear" data-id="${it.id}" title="Acknowledge"><i class="fa fa-times"></i></a>
-                        </div>
-                        <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
-                        ${it.context?`<pre class="mt-2">${it.context}</pre>`:''}
-                        `;
-                    tr.appendChild(td);
-                    tbody.appendChild(tr);
-                });
-                table.appendChild(tbody);
-                // Clear existing content and insert table
-                holder.innerHTML = '';
-                holder.appendChild(table);
-                // Bind clear buttons (acknowledge)
-                $(holder).off('click').on('click','a.urgent-clear', function(e){
-                    e.preventDefault();
-                    const id = $(this).data('id');
-                    $.post(`/local-api/urgent/clear/${id}`, ()=>{ showModal(); poll(); });
-                });
-            }).fail(()=>{
-                holder.innerHTML = '<div class="text-center text-danger">Failed to load urgent issues.</div>';
-            });
-        }
-
-        // Initial placeholder in case server didn’t inject content (defensive)
-        if (!document.getElementById(containerId)){
-            const ul = document.querySelector('.sidebar .navbar-nav');
-            if (ul){
-                const li = document.createElement('li'); li.className='nav-item'; li.id=containerId; ul.appendChild(li);
-            }
-        }
-        // Clear all action
-        $(document).off('click','#urgentClearAll').on('click','#urgentClearAll', function(){
-            $.post('/local-api/urgent/clear_all', ()=>{ showModal(); poll(); });
-        });
-
-        // Start polling
-        poll();
-        setInterval(poll, 30000);
-    })();
+    if (window.lqosInitUrgentIssues) {
+        window.lqosInitUrgentIssues();
+    }
     </script>
 
 </body>

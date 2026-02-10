@@ -13,6 +13,7 @@ pyo3 = {  workspace = true, features = ["extension-module"] }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_config = { path = "../lqos_config" }
+lqos_overrides = { path = "../lqos_overrides" }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 sysinfo = {  workspace = true }

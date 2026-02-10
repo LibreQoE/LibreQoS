@@ -1,7 +1,6 @@
 use crate::node_manager::auth::LoginResult;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use axum::http::StatusCode;
-use axum::{Extension, Json};
 use default_net::get_interfaces;
 use lqos_bus::{BusRequest, bus_request};
 use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser, WebUsers};
@@ -9,27 +8,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-pub async fn admin_check(Extension(login): Extension<LoginResult>) -> Json<bool> {
-    match login {
-        LoginResult::Admin => Json(true),
-        _ => Json(false),
-    }
+pub fn admin_check_data(login: LoginResult) -> bool {
+    matches!(login, LoginResult::Admin)
 }
 
-pub async fn get_config(
-    Extension(login): Extension<LoginResult>,
-) -> Result<Json<Config>, StatusCode> {
+pub fn get_config_data(login: LoginResult) -> Result<Config, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    let config = lqos_config::load_config()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json((*config).clone()))
+    lqos_config::load_config()
+        .map(|config| (*config).clone())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-pub async fn list_nics(
-    Extension(login): Extension<LoginResult>,
-) -> Result<Json<Vec<(String, String, String)>>, StatusCode> {
+pub fn list_nics_data(login: LoginResult) -> Result<Vec<(String, String, String)>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -44,58 +36,52 @@ pub async fn list_nics(
             (eth.name.clone(), format!("{:?}", eth.if_type), mac)
         })
         .collect();
-    Ok(Json(result))
+    Ok(result)
 }
 
-pub async fn network_json() -> Json<Value> {
+pub fn network_json_data() -> Value {
     if let Ok(config) = lqos_config::load_config() {
         let path = std::path::Path::new(&config.lqos_directory).join("network.json");
         if path.exists() {
             let raw = std::fs::read_to_string(path).expect("Unable to read network json");
             let json: Value = serde_json::from_str(&raw).expect("Unable to read network json");
-            return Json(json);
+            return json;
         }
     }
 
-    Json(Value::String("Not done yet".to_string()))
+    Value::String("Not done yet".to_string())
 }
 
-pub async fn all_shaped_devices() -> Json<Vec<ShapedDevice>> {
-    Json(SHAPED_DEVICES.load().devices.clone())
+pub fn all_shaped_devices_data() -> Vec<ShapedDevice> {
+    SHAPED_DEVICES.load().devices.clone()
 }
 
-pub async fn update_lqosd_config(
-    Extension(login): Extension<LoginResult>,
-    data: Json<Config>,
-) -> String {
+pub async fn update_lqosd_config_data(
+    login: LoginResult,
+    config: Config,
+) -> Result<(), StatusCode> {
     if login != LoginResult::Admin {
-        return "Unauthorized".to_string();
+        return Err(StatusCode::FORBIDDEN);
     }
-    let config: Config = (*data).clone();
     bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
         .await
-        .expect("Unable to update config");
-    "Ok".to_string()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(())
 }
 
-#[derive(Deserialize, Clone)]
-pub struct NetworkAndDevices {
-    shaped_devices: Vec<ShapedDevice>,
+pub fn update_network_and_devices_data(
+    login: LoginResult,
     network_json: Value,
-}
-
-pub async fn update_network_and_devices(
-    Extension(login): Extension<LoginResult>,
-    data: Json<NetworkAndDevices>,
-) -> String {
+    shaped_devices: Vec<ShapedDevice>,
+) -> Result<(), StatusCode> {
     if login != LoginResult::Admin {
-        return "Unauthorized".to_string();
+        return Err(StatusCode::FORBIDDEN);
     }
 
     let config = lqos_config::load_config().expect("Unable to load LibreQoS config");
 
     // Save network.json
-    let serialized_string = serde_json::to_string_pretty(&data.network_json)
+    let serialized_string = serde_json::to_string_pretty(&network_json)
         .expect("Unable to serialize network.json payload");
     let net_json_path = std::path::Path::new(&config.lqos_directory).join("network.json");
     let net_json_backup_path =
@@ -112,40 +98,27 @@ pub async fn update_network_and_devices(
     let sd_backup_path =
         std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
     if sd_path.exists() {
-        std::fs::copy(&sd_path, sd_backup_path)
-            .expect("Unable to create ShapedDevices.csv backup");
+        std::fs::copy(&sd_path, sd_backup_path).expect("Unable to create ShapedDevices.csv backup");
     }
     let mut copied = ConfigShapedDevices::default();
-    copied.replace_with_new_data(data.shaped_devices.clone());
+    copied.replace_with_new_data(shaped_devices);
     copied
         .write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory))
         .expect("Unable to write ShapedDevices.csv");
     SHAPED_DEVICES.store(Arc::new(copied));
 
-    "Ok".to_string()
+    Ok(())
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct UserRequest {
-    pub username: String,
-    pub password: Option<String>,
-    pub role: String,
-}
-
-pub async fn get_users(
-    Extension(login): Extension<LoginResult>,
-) -> Result<Json<Vec<WebUser>>, StatusCode> {
+pub fn get_users_data(login: LoginResult) -> Result<Vec<WebUser>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
     let users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(users.get_users()))
+    Ok(users.get_users())
 }
 
-pub async fn add_user(
-    Extension(login): Extension<LoginResult>,
-    Json(data): Json<UserRequest>,
-) -> Result<String, StatusCode> {
+pub fn add_user_data(login: LoginResult, data: UserRequest) -> Result<String, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -163,10 +136,7 @@ pub async fn add_user(
     Ok(format!("User '{}' added", data.username))
 }
 
-pub async fn update_user(
-    Extension(login): Extension<LoginResult>,
-    Json(data): Json<UserRequest>,
-) -> Result<String, StatusCode> {
+pub fn update_user_data(login: LoginResult, data: UserRequest) -> Result<String, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -178,21 +148,20 @@ pub async fn update_user(
     Ok("User updated".to_string())
 }
 
-#[derive(Deserialize)]
-pub struct DeleteUserRequest {
-    pub username: String,
-}
-
-pub async fn delete_user(
-    Extension(login): Extension<LoginResult>,
-    Json(data): Json<DeleteUserRequest>,
-) -> Result<String, StatusCode> {
+pub fn delete_user_data(login: LoginResult, username: String) -> Result<String, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     users
-        .remove_user(&data.username)
+        .remove_user(&username)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok("User deleted".to_string())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UserRequest {
+    pub username: String,
+    pub password: Option<String>,
+    pub role: String,
 }

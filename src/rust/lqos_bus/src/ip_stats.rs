@@ -197,6 +197,21 @@ pub struct Circuit {
     pub bytes_per_second: DownUpOrder<u64>,
     /// Median latency for this host at the current time.
     pub median_latency: Option<f32>,
+    /// Current RTT p50 (nanoseconds), per direction.
+    #[serde(default)]
+    pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
+    /// Current RTT p95 (nanoseconds), per direction.
+    #[serde(default)]
+    pub rtt_current_p95_nanos: DownUpOrder<Option<u64>>,
+    /// Total (lifetime) RTT p50 (nanoseconds), per direction.
+    #[serde(default)]
+    pub rtt_total_p50_nanos: DownUpOrder<Option<u64>>,
+    /// Total (lifetime) RTT p95 (nanoseconds), per direction.
+    #[serde(default)]
+    pub rtt_total_p95_nanos: DownUpOrder<Option<u64>>,
+    /// QoO score (0..100), per direction.
+    #[serde(default)]
+    pub qoo: DownUpOrder<Option<f32>>,
     /// TCP Retransmits for this host at the current time.
     pub tcp_retransmits: DownUpOrder<u64>,
     /// The number of TCP packets per second.

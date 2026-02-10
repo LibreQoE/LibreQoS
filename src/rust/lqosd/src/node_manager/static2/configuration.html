@@ -54,7 +54,7 @@
                         data-bs-target="#v-pills-icommon" type="button" role="tab" aria-controls="v-pills-settings"
                         aria-selected="false"><i class="fa fa-link"></i> Integration - Common
                 </button>
-                <button class="nav-link" id="v-pills-spylnx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-spylnx"
+                <button class="nav-link" id="v-pills-splynx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-splynx"
                         type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
                         class="fa fa-link"></i> Splynx
                 </button>
@@ -112,6 +112,14 @@
                         <tr>
                             <td><label for="bindNodeName">Node Name: </label></td>
                             <td><input type="text" id="bindNodeName" style="width: 500px"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindQooProfile">QoO Profile: </label></td>
+                            <td>
+                                <select id="bindQooProfile" style="width: 500px"></select>
+                                <br/>
+                                <small class="text-muted">Used for QoO/QoQ scoring (defaults to Web browsing).</small>
+                            </td>
                         </tr>
                         <tr>
                             <td><label for="bindPacketCaptureTime">Packet Capture Time: </label></td>
@@ -371,8 +379,8 @@
                     </table>
                 </div>
 
-                <!-- Spylnx Tab -->
-                <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
+                <!-- Splynx Tab -->
+                <div class="tab-pane fade" id="v-pills-splynx" role="tabpanel" aria-labelledby="v-pills-splynx-tab">
                     <h2><i class="fa fa-link"></i> Splynx Integration Settings</h2>
                     <table class="table table-bordered">
                         <tr>

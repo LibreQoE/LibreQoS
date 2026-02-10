@@ -44,6 +44,15 @@ pub(super) fn static_routes() -> Result<Router> {
         "lts_trial.html",
         "lts_trial_success.html",
         "lts_trial_fail.html",
+        "executive_worst_sites.html",
+        "executive_oversubscribed_sites.html",
+        "executive_sites_due_upgrade.html",
+        "executive_circuits_due_upgrade.html",
+        "executive_top_asns.html",
+        "executive_heatmap_rtt.html",
+        "executive_heatmap_retransmit.html",
+        "executive_heatmap_download.html",
+        "executive_heatmap_upload.html",
         "config_general.html",
         "config_tuning.html",
         "config_queues.html",
@@ -51,7 +60,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_iprange.html",
         "config_flows.html",
         "config_integration.html",
-        "config_spylnx.html",
+        "config_splynx.html",
         "config_netzur.html",
         "config_uisp.html",
         "config_powercode.html",
@@ -62,8 +71,10 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_users.html",
         "config_wispgate.html",
         "config_stormguard.html",
+        "stormguard_debug.html",
         "api.html",
         "cpu_weights.html",
+        "cpu_tree.html",
     ];
 
     // Iterate through pages and construct the router
@@ -80,6 +91,15 @@ pub(super) fn static_routes() -> Result<Router> {
 
         router = router.route_service(&format!("/{page}"), ServeFile::new(path));
     }
+
+    // Backwards compatible alias for historical misspelling.
+    // This route is included in the templated/authenticated router so bookmarks keep working.
+    let splynx_path = Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join("config_splynx.html");
+    router = router.route_service("/config_spylnx.html", ServeFile::new(splynx_path));
+
     router = router
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

@@ -38,8 +38,8 @@ use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
-use lqos_config::{Config, LazyQueueMode};
 use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient, TcHandle};
+use lqos_config::{Config, LazyQueueMode};
 use lqos_sys; // direct mapping control for live-move to avoid bus full-sync side-effects
 
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
@@ -80,6 +80,12 @@ struct Migration {
     // Per-circuit SQM override ("cake" or "fq_codel"), if any
     sqm_override: Option<String>,
     stage: MigrationStage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct StormguardOverrideKey {
+    interface: String,
+    class: TcHandle,
 }
 
 fn parse_ip_list(s: &str) -> Vec<String> {
@@ -223,6 +229,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut sites: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut circuits: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut live_circuits: HashMap<i64, u64> = HashMap::new();
+    // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
+    let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -272,7 +280,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     ) {
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
         let key = MappingKey { ip, prefix, upload };
-        let val = MappingVal { handle: tc_handle, cpu };
+        let val = MappingVal {
+            handle: tc_handle,
+            cpu,
+        };
         if mapping_staged.is_none() {
             *mapping_staged = Some(HashMap::new());
         }
@@ -289,7 +300,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     ) {
         // Best-effort deletion: if exact prefix was provided, remove that, else try common host prefixes
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
-        let key = MappingKey { ip: ip.clone(), prefix, upload };
+        let key = MappingKey {
+            ip: ip.clone(),
+            prefix,
+            upload,
+        };
         if let Some(stage) = mapping_staged.as_mut() {
             stage.remove(&key);
         }
@@ -309,8 +324,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 ..
             } = v.as_ref()
             {
-                let down_tc = TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
-                let up_tc = TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
+                let down_tc =
+                    TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
+                let up_tc =
+                    TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
                 down.insert(down_tc);
                 up.insert(up_tc);
             }
@@ -354,12 +371,21 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mapping_unknown.insert(k.clone());
                                 mapping_current.insert(
                                     k,
-                                    MappingVal { handle: m.tc_handle, cpu: m.cpu },
+                                    MappingVal {
+                                        handle: m.tc_handle,
+                                        cpu: m.cpu,
+                                    },
                                 );
                                 continue;
                             },
                         };
-                        mapping_current.insert(key, MappingVal { handle: m.tc_handle, cpu: m.cpu });
+                        mapping_current.insert(
+                            key,
+                            MappingVal {
+                                handle: m.tc_handle,
+                                cpu: m.cpu,
+                            },
+                        );
                     }
                 }
             }
@@ -394,11 +420,18 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             }
             BakeryCommands::BusReady => {
                 if !mapping_seeded {
-                    match attempt_seed_mappings(&circuits, &mut mapping_current, &mut mapping_unknown) {
+                    match attempt_seed_mappings(
+                        &circuits,
+                        &mut mapping_current,
+                        &mut mapping_unknown,
+                    ) {
                         Ok(_) => {
                             let total = mapping_current.len();
                             let unknown = mapping_unknown.len();
-                            info!("Bakery mappings seeded: total={}, unknown={}", total, unknown);
+                            info!(
+                                "Bakery mappings seeded: total={}, unknown={}",
+                                total, unknown
+                            );
                             mapping_seeded = true;
                         }
                         Err(e) => warn!("Bakery: Failed to seed IP mappings at bus-ready: {:?}", e),
@@ -406,7 +439,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
             }
             BakeryCommands::DelIp { ip_address, upload } => {
-                handle_del_ip(&ip_address, upload, &mut mapping_staged, &mut mapping_current);
+                handle_del_ip(
+                    &ip_address,
+                    upload,
+                    &mut mapping_staged,
+                    &mut mapping_current,
+                );
             }
             BakeryCommands::ClearIpAll => {
                 mapping_current.clear();
@@ -416,11 +454,18 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             BakeryCommands::CommitMappings => {
                 // Ensure we are seeded before first commit to avoid assuming empty kernel state.
                 if !mapping_seeded {
-                    match attempt_seed_mappings(&circuits, &mut mapping_current, &mut mapping_unknown) {
+                    match attempt_seed_mappings(
+                        &circuits,
+                        &mut mapping_current,
+                        &mut mapping_unknown,
+                    ) {
                         Ok(_) => {
                             let total = mapping_current.len();
                             let unknown = mapping_unknown.len();
-                            info!("Bakery mappings seeded: total={}, unknown={}", total, unknown);
+                            info!(
+                                "Bakery mappings seeded: total={}, unknown={}",
+                                total, unknown
+                            );
                             mapping_seeded = true;
                         }
                         Err(e) => warn!("Bakery: Failed to seed IP mappings: {:?}", e),
@@ -494,6 +539,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut live_circuits,
                     &tx,
                     &mut migrations,
+                    &stormguard_overrides,
                 );
             }
             BakeryCommands::MqSetup { .. } => {
@@ -556,21 +602,50 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 let mut cmds = Vec::new();
                                 match config.queues.lazy_queues.as_ref() {
                                     None | Some(LazyQueueMode::No) => {
-                                        if let Some(c) = add_commands_for_circuit(&temp, &config, ExecutionMode::Builder) { cmds.extend(c); }
+                                        if let Some(c) = add_commands_for_circuit(
+                                            &temp,
+                                            &config,
+                                            ExecutionMode::Builder,
+                                        ) {
+                                            cmds.extend(c);
+                                        }
                                     }
                                     Some(LazyQueueMode::Htb) => {
-                                        if let Some(c) = add_commands_for_circuit(&temp, &config, ExecutionMode::Builder) { cmds.extend(c); }
-                                        if let Some(c) = add_commands_for_circuit(&temp, &config, ExecutionMode::LiveUpdate) { cmds.extend(c); }
+                                        if let Some(c) = add_commands_for_circuit(
+                                            &temp,
+                                            &config,
+                                            ExecutionMode::Builder,
+                                        ) {
+                                            cmds.extend(c);
+                                        }
+                                        if let Some(c) = add_commands_for_circuit(
+                                            &temp,
+                                            &config,
+                                            ExecutionMode::LiveUpdate,
+                                        ) {
+                                            cmds.extend(c);
+                                        }
                                     }
                                     Some(LazyQueueMode::Full) => {
-                                        if let Some(c) = add_commands_for_circuit(&temp, &config, ExecutionMode::LiveUpdate) { cmds.extend(c); }
+                                        if let Some(c) = add_commands_for_circuit(
+                                            &temp,
+                                            &config,
+                                            ExecutionMode::LiveUpdate,
+                                        ) {
+                                            cmds.extend(c);
+                                        }
                                     }
                                 }
-                                if !cmds.is_empty() { execute_in_memory(&cmds, "live-move: create shadow"); }
+                                if !cmds.is_empty() {
+                                    execute_in_memory(&cmds, "live-move: create shadow");
+                                }
                                 mig.stage = MigrationStage::SwapToShadow;
                                 advanced += 1;
                             } else {
-                                warn!("live-move: failed to build shadow add cmd for {}", mig.circuit_hash);
+                                warn!(
+                                    "live-move: failed to build shadow add cmd for {}",
+                                    mig.circuit_hash
+                                );
                                 mig.stage = MigrationStage::Done;
                                 advanced += 1;
                             }
@@ -580,12 +655,22 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
                                 for &upload in &[false, true] {
-                                    let key = MappingKey { ip: ip_s.clone(), prefix, upload };
+                                    let key = MappingKey {
+                                        ip: ip_s.clone(),
+                                        prefix,
+                                        upload,
+                                    };
                                     let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
                                     let handle = if upload {
-                                        tc_handle_from_major_minor(mig.up_class_major, mig.shadow_minor)
+                                        tc_handle_from_major_minor(
+                                            mig.up_class_major,
+                                            mig.shadow_minor,
+                                        )
                                     } else {
-                                        tc_handle_from_major_minor(mig.class_major, mig.shadow_minor)
+                                        tc_handle_from_major_minor(
+                                            mig.class_major,
+                                            mig.shadow_minor,
+                                        )
                                     };
                                     let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload);
                                     // Update local mapping view
@@ -621,7 +706,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mig.old_up_max,
                             ) {
                                 let mut cmds = Vec::new();
-                                if let Some(prune) = old_cmd.to_prune(&config, true) { cmds.extend(prune); }
+                                if let Some(prune) = old_cmd.to_prune(&config, true) {
+                                    cmds.extend(prune);
+                                }
                                 // Final add (new rates) at final_minor
                                 if let Some(final_cmd) = build_temp_add_cmd(
                                     &old_cmd,
@@ -633,22 +720,51 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 ) {
                                     match config.queues.lazy_queues.as_ref() {
                                         None | Some(LazyQueueMode::No) => {
-                                            if let Some(c) = add_commands_for_circuit(&final_cmd, &config, ExecutionMode::Builder) { cmds.extend(c); }
+                                            if let Some(c) = add_commands_for_circuit(
+                                                &final_cmd,
+                                                &config,
+                                                ExecutionMode::Builder,
+                                            ) {
+                                                cmds.extend(c);
+                                            }
                                         }
                                         Some(LazyQueueMode::Htb) => {
-                                            if let Some(c) = add_commands_for_circuit(&final_cmd, &config, ExecutionMode::Builder) { cmds.extend(c); }
-                                            if let Some(c) = add_commands_for_circuit(&final_cmd, &config, ExecutionMode::LiveUpdate) { cmds.extend(c); }
+                                            if let Some(c) = add_commands_for_circuit(
+                                                &final_cmd,
+                                                &config,
+                                                ExecutionMode::Builder,
+                                            ) {
+                                                cmds.extend(c);
+                                            }
+                                            if let Some(c) = add_commands_for_circuit(
+                                                &final_cmd,
+                                                &config,
+                                                ExecutionMode::LiveUpdate,
+                                            ) {
+                                                cmds.extend(c);
+                                            }
                                         }
                                         Some(LazyQueueMode::Full) => {
-                                            if let Some(c) = add_commands_for_circuit(&final_cmd, &config, ExecutionMode::LiveUpdate) { cmds.extend(c); }
+                                            if let Some(c) = add_commands_for_circuit(
+                                                &final_cmd,
+                                                &config,
+                                                ExecutionMode::LiveUpdate,
+                                            ) {
+                                                cmds.extend(c);
+                                            }
                                         }
                                     }
                                 }
-                                if !cmds.is_empty() { execute_in_memory(&cmds, "live-move: build final"); }
+                                if !cmds.is_empty() {
+                                    execute_in_memory(&cmds, "live-move: build final");
+                                }
                                 mig.stage = MigrationStage::SwapToFinal;
                                 advanced += 1;
                             } else {
-                                warn!("live-move: failed to build old prune cmd for {}", mig.circuit_hash);
+                                warn!(
+                                    "live-move: failed to build old prune cmd for {}",
+                                    mig.circuit_hash
+                                );
                                 mig.stage = MigrationStage::Done;
                                 advanced += 1;
                             }
@@ -657,10 +773,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
                                 for &upload in &[false, true] {
-                                    let key = MappingKey { ip: ip_s.clone(), prefix, upload };
+                                    let key = MappingKey {
+                                        ip: ip_s.clone(),
+                                        prefix,
+                                        upload,
+                                    };
                                     let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
                                     let handle = if upload {
-                                        tc_handle_from_major_minor(mig.up_class_major, mig.final_minor)
+                                        tc_handle_from_major_minor(
+                                            mig.up_class_major,
+                                            mig.final_minor,
+                                        )
                                     } else {
                                         tc_handle_from_major_minor(mig.class_major, mig.final_minor)
                                     };
@@ -707,7 +830,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         }
                     }
                 }
-                for h in to_remove { migrations.remove(&h); }
+                for h in to_remove {
+                    migrations.remove(&h);
+                }
             }
             BakeryCommands::ChangeSiteSpeedLive {
                 site_hash,
@@ -736,17 +861,29 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     debug!("StormGuardAdjustment received before MQ setup, skipping.");
                     continue;
                 }
+                let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
+                    warn!("StormGuardAdjustment has invalid class_id [{}], skipping.", class_id);
+                    continue;
+                };
+                if !dry_run {
+                    let key = StormguardOverrideKey {
+                        interface: interface_name.to_string(),
+                        class: tc_handle,
+                    };
+                    stormguard_overrides.insert(key, new_rate);
+                }
+                let normalized_class = tc_handle.as_tc_string();
                 // Build the HTB command
                 let args = vec![
                     "class".to_string(),
-                    "change".to_string(),
+                    "replace".to_string(),
                     "dev".to_string(),
                     interface_name.to_string(),
                     "classid".to_string(),
-                    class_id.to_string(),
+                    normalized_class.clone(),
                     "htb".to_string(),
                     "rate".to_string(),
-                    format!("{}mbit", new_rate - 1),
+                    format!("{}mbit", new_rate.saturating_sub(1)),
                     "ceil".to_string(),
                     format!("{}mbit", new_rate),
                 ];
@@ -786,6 +923,7 @@ fn handle_commit_batch(
     live_circuits: &mut HashMap<i64, u64>,
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
@@ -801,7 +939,15 @@ fn handle_commit_batch(
     if !has_mq_been_setup {
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
         info!("MQ not created, performing full reload.");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            &config,
+            new_batch,
+            &stormguard_overrides,
+        );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
@@ -810,7 +956,15 @@ fn handle_commit_batch(
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
         info!("Bakery full reload: site_struct=1, circuit_struct=0");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            &config,
+            new_batch,
+            &stormguard_overrides,
+        );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
@@ -833,7 +987,15 @@ fn handle_commit_batch(
                 "Bakery full reload: site_struct=0, circuit_struct={}",
                 categories.structural_changed.len()
             );
-            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            full_reload(
+                batch,
+                sites,
+                circuits,
+                live_circuits,
+                &config,
+                new_batch,
+                &stormguard_overrides,
+            );
             MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
             return;
         }
@@ -876,6 +1038,7 @@ fn handle_commit_batch(
                     live_circuits,
                     &config,
                     new_batch.clone(),
+                    &stormguard_overrides,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
@@ -902,13 +1065,23 @@ fn handle_commit_batch(
                     let commands = match config.queues.lazy_queues.as_ref() {
                         None | Some(LazyQueueMode::No) => circuit.to_prune(&config, true),
                         Some(LazyQueueMode::Htb) => {
-                            if was_activated { circuit.to_prune(&config, false) } else { None }
+                            if was_activated {
+                                circuit.to_prune(&config, false)
+                            } else {
+                                None
+                            }
                         }
                         Some(LazyQueueMode::Full) => {
-                            if was_activated { circuit.to_prune(&config, true) } else { None }
+                            if was_activated {
+                                circuit.to_prune(&config, true)
+                            } else {
+                                None
+                            }
                         }
                     };
-                    if let Some(cmd) = commands { execute_in_memory(&cmd, "removing circuit"); }
+                    if let Some(cmd) = commands {
+                        execute_in_memory(&cmd, "removing circuit");
+                    }
                     live_circuits.remove(&circuit_hash);
                 } else {
                     debug!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
@@ -938,7 +1111,9 @@ fn handle_commit_batch(
                     let was_activated = live_circuits.contains_key(circuit_hash);
                     if was_activated {
                         // Attempt live-move
-                        if let Some(shadow_minor) = find_free_minor(circuits, parent_class_id, up_parent_class_id) {
+                        if let Some(shadow_minor) =
+                            find_free_minor(circuits, parent_class_id, up_parent_class_id)
+                        {
                             // Find old command for old rates
                             if let Some(old_cmd) = circuits.get(circuit_hash) {
                                 if let BakeryCommands::AddCircuit {
@@ -981,22 +1156,46 @@ fn handle_commit_batch(
                     // Fallback: immediate safe update
                     match config.queues.lazy_queues.as_ref() {
                         None | Some(LazyQueueMode::No) => {
-                            if let Some(prune) = cmd.to_prune(&config, true) { immediate_commands.extend(prune); }
-                            if let Some(add) = cmd.to_commands(&config, ExecutionMode::Builder) { immediate_commands.extend(add); }
+                            if let Some(prune) = cmd.to_prune(&config, true) {
+                                immediate_commands.extend(prune);
+                            }
+                            if let Some(add) = cmd.to_commands(&config, ExecutionMode::Builder) {
+                                immediate_commands.extend(add);
+                            }
                         }
                         Some(LazyQueueMode::Htb) => {
                             if was_activated {
-                                if let Some(prune) = cmd.to_prune(&config, false) { immediate_commands.extend(prune); }
-                                if let Some(add_htb) = cmd.to_commands(&config, ExecutionMode::Builder) { immediate_commands.extend(add_htb); }
-                                if let Some(add_qdisc) = cmd.to_commands(&config, ExecutionMode::LiveUpdate) { immediate_commands.extend(add_qdisc); }
+                                if let Some(prune) = cmd.to_prune(&config, false) {
+                                    immediate_commands.extend(prune);
+                                }
+                                if let Some(add_htb) =
+                                    cmd.to_commands(&config, ExecutionMode::Builder)
+                                {
+                                    immediate_commands.extend(add_htb);
+                                }
+                                if let Some(add_qdisc) =
+                                    cmd.to_commands(&config, ExecutionMode::LiveUpdate)
+                                {
+                                    immediate_commands.extend(add_qdisc);
+                                }
                             } else {
-                                if let Some(add_htb) = cmd.to_commands(&config, ExecutionMode::Builder) { immediate_commands.extend(add_htb); }
+                                if let Some(add_htb) =
+                                    cmd.to_commands(&config, ExecutionMode::Builder)
+                                {
+                                    immediate_commands.extend(add_htb);
+                                }
                             }
                         }
                         Some(LazyQueueMode::Full) => {
                             if was_activated {
-                                if let Some(prune) = cmd.to_prune(&config, true) { immediate_commands.extend(prune); }
-                                if let Some(add_all) = cmd.to_commands(&config, ExecutionMode::LiveUpdate) { immediate_commands.extend(add_all); }
+                                if let Some(prune) = cmd.to_prune(&config, true) {
+                                    immediate_commands.extend(prune);
+                                }
+                                if let Some(add_all) =
+                                    cmd.to_commands(&config, ExecutionMode::LiveUpdate)
+                                {
+                                    immediate_commands.extend(add_all);
+                                }
                             } else {
                                 // No TC ops
                             }
@@ -1077,10 +1276,12 @@ fn handle_circuit_activity(
             let mut cmd = Vec::new();
             match config.queues.lazy_queues.as_ref() {
                 Some(LazyQueueMode::Htb) => {
-                    if let Some(builder_cmds) = command.to_commands(&config, ExecutionMode::Builder) {
+                    if let Some(builder_cmds) = command.to_commands(&config, ExecutionMode::Builder)
+                    {
                         cmd.extend(builder_cmds);
                     }
-                    if let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate) {
+                    if let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate)
+                    {
                         cmd.extend(live_cmds);
                     }
                     if cmd.is_empty() {
@@ -1090,7 +1291,8 @@ fn handle_circuit_activity(
                 }
                 _ => {
                     // Full lazy mode handles both HTB and SQM in LiveUpdate; or other modes
-                    let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate) else {
+                    let Some(live_cmds) = command.to_commands(&config, ExecutionMode::LiveUpdate)
+                    else {
                         continue;
                     };
                     cmd.extend(live_cmds);
@@ -1303,6 +1505,7 @@ fn full_reload(
     live_circuits: &mut HashMap<i64, u64>,
     config: &Arc<Config>,
     new_batch: Vec<Arc<BakeryCommands>>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
     sites.clear();
@@ -1310,6 +1513,7 @@ fn full_reload(
     live_circuits.clear();
     process_batch(new_batch, config, sites, circuits);
     *batch = None;
+    apply_stormguard_overrides(stormguard_overrides, config);
 }
 
 fn process_batch(
@@ -1345,4 +1549,31 @@ fn process_batch(
 
     // Mark that at least one batch has been applied, unblocking live activation.
     FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
+}
+
+fn apply_stormguard_overrides(
+    overrides: &HashMap<StormguardOverrideKey, u64>,
+    config: &Arc<Config>,
+) {
+    let _ = config; // currently unused but kept for future interface-specific logic
+    if overrides.is_empty() {
+        return;
+    }
+    let mut commands = Vec::new();
+    for (key, rate) in overrides.iter() {
+        commands.push(vec![
+            "class".to_string(),
+            "replace".to_string(),
+            "dev".to_string(),
+            key.interface.clone(),
+            "classid".to_string(),
+            key.class.as_tc_string(),
+            "htb".to_string(),
+            "rate".to_string(),
+            format!("{}mbit", rate.saturating_sub(1)),
+            "ceil".to_string(),
+            format!("{}mbit", rate),
+        ]);
+    }
+    execute_in_memory(&commands, "replaying StormGuard overrides");
 }

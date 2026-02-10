@@ -32,8 +32,7 @@ pub enum MigrationError {
 
 pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     debug!("Checking config file version");
-    let raw =
-        std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
+    let raw = std::fs::read_to_string(config_location).map_err(MigrationError::ReadError)?;
 
     let doc = raw
         .parse::<DocumentMut>()
@@ -43,7 +42,12 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
             "Configuration file is at version {}",
             version.as_str().ok_or(MigrationError::InvalidVersion)?
         );
-        if version.as_str().ok_or(MigrationError::InvalidVersion)?.trim() == "1.5" {
+        if version
+            .as_str()
+            .ok_or(MigrationError::InvalidVersion)?
+            .trim()
+            == "1.5"
+        {
             debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
@@ -52,15 +56,32 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
                 version.as_str().ok_or(MigrationError::InvalidVersion)?
             );
             return Err(MigrationError::UnknownVersion(
-                version.as_str().ok_or(MigrationError::InvalidVersion)?.to_string(),
+                version
+                    .as_str()
+                    .ok_or(MigrationError::InvalidVersion)?
+                    .to_string(),
             ));
         }
     } else {
+        // If the file otherwise looks like a v1.5 config but is missing the `version` key,
+        // add it in-place. This avoids triggering 1.4->1.5 migration (which requires
+        // legacy `ispConfig.py`) for modern installs with a versionless config.
+        info!("No version found in configuration file; attempting to treat it as version 1.5 without an explicit version key");
+        let mut with_version = doc.clone();
+        with_version.insert("version", toml_edit::value("1.5"));
+        if Config::load_from_string(&with_version.to_string()).is_ok() {
+            let backup_path = format!("{config_location}.backup_noversion");
+            std::fs::copy(config_location, &backup_path).map_err(MigrationError::ReadError)?;
+            std::fs::write(config_location, with_version.to_string()).map_err(MigrationError::ReadError)?;
+            info!("Added missing `version = \"1.5\"` to {config_location}; backup written to {backup_path}");
+            return Ok(());
+        }
+
         info!("No version found in configuration file, assuming 1.4x and migration is needed");
         let new_config = migrate_14_to_15()?;
         // Back up the old configuration
-        std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
-            .map_err(MigrationError::ReadError)?;
+        let backup_path = format!("{config_location}.backup14");
+        std::fs::rename(config_location, &backup_path).map_err(MigrationError::ReadError)?;
 
         // Rename the old Python configuration
         let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
@@ -69,8 +90,9 @@ pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
         std::fs::rename(from, to).map_err(MigrationError::ReadError)?;
 
         // Save the configuration
-        let raw = toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
-        std::fs::write("/etc/lqos.conf", raw).map_err(MigrationError::ReadError)?;
+        let raw =
+            toml::to_string_pretty(&new_config).map_err(|_| MigrationError::SerializeError)?;
+        std::fs::write(config_location, raw).map_err(MigrationError::ReadError)?;
     }
 
     Ok(())
@@ -97,14 +119,16 @@ fn do_migration_14_to_15(
     migrate_lts(old_config, &mut new_config)?;
     migrate_ip_ranges(python_config, &mut new_config)?;
     migrate_integration_common(python_config, &mut new_config)?;
-    migrate_spylnx(python_config, &mut new_config)?;
+    migrate_splynx(python_config, &mut new_config)?;
     migrate_uisp(python_config, &mut new_config)?;
     migrate_powercode(python_config, &mut new_config)?;
     migrate_sonar(python_config, &mut new_config)?;
     migrate_queues(python_config, &mut new_config)?;
     migrate_influx(python_config, &mut new_config)?;
 
-    new_config.validate().map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
+    new_config
+        .validate()
+        .map_err(|_| MigrationError::ImpossibleError)?; // Left as an upwrap because this should *never* happen
     Ok(new_config)
 }
 
@@ -156,7 +180,11 @@ fn migrate_bridge(
     } else {
         new_config.single_interface = None;
         new_config.bridge = Some(BridgeConfig {
-            use_xdp_bridge: old_config.bridge.as_ref().ok_or(MigrationError::SerializeError)?.use_xdp_bridge,
+            use_xdp_bridge: old_config
+                .bridge
+                .as_ref()
+                .ok_or(MigrationError::SerializeError)?
+                .use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
         });
@@ -223,14 +251,14 @@ fn migrate_integration_common(
     Ok(())
 }
 
-fn migrate_spylnx(
+fn migrate_splynx(
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
-    new_config.spylnx_integration.enable_spylnx = python_config.automatic_import_splynx;
-    new_config.spylnx_integration.api_key = python_config.splynx_api_key.clone();
-    new_config.spylnx_integration.api_secret = python_config.splynx_api_secret.clone();
-    new_config.spylnx_integration.url = python_config.splynx_api_url.clone();
+    new_config.splynx_integration.enable_splynx = python_config.automatic_import_splynx;
+    new_config.splynx_integration.api_key = python_config.splynx_api_key.clone();
+    new_config.splynx_integration.api_secret = python_config.splynx_api_secret.clone();
+    new_config.splynx_integration.url = python_config.splynx_api_url.clone();
     Ok(())
 }
 

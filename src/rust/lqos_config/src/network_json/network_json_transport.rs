@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkJsonTransport {
     /// Display name
     pub name: String,
+    /// True if this node is a "virtual" (logical-only) node.
+    #[serde(rename = "virtual", default)]
+    pub is_virtual: bool,
     /// Max throughput for node (not clamped)
     pub max_throughput: (u32, u32),
     /// Current node throughput
@@ -28,6 +31,11 @@ pub struct NetworkJsonTransport {
     pub current_drops: (u64, u64),
     /// Set of RTT data
     pub rtts: Vec<f32>,
+    /// QoO (Quality of Outcome) score for download/upload directions (0..100).
+    ///
+    /// `None` means "insufficient data".
+    #[serde(default)]
+    pub qoo: (Option<f32>, Option<f32>),
     /// Node indices of parents
     pub parents: Vec<usize>,
     /// The immediate parent node in the tree

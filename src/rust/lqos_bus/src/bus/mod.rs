@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
 mod client;
+mod protocol;
 mod queue_data;
 mod reply;
 mod request;
@@ -12,10 +13,13 @@ pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity, UrgentSource};
-pub use response::{BakeryStatsSnapshot, BusResponse, UrgentIssue};
+#[allow(unused_imports)]
+pub use response::{
+    AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
+    StormguardDebugDirection, StormguardDebugEntry, UrgentIssue,
+};
 pub use session::BusSession;
 use thiserror::Error;
-use tracing::error;
 pub use unix_socket_server::UnixSocketServer;
 
 /// The local socket path to which `lqosd` will bind itself,

@@ -8,7 +8,7 @@
 # Don't forget to setup `/etc/lqos.conf`
 
 # Check Pre-Requisites
-sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev esbuild mold
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
 
 if ! rustup -V &> /dev/null
 then
@@ -38,7 +38,7 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration"
+PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_overrides"
 mkdir -p bin/static
 pushd rust > /dev/null || exit
 #cargo clean

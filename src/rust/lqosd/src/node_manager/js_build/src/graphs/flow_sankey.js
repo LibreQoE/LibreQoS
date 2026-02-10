@@ -1,4 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 
 export class FlowsSankey extends DashboardGraph {
     constructor(id) {
@@ -33,14 +34,18 @@ export class FlowsSankey extends DashboardGraph {
         let sortedTopFlows = flows.flows
             .slice() // copy to avoid mutating original
             .sort((a, b) => {
-                const rateA = (a[1]?.rate_estimate_bps?.down || 0) + (a[1]?.rate_estimate_bps?.up || 0);
-                const rateB = (b[1]?.rate_estimate_bps?.down || 0) + (b[1]?.rate_estimate_bps?.up || 0);
+                const rateA =
+                    toNumber(a[1]?.rate_estimate_bps?.down, 0) +
+                    toNumber(a[1]?.rate_estimate_bps?.up, 0);
+                const rateB =
+                    toNumber(b[1]?.rate_estimate_bps?.down, 0) +
+                    toNumber(b[1]?.rate_estimate_bps?.up, 0);
                 return rateB - rateA;
             })
             .slice(0, 20);
         
         sortedTopFlows.forEach((flow) => {
-            if (flow[0].last_seen_nanos > ten_second_in_nanos) return;
+            if (toNumber(flow[0].last_seen_nanos, 0) > ten_second_in_nanos) return;
             flowCount++;
             let localDevice = flow[0].device_name;
             let proto = flow[0].protocol_name;
@@ -64,7 +69,9 @@ export class FlowsSankey extends DashboardGraph {
             }
 
             // Accumulate traffic.
-            let currentRate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+            let currentRate =
+                toNumber(flow[1].rate_estimate_bps.down, 0) +
+                toNumber(flow[1].rate_estimate_bps.up, 0);
             if (localDevices[localDevice][asn] === undefined) {
                 localDevices[localDevice][asn] = currentRate;
             } else {

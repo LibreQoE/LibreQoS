@@ -21,12 +21,19 @@ import shutil
 import time
 from deepdiff import DeepDiff
 
+from virtual_tree_nodes import (
+    build_logical_to_physical_node_map,
+    build_physical_network,
+    is_virtual_node,
+)
+
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
     is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
     check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
     interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
+    is_insight_enabled, \
     fast_queues_fq_codel, \
     Bakery
 
@@ -593,6 +600,9 @@ def refreshShapers():
         # Load Subscriber Circuits & Devices
         subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
 
+        # Preserve the logical parent (as configured in ShapedDevices.csv) before any shaping-time rewrites.
+        for circuit in subscriberCircuits:
+            circuit['logicalParentNode'] = circuit.get('ParentNode')
 
         # Load network hierarchy
         with open(networkJSONfile, 'r') as j:
@@ -605,6 +615,53 @@ def refreshShapers():
             flat_network = flat_network or is_network_flat()
         except Exception:
             pass
+
+        # Virtual Nodes (logical-only): build a physical shaping topology that skips them,
+        # while leaving ShapedDevices.csv (and monitoring) unchanged.
+        logical_to_physical_node = {}
+        virtual_nodes = []
+        if not flat_network and isinstance(network, dict) and len(network) > 0:
+            logical_to_physical_node, virtual_nodes = build_logical_to_physical_node_map(network)
+            if len(virtual_nodes) > 0:
+                print(
+                    f"Detected {len(virtual_nodes)} virtual node(s) in network.json; building physical HTB tree without them."
+                )
+                network = build_physical_network(network)
+                if len(network) == 0:
+                    warnings.warn(
+                        "All nodes were removed from the physical shaping tree after virtual-node promotion. Treating this as a flat network for shaping.",
+                        stacklevel=2,
+                    )
+                    flat_network = True
+            else:
+                # Avoid bloating queuingStructure.json when there are no virtual nodes.
+                logical_to_physical_node = {}
+
+        # Re-map circuits that are directly parented to a virtual node to the nearest real ancestor (milestone c).
+        if not flat_network and len(virtual_nodes) > 0 and isinstance(logical_to_physical_node, dict):
+            next_id = max(dictForCircuitsWithoutParentNodes.keys(), default=-1) + 1
+            for circuit in subscriberCircuits:
+                logical_parent = circuit.get('logicalParentNode', circuit.get('ParentNode'))
+                if logical_parent and logical_parent != 'none' and logical_parent in logical_to_physical_node:
+                    physical_parent = logical_to_physical_node.get(logical_parent)
+                    if physical_parent is None:
+                        warnings.warn(
+                            f"Circuit '{circuit.get('circuitID','')}' is parented to virtual top-level node '{logical_parent}'. Attaching it as unparented for shaping.",
+                            stacklevel=2,
+                        )
+                        circuit['ParentNode'] = 'none'
+                    else:
+                        circuit['ParentNode'] = physical_parent
+
+                # If virtual-node mapping created new unparented circuits, ensure they have planner IDs.
+                if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' not in circuit:
+                    try:
+                        weight = float(circuit.get('maxDownload', 0)) + float(circuit.get('maxUpload', 0))
+                    except Exception:
+                        weight = 0.0
+                    dictForCircuitsWithoutParentNodes[next_id] = weight
+                    circuit['idForCircuitsWithoutParentNodes'] = next_id
+                    next_id += 1
         if flat_network:
             print("Flat network detected; assigning circuits to generated parent nodes")
             next_id = max(dictForCircuitsWithoutParentNodes.keys(), default=-1) + 1
@@ -693,6 +750,9 @@ def refreshShapers():
                                         "uploadBandwidthMbps": chosenUploadMbps
                                     }
             generatedPNs.append(genPNname)
+        # Planner/device weights (fetched only when planner/binpacking is enabled).
+        # When disabled, we keep this empty and fall back to rate-based weights later.
+        weight_by_circuit_id = {}
         if use_bin_packing_to_balance_cpu():
             print("Using internal planner to sort circuits by CPU core")
             # Build item list with weights for circuits lacking a ParentNode
@@ -939,19 +999,6 @@ def refreshShapers():
             return newDict
         network = flattenA(network, 1)
 
-        # Prepare planner weights (actual weighting may come from Insight or CSV defaults)
-        weight_by_circuit_id = {}
-        try:
-            weights = get_weights()
-            for w in weights:
-                try:
-                    weight_by_circuit_id[str(w.circuit_id)] = float(w.weight)
-                except Exception:
-                    pass
-        except Exception:
-            # If we can't get weights, leave mapping empty; UI will fall back
-            weight_by_circuit_id = {}
-
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
         circuit_min_down_combined_by_parent_node = {}
@@ -1139,6 +1186,7 @@ def refreshShapers():
                                 "circuitID": circuit['circuitID'],
                                 "circuitName": circuit['circuitName'],
                                 "ParentNode": circuit['ParentNode'],
+                                "logicalParentNode": circuit.get('logicalParentNode', circuit['ParentNode']),
                                 "devices": circuit['devices'],
                                 "classid": flowIDstring,
                                 "up_classid" : upFlowIDstring,
@@ -1225,13 +1273,32 @@ def refreshShapers():
 
         # If we're in binpacking mode, we need to sort the network structure a bit
         if use_bin_packing_to_balance_cpu() and not is_network_flat():
-            print("Planner is enabled, so we're going to sort your network across CPU queues.")
+            # Binpacking is an Insight feature; if Insight is not enabled/licensed, fall back to
+            # deterministic round-robin placement so "virtual node promotion" can still spread
+            # the physical tree across CPUs.
+            insight_enabled = False
+            try:
+                insight_enabled = bool(is_insight_enabled())
+            except Exception:
+                insight_enabled = False
+
+            if insight_enabled:
+                print("Planner is enabled, so we're going to sort your network across CPU queues.")
+            else:
+                warnings.warn(
+                    "Binpacking is enabled but Insight is not available; using round-robin CPU distribution.",
+                    stacklevel=2,
+                )
+
             # Build items from top-level nodes with weights
             items = []
             try:
                 weights = get_tree_weights()
             except Exception as e:
-                warnings.warn("get_tree_weights() failed; defaulting to equal weights (" + str(e) + ")", stacklevel=2)
+                warnings.warn(
+                    "get_tree_weights() failed; defaulting to equal weights (" + str(e) + ")",
+                    stacklevel=2,
+                )
                 weights = None
             weight_by_name = {}
             if weights is not None:
@@ -1240,64 +1307,157 @@ def refreshShapers():
                         weight_by_name[str(w.name)] = float(w.weight)
                 except Exception:
                     pass
+
+            def round_robin_assign(items_list, bins):
+                if not bins:
+                    return {}, []
+                names = [str(it["id"]) for it in items_list]
+                names.sort()
+                assignment_local = {}
+                for idx, name in enumerate(names):
+                    assignment_local[name] = bins[idx % len(bins)]
+                return assignment_local, list(assignment_local.keys())
+
             for node in network:
                 w = weight_by_name.get(str(node), 1.0)
-                items.append({"id": str(node), "weight": float(w)})
+                try:
+                    w = float(w)
+                except Exception:
+                    w = 1.0
+                # Ensure we always spread items. Zero/negative weights can cause all items
+                # to collapse into a single CPU bin in tie cases.
+                if not math.isfinite(w) or w <= 0.0:
+                    w = 1.0
+                items.append({"id": str(node), "weight": w})
+
+            def greedy_assign(items_list, bins):
+                bin_loads = {key: 0.0 for key in bins}
+                pairs = [(str(it["id"]), float(it["weight"])) for it in items_list]
+                pairs.sort(key=lambda nw: (-nw[1], nw[0]))
+                assignment_local = {}
+                for name, wgt in pairs:
+                    target = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
+                    assignment_local[name] = target
+                    bin_loads[target] += wgt
+                return assignment_local, list(assignment_local.keys())
 
             # Prepare bins and capacities
             cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
             bins_list = [{"id": key} for key in cpu_keys]
             capacities = {key: 1.0 for key in cpu_keys}
+            valid_bins = set(capacities.keys())
 
-            # Load planner state
-            try:
-                import bin_planner
-            except ImportError:
-                bin_planner = None
-            # Store planner state directly in lqos_directory (no hidden subdirs)
+            planner_used = False
             state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
             state = {}
-            if bin_planner is not None:
-                state = bin_planner.load_state(state_path)
             now_ts = time.time()
-            prev_assign = {}
-            last_change_ts = {}
-            if isinstance(state, dict):
-                prev_assign = state.get("assignments", {}) or {}
-                last_change_ts = state.get("last_change_ts", {}) or {}
-            item_ids = {str(it["id"]) for it in items}
-            valid_bins = set(capacities.keys())
-            prev_assign = {iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins}
-            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+            assignment = {}
+            changed = []
+            bin_planner = None
 
-            params = {
-                "candidate_set_size": 4,
-                "headroom": 0.05,
-                "alpha": 0.1,
-                "hysteresis_threshold": 0.03,
-                "cooldown_seconds": 3600,
-                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
-                "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
-                "last_change_ts_by_item": last_change_ts,
-            }
-            if monitor_mode_only() == True:
-                params["move_budget_per_run"] = 0
+            # Load planner state and generate assignments when Insight is enabled/licensed
+            if insight_enabled:
+                try:
+                    import bin_planner as bin_planner  # type: ignore
+                except ImportError:
+                    bin_planner = None
 
-            if bin_planner is not None:
-                assignment, changed = bin_planner.plan_assignments(
-                    items, bins_list, capacities, prev_assign, now_ts, params
-                )
+                if bin_planner is not None:
+                    try:
+                        state = bin_planner.load_state(state_path)
+                    except Exception:
+                        state = {}
+                    prev_assign = {}
+                    last_change_ts = {}
+                    if isinstance(state, dict):
+                        prev_assign = state.get("assignments", {}) or {}
+                        last_change_ts = state.get("last_change_ts", {}) or {}
+                    item_ids = {str(it["id"]) for it in items}
+                    prev_assign = {
+                        iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins
+                    }
+                    last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+
+                    params = {
+                        "candidate_set_size": 4,
+                        "headroom": 0.05,
+                        "alpha": 0.1,
+                        "hysteresis_threshold": 0.03,
+                        "cooldown_seconds": 3600,
+                        "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                        "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
+                        "last_change_ts_by_item": last_change_ts,
+                    }
+                    if monitor_mode_only() == True:
+                        params["move_budget_per_run"] = 0
+
+                    try:
+                        assignment, changed = bin_planner.plan_assignments(
+                            items, bins_list, capacities, prev_assign, now_ts, params
+                        )
+                        planner_used = True
+                    except Exception as e:
+                        warnings.warn(
+                            f"Planner failed ({e}); falling back to greedy distribution.",
+                            stacklevel=2,
+                        )
+                        assignment, changed = greedy_assign(items, cpu_keys)
+                        planner_used = False
+                else:
+                    warnings.warn(
+                        "Binpacking requested, but planner module is unavailable; using greedy distribution.",
+                        stacklevel=2,
+                    )
+                    assignment, changed = greedy_assign(items, cpu_keys)
+                    planner_used = False
             else:
-                # Fallback to simple greedy if planner unavailable
-                bin_loads = {key: 0.0 for key in cpu_keys}
-                pairs = [(str(it["id"]), float(it["weight"])) for it in items]
-                pairs.sort(key=lambda nw: (-nw[1], nw[0]))
-                assignment = {}
-                for name, w in pairs:
-                    target = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
-                    assignment[name] = target
-                    bin_loads[target] += w
-                changed = list(assignment.keys())
+                # Insight is unavailable; use deterministic round-robin distribution.
+                assignment, changed = round_robin_assign(items, cpu_keys)
+                planner_used = False
+
+            # Validate assignment covers all items and uses known bins (planner may return partial results)
+            try:
+                if not isinstance(assignment, dict):
+                    assignment, changed = greedy_assign(items, cpu_keys)
+            except Exception:
+                assignment, changed = greedy_assign(items, cpu_keys)
+            try:
+                item_ids = {str(it["id"]) for it in items}
+                rr_fallback, _ = round_robin_assign(items, cpu_keys)
+                for iid in item_ids:
+                    tgt = assignment.get(iid)
+                    if tgt not in valid_bins:
+                        assignment[iid] = rr_fallback.get(
+                            iid, cpu_keys[-1] if cpu_keys else "CpueQueue0"
+                        )
+            except Exception:
+                pass
+
+            # Sanity check: if planner returns a degenerate assignment (everything in one bin),
+            # fall back to a simple greedy distribution so the physical tree can spread.
+            if planner_used:
+                try:
+                    # Exclude Generated_PN_* placeholders from the degeneracy test: they may not
+                    # appear in the UI tree and can mask a collapsed real topology.
+                    interesting_ids = {
+                        str(it["id"])
+                        for it in items
+                        if not str(it["id"]).startswith("Generated_PN_")
+                    }
+                    used = {
+                        tgt
+                        for iid, tgt in assignment.items()
+                        if iid in interesting_ids and tgt in valid_bins
+                    }
+                    if queuesAvailable > 1 and len(interesting_ids) > 1 and len(used) <= 1:
+                        warnings.warn(
+                            "Planner produced degenerate CPU binning (single-bin result); falling back to greedy distribution.",
+                            stacklevel=2,
+                        )
+                        assignment, changed = greedy_assign(items, cpu_keys)
+                        planner_used = False
+                except Exception:
+                    pass
 
             for x in range(queuesAvailable):
                 key = "CpueQueue" + str(x)
@@ -1325,7 +1485,7 @@ def refreshShapers():
             network = binnedNetwork
 
             # Update and save state
-            if bin_planner is not None and isinstance(state, dict):
+            if planner_used and bin_planner is not None and isinstance(state, dict):
                 if state.get("salt") is None:
                     state["salt"] = "default_salt"
                 if "assignments" not in state or not isinstance(state["assignments"], dict):
@@ -1340,7 +1500,9 @@ def refreshShapers():
                     print(f"Saving planner state to {state_path} (top-level CPU binning)")
                     bin_planner.save_state(state_path, state)
                 except Exception as e:
-                    warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
+                    warnings.warn(
+                        f"Failed to save planner state at {state_path}: {e}", stacklevel=2
+                    )
 
         # Seed persisted circuit minor assignments (TTL already enforced in bin_planner.load_state()).
         try:
@@ -1630,6 +1792,8 @@ def refreshShapers():
         queuingStructure['Network'] = network
         queuingStructure['lastUsedClassIDCounterByCPU'] = minorByCPU
         queuingStructure['generatedPNs'] = generatedPNs
+        queuingStructure['logical_to_physical_node'] = logical_to_physical_node
+        queuingStructure['virtual_nodes'] = virtual_nodes
         with open('queuingStructure.json', 'w') as infile:
             json.dump(queuingStructure, infile, indent=4)
 
@@ -1834,7 +1998,7 @@ if __name__ == '__main__':
         print("Configuration from /etc/lqos.conf is usable")
     else:
         print("ERROR: Unable to load configuration from /etc/lqos.conf")
-        os.exit(-1)
+        os._exit(-1)
 
     # Check that we aren't running LibreQoS.py more than once at a time
     if is_libre_already_running():
@@ -1896,7 +2060,7 @@ if __name__ == '__main__':
         # Single-interface updates don't work at all right now.
         if on_a_stick():
             print("--updateonly is not supported for single-interface configurations")
-            os.exit(-1)
+            os._exit(-1)
         refreshShapersUpdateOnly()
     else:
         # Refresh and/or set up queues

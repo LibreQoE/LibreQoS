@@ -14,6 +14,36 @@
             </div>
 
             <div class="mb-3">
+                <label for="qooProfileId" class="form-label">QoO Profile</label>
+                <select class="form-select" id="qooProfileId"></select>
+                <div class="form-text">Used for QoO/QoQ scoring. Choose (default) to use the default profile.</div>
+            </div>
+
+            <div class="alert alert-info" role="alert">
+                QoO profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add/change profiles, then reload this page.
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Available QoO Profiles</div>
+                <div class="card-body">
+                    <div id="qooProfilesLoadAlert"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>ID</th>
+                                <th>Description</th>
+                                <th>Flags</th>
+                            </tr>
+                            </thead>
+                            <tbody id="qooProfilesTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
                 <label for="packetCaptureTime" class="form-label">Packet Capture Time (seconds)</label>
                 <input type="number" class="form-control" id="packetCaptureTime" min="1">
             </div>
@@ -21,6 +51,24 @@
             <div class="mb-3">
                 <label for="queueCheckPeriod" class="form-label">Queue Check Period (milliseconds)</label>
                 <input type="number" class="form-control" id="queueCheckPeriod" min="100">
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableCircuitHeatmaps">
+                <label class="form-check-label" for="enableCircuitHeatmaps">Enable Circuit Heatmaps</label>
+                <div class="form-text">Track per-circuit TemporalHeatmap data (disable to save memory)</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableSiteHeatmaps">
+                <label class="form-check-label" for="enableSiteHeatmaps">Enable Site Heatmaps</label>
+                <div class="form-text">Track per-site TemporalHeatmap data (disable to save memory)</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableAsnHeatmaps">
+                <label class="form-check-label" for="enableAsnHeatmaps">Enable ASN Heatmaps</label>
+                <div class="form-text">Track per-ASN TemporalHeatmap data (disable to save memory)</div>
             </div>
 
             <div class="mb-3 form-check">

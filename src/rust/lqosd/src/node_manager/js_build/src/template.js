@@ -2,6 +2,16 @@ import {clearDiv} from "./helpers/builders";
 import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
+import {get_ws_client} from "./pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 function escapeAttr(text) {
     if (text === undefined || text === null) return "";
@@ -16,7 +26,9 @@ function escapeAttr(text) {
 function loadSchedulerStatus() {
     const container = document.getElementById('schedulerStatus');
     if (!container) return;
-    $.get('/local-api/scheduler/status', (data) => {
+    listenOnce("SchedulerStatus", (msg) => {
+        if (!msg || !msg.data) return;
+        const data = msg.data;
         const color = data.available ? 'text-success' : 'text-danger';
         const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
         container.innerHTML = `
@@ -30,6 +42,7 @@ function loadSchedulerStatus() {
             openSchedulerModal();
         });
     });
+    wsClient.send({ SchedulerStatus: {} });
 }
 
 function openSchedulerModal() {
@@ -38,20 +51,23 @@ function openSchedulerModal() {
     const myModal = new bootstrap.Modal(modalEl, { focus: true });
     myModal.show();
     $("#schedulerDetailsBody").html("<i class='fa fa-spinner fa-spin'></i> Loading scheduler status...");
-    $.ajax({
-        url: '/local-api/scheduler/details',
-        method: 'GET',
-        success: (text) => { $("#schedulerDetailsBody").text(text); },
-        error: () => { $("#schedulerDetailsBody").text('Failed to load scheduler details'); }
+    listenOnce("SchedulerDetails", (msg) => {
+        if (!msg || !msg.data) {
+            $("#schedulerDetailsBody").text('Failed to load scheduler details');
+            return;
+        }
+        $("#schedulerDetailsBody").text(msg.data.details);
     });
+    wsClient.send({ SchedulerDetails: {} });
 }
 
 function getDeviceCounts() {
-    $.get("/local-api/deviceCount", (data) => {
-        //console.log(data);
-        $("#shapedDeviceCount").text(data.shaped_devices);
-        $("#unknownIpCount").text(data.unknown_ips);
-    })
+    listenOnce("DeviceCount", (msg) => {
+        if (!msg || !msg.data) return;
+        $("#shapedDeviceCount").text(msg.data.shaped_devices);
+        $("#unknownIpCount").text(msg.data.unknown_ips);
+    });
+    wsClient.send({ DeviceCount: {} });
 }
 
 function initLogout() {
@@ -69,57 +85,66 @@ function initLogout() {
     });
 }
 
+let lastSearchTerm = "";
+let searchHandlerReady = false;
+
+function renderSearchResults(data) {
+    let searchResults = document.getElementById("searchResults");
+    // Position panel near the search input for consistent placement
+    const inp = document.getElementById("txtSearch");
+    if (inp && searchResults) {
+        const rect = inp.getBoundingClientRect();
+        // Use fixed positioning relative to viewport
+        searchResults.style.position = 'fixed';
+        searchResults.style.top = (rect.bottom + 8) + 'px';
+        searchResults.style.left = rect.left + 'px';
+        const widthPx = Math.max(320, rect.width + 200);
+        searchResults.style.minWidth = widthPx + 'px';
+        searchResults.style.width = widthPx + 'px';
+        // Ensure it's not shifted or hidden by existing CSS
+        searchResults.style.transform = 'none';
+        searchResults.style.zIndex = '2000';
+        searchResults.style.padding = '6px';
+    }
+    searchResults.style.visibility = "visible";
+    let list = document.createElement("table");
+    list.classList.add("table", "table-striped");
+    let tbody = document.createElement("tbody");
+    data.forEach((item) => {
+        let r = document.createElement("tr");
+        let c = document.createElement("td");
+
+        if (item.Circuit !== undefined) {
+            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
+        } else if (item.Device !== undefined) {
+            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
+        } else if (item.Site !== undefined) {
+            c.innerHTML = "<a class='nav-link' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
+        } else {
+            console.log(item);
+            c.innerText = item;
+        }
+        r.appendChild(c);
+        tbody.appendChild(r);
+    });
+    clearDiv(searchResults);
+    list.appendChild(tbody);
+    searchResults.appendChild(list);
+}
+
 function doSearch(search) {
     if (search.length > 2) {
-        $.ajax({
-            type: "POST",
-            url: "/local-api/search",
-            data: JSON.stringify({term: search}),
-            contentType: 'application/json',
-            success: (data) => {
-                let searchResults = document.getElementById("searchResults");
-                // Position panel near the search input for consistent placement
-                const inp = document.getElementById("txtSearch");
-                if (inp && searchResults) {
-                    const rect = inp.getBoundingClientRect();
-                    // Use fixed positioning relative to viewport
-                    searchResults.style.position = 'fixed';
-                    searchResults.style.top = (rect.bottom + 8) + 'px';
-                    searchResults.style.left = rect.left + 'px';
-                    const widthPx = Math.max(320, rect.width + 200);
-                    searchResults.style.minWidth = widthPx + 'px';
-                    searchResults.style.width = widthPx + 'px';
-                    // Ensure it's not shifted or hidden by existing CSS
-                    searchResults.style.transform = 'none';
-                    searchResults.style.zIndex = '2000';
-                    searchResults.style.padding = '6px';
+        lastSearchTerm = search;
+        if (!searchHandlerReady) {
+            wsClient.on("SearchResults", (msg) => {
+                if (!msg || msg.term !== lastSearchTerm) {
+                    return;
                 }
-                searchResults.style.visibility = "visible";
-                let list = document.createElement("table");
-                list.classList.add("table", "table-striped");
-                let tbody = document.createElement("tbody");
-                data.forEach((item) => {
-                    let r = document.createElement("tr");
-                    let c = document.createElement("td");
-
-                    if (item.Circuit !== undefined) {
-                        c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
-                    } else if (item.Device !== undefined) {
-                        c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
-                    } else if (item.Site !== undefined) {
-                        c.innerHTML = "<a class='nav-link' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
-                    } else {
-                        console.log(item);
-                        c.innerText = item;
-                    }
-                    r.appendChild(c);
-                    tbody.appendChild(r);
-                });
-                clearDiv(searchResults);
-                list.appendChild(tbody);
-                searchResults.appendChild(list);
-            },
-        })
+                renderSearchResults(msg.results || []);
+            });
+            searchHandlerReady = true;
+        }
+        wsClient.send({ Search: { term: search } });
     } else {
         // Close the search panel
         let searchResults = document.getElementById("searchResults");
@@ -214,9 +239,14 @@ function setupReload() {
         const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
         myModal.show();
         $("#reloadLibreResult").html("<i class='fa fa-spinner fa-spin'></i> Reloading LibreQoS...");
-        $.get("/local-api/reloadLqos", (result) => {
-            $("#reloadLibreResult").text(result);
+        listenOnce("ReloadResult", (msg) => {
+            if (!msg) {
+                $("#reloadLibreResult").text("Failed to reload LibreQoS");
+                return;
+            }
+            $("#reloadLibreResult").text(msg.message || "");
         });
+        wsClient.send({ ReloadLibreQoS: {} });
     }
 }
 
@@ -263,6 +293,113 @@ function setupDynamicUrls() {
     }
 }
 
+function initUrgentIssues() {
+    const containerId = 'urgentStatus';
+    const linkId = 'urgentStatusLink';
+    const badgeId = 'urgentBadge';
+
+    function ensurePlaceholder() {
+        return document.getElementById(containerId) !== null;
+    }
+
+    function renderStatus(count) {
+        const cont = document.getElementById(containerId);
+        if (!cont) return;
+        const cls = count > 0 ? 'text-danger' : 'text-secondary';
+        const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
+        cont.innerHTML = `
+            <a class="nav-link ${cls}" href="#" id="${linkId}">
+                <i class="fa fa-fw fa-centerline ${icon}"></i> Urgent Issues
+                <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
+            </a>`;
+        $("#" + containerId).off("click").on("click", `#${linkId}`, (e) => {
+            e.preventDefault();
+            showModal();
+        });
+    }
+
+    function poll() {
+        if (!ensurePlaceholder()) return;
+        listenOnce("UrgentStatus", (msg) => {
+            const count = msg && msg.data ? msg.data.count : 0;
+            renderStatus(count || 0);
+        });
+        wsClient.send({ UrgentStatus: {} });
+    }
+
+    function showModal() {
+        const modalEl = document.getElementById('urgentModal');
+        if (!modalEl) return;
+        new bootstrap.Modal(modalEl, { focus: true }).show();
+        const holder = document.getElementById('urgentListContainer');
+        if (!holder) return;
+        holder.innerHTML = `<div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>`;
+        listenOnce("UrgentList", (msg) => {
+            const items = msg && msg.data ? msg.data.items || [] : [];
+            if (items.length === 0) {
+                holder.innerHTML = '<div class="text-center text-success">No urgent issues.</div>';
+                return;
+            }
+            const table = document.createElement('table');
+            table.className = 'table table-sm table-striped';
+            const tbody = document.createElement('tbody');
+            items.forEach((it) => {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                const when = new Date(it.ts * 1000).toLocaleString();
+                const sev = it.severity === 'Error' ? 'danger' : 'warning';
+                td.innerHTML = `
+                    <div>
+                        <span class="badge bg-${sev}">${it.severity}</span>
+                        <strong class="ms-2">${it.code}</strong>
+                        <span class="text-muted ms-2">(${it.source})</span>
+                        <span class="text-muted float-end">${when}</span>
+                        <a href="#" class="text-secondary float-end ms-3 urgent-clear" data-id="${it.id}" title="Acknowledge"><i class="fa fa-times"></i></a>
+                    </div>
+                    <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
+                    ${it.context ? `<pre class="mt-2">${it.context}</pre>` : ''}
+                    `;
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            holder.innerHTML = '';
+            holder.appendChild(table);
+            $(holder).off('click').on('click', 'a.urgent-clear', function (e) {
+                e.preventDefault();
+                const id = $(this).data('id');
+                listenOnce("UrgentClearResult", () => {
+                    showModal();
+                    poll();
+                });
+                wsClient.send({ UrgentClear: { id } });
+            });
+        });
+        wsClient.send({ UrgentList: {} });
+    }
+
+    if (!document.getElementById(containerId)) {
+        const ul = document.querySelector('.sidebar .navbar-nav');
+        if (ul) {
+            const li = document.createElement('li');
+            li.className = 'nav-item';
+            li.id = containerId;
+            ul.appendChild(li);
+        }
+    }
+
+    $(document).off('click', '#urgentClearAll').on('click', '#urgentClearAll', () => {
+        listenOnce("UrgentClearAllResult", () => {
+            showModal();
+            poll();
+        });
+        wsClient.send({ UrgentClearAll: {} });
+    });
+
+    poll();
+    setInterval(poll, 30000);
+}
+
 function initSchedulerTooltips() {
     // Initialize Bootstrap tooltips for scheduler status elements
     const schedulerElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
@@ -279,5 +416,6 @@ getDeviceCounts();
 setupSearch();
 setupReload();
 setupDynamicUrls();
+window.lqosInitUrgentIssues = initUrgentIssues;
 initSchedulerTooltips();
 loadSchedulerStatus();

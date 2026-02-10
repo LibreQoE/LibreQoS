@@ -1,7 +1,11 @@
+use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
 use lqos_bus::QueueStoreTransit;
 use lqos_queue_tracker::{add_watched_queue, get_raw_circuit_data, still_watching};
 
-pub(super) async fn cake_watcher(circuit_id: String, tx: tokio::sync::mpsc::Sender<String>) {
+pub(super) async fn cake_watcher(
+    circuit_id: String,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
+) {
     const INTERVAL_MS: u64 = 1000;
     add_watched_queue(&circuit_id);
 
@@ -13,8 +17,11 @@ pub(super) async fn cake_watcher(circuit_id: String, tx: tokio::sync::mpsc::Send
 
         match get_raw_circuit_data(&circuit_id) {
             lqos_bus::BusResponse::RawQueueData(Some(msg)) => {
-                if let Ok(json) = serde_json::to_string(&QueueStoreTransit::from(*msg)) {
-                    let send_result = tx.send(json.to_string()).await;
+                let response = WsResponse::CakeWatcher {
+                    data: QueueStoreTransit::from(*msg),
+                };
+                if let Ok(payload) = encode_ws_message(&response) {
+                    let send_result = tx.send(payload).await;
                     if send_result.is_err() {
                         break;
                     }

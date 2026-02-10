@@ -1,5 +1,4 @@
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
-use axum::Json;
 use ip_network::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -70,7 +69,7 @@ pub enum SearchResult {
     },
 }
 
-pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>> {
+pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
     const MAX_RESULTS: usize = 50;
     let mut results: Vec<SearchResult> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new(); // keys like "Device:<circuit_id>:<name>" or "Circuit:<id>" or "Site:<idx>"
@@ -253,5 +252,5 @@ pub async fn search(Json(search): Json<SearchRequest>) -> Json<Vec<SearchResult>
         }
     }
 
-    Json(results)
+    results
 }

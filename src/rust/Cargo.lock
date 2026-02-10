@@ -539,16 +539,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
-name = "colored"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
-dependencies = [
- "lazy_static",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "compact_str"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1906,7 +1896,6 @@ version = "0.1.0"
 dependencies = [
  "allocative",
  "allocative_derive",
- "bincode",
  "lqos_config",
  "lqos_utils",
  "nix",
@@ -1964,6 +1953,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_overrides"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "lqos_config",
+ "nix",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lqos_python"
 version = "0.1.0"
 dependencies = [
@@ -1972,6 +1973,7 @@ dependencies = [
  "chrono",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "lqos_utils",
  "miniz_oxide",
  "nix",
@@ -2043,22 +2045,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lqos_support_tool"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "colored",
- "libc",
- "lqos_config",
- "miniz_oxide",
- "nix",
- "serde",
- "serde_cbor",
- "serde_json",
-]
-
-[[package]]
 name = "lqos_sys"
 version = "0.1.0"
 dependencies = [
@@ -2090,6 +2076,8 @@ dependencies = [
  "notify",
  "num-traits",
  "serde",
+ "serde_json",
+ "smallvec",
  "thiserror 1.0.69",
  "tracing",
  "zerocopy",
@@ -2123,7 +2111,6 @@ dependencies = [
  "lqos_heimdall",
  "lqos_queue_tracker",
  "lqos_stormguard",
- "lqos_support_tool",
  "lqos_sys",
  "lqos_utils",
  "mimalloc",
@@ -2139,6 +2126,7 @@ dependencies = [
  "serde_json",
  "sha256",
  "signal-hook",
+ "smallvec",
  "strum",
  "surge-ping",
  "sysinfo",
@@ -4105,6 +4093,7 @@ dependencies = [
  "ip_network_table",
  "lqos_bus",
  "lqos_config",
+ "lqos_overrides",
  "petgraph",
  "serde",
  "serde_cbor",

@@ -18,8 +18,6 @@ import {TopTreeSummary} from "./top_tree_summary";
 import {CombinedTopDashlet} from "./combined_top_dash";
 import {RttHisto3dDash} from "./rtt_histo3d_dash";
 import {QueueStatsTotalDash} from "./queue_stats_total";
-import {TreeCapacityDash} from "./tree_capacity_dash";
-import {CircuitCapacityDash} from "./circuit_capacity_dash";
 import {TopTreeSankey} from "./top_tree_sankey";
 import {Top10DownloadersVisual} from "./top10_downloads_graphic";
 import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
@@ -39,11 +37,20 @@ import {ShaperChildrenDown} from "./children_sankey_down";
 import {ShaperChildrenUp} from "./children_sankey_up";
 import {ShaperWorldMapDown} from "./world_map_down";
 import {ShaperWorldMapUp} from "./world_map_up";
+import {ExecutiveSnapshotDashlet} from "./executive_snapshot";
+import {ExecutiveHelpersDashlet} from "./executive_helpers";
+import {
+    ExecutiveDownloadHeatmapDashlet,
+    ExecutiveGlobalHeatmapDashlet,
+    ExecutiveRetransmitsHeatmapDashlet,
+    ExecutiveRttHeatmapDashlet,
+    ExecutiveUploadHeatmapDashlet
+} from "./executive_heatmap_panels";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
     { name: "Throughput Packets/Second", tag: "throughputPps", size: 3, category: "Throughput" },
-    { name: "Shaped/Unshaped Pie", tag: "shapedUnshaped", size: 3, category: "Shaped" },
+    { name: "Mapped/Unmapped Traffic", tag: "shapedUnshaped", size: 3, category: "Shaped" },
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3, category: "Flows" },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6, category: "Throughput" },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6, category: "RTT" },
@@ -67,8 +74,6 @@ export const DashletMenu = [
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 6, category: "Top 10" },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3, category: "CAKE" },
     { name: "Total TCP Retransmits", tag: "totalRetransmits", size: 3, category: "Retransmits" },
-    { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6, category: "Capacity" },
-    { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6, category: "Capacity" },
     { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6, category: "Tree" },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12, category: "RTT" },
     { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3, category: "Insight" },
@@ -82,6 +87,13 @@ export const DashletMenu = [
     { name: "Shaper Children (Upload)", tag: "shaperChildrenUp", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
+    { name: "Network Snapshot", tag: "executiveSnapshot", size: 12, category: "Executive" },
+    { name: "Executive Helper Links", tag: "executiveHelpers", size: 12, category: "Executive" },
+    { name: "Global Heatmap", tag: "executiveGlobalHeatmap", size: 12, category: "Executive" },
+    { name: "Median RTT Heatmap", tag: "executiveHeatmapRtt", size: 6, category: "Executive" },
+    { name: "TCP Retransmits Heatmap", tag: "executiveHeatmapRetrans", size: 6, category: "Executive" },
+    { name: "Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
+    { name: "QoO Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -114,8 +126,6 @@ export function widgetFactory(widgetName, count) {
         case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
         case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
         case "totalRetransmits" : widget = new TcpRetransmitsDash(count); break;
-        case "circuitCapacity"  : widget = new CircuitCapacityDash(count); break;
-        case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
         case "networkTreeSankey": widget = new TopTreeSankey(count); break;
         case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
@@ -128,6 +138,13 @@ export function widgetFactory(widgetName, count) {
         case "shaperChildrenUp"  : widget = new ShaperChildrenUp(count); break;
         case "shaperWorldMapDown": widget = new ShaperWorldMapDown(count); break;
         case "shaperWorldMapUp"  : widget = new ShaperWorldMapUp(count); break;
+        case "executiveSnapshot": widget = new ExecutiveSnapshotDashlet(count); break;
+        case "executiveHelpers": widget = new ExecutiveHelpersDashlet(count); break;
+        case "executiveGlobalHeatmap": widget = new ExecutiveGlobalHeatmapDashlet(count); break;
+        case "executiveHeatmapRtt": widget = new ExecutiveRttHeatmapDashlet(count); break;
+        case "executiveHeatmapRetrans": widget = new ExecutiveRetransmitsHeatmapDashlet(count); break;
+        case "executiveHeatmapDownload": widget = new ExecutiveDownloadHeatmapDashlet(count); break;
+        case "executiveHeatmapUpload": widget = new ExecutiveUploadHeatmapDashlet(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

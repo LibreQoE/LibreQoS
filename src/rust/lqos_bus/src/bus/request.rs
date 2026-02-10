@@ -56,6 +56,21 @@ pub enum BusRequest {
         end: u32,
     },
 
+    /// Retrieve per-circuit TemporalHeatmap blocks.
+    GetCircuitHeatmaps,
+
+    /// Retrieve per-site TemporalHeatmap blocks.
+    GetSiteHeatmaps,
+
+    /// Retrieve per-ASN TemporalHeatmap blocks.
+    GetAsnHeatmaps,
+
+    /// Retrieve the global (roll-up) TemporalHeatmap.
+    GetGlobalHeatmap,
+
+    /// Retrieve headline metrics for the Executive Summary tab.
+    GetExecutiveSummaryHeader,
+
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
         /// First row to retrieve (usually 0 unless you are paging)
@@ -179,6 +194,12 @@ pub enum BusRequest {
 
     /// Get all circuits and usage statistics
     GetAllCircuits,
+
+    /// Get circuit usage statistics for a single circuit ID
+    GetCircuitById {
+        /// Circuit ID to query
+        circuit_id: String,
+    },
 
     /// Retrieve stats for all queues above a named circuit id
     GetFunnel {
@@ -321,6 +342,9 @@ pub enum BusRequest {
     /// Get current Stormguard statistics
     GetStormguardStats,
 
+    /// Get current Stormguard debug snapshot
+    GetStormguardDebug,
+
     /// Get current Bakery statistics
     GetBakeryStats,
 
@@ -342,6 +366,19 @@ pub enum BusRequest {
     /// Check the scheduler status
     CheckSchedulerStatus,
 
+    /// Bakery: Change Site Speed
+    BakeryChangeSiteSpeedLive {
+        /// The hash of the site to target
+        site_hash: i64,
+        /// Commit download bandwidth in Mbps
+        download_bandwidth_min: f32,
+        /// Commit upload bandwidth in Mbps
+        upload_bandwidth_min: f32,
+        /// Ceiling download bandwidth in Mbps
+        download_bandwidth_max: f32,
+        /// Ceiling upload bandwidth in Mbps
+        upload_bandwidth_max: f32,
+    },
     /// Submit an urgent issue for high-priority operator visibility
     SubmitUrgentIssue {
         /// Source of the issue
@@ -363,6 +400,72 @@ pub enum BusRequest {
 
     /// Clear a specific urgent issue by ID
     ClearUrgentIssue(u64),
+
+    /// Clear all urgent issues
+    ClearAllUrgentIssues,
+
+    /// Retrieve device counts (shaped + unknown)
+    GetDeviceCounts,
+
+    /// Retrieve circuit counts (active + configured)
+    GetCircuitCount,
+
+    /// Retrieve flow map points (lat/lon endpoints)
+    GetFlowMap,
+
+    /// Retrieve list of ASNs with recent flow data
+    GetAsnList,
+
+    /// Retrieve list of countries with recent flow data
+    GetCountryList,
+
+    /// Retrieve list of protocols with recent flow data
+    GetProtocolList,
+
+    /// Retrieve flow timeline entries for an ASN
+    GetAsnFlowTimeline {
+        /// ASN number to filter
+        asn: u32,
+    },
+
+    /// Retrieve flow timeline entries for a country
+    GetCountryFlowTimeline {
+        /// Country ISO code to filter
+        iso_code: String,
+    },
+
+    /// Retrieve flow timeline entries for a protocol
+    GetProtocolFlowTimeline {
+        /// Protocol name to filter
+        protocol: String,
+    },
+
+    /// Retrieve scheduler details (diagnostics)
+    GetSchedulerDetails,
+
+    /// Retrieve queue marks/drops totals
+    GetQueueStatsTotal,
+
+    /// Retrieve per-circuit capacity utilization
+    GetCircuitCapacity,
+
+    /// Retrieve per-node capacity utilization
+    GetTreeCapacity,
+
+    /// Retrieve aggregate TCP retransmit summary
+    GetRetransmitSummary,
+
+    /// Retrieve two-level tree summary
+    GetTreeSummaryL2,
+
+    /// Search circuits/devices/sites by term
+    Search {
+        /// Search term
+        term: String,
+    },
+
+    /// Retrieve current global warning list
+    GetGlobalWarnings,
 
     /// Is Insight Enabled?
     CheckInsight,

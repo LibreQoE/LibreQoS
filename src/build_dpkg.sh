@@ -11,7 +11,7 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
+APT_DEPENDENCIES="python3-pip, nano, graphviz, curl, ca-certificates"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
@@ -58,6 +58,8 @@ RUSTPROGS=(
   lqos_setup
   lqos_map_perf
   uisp_integration
+  lqos_support_tool
+  lqos_overrides
 )
 
 ####################################################
@@ -100,7 +102,8 @@ cargo build --release \
   -p lqos_setup \
   -p lqos_map_perf \
   -p uisp_integration \
-  -p lqos_python
+  -p lqos_python \
+  -p lqos_overrides
 popd > /dev/null || exit
 
 # Create the post-installation file
@@ -223,12 +226,13 @@ EOF
 popd || exit
 
 ####################################################
-# Bundle the API into src/bin
-echo "Fetching lqos_api (api.zip) ..."
-curl -fsSL -o /tmp/lqos_api.zip "https://download.libreqos.com/api.zip"
-unzip -o /tmp/lqos_api.zip -d "$LQOS_DIR/bin"
-chmod +x "$LQOS_DIR/bin/lqos_api" || true
-rm -f /tmp/lqos_api.zip
+# Bundle the API into the package
+echo "Fetching lqos_api via update_api.sh ..."
+bash ./update_api.sh --bin-dir "$LQOS_DIR/bin" --no-restart
+if [[ ! -x "$LQOS_DIR/bin/lqos_api" ]]; then
+  echo "Error: lqos_api was not installed into the package at $LQOS_DIR/bin/lqos_api"
+  exit 1
+fi
 
 ####################################################
 # Assemble the package

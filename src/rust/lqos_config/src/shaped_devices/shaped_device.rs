@@ -57,8 +57,9 @@ pub struct ShapedDevice {
     /// Generic comments field, does nothing.
     pub comment: String,
 
-    /// Optional per-circuit SQM override token. Strictly limited to
-    /// "cake" or "fq_codel" when present. Empty or missing means
+    /// Optional per-circuit SQM override token. Accepts "cake", "fq_codel",
+    /// "none", or directional "down_sqm/up_sqm" values like "cake/none" or
+    /// "/fq_codel". A single token applies to both directions; empty means
     /// "use global default".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sqm_override: Option<String>,
@@ -97,9 +98,9 @@ impl ShapedDevice {
     /// 12. Upload Max Mbps
     /// 13. Comment
     /// 14. sqm (optional; allowed values: "cake", "fq_codel", "none", or
-    ///     a directional override in the form "down/up". Either side may be
-    ///     empty to indicate no override for that direction, e.g. "cake/" or
-    ///     "/fq_codel".)
+    ///     a directional override in the form "down_sqm/up_sqm". Either side
+    ///     may be empty to indicate no override for that direction, e.g.
+    ///     "cake/" or "/fq_codel".)
     ///
     /// # Arguments
     ///
@@ -188,22 +189,21 @@ impl ShapedDevice {
                 // Normalize case and whitespace around optional '/'
                 let token = raw.to_lowercase();
                 if token.contains('/') {
-                    // Directional override: down/up (either may be empty)
+                    // Directional override: down_sqm/up_sqm (either may be empty)
                     let mut parts = token.splitn(2, '/');
                     let down = parts.next().unwrap_or("").trim();
                     let up = parts.next().unwrap_or("").trim();
 
                     // Validate each side if present
-                    let valid = |s: &str| -> bool {
-                        matches!(s, "" | "cake" | "fq_codel" | "none")
-                    };
+                    let valid =
+                        |s: &str| -> bool { matches!(s, "" | "cake" | "fq_codel" | "none") };
                     if !valid(down) || !valid(up) {
                         return Err(ShapedDevicesError::CsvEntryParseError(format!(
-                            "Invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or down/up"
+                            "Invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
                         )));
                     }
 
-                    // Store normalized (trimmed, lowercase) representation exactly as down/up
+                    // Store normalized (trimmed, lowercase) representation exactly as down_sqm/up_sqm
                     device.sqm_override = Some(format!("{down}/{up}"));
                 } else {
                     // Single token applies to both directions when used
@@ -211,7 +211,7 @@ impl ShapedDevice {
                         "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
                         other => {
                             return Err(ShapedDevicesError::CsvEntryParseError(format!(
-                                "Invalid sqm override '{other}'. Allowed values: 'cake', 'fq_codel', 'none', or down/up"
+                                "Invalid sqm override '{other}'. Allowed values: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
                             )));
                         }
                     }

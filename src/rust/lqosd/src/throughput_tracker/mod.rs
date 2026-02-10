@@ -3,23 +3,34 @@ mod stats_submission;
 mod throughput_entry;
 mod tracking_data;
 
-use self::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
+use self::flow_data::{
+    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
+    snapshot_asn_heatmaps,
+};
+pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::RttData;
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use arc_swap::ArcSwap;
 use crate::{
+    lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
+use lqos_bus::{
+    AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
+    IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
+};
+use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::sync::Arc;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, info, warn};
@@ -27,6 +38,8 @@ use tracing::{debug, info, warn};
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
+pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
 
 /// Create the throughput monitor thread, and begin polling for
 /// throughput data every second.
@@ -143,7 +156,8 @@ fn throughput_task(
     let mut timer_metrics = ThroughputTaskTimeMetrics::new();
 
     // Preallocate some buffers to avoid allocations in the loop
-    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
+    let mut rtt_by_circuit: FxHashMap<i64, RttBuffer> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
@@ -172,15 +186,24 @@ fn throughput_task(
                 netflow_sender.clone(),
                 &mut net_json_calc,
                 &mut rtt_circuit_tracker,
+                &mut rtt_by_circuit,
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+            CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
+            THROUGHPUT_TRACKER.record_circuit_heatmaps();
+            let enable_site_heatmaps = lqos_config::load_config()
+                .map(|config| config.enable_site_heatmaps)
+                .unwrap_or(true);
+            net_json_calc.record_site_heatmaps(enable_site_heatmaps);
 
             // Clean up work tables
             rtt_circuit_tracker.clear();
+            rtt_by_circuit.clear();
             tcp_retries.clear();
             expired_flows.clear();
             rtt_circuit_tracker.shrink_to_fit();
+            rtt_by_circuit.shrink_to_fit();
             tcp_retries.shrink_to_fit();
             expired_flows.shrink_to_fit();
 
@@ -393,6 +416,105 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
         )
         .collect();
     BusResponse::TopUploaders(result)
+}
+
+/// Retrieve per-circuit heatmap data for the executive summary.
+pub fn circuit_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_circuit_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::CircuitHeatmaps(Vec::new());
+    }
+
+    let devices = SHAPED_DEVICES.load();
+    let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
+    devices.devices.iter().for_each(|device| {
+        circuit_meta
+            .entry(device.circuit_hash)
+            .or_insert_with(|| (device.circuit_id.clone(), device.circuit_name.clone()));
+    });
+
+    let heatmaps = THROUGHPUT_TRACKER.circuit_heatmaps.lock();
+    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
+    let mut rows: Vec<CircuitHeatmapData> = heatmaps
+        .iter()
+        .map(|(hash, heatmap)| {
+            let (circuit_id, circuit_name) = circuit_meta
+                .get(hash)
+                .cloned()
+                .unwrap_or_else(|| (String::new(), String::new()));
+            CircuitHeatmapData {
+                circuit_hash: *hash,
+                circuit_id,
+                circuit_name,
+                blocks: heatmap.blocks(),
+                qoq_blocks: qoq_heatmaps.get(hash).map(|heatmap| heatmap.blocks()),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
+    BusResponse::CircuitHeatmaps(rows)
+}
+
+/// Retrieve per-site heatmap data for the executive summary.
+pub fn site_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_site_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::SiteHeatmaps(Vec::new());
+    }
+
+    let reader = NETWORK_JSON.read();
+    let mut rows: Vec<SiteHeatmapData> = reader
+        .get_nodes_when_ready()
+        .iter()
+        .filter_map(|node| {
+            if node.name == "Root" || node.name.parse::<std::net::IpAddr>().is_ok() {
+                return None;
+            }
+            node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
+                site_name: node.name.clone(),
+                node_type: node.node_type.clone(),
+                depth: node.parents.len().saturating_sub(1),
+                blocks: heatmap.blocks(),
+                qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
+    BusResponse::SiteHeatmaps(rows)
+}
+
+/// Retrieve per-ASN heatmap data for the executive summary.
+pub fn asn_heatmaps() -> BusResponse {
+    let enabled = lqos_config::load_config()
+        .map(|cfg| cfg.enable_asn_heatmaps)
+        .unwrap_or(true);
+    if !enabled {
+        return BusResponse::AsnHeatmaps(Vec::new());
+    }
+
+    let rows: Vec<AsnHeatmapData> = snapshot_asn_heatmaps()
+        .into_iter()
+        .map(|(asn, blocks)| {
+            let name = get_asn_name_by_id(asn);
+            let asn_name = if name.eq_ignore_ascii_case("unknown") {
+                None
+            } else {
+                Some(name)
+            };
+            AsnHeatmapData { asn, asn_name, blocks }
+        })
+        .collect();
+    BusResponse::AsnHeatmaps(rows)
+}
+
+/// Retrieve the global roll-up heatmap data for the executive summary.
+pub fn global_heatmap() -> BusResponse {
+    let heatmap = THROUGHPUT_TRACKER.global_heatmap.lock();
+    BusResponse::GlobalHeatmap(heatmap.blocks())
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
@@ -637,7 +759,7 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     Some(result)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct TcpRetransmitTotal {
     pub up: i32,
     pub down: i32,
@@ -701,6 +823,11 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
 }
 
 pub fn host_counts() -> BusResponse {
+    let (total, shaped) = current_host_counts();
+    BusResponse::HostCounts((total, shaped))
+}
+
+fn current_host_counts() -> (u32, u32) {
     let mut total = 0;
     let mut shaped = 0;
     let tp_cycle = THROUGHPUT_TRACKER
@@ -717,7 +844,47 @@ pub fn host_counts() -> BusResponse {
                 shaped += 1;
             }
         });
-    BusResponse::HostCounts((total, shaped))
+    (total, shaped)
+}
+
+/// Gather headline metrics for the Executive Summary header cards.
+pub fn executive_summary_header() -> BusResponse {
+    let devices = SHAPED_DEVICES.load();
+    let circuit_count = devices
+        .devices
+        .iter()
+        .map(|device| device.circuit_hash)
+        .collect::<FxHashSet<_>>()
+        .len() as u64;
+    let device_count = devices.devices.len() as u64;
+
+    let site_count = {
+        let reader = NETWORK_JSON.read();
+        let total_nodes = reader.get_nodes_when_ready().len();
+        // Remove the synthetic root node when counting sites.
+        total_nodes.saturating_sub(1) as u64
+    };
+
+    let (total_hosts, shaped_hosts) = current_host_counts();
+    let mapped_ip_count = shaped_hosts as u64;
+    let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
+
+    let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
+    let insight_connected = !matches!(
+        get_lts_license_status().0,
+        LtsStatus::Invalid | LtsStatus::NotChecked
+    );
+
+    BusResponse::ExecutiveSummaryHeader(ExecutiveSummaryHeader {
+        circuit_count,
+        device_count,
+        site_count,
+        mapped_ip_count,
+        unmapped_ip_count,
+        htb_queue_count: queue_counts.htb as u64,
+        cake_queue_count: queue_counts.cake as u64,
+        insight_connected,
+    })
 }
 
 type FullList = (
@@ -737,7 +904,7 @@ pub fn all_unknown_ips() -> BusResponse {
         return BusResponse::NotReadyYet;
     }
     let Ok(boot_time) = boot_time else {
-        return BusResponse::Fail("Boot time unavailable".to_string())
+        return BusResponse::Fail("Boot time unavailable".to_string());
     };
 
     // Safely convert TimeSpec to Duration - handle potential negative values
@@ -816,14 +983,14 @@ pub fn dump_active_flows() -> BusResponse {
                 tcp_retransmits: row.0.tcp_retransmits,
                 end_status: row.0.end_status,
                 tos: row.0.tos,
-                flags: row.0.flags,
+                flags: row.0.get_flags(),
                 remote_asn: row.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -880,8 +1047,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_total = a.1.0.rtt;
-                let b_total = b.1.0.rtt;
+                let a_total = a.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
+                let b_total = b.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
                 a_total.cmp(&b_total)
             });
         }
@@ -911,14 +1078,14 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 tcp_retransmits: flow.0.tcp_retransmits,
                 end_status: flow.0.end_status,
                 tos: flow.0.tos,
-                flags: flow.0.flags,
+                flags: flow.0.get_flags(),
                 remote_asn: flow.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
+                rtt_nanos: DownUpOrder::new(flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                 circuit_id,
                 circuit_name,
             }
@@ -957,14 +1124,14 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     tcp_retransmits: row.0.tcp_retransmits,
                     end_status: row.0.end_status,
                     tos: row.0.tos,
-                    flags: row.0.flags,
+                    flags: row.0.get_flags(),
                     remote_asn: row.1.asn_id.0,
                     remote_asn_name: geo.name,
                     remote_asn_country: geo.country,
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                    rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
                     circuit_id,
                     circuit_name,
                 }

@@ -6,5 +6,5 @@ use tokio::sync::mpsc::Sender;
 pub(super) struct Subscriber {
     pub(super) is_alive: bool,
     #[allocative(skip)]
-    pub(super) sender: Sender<Arc<String>>,
+    pub(super) sender: Sender<Arc<Vec<u8>>>,
 }

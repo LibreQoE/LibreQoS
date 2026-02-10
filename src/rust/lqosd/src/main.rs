@@ -19,8 +19,8 @@ mod stats;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
-mod urgent;
 mod tuning;
+mod urgent;
 mod validation;
 mod version_checks;
 
@@ -58,6 +58,8 @@ use tracing::{error, info, warn};
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 
+use crate::lts2_sys::get_lts_license_status;
+use crate::lts2_sys::shared_types::LtsStatus;
 use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -65,10 +67,8 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
-use lqos_stormguard::STORMGUARD_STATS;
+use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::LtsStatus;
 // Use MiMalloc only on supported platforms
 // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 // #[global_allocator]
@@ -138,6 +138,10 @@ fn main() -> Result<()> {
 
     // Load config
     let config = lqos_config::load_config()?;
+
+    if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
+        warn!("Failed to initialize Insight license storage: {e:?}");
+    }
 
     // Apply Tunings
     tuning::tune_lqosd_from_config_file()?;
@@ -247,69 +251,68 @@ fn main() -> Result<()> {
         .spawn(move || {
             let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
-                .build() else {
+                .build()
+            else {
                 error!("Unable to start Tokio runtime. Not much is going to work");
                 return;
             };
             tokio_runtime.block_on(async {
-                    // Notify bakery when the bus socket becomes available
-                    tokio::spawn(async move {
-                        use tokio::time::{sleep, Duration};
-                        // Wait up to ~5 seconds for the socket to appear
-                        for _ in 0..100u32 {
-                            if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
-                                break;
-                            }
-                            sleep(Duration::from_millis(50)).await;
+                // Notify bakery when the bus socket becomes available
+                tokio::spawn(async move {
+                    use tokio::time::{Duration, sleep};
+                    // Wait up to ~5 seconds for the socket to appear
+                    for _ in 0..100u32 {
+                        if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                            break;
                         }
-                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                            let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
-                        }
-                    });
-
-                    tokio::spawn(async move {
-                        match lts2_sys::control_channel::start_control_channel(control_channel)
-                            .await
-                        {
-                            Ok(_) => info!("Insight control channel started successfully"),
-                            Err(e) => error!("Insight control channel failed to start: {:#}", e),
-                        }
-
-                        match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
-                            Ok(_) => info!("StormGuard started successfully"),
-                            Err(e) => error!("StormGuard failed to start: {:#}", e),
-                        }
-                    });
-
-                    let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
-                        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
-                        BusRequest,
-                    )>(100);
-
-                    // Webserver starting point
-                    let webserver_disabled = config.disable_webserver.unwrap_or(false);
-                    if !webserver_disabled {
-                        let control_tx_for_webserver = control_tx_for_webserver.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = node_manager::spawn_webserver(
-                                bus_tx,
-                                system_usage_tx,
-                                control_tx_for_webserver,
-                            )
-                            .await
-                            {
-                                error!("Node Manager Failed: {e:?}");
-                            }
-                        });
-                    } else {
-                        warn!("Webserver disabled by configuration");
+                        sleep(Duration::from_millis(50)).await;
                     }
-
-                    // Main bus listen loop
-                    if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
-                        error!("Bus stopped: {e:?}");
+                    if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                        let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
                     }
                 });
+
+                tokio::spawn(async move {
+                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                        Ok(_) => info!("Insight control channel started successfully"),
+                        Err(e) => error!("Insight control channel failed to start: {:#}", e),
+                    }
+
+                    match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                        Ok(_) => info!("StormGuard started successfully"),
+                        Err(e) => error!("StormGuard failed to start: {:#}", e),
+                    }
+                });
+
+                let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
+                    tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+                    BusRequest,
+                )>(100);
+
+                // Webserver starting point
+                let webserver_disabled = config.disable_webserver.unwrap_or(false);
+                if !webserver_disabled {
+                    let control_tx_for_webserver = control_tx_for_webserver.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = node_manager::spawn_webserver(
+                            bus_tx,
+                            system_usage_tx,
+                            control_tx_for_webserver,
+                        )
+                        .await
+                        {
+                            error!("Node Manager Failed: {e:?}");
+                        }
+                    });
+                } else {
+                    warn!("Webserver disabled by configuration");
+                }
+
+                // Main bus listen loop
+                if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
+                    error!("Bus stopped: {e:?}");
+                }
+            });
         })?;
     let _ = handle.join();
     warn!("Main thread exiting");
@@ -360,6 +363,11 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetTopNUploaders { start, end } => {
                 throughput_tracker::top_n_up(*start, *end)
             }
+            BusRequest::GetCircuitHeatmaps => throughput_tracker::circuit_heatmaps(),
+            BusRequest::GetSiteHeatmaps => throughput_tracker::site_heatmaps(),
+            BusRequest::GetAsnHeatmaps => throughput_tracker::asn_heatmaps(),
+            BusRequest::GetGlobalHeatmap => throughput_tracker::global_heatmap(),
+            BusRequest::GetExecutiveSummaryHeader => throughput_tracker::executive_summary_header(),
             BusRequest::GetWorstRtt { start, end } => throughput_tracker::worst_n(*start, *end),
             BusRequest::GetWorstRetransmits { start, end } => {
                 throughput_tracker::worst_n_retransmits(*start, *end)
@@ -437,6 +445,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetNodeNamesFromIds(nodes) => shaped_devices_tracker::map_node_names(nodes),
             BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
+            BusRequest::GetCircuitById { circuit_id } => {
+                shaped_devices_tracker::get_circuit_by_id(circuit_id.clone())
+            }
             BusRequest::GetFunnel { target: parent } => shaped_devices_tracker::get_funnel(parent),
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
@@ -524,6 +535,20 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
+            }
+            BusRequest::BakeryChangeSiteSpeedLive { site_hash, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let command = lqos_bakery::BakeryCommands::ChangeSiteSpeedLive {
+                        site_hash: *site_hash,
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                    };
+                    let _ = sender.send(command);
+                }
+                BusResponse::Ack
             }
             BusRequest::BakeryMqSetup {
                 queues_available,
@@ -620,6 +645,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 };
                 BusResponse::StormguardStats(cloned)
             }
+            BusRequest::GetStormguardDebug => {
+                let cloned = {
+                    let lock = STORMGUARD_DEBUG.lock();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardDebug(cloned)
+            }
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
             ),
@@ -660,6 +692,133 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 urgent::clear(*id);
                 BusResponse::Ack
             }
+            BusRequest::ClearAllUrgentIssues => {
+                urgent::clear_all();
+                BusResponse::Ack
+            }
+            BusRequest::GetGlobalWarnings => {
+                let warnings = node_manager::get_global_warnings()
+                    .into_iter()
+                    .map(|(level, message)| (map_warning_level(level), message))
+                    .collect();
+                BusResponse::GlobalWarnings(warnings)
+            }
+            BusRequest::GetDeviceCounts => {
+                let data = node_manager::device_count();
+                BusResponse::DeviceCounts(lqos_bus::DeviceCounts {
+                    shaped_devices: data.shaped_devices,
+                    unknown_ips: data.unknown_ips,
+                })
+            }
+            BusRequest::GetCircuitCount => {
+                let data = node_manager::circuit_count_data();
+                BusResponse::CircuitCount(lqos_bus::CircuitCount {
+                    count: data.count,
+                    configured_count: data.configured_count,
+                })
+            }
+            BusRequest::GetFlowMap => {
+                let points = node_manager::flow_map_data()
+                    .into_iter()
+                    .map(|(lat, lon, country, bytes_sent, rtt_nanos)| lqos_bus::FlowMapPoint {
+                        lat,
+                        lon,
+                        country,
+                        bytes_sent,
+                        rtt_nanos,
+                    })
+                    .collect();
+                BusResponse::FlowMap(points)
+            }
+            BusRequest::GetAsnList => {
+                let entries = node_manager::asn_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::AsnListEntry {
+                        count: entry.count,
+                        asn: entry.asn,
+                        name: entry.name,
+                    })
+                    .collect();
+                BusResponse::AsnList(entries)
+            }
+            BusRequest::GetCountryList => {
+                let entries = node_manager::country_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::CountryListEntry {
+                        count: entry.count,
+                        name: entry.name,
+                        iso_code: entry.iso_code,
+                    })
+                    .collect();
+                BusResponse::CountryList(entries)
+            }
+            BusRequest::GetProtocolList => {
+                let entries = node_manager::protocol_list_data()
+                    .into_iter()
+                    .map(|entry| lqos_bus::ProtocolListEntry {
+                        count: entry.count,
+                        protocol: entry.protocol,
+                    })
+                    .collect();
+                BusResponse::ProtocolList(entries)
+            }
+            BusRequest::GetAsnFlowTimeline { asn } => {
+                let data = node_manager::flow_timeline_data(*asn)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::AsnFlowTimeline(data)
+            }
+            BusRequest::GetCountryFlowTimeline { iso_code } => {
+                let data = node_manager::country_timeline_data(iso_code)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::CountryFlowTimeline(data)
+            }
+            BusRequest::GetProtocolFlowTimeline { protocol } => {
+                let data = node_manager::protocol_timeline_data(protocol)
+                    .into_iter()
+                    .map(flow_timeline_to_bus)
+                    .collect();
+                BusResponse::ProtocolFlowTimeline(data)
+            }
+            BusRequest::GetSchedulerDetails => {
+                let details = node_manager::scheduler_details_data();
+                BusResponse::SchedulerDetails(lqos_bus::SchedulerDetails {
+                    available: details.available,
+                    error: details.error,
+                    details: details.details,
+                })
+            }
+            BusRequest::GetQueueStatsTotal => {
+                let totals = queue_stats_total_data();
+                BusResponse::QueueStatsTotal(totals)
+            }
+            BusRequest::GetCircuitCapacity => {
+                let data = circuit_capacity_data();
+                BusResponse::CircuitCapacity(data)
+            }
+            BusRequest::GetTreeCapacity => {
+                let data = tree_capacity_data();
+                BusResponse::TreeCapacity(data)
+            }
+            BusRequest::GetRetransmitSummary => {
+                let data = retransmit_summary_data();
+                BusResponse::RetransmitSummary(data)
+            }
+            BusRequest::GetTreeSummaryL2 => {
+                let data = tree_summary_l2_data();
+                BusResponse::TreeSummaryL2(data)
+            }
+            BusRequest::Search { term } => {
+                let results =
+                    node_manager::search_results(node_manager::SearchRequest { term: term.clone() })
+                .into_iter()
+                .map(search_result_to_bus)
+                .collect();
+                BusResponse::SearchResults(results)
+            }
             BusRequest::CheckInsight => {
                 let (status, _) = get_lts_license_status();
                 match status {
@@ -668,5 +827,207 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
             }
         });
+    }
+}
+
+fn map_warning_level(level: node_manager::WarningLevel) -> lqos_bus::WarningLevel {
+    match level {
+        node_manager::WarningLevel::Info => lqos_bus::WarningLevel::Info,
+        node_manager::WarningLevel::Warning => lqos_bus::WarningLevel::Warning,
+        node_manager::WarningLevel::Error => lqos_bus::WarningLevel::Error,
+    }
+}
+
+fn flow_timeline_to_bus(entry: node_manager::FlowTimeline) -> lqos_bus::FlowTimelineEntry {
+    lqos_bus::FlowTimelineEntry {
+        start: entry.start,
+        end: entry.end,
+        duration_nanos: entry.duration_nanos,
+        throughput: entry.throughput,
+        tcp_retransmits: entry.tcp_retransmits,
+        rtt_nanos: [entry.rtt[0].as_nanos(), entry.rtt[1].as_nanos()],
+        retransmit_times_down: entry.retransmit_times_down,
+        retransmit_times_up: entry.retransmit_times_up,
+        total_bytes: entry.total_bytes,
+        protocol: entry.protocol,
+        circuit_id: entry.circuit_id,
+        circuit_name: entry.circuit_name,
+        remote_ip: entry.remote_ip,
+    }
+}
+
+fn queue_stats_total_data() -> lqos_bus::QueueStatsTotal {
+    lqos_bus::QueueStatsTotal {
+        marks: lqos_utils::units::DownUpOrder::new(
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.marks.get_down(),
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.marks.get_up(),
+        ),
+        drops: lqos_utils::units::DownUpOrder::new(
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.drops.get_down(),
+            lqos_queue_tracker::TOTAL_QUEUE_STATS.drops.get_up(),
+        ),
+    }
+}
+
+fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
+    use crate::shaped_devices_tracker::SHAPED_DEVICES;
+    use crate::throughput_tracker::THROUGHPUT_TRACKER;
+    use lqos_utils::units::DownUpOrder;
+    use std::collections::HashMap;
+
+    struct CircuitAccumulator {
+        bytes: DownUpOrder<u64>,
+        median_rtt: f32,
+    }
+
+    let mut circuits: HashMap<String, CircuitAccumulator> = HashMap::new();
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .lock()
+        .iter()
+        .for_each(|(_k, c)| {
+            if let Some(circuit_id) = &c.circuit_id {
+                if let Some(accumulator) = circuits.get_mut(circuit_id) {
+                    accumulator.bytes += c.bytes_per_second;
+                    if let Some(latency) = c.median_latency() {
+                        accumulator.median_rtt = latency;
+                    }
+                } else {
+                    circuits.insert(
+                        circuit_id.clone(),
+                        CircuitAccumulator {
+                            bytes: c.bytes_per_second,
+                            median_rtt: c.median_latency().unwrap_or(0.0),
+                        },
+                    );
+                }
+            }
+        });
+
+    let shaped_devices = SHAPED_DEVICES.load();
+    circuits
+        .iter()
+        .filter_map(|(circuit_id, accumulator)| {
+            shaped_devices
+                .devices
+                .iter()
+                .find(|sd| sd.circuit_id == *circuit_id)
+                .map(|device| {
+                    let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;
+                    let down = down_mbps / device.download_max_mbps as f64;
+                    let up_mbps = (accumulator.bytes.up as f64 * 8.0) / 1_000_000.0;
+                    let up = up_mbps / device.upload_max_mbps as f64;
+
+                    lqos_bus::CircuitCapacityRow {
+                        circuit_name: device.circuit_name.clone(),
+                        circuit_id: circuit_id.clone(),
+                        capacity: [down, up],
+                        median_rtt: accumulator.median_rtt,
+                    }
+                })
+        })
+        .collect()
+}
+
+fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
+    use crate::shaped_devices_tracker::NETWORK_JSON;
+
+    let net_json = NETWORK_JSON.read();
+    net_json
+        .get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(id, node)| {
+            let node = node.clone_to_transit();
+            let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
+            let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+            let max_down = node.max_throughput.0 as f64;
+            let max_up = node.max_throughput.1 as f64;
+            let median_rtt = if node.rtts.is_empty() {
+                0.0
+            } else {
+                let n = node.rtts.len() / 2;
+                if node.rtts.len() % 2 == 0 {
+                    (node.rtts[n - 1] + node.rtts[n]) / 2.0
+                } else {
+                    node.rtts[n]
+                }
+            };
+
+            lqos_bus::NodeCapacity {
+                id,
+                name: node.name.clone(),
+                down,
+                up,
+                max_down,
+                max_up,
+                median_rtt,
+            }
+        })
+        .collect()
+}
+
+fn retransmit_summary_data() -> lqos_bus::RetransmitSummary {
+    let data = crate::throughput_tracker::min_max_median_tcp_retransmits();
+    lqos_bus::RetransmitSummary {
+        up: data.up,
+        down: data.down,
+        tcp_up: data.tcp_up,
+        tcp_down: data.tcp_down,
+    }
+}
+
+fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTransport)>)> {
+    use crate::shaped_devices_tracker::NETWORK_JSON;
+    use std::collections::BTreeMap;
+
+    let net_json = NETWORK_JSON.read();
+    let nodes = net_json.get_nodes_when_ready();
+    let mut candidates: Vec<(usize, usize, lqos_config::NetworkJsonTransport, u64)> = Vec::new();
+
+    for (p_idx, p_node) in nodes.iter().enumerate() {
+        if p_node.immediate_parent == Some(0) {
+            for (c_idx, c_node) in nodes.iter().enumerate() {
+                if c_node.immediate_parent == Some(p_idx) {
+                    let t = c_node.clone_to_transit();
+                    let total = t.current_throughput.0 + t.current_throughput.1;
+                    candidates.push((p_idx, c_idx, t, total));
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| b.3.cmp(&a.3));
+    let n: usize = 10;
+    if candidates.len() > n {
+        candidates.truncate(n);
+    }
+
+    let mut map: BTreeMap<usize, Vec<(usize, lqos_config::NetworkJsonTransport)>> = BTreeMap::new();
+    for (p_idx, c_idx, t, _total) in candidates.into_iter() {
+        map.entry(p_idx).or_default().push((c_idx, t));
+    }
+
+    map.into_iter().collect()
+}
+
+fn search_result_to_bus(entry: node_manager::SearchResult) -> lqos_bus::SearchResultEntry {
+    match entry {
+        node_manager::SearchResult::Circuit { id, name } => {
+            lqos_bus::SearchResultEntry::Circuit { id, name }
+        }
+        node_manager::SearchResult::Device {
+            circuit_id,
+            name,
+            circuit_name,
+        } => lqos_bus::SearchResultEntry::Device {
+            circuit_id,
+            name,
+            circuit_name,
+        },
+        node_manager::SearchResult::Site { idx, name } => {
+            lqos_bus::SearchResultEntry::Site { idx, name }
+        }
     }
 }
