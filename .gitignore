@@ -141,6 +141,24 @@ src/bin/lqos_api
 /src/linux_tc_rust.txt
 /src/linux_tc_rust_live.txt
 /src/linux_tc_rust_prune.txt
+
+# VISP integration local artifacts (never commit)
+src/.visp_token_cache_*.json
+
+# Local key material (never commit)
+src/.keys/
+
+# Node manager first-login timestamp (local)
+src/.fl
+
+# LibreOffice / editor lock files
+src/.~lock.*#
+
+# Local build artifact (built on target host)
+src/bin/lqos_overrides
+
+# Local large test topology artifact
+src/network.large.json
 <<<<<<< HEAD
 /src/lqos_overrides.json
 

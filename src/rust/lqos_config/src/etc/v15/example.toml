@@ -70,6 +70,18 @@ api_key = ""
 api_url = ""
 timeout_secs = 60
 
+[visp_integration]
+enable_visp = false
+client_id = ""
+client_secret = ""
+username = ""
+password = ""
+# Leave blank to auto-select the first ISP ID returned by the token endpoint.
+#isp_id = 0
+timeout_secs = 20
+# Optional RADIUS domain for online session enrichment.
+#online_users_domain = ""
+
 [uisp_integration]
 enable_uisp = false
 token = ""
