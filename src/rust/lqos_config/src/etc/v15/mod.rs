@@ -16,6 +16,7 @@ mod splynx_integration;
 mod stormguard;
 mod tuning;
 mod uisp_integration;
+mod visp_integration;
 mod wispgate;
 
 pub use bridge::*;

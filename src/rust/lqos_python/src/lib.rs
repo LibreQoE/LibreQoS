@@ -628,9 +628,17 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_client_id, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_client_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_username, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_password, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_isp_id, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_online_users_domain, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_timeout_secs, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_visp, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -1324,6 +1332,76 @@ fn netzur_api_timeout() -> PyResult<u64> {
 }
 
 #[pyfunction]
+fn visp_client_id() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.client_id.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_client_secret() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.client_secret.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_username() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.username.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_password() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.password.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_isp_id() -> PyResult<i64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .and_then(|cfg| cfg.isp_id)
+        .unwrap_or(0))
+}
+
+#[pyfunction]
+fn visp_online_users_domain() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .and_then(|cfg| cfg.online_users_domain.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_timeout_secs() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.timeout_secs)
+        .unwrap_or(20))
+}
+
+#[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.enable_uisp)
@@ -1342,6 +1420,16 @@ fn automatic_import_netzur() -> PyResult<bool> {
         .netzur_integration
         .as_ref()
         .map(|cfg| cfg.enable_netzur)
+        .unwrap_or(false))
+}
+
+#[pyfunction]
+fn automatic_import_visp() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.enable_visp)
         .unwrap_or(false))
 }
 

@@ -263,6 +263,7 @@ export function renderConfigMenu(currentPage) {
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
+        { href: "config_visp.html", icon: "fa-link", text: "VISP", id: "visp" },
         { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
         { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },

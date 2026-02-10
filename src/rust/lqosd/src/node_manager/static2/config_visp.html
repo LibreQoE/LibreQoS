@@ -1,0 +1,53 @@
+<div id="configMenuContainer"></div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableVisp">
+                <label class="form-check-label" for="enableVisp">Enable VISP Integration</label>
+                <div class="form-text">Toggle automated imports from VISP (GraphQL UBO API)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="vispClientId" class="form-label">Client ID</label>
+                <input type="text" class="form-control" id="vispClientId" autocomplete="off">
+            </div>
+
+            <div class="mb-3">
+                <label for="vispClientSecret" class="form-label">Client Secret</label>
+                <input type="password" class="form-control" id="vispClientSecret" autocomplete="off">
+            </div>
+
+            <div class="mb-3">
+                <label for="vispUsername" class="form-label">Appuser Username</label>
+                <input type="text" class="form-control" id="vispUsername" autocomplete="username">
+                <div class="form-text">Same credentials used to login to VISP UBO</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="vispPassword" class="form-label">Appuser Password</label>
+                <input type="password" class="form-control" id="vispPassword" autocomplete="current-password">
+            </div>
+
+            <div class="mb-3">
+                <label for="vispIspId" class="form-label">ISP ID (Tenant)</label>
+                <input type="number" class="form-control" id="vispIspId" min="0" step="1">
+                <div class="form-text">Leave blank to auto-select the first ISP ID returned by the token endpoint</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="vispTimeout" class="form-label">Request Timeout (seconds)</label>
+                <input type="number" class="form-control" id="vispTimeout" min="15" step="5">
+            </div>
+
+            <div class="mb-3">
+                <label for="vispOnlineUsersDomain" class="form-label">Online Users Domain (Optional)</label>
+                <input type="text" class="form-control" id="vispOnlineUsersDomain" autocomplete="off">
+                <div class="form-text">Used to enrich IPs via online RADIUS sessions if VISP is missing static IPs</div>
+            </div>
+
+            <button type="button" id="saveVisp" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+<script src="config_visp.js%CACHEBUSTERS%"></script>

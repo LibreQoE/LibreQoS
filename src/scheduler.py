@@ -11,7 +11,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
+    automatic_import_netzur, automatic_import_visp, calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -96,6 +96,8 @@ def importFromCRM():
             scheduler_error(error_msg)
     elif automatic_import_splynx():
         run_python_integration("integrationSplynx", "importFromSplynx", label="Splynx")
+    elif automatic_import_visp():
+        run_python_integration("integrationVISP", "importFromVISP", label="VISP")
     elif automatic_import_netzur():
         run_python_integration("integrationNetzur", "importFromNetzur", label="Netzur")
     elif automatic_import_powercode():

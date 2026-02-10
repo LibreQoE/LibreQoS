@@ -25,6 +25,7 @@ LQOS_FILES=(
   integrationSonar.py
   integrationSplynx.py
   integrationUISP.py
+  integrationVISP.py
   LibreQoS.py
   lqos.example
   lqTools.py
