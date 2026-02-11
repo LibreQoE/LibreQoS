@@ -27,6 +27,14 @@ enum Commands {
         #[arg(long)]
         cpu: String,
 
+        /// Circuit ID (raw string). Hashed before being stored.
+        #[arg(long)]
+        circuit_id: Option<String>,
+
+        /// Device ID (raw string). Hashed before being stored.
+        #[arg(long)]
+        device_id: Option<String>,
+
         /// Add "--upload 1" if you are using on-a-stick and need to map upload separately
         #[arg(long)]
         upload: Option<String>,
@@ -74,16 +82,25 @@ fn print_ips(ips: &[IpMapping]) {
             format!("{}/{}", ip.ip_address, ip.prefix_length - 96)
         };
         println!(
-            "{:<45} CPU: {:<4} TC: {}",
+            "{:<45} CPU: {:<4} TC: {} CIRCUIT: {} DEVICE: {}",
             ip_formatted,
             ip.cpu,
-            ip.tc_handle.to_string()
+            ip.tc_handle.to_string(),
+            ip.circuit_id as i64,
+            ip.device_id as i64
         );
     }
     println!();
 }
 
-fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: &Option<String>) -> Result<BusRequest> {
+fn parse_add_ip(
+    ip: &str,
+    classid: &str,
+    cpu: &str,
+    upload: &Option<String>,
+    circuit_id: &Option<String>,
+    device_id: &Option<String>,
+) -> Result<BusRequest> {
     //if ip.parse::<IpAddr>().is_err() {
     //    return Err(Error::msg(format!("Unable to parse IP address: {ip}")));
     //}
@@ -92,10 +109,22 @@ fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: &Option<String>) -> 
             "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
         )));
     }
+    let circuit_id = circuit_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| lqos_utils::hash_to_i64(s) as u64)
+        .unwrap_or(0);
+    let device_id = device_id
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| lqos_utils::hash_to_i64(s) as u64)
+        .unwrap_or(0);
     Ok(BusRequest::MapIpToFlow {
         ip_address: ip.to_string(),
         tc_handle: TcHandle::from_string(classid)?,
         cpu: read_hex_string(cpu)?, // Force HEX representation
+        circuit_id,
+        device_id,
         upload: upload.is_some(),
     })
 }
@@ -109,9 +138,12 @@ pub async fn main() -> Result<()> {
             ip,
             classid,
             cpu,
+            circuit_id,
+            device_id,
             upload,
         }) => {
-            talk_to_server(parse_add_ip(&ip, &classid, &cpu, &upload)?).await?;
+            talk_to_server(parse_add_ip(&ip, &classid, &cpu, &upload, &circuit_id, &device_id)?)
+                .await?;
         }
         Some(Commands::Del { ip, upload }) => {
             talk_to_server(BusRequest::DelIpFlow {

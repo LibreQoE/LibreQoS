@@ -46,6 +46,32 @@ where
         }
     }
 
+    /// Lookup a value from the underlying eBPF map.
+    ///
+    /// Returns `Ok(None)` if the key does not exist.
+    pub fn lookup(&self, key: &mut K) -> Result<Option<V>> {
+        let key_ptr: *mut K = key;
+        let mut value = V::default();
+        let value_ptr: *mut V = &mut value;
+        let err = unsafe {
+            bpf_map_lookup_elem(
+                self.fd,
+                key_ptr as *mut c_void,
+                value_ptr as *mut c_void,
+            )
+        };
+        if err != 0 {
+            if err == -2 {
+                // -ENOENT
+                Ok(None)
+            } else {
+                Err(Error::msg(format!("Unable to lookup map element ({err})")))
+            }
+        } else {
+            Ok(Some(value))
+        }
+    }
+
     /// Iterates the underlying BPF map, and adds the results
     /// to a vector. Each entry contains a `key, value` tuple.
     ///

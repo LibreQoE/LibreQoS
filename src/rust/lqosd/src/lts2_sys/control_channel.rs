@@ -10,12 +10,12 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
-use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 use crate::lts2_sys::license_grant;
+use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 
 mod messages;
-pub use messages::{RemoteInsightRequest, WsMessage};
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+pub use messages::{RemoteInsightRequest, WsMessage};
 
 #[derive(Debug)]
 pub struct HistoryQueryResultPayload {
@@ -180,30 +180,31 @@ async fn persistent_connection(
             // Queue chatbot control messages until the connection is permitted (Welcome received)
             let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
-            let queue_license_grant_request =
-                |socket_sender_tx: &tokio::sync::mpsc::Sender<Message>| {
-                    let Some(public_key) = license_grant::local_public_key_bytes() else {
-                        warn!("No local Insight keypair available for license grant request");
-                        return;
-                    };
-                    let message = messages::WsMessage::LicenseGrantRequest { public_key };
-                    let Ok((_, _, bytes)) = message.to_bytes() else {
-                        error!("Failed to serialize LicenseGrantRequest");
-                        return;
-                    };
-                    if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
-                        match e {
-                            TrySendError::Full(_) => {
-                                warn!(
-                                    "Send unavailable: license grant request queue full; dropping message"
-                                );
-                            }
-                            TrySendError::Closed(_) => {
-                                error!("Failed to send license grant request: channel closed");
-                            }
+            let queue_license_grant_request = |socket_sender_tx: &tokio::sync::mpsc::Sender<
+                Message,
+            >| {
+                let Some(public_key) = license_grant::local_public_key_bytes() else {
+                    warn!("No local Insight keypair available for license grant request");
+                    return;
+                };
+                let message = messages::WsMessage::LicenseGrantRequest { public_key };
+                let Ok((_, _, bytes)) = message.to_bytes() else {
+                    error!("Failed to serialize LicenseGrantRequest");
+                    return;
+                };
+                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                    match e {
+                        TrySendError::Full(_) => {
+                            warn!(
+                                "Send unavailable: license grant request queue full; dropping message"
+                            );
+                        }
+                        TrySendError::Closed(_) => {
+                            error!("Failed to send license grant request: channel closed");
                         }
                     }
-                };
+                }
+            };
 
             // Message pump
             'message_pump: loop {
@@ -970,6 +971,7 @@ async fn circuit_snapshot_streaming(
 
     // Load "shaped devices" snapshot and pick devices in the target circuit
     let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
+    let shaped_cache = crate::shaped_devices_tracker::SHAPED_DEVICE_HASH_CACHE.load();
     let mut device_indexes: Vec<usize> = Vec::new();
     for (idx, dev) in shaped.devices.iter().enumerate() {
         if dev.circuit_hash == circuit_hash {
@@ -1003,18 +1005,16 @@ async fn circuit_snapshot_streaming(
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
             .raw_data
             .lock();
-        for (xdp_ip, te) in raw.iter() {
+        for (_xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
             if te.circuit_hash != Some(circuit_hash) {
                 continue;
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            // Map IP to a device via trie
-            let lookup = xdp_ip.as_ipv6();
-            if let Some((_, id)) = shaped.trie.longest_match(lookup) {
-                if aggregates.contains_key(id) {
-                    if let Some(agg) = aggregates.get_mut(id) {
+            if let Some(device_hash) = te.device_hash {
+                if let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash) {
+                    if let Some(agg) = aggregates.get_mut(&id) {
                         // bytes_per_second -> later convert to bits
                         agg.bps_bytes += te.bytes_per_second;
                         agg.tcp_packets += te.tcp_packets;
@@ -1102,39 +1102,12 @@ async fn circuit_snapshot_streaming(
             if local.last_seen < five_minutes_ago {
                 continue;
             }
-            // Identify if this flow belongs to our circuit via local or remote mapping
-            use std::net::IpAddr;
-            let local_ip_v6 = match key.local_ip.as_ip() {
-                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                IpAddr::V6(ip) => ip,
-            };
-            let remote_ip_v6 = match key.remote_ip.as_ip() {
-                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                IpAddr::V6(ip) => ip,
-            };
-            let mut include = false;
-            let (mut local_ip_addr, mut remote_ip_addr) =
-                (key.local_ip.as_ip(), key.remote_ip.as_ip());
-            if let Some((_, id)) = shaped.trie.longest_match(local_ip_v6) {
-                if shaped.devices[*id].circuit_hash == circuit_hash {
-                    include = true;
-                    local_ip_addr = key.local_ip.as_ip();
-                    remote_ip_addr = key.remote_ip.as_ip();
-                }
-            }
-            if !include {
-                if let Some((_, id)) = shaped.trie.longest_match(remote_ip_v6) {
-                    if shaped.devices[*id].circuit_hash == circuit_hash {
-                        include = true;
-                        // swap orientation so local is on-circuit side
-                        local_ip_addr = key.remote_ip.as_ip();
-                        remote_ip_addr = key.local_ip.as_ip();
-                    }
-                }
-            }
-            if !include {
+            if local.circuit_hash != Some(circuit_hash) {
                 continue;
             }
+
+            let local_ip_addr = key.local_ip.as_ip();
+            let remote_ip_addr = key.remote_ip.as_ip();
 
             let rtt_ms = (
                 local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,

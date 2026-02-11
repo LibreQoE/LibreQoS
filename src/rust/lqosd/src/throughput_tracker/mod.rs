@@ -7,16 +7,16 @@ use self::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
     snapshot_asn_heatmaps,
 };
-pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
-use arc_swap::ArcSwap;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
-    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
+    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
+use arc_swap::ArcSwap;
+pub(crate) use flow_data::RttBuffer;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
 use lqos_bus::{
@@ -505,7 +505,11 @@ pub fn asn_heatmaps() -> BusResponse {
             } else {
                 Some(name)
             };
-            AsnHeatmapData { asn, asn_name, blocks }
+            AsnHeatmapData {
+                asn,
+                asn_name,
+                blocks,
+            }
         })
         .collect();
     BusResponse::AsnHeatmaps(rows)
@@ -990,7 +994,12 @@ pub fn dump_active_flows() -> BusResponse {
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
+                rtt_nanos: DownUpOrder::new(
+                    row.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                    row.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                ),
                 circuit_id,
                 circuit_name,
             }
@@ -1054,7 +1063,9 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let sd = SHAPED_DEVICES.load();
+    let shaped = SHAPED_DEVICES.load();
+    let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let throughput = THROUGHPUT_TRACKER.raw_data.lock();
 
     let result = table
         .iter()
@@ -1062,9 +1073,27 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .map(|(ip, flow)| {
             let geo = get_asn_name_and_country(ip.remote_ip.as_ip());
 
-            let (circuit_id, circuit_name) = sd
-                .get_circuit_id_and_name_from_ip(&ip.local_ip)
-                .unwrap_or((String::new(), String::new()));
+            let mut circuit_id = String::new();
+            let mut circuit_name = String::new();
+            if let Some(te) = throughput.get(&ip.local_ip) {
+                if let Some(id) = &te.circuit_id {
+                    circuit_id = id.clone();
+                }
+                let shaped_device = te
+                    .device_hash
+                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
+                    .or_else(|| {
+                        te.circuit_hash
+                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
+                    })
+                    .and_then(|idx| shaped.devices.get(idx));
+                if let Some(device) = shaped_device {
+                    if circuit_id.is_empty() {
+                        circuit_id = device.circuit_id.clone();
+                    }
+                    circuit_name = device.circuit_name.clone();
+                }
+            }
 
             lqos_bus::FlowbeeSummaryData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
@@ -1085,7 +1114,12 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
+                rtt_nanos: DownUpOrder::new(
+                    flow.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                    flow.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                ),
                 circuit_id,
                 circuit_name,
             }
@@ -1100,17 +1134,39 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
-        let sd = SHAPED_DEVICES.load();
+        let throughput = THROUGHPUT_TRACKER.raw_data.lock();
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let (circuit_id, circuit_name) = {
+            let mut circuit_id = String::new();
+            let mut circuit_name = String::new();
+            if let Some(te) = throughput.get(&ip) {
+                if let Some(id) = &te.circuit_id {
+                    circuit_id = id.clone();
+                }
+                let shaped_device = te
+                    .device_hash
+                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
+                    .or_else(|| {
+                        te.circuit_hash
+                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
+                    })
+                    .and_then(|idx| shaped.devices.get(idx));
+                if let Some(device) = shaped_device {
+                    if circuit_id.is_empty() {
+                        circuit_id = device.circuit_id.clone();
+                    }
+                    circuit_name = device.circuit_name.clone();
+                }
+            }
+            (circuit_id, circuit_name)
+        };
         let matching_flows: Vec<_> = lock
             .flow_data
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-
-                let (circuit_id, circuit_name) = sd
-                    .get_circuit_id_and_name_from_ip(&key.local_ip)
-                    .unwrap_or((String::new(), String::new()));
 
                 lqos_bus::FlowbeeSummaryData {
                     remote_ip: key.remote_ip.as_ip().to_string(),
@@ -1131,9 +1187,14 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
-                    circuit_id,
-                    circuit_name,
+                    rtt_nanos: DownUpOrder::new(
+                        row.0
+                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                        row.0
+                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                    ),
+                    circuit_id: circuit_id.clone(),
+                    circuit_name: circuit_name.clone(),
                 }
             })
             .collect();

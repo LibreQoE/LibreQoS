@@ -7,16 +7,21 @@ use crate::cpu_map::CpuMapping;
 use anyhow::{Error, Result};
 use libbpf_sys::{
     LIBBPF_STRICT_ALL, XDP_FLAGS_DRV_MODE, XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE,
-    XDP_FLAGS_UPDATE_IF_NOEXIST, bpf_xdp_attach, libbpf_set_strict_mode,
+    XDP_FLAGS_UPDATE_IF_NOEXIST, bpf_map_info, bpf_obj_get, bpf_obj_get_info_by_fd, bpf_xdp_attach,
+    libbpf_set_strict_mode,
 };
-use nix::libc::{geteuid, if_nametoindex};
+use lqos_utils::XdpIpAddress;
+use nix::libc::{close, geteuid, if_nametoindex};
 use std::{
     ffi::{CString, c_void},
+    fs,
+    mem::MaybeUninit,
+    path::Path,
     process::Command,
     thread,
     time::Duration,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use self::bpf::{libbpf_num_possible_cpus, lqos_kern};
 
@@ -39,6 +44,81 @@ pub fn check_root() -> Result<()> {
             Err(Error::msg("You need to be root to do this."))
         }
     }
+}
+
+fn remove_incompatible_pinned_map(
+    path: &str,
+    expected_key_size: u32,
+    expected_value_size: u32,
+) -> Result<()> {
+    if !Path::new(path).exists() {
+        return Ok(());
+    }
+
+    let path_c = CString::new(path)?;
+    let fd = unsafe { bpf_obj_get(path_c.as_ptr()) };
+    if fd < 0 {
+        warn!("Unable to open pinned BPF map '{path}' for ABI check (fd={fd})");
+        return Ok(());
+    }
+
+    let mut info = MaybeUninit::<bpf_map_info>::zeroed();
+    let mut len: u32 = std::mem::size_of::<bpf_map_info>() as u32;
+    let err = unsafe { bpf_obj_get_info_by_fd(fd, info.as_mut_ptr() as *mut c_void, &mut len) };
+    unsafe {
+        close(fd);
+    }
+    if err != 0 {
+        return Err(Error::msg(format!(
+            "Unable to query pinned BPF map '{path}' info (err={err})."
+        )));
+    }
+    let info = unsafe { info.assume_init() };
+
+    if info.key_size != expected_key_size || info.value_size != expected_value_size {
+        warn!(
+            "Pinned BPF map '{}' ABI mismatch (key_size={}, value_size={}) expected (key_size={}, value_size={}). Removing pin to force recreation.",
+            path, info.key_size, info.value_size, expected_key_size, expected_value_size
+        );
+        fs::remove_file(path).map_err(|e| {
+            Error::msg(format!(
+                "Unable to remove pinned BPF map '{path}' (needed for ABI upgrade): {e:?}"
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
+fn ensure_ip_mapping_maps_abi() -> Result<()> {
+    let expected_key_size = std::mem::size_of::<crate::ip_mapping::IpHashKey>() as u32;
+    let expected_value_size = std::mem::size_of::<crate::ip_mapping::IpHashData>() as u32;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/map_ip_to_cpu_and_tc",
+        expected_key_size,
+        expected_value_size,
+    )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
+        std::mem::size_of::<XdpIpAddress>() as u32,
+        expected_value_size,
+    )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/ip_mapping_epoch",
+        std::mem::size_of::<u32>() as u32,
+        std::mem::size_of::<u32>() as u32,
+    )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/map_traffic",
+        std::mem::size_of::<XdpIpAddress>() as u32,
+        std::mem::size_of::<crate::HostCounter>() as u32,
+    )?;
+    remove_incompatible_pinned_map(
+        "/sys/fs/bpf/flowbee",
+        std::mem::size_of::<crate::flowbee_data::FlowbeeKey>() as u32,
+        std::mem::size_of::<crate::flowbee_data::FlowbeeData>() as u32,
+    )?;
+    Ok(())
 }
 
 /// Converts an interface name to an interface index.
@@ -155,7 +235,7 @@ unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
 pub enum InterfaceDirection {
     Internet,
     IspNetwork,
-    OnAStick(u16, u16),
+    OnAStick(u16, u16, u32),
 }
 
 pub fn attach_xdp_and_tc_to_interface(
@@ -165,6 +245,9 @@ pub fn attach_xdp_and_tc_to_interface(
     flowbee_event_handler: bpf::ring_buffer_sample_fn,
 ) -> Result<*mut lqos_kern> {
     check_root()?;
+    // If ABI changes were made to pinned maps, ensure we do not silently reuse
+    // incompatible versions that truncate struct values.
+    ensure_ip_mapping_maps_abi()?;
     // Check the interface is valid
     let interface_index = interface_name_to_index(interface_name)?;
     set_strict_mode()?;
@@ -176,9 +259,10 @@ pub fn attach_xdp_and_tc_to_interface(
             InterfaceDirection::IspNetwork => 2,
             InterfaceDirection::OnAStick(..) => 3,
         };
-        if let InterfaceDirection::OnAStick(internet, isp) = direction {
+        if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
             (*(*skeleton).bss).internet_vlan = internet.to_be();
             (*(*skeleton).bss).isp_vlan = isp.to_be();
+            (*(*skeleton).bss).stick_offset = stick_offset;
         }
         // Ensure no lingering XDP programs before loading/attaching
         let _ = unload_xdp_from_interface(interface_name);

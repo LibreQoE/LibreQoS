@@ -1,4 +1,7 @@
-use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id, FlowbeeEffectiveDirection};
+use super::{
+    FlowAnalysis, FlowbeeEffectiveDirection, get_asn_lat_lon, get_asn_name_and_country,
+    get_asn_name_by_id,
+};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use allocative_derive::Allocative;
@@ -108,7 +111,10 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                let rtt = [data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32, data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32]; // TODO: Fix these types
+                let rtt = [
+                    data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32,
+                    data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32,
+                ]; // TODO: Fix these types
                 (geo.country, data.bytes_sent, rtt, geo.flag)
             })
             .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
@@ -212,10 +218,12 @@ impl TimeBuffer {
                 v4_packets_sent.checked_add(data.packets_sent);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
-                    v4_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
+                    v4_rtt[0]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
-                    v4_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
+                    v4_rtt[1]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             } else {
                 // It's V6
@@ -223,10 +231,12 @@ impl TimeBuffer {
                 v6_packets_sent.checked_add(data.packets_sent);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
-                    v6_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
+                    v6_rtt[0]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
-                    v6_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
+                    v6_rtt[1]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             }
         });
@@ -459,8 +469,14 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
     let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
-    let sd = SHAPED_DEVICES.load();
-    let circuit_hash = sd.get_circuit_hash_from_ip(&key.local_ip);
+    let circuit_hash = data.circuit_hash.or_else(|| {
+        crate::throughput_tracker::THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .get(&key.local_ip)
+            .and_then(|te| te.circuit_hash)
+            .or_else(|| SHAPED_DEVICES.load().get_circuit_hash_from_ip(&key.local_ip))
+    });
 
     if !one_way {
         //data.trim(); // Remove the trailing 30 seconds of zeroes

@@ -769,29 +769,53 @@ fn delete_ip_mapping(_py: Python, ip_address: String) -> PyResult<()> {
 
 /// Internal function
 /// Converts IP address arguments into an IP mapping request.
-fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: bool) -> Result<BusRequest> {
+fn parse_add_ip(
+    ip: &str,
+    classid: &str,
+    cpu: &str,
+    upload: bool,
+    circuit_id: Option<&str>,
+    device_id: Option<&str>,
+) -> Result<BusRequest> {
     if !classid.contains(':') {
         return Err(Error::msg(format!(
             "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
         )));
     }
+    let circuit_id = circuit_id
+        .and_then(|s| (!s.is_empty()).then(|| lqos_utils::hash_to_i64(s) as u64))
+        .unwrap_or(0);
+    let device_id = device_id
+        .and_then(|s| (!s.is_empty()).then(|| lqos_utils::hash_to_i64(s) as u64))
+        .unwrap_or(0);
     Ok(BusRequest::MapIpToFlow {
         ip_address: ip.to_string(),
         tc_handle: TcHandle::from_string(classid)?,
         cpu: read_hex_string(cpu)?, // Force HEX representation
+        circuit_id,
+        device_id,
         upload,
     })
 }
 
 /// Adds an IP address mapping
-#[pyfunction]
+#[pyfunction(signature = (ip, classid, cpu, upload, circuit_id=None, device_id=None))]
 fn add_ip_mapping(
     ip: String,
     classid: String,
     cpu: String, // In HEX
     upload: bool,
+    circuit_id: Option<String>,
+    device_id: Option<String>,
 ) -> PyResult<()> {
-    let request = parse_add_ip(&ip, &classid, &cpu, upload);
+    let request = parse_add_ip(
+        &ip,
+        &classid,
+        &cpu,
+        upload,
+        circuit_id.as_deref(),
+        device_id.as_deref(),
+    );
     if let Ok(request) = request {
         run_query(vec![request]).unwrap();
         Ok(())
@@ -812,14 +836,24 @@ impl BatchedCommands {
         Ok(Self { batch: Vec::new() })
     }
 
+    #[pyo3(signature = (ip, classid, cpu, upload, circuit_id=None, device_id=None))]
     pub fn add_ip_mapping(
         &mut self,
         ip: String,
         classid: String,
         cpu: String,
         upload: bool,
+        circuit_id: Option<String>,
+        device_id: Option<String>,
     ) -> PyResult<()> {
-        let request = parse_add_ip(&ip, &classid, &cpu, upload);
+        let request = parse_add_ip(
+            &ip,
+            &classid,
+            &cpu,
+            upload,
+            circuit_id.as_deref(),
+            device_id.as_deref(),
+        );
         if let Ok(request) = request {
             self.batch.push(request);
             Ok(())

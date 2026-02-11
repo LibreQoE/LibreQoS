@@ -8,9 +8,9 @@ use super::{
 };
 use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::{
-    shaped_devices_tracker::SHAPED_DEVICES,
+    shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::HIGH_WATERMARK,
-    throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map, FlowbeeEffectiveDirection},
+    throughput_tracker::flow_data::{FlowbeeEffectiveDirection, expire_rtt_flows, flowbee_rtt_map},
 };
 use fxhash::FxHashMap;
 use lqos_bakery::BakeryCommands;
@@ -18,14 +18,14 @@ use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
+use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QoqScores, compute_qoq_scores};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
-    temporal_heatmap::TemporalHeatmap,
     qoq_heatmap::TemporalQoqHeatmap,
     rtt::RttBucket,
+    temporal_heatmap::TemporalHeatmap,
     units::{AtomicDownUp, DownUpOrder},
 };
-use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QoqScores, compute_qoq_scores};
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::{sync::atomic::AtomicU64, time::Duration};
@@ -198,19 +198,27 @@ impl ThroughputTracker {
                 utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
             let rtt_p50_down = circuit_rtt_snapshot
                 .get(&circuit_hash)
-                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50))
+                .and_then(|rtt| {
+                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                })
                 .map(|rtt| rtt.as_millis() as f32);
             let rtt_p50_up = circuit_rtt_snapshot
                 .get(&circuit_hash)
-                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50))
+                .and_then(|rtt| {
+                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                })
                 .map(|rtt| rtt.as_millis() as f32);
             let rtt_p90_down = circuit_rtt_snapshot
                 .get(&circuit_hash)
-                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90))
+                .and_then(|rtt| {
+                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+                })
                 .map(|rtt| rtt.as_millis() as f32);
             let rtt_p90_up = circuit_rtt_snapshot
                 .get(&circuit_hash)
-                .and_then(|rtt| rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90))
+                .and_then(|rtt| {
+                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+                })
                 .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down =
                 retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
@@ -231,28 +239,24 @@ impl ThroughputTracker {
                 retransmit_up,
             );
 
-            let rtt = circuit_rtt_snapshot.get(&circuit_hash).unwrap_or(&empty_rtt);
-            let loss_download =
-                tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
+            let rtt = circuit_rtt_snapshot
+                .get(&circuit_hash)
+                .unwrap_or(&empty_rtt);
+            let loss_download = tcp_retransmit_loss_proxy(
+                aggregate.tcp_retransmits.down,
+                aggregate.tcp_packets.down,
+            );
             let loss_upload =
                 tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
             let scores = if let Some(profile) = qoo_profile.as_ref() {
-                compute_qoq_scores(
-                    profile.as_ref(),
-                    rtt,
-                    loss_download,
-                    loss_upload,
-                )
+                compute_qoq_scores(profile.as_ref(), rtt, loss_download, loss_upload)
             } else {
                 QoqScores::default()
             };
             let qoq_heatmap = qoq_heatmaps
                 .entry(circuit_hash)
                 .or_insert_with(TemporalQoqHeatmap::new);
-            qoq_heatmap.add_sample(
-                scores.download_total_f32(),
-                scores.upload_total_f32(),
-            );
+            qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
         }
 
         let mut global_rtt_buffer = RttBuffer::default();
@@ -303,10 +307,9 @@ impl ThroughputTracker {
             QoqScores::default()
         };
 
-        self.global_qoq_heatmap.lock().add_sample(
-            scores.download_total_f32(),
-            scores.upload_total_f32(),
-        );
+        self.global_qoq_heatmap
+            .lock()
+            .add_sample(scores.download_total_f32(), scores.upload_total_f32());
     }
 
     pub(crate) fn copy_previous_and_reset_rtt(&self) {
@@ -335,53 +338,55 @@ impl ThroughputTracker {
         });
     }
 
-    fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> (Option<String>, Option<i64>) {
-        let mut circuit_id = None;
-        let mut circuit_hash = None;
-        let lookup = xdp_ip.as_ipv6();
-        let cfg = SHAPED_DEVICES.load();
-        if let Some((_, id)) = cfg.trie.longest_match(lookup) {
-            circuit_id = Some(cfg.devices[*id].circuit_id.clone());
-            circuit_hash = Some(cfg.devices[*id].circuit_hash);
+    fn shaped_device_for_hashes<'a>(
+        shaped: &'a lqos_config::ConfigShapedDevices,
+        cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+        device_hash: Option<i64>,
+        circuit_hash: Option<i64>,
+    ) -> Option<&'a lqos_config::ShapedDevice> {
+        if let Some(device_hash) = device_hash {
+            if let Some(idx) = cache.index_by_device_hash(shaped, device_hash) {
+                return shaped.devices.get(idx);
+            }
         }
-        //println!("{lookup:?} Found circuit_id: {circuit_id:?}");
-        (circuit_id, circuit_hash)
+        if let Some(circuit_hash) = circuit_hash {
+            if let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash) {
+                return shaped.devices.get(idx);
+            }
+        }
+        None
     }
 
-    pub(crate) fn get_node_name_for_circuit_id(circuit_id: Option<String>) -> Option<String> {
-        if let Some(circuit_id) = circuit_id {
-            let shaped = SHAPED_DEVICES.load();
-            let parent_name = shaped
-                .devices
-                .iter()
-                .find(|d| d.circuit_id == circuit_id)
-                .map(|device| device.parent_node.clone());
-            //println!("{parent_name:?}");
-            parent_name
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn lookup_network_parents(
-        circuit_id: Option<String>,
+    fn lookup_network_parents_from_hashes(
+        shaped: &lqos_config::ConfigShapedDevices,
+        cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+        device_hash: Option<i64>,
+        circuit_hash: Option<i64>,
         lock: &NetworkJson,
     ) -> Option<Vec<usize>> {
-        if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
-            //let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
-            lock.get_parents_for_circuit_id(&parent)
-        } else {
-            None
-        }
+        Self::shaped_device_for_hashes(shaped, cache, device_hash, circuit_hash)
+            .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node))
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
+        let shaped = SHAPED_DEVICES.load();
+        let cache = SHAPED_DEVICE_HASH_CACHE.load();
         let mut raw_data = self.raw_data.lock();
-        raw_data.iter_mut().for_each(|(key, data)| {
-            let (circuit_id, circuit_hash) = Self::lookup_circuit_id(key);
-            data.circuit_id = circuit_id;
-            data.circuit_hash = circuit_hash;
-            data.network_json_parents = Self::lookup_network_parents(data.circuit_id.clone(), lock);
+        raw_data.iter_mut().for_each(|(_key, data)| {
+            let shaped_device = Self::shaped_device_for_hashes(
+                &shaped,
+                &cache,
+                data.device_hash,
+                data.circuit_hash,
+            );
+            if data.circuit_hash.is_none() {
+                if let Some(device) = shaped_device {
+                    data.circuit_hash = Some(device.circuit_hash);
+                }
+            }
+            data.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
+            data.network_json_parents = shaped_device
+                .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node));
         });
     }
 
@@ -393,6 +398,8 @@ impl ThroughputTracker {
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let cache = SHAPED_DEVICE_HASH_CACHE.load();
         let mut raw_data = self.raw_data.lock();
         throughput_for_each(&mut |xdp_ip, counts| {
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
@@ -402,6 +409,12 @@ impl ThroughputTracker {
                 entry.tcp_packets = DownUpOrder::zeroed();
                 entry.udp_packets = DownUpOrder::zeroed();
                 entry.icmp_packets = DownUpOrder::zeroed();
+                let mut last_seen = 0u64;
+                // Choose the most recent metadata to reduce staleness when mappings change.
+                let mut meta_last_seen = 0u64;
+                let mut meta_tc_handle = 0u32;
+                let mut meta_circuit_id = 0u64;
+                let mut meta_device_id = 0u64;
                 // Sum the counts across CPUs (it's a per-CPU map)
                 for c in counts {
                     entry
@@ -419,10 +432,44 @@ impl ThroughputTracker {
                     entry
                         .icmp_packets
                         .checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
-                    if c.tc_handle != 0 {
-                        entry.tc_handle = TcHandle::from_u32(c.tc_handle);
+                    last_seen = u64::max(last_seen, c.last_seen);
+                    if c.last_seen > meta_last_seen {
+                        meta_last_seen = c.last_seen;
+                        meta_tc_handle = c.tc_handle;
+                        meta_circuit_id = c.circuit_id;
+                        meta_device_id = c.device_id;
                     }
-                    entry.last_seen = u64::max(entry.last_seen, c.last_seen);
+                }
+                entry.last_seen = last_seen;
+
+                let new_tc_handle = TcHandle::from_u32(meta_tc_handle);
+                let new_circuit_hash = if meta_circuit_id != 0 {
+                    Some(meta_circuit_id as i64)
+                } else {
+                    None
+                };
+                let new_device_hash = if meta_device_id != 0 {
+                    Some(meta_device_id as i64)
+                } else {
+                    None
+                };
+
+                let hashes_changed =
+                    entry.circuit_hash != new_circuit_hash || entry.device_hash != new_device_hash;
+                entry.tc_handle = new_tc_handle;
+                entry.circuit_hash = new_circuit_hash;
+                entry.device_hash = new_device_hash;
+                if hashes_changed {
+                    let shaped_device = Self::shaped_device_for_hashes(
+                        &shaped,
+                        &cache,
+                        entry.device_hash,
+                        entry.circuit_hash,
+                    );
+                    entry.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
+                    entry.network_json_parents = shaped_device.and_then(|device| {
+                        net_json_calc.get_parents_for_circuit_id(&device.parent_node)
+                    });
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
@@ -476,7 +523,48 @@ impl ThroughputTracker {
                     }
                 }
             } else {
-                let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
+                let mut last_seen = 0u64;
+                let mut meta_last_seen = 0u64;
+                let mut meta_tc_handle = 0u32;
+                let mut meta_circuit_id = 0u64;
+                let mut meta_device_id = 0u64;
+                let mut total_bytes: DownUpOrder<u64> = DownUpOrder::zeroed();
+                let mut total_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+                let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+                let mut total_udp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+                let mut total_icmp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
+                for c in counts {
+                    total_bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
+                    total_packets.checked_add_direct(c.download_packets, c.upload_packets);
+                    total_tcp_packets
+                        .checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
+                    total_udp_packets
+                        .checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
+                    total_icmp_packets
+                        .checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
+                    last_seen = u64::max(last_seen, c.last_seen);
+                    if c.last_seen > meta_last_seen {
+                        meta_last_seen = c.last_seen;
+                        meta_tc_handle = c.tc_handle;
+                        meta_circuit_id = c.circuit_id;
+                        meta_device_id = c.device_id;
+                    }
+                }
+
+                let tc_handle = TcHandle::from_u32(meta_tc_handle);
+                let circuit_hash = if meta_circuit_id != 0 {
+                    Some(meta_circuit_id as i64)
+                } else {
+                    None
+                };
+                let device_hash = if meta_device_id != 0 {
+                    Some(meta_device_id as i64)
+                } else {
+                    None
+                };
+                let shaped_device =
+                    Self::shaped_device_for_hashes(&shaped, &cache, device_hash, circuit_hash);
+                let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
                 // Call the Bakery Queue Creation for new circuits
                 if let Some(circuit_hash) = circuit_hash {
                     if let Ok(config) = lqos_config::load_config() {
@@ -485,11 +573,7 @@ impl ThroughputTracker {
 
                             if config.queues.lazy_threshold_bytes.is_some() {
                                 let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
-                                let total_bytes: u64 = counts
-                                    .iter()
-                                    .map(|c| c.download_bytes + c.upload_bytes)
-                                    .sum();
-                                if total_bytes < threshold {
+                                if total_bytes.down.saturating_add(total_bytes.up) < threshold {
                                     add = false;
                                 }
                             }
@@ -500,54 +584,40 @@ impl ThroughputTracker {
                         }
                     }
                 }
-                let mut entry = ThroughputEntry {
-                    circuit_id: circuit_id.clone(),
+                let entry = ThroughputEntry {
+                    circuit_id,
                     circuit_hash,
-                    network_json_parents: Self::lookup_network_parents(circuit_id, net_json_calc),
+                    device_hash,
+                    network_json_parents: Self::lookup_network_parents_from_hashes(
+                        &shaped,
+                        &cache,
+                        device_hash,
+                        circuit_hash,
+                        net_json_calc,
+                    ),
                     first_cycle: self_cycle,
                     most_recent_cycle: 0,
-                    bytes: DownUpOrder::zeroed(),
-                    packets: DownUpOrder::zeroed(),
+                    bytes: total_bytes,
+                    packets: total_packets,
                     prev_bytes: DownUpOrder::zeroed(),
                     prev_packets: DownUpOrder::zeroed(),
                     bytes_per_second: DownUpOrder::zeroed(),
                     packets_per_second: DownUpOrder::zeroed(),
-                    tcp_packets: DownUpOrder::zeroed(),
-                    udp_packets: DownUpOrder::zeroed(),
-                    icmp_packets: DownUpOrder::zeroed(),
+                    tcp_packets: total_tcp_packets,
+                    udp_packets: total_udp_packets,
+                    icmp_packets: total_icmp_packets,
                     prev_tcp_packets: DownUpOrder::zeroed(),
                     prev_udp_packets: DownUpOrder::zeroed(),
                     prev_icmp_packets: DownUpOrder::zeroed(),
-                    tc_handle: TcHandle::zero(),
+                    tc_handle,
                     rtt_buffer: RttBuffer::default(),
                     recent_rtt_data: [RttData::from_nanos(0); 60],
                     last_fresh_rtt_data_cycle: 0,
-                    last_seen: 0,
+                    last_seen,
                     tcp_retransmits: DownUpOrder::zeroed(),
                     prev_tcp_retransmits: DownUpOrder::zeroed(),
                     qoq: QoqScores::default(),
                 };
-                for c in counts {
-                    entry
-                        .bytes
-                        .checked_add_direct(c.download_bytes, c.upload_bytes);
-                    entry
-                        .packets
-                        .checked_add_direct(c.download_packets, c.upload_packets);
-                    entry
-                        .tcp_packets
-                        .checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
-                    entry
-                        .udp_packets
-                        .checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
-                    entry
-                        .icmp_packets
-                        .checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
-                    if c.tc_handle != 0 {
-                        entry.tc_handle = TcHandle::from_u32(c.tc_handle);
-                    }
-                    entry.last_seen = u64::max(entry.last_seen, c.last_seen);
-                }
                 raw_data.insert(*xdp_ip, entry);
             }
         });
@@ -657,14 +727,16 @@ impl ThroughputTracker {
                             DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64);
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            this_flow
-                                .0
-                                .record_tcp_retry_time(FlowbeeEffectiveDirection::Download, data.last_seen);
+                            this_flow.0.record_tcp_retry_time(
+                                FlowbeeEffectiveDirection::Download,
+                                data.last_seen,
+                            );
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            this_flow
-                                .0
-                                .record_tcp_retry_time(FlowbeeEffectiveDirection::Upload, data.last_seen);
+                            this_flow.0.record_tcp_retry_time(
+                                FlowbeeEffectiveDirection::Upload,
+                                data.last_seen,
+                            );
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
@@ -932,9 +1004,13 @@ impl ThroughputTracker {
             // doesn't flap to unknown ("-") on idle seconds.
             if let Some(profile) = qoo_profile.as_ref() {
                 for tracker in raw_data.values_mut() {
-                    let tcp_packets_delta = tracker.tcp_packets.checked_sub_or_zero(tracker.prev_tcp_packets);
-                    let loss_download =
-                        tcp_retransmit_loss_proxy(tracker.tcp_retransmits.down, tcp_packets_delta.down);
+                    let tcp_packets_delta = tracker
+                        .tcp_packets
+                        .checked_sub_or_zero(tracker.prev_tcp_packets);
+                    let loss_download = tcp_retransmit_loss_proxy(
+                        tracker.tcp_retransmits.down,
+                        tcp_packets_delta.down,
+                    );
                     let loss_upload =
                         tcp_retransmit_loss_proxy(tracker.tcp_retransmits.up, tcp_packets_delta.up);
                     let scores = compute_qoq_scores(
@@ -1135,12 +1211,8 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     if retransmits == 0 || packets < 10 {
         return None;
     }
-    let value =(retransmits as f32 / packets as f32) * 100.0;
-    if value > 50.0 {
-        None
-    } else {
-        Some(value)
-    }
+    let value = (retransmits as f32 / packets as f32) * 100.0;
+    if value > 50.0 { None } else { Some(value) }
 }
 
 fn median(values: &mut Vec<f32>) -> Option<f32> {

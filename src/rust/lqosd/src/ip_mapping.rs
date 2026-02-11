@@ -15,8 +15,12 @@ pub(crate) fn map_ip_to_flow(
     tc_handle: &TcHandle,
     cpu: u32,
     upload: bool,
+    circuit_id: u64,
+    device_id: u64,
 ) -> BusResponse {
-    expect_ack(lqos_sys::add_ip_to_tc(ip_address, *tc_handle, cpu, upload))
+    expect_ack(lqos_sys::add_ip_to_tc(
+        ip_address, *tc_handle, cpu, upload, circuit_id, device_id,
+    ))
 }
 
 pub(crate) fn clear_hot_cache() -> BusResponse {
@@ -40,6 +44,8 @@ pub(crate) fn list_mapped_ips() -> BusResponse {
                 prefix_length: ip_key.prefixlen,
                 tc_handle: TcHandle::from_u32(ip_data.tc_handle),
                 cpu: ip_data.cpu,
+                circuit_id: ip_data.circuit_id,
+                device_id: ip_data.device_id,
             })
             .collect();
         BusResponse::MappedIps(data)

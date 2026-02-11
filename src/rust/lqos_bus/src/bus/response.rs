@@ -31,6 +31,16 @@ pub struct UrgentIssue {
     /// Optional dedupe key
     pub dedupe_key: Option<String>,
 }
+
+/// Summary of current Insight license state and limits.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct InsightLicenseSummary {
+    /// True when a currently valid Insight grant is available.
+    pub licensed: bool,
+    /// Optional maximum mapped-circuit limit from license.
+    /// `None` means the license did not specify a max.
+    pub max_circuits: Option<u64>,
+}
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
@@ -597,4 +607,7 @@ pub enum BusResponse {
 
     /// Is Insight Enabled?
     InsightStatus(bool),
+
+    /// Insight license summary (licensed + optional max circuits).
+    InsightLicenseSummary(InsightLicenseSummary),
 }

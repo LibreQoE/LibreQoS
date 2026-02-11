@@ -56,6 +56,10 @@ int direction = 255;
 __be16 internet_vlan = 0; // Note: turn these into big-endian
 __be16 isp_vlan = 0;
 
+// In on-a-stick mode, upload classes/CPUs are offset by this amount.
+// Userspace computes this from NIC queues / CPU count and sets it at load time.
+__u32 stick_offset = 0;
+
 // Helpers from https://elixir.bootlin.com/linux/v5.4.153/source/tools/testing/selftests/bpf/progs/test_xdp_meta.c#L37
 #define __round_mask(x, y) ((__typeof__(x))((y) - 1))
 #define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
@@ -128,31 +132,28 @@ int xdp_prog(struct xdp_md *ctx)
     bpf_debug("(XDP) Spotted VLAN: %u", dissector.current_vlan);
 #endif
 
-    // Determine the lookup key by direction
-    struct ip_hash_key lookup_key;
-    struct ip_hash_info * ip_info = setup_lookup_key_and_tc_cpu(
-        effective_direction, 
-        &lookup_key, 
-        &dissector
-    );
+    // Per-Flow RTT Tracking (also resolves mapping using flowbee first, falling
+    // back to hotcache/LPM for new flows).
+    struct ip_hash_info ip_info = {0};
+    track_flows(&dissector, effective_direction, &ip_info);
 
     // Find the desired TC handle and CPU target
-    __u32 tc_handle = 0;
-    __u32 cpu = 0;
-    if (ip_info) {
-        tc_handle = ip_info->tc_handle;
-        cpu = ip_info->cpu;
-    }
+    __u32 tc_handle = ip_info.tc_handle;
+    __u32 cpu = ip_info.cpu;
+    __u64 circuit_id = ip_info.circuit_id;
+    __u64 device_id = ip_info.device_id;
 
-    // Per-Flow RTT Tracking
-    track_flows(&dissector, effective_direction);
+    // Host key used for throughput tracking (customer-side IP).
+    struct in6_addr host_key = (effective_direction == 1) ? dissector.dst_ip : dissector.src_ip;
 
     // Update the traffic tracking buffers
     track_traffic(
         effective_direction, 
-        &lookup_key.address, 
+        &host_key, 
         ctx->data_end - ctx->data, // end - data = length
         tc_handle,
+        circuit_id,
+        device_id,
         &dissector
     );
 
@@ -260,11 +261,11 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     } // Scope to remove tcq_cfg when done with it
 
     // Do we have metadata?
-    if (skb->data != skb->data_meta) {
+    if (skb->data_meta < skb->data) {
         #ifdef VERBOSE
         bpf_debug("(TC) Metadata is present");
         #endif
-        int size = skb->data_meta - skb->data;
+        int size = skb->data - skb->data_meta;
         if (size < sizeof(struct metadata_pass_t)) {
             bpf_debug("(TC) Metadata too small");
         } else {
@@ -281,7 +282,7 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
 
             struct metadata_pass_t *meta = (struct metadata_pass_t *)data_meta;
             #ifdef VERBOSE
-            bpf_debug("(TC) Metadata: CPU: %u, TC: %u", meta->cpu, meta->tc_handle);
+            bpf_debug("(TC) Metadata: TC: %u", meta->tc_handle);
             #endif
             if (meta->tc_handle != 0) {
                 // We can short-circuit the redirect and bypass the second
@@ -318,7 +319,7 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     // Determine the lookup key by direction
     struct ip_hash_key lookup_key;
     int effective_direction = 0;
-    struct ip_hash_info * ip_info = tc_setup_lookup_key_and_tc_cpu(
+    struct ip_hash_info ip_info = tc_setup_lookup_key_and_tc_cpu(
         direction, 
         &lookup_key, 
         &dissector, 
@@ -329,12 +330,12 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     bpf_debug("(TC) effective direction: %d", effective_direction);
 #endif
 
-    if (ip_info && ip_info->tc_handle != 0) {
+    if (ip_info.tc_handle != 0) {
         // We found a matching mapped TC flow
 #ifdef VERBOSE
-        bpf_debug("(TC) Mapped to TC handle %x", ip_info->tc_handle);
+        bpf_debug("(TC) Mapped to TC handle %x", ip_info.tc_handle);
 #endif
-        skb->priority = ip_info->tc_handle;
+        skb->priority = ip_info.tc_handle;
         #ifdef TRACING
         {
             __u64 now = bpf_ktime_get_ns();
