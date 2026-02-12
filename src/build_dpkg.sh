@@ -26,6 +26,7 @@ LQOS_FILES=(
   integrationSplynx.py
   integrationUISP.py
   integrationVISP.py
+  integrationWISPGate.py
   LibreQoS.py
   lqos.example
   lqTools.py
@@ -35,6 +36,7 @@ LQOS_FILES=(
   README.md
   scheduler.py
   ShapedDevices.example.csv
+  virtual_tree_nodes.py
   mikrotikDHCPRouterList.template.csv
   integrationUISPbandwidths.template.csv
   manualNetwork.template.csv

@@ -62,6 +62,7 @@ pub struct Config {
     pub flows: Option<super::flows::FlowConfig>,
 
     /// Integration Common Variables
+    #[serde(default)]
     pub integration_common: super::integration_common::IntegrationConfig,
 
     /// Splynx Integration configuration. Optional so older configs without this
@@ -78,12 +79,15 @@ pub struct Config {
     pub visp_integration: Option<super::visp_integration::VispIntegration>,
 
     /// UISP Integration
+    #[serde(default)]
     pub uisp_integration: super::uisp_integration::UispIntegration,
 
     /// Powercode Integration
+    #[serde(default)]
     pub powercode_integration: super::powercode_integration::PowercodeIntegration,
 
     /// Sonar Integration
+    #[serde(default)]
     pub sonar_integration: super::sonar_integration::SonarIntegration,
 
     /// InfluxDB Configuration
@@ -286,6 +290,25 @@ impl Config {
 mod test {
     use super::Config;
 
+    fn remove_sections(raw: &str, sections: &[&str]) -> String {
+        let mut output = Vec::new();
+        let mut skip_section = false;
+
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                let section_name = &trimmed[1..trimmed.len() - 1];
+                skip_section = sections.contains(&section_name);
+            }
+
+            if !skip_section {
+                output.push(line);
+            }
+        }
+
+        output.join("\n")
+    }
+
     #[test]
     fn load_example() {
         let config = Config::load_from_string(include_str!("example.toml"))
@@ -328,6 +351,31 @@ mod test {
         let config = Config::load_from_string(&no_splynx)
             .expect("Config without splynx section should still deserialize");
         assert!(!config.splynx_integration.enable_splynx);
+    }
+
+    #[test]
+    fn load_example_without_integration_sections() {
+        let stripped = remove_sections(
+            include_str!("example.toml"),
+            &[
+                "integration_common",
+                "splynx_integration",
+                "spylnx_integration",
+                "netzur_integration",
+                "visp_integration",
+                "uisp_integration",
+                "powercode_integration",
+                "sonar_integration",
+                "wispgate_integration",
+            ],
+        );
+
+        let config = Config::load_from_string(&stripped)
+            .expect("Config without integrations should still deserialize");
+        assert!(!config.splynx_integration.enable_splynx);
+        assert!(!config.uisp_integration.enable_uisp);
+        assert!(!config.powercode_integration.enable_powercode);
+        assert!(!config.sonar_integration.enable_sonar);
     }
 
     #[test]
