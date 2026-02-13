@@ -218,7 +218,7 @@ static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Default, Clone, Copy)]
 struct MappedLimitStats {
-    enforced_limit: usize,
+    enforced_limit: Option<usize>,
     requested_mapped: usize,
     allowed_mapped: usize,
     dropped_mapped: usize,
@@ -228,7 +228,13 @@ struct MappedLimitStats {
 struct ResolvedMappedLimit {
     licensed: bool,
     max_circuits: Option<usize>,
-    effective_limit: usize,
+    effective_limit: Option<usize>,
+}
+
+fn format_mapped_limit(limit: Option<usize>) -> String {
+    limit
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "unlimited".to_string())
 }
 
 fn is_mapped_add_circuit(cmd: &BakeryCommands) -> bool {
@@ -260,7 +266,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
             };
         }
     };
@@ -270,14 +276,14 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
             };
         };
         let Ok(reply) = bus.request(vec![BusRequest::GetInsightLicenseSummary]).await else {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
             };
         };
 
@@ -292,9 +298,9 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
                     clamped as usize
                 });
                 let effective_limit = if licensed {
-                    max_circuits_usize.unwrap_or(DEFAULT_MAPPED_CIRCUITS_LIMIT)
+                    max_circuits_usize
                 } else {
-                    DEFAULT_MAPPED_CIRCUITS_LIMIT
+                    Some(DEFAULT_MAPPED_CIRCUITS_LIMIT)
                 };
                 return ResolvedMappedLimit {
                     licensed,
@@ -306,7 +312,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
         ResolvedMappedLimit {
             licensed: false,
             max_circuits: None,
-            effective_limit: DEFAULT_MAPPED_CIRCUITS_LIMIT,
+            effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
         }
     })
 }
@@ -314,7 +320,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
 fn filter_batch_by_mapped_circuit_limit(
     batch: Vec<Arc<BakeryCommands>>,
     existing_circuits: &HashMap<i64, Arc<BakeryCommands>>,
-    effective_limit: usize,
+    effective_limit: Option<usize>,
 ) -> (Vec<Arc<BakeryCommands>>, MappedLimitStats) {
     let mut mapped_candidates: Vec<i64> = Vec::new();
     let mut seen = HashSet::new();
@@ -328,11 +334,23 @@ fn filter_batch_by_mapped_circuit_limit(
     }
 
     let requested = mapped_candidates.len();
+    let Some(effective_limit) = effective_limit else {
+        return (
+            batch,
+            MappedLimitStats {
+                enforced_limit: None,
+                requested_mapped: requested,
+                allowed_mapped: requested,
+                dropped_mapped: 0,
+            },
+        );
+    };
+
     if requested <= effective_limit {
         return (
             batch,
             MappedLimitStats {
-                enforced_limit: effective_limit,
+                enforced_limit: Some(effective_limit),
                 requested_mapped: requested,
                 allowed_mapped: requested,
                 dropped_mapped: 0,
@@ -375,7 +393,7 @@ fn filter_batch_by_mapped_circuit_limit(
     (
         filtered,
         MappedLimitStats {
-            enforced_limit: effective_limit,
+            enforced_limit: Some(effective_limit),
             requested_mapped: requested,
             allowed_mapped: allowed,
             dropped_mapped: requested.saturating_sub(allowed),
@@ -407,7 +425,10 @@ fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
         stats.requested_mapped,
         stats.allowed_mapped,
         stats.dropped_mapped,
-        stats.enforced_limit
+        stats
+            .enforced_limit
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "null".to_string())
     ));
 
     let rt = match tokio::runtime::Builder::new_current_thread()
@@ -1104,6 +1125,7 @@ fn handle_commit_batch(
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
+    let limit_label = format_mapped_limit(effective_limit);
 
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
@@ -1115,7 +1137,7 @@ fn handle_commit_batch(
                 mapped_limit_stats.requested_mapped,
                 mapped_limit_stats.allowed_mapped,
                 mapped_limit_stats.dropped_mapped,
-                effective_limit,
+                limit_label,
                 mapped_limit.licensed,
                 mapped_limit.max_circuits
             );
@@ -1146,7 +1168,7 @@ fn handle_commit_batch(
                 mapped_limit_stats.requested_mapped,
                 mapped_limit_stats.allowed_mapped,
                 mapped_limit_stats.dropped_mapped,
-                effective_limit,
+                limit_label,
                 mapped_limit.licensed,
                 mapped_limit.max_circuits
             );
@@ -1189,7 +1211,7 @@ fn handle_commit_batch(
                     mapped_limit_stats.requested_mapped,
                     mapped_limit_stats.allowed_mapped,
                     mapped_limit_stats.dropped_mapped,
-                    effective_limit,
+                    limit_label,
                     mapped_limit.licensed,
                     mapped_limit.max_circuits
                 );
@@ -1435,9 +1457,11 @@ fn handle_commit_batch(
             for command in &categories.newly_added {
                 if is_mapped_add_circuit(command.as_ref()) {
                     requested_mapped_additions += 1;
-                    if mapped_in_state >= effective_limit {
-                        dropped_mapped_additions += 1;
-                        continue;
+                    if let Some(limit) = effective_limit {
+                        if mapped_in_state >= limit {
+                            dropped_mapped_additions += 1;
+                            continue;
+                        }
                     }
                     mapped_in_state += 1;
                 }
@@ -1457,7 +1481,7 @@ fn handle_commit_batch(
                     stats.requested_mapped,
                     stats.allowed_mapped,
                     stats.dropped_mapped,
-                    effective_limit,
+                    limit_label,
                     mapped_limit.licensed,
                     mapped_limit.max_circuits
                 );
@@ -1884,8 +1908,8 @@ mod tests {
         batch.push(mk_add_circuit(1001, "10.0.0.200/32"));
 
         let (filtered, stats) =
-            filter_batch_by_mapped_circuit_limit(batch, &existing, DEFAULT_MAPPED_CIRCUITS_LIMIT);
-        assert_eq!(stats.enforced_limit, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+            filter_batch_by_mapped_circuit_limit(batch, &existing, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
         assert_eq!(stats.requested_mapped, 1001);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 1);
@@ -1908,8 +1932,8 @@ mod tests {
         batch.push(mk_add_circuit(9001, ""));
 
         let (filtered, stats) =
-            filter_batch_by_mapped_circuit_limit(batch, &existing, DEFAULT_MAPPED_CIRCUITS_LIMIT);
-        assert_eq!(stats.enforced_limit, DEFAULT_MAPPED_CIRCUITS_LIMIT);
+            filter_batch_by_mapped_circuit_limit(batch, &existing, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
         assert_eq!(stats.requested_mapped, 1000);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 0);
@@ -1926,11 +1950,28 @@ mod tests {
             mk_add_circuit(3, "10.2.0.3/32"),
         ];
 
-        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, 2);
-        assert_eq!(stats.enforced_limit, 2);
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, Some(2));
+        assert_eq!(stats.enforced_limit, Some(2));
         assert_eq!(stats.requested_mapped, 3);
         assert_eq!(stats.allowed_mapped, 2);
         assert_eq!(stats.dropped_mapped, 1);
         assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn mapped_circuit_limit_none_is_unlimited() {
+        let existing = HashMap::new();
+        let batch = vec![
+            mk_add_circuit(1, "10.3.0.1/32"),
+            mk_add_circuit(2, "10.3.0.2/32"),
+            mk_add_circuit(3, "10.3.0.3/32"),
+        ];
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, None);
+        assert_eq!(stats.enforced_limit, None);
+        assert_eq!(stats.requested_mapped, 3);
+        assert_eq!(stats.allowed_mapped, 3);
+        assert_eq!(stats.dropped_mapped, 0);
+        assert_eq!(filtered.len(), 3);
     }
 }
