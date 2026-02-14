@@ -205,6 +205,8 @@ async fn persistent_connection(
                     }
                 }
             };
+            // Request the current grant as soon as the connection is established.
+            queue_license_grant_request(&socket_sender_tx);
 
             // Message pump
             'message_pump: loop {
@@ -623,9 +625,7 @@ async fn persistent_connection(
                                 }
                             }
                         }
-                        if permitted {
-                            queue_license_grant_request(&socket_sender_tx);
-                        }
+                        queue_license_grant_request(&socket_sender_tx);
                     }
                 }
             } // End of message pump

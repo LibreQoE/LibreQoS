@@ -11,6 +11,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use crate::lts2_sys::shared_types::LtsStatus;
 use lqos_utils::unix_time::unix_now;
 
 #[cfg(unix)]
@@ -215,17 +216,30 @@ pub fn current_license_summary() -> (Option<Uuid>, Option<u64>) {
 
 pub fn current_license_limits() -> (bool, Option<u64>) {
     let Some(state) = GRANT_STATE.get() else {
-        return (false, None);
+        return current_license_limits_from_status();
     };
     let guard = state.lock();
     let Some(grant) = guard.as_ref() else {
-        return (false, None);
+        return current_license_limits_from_status();
     };
     let now = unix_now().unwrap_or(0) as i64;
     if grant.grant_expires <= now {
-        return (false, None);
+        return current_license_limits_from_status();
     }
     (true, grant.max_circuits)
+}
+
+fn current_license_limits_from_status() -> (bool, Option<u64>) {
+    let (status, _) = crate::lts2_sys::get_lts_license_status();
+    let licensed = !matches!(
+        status,
+        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
+    );
+    if licensed {
+        (true, None)
+    } else {
+        (false, None)
+    }
 }
 
 fn store_grant_state(grant: Option<LicenseGrant>) {
