@@ -18,7 +18,7 @@ pub struct NetworkJsonNode {
     pub virtual_node: bool,
 
     /// The maximum throughput allowed per `network.json` for this node
-    pub max_throughput: (u32, u32), // In mbps
+    pub max_throughput: (f64, f64), // In mbps
 
     /// Current throughput (in bytes/second) at this node
     pub current_throughput: DownUpOrder<u64>, // In bytes
@@ -70,14 +70,12 @@ impl NetworkJsonNode {
     /// Make a deep copy of a `NetworkJsonNode`, converting atomics
     /// into concrete values.
     pub fn clone_to_transit(&self) -> NetworkJsonTransport {
-        let download = self.rtt_buffer.percentile(
-            RttBucket::Current,
-            FlowbeeEffectiveDirection::Download,
-            50,
-        );
-        let upload = self
-            .rtt_buffer
-            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
+        let download =
+            self.rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50);
+        let upload =
+            self.rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
 
         let rtts = match (download, upload) {
             (None, None) => Vec::new(),

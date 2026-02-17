@@ -7,6 +7,7 @@ import {
 
 let network_json = null;
 let shaped_devices = null;
+const MIN_NODE_MBPS = 0.1;
 
 function renderNetworkNode(level, depth) {
     let html = `<div class="card mb-3" style="margin-left: ${depth * 30}px;">`;
@@ -89,13 +90,13 @@ function promoteNode(nodeId) {
 
 function nodeSpeedChange(nodeId, direction) {
     let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
-    newVal = parseInt(newVal);
+    newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
         alert("Please enter a valid number");
         return;
     }
-    if (newVal < 1) {
-        alert("Value must be greater than 1");
+    if (newVal < MIN_NODE_MBPS) {
+        alert(`Value must be at least ${MIN_NODE_MBPS} Mbps`);
         return;
     }
 
