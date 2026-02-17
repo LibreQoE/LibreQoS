@@ -12,7 +12,7 @@ pub struct NetworkJsonTransport {
     #[serde(rename = "virtual", default)]
     pub is_virtual: bool,
     /// Max throughput for node (not clamped)
-    pub max_throughput: (u32, u32),
+    pub max_throughput: (f64, f64),
     /// Current node throughput
     pub current_throughput: (u64, u64),
     /// Current node packets

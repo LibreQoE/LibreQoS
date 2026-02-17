@@ -1016,8 +1016,8 @@ fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
             let node = node.clone_to_transit();
             let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
             let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
-            let max_down = node.max_throughput.0 as f64;
-            let max_up = node.max_throughput.1 as f64;
+            let max_down = node.max_throughput.0;
+            let max_up = node.max_throughput.1;
             let median_rtt = if node.rtts.is_empty() {
                 0.0
             } else {

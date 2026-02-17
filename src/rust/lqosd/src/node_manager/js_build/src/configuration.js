@@ -6,6 +6,7 @@ let lqosd_config = null;
 let shaped_devices = null;
 let network_json = null;
 let qoo_profiles = null;
+const MIN_NODE_MBPS = 0.1;
 
 const wsClient = get_ws_client();
 
@@ -535,9 +536,9 @@ function flattenNetwork() {
 
 function addNetworkNode() {
     let newName = $("#njsNewNodeName").val();
-    let newDown = parseInt($("#njsNewNodeDown").val());
-    let newUp = parseInt($("#njsNewNodeUp").val());
-    if (newName.length > 0 && newDown > 1 && newUp > 1) {
+    let newDown = parseFloat($("#njsNewNodeDown").val());
+    let newUp = parseFloat($("#njsNewNodeUp").val());
+    if (newName.length > 0 && !isNaN(newDown) && !isNaN(newUp) && newDown >= MIN_NODE_MBPS && newUp >= MIN_NODE_MBPS) {
         network_json[newName] = {
             downloadBandwidthMbps: newDown,
             uploadBandwidthMbps: newUp,
@@ -574,14 +575,14 @@ function promoteNode(nodeId) {
 }
 
 function nodeSpeedChange(nodeId, direction) {
-    let newVal = prompt("New download value in Mbps");
-    newVal = parseInt(newVal);
+    let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
+    newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
-        alert("That's not an integer!");
+        alert("Please enter a valid number");
         return;
     }
-    if (newVal < 1) {
-        alert("New value must be greater than 1");
+    if (newVal < MIN_NODE_MBPS) {
+        alert(`New value must be at least ${MIN_NODE_MBPS} Mbps`);
         return;
     }
 
