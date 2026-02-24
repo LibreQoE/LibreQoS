@@ -508,12 +508,13 @@ function clientsUpdate(msg) {
             let circuitLink = document.createElement("a");
             circuitLink.href = "/circuit.html?id=" + device.circuit_id;
             circuitLink.innerText = device.circuit_name;
+            circuitLink.classList.add("redactable");
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
             tr.appendChild(simpleRow(device.device_name, true));
             tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
-            tr.appendChild(simpleRow(device.parent_node));
-            tr.appendChild(simpleRow(device.ip));
+            tr.appendChild(simpleRow(device.parent_node, true));
+            tr.appendChild(simpleRow(device.ip, true));
             tr.appendChild(simpleRow(formatLastSeen(device.last_seen_nanos)));
             tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, device.plan.down)));
             tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, device.plan.up)));

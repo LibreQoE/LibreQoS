@@ -87,6 +87,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 } else {
                     let localIp = document.createElement("td");
                     localIp.innerText = r.local_ip;
+                    localIp.classList.add("redactable");
                     row.appendChild(localIp);
                 }
 
@@ -184,7 +185,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             data.forEach((row) => {
                 let tr = document.createElement("tr");
                 tr.classList.add("small");
-                tr.appendChild(simpleRow(row.circuit_name));
+                tr.appendChild(simpleRow(row.circuit_name || "", true));
                 tr.appendChild(simpleRow(row.protocol));
                 tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_down)));
                 tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_up)));

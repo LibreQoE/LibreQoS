@@ -175,7 +175,7 @@ function applyCircuitUpdate(device) {
 
 function buildIpListEl(device) {
     const wrapper = document.createElement("div");
-    wrapper.classList.add("small", "text-body-secondary");
+    wrapper.classList.add("small", "text-body-secondary", "redactable");
     const addLine = (text) => {
         const div = document.createElement("div");
         div.innerText = text;
@@ -245,12 +245,12 @@ function buildDeviceCard(device) {
         titleWrap.appendChild(deviceLink);
     } else {
         const circuitName = document.createElement("div");
-        circuitName.classList.add("fw-semibold");
+        circuitName.classList.add("fw-semibold", "redactable");
         circuitName.innerText = device.circuit_name || "(Unknown circuit)";
         titleWrap.appendChild(circuitName);
 
         const deviceName = document.createElement("div");
-        deviceName.classList.add("small", "text-body-secondary");
+        deviceName.classList.add("small", "text-body-secondary", "redactable");
         deviceName.innerText = device.device_name || "";
         titleWrap.appendChild(deviceName);
     }

@@ -56,7 +56,7 @@ function loadUnknownIps() {
 
       data.forEach((row) => {
          let tr = document.createElement("tr");
-         tr.appendChild(simpleRow(row.ip));
+         tr.appendChild(simpleRow(row.ip, true));
          tr.appendChild(simpleRow(formatLastSeen(row.last_seen_nanos)));
          tr.appendChild(simpleRow(scaleNumber(row.total_bytes.down)));
          tr.appendChild(simpleRow(scaleNumber(row.total_bytes.up)));

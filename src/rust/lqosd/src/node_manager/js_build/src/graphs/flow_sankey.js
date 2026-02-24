@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {toNumber} from "../lq_js_common/helpers/scaling";
+import {isRedacted} from "../helpers/redact";
 
 export class FlowsSankey extends DashboardGraph {
     constructor(id) {
@@ -89,6 +90,9 @@ export class FlowsSankey extends DashboardGraph {
             }
         });
 
+        const redact = isRedacted();
+        const localLabel = redact ? { color: 'magenta', fontFamily: "Illegible" } : { color: 'magenta' };
+
         // Accumulate the graph information.
         let data = [];
         let links = [];
@@ -97,9 +101,7 @@ export class FlowsSankey extends DashboardGraph {
         for (let localDevice in localDevices) {
             data.push({
                 name: localDevice,
-                label: {
-                    color: 'magenta'
-                }
+                label: localLabel
             });
             for (let asn in localDevices[localDevice]) {
                 links.push({source: localDevice, target: asn, value: localDevices[localDevice][asn]});

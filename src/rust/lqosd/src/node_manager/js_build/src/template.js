@@ -115,11 +115,11 @@ function renderSearchResults(data) {
         let c = document.createElement("td");
 
         if (item.Circuit !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
         } else if (item.Device !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
         } else if (item.Site !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
         } else {
             console.log(item);
             c.innerText = item;
