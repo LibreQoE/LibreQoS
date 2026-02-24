@@ -74,6 +74,7 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 } else {
                     let localIp = document.createElement("td");
                     localIp.innerText = r.local_ip;
+                    localIp.classList.add("redactable");
                     row.appendChild(localIp);
                 }
 

@@ -325,6 +325,7 @@ function renderAsn(asn, data) {
             clientLink.style.textOverflow = "ellipsis";
             clientCol.appendChild(clientLink);
         } else {
+            clientCol.classList.add("redactable");
             clientCol.innerText = row.circuit_name;
         }
         div.appendChild(clientCol);

@@ -233,8 +233,8 @@ function renderCircuits(page) {
             idCell.textContent = "";
         }
         tr.appendChild(idCell);
-        tr.appendChild(simpleRow(c.circuit_name || ""));
-        tr.appendChild(simpleRow(c.parent_node || ""));
+        tr.appendChild(simpleRow(c.circuit_name || "", true));
+        tr.appendChild(simpleRow(c.parent_node || "", true));
         tr.appendChild(simpleRow(c.classid || ""));
         const weightCell = document.createElement('td');
         if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {

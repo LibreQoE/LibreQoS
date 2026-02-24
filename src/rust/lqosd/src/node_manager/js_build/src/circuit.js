@@ -638,6 +638,7 @@ function initialDevices(circuits) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
             label.innerHTML = ip[0] + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
@@ -674,6 +675,7 @@ function initialDevices(circuits) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
             label.innerHTML = ip[0] + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
@@ -1030,7 +1032,7 @@ function wireupAnalysis(circuits) {
         let entry = document.createElement("li");
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
-        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from " + ip[0];
+        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from <span class='redactable'>" + ip[0] + "</span>";
         let address = ip[0]; // For closure capture
         item.onclick = () => {
             //console.log("Clicky " + address);
@@ -1051,7 +1053,7 @@ function wireupAnalysis(circuits) {
                     if (counter === -1) {
                         clearInterval(interval);
                         btn.disabled = false;
-                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for " + address;
+                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for <span class='redactable'>" + address + "</span>";
                         btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
