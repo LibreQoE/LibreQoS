@@ -2,6 +2,7 @@
 
 mod top_config;
 pub use top_config::Config;
+mod autopilot;
 mod bridge;
 mod flows;
 pub mod influxdb;
@@ -20,6 +21,7 @@ mod visp_integration;
 mod wispgate;
 
 pub use bridge::*;
+pub use autopilot::*;
 pub use long_term_stats::LongTermStats;
 pub use queues::LazyQueueMode;
 pub use stormguard::StormguardConfig;

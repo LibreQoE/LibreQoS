@@ -421,7 +421,7 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 1) Add config schema (Rust, persisted in `/etc/lqos.conf`)
 
-- [ ] Create config structs for Autopilot:
+- [x] Create config structs for Autopilot:
   - Add file: `src/rust/lqos_config/src/etc/v15/autopilot.rs` (new).
   - Export from: `src/rust/lqos_config/src/etc/v15/mod.rs:3` (add `mod autopilot;` near the other `mod ...;` lines and `pub use autopilot::*;` near the other `pub use ...` lines).
   - Required types (suggestion):
@@ -433,12 +433,12 @@ When you finish an item, change `[ ]` to `[x]`.
   - Derives: `Serialize`, `Deserialize`, `Clone`, `Debug`, `PartialEq`, `Allocative` (match other config structs).
   - Defaults MUST match this spec’s TOML block (see `NLNET_MILESTONE6_PLAN.md` “Proposed TOML shape (v1)”).
 
-- [ ] Add Autopilot to the top-level config struct:
+- [x] Add Autopilot to the top-level config struct:
   - Edit: `src/rust/lqos_config/src/etc/v15/top_config.rs:18` (`pub struct Config`).
   - Add field: `pub autopilot: AutopilotConfig`.
   - Edit: `src/rust/lqos_config/src/etc/v15/top_config.rs:214` (`impl Default for Config`) to populate defaults.
 
-- [ ] Update the example config:
+- [x] Update the example config:
   - Edit: `src/rust/lqos_config/src/etc/v15/example.toml:33` (add an `[autopilot]` section near other top-level feature sections; `[queues]` starts at line 33).
 
 ### 2) Node Manager: Autopilot configuration page (UI + wiring)

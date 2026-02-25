@@ -1,5 +1,6 @@
 //! Top-level configuration file for LibreQoS.
 
+use super::AutopilotConfig;
 use super::tuning::Tunables;
 use crate::etc::v15::stormguard;
 use allocative::Allocative;
@@ -104,6 +105,10 @@ pub struct Config {
 
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
+
+    /// Autopilot (intelligent node management) configuration.
+    #[serde(default)]
+    pub autopilot: AutopilotConfig,
 
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
@@ -240,6 +245,7 @@ impl Default for Config {
             disable_webserver: None,
             webserver_listen: None,
             stormguard: None,
+            autopilot: AutopilotConfig::default(),
             disable_icmp_ping: Some(false),
             enable_circuit_heatmaps: true,
             enable_site_heatmaps: true,
