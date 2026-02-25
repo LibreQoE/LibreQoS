@@ -108,6 +108,13 @@ pub struct Config {
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
 
+    /// Exclude efficiency cores (E-cores) from CPU assignment / shaping where possible.
+    ///
+    /// On hybrid CPUs, this attempts to detect performance cores (P-cores) via sysfs and
+    /// restricts LibreQoS CPU binning and XDP redirection to those CPUs.
+    #[serde(default = "default_true")]
+    pub exclude_efficiency_cores: bool,
+
     /// Enable per-circuit TemporalHeatmap collection.
     #[serde(default = "default_true")]
     pub enable_circuit_heatmaps: bool,
@@ -241,6 +248,7 @@ impl Default for Config {
             webserver_listen: None,
             stormguard: None,
             disable_icmp_ping: Some(false),
+            exclude_efficiency_cores: true,
             enable_circuit_heatmaps: true,
             enable_site_heatmaps: true,
             enable_asn_heatmaps: true,
