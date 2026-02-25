@@ -5,6 +5,7 @@
 
 use crate::node_manager::ws::messages::{AutopilotActivityEntry, AutopilotStatusData};
 use crate::autopilot::AutopilotError;
+use crate::autopilot::reload::{ReloadController, ReloadOutcome};
 use crate::autopilot::state::{
     is_sustained_idle, CircuitSqmState, CircuitState, LinkState, LinkVirtualState,
 };
@@ -12,8 +13,10 @@ use crate::autopilot::{decisions, overrides};
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::{CIRCUIT_RTT_BUFFERS, THROUGHPUT_TRACKER};
+use crate::urgent;
 use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
+use lqos_bus::{UrgentSeverity, UrgentSource};
 use lqos_config::load_config;
 use lqos_overrides::{NetworkAdjustment, OverrideFile};
 use lqos_utils::hash_to_i64;
@@ -123,6 +126,7 @@ fn autopilot_actor_loop(
     let mut managed_nodes: FxHashSet<String> = FxHashSet::default();
     let mut managed_device_ids: FxHashSet<String> = FxHashSet::default();
     let mut last_dry_run: Option<bool> = None;
+    let mut reload_controller = ReloadController::default();
 
     let mut tick_seconds: u64 = 1;
     let mut last_tick = Instant::now();
@@ -145,6 +149,7 @@ fn autopilot_actor_loop(
                     &mut managed_nodes,
                     &mut managed_device_ids,
                     &mut last_dry_run,
+                    &mut reload_controller,
                 );
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
@@ -188,6 +193,7 @@ fn run_tick(
     managed_nodes: &mut FxHashSet<String>,
     managed_device_ids: &mut FxHashSet<String>,
     last_dry_run: &mut Option<bool>,
+    reload_controller: &mut ReloadController,
 ) {
     let now_unix = unix_now().unwrap_or(0);
     let now_nanos_since_boot = time_since_boot()
@@ -277,25 +283,56 @@ fn run_tick(
     // --- Link sampling + decisions (virtualization) ---
     let manage_links = ap.enabled && ap.links.enabled;
     let allowlisted_nodes: FxHashSet<String> = ap.links.nodes.iter().cloned().collect();
+    let mut reload_requested = false;
+    let mut reload_request_reason: Option<String> = None;
 
     // Cleanup for removed nodes or disabled links.
     if !manage_links {
         let removed: Vec<String> = managed_nodes.iter().cloned().collect();
         for node_name in removed {
-            let _ = overrides::clear_node_virtual(&node_name);
-            managed_nodes.remove(&node_name);
-            link_states.remove(&node_name);
-            push_activity(
-                activity,
-                AutopilotActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "node".to_string(),
-                    entity_id: node_name,
-                    action: "clear_virtual_override".to_string(),
-                    persisted: true,
-                    reason: "Autopilot disabled or links disabled".to_string(),
-                },
-            );
+            match overrides::clear_node_virtual(&node_name) {
+                Ok(changed) => {
+                    if changed {
+                        reload_requested = true;
+                        if reload_request_reason.is_none() {
+                            reload_request_reason =
+                                Some(format!("Cleared virtual override for node '{node_name}'"));
+                        } else {
+                            reload_request_reason =
+                                Some("Multiple node topology changes".to_string());
+                        }
+                        push_activity(
+                            activity,
+                            AutopilotActivityEntry {
+                                time: now_unix.to_string(),
+                                entity_type: "node".to_string(),
+                                entity_id: node_name.clone(),
+                                action: "clear_virtual_override".to_string(),
+                                persisted: true,
+                                reason: "Autopilot disabled or links disabled".to_string(),
+                            },
+                        );
+                    }
+                    managed_nodes.remove(&node_name);
+                    link_states.remove(&node_name);
+                }
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot links: failed to clear virtual override for node '{node_name}': {e}"
+                    ));
+                    push_activity(
+                        activity,
+                        AutopilotActivityEntry {
+                            time: now_unix.to_string(),
+                            entity_type: "node".to_string(),
+                            entity_id: node_name,
+                            action: "clear_virtual_override_failed".to_string(),
+                            persisted: false,
+                            reason: format!("Overrides write failed: {e}"),
+                        },
+                    );
+                }
+            }
         }
     } else {
         // Reconcile nodes removed from allowlist.
@@ -305,20 +342,49 @@ fn run_tick(
             .cloned()
             .collect();
         for node_name in removed {
-            let _ = overrides::clear_node_virtual(&node_name);
-            managed_nodes.remove(&node_name);
-            link_states.remove(&node_name);
-            push_activity(
-                activity,
-                AutopilotActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "node".to_string(),
-                    entity_id: node_name,
-                    action: "clear_virtual_override".to_string(),
-                    persisted: true,
-                    reason: "Node removed from allowlist".to_string(),
-                },
-            );
+            match overrides::clear_node_virtual(&node_name) {
+                Ok(changed) => {
+                    if changed {
+                        reload_requested = true;
+                        if reload_request_reason.is_none() {
+                            reload_request_reason =
+                                Some(format!("Cleared virtual override for node '{node_name}'"));
+                        } else {
+                            reload_request_reason =
+                                Some("Multiple node topology changes".to_string());
+                        }
+                        push_activity(
+                            activity,
+                            AutopilotActivityEntry {
+                                time: now_unix.to_string(),
+                                entity_type: "node".to_string(),
+                                entity_id: node_name.clone(),
+                                action: "clear_virtual_override".to_string(),
+                                persisted: true,
+                                reason: "Node removed from allowlist".to_string(),
+                            },
+                        );
+                    }
+                    managed_nodes.remove(&node_name);
+                    link_states.remove(&node_name);
+                }
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot links: failed to clear virtual override for node '{node_name}': {e}"
+                    ));
+                    push_activity(
+                        activity,
+                        AutopilotActivityEntry {
+                            time: now_unix.to_string(),
+                            entity_type: "node".to_string(),
+                            entity_id: node_name,
+                            action: "clear_virtual_override_failed".to_string(),
+                            persisted: false,
+                            reason: format!("Overrides write failed: {e}"),
+                        },
+                    );
+                }
+            }
         }
 
         let reader = NETWORK_JSON.read();
@@ -457,11 +523,46 @@ fn run_tick(
 
                 let persist = !ap.dry_run;
                 let mut persisted_ok = false;
+                let mut override_changed = false;
 
                 if persist {
                     let new_virtual = target == LinkVirtualState::Virtual;
-                    persisted_ok =
-                        overrides::set_node_virtual(node_name, new_virtual).unwrap_or(false);
+                    match overrides::set_node_virtual(node_name, new_virtual) {
+                        Ok(changed) => {
+                            persisted_ok = true;
+                            override_changed = changed;
+                        }
+                        Err(e) => {
+                            status.warnings.push(format!(
+                                "Autopilot links: failed to persist virtual override for node '{node_name}': {e}"
+                            ));
+                            managed_nodes.insert(node_name.clone());
+                            push_activity(
+                                activity,
+                                AutopilotActivityEntry {
+                                    time: now_unix.to_string(),
+                                    entity_type: "node".to_string(),
+                                    entity_id: node_name.clone(),
+                                    action: "set_virtual_override_failed".to_string(),
+                                    persisted: false,
+                                    reason: format!("Overrides write failed: {e}"),
+                                },
+                            );
+                            continue;
+                        }
+                    }
+                }
+
+                if override_changed {
+                    reload_requested = true;
+                    if reload_request_reason.is_none() {
+                        reload_request_reason = Some(format!(
+                            "Node '{}' virtualization changed",
+                            node_name.clone()
+                        ));
+                    } else {
+                        reload_request_reason = Some("Multiple node topology changes".to_string());
+                    }
                 }
 
                 state.desired = target;
@@ -499,6 +600,75 @@ fn run_tick(
 
             if state.desired == LinkVirtualState::Virtual {
                 virtualized_nodes += 1;
+            }
+        }
+    }
+
+    if reload_requested {
+        let why = reload_request_reason
+            .clone()
+            .unwrap_or_else(|| "Topology change".to_string());
+        match reload_controller.try_reload(now_unix, ap.links.reload_cooldown_minutes) {
+            ReloadOutcome::Success { message: _ } => {
+                push_activity(
+                    activity,
+                    AutopilotActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "autopilot".to_string(),
+                        entity_id: "reload".to_string(),
+                        action: "reload_success".to_string(),
+                        persisted: true,
+                        reason: why.clone(),
+                    },
+                );
+                status.last_action_summary = Some(format!("Reloaded LibreQoS: {why}"));
+            }
+            ReloadOutcome::Skipped {
+                reason,
+                next_allowed_unix,
+            } => {
+                let extra = next_allowed_unix
+                    .map(|t| format!(" next_allowed_unix={t}"))
+                    .unwrap_or_default();
+                push_activity(
+                    activity,
+                    AutopilotActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "autopilot".to_string(),
+                        entity_id: "reload".to_string(),
+                        action: "reload_skipped".to_string(),
+                        persisted: false,
+                        reason: format!("{reason}.{extra}"),
+                    },
+                );
+            }
+            ReloadOutcome::Failed {
+                error,
+                next_allowed_unix,
+            } => {
+                let extra = next_allowed_unix
+                    .map(|t| format!(" next_allowed_unix={t}"))
+                    .unwrap_or_default();
+                status.warnings.push(format!("Autopilot reload failed: {error}.{extra}"));
+                push_activity(
+                    activity,
+                    AutopilotActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "autopilot".to_string(),
+                        entity_id: "reload".to_string(),
+                        action: "reload_failed".to_string(),
+                        persisted: false,
+                        reason: format!("{error}.{extra}"),
+                    },
+                );
+                urgent::submit(
+                    UrgentSource::System,
+                    UrgentSeverity::Error,
+                    "autopilot_reload_failed".to_string(),
+                    format!("Autopilot failed to reload LibreQoS: {error}"),
+                    Some(why),
+                    Some("autopilot_reload".to_string()),
+                );
             }
         }
     }

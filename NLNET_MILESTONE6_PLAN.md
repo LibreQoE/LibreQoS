@@ -619,7 +619,7 @@ When you finish an item, change `[ ]` to `[x]`.
   - Send Bakery live updates via the existing bakery sender (see `BakeryCommands::AddCircuit` in `src/rust/lqos_bakery/src/commands.rs:132`).
   - Make the live command consistent with the persisted SQM token (directional if independent).
 
-- [ ] Reload when topology changes (link virtualization):
+- [x] Reload when topology changes (link virtualization):
   - Implement in `src/rust/lqosd/src/autopilot/reload.rs`.
   - Use existing reload path:
     - `src/rust/lqosd/src/program_control.rs:4` calls `lqos_config::load_libreqos()`
