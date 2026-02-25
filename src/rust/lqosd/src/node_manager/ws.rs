@@ -1132,6 +1132,9 @@ async fn receive_channel_message(
                 Err(StatusCode::BAD_REQUEST) => (false, "Invalid user data".to_string()),
                 Err(_) => (false, "Error".to_string()),
             };
+            if ok {
+                crate::node_manager::auth::refresh_cached_users().await;
+            }
             let response = WsResponse::AddUserResult { ok, message };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -1156,6 +1159,9 @@ async fn receive_channel_message(
                 Err(StatusCode::BAD_REQUEST) => (false, "Invalid user data".to_string()),
                 Err(_) => (false, "Error".to_string()),
             };
+            if ok {
+                crate::node_manager::auth::refresh_cached_users().await;
+            }
             let response = WsResponse::UpdateUserResult { ok, message };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -1169,6 +1175,9 @@ async fn receive_channel_message(
                 Err(StatusCode::BAD_REQUEST) => (false, "Invalid user data".to_string()),
                 Err(_) => (false, "Error".to_string()),
             };
+            if ok {
+                crate::node_manager::auth::refresh_cached_users().await;
+            }
             let response = WsResponse::DeleteUserResult { ok, message };
             if send_ws_response(&tx, response).await {
                 return true;
