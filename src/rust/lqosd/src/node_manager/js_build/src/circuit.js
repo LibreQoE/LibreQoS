@@ -635,14 +635,15 @@ function initialDevices(circuits) {
         ipv4Table.classList.add("table", "table-sm");
         let ipv4Body = document.createElement("tbody");
         circuit.ipv4.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
             label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv4Body.appendChild(tr);
@@ -672,14 +673,15 @@ function initialDevices(circuits) {
         ipv6.classList.add("table", "table-sm");
         let ipv6Body = document.createElement("tbody");
         circuit.ipv6.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
             label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv6Body.appendChild(tr);
