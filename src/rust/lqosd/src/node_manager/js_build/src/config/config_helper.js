@@ -278,6 +278,7 @@ export function renderConfigMenu(currentPage) {
         { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
+        { href: "config_autopilot.html", icon: "fa-rocket", text: "Autopilot", id: "autopilot" },
         { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },

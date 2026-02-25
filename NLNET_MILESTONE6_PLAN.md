@@ -443,21 +443,21 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 2) Node Manager: Autopilot configuration page (UI + wiring)
 
-- [ ] Create the Autopilot config HTML page:
+- [x] Create the Autopilot config HTML page:
   - Add file: `src/rust/lqosd/src/node_manager/static2/config_autopilot.html`.
   - Copy pattern from: `src/rust/lqosd/src/node_manager/static2/config_stormguard.html`.
   - Include form inputs for every config field in the TOML spec (including the allowlists).
   - Load script: `<script src="config_autopilot.js%CACHEBUSTERS%"></script>`.
 
-- [ ] Serve the new HTML page with templates/auth:
+- [x] Serve the new HTML page with templates/auth:
   - Edit: `src/rust/lqosd/src/node_manager/static_pages.rs:31` (`let html_pages = [`).
   - Add `"config_autopilot.html"` near the other config pages.
 
-- [ ] Add the Autopilot config page to the config menu:
+- [x] Add the Autopilot config page to the config menu:
   - Edit: `src/rust/lqosd/src/node_manager/js_build/src/config/config_helper.js:274` (`renderConfigMenu`).
   - Add a menu item like `{ href: "config_autopilot.html", icon: "fa-rocket", text: "Autopilot", id: "autopilot" }`.
 
-- [ ] Implement the Autopilot config page JavaScript:
+- [x] Implement the Autopilot config page JavaScript:
   - Add file: `src/rust/lqosd/src/node_manager/js_build/src/config_autopilot.js`.
   - Copy pattern from: `src/rust/lqosd/src/node_manager/js_build/src/config_stormguard.js` and `src/rust/lqosd/src/node_manager/js_build/src/config_queues.js`.
   - Must do:
@@ -469,7 +469,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - `autopilot.links.nodes`
     - `autopilot.circuits.circuits`
 
-- [ ] Rebuild and copy the UI assets:
+- [x] Rebuild and copy the UI assets:
   - After adding new HTML: run `bash src/rust/lqosd/copy_files.sh` (copies static2 + builds JS + copies bundles).
   - During JS-only iteration: run `bash src/rust/lqosd/dev_build.sh` (builds JS + copies bundles).
 
