@@ -3,7 +3,7 @@
 Let's plan out a large feature.
 
 My requirements:
-* All new work MUST occur in a new branch, `intelligent_node_management`.
+* All new work MUST occur in a new branch, `intelligence_node_management`.
 * Favor creating a new module `autopilot` inside `lqosd`.
 * All functions must have RustDoc headers (without examples).
     * All RustDoc must document what a function does.
@@ -413,9 +413,9 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 0) Branch + baseline
 
-- [ ] Create a new branch from `develop`: `git checkout develop && git pull && git checkout -b intelligent_node_management`.
-- [ ] Read this spec end-to-end: `NLNET_MILESTONE6_PLAN.md` (you should be able to explain Autopilot in 2 minutes).
-- [ ] Build + run baseline tests before touching code:
+- [x] Create a new branch from `develop`: `git checkout develop && git pull && git checkout -b intelligence_node_management`.
+- [x] Read this spec end-to-end: `NLNET_MILESTONE6_PLAN.md` (you should be able to explain Autopilot in 2 minutes).
+- [x] Build + run baseline tests before touching code:
   - `cd src/rust && cargo test --workspace`
   - (Optional) `cd src/rust && cargo check --workspace`
 
