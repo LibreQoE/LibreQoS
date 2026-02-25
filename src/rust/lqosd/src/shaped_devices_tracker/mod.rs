@@ -212,7 +212,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 NetworkJsonTransport {
                     name: "Others".into(),
                     is_virtual: false,
-                    max_throughput: (0, 0),
+                    max_throughput: (0.0, 0.0),
                     current_throughput: other_bw,
                     current_packets: other_packets,
                     current_tcp_packets: other_tcp_packets,

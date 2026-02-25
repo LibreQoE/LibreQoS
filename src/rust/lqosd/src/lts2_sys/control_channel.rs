@@ -1165,7 +1165,7 @@ async fn tree_snapshot_streaming(
     #[derive(Serialize, Deserialize)]
     struct LiveNetworkTransport {
         name: String,
-        max_throughput: (u32, u32),
+        max_throughput: (f64, f64),
         current_throughput: (u64, u64),
         current_packets: (u64, u64),
         current_tcp_packets: (u64, u64),

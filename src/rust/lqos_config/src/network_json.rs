@@ -3,8 +3,8 @@ mod network_json_transport;
 
 use allocative_derive::Allocative;
 use lqos_utils::{
-    qoq_heatmap::TemporalQoqHeatmap,
     qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
+    qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
@@ -79,7 +79,7 @@ impl NetworkJson {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
             virtual_node: false,
-            max_throughput: (0, 0),
+            max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
             current_tcp_packets: DownUpOrder::zeroed(),
@@ -298,8 +298,10 @@ impl NetworkJson {
                 node.current_tcp_retransmits.down,
                 node.current_tcp_packets.down,
             );
-            let loss_upload =
-                tcp_retransmit_loss_proxy(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+            let loss_upload = tcp_retransmit_loss_proxy(
+                node.current_tcp_retransmits.up,
+                node.current_tcp_packets.up,
+            );
             let scores = if let Some(profile) = qoo_profile.as_ref() {
                 compute_qoq_scores(
                     profile.as_ref(),
@@ -311,24 +313,18 @@ impl NetworkJson {
                 QoqScores::default()
             };
             let qoq_heatmap = node.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
-            qoq_heatmap.add_sample(
-                scores.download_total_f32(),
-                scores.upload_total_f32(),
-            );
+            qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
         }
     }
 }
 
-fn json_to_u32(val: Option<&Value>) -> u32 {
-    if let Some(val) = val {
-        if let Some(n) = val.as_u64() {
-            n as u32
-        } else {
-            0
-        }
-    } else {
-        0
-    }
+fn json_to_mbps(val: Option<&Value>) -> f64 {
+    val.and_then(|v| {
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+    })
+    .filter(|n| n.is_finite() && *n >= 0.0)
+    .unwrap_or(0.0)
 }
 
 fn recurse_node(
@@ -359,8 +355,8 @@ fn recurse_node(
     let node = NetworkJsonNode {
         parents: parents.to_vec(),
         max_throughput: (
-            json_to_u32(json.get("downloadBandwidthMbps")),
-            json_to_u32(json.get("uploadBandwidthMbps")),
+            json_to_mbps(json.get("downloadBandwidthMbps")),
+            json_to_mbps(json.get("uploadBandwidthMbps")),
         ),
         current_throughput: DownUpOrder::zeroed(),
         current_packets: DownUpOrder::zeroed(),
@@ -397,12 +393,12 @@ fn recurse_node(
     }
 }
 
-fn utilization_percent_bytes(bytes: u64, max_mbps: u32) -> Option<f32> {
-    if max_mbps == 0 {
+fn utilization_percent_bytes(bytes: u64, max_mbps: f64) -> Option<f32> {
+    if max_mbps <= 0.0 {
         return None;
     }
     let bits_per_second = bytes.saturating_mul(8) as f64;
-    let capacity_bps = max_mbps as f64 * 1_000_000.0;
+    let capacity_bps = max_mbps * 1_000_000.0;
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
 }
 
@@ -445,7 +441,7 @@ mod test {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
             virtual_node: false,
-            max_throughput: (0, 0),
+            max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
             current_tcp_packets: DownUpOrder::zeroed(),
@@ -529,5 +525,31 @@ mod test {
             .expect("RealNode must be present");
         assert!(!real.virtual_node);
         assert!(!real.clone_to_transit().is_virtual);
+    }
+
+    #[test]
+    fn parses_fractional_mbps_and_preserves_transport_values() {
+        let raw = serde_json::json!({
+            "TinySite": {
+                "downloadBandwidthMbps": 1.5,
+                "uploadBandwidthMbps": 0.5,
+                "children": {}
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+        let tiny = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "TinySite")
+            .expect("TinySite must be present");
+
+        assert_eq!(tiny.max_throughput, (1.5, 0.5));
+        assert!(tiny.max_throughput.0 > 0.0);
+        assert!(tiny.max_throughput.1 > 0.0);
+
+        let transport = tiny.clone_to_transit();
+        let encoded = serde_json::to_value(&transport).expect("transport must serialize");
+        assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
     }
 }
