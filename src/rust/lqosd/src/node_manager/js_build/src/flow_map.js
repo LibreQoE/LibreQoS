@@ -1,15 +1,84 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
-const listenOnce = (eventName, handler) => {
+
+const POLL_MS = 1000;
+const RESPONSE_TIMEOUT_MS = 2000;
+const MIN_POINTS = 3;
+const MIN_TOTAL_BYTES = 1_000_000;
+const RTT_LIMIT_MS = 200;
+
+function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
+    let done = false;
     const wrapped = (msg) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         wsClient.off(eventName, wrapped);
         handler(msg);
     };
+    const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        wsClient.off(eventName, wrapped);
+        onTimeout();
+    }, timeoutMs);
     wsClient.on(eventName, wrapped);
-};
+    return { cancel: () => { wsClient.off(eventName, wrapped); clearTimeout(timer); } };
+}
+
+function makeOverlay(container, id) {
+    container.style.position = "relative";
+
+    const overlay = document.createElement("div");
+    overlay.id = id;
+    overlay.style.position = "absolute";
+    overlay.style.inset = "0";
+    overlay.style.display = "none";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "10";
+    overlay.style.padding = "16px";
+
+    const panel = document.createElement("div");
+    panel.style.background = "var(--lqos-surface)";
+    panel.style.border = "1px solid var(--lqos-border)";
+    panel.style.borderRadius = "var(--lqos-radius-lg)";
+    panel.style.boxShadow = "var(--lqos-shadow-sm)";
+    panel.style.padding = "14px 18px";
+    panel.style.maxWidth = "560px";
+    panel.style.textAlign = "center";
+    panel.style.backdropFilter = "blur(10px)";
+    panel.style.webkitBackdropFilter = "blur(10px)";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "700";
+    title.style.fontSize = "1.1rem";
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "text-muted";
+    subtitle.style.marginTop = "4px";
+
+    panel.appendChild(title);
+    panel.appendChild(subtitle);
+    overlay.appendChild(panel);
+    container.appendChild(overlay);
+
+    return {
+        show: (t, s) => {
+            title.textContent = t;
+            subtitle.textContent = s || "";
+            overlay.style.display = "flex";
+        },
+        hide: () => {
+            overlay.style.display = "none";
+        },
+    };
+}
 
 class FlowMap extends DashboardGraph {
     constructor(id) {
@@ -75,27 +144,46 @@ class FlowMap extends DashboardGraph {
     }
 }
 
-function updateMap() {
-    listenOnce("FlowMap", (msg) => {
-        const data = msg && msg.data ? msg.data : [];
-        let output = [];
-        data.forEach((d) => {
-            let rtt = Math.min(200, d[4]);
-            let color = lerpGreenToRedViaOrange(200 - rtt, 200);
-            output.push({
-                value: [d[1], d[0]], // It wants lon/lat
-                itemStyle: {
-                    color: color,
-                }
-            });
-        });
-        map.update(output);
+const map = new FlowMap("flowMap");
+const overlay = makeOverlay(map.dom, "flowMapOverlay");
 
-        // Note that I'm NOT using a channel ticker here because of the amount of data
-        setTimeout(updateMap, 1000); // Keep on ticking!
+function updateMap() {
+    listenOnceWithTimeout("FlowMap", RESPONSE_TIMEOUT_MS, (msg) => {
+        const data = msg && msg.data ? msg.data : [];
+        const totalBytes = data.reduce((acc, d) => acc + toNumber(d?.[3], 0), 0);
+
+        if (data.length < MIN_POINTS || totalBytes < MIN_TOTAL_BYTES) {
+            overlay.show("Insufficient data", "Not enough recent flow traffic to render the map yet.");
+            map.update([]);
+        } else {
+            overlay.hide();
+            const output = data.map((d) => {
+                const rttMs = Math.min(RTT_LIMIT_MS, toNumber(d?.[4], 0) / 1_000_000);
+                const color = lerpGreenToRedViaOrange(RTT_LIMIT_MS - rttMs, RTT_LIMIT_MS);
+                return {
+                    value: [toNumber(d?.[1], 0), toNumber(d?.[0], 0)], // It wants lon/lat
+                    itemStyle: { color },
+                };
+            });
+            map.update(output);
+        }
+
+        setTimeout(updateMap, POLL_MS);
+    }, () => {
+        overlay.show("Waiting for data", "No FlowMap websocket response received yet.");
+        map.update([]);
+        setTimeout(updateMap, POLL_MS);
     });
     wsClient.send({ FlowMap: {} });
 }
 
-let map = new FlowMap("flowMap");
-updateMap()
+window.addEventListener("resize", () => {
+    try {
+        map.chart.resize();
+    } catch (e) {
+        // ignore
+    }
+});
+
+overlay.show("Waiting for data", "Requesting recent flow endpoints...");
+updateMap();
