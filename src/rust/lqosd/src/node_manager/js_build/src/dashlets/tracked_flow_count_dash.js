@@ -31,9 +31,26 @@ export class TrackedFlowsCount extends DashletBaseInsight{
         window.timeGraphs.push(this);
     }
 
+    setupZoomed() {
+        const period = window.timePeriods && window.timePeriods.activePeriod ? window.timePeriods.activePeriod : "Live";
+        if (period === "Live") {
+            this.zoomGraph = new FlowCountGraph(this.zoomGraphDivId());
+        } else {
+            this.zoomGraph = new FlowCountGraphTimescale(this.zoomGraphDivId(), period);
+        }
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "FlowCount" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.active, msg.recent);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.active, msg.recent);
+            }
         }
     }
 
@@ -45,6 +62,10 @@ export class TrackedFlowsCount extends DashletBaseInsight{
             this.graph = new FlowCountGraph(this.graphDivId());
         } else {
             this.graph = new FlowCountGraphTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
+        if (this.zoomed) {
+            this.teardownZoomed();
+            this.setupZoomed();
         }
     }
 }

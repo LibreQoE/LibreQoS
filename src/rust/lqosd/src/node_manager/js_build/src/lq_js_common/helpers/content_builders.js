@@ -5,9 +5,27 @@ export function heading5Icon(icon, text) {
 }
 
 export function enableTooltips() {
-    // Tooltips everywhere!
-    let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    let tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    })
+    // Tooltips everywhere! Make this idempotent to avoid leaking tooltip instances
+    // on websocket reconnects or repeated dashboard setup cycles.
+    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) {
+        return;
+    }
+    const Tooltip = bootstrap.Tooltip;
+    const tooltipTriggerList = Array.prototype.slice.call(
+        document.querySelectorAll('[data-bs-toggle="tooltip"]'),
+    );
+    tooltipTriggerList.forEach((el) => {
+        if (!el) return;
+        if (Tooltip.getOrCreateInstance) {
+            Tooltip.getOrCreateInstance(el);
+            return;
+        }
+        if (Tooltip.getInstance) {
+            const existing = Tooltip.getInstance(el);
+            if (existing && existing.dispose) {
+                existing.dispose();
+            }
+        }
+        new Tooltip(el);
+    });
 }

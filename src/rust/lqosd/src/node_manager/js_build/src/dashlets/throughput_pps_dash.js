@@ -31,9 +31,26 @@ export class ThroughputPpsDash extends DashletBaseInsight{
         window.timeGraphs.push(this);
     }
 
+    setupZoomed() {
+        const period = window.timePeriods && window.timePeriods.activePeriod ? window.timePeriods.activePeriod : "Live";
+        if (period === "Live") {
+            this.zoomGraph = new PacketsPerSecondBar(this.zoomGraphDivId());
+        } else {
+            this.zoomGraph = new PacketsPerSecondTimescale(this.zoomGraphDivId(), period);
+        }
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.data.pps.down, msg.data.pps.up, msg.data.tcp_pps, msg.data.udp_pps, msg.data.icmp_pps);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data.pps.down, msg.data.pps.up, msg.data.tcp_pps, msg.data.udp_pps, msg.data.icmp_pps);
+            }
         }
     }
 
@@ -45,6 +62,10 @@ export class ThroughputPpsDash extends DashletBaseInsight{
             this.graph = new PacketsPerSecondBar(this.graphDivId());
         } else {
             this.graph = new PacketsPerSecondTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
+        if (this.zoomed) {
+            this.teardownZoomed();
+            this.setupZoomed();
         }
     }
 }
