@@ -45,6 +45,8 @@ pub enum PublishedChannels {
     StormguardStatus,
     StormguardDebug,
     BakeryStatus,
+    AutopilotStatus,
+    AutopilotActivity,
     EndpointLatLon,
     AsnTopDownload,
     AsnTopUpload,

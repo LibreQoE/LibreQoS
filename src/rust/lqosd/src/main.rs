@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
+mod autopilot;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]

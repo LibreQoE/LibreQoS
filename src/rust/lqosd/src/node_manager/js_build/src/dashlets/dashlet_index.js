@@ -28,6 +28,8 @@ import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
 import {StormguardStatusDashlet} from "./stormguard_status";
 import {BakeryStatusDashlet} from "./bakery_status";
+import {AutopilotStatusDashlet} from "./autopilot_status";
+import {AutopilotActivityDashlet} from "./autopilot_activity";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
 // New Traffic Overview dashlets
@@ -80,6 +82,8 @@ export const DashletMenu = [
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
     { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
+    { name: "Autopilot Status", tag: "autopilotStatus", size: 6, category: "Autopilot" },
+    { name: "Autopilot Activity", tag: "autopilotActivity", size: 12, category: "Autopilot" },
     // Traffic Overview (Insight-like)
     { name: "Shaper Top ASN (Download)", tag: "shaperTopAsnDown", size: 6, category: "Traffic" },
     { name: "Shaper Top ASN (Upload)", tag: "shaperTopAsnUp", size: 6, category: "Traffic" },
@@ -131,6 +135,8 @@ export function widgetFactory(widgetName, count) {
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
+        case "autopilotStatus"  : widget = new AutopilotStatusDashlet(count); break;
+        case "autopilotActivity": widget = new AutopilotActivityDashlet(count); break;
         // Traffic Overview
         case "shaperTopAsnDown"  : widget = new ShaperTopAsnDownload(count); break;
         case "shaperTopAsnUp"    : widget = new ShaperTopAsnUpload(count); break;

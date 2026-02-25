@@ -200,6 +200,27 @@ pub struct BakeryStatusData {
     pub current_state: BakeryStatusState,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct AutopilotStatusData {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub cpu_max_pct: Option<u8>,
+    pub managed_nodes: usize,
+    pub managed_circuits: usize,
+    pub last_action_summary: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AutopilotActivityEntry {
+    pub time: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub action: String,
+    pub persisted: bool,
+    pub reason: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TopAsnRow {
     pub name: String,
@@ -440,6 +461,8 @@ pub enum WsResponse {
     StormguardStatus { data: Vec<(String, u64, u64)> },
     StormguardDebug { data: Vec<StormguardDebugEntry> },
     BakeryStatus { data: BakeryStatusData },
+    AutopilotStatus { data: AutopilotStatusData },
+    AutopilotActivity { data: Vec<AutopilotActivityEntry> },
     ExecutiveHeatmaps { data: ExecutiveHeatmapsData },
     CircuitWatcher {
         circuit_id: String,

@@ -9,6 +9,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, warn};
 mod asn_top;
+mod autopilot;
 mod bakery;
 mod cadence;
 mod circuit_capacity;
@@ -184,6 +185,14 @@ async fn one_second_cadence(
             ticker_with_timeout(
                 "bakery",
                 bakery::bakery_ticker(channels.clone(), bus_tx.clone())
+            ),
+            ticker_with_timeout(
+                "autopilot_status",
+                autopilot::autopilot_status(channels.clone())
+            ),
+            ticker_with_timeout(
+                "autopilot_activity",
+                autopilot::autopilot_activity(channels.clone())
             ),
             ticker_with_timeout(
                 "executive_heatmaps",

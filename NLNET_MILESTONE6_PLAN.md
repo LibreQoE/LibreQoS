@@ -475,11 +475,11 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 3) Node Manager: Autopilot dashboard elements (Status + Activity/Audit)
 
-- [ ] Add WS channels for Autopilot:
+- [x] Add WS channels for Autopilot:
   - Edit: `src/rust/lqosd/src/node_manager/ws/published_channels.rs:19` (`pub enum PublishedChannels`).
   - Add: `AutopilotStatus`, `AutopilotActivity`.
 
-- [ ] Define WS message payloads + events:
+- [x] Define WS message payloads + events:
   - Edit: `src/rust/lqosd/src/node_manager/ws/messages.rs:276` (`pub enum WsResponse`).
   - Add new data structs above the enum (example types to design):
     - `AutopilotStatusData` (enabled/dry_run, cpu_max, counts, last_action_summary, warnings)
@@ -488,13 +488,13 @@ When you finish an item, change `[ ]` to `[x]`.
     - `AutopilotStatus { data: AutopilotStatusData }`
     - `AutopilotActivity { data: Vec<AutopilotActivityEntry> }`
 
-- [ ] Add ticker(s) to publish Autopilot data once per second:
+- [x] Add ticker(s) to publish Autopilot data once per second:
   - Add file: `src/rust/lqosd/src/node_manager/ws/ticker/autopilot.rs` (new).
   - Edit: `src/rust/lqosd/src/node_manager/ws/ticker.rs`:
     - add `mod autopilot;` near the other `mod ...;` lines (`src/rust/lqosd/src/node_manager/ws/ticker.rs:11`).
     - add `ticker_with_timeout("autopilot_status", ...)` and `ticker_with_timeout("autopilot_activity", ...)` inside the `join!(...)` list in `one_second_cadence` (`src/rust/lqosd/src/node_manager/ws/ticker.rs:84`).
 
-- [ ] Add dashlets in JS:
+- [x] Add dashlets in JS:
   - Add files:
     - `src/rust/lqosd/src/node_manager/js_build/src/dashlets/autopilot_status.js`
     - `src/rust/lqosd/src/node_manager/js_build/src/dashlets/autopilot_activity.js`
@@ -508,7 +508,7 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 4) Autopilot module scaffolding (Rust, inside `lqosd`)
 
-- [ ] Create the new module directory:
+- [x] Create the new module directory:
   - Add folder: `src/rust/lqosd/src/autopilot/`
   - Add at minimum:
     - `src/rust/lqosd/src/autopilot/mod.rs` (public API + start function)
@@ -521,7 +521,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - `src/rust/lqosd/src/autopilot/bakery.rs` (live apply SQM changes)
     - `src/rust/lqosd/src/autopilot/status.rs` (status snapshot + activity log for UI)
 
-- [ ] Register the module in `lqosd`:
+- [x] Register the module in `lqosd`:
   - Edit: `src/rust/lqosd/src/main.rs:21` (module list near `mod throughput_tracker;`).
   - Add: `mod autopilot;`
 
