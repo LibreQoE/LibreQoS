@@ -525,7 +525,7 @@ When you finish an item, change `[ ]` to `[x]`.
   - Edit: `src/rust/lqosd/src/main.rs:21` (module list near `mod throughput_tracker;`).
   - Add: `mod autopilot;`
 
-- [ ] Start the Autopilot actor at daemon startup:
+- [x] Start the Autopilot actor at daemon startup:
   - Edit: `src/rust/lqosd/src/main.rs:245` where other subsystems start (near `throughput_tracker::spawn_throughput_monitor(...)`).
   - Start Autopilot after:
     - config load

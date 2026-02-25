@@ -249,6 +249,11 @@ fn main() -> Result<()> {
         bakery_sender.clone(),
     )?;
     spawn_queue_monitor()?;
+
+    if let Err(err) = autopilot::actor::start_autopilot_actor(system_usage_tx.clone()) {
+        warn!("Failed to start Autopilot actor: {err}");
+    }
+
     lqos_sys::bpf_garbage_collector();
     version_checks::start_version_check()?;
 
