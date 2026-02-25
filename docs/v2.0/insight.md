@@ -3,6 +3,34 @@
 ## About Insight
 Learn more about Insight on our website, [here](https://libreqos.io/insight/).
 
+## Insight Licensing Behavior (Node-side)
+
+### Local key material and offline grants
+
+LibreQoS stores Insight key material under:
+
+`<lqos_directory>/.keys/`
+
+Current builds can cache signed license grants locally so nodes can continue operating through temporary connectivity loss to Insight control services. Grant validity and expiration are enforced locally.
+
+Operational notes:
+- Keep `.keys/` persistent across reboots.
+- Treat `.keys/` as sensitive local key material.
+- If grant or key state is invalid, `lqosd` logs will show license/grant errors.
+
+### Mapped circuit limits and license state
+
+Recent builds enforce mapped-circuit limits based on license state.
+
+If your node is unlicensed/invalid, LibreQoS can enforce a default mapped-circuit cap. When the cap is exceeded, logs include messages such as:
+- `Mapped circuit limit reached`
+- `Bakery mapped circuit cap enforced`
+
+When this occurs, check:
+1. Insight license status in the UI.
+2. `journalctl -u lqosd` for requested/allowed/dropped mapped counts.
+3. Whether the number of mapped circuits exceeds your licensed allowance.
+
 ## Insight UI
 
 ### Taskbar

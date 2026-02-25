@@ -13,6 +13,7 @@ Bienvenido a la documentación de LibreQoS
    v2.0/ubuntu-server-es
    v2.0/bridge-es
    v2.0/quickstart-es
+   v2.0/git-install-es
 
 .. toctree::
    :maxdepth: 1
@@ -21,6 +22,9 @@ Bienvenido a la documentación de LibreQoS
    v2.0/configuration-es
    v2.0/integrations-es
    v2.0/components-es
+   v2.0/node-manager-ui-es
+   v2.0/stormguard-es
+   v2.0/scale-topology-es
    v2.0/update-es
    v2.0/troubleshooting-es
 
@@ -30,10 +34,12 @@ Bienvenido a la documentación de LibreQoS
 
    v2.0/insight-es
    v2.0/api-es
+   v2.0/lts-es
 
 .. toctree::
    :maxdepth: 1
    :caption: Misceláneo
 
    v2.0/cake-es
+   v2.0/performance-tuning-es
    v2.0/extras-es

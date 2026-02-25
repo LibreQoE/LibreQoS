@@ -1,33 +1,65 @@
 # API del Nodo de LibreQoS
 
 ## Requisitos
-La API de nodo LibreQoS requiere una suscripción activa a LibreQoS Insight.
+
+La API del nodo LibreQoS requiere una suscripción activa a LibreQoS Insight.
 
 ## Instalación
 
-### Descarga
+### Si instaló vía `.deb` (recomendado)
 
-```
-cd ~
-sudo apt-get update
-sudo apt-get upgrade
-wget https://libreqos.io/wp-content/uploads/2025/09/lqos_api.zip
-sudo apt-get install unzip
-sudo mkdir /opt/lqos_api/
-sudo chown -R $USER /opt/lqos_api/
-cd /opt/lqos_api/
-unzip lqos_api.zip
-```
+`lqos_api` se instala con LibreQoS en:
+
+`/opt/libreqos/src/bin/lqos_api`
 
 ### Ejecución de prueba
-```
-cd /opt/lqos_api/
-./lqos_api
+
+```bash
+/opt/libreqos/src/bin/lqos_api
 ```
 
 ### Servicio systemd
 
-Si la ejecución de prueba funciona correctamente, use `sudo nano /etc/systemd/system/lqos_api.service` y pegue el siguiente contenido:
+El paquete incluye un archivo de servicio de ejemplo:
+
+```bash
+sudo cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+```
+
+Luego ejecute:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable lqos_api
+sudo systemctl start lqos_api
+```
+
+### Actualizar solo el binario de la API
+
+Use el script de ayuda:
+
+```bash
+cd /opt/libreqos/src
+./update_api.sh
+```
+
+Esto descarga el `lqos_api` más reciente e instala en `/opt/libreqos/src/bin/lqos_api`.
+
+Puede omitir el reinicio del servicio:
+
+```bash
+./update_api.sh --no-restart
+```
+
+O instalar en otra ruta:
+
+```bash
+./update_api.sh --bin-dir /alguna/ruta/bin --no-restart
+```
+
+### Archivo de servicio manual (si es necesario)
+
+Si crea el servicio manualmente, use:
 
 ```
 [Unit]
@@ -35,15 +67,17 @@ After=network.service lqosd.service
 Requires=lqosd.service
 
 [Service]
-WorkingDirectory=/opt/lqos_api/
-ExecStart=/opt/lqos_api/lqos_api
+WorkingDirectory=/opt/libreqos/src/bin
+ExecStart=/opt/libreqos/src/bin/lqos_api
 Restart=always
 
 [Install]
 WantedBy=default.target
 ```
+
 Luego ejecute:
-```
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
@@ -51,42 +85,66 @@ sudo systemctl start lqos_api
 
 ## Uso
 
-Vea `localhost:9122/api-docs` para la interfaz de Swagger UI.
+Vea `localhost:9122/api-docs` para la interfaz Swagger.
+
+`/api-docs` es la fuente de verdad para su versión instalada. La disponibilidad de endpoints puede cambiar entre versiones.
+
+## Guía de despliegue y hardening
+
+Postura recomendada para producción:
+
+1. Mantenga la API accesible solo desde redes de gestión confiables.
+2. No exponga la API directamente a Internet público.
+3. Si requiere acceso remoto, publíquela detrás de un reverse proxy con TLS y autenticación.
+4. Restrinja acceso entrante con allowlists de firewall (host/red).
+5. Monitoree logs de API/servicio para detectar accesos anómalos.
+
+Si la API no se necesita en un nodo, deshabilite el servicio:
+
+```bash
+sudo systemctl disable --now lqos_api
+```
+
+Si está habilitada, verifique el estado tras actualizaciones:
+
+```bash
+sudo systemctl status lqos_api
+```
 
 ## Endpoints de la API
 
 ### Salud y sistema
-- `/health` - Comprobación de salud del servicio
-- `/reload_libreqos` - Recargar la configuración de LibreQoS
-- `/validate_shaped_devices` - Validar el CSV de dispositivos modelados
-- `/lqos_stats` - Obtener estadísticas internas de lqosd
-- `/stormguard_stats` - Obtener estadísticas de Stormguard
-- `/bakery_stats` - Obtener el recuento de circuitos activos de Bakery
+- `/health` - Verificación de salud del servicio
+- `/reload_libreqos` - Recarga configuración de LibreQoS
+- `/validate_shaped_devices` - Valida CSV de Shaped Devices
+- `/lqos_stats` - Estadísticas internas de lqosd
+- `/stormguard_stats` - Estadísticas de StormGuard
+- `/bakery_stats` - Conteo de circuitos activos de Bakery
 
 ### Métricas de tráfico
-- `/current_throughput` - Estadísticas actuales de rendimiento de la red
-- `/top_n_downloaders/{start}/{end}` - Descargadores principales por tráfico
-- `/worst_rtt/{start}/{end}` - Hosts con peor tiempo de ida y vuelta (RTT)
+- `/current_throughput` - Throughput actual de red
+- `/top_n_downloaders/{start}/{end}` - Top descargadores por tráfico
+- `/worst_rtt/{start}/{end}` - Hosts con peor RTT
 - `/worst_retransmits/{start}/{end}` - Hosts con más retransmisiones TCP
-- `/best_rtt/{start}/{end}` - Hosts con mejor tiempo de ida y vuelta (RTT)
-- `/host_counter` - Todos los contadores de tráfico por host
+- `/best_rtt/{start}/{end}` - Hosts con mejor RTT
+- `/host_counter` - Contadores de tráfico por host
 
 ### Topología de red
-- `/network_map/{parent}` - Mapa de red desde el nodo padre
-- `/full_network_map` - Topología de red completa
-- `/top_map_queues/{n}` - Las N colas principales por tráfico
-- `/node_names` - Obtener nombres de nodos a partir de IDs
-- `/funnel/{target}` - Analizar el embudo de tráfico hacia el circuito
+- `/network_map/{parent}` - Mapa de red desde nodo padre
+- `/full_network_map` - Topología completa
+- `/top_map_queues/{n}` - Top N colas por tráfico
+- `/node_names` - Nombres de nodos por ID
+- `/funnel/{target}` - Análisis de embudo hacia circuito
 
 ### Gestión de circuitos
-- `/all_circuits` - Listar todos los circuitos
-- `/raw_queue_data/{circuit_id}` - Datos en bruto de colas para el circuito
+- `/all_circuits` - Lista de todos los circuitos
+- `/raw_queue_data/{circuit_id}` - Datos de cola en bruto por circuito
 
 ### Análisis de flujos
-- `/dump_active_flows` - Volcar todos los flujos activos (lento)
+- `/dump_active_flows` - Volcado de flujos activos (lento)
 - `/count_active_flows` - Conteo de flujos activos
-- `/top_flows/{flow_type}/{n}` - Flujos principales por tipo de métrica
-- `/flows_by_ip/{ip}` - Flujos para una IP específica
+- `/top_flows/{flow_type}/{n}` - Top flujos por tipo de métrica
+- `/flows_by_ip/{ip}` - Flujos por IP específica
 - `/flow_duration` - Estadísticas de duración de flujos
 
 ### Geo y protocolos
@@ -94,3 +152,25 @@ Vea `localhost:9122/api-docs` para la interfaz de Swagger UI.
 - `/current_endpoint_latlon` - Coordenadas geográficas de endpoints
 - `/ether_protocol_summary` - Resumen de protocolos Ethernet
 - `/ip_protocol_summary` - Resumen de protocolos IP
+
+## Cobertura de API en versiones recientes
+
+Compilaciones recientes ampliaron cobertura en algunas áreas. Dependiendo de su versión, la API también puede incluir:
+
+- Resúmenes de alertas y warnings
+- Resúmenes de conteo de dispositivos y circuitos
+- Consulta de detalle para circuito individual
+- Helpers de búsqueda para flujos de UI
+- Endpoints de detalle de scheduler y estadísticas de colas
+
+Use `localhost:9122/api-docs` para confirmar rutas y esquemas exactos en su nodo.
+
+## Capturar inventario de endpoints por release
+
+Para notas de release o runbooks internos, capture un snapshot de rutas API desde el nodo:
+
+```bash
+curl -s http://localhost:9122/api-docs | jq -r '.paths | keys[]' | sort
+```
+
+Guarde esta salida junto con artefactos del release para comparar diferencias entre versiones.

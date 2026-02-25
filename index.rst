@@ -16,6 +16,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/ubuntu-server
    docs/v2.0/bridge
    docs/v2.0/quickstart
+   docs/v2.0/git-install
 
 .. toctree::
    :maxdepth: 1
@@ -24,6 +25,8 @@ Welcome to the LibreQoS documentation
    docs/v2.0/configuration
    docs/v2.0/integrations
    docs/v2.0/components
+   docs/v2.0/node-manager-ui
+   docs/v2.0/stormguard
    docs/v2.0/update
    docs/v2.0/troubleshooting
 
@@ -33,10 +36,12 @@ Welcome to the LibreQoS documentation
 
    docs/v2.0/insight
    docs/v2.0/api
+   docs/v2.0/lts
 
 .. toctree::
    :maxdepth: 1
    :caption: Misc:
 
    docs/v2.0/cake
+   docs/v2.0/performance-tuning
    docs/v2.0/extras

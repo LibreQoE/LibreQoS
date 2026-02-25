@@ -6,6 +6,7 @@
     + [Acceso API de Splynx](#acceso-api-de-splynx)
     + [Sobrescrituras de Splynx](#sobrescrituras-de-splynx)
   * [Integración con Netzur](#integración-con-netzur)
+  * [Integración con VISP](#integración-con-visp)
   * [Integración con UISP](#integración-con-uisp)
     + [Estrategias de Topología](#estrategias-de-topología-1)
     + [Estrategias de Manejo de Suspensiones](#estrategias-de-manejo-de-suspensiones)
@@ -153,6 +154,46 @@ python3 integrationNetzur.py
 
 La integración actualiza `ShapedDevices.csv` y, salvo que `always_overwrite_network_json` esté deshabilitado, también `network.json`. Ajuste la opción Integración → Común si necesita preservar un `network.json` existente entre ejecuciones de Netzur.
 
+## Integración con VISP
+
+Primero, configure los parámetros relevantes de VISP en `/etc/lqos.conf`:
+
+```ini
+[visp_integration]
+enable_visp = true
+client_id = "su-client-id"
+client_secret = "su-client-secret"
+username = "usuario-app"
+password = "password-app"
+# Opcional: si se deja vacío, se usa el primer ISP ID del token
+# isp_id = 0
+timeout_secs = 20
+# Opcional: dominio para enriquecimiento de sesiones online
+# online_users_domain = ""
+```
+
+Notas:
+
+- La importación VISP usa GraphQL y actualmente trabaja en estrategia `flat`.
+- La integración reescribe `ShapedDevices.csv` en cada ejecución.
+- `network.json` solo se sobrescribe cuando `always_overwrite_network_json = true` (en `[integration_common]`).
+- Los tokens de VISP se cachean en `<lqos_directory>/.visp_token_cache_*.json`.
+
+Importación manual:
+
+```bash
+python3 integrationVISP.py
+```
+
+Para ejecución automática con scheduler:
+
+- `[visp_integration] enable_visp = true`
+- reinicie scheduler:
+
+```bash
+sudo systemctl restart lqos_scheduler
+```
+
 ## Integración con UISP
 
 Primero, configure los parámetros relevantes de UISP en `/etc/lqos.conf`.
@@ -246,7 +287,31 @@ commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR
 ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
 always_overwrite_network_json = false  # Establecer true para reconstruir topología en cada ejecución
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
+squash_sites = []  # Opcional: sitios a compactar (flujo legacy de full)
+enable_squashing = false  # Opcional: habilita lógica adicional de compactación
+do_not_squash_sites = []  # Opcional: sitios excluidos de compactación
+ignore_calculated_capacity = false  # Opcional: prioriza capacidad configurada sobre la calculada
+insecure_ssl = false  # Opcional: ignora validación TLS del API UISP
 ```
+
+### Opciones avanzadas/operativas de UISP
+
+Las compilaciones actuales también incluyen estas opciones en los editores de configuración de Node Manager:
+
+- `exclude_sites`: lista de sitios a excluir de la importación.
+- `exception_cpes`: sobrescrituras `cpe:parent` para asignación ambigua.
+- `squash_sites`: lista opcional de sitios a compactar en flujos `full`.
+- `enable_squashing`: habilita compactación adicional donde aplique.
+- `do_not_squash_sites`: exclusiones explícitas de compactación.
+- `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
+- `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
+- `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
+
+Uso recomendado:
+
+1. Mantenga `insecure_ssl = false` salvo necesidad interna clara (PKI/self-signed).
+2. Use primero `exclude_sites` y `do_not_squash_sites` para cambios más seguros.
+3. Aplique `squash_sites`/`enable_squashing` de forma incremental y valide colocación de colas tras cada cambio.
 
 Para probar la integración con UISP, ejecute:
 

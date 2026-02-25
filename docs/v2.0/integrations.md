@@ -6,6 +6,7 @@
     + [Splynx API Access](#splynx-api-access)
     + [Splynx Overrides](#splynx-overrides)
   * [Netzur Integration](#netzur-integration)
+  * [VISP Integration](#visp-integration)
   * [UISP Integration](#uisp-integration)
     + [Topology Strategies](#topology-strategies-1)
     + [Suspension Handling Strategies](#suspension-handling-strategies)
@@ -38,10 +39,10 @@ LibreQoS supports multiple topology strategies for Splynx integration to balance
 | `ap_site` | Two layers: Site → AP → Clients | Medium | Site-level aggregation with moderate complexity |
 | `full` | Complete topology mapping | Highest | Full network hierarchy representation |
 
-Configure the strategy in `/etc/lqos.conf` under the `[splynx]` section:
+Configure the strategy in `/etc/lqos.conf` under the `[splynx_integration]` section:
 
 ```ini
-[splynx]
+[splynx_integration]
 # ... other splynx settings ...
 strategy = "ap_only"
 ```
@@ -158,6 +159,44 @@ python3 integrationNetzur.py
 
 The integration regenerates `ShapedDevices.csv` and, unless `always_overwrite_network_json` is disabled, updates `network.json`. Adjust the Integration → Common settings if you need to preserve an existing network map between Netzur syncs.
 
+## VISP Integration
+
+First, set the relevant parameters for VISP in `/etc/lqos.conf`:
+
+```ini
+[visp_integration]
+enable_visp = true
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+username = "appuser-username"
+password = "appuser-password"
+# Optional: leave unset/blank to auto-select first ISP ID returned by token payload
+# isp_id = 0
+timeout_secs = 20
+# Optional: used for online session enrichment
+# online_users_domain = ""
+```
+
+Notes:
+- VISP import is GraphQL-based and currently defaults to a flat topology strategy.
+- The integration writes `ShapedDevices.csv` every run.
+- `network.json` is only overwritten when `always_overwrite_network_json = true` (under `[integration_common]`).
+- VISP auth tokens are cached in `<lqos_directory>/.visp_token_cache_*.json`.
+
+Run a manual import with:
+
+```bash
+python3 integrationVISP.py
+```
+
+To run automatically through `lqos_scheduler`, set:
+- `[visp_integration] enable_visp = true`
+- then restart scheduler:
+
+```bash
+sudo systemctl restart lqos_scheduler
+```
+
 ## UISP Integration
 
 First, set the relevant parameters for UISP in `/etc/lqos.conf`.
@@ -251,7 +290,30 @@ commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
 always_overwrite_network_json = false  # Set true to rebuild topology each run
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
+squash_sites = []  # Optional: sites to squash (legacy full strategy behavior)
+enable_squashing = false  # Optional: enable AP/single-entry squashing logic
+do_not_squash_sites = []  # Optional: never squash these sites
+ignore_calculated_capacity = false  # Optional: keep configured capacities even if calculated differs
+insecure_ssl = false  # Optional: ignore UISP TLS certificate validation
 ```
+
+### UISP Advanced/Operational Options
+
+The following UISP options are available in current builds and Node Manager config editors:
+
+- `exclude_sites`: list of site names to exclude from import.
+- `exception_cpes`: list of `cpe:parent` overrides for ambiguous parent assignment.
+- `squash_sites`: optional list of sites to squash in full strategy workflows.
+- `enable_squashing`: enables additional squashing behavior where supported.
+- `do_not_squash_sites`: explicit exclusions from squashing.
+- `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
+- `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
+- `insecure_ssl`: disables TLS certificate verification for UISP API calls.
+
+Recommended use:
+1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
+2. Use `exclude_sites` and `do_not_squash_sites` first for safer topology changes.
+3. Apply `squash_sites`/`enable_squashing` incrementally and validate queue placement after each change.
 
 To test the UISP Integration, use
 

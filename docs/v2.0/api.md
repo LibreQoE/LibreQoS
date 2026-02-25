@@ -6,29 +6,60 @@ The LibreQoS Node API requires an active LibreQoS Insight subscription.
 
 ## Installation
 
-### Download
+### If installed via `.deb` (recommended)
 
-```
-cd ~
-sudo apt-get update
-sudo apt-get upgrade
-wget https://libreqos.io/wp-content/uploads/2025/09/lqos_api.zip
-sudo apt-get install unzip
-sudo mkdir /opt/lqos_api/
-sudo chown -R $USER /opt/lqos_api/
-cd /opt/lqos_api/
-unzip lqos_api.zip
-```
+`lqos_api` is installed with LibreQoS into:
+
+`/opt/libreqos/src/bin/lqos_api`
 
 ### Test run
-```
-cd /opt/lqos_api/
-./lqos_api
+
+```bash
+/opt/libreqos/src/bin/lqos_api
 ```
 
 ### Systemd Service
 
-If the test run succeeds, use `sudo nano /etc/systemd/system/lqos_api.service` and paste these contents:
+The package includes a template service file:
+
+```bash
+sudo cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+```
+
+Then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable lqos_api
+sudo systemctl start lqos_api
+```
+
+### Update just the API binary
+
+Use the helper script:
+
+```bash
+cd /opt/libreqos/src
+./update_api.sh
+```
+
+This downloads the latest `lqos_api` and installs it to `/opt/libreqos/src/bin/lqos_api`.
+
+You can optionally skip service restart:
+
+```bash
+./update_api.sh --no-restart
+```
+
+Or install to an alternate location:
+
+```bash
+./update_api.sh --bin-dir /some/path/bin --no-restart
+```
+
+### Manual service file (if needed)
+
+If you are creating the service manually, use:
 
 ```
 [Unit]
@@ -36,15 +67,17 @@ After=network.service lqosd.service
 Requires=lqosd.service
 
 [Service]
-WorkingDirectory=/opt/lqos_api/
-ExecStart=/opt/lqos_api/lqos_api
+WorkingDirectory=/opt/libreqos/src/bin
+ExecStart=/opt/libreqos/src/bin/lqos_api
 Restart=always
 
 [Install]
 WantedBy=default.target
 ```
+
 Then run:
-```
+
+```bash
 sudo systemctl daemon-reload
 sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
@@ -53,6 +86,30 @@ sudo systemctl start lqos_api
 ## Usage
 
 See `localhost:9122/api-docs` for the Swagger UI.
+
+`/api-docs` is the source of truth for your installed version. Endpoint availability can change between releases.
+
+## Deployment and Hardening Guidance
+
+Recommended production posture:
+
+1. Keep the Node API reachable only from trusted management networks.
+2. Do not expose the API directly to the public Internet.
+3. If remote access is required, place it behind a reverse proxy with TLS and authentication.
+4. Restrict inbound access with host/network firewall allowlists.
+5. Monitor API and service logs for abnormal access patterns.
+
+If the API is not needed on a node, disable the service:
+
+```bash
+sudo systemctl disable --now lqos_api
+```
+
+If enabled for operations, verify service state after upgrades:
+
+```bash
+sudo systemctl status lqos_api
+```
 
 ## API Endpoints
 
@@ -95,3 +152,25 @@ See `localhost:9122/api-docs` for the Swagger UI.
 - `/current_endpoint_latlon` - Endpoint geographic coordinates
 - `/ether_protocol_summary` - Ethernet protocol statistics
 - `/ip_protocol_summary` - IP protocol statistics
+
+## Newer API Coverage Areas
+
+Recent builds expanded API coverage in a few areas. Depending on your version, the API may also include:
+
+- Alerts and warnings summaries
+- Device and circuit count summaries
+- Single-circuit detail lookups
+- Search result helpers for UI workflows
+- Scheduler and queue-stat detail endpoints
+
+Use `localhost:9122/api-docs` to confirm exact paths and schemas on your node.
+
+## Capturing an endpoint inventory for your release
+
+For release notes or internal runbooks, capture a snapshot of API paths from your node:
+
+```bash
+curl -s http://localhost:9122/api-docs | jq -r '.paths | keys[]' | sort
+```
+
+Save this output with your release artifacts so operators can compare endpoint differences between versions.

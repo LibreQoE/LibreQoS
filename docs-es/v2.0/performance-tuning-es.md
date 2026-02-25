@@ -1,28 +1,71 @@
-# Ajuste de Rendimiento
+# Ajuste de rendimiento
 
-## Ubuntu inicia lentamente (~2 minutos)
+## Base de CPU e IRQ
 
-### Listar todos los servicios que dependen de la red
+Configure el governor de CPU en modo rendimiento para bare metal/hipervisor:
 
-```shell
+```bash
+sudo cpupower frequency-set --governor performance
+```
+
+Confirme que el conteo de colas NIC y la distribución por CPU sean razonables:
+
+```bash
+ethtool -l <interfaz>
+grep -E 'CPU\\(|IRQ' /proc/interrupts | head -n 50
+```
+
+Si un solo núcleo/cola está saturado y los demás están ociosos, rebalancee afinidad IRQ/colas y revise la configuración de colas en `/etc/lqos.conf`.
+
+## Presión por topología/colas
+
+Cuando modele jerarquías grandes:
+
+- Prefiera estrategias de menor profundidad (`ap_only`/`ap_site`) salvo que necesite jerarquía completa.
+- Use `promote_to_root` en topologías multi-sitio para evitar cuellos de botella de un solo núcleo.
+- Valide CPU Tree/CPU Weights en Node Manager después de cambios topológicos importantes.
+
+Consulte también [Escalado y diseño de topología](scale-topology-es.md).
+
+## Frecuencia del scheduler y carga
+
+La cadencia de `lqos_scheduler` afecta carga del plano de control y velocidad de cambios.
+
+- Comience con `queue_refresh_interval_mins` conservador.
+- Reduzca intervalo solo si su integración/API y host soportan ese churn.
+- Tras cambiar intervalo, monitoree:
+  - `journalctl -u lqos_scheduler --since "30 minutes ago"`
+  - estado del scheduler en Node Manager
+
+## Despliegue de StormGuard
+
+Si usa StormGuard:
+
+1. Inicie con `dry_run = true`.
+2. Observe al menos un periodo de alto tráfico.
+3. Pase a modo activo solo tras revisar estado/depuración.
+
+Vea [StormGuard](stormguard-es.md).
+
+## Arranque lento / dependencias de red
+
+Si Ubuntu arranca lento por dependencias de `network-online`, inspeccione:
+
+```bash
 systemctl show -p WantedBy network-online.target
 ```
 
-### En Ubuntu 22.04 este comando puede ayudar
+En algunos entornos Ubuntu, deshabilitar servicios no usados de cloud/iSCSI puede ayudar:
 
-```shell
-systemctl disable cloud-config iscsid cloud-final
+```bash
+sudo systemctl disable cloud-config iscsid cloud-final
 ```
 
-### Establecer el governor correcto para la CPU (baremetal/hipervisor)
+Valide esta acción contra su entorno antes de aplicarla.
 
-```shell
-cpupower frequency-set --governor performance
-```
+## Convergencia de ruteo (OSPF)
 
-### OSPF
+Para despliegues enrutados, ajuste timers OSPF entre core y edge para reducir ventanas de indisponibilidad en reinicios:
 
-Se recomienda ajustar los temporizadores OSPF de ambos vecinos (core y edge router) para minimizar el tiempo de inactividad cuando el servidor LibreQoS se reinicie.
-
-* hello interval
-* dead interval
+- hello interval
+- dead interval

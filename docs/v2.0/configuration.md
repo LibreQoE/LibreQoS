@@ -170,9 +170,57 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
+#### On-a-stick mode queue mapping (single interface)
+
+When running on-a-stick mode, LibreQoS splits available TX queues in half:
+- first half for one direction
+- second half for the reverse direction
+
+So if 16 queues are available, each direction gets 8 queues. This directional offset is computed automatically at startup.
+
+If your NIC exposes unusual queue counts, you can set `override_available_queues` in `[queues]` and restart `lqosd`.
+
+If shaping appears asymmetric in on-a-stick deployments, verify:
+- the interface has enough TX queues
+- `override_available_queues` is not forcing an incorrect value
+- you have restarted after config changes
+
+See also [Troubleshooting](troubleshooting.md).
+
 #### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).
+
+### Runtime overrides (`lqos_overrides.json`)
+
+LibreQoS supports runtime-friendly adjustments via `lqos_overrides.json` in your `lqos_directory`.
+
+Use the `lqos_overrides` CLI:
+
+```bash
+/opt/libreqos/src/bin/lqos_overrides --help
+```
+
+Common examples:
+
+```bash
+# List persistent devices
+/opt/libreqos/src/bin/lqos_overrides persistent-devices list
+
+# Add/replace per-circuit speed adjustment
+/opt/libreqos/src/bin/lqos_overrides adjustments add-circuit-speed --circuit-id "1234" --max-download-bandwidth 200 --max-upload-bandwidth 50
+
+# Set a node to logical-only (virtual) without editing network.json directly
+/opt/libreqos/src/bin/lqos_overrides network-adjustments set-virtual "AP_GROUP_A" true
+
+# List network adjustments
+/opt/libreqos/src/bin/lqos_overrides network-adjustments list
+```
+
+How overrides apply:
+- `lqos_scheduler` applies overrides during refresh cycles.
+- persistent devices are merged into `ShapedDevices.csv`.
+- circuit/device/network adjustments are applied on top of imported/manual data.
 
 ### Network Hierarchy
 #### Network.json
@@ -255,6 +303,28 @@ LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they ar
 
 The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
 
+The base format has 13 columns, with an optional 14th `sqm` column for per-circuit queue overrides:
+
+```
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment[,sqm]
+```
+
+##### Optional `sqm` column
+
+If present, `sqm` overrides queueing for that circuit.
+
+Allowed values:
+- Single token: `cake`, `fq_codel`, `none`
+- Directional token: `down_sqm/up_sqm` where each side is `cake`, `fq_codel`, `none`, or empty
+
+Examples:
+- `cake` (both directions)
+- `cake/fq_codel` (download cake, upload fq_codel)
+- `fq_codel/` (download fq_codel, upload uses global default)
+- `/none` (upload disabled, download uses global default)
+
+If `sqm` is empty/missing, global queue defaults apply.
+
 Here is an example of an entry in the ShapedDevices.csv file:
 | Circuit ID | Circuit Name                                        | Device ID | Device Name | Parent Node | MAC | IPv4                    | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
 |------------|-----------------------------------------------------|-----------|-------------|-------------|-----|-------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|
@@ -271,6 +341,13 @@ Here is an example of an entry in the ShapedDevices.csv file:
 | 9          | 525 Birchpond St., Romulus, MI 48174                | 11        | Device 11   | Site_1      |     | 100.64.0.11             | fdd7:b724:0:b00::/56 | 1                 | 1               | 105               | 18              |         |
 
 If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
+
+Directional SQM examples:
+
+```
+2794,"6 Littleton Drive, Ringgold, GA 30736",5,Device 5,AP_11,,100.64.0.5,"fdd7:b724:0:500::/56",1,1,105,18,"",cake/fq_codel
+2795,"7 Example Ave",6,Device 6,AP_11,,100.64.0.6,,1,1,105,18,"",/none
+```
 
 ##### Multiple IPs per Circuit
 If you need to list multiple IPv4s in the IPv4 field, or multiple IPv6s in the IPv6 field, add a comma between them. If you are editing with a CSV editor (LibreOffice Calc, Excel), the CSV editor will automatically wrap these comma-seperated items with quotes for you. If you are editing the file manually with a utility like notepad or nano, please add quotes surrounding the comma-seperated entries.
