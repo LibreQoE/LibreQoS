@@ -36,6 +36,15 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
         this.graph = new BakeryCircuitsGraph(this.graphDivId());
     }
 
+    setupZoomed() {
+        this.zoomGraph = new BakeryCircuitsGraph(this.zoomGraphDivId());
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "BakeryStatus") {
             this.lastUpdate = msg.data;
@@ -43,6 +52,9 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
                 this.graph.update(
                     msg.data.currentState.activeCircuits,
                 );
+                if (this.zoomGraph) {
+                    this.zoomGraph.update(msg.data.currentState.activeCircuits);
+                }
             }
         }
     }

@@ -68,9 +68,22 @@ export class TcpRetransmitsDash extends DashletBaseInsight{
         }
     }
 
+    setupZoomed() {
+        // Zoom the live retransmit graph (dashlet-local period controls remain in the main card).
+        this.zoomGraph = new RetransmitsGraph(this.zoomGraphDivId());
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "Retransmits") {
             this.graph.update(msg.data.down, msg.data.up, msg.data.tcp_down, msg.data.tcp_up);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data.down, msg.data.up, msg.data.tcp_down, msg.data.tcp_up);
+            }
             if (!this.ltsLoaded && window.hasLts) {
                 this.graphs.forEach((g) => {
                     if (g && g.chart) {

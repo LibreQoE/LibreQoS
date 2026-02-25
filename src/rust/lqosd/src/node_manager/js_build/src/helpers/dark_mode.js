@@ -52,16 +52,40 @@ export function initDayNightMode() {
                 ];
             }
             if (window.graphList !== undefined) {
+                const next = [];
                 window.graphList.forEach((graph) => {
-                    graph.chart.dispose();
-                    if (darkModeSwitch.checked) {
-                        graph.chart = echarts.init(graph.dom, 'dark');
-                    } else {
-                        graph.chart = echarts.init(graph.dom, 'vintage');
+                    if (!graph || !graph.dom) return;
+                    if (typeof graph.dom.isConnected === "boolean" && !graph.dom.isConnected) {
+                        // Drop charts whose DOM has been removed (e.g. closed zoom overlay).
+                        try {
+                            if (graph.chart && graph.chart.dispose) {
+                                graph.chart.dispose();
+                            }
+                        } catch (_) {}
+                        return;
                     }
+
+                    // Defensive: dispose any existing instance before re-init.
+                    try {
+                        if (graph.chart && graph.chart.dispose) {
+                            graph.chart.dispose();
+                        } else if (typeof echarts !== "undefined" && echarts.getInstanceByDom) {
+                            const existing = echarts.getInstanceByDom(graph.dom);
+                            if (existing) existing.dispose();
+                        }
+                    } catch (_) {}
+
+                    if (typeof echarts === "undefined" || !echarts.init) {
+                        return;
+                    }
+                    graph.chart = echarts.init(graph.dom, darkModeSwitch.checked ? 'dark' : 'vintage');
                     graph.chart.setOption(graph.option);
-                    graph.onThemeChange();
+                    if (graph.onThemeChange) {
+                        graph.onThemeChange();
+                    }
+                    next.push(graph);
                 });
+                window.graphList = next;
             }
         });
     });

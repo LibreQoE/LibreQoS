@@ -34,7 +34,7 @@ class ChildrenSankeyGraphUp extends DashboardGraph {
             this.option.series[0].links = items.links;
         }
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        this.chart.setOption(this.option, true);
     }
 }
 
