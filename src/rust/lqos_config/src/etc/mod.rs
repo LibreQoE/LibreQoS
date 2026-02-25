@@ -17,7 +17,11 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::{BridgeConfig, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, Tunables};
+pub use v15::{
+    AutopilotCircuitsConfig, AutopilotConfig, AutopilotCpuConfig, AutopilotCpuMode,
+    AutopilotLinksConfig, AutopilotQooConfig, BridgeConfig, LazyQueueMode, SingleInterfaceConfig,
+    StormguardConfig, Tunables,
+};
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
 
@@ -167,7 +171,9 @@ pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
 
 #[derive(Debug, Error)]
 pub enum LibreQoSConfigError {
-    #[error("Unable to locate LibreQoS configuration at {path}. Set `LQOS_CONFIG` to override the path.")]
+    #[error(
+        "Unable to locate LibreQoS configuration at {path}. Set `LQOS_CONFIG` to override the path."
+    )]
     NotFound { path: String },
     #[error("Unable to read LibreQoS configuration at {path}: {source}")]
     CannotRead {

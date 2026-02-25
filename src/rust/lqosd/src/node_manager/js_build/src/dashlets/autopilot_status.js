@@ -11,7 +11,7 @@ export class AutopilotStatusDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>Autopilot Status</h5><p>Shows Autopilot enablement, dry-run state, CPU pressure, managed allowlists, and warnings.</p>";
+        return "<h5>Autopilot Status</h5><p>Shows Autopilot enablement, dry-run state, CPU pressure, managed allowlists, current virtualization/SQM states, and warnings.</p>";
     }
 
     subscribeTo() {
@@ -46,6 +46,8 @@ export class AutopilotStatusDashlet extends BaseDashlet {
         this.cpuEl = document.createElement("span");
         this.nodesEl = document.createElement("span");
         this.circuitsEl = document.createElement("span");
+        this.virtualizedEl = document.createElement("span");
+        this.fqCodelEl = document.createElement("span");
         this.lastActionEl = document.createElement("span");
 
         tbody.appendChild(mkRow("Enabled", this.enabledEl));
@@ -53,6 +55,8 @@ export class AutopilotStatusDashlet extends BaseDashlet {
         tbody.appendChild(mkRow("CPU Max", this.cpuEl));
         tbody.appendChild(mkRow("Managed Nodes", this.nodesEl));
         tbody.appendChild(mkRow("Managed Circuits", this.circuitsEl));
+        tbody.appendChild(mkRow("Virtualized Nodes", this.virtualizedEl));
+        tbody.appendChild(mkRow("fq_codel Circuits", this.fqCodelEl));
         tbody.appendChild(mkRow("Last Action", this.lastActionEl));
 
         table.appendChild(tbody);
@@ -88,6 +92,8 @@ export class AutopilotStatusDashlet extends BaseDashlet {
 
         this.nodesEl.textContent = (d.managed_nodes ?? 0).toString();
         this.circuitsEl.textContent = (d.managed_circuits ?? 0).toString();
+        this.virtualizedEl.textContent = (d.virtualized_nodes ?? 0).toString();
+        this.fqCodelEl.textContent = (d.fq_codel_circuits ?? 0).toString();
         this.lastActionEl.textContent = d.last_action_summary ?? "—";
 
         const warnings = Array.isArray(d.warnings) ? d.warnings : [];
@@ -107,4 +113,3 @@ export class AutopilotStatusDashlet extends BaseDashlet {
         this.warningsEl.appendChild(ul);
     }
 }
-

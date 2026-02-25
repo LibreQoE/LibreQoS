@@ -534,11 +534,11 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 5) Implement telemetry sampling (links, circuits, CPU, QoO)
 
-- [ ] CPU sampling:
+- [x] CPU sampling:
   - Use the already-running system stats actor started in `src/rust/lqosd/src/system_stats.rs:29` (`start_system_stats()`).
   - In Autopilot, define “cpu_max_pct” as `max(SystemStats.cpu_usage)`.
 
-- [ ] Link/node sampling:
+- [x] Link/node sampling:
   - Read from `NETWORK_JSON` in `src/rust/lqosd/src/shaped_devices_tracker/netjson.rs:8` (global `NETWORK_JSON` lock).
   - Find nodes by name using `lqos_config::NetworkJson::get_index_for_name()` (`src/rust/lqos_config/src/network_json.rs:120`).
   - Capacity:
@@ -547,7 +547,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - use `RttBuffer.last_seen` (nanos since boot) (`src/rust/lqos_utils/src/rtt/rtt_buffer.rs:194`) and compare to `time_since_boot()` (imported in `src/rust/lqosd/src/throughput_tracker/mod.rs:29`).
     - if age >= `rtt_missing_seconds` (120s), treat RTT as missing/unsafe.
 
-- [ ] QoO sampling (guard rail):
+- [x] QoO sampling (guard rail):
   - For circuits, QoO is already computed in the throughput tracker:
     - reference: `src/rust/lqosd/src/shaped_devices_tracker/mod.rs:268` (`pub fn get_all_circuits()` builds `qoo` fields).
   - In Autopilot, snapshot per-circuit QoO (down/up). **QoO is an optional guard**: enforce only when the value is `Some(score)`.
@@ -555,11 +555,11 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 6) Implement decision logic (pure functions + state machines)
 
-- [ ] Implement EWMA + sustained-idle tracking:
+- [x] Implement EWMA + sustained-idle tracking:
   - “Basically idle” = utilization below `idle_util_pct` for >= `idle_min_minutes` (15 minutes) *after smoothing*.
   - Keep per-direction EWMAs + timers in `src/rust/lqosd/src/autopilot/state.rs`.
 
-- [ ] Link virtualization state machine (per allowlisted node):
+- [x] Link virtualization state machine (per allowlisted node):
   - Implement in `src/rust/lqosd/src/autopilot/decisions.rs` (pure).
   - Virtualize only if:
     - sustained idle (>= 15 minutes)
@@ -574,7 +574,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - dwell time (`min_state_dwell_minutes`)
     - rate limit (`max_link_changes_per_hour`)
 
-- [ ] Circuit SQM switching state machine (per allowlisted circuit, per direction):
+- [x] Circuit SQM switching state machine (per allowlisted circuit, per direction):
   - Implement in `src/rust/lqosd/src/autopilot/decisions.rs` (pure).
   - Downgrade CAKE → fq_codel only if:
     - CPU pressure meets `cpu_high_pct`
@@ -587,7 +587,7 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 7) Apply changes (persistence, live updates, reloads)
 
-- [ ] Persist link virtualization using overrides:
+- [x] Persist link virtualization using overrides:
   - Implement in `src/rust/lqosd/src/autopilot/overrides.rs`.
   - Use `lqos_overrides::OverrideFile` (`src/rust/lqos_overrides/src/overrides_file.rs`):
     - `OverrideFile::load()`
@@ -596,7 +596,7 @@ When you finish an item, change `[ ]` to `[x]`.
   - Reconciliation rule:
     - Autopilot must remove its `set_node_virtual` entries for nodes that are no longer allowlisted or when Autopilot is disabled.
 
-- [ ] Persist circuit SQM changes **without changing overrides format**:
+- [x] Persist circuit SQM changes **without changing overrides format**:
   - Implement in `src/rust/lqosd/src/autopilot/overrides.rs`.
   - Use `OverrideFile::add_persistent_shaped_device_return_changed(...)` (`src/rust/lqos_overrides/src/overrides_file.rs:129`) to store **device overlays** keyed by `device_id` with `sqm_override` set.
   - For allowlisted circuits, write overlays for **every device_id in the circuit** so `LibreQoS.py` never sees mixed SQM tokens.
@@ -631,13 +631,13 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 8) Connect Autopilot to the UI tickers (status + activity)
 
-- [ ] Implement status snapshot API in Autopilot:
+- [x] Implement status snapshot API in Autopilot:
   - In `src/rust/lqosd/src/autopilot/status.rs`, provide functions like:
     - `autopilot_status_snapshot() -> AutopilotStatusData`
     - `autopilot_activity_snapshot() -> Vec<AutopilotActivityEntry>`
   - Store activity as a ring buffer (e.g., last 200 entries) in the Autopilot actor.
 
-- [ ] Wire WS tickers to call these snapshot functions:
+- [x] Wire WS tickers to call these snapshot functions:
   - Implement in `src/rust/lqosd/src/node_manager/ws/ticker/autopilot.rs`.
   - Publish to:
     - `PublishedChannels::AutopilotStatus` with `WsResponse::AutopilotStatus { ... }`

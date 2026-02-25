@@ -20,6 +20,8 @@ pub async fn autopilot_status_snapshot() -> AutopilotStatusData {
             cpu_max_pct: None,
             managed_nodes: 0,
             managed_circuits: 0,
+            virtualized_nodes: 0,
+            fq_codel_circuits: 0,
             last_action_summary: None,
             warnings: vec!["Unable to load configuration; Autopilot status unavailable.".to_string()],
         };
@@ -41,6 +43,8 @@ pub async fn autopilot_status_snapshot() -> AutopilotStatusData {
         cpu_max_pct: None,
         managed_nodes: ap.links.nodes.len(),
         managed_circuits: ap.circuits.circuits.len(),
+        virtualized_nodes: 0,
+        fq_codel_circuits: 0,
         last_action_summary: None,
         warnings,
     }

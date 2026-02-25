@@ -207,6 +207,8 @@ pub struct AutopilotStatusData {
     pub cpu_max_pct: Option<u8>,
     pub managed_nodes: usize,
     pub managed_circuits: usize,
+    pub virtualized_nodes: usize,
+    pub fq_codel_circuits: usize,
     pub last_action_summary: Option<String>,
     pub warnings: Vec<String>,
 }
