@@ -1350,12 +1350,31 @@ fn run_tick(
                     up: None,
                 });
 
-            let circuit_device_ids: Vec<String> = shaped
+            let devices: Vec<lqos_config::ShapedDevice> = shaped
                 .devices
                 .iter()
                 .filter(|d| d.circuit_id == circuit_id.as_str())
-                .map(|d| d.device_id.clone())
+                .cloned()
                 .collect();
+
+            let circuit_name: Option<String> = devices.iter().find_map(|d| {
+                let name = d.circuit_name.trim();
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                }
+            });
+            let circuit_entity_id: String = match circuit_name.as_deref() {
+                Some(name) => format!("{name} ({circuit_id})"),
+                None => circuit_id.clone(),
+            };
+            let circuit_label: String = circuit_name.unwrap_or_else(|| circuit_id.clone());
+
+            let mut circuit_device_ids: Vec<String> =
+                devices.iter().map(|d| d.device_id.clone()).collect();
+            circuit_device_ids.sort();
+            circuit_device_ids.dedup();
             let operator_conflict = circuit_device_ids
                 .iter()
                 .any(|did| operator_sqm_device_overrides.contains(did));
@@ -1372,7 +1391,7 @@ fn run_tick(
                                     AutopilotActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
-                                        entity_id: circuit_id.clone(),
+                                        entity_id: circuit_entity_id.clone(),
                                         action: "clear_sqm_overrides_conflict".to_string(),
                                         persisted: true,
                                         reason: "Operator SQM overrides present; cleared Autopilot SQM overlays.".to_string(),
@@ -1418,12 +1437,6 @@ fn run_tick(
             let changed_up = proposed_up != state.up.desired;
             let changed = changed_down || changed_up;
 
-            let devices: Vec<lqos_config::ShapedDevice> = shaped
-                .devices
-                .iter()
-                .filter(|d| d.circuit_id == circuit_id.as_str())
-                .cloned()
-                .collect();
             if devices.is_empty() {
                 status.warnings.push(format!(
                     "Autopilot circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
@@ -1457,7 +1470,7 @@ fn run_tick(
                         AutopilotActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "circuit".to_string(),
-                            entity_id: circuit_id.clone(),
+                            entity_id: circuit_entity_id.clone(),
                             action: format!("would_set_sqm_override:{token}"),
                             persisted: false,
                             reason: "Dry-run".to_string(),
@@ -1465,7 +1478,7 @@ fn run_tick(
                     );
                     status.last_action_summary = Some(format!(
                         "Would set SQM override for circuit '{}' -> {}",
-                        circuit_id, token
+                        circuit_label, token
                     ));
                 } else {
                     let mut persisted_ok = false;
@@ -1485,7 +1498,7 @@ fn run_tick(
                                     AutopilotActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
-                                        entity_id: circuit_id.clone(),
+                                        entity_id: circuit_entity_id.clone(),
                                         action: "set_sqm_override_failed".to_string(),
                                         persisted: false,
                                         reason: format!("Overrides write failed: {e}"),
@@ -1511,7 +1524,7 @@ fn run_tick(
                                     AutopilotActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
-                                        entity_id: circuit_id.clone(),
+                                        entity_id: circuit_entity_id.clone(),
                                         action: format!("apply_sqm_live_failed:{token}"),
                                         persisted: persisted_ok,
                                         reason: format!("Bakery live apply failed: {e}"),
@@ -1561,7 +1574,7 @@ fn run_tick(
                             AutopilotActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "circuit".to_string(),
-                                entity_id: circuit_id.clone(),
+                                entity_id: circuit_entity_id.clone(),
                                 action: format!("{action}:{token}"),
                                 persisted: persisted_ok,
                                 reason,
@@ -1570,7 +1583,7 @@ fn run_tick(
 
                         status.last_action_summary = Some(format!(
                             "SQM override for circuit '{}' -> {}",
-                            circuit_id, token
+                            circuit_label, token
                         ));
                     }
                 }
