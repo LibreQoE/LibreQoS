@@ -598,6 +598,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(enable_actual_shell_commands, m)?)?;
     m.add_function(wrap_pyfunction!(use_bin_packing_to_balance_cpu, m)?)?;
     m.add_function(wrap_pyfunction!(monitor_mode_only, m)?)?;
+    m.add_function(wrap_pyfunction!(shaping_cpu_count, m)?)?;
     m.add_function(wrap_pyfunction!(run_shell_commands_as_sudo, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_download_mbps, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_upload_mbps, m)?)?;
@@ -1147,6 +1148,16 @@ fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
 fn monitor_mode_only() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.queues.monitor_only)
+}
+
+/// Returns the number of CPUs that should be used for shaping / binning.
+///
+/// On hybrid CPUs, this may exclude efficiency cores (E-cores) when configured.
+#[pyfunction]
+fn shaping_cpu_count() -> PyResult<u32> {
+    let config = lqos_config::load_config().unwrap();
+    let det = lqos_config::detect_shaping_cpus(config.as_ref());
+    Ok(det.shaping.len() as u32)
 }
 
 #[pyfunction]

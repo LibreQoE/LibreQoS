@@ -157,6 +157,7 @@ function updateConfig() {
     window.config.queue_check_period_ms = parseInt(document.getElementById("queueCheckPeriod").value);
     window.config.disable_webserver = document.getElementById("disableWebserver").checked;
     window.config.disable_icmp_ping = document.getElementById("disableIcmpPing").checked;
+    window.config.exclude_efficiency_cores = document.getElementById("excludeEfficiencyCores").checked;
     window.config.enable_circuit_heatmaps = document.getElementById("enableCircuitHeatmaps").checked;
     window.config.enable_site_heatmaps = document.getElementById("enableSiteHeatmaps").checked;
     window.config.enable_asn_heatmaps = document.getElementById("enableAsnHeatmaps").checked;
@@ -193,6 +194,7 @@ loadConfig(() => {
         document.getElementById("disableWebserver").checked = window.config.disable_webserver ?? false;
         document.getElementById("webserverListen").value = window.config.webserver_listen ?? "";
         document.getElementById("disableIcmpPing").checked = window.config.disable_icmp_ping ?? false;
+        document.getElementById("excludeEfficiencyCores").checked = window.config.exclude_efficiency_cores ?? true;
         document.getElementById("enableCircuitHeatmaps").checked = window.config.enable_circuit_heatmaps ?? true;
         document.getElementById("enableSiteHeatmaps").checked = window.config.enable_site_heatmaps ?? true;
         document.getElementById("enableAsnHeatmaps").checked = window.config.enable_asn_heatmaps ?? true;

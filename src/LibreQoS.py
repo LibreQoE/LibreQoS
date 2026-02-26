@@ -35,6 +35,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     is_insight_enabled, \
     fast_queues_fq_codel, \
+    shaping_cpu_count, \
     Bakery
 
 # Optional: urgent issue submission (available in newer liblqos_python)
@@ -189,7 +190,10 @@ def findQueuesAvailable(interfaceName):
         else:
             queuesAvailable = queues_available_override()
             print(f"Interface {interfaceName} NIC queues (Override):\t\t\t" + str(queuesAvailable))
-        cpuCount = multiprocessing.cpu_count()
+        try:
+            cpuCount = shaping_cpu_count()
+        except Exception:
+            cpuCount = multiprocessing.cpu_count()
         print("CPU cores:\t\t\t" + str(cpuCount))
         if queuesAvailable < 2:
             raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available.')

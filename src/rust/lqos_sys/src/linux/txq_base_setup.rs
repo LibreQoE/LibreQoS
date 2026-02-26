@@ -40,6 +40,65 @@ pub fn map_txq_config_base_setup(map_fd: i32) -> Result<(), MapTxqConfigError> {
     Ok(())
 }
 
+/// Populate `map_txq_config` for a shaping CPU set.
+///
+/// The map is keyed by the **physical CPU** that will execute the TC program
+/// (i.e. the destination of XDP redirection). Values set `queue_mapping` and
+/// `htb_major` to match the logical queue index used by LibreQoS (major IDs
+/// start at 1).
+pub fn map_txq_config_shaping(
+    map_fd: i32,
+    shaping_physical_cpus: &[u32],
+) -> Result<(), MapTxqConfigError> {
+    let possible_cpus = num_possible_cpus().map_err(|_| MapTxqConfigError::NumCpusError)?;
+    if map_fd < 0 {
+        error!("ERR: (bad map_fd:{map_fd}) cannot proceed without access to txq_config map");
+        return Err(MapTxqConfigError::BadMapFd);
+    }
+
+    if shaping_physical_cpus.is_empty() {
+        return map_txq_config_base_setup(map_fd);
+    }
+
+    // Clear prior values to avoid stale queue mappings on excluded CPUs.
+    let mut txq_cfg = TxqConfig::default();
+    for cpu in 0..possible_cpus {
+        let key_ptr: *const u32 = &cpu;
+        let val_ptr: *const TxqConfig = &txq_cfg;
+        let err = unsafe {
+            bpf_map_update_elem(map_fd, key_ptr as *const c_void, val_ptr as *mut c_void, 0)
+        };
+        if err != 0 {
+            error!("Unable to clear TXQ map");
+            return Err(MapTxqConfigError::BpfMapUpdateFail);
+        }
+    }
+
+    // Program shaping CPUs: physical CPU -> queue index+1.
+    for (logical_idx, &physical_cpu) in shaping_physical_cpus.iter().enumerate() {
+        // Ignore CPUs outside the possible range.
+        if physical_cpu >= possible_cpus {
+            continue;
+        }
+        let queue_u16: u16 = (logical_idx as u16).saturating_add(1);
+        txq_cfg.queue_mapping = queue_u16;
+        txq_cfg.htb_major = queue_u16;
+
+        let key_ptr: *const u32 = &physical_cpu;
+        let val_ptr: *const TxqConfig = &txq_cfg;
+
+        let err = unsafe {
+            bpf_map_update_elem(map_fd, key_ptr as *const c_void, val_ptr as *mut c_void, 0)
+        };
+        if err != 0 {
+            error!("Unable to update TXQ map for physical CPU {}", physical_cpu);
+            return Err(MapTxqConfigError::BpfMapUpdateFail);
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Error, Debug)]
 pub enum MapTxqConfigError {
     #[error("Unable to determine number of CPUs")]
