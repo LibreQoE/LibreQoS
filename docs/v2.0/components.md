@@ -6,7 +6,7 @@
 - Manages actual XDP code.
 - Coded in Rust.
 - Runs the GUI available at http://a.b.c.d:9123
-- Hosts Node Manager pages such as:
+- Hosts WebUI pages such as:
   - Flow Map
   - Network Tree Overview
   - ASN Explorer
@@ -78,9 +78,9 @@ sudo systemctl start lqos_scheduler
 ### Troubleshooting Service Components
 Please see [Troubleshooting](troubleshooting.md).
 
-## Node Manager privacy mode
+## WebUI privacy mode
 
-Node Manager includes a client-side redaction mode for demos/screenshots:
+WebUI (Node Manager) includes a client-side redaction mode for demos/screenshots:
 - Toggle using the mask icon in the top navigation.
 - Redaction preference is saved in browser local storage.
 - This masks/redacts visible data in the browser UI; it does not modify source data files.
@@ -89,7 +89,7 @@ For public screenshots, enable redaction before capture.
 
 ## Urgent issue channel
 
-Node Manager includes an urgent issue channel for high-priority events (for example, mapped-circuit limit enforcement and related operational warnings).
+WebUI (Node Manager) includes an urgent issue channel for high-priority events (for example, mapped-circuit limit enforcement and related operational warnings).
 
 - Urgent issues appear in the top navigation indicator.
 - They can be reviewed and acknowledged from the urgent issues modal.
@@ -97,7 +97,7 @@ Node Manager includes an urgent issue channel for high-priority events (for exam
 
 ## Scheduler status indicator
 
-Node Manager includes scheduler status visibility for operator awareness.
+WebUI (Node Manager) includes scheduler status visibility for operator awareness.
 
 - Use scheduler status as a quick health signal for recurring refresh jobs.
 - If scheduler is not healthy, validate `lqosd` and `lqos_scheduler` service state first.

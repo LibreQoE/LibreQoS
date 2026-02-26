@@ -1,6 +1,27 @@
 # Solución de problemas
 
+## Empiece aquí: triage por síntoma
+
+Use esta tabla para ir al primer check rápidamente.
+
+| Síntoma | Primer check | Ubicación en WebUI | Siguiente sección |
+|---|---|---|---|
+| No se puede acceder a la WebUI | `systemctl status lqosd` | N/A (UI no disponible) | No hay WebUI en x.x.x.x:9123 |
+| Hay tráfico pero no hace shaping | verificar `to_internet` / `to_network` y servicios | WebUI Dashboard | LibreQoS está en ejecución, pero no hace shaping |
+| Scheduler no saludable | revisar logs de `lqosd` y `lqos_scheduler` | WebUI -> Scheduler Status | El estado del scheduler en WebUI aparece no saludable |
+| Vistas de topología/flujo vacías | confirmar tráfico reciente y estado de `lqosd` | WebUI -> Flow Map / Tree / ASN Explorer | Flow Map / Tree Overview / ASN Explorer aparecen en blanco |
+| Aparece código urgente | abrir detalle y mapear código | WebUI -> Urgent Issues | Códigos de problemas urgentes y primeras acciones |
+| Eventos de límite de circuitos | validar licencia y conteos mapped | Insight UI + WebUI -> Urgent Issues | Se alcanzó el límite de circuitos mapeados |
+
 ## Problemas comunes
+
+### Dónde en la WebUI
+
+- Estado de servicios y salud general: `WebUI -> Dashboard`
+- Estado/readiness del scheduler: `WebUI -> Scheduler Status`
+- Alertas prioritarias: `WebUI -> Urgent Issues`
+- Visualización de topología/tráfico: `WebUI -> Network Tree Overview` y `Flow Map`
+- Revisión de datos de shaping: `WebUI -> Shaped Devices Editor`
 
 ### La contraseña de usuario no funciona
 
@@ -62,9 +83,9 @@ sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd
 sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_log.txt
 ```
 
-### El estado del scheduler en Node Manager aparece no saludable
+### El estado del scheduler en WebUI aparece no saludable
 
-Versiones recientes muestran estado/readiness del scheduler en Node Manager.
+Versiones recientes muestran estado/readiness del scheduler en WebUI.
 
 Si aparece caído/desactualizado:
 
@@ -152,7 +173,7 @@ Checks recomendados:
 
 ### Códigos de problemas urgentes y primeras acciones
 
-Node Manager muestra códigos legibles por máquina para triage rápido.
+WebUI muestra códigos legibles por máquina para triage rápido.
 
 | Código | Significado | Primeros checks | Ruta de corrección típica |
 |---|---|---|---|
@@ -161,7 +182,7 @@ Node Manager muestra códigos legibles por máquina para triage rápido.
 
 Patrón operativo:
 
-1. Abra el detalle del problema urgente en Node Manager (código/mensaje/contexto).
+1. Abra el detalle del problema urgente en WebUI (código/mensaje/contexto).
 2. Recolecte logs correlacionados de `lqosd` y `lqos_scheduler`.
 3. Aplique mitigación inmediata.
 4. Reconozca/limpie el evento en UI cuando esté estable.
@@ -195,3 +216,11 @@ Luego reinicie y valide con:
 ```bash
 systemctl --version
 ```
+
+## Páginas relacionadas
+
+- [Quickstart](quickstart-es.md)
+- [Configurar LibreQoS](configuration-es.md)
+- [Integraciones CRM/NMS](integrations-es.md)
+- [Escalado y diseño de topología](scale-topology-es.md)
+- [Ajuste de rendimiento](performance-tuning-es.md)

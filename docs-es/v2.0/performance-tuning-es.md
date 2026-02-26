@@ -23,7 +23,7 @@ Cuando modele jerarquías grandes:
 
 - Prefiera estrategias de menor profundidad (`ap_only`/`ap_site`) salvo que necesite jerarquía completa.
 - Use `promote_to_root` en topologías multi-sitio para evitar cuellos de botella de un solo núcleo.
-- Valide CPU Tree/CPU Weights en Node Manager después de cambios topológicos importantes.
+- Valide CPU Tree/CPU Weights en WebUI después de cambios topológicos importantes.
 
 Consulte también [Escalado y diseño de topología](scale-topology-es.md).
 
@@ -35,7 +35,7 @@ La cadencia de `lqos_scheduler` afecta carga del plano de control y velocidad de
 - Reduzca intervalo solo si su integración/API y host soportan ese churn.
 - Tras cambiar intervalo, monitoree:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`
-  - estado del scheduler en Node Manager
+  - estado del scheduler en WebUI
 
 ## Despliegue de StormGuard
 
@@ -69,3 +69,10 @@ Para despliegues enrutados, ajuste timers OSPF entre core y edge para reducir ve
 
 - hello interval
 - dead interval
+
+## Páginas relacionadas de optimización y resiliencia
+
+- [Escalado y diseño de topología](scale-topology-es.md)
+- [StormGuard](stormguard-es.md)
+- [Alta Disponibilidad y Dominios de Falla](high-availability-es.md)
+- [Solución de problemas](troubleshooting-es.md)

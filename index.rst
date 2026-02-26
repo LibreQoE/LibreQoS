@@ -16,16 +16,18 @@ Welcome to the LibreQoS documentation
    docs/v2.0/ubuntu-server
    docs/v2.0/bridge
    docs/v2.0/quickstart
-   docs/v2.0/git-install
 
 .. toctree::
    :maxdepth: 1
    :caption: Managing LibreQoS (v1.5 to v2.0):
 
    docs/v2.0/configuration
+   docs/v2.0/operating-modes
+   docs/v2.0/configuration-advanced
    docs/v2.0/integrations
    docs/v2.0/components
    docs/v2.0/node-manager-ui
+   docs/v2.0/scale-topology
    docs/v2.0/stormguard
    docs/v2.0/high-availability
    docs/v2.0/update

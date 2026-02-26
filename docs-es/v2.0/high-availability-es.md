@@ -74,6 +74,8 @@ Si usa BGP, utilice controles de preferencia estándar para definir una ruta pri
 ## Documentación Relacionada
 
 - [Planificación de Escala y Diseño de Topología](scale-topology-es.md)
+- [Ajuste de rendimiento](performance-tuning-es.md)
+- [StormGuard](stormguard-es.md)
 - [Configuración](configuration-es.md)
 - [Integraciones](integrations-es.md)
 - [Resolución de Problemas](troubleshooting-es.md)

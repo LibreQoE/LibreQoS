@@ -7,7 +7,7 @@
 - Administra la lógica de shaping/XDP.
 - Implementado en Rust.
 - Ejecuta la UI local disponible en `http://a.b.c.d:9123`.
-- Hospeda páginas de Node Manager como:
+- Hospeda páginas de WebUI (Node Manager) como:
   - Mapa de flujos
   - Árbol de red
   - Explorador ASN
@@ -49,9 +49,9 @@ sudo python3 scheduler.py
 sudo systemctl start lqos_scheduler
 ```
 
-## Modo privacidad en Node Manager
+## Modo privacidad en WebUI
 
-Node Manager incluye redacción del lado cliente para demos/capturas:
+WebUI (Node Manager) incluye redacción del lado cliente para demos/capturas:
 
 - Se activa con el ícono de máscara en la barra superior.
 - La preferencia se guarda en `localStorage`.
@@ -59,7 +59,7 @@ Node Manager incluye redacción del lado cliente para demos/capturas:
 
 ## Canal de problemas urgentes
 
-Node Manager incluye un canal de problemas urgentes para eventos de alta prioridad (por ejemplo, límite de circuitos mapeados).
+WebUI (Node Manager) incluye un canal de problemas urgentes para eventos de alta prioridad (por ejemplo, límite de circuitos mapeados).
 
 - Los eventos aparecen en el indicador de navegación superior.
 - Pueden revisarse y reconocerse desde el modal de problemas urgentes.
@@ -67,7 +67,7 @@ Node Manager incluye un canal de problemas urgentes para eventos de alta priorid
 
 ## Indicador de estado del scheduler
 
-Node Manager incluye visibilidad del estado del scheduler.
+WebUI (Node Manager) incluye visibilidad del estado del scheduler.
 
 - Úselo como señal rápida de salud para jobs periódicos.
 - Si el scheduler no está saludable, valide primero estado de `lqosd` y `lqos_scheduler`.
