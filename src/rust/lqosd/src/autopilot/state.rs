@@ -13,13 +13,6 @@ pub struct Ewma {
 }
 
 impl Ewma {
-    /// Returns the current EWMA value if it has been initialized.
-    ///
-    /// This function is pure: it has no side effects.
-    pub fn value(self) -> Option<f64> {
-        self.initialized.then_some(self.value)
-    }
-
     /// Updates the EWMA with a new sample and returns the updated value.
     ///
     /// This function is not pure: it mutates `self`.

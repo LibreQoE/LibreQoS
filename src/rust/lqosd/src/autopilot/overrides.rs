@@ -71,28 +71,6 @@ pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError
     Ok(true)
 }
 
-/// Persists a per-device SQM override token (CAKE/fq_codel/none or down/up form) for the given
-/// `device_id` by storing a persistent shaped device overlay.
-///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
-///
-/// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
-pub(crate) fn set_device_sqm_override(
-    base_device: &ShapedDevice,
-    sqm_override: &str,
-) -> Result<bool, AutopilotError> {
-    set_devices_sqm_override(std::slice::from_ref(base_device), sqm_override)
-}
-
-/// Removes any persistent shaped device overlay entries for `device_id`.
-///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
-///
-/// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
-pub(crate) fn clear_device_override(device_id: &str) -> Result<bool, AutopilotError> {
-    clear_device_overrides(std::slice::from_ref(&device_id.to_string()))
-}
-
 /// Persists a per-device SQM override token for a list of devices by storing persistent shaped
 /// device overlays.
 ///
