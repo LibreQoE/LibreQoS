@@ -79,6 +79,11 @@ impl Default for AutopilotCpuConfig {
 pub struct AutopilotLinksConfig {
     /// Whether link/node virtualization is enabled.
     pub enabled: bool,
+    /// Whether Autopilot may manage all non-root nodes in `network.json`.
+    ///
+    /// When enabled, the `nodes` allowlist is ignored.
+    #[serde(default)]
+    pub all_nodes: bool,
     /// Node allowlist: network.json node names that Autopilot may manage.
     pub nodes: Vec<String>,
     /// Utilization percentage below which a link is considered idle.
@@ -101,6 +106,7 @@ impl Default for AutopilotLinksConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            all_nodes: false,
             nodes: Vec::new(),
             idle_util_pct: 2.0,
             idle_min_minutes: 15,
@@ -118,6 +124,11 @@ impl Default for AutopilotLinksConfig {
 pub struct AutopilotCircuitsConfig {
     /// Whether per-circuit management is enabled.
     pub enabled: bool,
+    /// Whether Autopilot may manage all circuits found in ShapedDevices.
+    ///
+    /// When enabled, the `circuits` allowlist is ignored.
+    #[serde(default)]
+    pub all_circuits: bool,
     /// Circuit allowlist: circuit IDs (strings, as in ShapedDevices.csv) that Autopilot may manage.
     pub circuits: Vec<String>,
     /// Whether SQM switching is enabled.
@@ -138,6 +149,7 @@ impl Default for AutopilotCircuitsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            all_circuits: false,
             circuits: Vec::new(),
             switching_enabled: true,
             independent_directions: true,

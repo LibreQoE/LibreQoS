@@ -11,6 +11,22 @@ let shapedDevices = null;
 let selectedNodes = [];
 let selectedCircuits = [];
 
+function updateLinksEnrollmentUi() {
+    const allNodes = document.getElementById("linksAllNodes")?.checked ?? false;
+    const section = document.getElementById("nodesAllowlistSection");
+    if (section) {
+        section.style.display = allNodes ? "none" : "";
+    }
+}
+
+function updateCircuitsEnrollmentUi() {
+    const allCircuits = document.getElementById("circuitsAllCircuits")?.checked ?? false;
+    const section = document.getElementById("circuitsAllowlistSection");
+    if (section) {
+        section.style.display = allCircuits ? "none" : "";
+    }
+}
+
 function loadNetworkData() {
     return new Promise((resolve, reject) => {
         loadNetworkJson(
@@ -311,6 +327,7 @@ function updateConfig() {
         },
         links: {
             enabled: document.getElementById("linksEnabled").checked,
+            all_nodes: document.getElementById("linksAllNodes").checked,
             nodes: selectedNodes,
             idle_util_pct: parseFloat(document.getElementById("idleUtilPct").value),
             idle_min_minutes: parseInt(document.getElementById("idleMinMinutes").value),
@@ -322,6 +339,7 @@ function updateConfig() {
         },
         circuits: {
             enabled: document.getElementById("circuitsEnabled").checked,
+            all_circuits: document.getElementById("circuitsAllCircuits").checked,
             circuits: selectedCircuits,
             switching_enabled: document.getElementById("switchingEnabled").checked,
             independent_directions: document.getElementById("independentDirections").checked,
@@ -361,6 +379,7 @@ Promise.all([
     document.getElementById("cpuLowPct").value = cpu.cpu_low_pct ?? 55;
 
     document.getElementById("linksEnabled").checked = links.enabled ?? true;
+    document.getElementById("linksAllNodes").checked = links.all_nodes ?? false;
     document.getElementById("idleUtilPct").value = links.idle_util_pct ?? 2.0;
     document.getElementById("idleMinMinutes").value = links.idle_min_minutes ?? 15;
     document.getElementById("linksRttMissingSeconds").value = links.rtt_missing_seconds ?? 120;
@@ -372,8 +391,10 @@ Promise.all([
     selectedNodes = Array.isArray(links.nodes) ? links.nodes.slice() : [];
     selectedNodes.sort((a, b) => a.localeCompare(b));
     updateNodesList();
+    updateLinksEnrollmentUi();
 
     document.getElementById("circuitsEnabled").checked = circuits.enabled ?? true;
+    document.getElementById("circuitsAllCircuits").checked = circuits.all_circuits ?? false;
     document.getElementById("switchingEnabled").checked = circuits.switching_enabled ?? true;
     document.getElementById("independentDirections").checked =
         circuits.independent_directions ?? true;
@@ -386,11 +407,13 @@ Promise.all([
     selectedCircuits = Array.isArray(circuits.circuits) ? circuits.circuits.slice() : [];
     selectedCircuits.sort((a, b) => a.localeCompare(b));
     updateCircuitsList();
+    updateCircuitsEnrollmentUi();
 
     document.getElementById("qooEnabled").checked = qoo.enabled ?? true;
     document.getElementById("minScore").value = qoo.min_score ?? 80.0;
 
     document.getElementById("addNodeBtn").addEventListener("click", addNode);
+    document.getElementById("linksAllNodes").addEventListener("change", updateLinksEnrollmentUi);
     document.getElementById("nodeSelector").addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
@@ -399,6 +422,7 @@ Promise.all([
     });
 
     document.getElementById("addCircuitBtn").addEventListener("click", addCircuitFromSelector);
+    document.getElementById("circuitsAllCircuits").addEventListener("change", updateCircuitsEnrollmentUi);
     document.getElementById("circuitSelector").addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
@@ -424,4 +448,3 @@ Promise.all([
         });
     });
 });
-

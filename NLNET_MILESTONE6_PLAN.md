@@ -141,8 +141,10 @@ Add a top-level config section: `[autopilot]`.
 - Dry-run enabled by default.
 - CPU-aware behavior enabled by default.
 
-**Chosen v1 enrollment model: explicit allowlists only.**
-- No `all/none/denylist` modes in v1. The config contains explicit `nodes = [...]` and `circuits = [...]` allowlists.
+**Chosen v1 enrollment model: explicit allowlists by default.**
+- The config supports explicit `nodes = [...]` / `circuits = [...]` allowlists, plus convenience toggles:
+  - `autopilot.links.all_nodes = true` (“all links”)
+  - `autopilot.circuits.all_circuits = true` (“all circuits”)
 
 ### Proposed TOML shape (v1)
 ```toml
@@ -158,6 +160,7 @@ cpu_low_pct  = 55           # max CPU% to revert actions
 
 [autopilot.links]
 enabled = true
+all_nodes = false               # if true, manage all non-root nodes in network.json
 nodes = []                      # network.json node names
 idle_util_pct = 2.0             # "very low utilization" (starting default; tune in production)
 idle_min_minutes = 15
@@ -169,6 +172,7 @@ reload_cooldown_minutes = 10
 
 [autopilot.circuits]
 enabled = true
+all_circuits = false            # if true, manage all circuits found in ShapedDevices.csv
 circuits = []                   # circuit IDs (strings, as in ShapedDevices.csv)
 switching_enabled = true
 independent_directions = true   # allow different SQM decisions for down vs up (directional sqm_override)
@@ -214,7 +218,7 @@ Autopilot must maintain:
 ## Link virtualization behavior (milestone b)
 
 ### Eligibility
-- Only allowlisted nodes are eligible (default none).
+- Only enrolled nodes are eligible (default none unless `all_nodes = true`).
 - Nodes explicitly `virtual` in base `network.json` are treated as operator intent and are not flipped by Autopilot in v1.
 - Nodes already managed by non-Autopilot operator workflows should not be allowlisted (allowlist defines ownership).
 
@@ -312,7 +316,7 @@ Autopilot must never be a “silent optimizer”.
 Use existing network adjustments:
 - `NetworkAdjustment::SetNodeVirtual { node_name, virtual: bool }`
 
-Autopilot writes/updates these only for allowlisted nodes.
+Autopilot writes/updates these only for enrolled nodes.
 
 ### Circuit SQM persistence (without changing overrides format)
 We will not extend `lqos_overrides.json` with new adjustment variants.
@@ -360,7 +364,7 @@ Milestone (d)
 ## Defaults & tuning notes
 
 Decisions locked in for v1:
-- Enrollment is explicit allowlists only (`nodes = [...]`, `circuits = [...]`).
+- Enrollment is explicit allowlists by default (`nodes = [...]`, `circuits = [...]`), with optional `all_nodes` / `all_circuits` convenience toggles.
 - Missing RTT for >= 2 minutes is treated as unsafe (no new CPU-saving actions; revert when applicable).
 - Unknown/missing capacity means **no changes** (warn in UI instead).
 - QoO threshold default is **80**; no additional safety signals beyond utilization + RTT availability + QoO.

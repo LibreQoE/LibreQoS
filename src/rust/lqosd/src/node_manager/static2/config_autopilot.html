@@ -63,24 +63,33 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="linksEnabled">
                 <label class="form-check-label" for="linksEnabled">Enable Link Virtualization</label>
-                <div class="form-text">Allow Autopilot to mark allowlisted nodes as virtual/unvirtual</div>
+                <div class="form-text">Allow Autopilot to mark enrolled nodes as virtual/unvirtual</div>
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Managed Nodes (Allowlist)</label>
-                <div class="form-text">Autopilot will only manage nodes explicitly listed here</div>
+                <label class="form-label">Managed Nodes</label>
 
-                <div class="input-group mb-2">
-                    <select class="form-select" id="nodeSelector">
-                        <option value="">Select a node...</option>
-                    </select>
-                    <button class="btn btn-outline-primary" type="button" id="addNodeBtn">
-                        <i class="fa fa-plus"></i> Add Node
-                    </button>
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="linksAllNodes">
+                    <label class="form-check-label" for="linksAllNodes">All links</label>
+                    <div class="form-text">If enabled, Autopilot manages all non-root nodes in network.json (allowlist ignored)</div>
                 </div>
 
-                <div id="selectedNodesList" class="list-group">
-                    <!-- Dynamically populated list with remove buttons -->
+                <div id="nodesAllowlistSection">
+                    <div class="form-text">Autopilot will only manage nodes explicitly listed here</div>
+
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="nodeSelector">
+                            <option value="">Select a node...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" type="button" id="addNodeBtn">
+                            <i class="fa fa-plus"></i> Add Node
+                        </button>
+                    </div>
+
+                    <div id="selectedNodesList" class="list-group">
+                        <!-- Dynamically populated list with remove buttons -->
+                    </div>
                 </div>
             </div>
 
@@ -132,31 +141,40 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="circuitsEnabled">
                 <label class="form-check-label" for="circuitsEnabled">Enable Circuit Management</label>
-                <div class="form-text">Allow Autopilot to manage per-circuit SQM for allowlisted circuits</div>
+                <div class="form-text">Allow Autopilot to manage per-circuit SQM for enrolled circuits</div>
             </div>
 
             <div class="mb-3">
-                <label class="form-label">Managed Circuits (Allowlist)</label>
-                <div class="form-text">Circuit IDs as in ShapedDevices.csv</div>
+                <label class="form-label">Managed Circuits</label>
 
-                <div class="input-group mb-2">
-                    <select class="form-select" id="circuitSelector">
-                        <option value="">Select a circuit...</option>
-                    </select>
-                    <button class="btn btn-outline-primary" type="button" id="addCircuitBtn">
-                        <i class="fa fa-plus"></i> Add Circuit
-                    </button>
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="circuitsAllCircuits">
+                    <label class="form-check-label" for="circuitsAllCircuits">All circuits</label>
+                    <div class="form-text">If enabled, Autopilot manages all circuits found in ShapedDevices (allowlist ignored)</div>
                 </div>
 
-                <div class="input-group mb-2">
-                    <input type="text" class="form-control" id="circuitManual" placeholder="Or type a circuit ID...">
-                    <button class="btn btn-outline-primary" type="button" id="addCircuitManualBtn">
-                        <i class="fa fa-plus"></i> Add
-                    </button>
-                </div>
+                <div id="circuitsAllowlistSection">
+                    <div class="form-text">Circuit IDs as in ShapedDevices.csv</div>
 
-                <div id="selectedCircuitsList" class="list-group">
-                    <!-- Dynamically populated list with remove buttons -->
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="circuitSelector">
+                            <option value="">Select a circuit...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" type="button" id="addCircuitBtn">
+                            <i class="fa fa-plus"></i> Add Circuit
+                        </button>
+                    </div>
+
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="circuitManual" placeholder="Or type a circuit ID...">
+                        <button class="btn btn-outline-primary" type="button" id="addCircuitManualBtn">
+                            <i class="fa fa-plus"></i> Add
+                        </button>
+                    </div>
+
+                    <div id="selectedCircuitsList" class="list-group">
+                        <!-- Dynamically populated list with remove buttons -->
+                    </div>
                 </div>
             </div>
 

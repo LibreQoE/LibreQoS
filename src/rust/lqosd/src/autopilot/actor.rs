@@ -239,7 +239,12 @@ fn run_tick(
     let mut virtualized_nodes: usize = 0;
     let mut fq_codel_circuits: usize = 0;
 
-    if ap.enabled && ap.links.nodes.is_empty() && ap.circuits.circuits.is_empty() {
+    if ap.enabled
+        && !ap.links.all_nodes
+        && ap.links.nodes.is_empty()
+        && !ap.circuits.all_circuits
+        && ap.circuits.circuits.is_empty()
+    {
         warnings.push(
             "Autopilot is enabled but no nodes/circuits are allowlisted. No actions will occur."
                 .to_string(),
@@ -259,11 +264,36 @@ fn run_tick(
             .push("Unable to sample CPU usage; CPU-aware behavior may be degraded.".to_string());
     }
 
+    let managed_nodes_count: usize = if ap.links.all_nodes {
+        let reader = NETWORK_JSON.read();
+        reader
+            .get_nodes_when_ready()
+            .iter()
+            .filter(|n| n.name != "Root")
+            .count()
+    } else {
+        ap.links.nodes.len()
+    };
+
+    let managed_circuits_count: usize = if ap.circuits.all_circuits {
+        let shaped = SHAPED_DEVICES.load();
+        let mut circuits: FxHashSet<&str> = FxHashSet::default();
+        for d in shaped.devices.iter() {
+            let id = d.circuit_id.trim();
+            if !id.is_empty() {
+                circuits.insert(id);
+            }
+        }
+        circuits.len()
+    } else {
+        ap.circuits.circuits.len()
+    };
+
     status.enabled = ap.enabled;
     status.dry_run = ap.dry_run;
     status.cpu_max_pct = cpu_max_pct;
-    status.managed_nodes = ap.links.nodes.len();
-    status.managed_circuits = ap.circuits.circuits.len();
+    status.managed_nodes = managed_nodes_count;
+    status.managed_circuits = managed_circuits_count;
     status.warnings = warnings;
 
     let overrides_snapshot = if ap.enabled && (ap.links.enabled || ap.circuits.enabled) {
@@ -335,12 +365,28 @@ fn run_tick(
             }
         }
     } else {
-        // Reconcile nodes removed from allowlist.
-        let removed: Vec<String> = managed_nodes
-            .iter()
-            .filter(|n| !allowlisted_nodes.contains(*n))
-            .cloned()
-            .collect();
+        let reader = NETWORK_JSON.read();
+
+        // Reconcile nodes removed from allowlist, or removed from network.json.
+        let removed: Vec<String> = if ap.links.all_nodes {
+            let current: FxHashSet<&str> = reader
+                .get_nodes_when_ready()
+                .iter()
+                .filter(|n| n.name != "Root")
+                .map(|n| n.name.as_str())
+                .collect();
+            managed_nodes
+                .iter()
+                .filter(|n| !current.contains(n.as_str()))
+                .cloned()
+                .collect()
+        } else {
+            managed_nodes
+                .iter()
+                .filter(|n| !allowlisted_nodes.contains(*n))
+                .cloned()
+                .collect()
+        };
         for node_name in removed {
             match overrides::clear_node_virtual(&node_name) {
                 Ok(changed) => {
@@ -386,9 +432,217 @@ fn run_tick(
                 }
             }
         }
+        if ap.links.all_nodes {
+            for node in reader.get_nodes_when_ready().iter() {
+                let node_name = node.name.as_str();
+                if node_name == "Root" {
+                    continue;
+                }
 
-        let reader = NETWORK_JSON.read();
-        for node_name in ap.links.nodes.iter() {
+                if node.virtual_node {
+                    status.warnings.push(format!(
+                        "Autopilot links: node '{node_name}' is marked virtual in base network.json; Autopilot will not manage it."
+                    ));
+                    continue;
+                }
+
+                let cap_down = node.max_throughput.0;
+                let cap_up = node.max_throughput.1;
+                if cap_down <= 0.0 || cap_up <= 0.0 {
+                    status.warnings.push(format!(
+                        "Autopilot links: node '{node_name}' has unknown capacity; no changes will be made."
+                    ));
+                    continue;
+                }
+
+                let bytes_down = node.current_throughput.get_down() as f64;
+                let bytes_up = node.current_throughput.get_up() as f64;
+                let mbps_down = (bytes_down * 8.0) / 1_000_000.0;
+                let mbps_up = (bytes_up * 8.0) / 1_000_000.0;
+                let util_down_pct = (mbps_down / cap_down) * 100.0;
+                let util_up_pct = (mbps_up / cap_up) * 100.0;
+
+                let state = link_states
+                    .entry(node_name.to_string())
+                    .or_insert_with(|| {
+                        let mut state = LinkState::default();
+                        if let Some(overrides) = overrides_snapshot.as_ref() {
+                            if let Some(v) = overrides_node_virtual(overrides, node_name) {
+                                state.desired = if v {
+                                    LinkVirtualState::Virtual
+                                } else {
+                                    LinkVirtualState::Physical
+                                };
+                            }
+                        }
+                        state
+                    });
+                prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+
+                let ewma_down = state
+                    .down
+                    .util_ewma_pct
+                    .update(util_down_pct, UTIL_EWMA_ALPHA);
+                let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
+
+                // Per-direction idle tracking (sustained-idle is evaluated across both directions).
+                update_idle_since(
+                    &mut state.down.idle_since_unix,
+                    now_unix,
+                    ewma_down,
+                    ap.links.idle_util_pct as f64,
+                );
+                update_idle_since(
+                    &mut state.up.idle_since_unix,
+                    now_unix,
+                    ewma_up,
+                    ap.links.idle_util_pct as f64,
+                );
+
+                let sustained_idle = is_sustained_idle(
+                    now_unix,
+                    state.down.idle_since_unix,
+                    state.up.idle_since_unix,
+                    ap.links.idle_min_minutes,
+                );
+
+                let rtt_missing = match now_nanos_since_boot {
+                    None => true,
+                    Some(now_nanos) => {
+                        if node.rtt_buffer.last_seen == 0 {
+                            true
+                        } else {
+                            let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
+                            age_nanos
+                                >= ap.links.rtt_missing_seconds.saturating_mul(1_000_000_000)
+                        }
+                    }
+                };
+
+                // QoO (when available) from the node heatmap blocks (latest non-None sample).
+                let qoo = node
+                    .qoq_heatmap
+                    .as_ref()
+                    .map(|heatmap| {
+                        let blocks = heatmap.blocks();
+                        let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
+                        DownUpOrder {
+                            down: latest(&blocks.download_total),
+                            up: latest(&blocks.upload_total),
+                        }
+                    })
+                    .unwrap_or(DownUpOrder {
+                        down: None,
+                        up: None,
+                    });
+
+                let util_ewma_pct = DownUpOrder {
+                    down: ewma_down,
+                    up: ewma_up,
+                };
+
+                let decision = decisions::decide_link_virtualization(
+                    now_unix,
+                    true,
+                    cpu_max_pct,
+                    &ap.cpu,
+                    &ap.links,
+                    &ap.qoo,
+                    rtt_missing,
+                    qoo,
+                    util_ewma_pct,
+                    sustained_idle,
+                    state,
+                );
+
+                if let decisions::LinkVirtualDecision::Set(target) = decision {
+                    if target == state.desired {
+                        continue;
+                    }
+
+                    let persist = !ap.dry_run;
+                    let mut persisted_ok = false;
+                    let mut override_changed = false;
+
+                    if persist {
+                        let new_virtual = target == LinkVirtualState::Virtual;
+                        match overrides::set_node_virtual(node_name, new_virtual) {
+                            Ok(changed) => {
+                                persisted_ok = true;
+                                override_changed = changed;
+                            }
+                            Err(e) => {
+                                status.warnings.push(format!(
+                                    "Autopilot links: failed to persist virtual override for node '{node_name}': {e}"
+                                ));
+                                managed_nodes.insert(node_name.to_string());
+                                push_activity(
+                                    activity,
+                                    AutopilotActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "node".to_string(),
+                                        entity_id: node_name.to_string(),
+                                        action: "set_virtual_override_failed".to_string(),
+                                        persisted: false,
+                                        reason: format!("Overrides write failed: {e}"),
+                                    },
+                                );
+                                continue;
+                            }
+                        }
+                    }
+
+                    if override_changed {
+                        reload_requested = true;
+                        if reload_request_reason.is_none() {
+                            reload_request_reason = Some(format!(
+                                "Node '{}' virtualization changed",
+                                node_name.to_string()
+                            ));
+                        } else {
+                            reload_request_reason = Some("Multiple node topology changes".to_string());
+                        }
+                    }
+
+                    state.desired = target;
+                    state.last_change_unix = Some(now_unix);
+                    state.recent_changes_unix.push_back(now_unix);
+                    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+                    managed_nodes.insert(node_name.to_string());
+
+                    push_activity(
+                        activity,
+                        AutopilotActivityEntry {
+                            time: now_unix.to_string(),
+                            entity_type: "node".to_string(),
+                            entity_id: node_name.to_string(),
+                            action: match target {
+                                LinkVirtualState::Physical => "unvirtualize".to_string(),
+                                LinkVirtualState::Virtual => "virtualize".to_string(),
+                            },
+                            persisted: persist && persisted_ok,
+                            reason: "Decision policy matched".to_string(),
+                        },
+                    );
+                    status.last_action_summary = Some(format!(
+                        "{} node '{}'",
+                        if target == LinkVirtualState::Virtual {
+                            "Virtualized"
+                        } else {
+                            "Unvirtualized"
+                        },
+                        node_name
+                    ));
+                } else {
+                    managed_nodes.insert(node_name.to_string());
+                }
+
+                if state.desired == LinkVirtualState::Virtual {
+                    virtualized_nodes += 1;
+                }
+            }
+        } else {
+            for node_name in ap.links.nodes.iter() {
             let Some(index) = reader.get_index_for_name(node_name) else {
                 status.warnings.push(format!(
                     "Autopilot links allowlist: node '{node_name}' not found in network.json."
@@ -603,6 +857,7 @@ fn run_tick(
                 virtualized_nodes += 1;
             }
         }
+        }
     }
 
     if reload_requested {
@@ -676,17 +931,43 @@ fn run_tick(
 
     // --- Circuit sampling + decisions (SQM switching) ---
     let manage_circuits = ap.enabled && ap.circuits.enabled;
-    let allowlisted_circuits: FxHashSet<String> = ap.circuits.circuits.iter().cloned().collect();
 
-    // Compute desired device_id set from allowlisted circuits.
+    // Snapshot shaped devices so we can compute the enrolled circuit set.
     let shaped = SHAPED_DEVICES.load();
+
+    let enrolled_circuits: Vec<String> = if ap.circuits.all_circuits {
+        let mut set: FxHashSet<String> = FxHashSet::default();
+        for d in shaped.devices.iter() {
+            let id = d.circuit_id.trim();
+            if !id.is_empty() {
+                set.insert(id.to_string());
+            }
+        }
+        let mut v: Vec<String> = set.into_iter().collect();
+        v.sort();
+        v
+    } else {
+        let mut v = ap.circuits.circuits.clone();
+        v.sort();
+        v.dedup();
+        v
+    };
+
+    let allowlisted_circuits: FxHashSet<String> = enrolled_circuits.iter().cloned().collect();
+    status.managed_circuits = enrolled_circuits.len();
+
+    // Compute desired device_id set from enrolled circuits.
     let desired_device_ids: FxHashSet<String> = if manage_circuits {
-        shaped
-            .devices
-            .iter()
-            .filter(|d| allowlisted_circuits.contains(&d.circuit_id))
-            .map(|d| d.device_id.clone())
-            .collect()
+        if ap.circuits.all_circuits {
+            shaped.devices.iter().map(|d| d.device_id.clone()).collect()
+        } else {
+            shaped
+                .devices
+                .iter()
+                .filter(|d| allowlisted_circuits.contains(&d.circuit_id))
+                .map(|d| d.device_id.clone())
+                .collect()
+        }
     } else {
         FxHashSet::default()
     };
@@ -741,13 +1022,11 @@ fn run_tick(
         // Snapshot RTT buffers by circuit hash.
         let rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
 
-        // Build an allowlist hash set for efficient scanning.
-        let allow_hashes: FxHashMap<i64, String> = ap
-            .circuits
-            .circuits
-            .iter()
-            .map(|id| (hash_to_i64(id), id.clone()))
-            .collect();
+        let allow_hashes: Option<FxHashSet<i64>> = if ap.circuits.all_circuits {
+            None
+        } else {
+            Some(enrolled_circuits.iter().map(|id| hash_to_i64(id)).collect())
+        };
 
         // Aggregate worst (minimum) QoO per circuit hash across devices/hosts.
         let mut qoo_by_circuit: FxHashMap<i64, DownUpOrder<Option<f32>>> = FxHashMap::default();
@@ -757,7 +1036,7 @@ fn run_tick(
                 let Some(ch) = entry.circuit_hash else {
                     continue;
                 };
-                if !allow_hashes.contains_key(&ch) {
+                if allow_hashes.as_ref().is_some_and(|h| !h.contains(&ch)) {
                     continue;
                 }
 
@@ -772,7 +1051,7 @@ fn run_tick(
             }
         }
 
-        for circuit_id in ap.circuits.circuits.iter() {
+        for circuit_id in enrolled_circuits.iter() {
             let state = circuit_states
                 .entry(circuit_id.clone())
                 .or_insert_with(|| {
