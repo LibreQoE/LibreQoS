@@ -115,6 +115,10 @@ pub async fn apply_templates(
         // Change the LTS part of the template
         let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
         trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
+        let script_has_support_tickets = matches!(
+            lts_status,
+            LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full
+        );
         match lts_status {
             LtsStatus::Invalid | LtsStatus::NotChecked => {}
             _ => {
@@ -135,9 +139,10 @@ pub async fn apply_templates(
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
+            js_tf(script_has_support_tickets),
             js_tf(new_version),
             node_id_js
         );
