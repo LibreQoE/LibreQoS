@@ -2,6 +2,16 @@
 
 Use this page when you need CLI-driven configuration, direct file editing, or deep reference details.
 
+## Topology Pattern Guardrails
+
+Use these guardrails before deeper tuning:
+
+- Single-interface (on-a-stick): supported, but queue count and directional mapping must be validated after any interface/queue change.
+- VLAN-heavy designs: supported when interface roles and topology parent mapping are clear; avoid mixing ambiguous parent definitions across multiple systems.
+- Integration users: do not manually maintain long-term conflicting edits in files that integration refresh cycles regenerate.
+
+If results diverge from expectations after edits, use [Troubleshooting](troubleshooting.md) before additional changes.
+
 ## Configuration via Command Line
 
 You can also modify settings using the command line.
@@ -59,6 +69,13 @@ If shaping appears asymmetric in on-a-stick deployments, verify:
 - you have restarted after config changes
 
 See also [Troubleshooting](troubleshooting.md).
+
+#### Source-of-truth boundary for integration users
+
+If integration mode is enabled, integration refresh cycles typically own `ShapedDevices.csv` and may also own `network.json` depending on settings.
+
+- Use WebUI/manual edits for short operational adjustments only.
+- Put permanent changes in your integration system, integration overrides, or declared external source-of-truth workflow.
 
 #### CRM/NMS Integrations
 

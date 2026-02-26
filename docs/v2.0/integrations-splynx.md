@@ -4,6 +4,16 @@
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
 
+## New Operator Quick Start
+
+Start with this baseline unless you have a known reason to deviate:
+
+- `strategy = "ap_only"` (default, lowest confusion)
+- `enable_splynx = true`
+- `always_overwrite_network_json = false` unless you explicitly want integration to overwrite each run
+
+Then run one manual sync and validate outputs before enabling frequent scheduler refresh cycles.
+
 ### Topology Strategies
 
 LibreQoS supports multiple topology strategies for Splynx integration to balance CPU performance with network hierarchy needs:
@@ -97,6 +107,25 @@ Then, run `sudo systemctl restart lqosd`.
 
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_splynx = true``` under the ```[splynx_integration]``` section in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
+
+## 5-Minute Validation After Splynx Changes
+
+1. Run one integration test:
+```shell
+python3 integrationSplynx.py
+```
+2. Confirm files exist and were updated:
+```shell
+ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+```
+3. Confirm services are healthy:
+```shell
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+4. Check WebUI Scheduler Status and tree depth for expected strategy behavior.
+
+If sync looks successful but data is incomplete, recheck API permissions and strategy assumptions before changing unrelated settings.
 
 ### Splynx Overrides
 

@@ -26,6 +26,25 @@ sudo apt install ./{deb_url_v1_5}
 
 5. Abra WebUI en `http://your_shaper_ip:9123`.
 
+## Después de instalar: estado esperado (10 minutos)
+
+Antes de cambios profundos, valide base operativa:
+
+1. Servicios activos:
+```bash
+sudo systemctl status lqosd lqos_scheduler
+```
+2. WebUI carga y actualiza (Dashboard + Scheduler Status).
+3. Sin errores críticos recientes:
+```bash
+journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
+```
+4. Fuente de verdad definida:
+- modo integración: la integración controla refresco de archivos
+- modo custom/manual: sus archivos/scripts controlan persistencia
+
+Si falla algo, pase a [Solución de problemas](troubleshooting-es.md) antes del piloto.
+
 ## Testbed / Lab
 
 ### Cuándo elegir
@@ -71,6 +90,12 @@ Nota:
 - [Integraciones CRM/NMS](integrations-es.md)
 - [Escalado y diseño de topología](scale-topology-es.md)
 - [Solución de problemas](troubleshooting-es.md)
+
+## Errores comunes en primera puesta en marcha
+
+- Fuente de verdad no definida entre integración y edición manual.
+- Elegir estrategia topológica profunda sin validar salud base.
+- Omitir checks de servicios/logs antes de tráfico piloto.
 
 ## Integración con Script Personalizado
 

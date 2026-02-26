@@ -2,6 +2,16 @@
 
 Use esta página cuando necesite configuración por CLI, edición directa de archivos o contenido de referencia detallado.
 
+## Guardrails de patrones topológicos
+
+Antes de ajustes profundos:
+
+- Single-interface (on-a-stick): compatible, pero valide conteo de colas y mapeo por dirección tras cambios de interfaz/colas.
+- Diseños con VLAN: compatibles si roles de interfaz y mapeo de nodos padre están bien definidos.
+- En modo integración: no mantenga cambios permanentes en archivos que la integración regenera.
+
+Si el resultado no coincide con lo esperado, use [Solución de problemas](troubleshooting-es.md) antes de seguir cambiando parámetros.
+
 ## Configuración por línea de comando
 
 También puedes modificar ajustes usando la CLI.
@@ -46,6 +56,13 @@ do_not_track_subnets = ["192.168.0.0/16"]
 ### Integraciones con CRM/NMS
 
 Más información sobre [configuración de integraciones aquí.](integrations-es.md).
+
+### Límite de fuente de verdad para usuarios de integración
+
+Si el modo integración está habilitado, los ciclos de refresco suelen ser dueños de `ShapedDevices.csv` y, según configuración, también de `network.json`.
+
+- Use edición manual/WebUI para ajustes operativos temporales.
+- Mantenga cambios permanentes en el sistema de integración, overrides de integración o flujo externo declarado.
 
 ## Jerarquía de Red
 ### Network.json

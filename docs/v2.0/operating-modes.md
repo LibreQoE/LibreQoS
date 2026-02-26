@@ -44,6 +44,17 @@ Key behavior:
 4. Document your hotfix workflow (WebUI, external editor, or both).
 5. Do not maintain competing edits in multiple systems for the same objects.
 
+## Topology and Mode Expectations
+
+- Single-interface (on-a-stick) and VLAN-heavy designs are valid, but require explicit queue/interface planning and careful validation after changes.
+- Integration mode is best when you want CRM/NMS-driven topology and subscriber lifecycle data to own shaping inputs.
+- If you need strict custom topology behavior not represented by integration output, use custom source-of-truth mode and keep ownership explicit.
+
+See:
+- [Advanced Configuration Reference](configuration-advanced.md)
+- [CRM/NMS Integrations](integrations.md)
+- [Troubleshooting](troubleshooting.md)
+
 ## Related Pages
 
 - [Configure LibreQoS](configuration.md)

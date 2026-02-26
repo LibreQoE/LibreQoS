@@ -1,5 +1,13 @@
 # Ajuste de rendimiento
 
+## Triage por síntoma
+
+| Síntoma | Primeros checks | Siguiente acción probable |
+|---|---|---|
+| Throughput menor al esperado | distribución de colas/CPU, profundidad de estrategia, salud del scheduler | reducir profundidad o usar `promote_to_root` y volver a medir |
+| CPU alta en un solo núcleo | desbalance IRQ/colas, cuello en nodo raíz | rebalancear afinidad y/o promover sitios pesados a raíz |
+| Cambio de rendimiento tras cambios de integración | cambio no intencional de estrategia/profundidad | confirmar estrategia (`flat`/`ap_only`/`ap_site`/`full`) y validar árbol/flujo |
+
 ## Base de CPU e IRQ
 
 Configure el governor de CPU en modo rendimiento para bare metal/hipervisor:

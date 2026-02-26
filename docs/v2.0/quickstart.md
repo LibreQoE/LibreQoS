@@ -48,6 +48,25 @@ sudo apt install ./{deb_url_v1_5}
 
 5. Open WebUI at `http://your_shaper_ip:9123`.
 
+## After Install: What Good Looks Like (10-Minute Check)
+
+Before deeper configuration, verify baseline health:
+
+1. Services are active:
+```bash
+sudo systemctl status lqosd lqos_scheduler
+```
+2. WebUI loads and updates (Dashboard + Scheduler Status).
+3. No urgent/fatal errors in recent logs:
+```bash
+journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
+```
+4. Your chosen source-of-truth is clear:
+- integration mode: integration owns refresh of shaping inputs
+- custom/manual mode: your files/scripts own persistence
+
+If these checks fail, continue in [Troubleshooting](troubleshooting.md) before pilot rollout.
+
 ## Testbed / Lab
 
 ### When to choose
@@ -140,4 +159,14 @@ Recommended only for networks under 100 subscribers.
 - [Advanced Configuration Reference](configuration-advanced.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [Scale Planning and Topology Design](scale-topology.md)
+- [Troubleshooting](troubleshooting.md)
+
+## Common First-Run Mistakes
+
+- Unclear source-of-truth ownership between integration and manual edits.
+- Choosing deeper topology strategy before confirming baseline health.
+- Skipping post-install service/log checks before pilot traffic.
+
+Use:
+- [Operating Modes and Source of Truth](operating-modes.md)
 - [Troubleshooting](troubleshooting.md)
