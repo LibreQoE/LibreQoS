@@ -1,0 +1,289 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LibreQoS Insight (Insight) &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="LibreQoS Node API" href="api.html" />
+    <link rel="prev" title="Troubleshooting" href="troubleshooting.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">LibreQoS Insight (Insight)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#about-insight">About Insight</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#insight-ui">Insight UI</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#taskbar">Taskbar</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#time-selector">Time Selector</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#dashboard">Dashboard</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#traffic-overview-tab">Traffic Overview Tab</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#shaper-tab">Shaper Tab</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#children-tab">Children Tab</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#heatmaps">Heatmaps</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#site-rankings">Site Rankings</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#node-map">Node Map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#libby-ai-assistant">Libby (AI Assistant)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#site-heatmap">Site Heatmap</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#tree-history">Tree History</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#reports">Reports</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alerts">Alerts</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#insight-licensing-behavior-node-side">Insight Licensing Behavior (Node-side)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#local-key-material-and-offline-grants">Local key material and offline grants</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mapped-circuit-limits-and-license-state">Mapped circuit limits and license state</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">LibreQoS Insight (Insight)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/insight.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="libreqos-insight-insight">
+<h1>LibreQoS Insight (Insight)<a class="headerlink" href="#libreqos-insight-insight" title="Permalink to this heading"></a></h1>
+<section id="about-insight">
+<h2>About Insight<a class="headerlink" href="#about-insight" title="Permalink to this heading"></a></h2>
+<p>Learn more about Insight on our website, <a class="reference external" href="https://libreqos.io/insight/">here</a>.</p>
+</section>
+<section id="insight-ui">
+<h2>Insight UI<a class="headerlink" href="#insight-ui" title="Permalink to this heading"></a></h2>
+<section id="taskbar">
+<h3>Taskbar<a class="headerlink" href="#taskbar" title="Permalink to this heading"></a></h3>
+<img width="355" height="871" alt="taskbar" src="https://github.com/user-attachments/assets/796cba7b-49d0-4a49-96a5-cd12823a6bd8" />
+<p>If you have more than one LibreQoS shaper box, you can select the shaper box you want to view using the Shaper Nodes dropdown box (located just below the search box).</p>
+</section>
+<section id="time-selector">
+<h3>Time Selector<a class="headerlink" href="#time-selector" title="Permalink to this heading"></a></h3>
+<img width="529" height="83" alt="image" src="https://github.com/user-attachments/assets/b706a230-883a-4064-9436-2e82749eb8b7" />
+<p>By clicking the time selector (Last 24 Hours by default) you can set the time range for data display anywhere from 15 minutes to 28 days. You can also specify custom time periods (Now minus X minutes) or highly-specific detailed time periods.</p>
+</section>
+<section id="dashboard">
+<h3>Dashboard<a class="headerlink" href="#dashboard" title="Permalink to this heading"></a></h3>
+<p>You can see which shaper box “perspective” is in use by the listed shpaer box name at the top-left corner next to “Select a destination”.</p>
+<p>The dashboard for LibreQoS Insight is widget-based, and has multiple tabs - each of which can be edited.</p>
+<section id="traffic-overview-tab">
+<h4>Traffic Overview Tab<a class="headerlink" href="#traffic-overview-tab" title="Permalink to this heading"></a></h4>
+<img width="3828" height="2160" alt="01 dashboard" src="https://github.com/user-attachments/assets/29ee98e3-55c7-4466-a444-de9542cc0940" />
+<p>The default tab is the Traffic Overview tab - which displays both Live traffic levels as well as top-traffic endpoints - both by ASN and by Node.</p>
+</section>
+<section id="shaper-tab">
+<h4>Shaper Tab<a class="headerlink" href="#shaper-tab" title="Permalink to this heading"></a></h4>
+<img width="3840" height="2160" alt="02 shaper tab" src="https://github.com/user-attachments/assets/721fd195-35ad-421b-8d0a-e2aa6e5cf7e9" />
+<p>The Shaper tab shows high-level stats for a particular LibreQoS shaper box.</p>
+<ul class="simple">
+<li><p>Active Circuit Count: The number of active customer circuits observed - based on the subscriber’s traffic movement.</p></li>
+<li><p>Throughput: Shaper box throughput</p></li>
+<li><p>Shaper Packets: Packet-per-second rate of the Shaper box over time.</p></li>
+<li><p>Shaper TCP Retransmits Percentage: The percentage of TCP packets observed that were retransmitted. Consider this a proxy for packet loss. This value should typically remain below 1 % across the network.</p></li>
+<li><p>Shaper CAKE Activity: How active the CAKE shapers are on the network over time.</p></li>
+<li><p>Shaper Round Trip Time: The Round Trip Time average of traffic moving across the network.</p></li>
+<li><p>Shaper Round Trip Time Histogram: The Round Trip Time average of traffic moving across the network in histogram format.</p></li>
+<li><p>Shaper CPU Utilization: The peak and average CPU utilization of the shaper box over time.</p></li>
+<li><p>Shaper Memory Utilization: The RAM utilization of the shaper box over time.</p></li>
+</ul>
+</section>
+<section id="children-tab">
+<h4>Children Tab<a class="headerlink" href="#children-tab" title="Permalink to this heading"></a></h4>
+<img width="3840" height="2160" alt="03 child view" src="https://github.com/user-attachments/assets/1f0a0e3c-672b-4982-b334-60a681248b99" />
+<ul class="simple">
+<li><p>Shaper Child Throughput: The throughput of each top-level child node on the shaper box.</p></li>
+<li><p>Shaper Child TCP Retransmits: This can be used to spot outliers top-level nodes with regard to Retransmits (packet loss).</p></li>
+<li><p>Shaper Child Round Trip Time: This can be used to spot outliers top-level nodes with regard to Round Trip Time.</p></li>
+</ul>
+</section>
+<section id="heatmaps">
+<h4>Heatmaps<a class="headerlink" href="#heatmaps" title="Permalink to this heading"></a></h4>
+<img width="3840" height="2160" alt="04 heatmap" src="https://github.com/user-attachments/assets/f3911ca3-8157-43dc-9f57-1402a6cd0204" />
+<p>This view shows the Round Trip Time, Retransmit, and Capacity heatmaps for the top-level nodes on this shaper box.</p>
+</section>
+<section id="site-rankings">
+<h4>Site Rankings<a class="headerlink" href="#site-rankings" title="Permalink to this heading"></a></h4>
+<img width="3840" height="2160" alt="05 health" src="https://github.com/user-attachments/assets/37e69c41-646c-458f-912d-8556acace102" />
+<p>This tab shows the health of Sites / Access Points / etc across the network in terms of their Round Trip Time, TCP Retransmits, and Capacity in each direction.</p>
+</section>
+</section>
+<section id="node-map">
+<h3>Node Map<a class="headerlink" href="#node-map" title="Permalink to this heading"></a></h3>
+<img width="3840" height="2160" alt="06 map" src="https://github.com/user-attachments/assets/219d75b3-739a-4f41-86e6-5bc270f22afd" />
+<p>This view allows you to identify the general topology of the network from LibreQoS Insight’s perspective. If you hover over the bands between nodes, it will display the current throughput and TCP retransmits for that leg of the network.</p>
+</section>
+<section id="libby-ai-assistant">
+<h3>Libby (AI Assistant)<a class="headerlink" href="#libby-ai-assistant" title="Permalink to this heading"></a></h3>
+<img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
+<p>Libby is LibreQoS Insight’s AI Chat Assistant. Libby can help with questions you may have about using LibreQoS or LibreQoS Insight. Libby leverages the official LibreQoS documentation to help you with any questions you may have. Libby can access both live and long-term data - both from synced LibreQoS shaper boxes and from Insight itself. Libby can reply to queries in most major languages with automatic translation.</p>
+<p>You may find new ways to use Libby that we had not originally considered. Please feel welcome to share with us ways you have found Libby to help your workflow.</p>
+</section>
+<section id="site-heatmap">
+<h3>Site Heatmap<a class="headerlink" href="#site-heatmap" title="Permalink to this heading"></a></h3>
+<img width="3830" height="2160" alt="08 heatmap" src="https://github.com/user-attachments/assets/dfaea245-3221-4cea-874b-fd795ac8da33" />
+<p>This view provides RTT, Retransmit, and Capacity heatmaps for every Access Point, OLT, and Site across your network in one view. This allows you to quickly spot trouble points on your network.</p>
+</section>
+<section id="tree-history">
+<h3>Tree History<a class="headerlink" href="#tree-history" title="Permalink to this heading"></a></h3>
+<img width="3840" height="2160" alt="09 tree history" src="https://github.com/user-attachments/assets/ea0d0417-c937-41ee-ac4d-7d84c162c6dd" />
+<p>The Tree History is based on the Tree Overview display from the LibreQoS WebUI, and displays the sankey over time to help quickly identify network bottlenecks impacting performance.</p>
+</section>
+<section id="reports">
+<h3>Reports<a class="headerlink" href="#reports" title="Permalink to this heading"></a></h3>
+<img width="3828" height="2160" alt="10 report" src="https://github.com/user-attachments/assets/37f6bd91-8937-4755-a095-6bc38822f544" />
+<p>LibreQoS Insight enables you to trigger AI-generated reports on specific subscriber circuits. These reports draw in from the customer’s last 7 days of network activity - including per-ASN performance characteristics, network topology context, and geographic context. The report identifies the User Profile, Key Findings, Critical Issues, Performance Trends, an Upgrade Recommendation, and suggestions for items to manually review.</p>
+</section>
+<section id="alerts">
+<h3>Alerts<a class="headerlink" href="#alerts" title="Permalink to this heading"></a></h3>
+<img width="3831" height="2160" alt="11 alerts" src="https://github.com/user-attachments/assets/66f0a465-eb00-4bfb-9cf8-c8302af78ead" />
+<p>The Alerts section provides you with automated warnings of out-of-norm performance for nodes across the network (Access Points, OLTs, Sites).</p>
+</section>
+</section>
+<section id="insight-licensing-behavior-node-side">
+<h2>Insight Licensing Behavior (Node-side)<a class="headerlink" href="#insight-licensing-behavior-node-side" title="Permalink to this heading"></a></h2>
+<section id="local-key-material-and-offline-grants">
+<h3>Local key material and offline grants<a class="headerlink" href="#local-key-material-and-offline-grants" title="Permalink to this heading"></a></h3>
+<p>LibreQoS stores Insight key material under:</p>
+<p><code class="docutils literal notranslate"><span class="pre">&lt;lqos_directory&gt;/.keys/</span></code></p>
+<p>Current builds can cache signed license grants locally so nodes can continue operating through temporary connectivity loss to Insight control services. Grant validity and expiration are enforced locally.</p>
+<p>Operational notes:</p>
+<ul class="simple">
+<li><p>Keep <code class="docutils literal notranslate"><span class="pre">.keys/</span></code> persistent across reboots.</p></li>
+<li><p>Treat <code class="docutils literal notranslate"><span class="pre">.keys/</span></code> as sensitive local key material.</p></li>
+<li><p>If grant or key state is invalid, <code class="docutils literal notranslate"><span class="pre">lqosd</span></code> logs will show license/grant errors.</p></li>
+</ul>
+</section>
+<section id="mapped-circuit-limits-and-license-state">
+<h3>Mapped circuit limits and license state<a class="headerlink" href="#mapped-circuit-limits-and-license-state" title="Permalink to this heading"></a></h3>
+<p>Recent builds enforce mapped-circuit limits based on license state.</p>
+<p>If your node is unlicensed/invalid, LibreQoS can enforce a default mapped-circuit cap. When the cap is exceeded, logs include messages such as:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Mapped</span> <span class="pre">circuit</span> <span class="pre">limit</span> <span class="pre">reached</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Bakery</span> <span class="pre">mapped</span> <span class="pre">circuit</span> <span class="pre">cap</span> <span class="pre">enforced</span></code></p></li>
+</ul>
+<p>When this occurs, check:</p>
+<ol class="arabic simple">
+<li><p>Insight license status in the UI.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqosd</span></code> for requested/allowed/dropped mapped counts.</p></li>
+<li><p>Whether the number of mapped circuits exceeds your licensed allowance.</p></li>
+</ol>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="troubleshooting.html" class="btn btn-neutral float-left" title="Troubleshooting" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="api.html" class="btn btn-neutral float-right" title="LibreQoS Node API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

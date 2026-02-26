@@ -1,0 +1,160 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Integración con Sonar &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Integración con Sonar</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs-es/v2.0/integrations-sonar-es.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="integracion-con-sonar">
+<h1>Integración con Sonar<a class="headerlink" href="#integracion-con-sonar" title="Permalink to this heading"></a></h1>
+<section id="resumen">
+<h2>Resumen<a class="headerlink" href="#resumen" title="Permalink to this heading"></a></h2>
+<p>Use esta integración cuando Sonar sea su fuente de verdad CRM/NMS.</p>
+</section>
+<section id="configuracion-basica">
+<h2>Configuración básica<a class="headerlink" href="#configuracion-basica" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Configure Sonar en <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p></li>
+<li><p>Ejecute una importación manual de prueba.</p></li>
+<li><p>Habilite sincronización por scheduler.</p></li>
+</ol>
+</section>
+<section id="notas-operativas">
+<h2>Notas operativas<a class="headerlink" href="#notas-operativas" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> se regenera en cada sincronización.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">network.json</span></code> depende de su configuración de sobrescritura.</p></li>
+</ul>
+</section>
+<section id="referencia-completa">
+<h2>Referencia completa<a class="headerlink" href="#referencia-completa" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="integrations-reference-es.html#integración-con-sonar"><span class="std std-ref">Referencia detallada de Sonar</span></a></p></li>
+<li><p><a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

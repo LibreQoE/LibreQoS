@@ -1,0 +1,200 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Integraciones CRM/NMS &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Integraciones CRM/NMS</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs-es/v2.0/integrations-es.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="integraciones-crm-nms">
+<h1>Integraciones CRM/NMS<a class="headerlink" href="#integraciones-crm-nms" title="Permalink to this heading"></a></h1>
+<section id="proposito-de-esta-pagina">
+<h2>Propósito de esta página<a class="headerlink" href="#proposito-de-esta-pagina" title="Permalink to this heading"></a></h2>
+<p>Use esta página para elegir y configurar integraciones CRM/NMS soportadas. Use las páginas por integración para detalles específicos.</p>
+<p>La mayoría de operadores usan las integraciones incluidas. Si usa scripts propios como fuente de verdad para <code class="docutils literal notranslate"><span class="pre">network.json</span></code> y <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>, comience por <a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a>.</p>
+</section>
+<section id="elegir-ruta-de-integracion">
+<h2>Elegir ruta de integración<a class="headerlink" href="#elegir-ruta-de-integracion" title="Permalink to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Ruta</p></th>
+<th class="head"><p>Mejor para</p></th>
+<th class="head"><p>Fuente de verdad principal</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Integración incluida</p></td>
+<td><p>La mayoría de operadores con sistemas soportados</p></td>
+<td><p>CRM/NMS por jobs de integración de LibreQoS</p></td>
+</tr>
+<tr class="row-odd"><td><p>Fuente-de-verdad personalizada</p></td>
+<td><p>Operadores con sincronización propia de CRM/NMS</p></td>
+<td><p>Archivos externos generados (<code class="docutils literal notranslate"><span class="pre">network.json</span></code>, <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>)</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="donde-en-la-webui">
+<h2>Dónde en la WebUI<a class="headerlink" href="#donde-en-la-webui" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Comportamiento común de integración: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Integrations</span></code></p></li>
+<li><p>Campos por integración: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Integrations</span></code></p></li>
+<li><p>Validación de salud tras cambios: <code class="docutils literal notranslate"><span class="pre">WebUI</span> <span class="pre">-&gt;</span> <span class="pre">Scheduler</span> <span class="pre">Status</span></code> y <code class="docutils literal notranslate"><span class="pre">WebUI</span> <span class="pre">-&gt;</span> <span class="pre">Urgent</span> <span class="pre">Issues</span></code></p></li>
+<li><p>Validación de resultados/topología: <code class="docutils literal notranslate"><span class="pre">WebUI</span> <span class="pre">-&gt;</span> <span class="pre">Network</span> <span class="pre">Tree</span> <span class="pre">Overview</span></code> y <code class="docutils literal notranslate"><span class="pre">Flow</span> <span class="pre">Map</span></code></p></li>
+</ul>
+</section>
+<section id="integraciones-incluidas">
+<h2>Integraciones incluidas<a class="headerlink" href="#integraciones-incluidas" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="integrations-splynx-es.html"><span class="std std-doc">Integración con Splynx</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-uisp-es.html"><span class="std std-doc">Integración con UISP</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-netzur-es.html"><span class="std std-doc">Integración con Netzur</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-visp-es.html"><span class="std std-doc">Integración con VISP</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-wispgate-es.html"><span class="std std-doc">Integración con WISPGate</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-powercode-es.html"><span class="std std-doc">Integración con Powercode</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-sonar-es.html"><span class="std std-doc">Integración con Sonar</span></a></p></li>
+</ul>
+</section>
+<section id="comportamiento-importante-de-sobrescritura">
+<h2>Comportamiento importante de sobrescritura<a class="headerlink" href="#comportamiento-importante-de-sobrescritura" title="Permalink to this heading"></a></h2>
+<p>Cuando hay integraciones habilitadas:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> normalmente se regenera por jobs de sincronización.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">network.json</span></code> también puede sobrescribirse según configuración (por ejemplo <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code>).</p></li>
+<li><p>Las ediciones manuales pueden sobrescribirse en el siguiente ciclo de refresco.</p></li>
+</ul>
+</section>
+<section id="paginas-relacionadas">
+<h2>Páginas relacionadas<a class="headerlink" href="#paginas-relacionadas" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="quickstart-es.html"><span class="std std-doc">Quickstart</span></a></p></li>
+<li><p><a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a></p></li>
+<li><p><a class="reference internal" href="configuration-es.html"><span class="std std-doc">Configurar LibreQoS</span></a></p></li>
+<li><p><a class="reference internal" href="scale-topology-es.html"><span class="std std-doc">Escalado y diseño de topología</span></a></p></li>
+<li><p><a class="reference internal" href="troubleshooting-es.html"><span class="std std-doc">Solución de problemas</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

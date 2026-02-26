@@ -1,0 +1,211 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Git Install (For Developers - Not Recommended) &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" />
+
+  
+      <script src="../../../_static/jquery.js"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+      <script src="../../../_static/doctools.js"></script>
+      <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Git Install (For Developers - Not Recommended)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs-es/v2.0/TechnicalDocs/git-install.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="git-install-for-developers-not-recommended">
+<h1>Git Install (For Developers - Not Recommended)<a class="headerlink" href="#git-install-for-developers-not-recommended" title="Permalink to this heading"></a></h1>
+<section id="clone-the-repo">
+<h2>Clone the repo<a class="headerlink" href="#clone-the-repo" title="Permalink to this heading"></a></h2>
+<p>The recommended install location is <code class="docutils literal notranslate"><span class="pre">/opt/libreqos</span></code>
+Go to the install location, and clone the repo:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/
+sudo<span class="w"> </span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/LibreQoE/LibreQoS.git<span class="w"> </span>libreqos
+sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="nv">$USER</span><span class="w"> </span>/opt/libreqos
+<span class="nb">cd</span><span class="w"> </span>/opt/libreqos/
+git<span class="w"> </span>switch<span class="w"> </span>develop
+git<span class="w"> </span>pull
+</pre></div>
+</div>
+<p>By specifying <code class="docutils literal notranslate"><span class="pre">libreqos</span></code> at the end, git will ensure the folder name is lowercase.</p>
+</section>
+<section id="install-dependencies-from-apt-and-pip">
+<h2>Install Dependencies from apt and pip<a class="headerlink" href="#install-dependencies-from-apt-and-pip" title="Permalink to this heading"></a></h2>
+<p>You need to have a few packages from <code class="docutils literal notranslate"><span class="pre">apt</span></code> installed:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>python3-pip<span class="w"> </span>clang<span class="w"> </span>gcc<span class="w"> </span>gcc-multilib<span class="w"> </span>llvm<span class="w"> </span>libelf-dev<span class="w"> </span>git<span class="w"> </span>nano<span class="w"> </span>graphviz<span class="w"> </span>curl<span class="w"> </span>screen<span class="w"> </span>llvm<span class="w"> </span>pkg-config<span class="w"> </span>linux-tools-common<span class="w"> </span>linux-tools-<span class="sb">`</span>uname<span class="w"> </span>-r<span class="sb">`</span><span class="w"> </span>libbpf-dev<span class="w"> </span>libssl-dev
+</pre></div>
+</div>
+<p>Then you need to install some Python dependencies:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos
+<span class="nv">PIP_BREAK_SYSTEM_PACKAGES</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+sudo<span class="w"> </span><span class="nv">PIP_BREAK_SYSTEM_PACKAGES</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+</pre></div>
+</div>
+</section>
+<section id="install-the-rust-development-system">
+<h2>Install the Rust development system<a class="headerlink" href="#install-the-rust-development-system" title="Permalink to this heading"></a></h2>
+<p>Run the following:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>--proto<span class="w"> </span><span class="s1">&#39;=https&#39;</span><span class="w"> </span>--tlsv1.2<span class="w"> </span>-sSf<span class="w"> </span>https://sh.rustup.rs<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+</pre></div>
+</div>
+<p>When Rust finishes installing, it will tell you to execute a command to place the Rust build tools into your path. You need to either execute this command or logout and back in again.</p>
+<p>Once that’s done, please run:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos/src/
+./build_rust.sh
+</pre></div>
+</div>
+<p>This will take a while the first time, but it puts everything in the right place.</p>
+<p>Now, to build rust crates, run:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>rust
+cargo<span class="w"> </span>build<span class="w"> </span>--all
+</pre></div>
+</div>
+</section>
+<section id="lqos-conf">
+<h2>Lqos.conf<a class="headerlink" href="#lqos-conf" title="Permalink to this heading"></a></h2>
+<p>Copy the lqos.conf configuration file to <code class="docutils literal notranslate"><span class="pre">/etc</span></code>. This is not neccesarry if you installed using the .deb:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos/src
+sudo<span class="w"> </span>cp<span class="w"> </span>lqos.example<span class="w"> </span>/etc/lqos.conf
+</pre></div>
+</div>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
+<p>Proceed to configure settings <a class="reference internal" href="../Quickstart/configuration.html"><span class="std std-doc">following this guide</span></a>.</p>
+</section>
+<section id="daemon-setup">
+<h2>Daemon setup<a class="headerlink" href="#daemon-setup" title="Permalink to this heading"></a></h2>
+</section>
+<section id="run-daemons-with-systemd">
+<h2>Run daemons with systemd<a class="headerlink" href="#run-daemons-with-systemd" title="Permalink to this heading"></a></h2>
+<p>Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.</p>
+<p>You can now set up <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>, and <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code> as systemd services.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>cp<span class="w"> </span>/opt/libreqos/src/bin/lqosd.service.example<span class="w"> </span>/etc/systemd/system/lqosd.service
+sudo<span class="w"> </span>cp<span class="w"> </span>/opt/libreqos/src/bin/lqos_scheduler.service.example<span class="w"> </span>/etc/systemd/system/lqos_scheduler.service
+</pre></div>
+</div>
+<p>Finally, run</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>lqosd<span class="w"> </span>lqos_scheduler
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>lqosd<span class="w"> </span>lqos_scheduler
+</pre></div>
+</div>
+<p>You can now point a web browser at <code class="docutils literal notranslate"><span class="pre">http://a.b.c.d:9123</span></code> (replace <code class="docutils literal notranslate"><span class="pre">a.b.c.d</span></code> with the management IP address of your shaping server) and enjoy a real-time view of your network.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

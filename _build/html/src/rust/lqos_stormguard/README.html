@@ -1,0 +1,194 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LibreQoS StormGuard &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" />
+
+  
+      <script src="../../../_static/jquery.js"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+      <script src="../../../_static/doctools.js"></script>
+      <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">LibreQoS StormGuard</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/src/rust/lqos_stormguard/README.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="libreqos-stormguard">
+<h1>LibreQoS StormGuard<a class="headerlink" href="#libreqos-stormguard" title="Permalink to this heading"></a></h1>
+<p><strong>WARNING</strong>: This is extremely experimental. Don’t try this on anyone you like.</p>
+<p>LibreQoS StormGuard. Automatic top-level HTB rate adjustment, based on capacity monitoring.</p>
+<p>Heavily inspired by LynxTheCat’s Cake AutoRate project. https://github.com/lynxthecat/cake-autorate</p>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading"></a></h2>
+<p>Add the following to your <code class="docutils literal notranslate"><span class="pre">lqos.conf</span></code>:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[stormguard]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">dry_run</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">log_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/tmp/stormguard.csv&quot;</span><span class="w"> </span><span class="c1"># Optional</span>
+<span class="n">targets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;CALVIN 1&quot;</span><span class="w"> </span><span class="p">]</span>
+<span class="n">minimum_download_percentage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span><span class="w"> </span><span class="c1"># For 50% of download as minimum</span>
+<span class="n">minimum_upload_percentage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span><span class="w"> </span><span class="c1"># For 50% of upload as minimum</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><strong>Entry Name</strong></p></th>
+<th class="head"><p><strong>Description</strong></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">enabled</span></code></p></td>
+<td><p>Enable or disable Tornado. Default: <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dry_run</span></code></p></td>
+<td><p>If true, Tornado will not change the rate. It will only log what it <em>would</em> have done. Default: <code class="docutils literal notranslate"><span class="pre">false</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">log_file</span></code></p></td>
+<td><p>If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent</p></td>
+</tr>
+</tbody>
+</table>
+<p>You can list as many sites as you want in the <code class="docutils literal notranslate"><span class="pre">targets</span></code> array. I strongly recommend <code class="docutils literal notranslate"><span class="pre">dry_run</span></code> for now, which just
+emits what it <em>would</em> have done to the console!</p>
+</section>
+<section id="how-it-works">
+<h2>How it works<a class="headerlink" href="#how-it-works" title="Permalink to this heading"></a></h2>
+<p>StormGuard maintains a ring-buffer of recent throughput, TCP retransmits and TCP round-trip times for each target site.
+These are updated once per second, when <code class="docutils literal notranslate"><span class="pre">lqosd</span></code> “ticks”. A second buffer maintains a moving average of a larger time period.</p>
+<p>Each circuit also maintains a “current queue bandwidth”, which is adjusted dynamically. If <code class="docutils literal notranslate"><span class="pre">dry_run</span></code> is not set,
+this is applied directly to the HTB queue associated with the monitoring.</p>
+<blockquote>
+<div><p><em>Warning</em>: Do not apply this to HTB circuits that have a directly attached CAKE instance.</p>
+</div></blockquote>
+<p>Periodically:</p>
+<ul class="simple">
+<li><p>Saturation is calculated as current throughput / max throughput.</p></li>
+<li><p>Live saturation is calculated as current throughput / current queue bandwidth.</p></li>
+<li><p>Retransmits are set to either High, RisingFast, Rising, Stable, Falling, FallingFast.</p></li>
+<li><p>RTT is set to either Rising, Stable or Falling.</p></li>
+</ul>
+<p>These are fed through a decision matrix to determine if the queue bandwidth should be increased or decreased.</p>
+<p>Changes have a “cool-down” following their application, during which monitoring will continue but no changes will be made.
+This is to prevent oscillation between two states.</p>
+</section>
+<section id="running-stormguard">
+<h2>Running StormGuard<a class="headerlink" href="#running-stormguard" title="Permalink to this heading"></a></h2>
+<p>StormGuard is integrated into <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>. If it is enabled, it will run automatically when <code class="docutils literal notranslate"><span class="pre">lqosd</span></code> is started.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

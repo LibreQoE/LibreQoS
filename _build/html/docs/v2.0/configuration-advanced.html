@@ -1,0 +1,558 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced Configuration Reference &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="CRM/NMS Integrations" href="integrations.html" />
+    <link rel="prev" title="Operating Modes and Source of Truth" href="operating-modes.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Advanced Configuration Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-via-command-line">Configuration via Command Line</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#main-configuration-file">Main Configuration File</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etc-lqos-conf">/etc/lqos.conf</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#netflow-optional">Netflow (optional)</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#on-a-stick-mode-queue-mapping-single-interface">On-a-stick mode queue mapping (single interface)</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#crm-nms-integrations">CRM/NMS Integrations</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#runtime-overrides-lqos-overrides-json">Runtime overrides (<code class="docutils literal notranslate"><span class="pre">lqos_overrides.json</span></code>)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#network-hierarchy">Network Hierarchy</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#network-json">Network.json</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#cpu-considerations">CPU Considerations</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#circuits">Circuits</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#shapeddevices-csv">ShapedDevices.csv</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Advanced Configuration Reference</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/configuration-advanced.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="advanced-configuration-reference">
+<h1>Advanced Configuration Reference<a class="headerlink" href="#advanced-configuration-reference" title="Permalink to this heading"></a></h1>
+<p>Use this page when you need CLI-driven configuration, direct file editing, or deep reference details.</p>
+<section id="configuration-via-command-line">
+<h2>Configuration via Command Line<a class="headerlink" href="#configuration-via-command-line" title="Permalink to this heading"></a></h2>
+<p>You can also modify settings using the command line.</p>
+<section id="main-configuration-file">
+<h3>Main Configuration File<a class="headerlink" href="#main-configuration-file" title="Permalink to this heading"></a></h3>
+<section id="etc-lqos-conf">
+<h4>/etc/lqos.conf<a class="headerlink" href="#etc-lqos-conf" title="Permalink to this heading"></a></h4>
+<p>The configuration for each LibreQoS shaper box is stored in the file <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<p>Edit the file to match your setup with</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>nano<span class="w"> </span>/etc/lqos.conf
+</pre></div>
+</div>
+<p>In the <code class="docutils literal notranslate"><span class="pre">[bridge]</span></code> section, change <code class="docutils literal notranslate"><span class="pre">to_internet</span></code> and <code class="docutils literal notranslate"><span class="pre">to_network</span></code> to match your network interfaces.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">to_internet</span> <span class="pre">=</span> <span class="pre">&quot;enp1s0f1&quot;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to_network</span> <span class="pre">=</span> <span class="pre">&quot;enp1s0f2&quot;</span></code></p></li>
+</ul>
+<p>In the <code class="docutils literal notranslate"><span class="pre">[bridge]</span></code> section of the lqos.conf file, you can enable or disable the XDP Bridge with the setting <code class="docutils literal notranslate"><span class="pre">use_xdp_bridge</span></code>. The default value is <code class="docutils literal notranslate"><span class="pre">false</span></code> - because the default setup assumes a <a class="reference internal" href="prereq.html"><span class="std std-doc">Linux Bridge</span></a>. If you chose to use the XDP Bridge during that pre-requisites setup, please set <code class="docutils literal notranslate"><span class="pre">use_xdp_bridge</span> <span class="pre">=</span> <span class="pre">true</span></code> instead.</p>
+<ul class="simple">
+<li><p>Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network’s upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.</p></li>
+<li><p>to_internet would be the interface facing your edge router and the broader internet</p></li>
+<li><p>to_network would be the interface facing your core router (or bridged internal network if your network is bridged)</p></li>
+</ul>
+<p>Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span> <span class="pre">lqos_scheduler</span></code>.</p>
+<p>After changing any part of <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> it is highly recommended to always restart lqosd, using <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.</p>
+</section>
+<section id="netflow-optional">
+<h4>Netflow (optional)<a class="headerlink" href="#netflow-optional" title="Permalink to this heading"></a></h4>
+<p>To enable netflow, add the following <code class="docutils literal notranslate"><span class="pre">[flows]</span></code> section to the <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> configuration file, setting the appropriate <code class="docutils literal notranslate"><span class="pre">netflow_ip</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">flows</span><span class="p">]</span>
+<span class="n">flow_timeout_seconds</span> <span class="o">=</span> <span class="mi">30</span>
+<span class="n">netflow_enabled</span> <span class="o">=</span> <span class="n">true</span>
+<span class="n">netflow_port</span> <span class="o">=</span> <span class="mi">2055</span>
+<span class="n">netflow_ip</span> <span class="o">=</span> <span class="s2">&quot;100.100.100.100&quot;</span>
+<span class="n">netflow_version</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="n">do_not_track_subnets</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;192.168.0.0/16&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="on-a-stick-mode-queue-mapping-single-interface">
+<h4>On-a-stick mode queue mapping (single interface)<a class="headerlink" href="#on-a-stick-mode-queue-mapping-single-interface" title="Permalink to this heading"></a></h4>
+<p>When running on-a-stick mode, LibreQoS splits available TX queues in half:</p>
+<ul class="simple">
+<li><p>first half for one direction</p></li>
+<li><p>second half for the reverse direction</p></li>
+</ul>
+<p>So if 16 queues are available, each direction gets 8 queues. This directional offset is computed automatically at startup.</p>
+<p>If your NIC exposes unusual queue counts, you can set <code class="docutils literal notranslate"><span class="pre">override_available_queues</span></code> in <code class="docutils literal notranslate"><span class="pre">[queues]</span></code> and restart <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>.</p>
+<p>If shaping appears asymmetric in on-a-stick deployments, verify:</p>
+<ul class="simple">
+<li><p>the interface has enough TX queues</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">override_available_queues</span></code> is not forcing an incorrect value</p></li>
+<li><p>you have restarted after config changes</p></li>
+</ul>
+<p>See also <a class="reference internal" href="troubleshooting.html"><span class="std std-doc">Troubleshooting</span></a>.</p>
+</section>
+<section id="crm-nms-integrations">
+<h4>CRM/NMS Integrations<a class="headerlink" href="#crm-nms-integrations" title="Permalink to this heading"></a></h4>
+<p>Learn more about <a class="reference internal" href="integrations.html"><span class="std std-doc">configuring integrations here</span></a>.</p>
+</section>
+</section>
+<section id="runtime-overrides-lqos-overrides-json">
+<h3>Runtime overrides (<code class="docutils literal notranslate"><span class="pre">lqos_overrides.json</span></code>)<a class="headerlink" href="#runtime-overrides-lqos-overrides-json" title="Permalink to this heading"></a></h3>
+<p>LibreQoS supports runtime-friendly adjustments via <code class="docutils literal notranslate"><span class="pre">lqos_overrides.json</span></code> in your <code class="docutils literal notranslate"><span class="pre">lqos_directory</span></code>.</p>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">lqos_overrides</span></code> CLI:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>/opt/libreqos/src/bin/lqos_overrides<span class="w"> </span>--help
+</pre></div>
+</div>
+<p>Common examples:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># List persistent devices</span>
+/opt/libreqos/src/bin/lqos_overrides<span class="w"> </span>persistent-devices<span class="w"> </span>list
+
+<span class="c1"># Add/replace per-circuit speed adjustment</span>
+/opt/libreqos/src/bin/lqos_overrides<span class="w"> </span>adjustments<span class="w"> </span>add-circuit-speed<span class="w"> </span>--circuit-id<span class="w"> </span><span class="s2">&quot;1234&quot;</span><span class="w"> </span>--max-download-bandwidth<span class="w"> </span><span class="m">200</span><span class="w"> </span>--max-upload-bandwidth<span class="w"> </span><span class="m">50</span>
+
+<span class="c1"># Set a node to logical-only (virtual) without editing network.json directly</span>
+/opt/libreqos/src/bin/lqos_overrides<span class="w"> </span>network-adjustments<span class="w"> </span>set-virtual<span class="w"> </span><span class="s2">&quot;AP_GROUP_A&quot;</span><span class="w"> </span><span class="nb">true</span>
+
+<span class="c1"># List network adjustments</span>
+/opt/libreqos/src/bin/lqos_overrides<span class="w"> </span>network-adjustments<span class="w"> </span>list
+</pre></div>
+</div>
+<p>How overrides apply:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code> applies overrides during refresh cycles.</p></li>
+<li><p>persistent devices are merged into <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>.</p></li>
+<li><p>circuit/device/network adjustments are applied on top of imported/manual data.</p></li>
+</ul>
+</section>
+<section id="network-hierarchy">
+<h3>Network Hierarchy<a class="headerlink" href="#network-hierarchy" title="Permalink to this heading"></a></h3>
+<section id="network-json">
+<h4>Network.json<a class="headerlink" href="#network-json" title="Permalink to this heading"></a></h4>
+<p>Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.</p>
+<p>If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.
+If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).</p>
+<p>If you will not be using an integration, you can manually define the network.json following the template file - <a class="reference external" href="https://github.com/LibreQoE/LibreQoS/blob/develop/src/network.example.json">network.example.json</a>. Below is a table illustration of network.example.json.</p>
+<table><thead><tr><th colspan="5">Entire Network</th></tr></thead><tbody><tr><td colspan="3">Site_1</td><td colspan="2">Site_2</td></tr><tr><td>AP_A</td><td colspan="2">Site_3</td><td>Pop_1</td><td>AP_1</td></tr><tr><td></td><td colspan="2">PoP_5</td><td>AP_7</td><td></td></tr><tr><td></td><td>AP_9</td><td>PoP_6</td><td></td><td></td></tr><tr><td></td><td></td><td>AP_11</td><td></td><td></td></tr></tbody></table>
+<p>For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">echo</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span> <span class="o">&gt;</span> <span class="n">network</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+<section id="virtual-logical-only-nodes">
+<h5>Virtual (logical-only) nodes<a class="headerlink" href="#virtual-logical-only-nodes" title="Permalink to this heading"></a></h5>
+<p>LibreQoS supports <strong>virtual nodes</strong> in <code class="docutils literal notranslate"><span class="pre">network.json</span></code> for organizational grouping and monitoring/aggregation in the WebUI/Insight. Virtual nodes are <strong>not</strong> included in the physical HTB shaping tree (they won’t create HTB classes and won’t enforce bandwidth limits).</p>
+<p>To mark a node as virtual, set <code class="docutils literal notranslate"><span class="pre">&quot;virtual&quot;:</span> <span class="pre">true</span></code> on that node.</p>
+<p>Example:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;Region&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;downloadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;uploadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;children&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;Town&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;virtual&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;downloadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;uploadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;children&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;AP_A&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;downloadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">&quot;uploadBandwidthMbps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span>
+<span class="w">          </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>During shaping, virtual nodes are removed and their children are promoted to the nearest non-virtual ancestor (see <code class="docutils literal notranslate"><span class="pre">queuingStructure.json</span></code> for the active physical plan).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> can still use a virtual node as a <code class="docutils literal notranslate"><span class="pre">Parent</span> <span class="pre">Node</span></code> for display/grouping; LibreQoS will attach those circuits for shaping to the nearest non-virtual ancestor (top-level virtual nodes will be treated as unparented for shaping).</p></li>
+<li><p>Avoid name collisions after promotion (two nodes with the same name ending up at the same level).</p></li>
+</ul>
+</section>
+</section>
+<section id="cpu-considerations">
+<h4>CPU Considerations<a class="headerlink" href="#cpu-considerations" title="Permalink to this heading"></a></h4>
+<img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
+<section id="csv-to-json-conversion-helper">
+<h5>CSV to JSON conversion helper<a class="headerlink" href="#csv-to-json-conversion-helper" title="Permalink to this heading"></a></h5>
+<p>You can use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>csvToNetworkJSON.py
+</pre></div>
+</div>
+<p>to convert manualNetwork.csv to a network.json file.
+manualNetwork.csv can be copied from the template file, manualNetwork.template.csv</p>
+<p>Note: The parent node name must match that used for clients in ShapedDevices.csv</p>
+</section>
+</section>
+</section>
+<section id="circuits">
+<h3>Circuits<a class="headerlink" href="#circuits" title="Permalink to this heading"></a></h3>
+<p>LibreQoS shapes individual devices by their IP addresses, which are grouped into “circuits”.</p>
+<p>A circuit represents an ISP subscriber’s internet service, which may have just one associated IP (the subscriber’s router may be assigned a single /32 IPv4 for example) or it might have multiple IPs associated (maybe their router has a /29 assigned, or multiple /32s).</p>
+<p>LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they are contained by, with the ShapedDevices.csv file.</p>
+<section id="shapeddevices-csv">
+<h4>ShapedDevices.csv<a class="headerlink" href="#shapeddevices-csv" title="Permalink to this heading"></a></h4>
+<p>The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber’s unique service).</p>
+<p>The base format has 13 columns, with an optional 14th <code class="docutils literal notranslate"><span class="pre">sqm</span></code> column for per-circuit queue overrides:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Circuit</span> <span class="n">ID</span><span class="p">,</span><span class="n">Circuit</span> <span class="n">Name</span><span class="p">,</span><span class="n">Device</span> <span class="n">ID</span><span class="p">,</span><span class="n">Device</span> <span class="n">Name</span><span class="p">,</span><span class="n">Parent</span> <span class="n">Node</span><span class="p">,</span><span class="n">MAC</span><span class="p">,</span><span class="n">IPv4</span><span class="p">,</span><span class="n">IPv6</span><span class="p">,</span><span class="n">Download</span> <span class="n">Min</span> <span class="n">Mbps</span><span class="p">,</span><span class="n">Upload</span> <span class="n">Min</span> <span class="n">Mbps</span><span class="p">,</span><span class="n">Download</span> <span class="n">Max</span> <span class="n">Mbps</span><span class="p">,</span><span class="n">Upload</span> <span class="n">Max</span> <span class="n">Mbps</span><span class="p">,</span><span class="n">Comment</span><span class="p">[,</span><span class="n">sqm</span><span class="p">]</span>
+</pre></div>
+</div>
+<section id="optional-sqm-column">
+<h5>Optional <code class="docutils literal notranslate"><span class="pre">sqm</span></code> column<a class="headerlink" href="#optional-sqm-column" title="Permalink to this heading"></a></h5>
+<p>If present, <code class="docutils literal notranslate"><span class="pre">sqm</span></code> overrides queueing for that circuit.</p>
+<p>Allowed values:</p>
+<ul class="simple">
+<li><p>Single token: <code class="docutils literal notranslate"><span class="pre">cake</span></code>, <code class="docutils literal notranslate"><span class="pre">fq_codel</span></code>, <code class="docutils literal notranslate"><span class="pre">none</span></code></p></li>
+<li><p>Directional token: <code class="docutils literal notranslate"><span class="pre">down_sqm/up_sqm</span></code> where each side is <code class="docutils literal notranslate"><span class="pre">cake</span></code>, <code class="docutils literal notranslate"><span class="pre">fq_codel</span></code>, <code class="docutils literal notranslate"><span class="pre">none</span></code>, or empty</p></li>
+</ul>
+<p>Examples:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">cake</span></code> (both directions)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cake/fq_codel</span></code> (download cake, upload fq_codel)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fq_codel/</span></code> (download fq_codel, upload uses global default)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/none</span></code> (upload disabled, download uses global default)</p></li>
+</ul>
+<p>If <code class="docutils literal notranslate"><span class="pre">sqm</span></code> is empty/missing, global queue defaults apply.</p>
+<p>Here is an example of an entry in the ShapedDevices.csv file:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Circuit ID</p></th>
+<th class="head"><p>Circuit Name</p></th>
+<th class="head"><p>Device ID</p></th>
+<th class="head"><p>Device Name</p></th>
+<th class="head"><p>Parent Node</p></th>
+<th class="head"><p>MAC</p></th>
+<th class="head"><p>IPv4</p></th>
+<th class="head"><p>IPv6</p></th>
+<th class="head"><p>Download Min Mbps</p></th>
+<th class="head"><p>Upload Min Mbps</p></th>
+<th class="head"><p>Download Max Mbps</p></th>
+<th class="head"><p>Upload Max Mbps</p></th>
+<th class="head"><p>Comment</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>968 Circle St., Gurnee, IL 60031</p></td>
+<td><p>1</p></td>
+<td><p>Device 1</p></td>
+<td><p>AP_A</p></td>
+<td><p></p></td>
+<td><p>100.64.0.1, 100.64.0.14</p></td>
+<td><p>fdd7:b724:0:100::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>155</p></td>
+<td><p>20</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>31 Marconi Street, Lake In The Hills, IL 60156</p></td>
+<td><p>2</p></td>
+<td><p>Device 2</p></td>
+<td><p>AP_A</p></td>
+<td><p></p></td>
+<td><p>100.64.0.2</p></td>
+<td><p>fdd7:b724:0:200::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>255 NW. Newport Ave., Jamestown, NY 14701</p></td>
+<td><p>3</p></td>
+<td><p>Device 3</p></td>
+<td><p>AP_9</p></td>
+<td><p></p></td>
+<td><p>100.64.0.3</p></td>
+<td><p>fdd7:b724:0:300::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>8493 Campfire Street, Peabody, MA 01960</p></td>
+<td><p>4</p></td>
+<td><p>Device 4</p></td>
+<td><p>AP_9</p></td>
+<td><p></p></td>
+<td><p>100.64.0.4</p></td>
+<td><p>fdd7:b724:0:400::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p>2794</p></td>
+<td><p>6 Littleton Drive, Ringgold, GA 30736</p></td>
+<td><p>5</p></td>
+<td><p>Device 5</p></td>
+<td><p>AP_11</p></td>
+<td><p></p></td>
+<td><p>100.64.0.5</p></td>
+<td><p>fdd7:b724:0:500::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>2794</p></td>
+<td><p>6 Littleton Drive, Ringgold, GA 30736</p></td>
+<td><p>6</p></td>
+<td><p>Device 6</p></td>
+<td><p>AP_11</p></td>
+<td><p></p></td>
+<td><p>100.64.0.6</p></td>
+<td><p>fdd7:b724:0:600::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p>5</p></td>
+<td><p>93 Oklahoma Ave., Parsippany, NJ 07054</p></td>
+<td><p>7</p></td>
+<td><p>Device 7</p></td>
+<td><p>AP_1</p></td>
+<td><p></p></td>
+<td><p>100.64.0.7</p></td>
+<td><p>fdd7:b724:0:700::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>155</p></td>
+<td><p>20</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>6</p></td>
+<td><p>74 Bishop Ave., Bakersfield, CA 93306</p></td>
+<td><p>8</p></td>
+<td><p>Device 8</p></td>
+<td><p>AP_1</p></td>
+<td><p></p></td>
+<td><p>100.64.0.8</p></td>
+<td><p>fdd7:b724:0:800::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p>7</p></td>
+<td><p>9598 Peg Shop Drive, Lutherville Timonium, MD 21093</p></td>
+<td><p>9</p></td>
+<td><p>Device 9</p></td>
+<td><p>AP_7</p></td>
+<td><p></p></td>
+<td><p>100.64.0.9</p></td>
+<td><p>fdd7:b724:0:900::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>8</p></td>
+<td><p>115 Gartner Rd., Gettysburg, PA 17325</p></td>
+<td><p>10</p></td>
+<td><p>Device 10</p></td>
+<td><p>AP_7</p></td>
+<td><p></p></td>
+<td><p>100.64.0.10</p></td>
+<td><p>fdd7:b724:0:a00::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p>9</p></td>
+<td><p>525 Birchpond St., Romulus, MI 48174</p></td>
+<td><p>11</p></td>
+<td><p>Device 11</p></td>
+<td><p>Site_1</p></td>
+<td><p></p></td>
+<td><p>100.64.0.11</p></td>
+<td><p>fdd7:b724:0:b00::/56</p></td>
+<td><p>1</p></td>
+<td><p>1</p></td>
+<td><p>105</p></td>
+<td><p>18</p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p>If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.</p>
+<p>Directional SQM examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">2794</span><span class="p">,</span><span class="s2">&quot;6 Littleton Drive, Ringgold, GA 30736&quot;</span><span class="p">,</span><span class="mi">5</span><span class="p">,</span><span class="n">Device</span> <span class="mi">5</span><span class="p">,</span><span class="n">AP_11</span><span class="p">,,</span><span class="mf">100.64.0.5</span><span class="p">,</span><span class="s2">&quot;fdd7:b724:0:500::/56&quot;</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">105</span><span class="p">,</span><span class="mi">18</span><span class="p">,</span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="n">cake</span><span class="o">/</span><span class="n">fq_codel</span>
+<span class="mi">2795</span><span class="p">,</span><span class="s2">&quot;7 Example Ave&quot;</span><span class="p">,</span><span class="mi">6</span><span class="p">,</span><span class="n">Device</span> <span class="mi">6</span><span class="p">,</span><span class="n">AP_11</span><span class="p">,,</span><span class="mf">100.64.0.6</span><span class="p">,,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">105</span><span class="p">,</span><span class="mi">18</span><span class="p">,</span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="o">/</span><span class="n">none</span>
+</pre></div>
+</div>
+</section>
+<section id="multiple-ips-per-circuit">
+<h5>Multiple IPs per Circuit<a class="headerlink" href="#multiple-ips-per-circuit" title="Permalink to this heading"></a></h5>
+<p>If you need to list multiple IPv4s in the IPv4 field, or multiple IPv6s in the IPv6 field, add a comma between them. If you are editing with a CSV editor (LibreOffice Calc, Excel), the CSV editor will automatically wrap these comma-seperated items with quotes for you. If you are editing the file manually with a utility like notepad or nano, please add quotes surrounding the comma-seperated entries.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">2794</span><span class="p">,</span><span class="s2">&quot;6 Littleton Drive, Ringgold, GA 30736&quot;</span><span class="p">,</span><span class="mi">5</span><span class="p">,</span><span class="n">Device</span> <span class="mi">5</span><span class="p">,</span><span class="n">AP_11</span><span class="p">,,</span><span class="mf">100.64.0.5</span><span class="p">,</span><span class="s2">&quot;fdd7:b724:0:500::/56,fdd7:b724:0:600::/56&quot;</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">105</span><span class="p">,</span><span class="mi">18</span><span class="p">,</span><span class="s2">&quot;&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="manual-editing-by-webui">
+<h5>Manual Editing by WebUI<a class="headerlink" href="#manual-editing-by-webui" title="Permalink to this heading"></a></h5>
+<p>Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration &gt; Shaped Devices.</p>
+</section>
+<section id="manual-editing-by-cli">
+<h5>Manual Editing by CLI<a class="headerlink" href="#manual-editing-by-cli" title="Permalink to this heading"></a></h5>
+<ul class="simple">
+<li><p>Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv</p></li>
+<li><p>Circuit ID is required. The Circuit ID can be a number or string. This field must NOT include any number symbols (#). Every circuit requires a unique CircuitID - they cannot be reused. Here, circuit essentially refers to a customer’s service. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.</p></li>
+<li><p>At least one IPv4 address or IPv6 address is required for each entry.</p></li>
+<li><p>The Access Point or Site name should be set in the Parent Node field. Parent Node can be left blank for flat networks.</p></li>
+<li><p>The ShapedDevices.csv file allows you to set minimum (guaranteed), and maximum allowed bandwidth per subscriber.</p></li>
+<li><p>The Download Min and Upload Min for each Circuit must be 1 Mbps or greater. Generally, these should be set to 1 Mbps by default.</p></li>
+<li><p>The Download Max and Upload Max for each Circuit must be 2 Mbps or greater. Generally, these correspond to the customer’s speed plan.</p></li>
+<li><p>Recommendation: set the min bandwidth to 1/1 and max to 1.15X advertised plan rate:</p>
+<ul>
+<li><p>This way, when an AP hits its ceiling, users have any remaining AP capacity fairly distributed between them.</p></li>
+<li><p>By setting the max to 1.15X the speed plan, this makes it more likely that the subscriber will see a satisfactory speed test result, even if there is some small light traffic on their circuit running in the background - such as an HD video stream, software updates, etc.</p></li>
+<li><p>This allows subscribers to utilize up to the maximum rate when AP has the capacity to allow that.</p></li>
+</ul>
+</li>
+</ul>
+<p>Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, you can set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always see that rate available. Make sure that the combined minimum rates for circuits connected to a parent node do not exceed the rate of the parent node. If that happens, LibreQoS has a fail-safe that will <a class="reference external" href="https://github.com/LibreQoE/LibreQoS/pull/643">reduce the minimums to 1/1</a> for all affected circuits.</p>
+<p>Once your configuration is complete. You’re ready to run the application and start the <a class="reference internal" href="components.html#systemd-services"><span class="std std-ref">systemd services</span></a></p>
+</section>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="operating-modes.html" class="btn btn-neutral float-left" title="Operating Modes and Source of Truth" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="integrations.html" class="btn btn-neutral float-right" title="CRM/NMS Integrations" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

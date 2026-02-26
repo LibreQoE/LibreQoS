@@ -1,0 +1,237 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TemporalHeatmap Design &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css" />
+
+  
+      <script src="../../../../_static/jquery.js"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../../../" id="documentation_options" src="../../../../_static/documentation_options.js"></script>
+      <script src="../../../../_static/doctools.js"></script>
+      <script src="../../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">TemporalHeatmap Design</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../../_sources/src/rust/lqos_utils/src/temporal_heatmap_design.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="temporalheatmap-design">
+<h1>TemporalHeatmap Design<a class="headerlink" href="#temporalheatmap-design" title="Permalink to this heading"></a></h1>
+<section id="goals">
+<h2>Goals<a class="headerlink" href="#goals" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Keep a fixed-size, pre-allocated rolling window for 15 minutes of data.</p></li>
+<li><p>Store 60 raw samples (1 per second) for the current minute and 14 summary blocks for prior minutes.</p></li>
+<li><p>Track download, upload, RTT (optional), and TCP retransmit percentage (optional).</p></li>
+<li><p>Provide median values per 1-minute block for 15 blocks total.</p></li>
+<li><p>Avoid allocations in steady state; no persistence; optional use of Box for heap storage.</p></li>
+</ul>
+</section>
+<section id="data-layout">
+<h2>Data Layout<a class="headerlink" href="#data-layout" title="Permalink to this heading"></a></h2>
+<p>Constants:</p>
+<ul class="simple">
+<li><p>RAW_SAMPLES = 60</p></li>
+<li><p>SUMMARY_BLOCKS = 14</p></li>
+<li><p>TOTAL_BLOCKS = 15</p></li>
+</ul>
+<p>Fields (per instance):</p>
+<ul class="simple">
+<li><p>raw_download: [Option<f32>; RAW_SAMPLES]</p></li>
+<li><p>raw_upload: [Option<f32>; RAW_SAMPLES]</p></li>
+<li><p>raw_rtt: [Option<f32>; RAW_SAMPLES]</p></li>
+<li><p>raw_retransmit: [Option<f32>; RAW_SAMPLES]</p></li>
+<li><p>summary_download: [Option<f32>; SUMMARY_BLOCKS]</p></li>
+<li><p>summary_upload: [Option<f32>; SUMMARY_BLOCKS]</p></li>
+<li><p>summary_rtt: [Option<f32>; SUMMARY_BLOCKS]</p></li>
+<li><p>summary_retransmit: [Option<f32>; SUMMARY_BLOCKS]</p></li>
+<li><p>raw_index: usize (0..RAW_SAMPLES)</p></li>
+<li><p>raw_filled: usize (0..RAW_SAMPLES)</p></li>
+</ul>
+<p>All arrays are initialized to None so partial minutes do not skew medians.</p>
+</section>
+<section id="methods">
+<h2>Methods<a class="headerlink" href="#methods" title="Permalink to this heading"></a></h2>
+<p>Public:</p>
+<ul class="simple">
+<li><p>new() / default(): pre-allocate arrays and initialize indices.</p></li>
+<li><p>add_sample(download: f32, upload: f32,
+rtt_down: Option<f32>, rtt_up: Option<f32>,
+retransmit_down: Option<f32>, retransmit_up: Option<f32>)</p>
+<ul>
+<li><p>Combine RTT and retransmit values:</p>
+<ul>
+<li><p>If both present, use average.</p></li>
+<li><p>If only one present, use that.</p></li>
+<li><p>If neither present, store None.</p></li>
+</ul>
+</li>
+<li><p>Store download/upload and combined RTT/retransmit at raw_index.</p></li>
+<li><p>Increment raw_index and raw_filled.</p></li>
+<li><p>When raw_index reaches RAW_SAMPLES:</p>
+<ul>
+<li><p>Compute median for each metric from raw_* (ignoring None values).</p></li>
+<li><p>Shift summary_* left by one and append new median at the end.</p></li>
+<li><p>Reset raw_* to None and raw_index/raw_filled to 0.</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>blocks() -&gt; HeatmapBlocks</p>
+<ul>
+<li><p>Returns 15 blocks for each metric.</p></li>
+<li><p>Blocks 0..SUMMARY_BLOCKS-1 mirror summary_* in oldest-&gt;newest order.</p></li>
+<li><p>Block TOTAL_BLOCKS-1 is computed from raw_* via median (ignoring None).</p></li>
+<li><p>If there are no samples for a block, return None for that slot.</p></li>
+</ul>
+</li>
+</ul>
+<p>Helpers:</p>
+<ul class="simple">
+<li><p>median(values: &amp;mut [f32], len: usize) -&gt; Option<f32></p>
+<ul>
+<li><p>Build a scratch buffer with present samples.</p></li>
+<li><p>Sort and select middle element (or average of two middles).</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="output-type">
+<h2>Output Type<a class="headerlink" href="#output-type" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>HeatmapBlocks { download: [Option<f32>; TOTAL_BLOCKS], upload: [Option<f32>; TOTAL_BLOCKS],
+rtt: [Option<f32>; TOTAL_BLOCKS], retransmit: [Option<f32>; TOTAL_BLOCKS] }</p></li>
+</ul>
+</section>
+<section id="size-and-memory-notes">
+<h2>Size and Memory Notes<a class="headerlink" href="#size-and-memory-notes" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Fixed-size: 4 * (RAW_SAMPLES + SUMMARY_BLOCKS) = 296 Option<f32> values.</p></li>
+<li><p>Option<f32> is typically 8 bytes, so arrays are ~2368 bytes plus indices.</p></li>
+<li><p>Document the exact size formula in the Rust doc comment for TemporalHeatmap.</p></li>
+<li><p>Use arrays (or boxed arrays) to ensure no allocation growth after construction.</p></li>
+</ul>
+</section>
+<section id="median-rules">
+<h2>Median Rules<a class="headerlink" href="#median-rules" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Missing samples (None) are ignored.</p></li>
+<li><p>If no samples exist for a block, return None for that block.</p></li>
+<li><p>For even counts, use the average of the two middle values.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

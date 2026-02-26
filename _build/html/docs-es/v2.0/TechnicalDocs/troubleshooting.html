@@ -1,0 +1,209 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Troubleshooting &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" />
+
+  
+      <script src="../../../_static/jquery.js"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+      <script src="../../../_static/doctools.js"></script>
+      <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Troubleshooting</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs-es/v2.0/TechnicalDocs/troubleshooting.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="troubleshooting">
+<h1>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permalink to this heading"></a></h1>
+<section id="common-issues">
+<h2>Common Issues<a class="headerlink" href="#common-issues" title="Permalink to this heading"></a></h2>
+<section id="no-webui-at-x-x-x-x-9123">
+<h3>No WebUI at x.x.x.x:9123<a class="headerlink" href="#no-webui-at-x-x-x-x-9123" title="Permalink to this heading"></a></h3>
+<p>The WebUI is controlled by the lqosd service. Usually, when the WebUI doesn’t start, it is related to lqosd being in a failed state.
+Check to see if the lqosd service is running:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">status</span> <span class="n">lqosd</span>
+</pre></div>
+</div>
+<p>If the status is ‘failed’, examine why using journalctl, which shows the full status of the service:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">journalctl</span> <span class="o">-</span><span class="n">u</span> <span class="n">lqosd</span> <span class="o">--</span><span class="n">since</span> <span class="s2">&quot;10 minutes ago&quot;</span>
+</pre></div>
+</div>
+<p>Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.</p>
+<p>Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.</p>
+</section>
+<section id="libreqos-is-running-but-traffic-not-shaping">
+<h3>LibreQoS Is Running, But Traffic Not Shaping<a class="headerlink" href="#libreqos-is-running-but-traffic-not-shaping" title="Permalink to this heading"></a></h3>
+<p>In /etc/lqos.conf, ensure that <code class="docutils literal notranslate"><span class="pre">to_internet</span></code> and <code class="docutils literal notranslate"><span class="pre">to_network</span></code> are set correctly. If not, simply swap the interfaces between those and restart lqosd and the scheduler.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">restart</span> <span class="n">lqosd</span> <span class="n">lqos_scheduler</span>
+</pre></div>
+</div>
+<p>Make sure your services are running properly</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">status</span> <span class="n">lqosd</span> <span class="n">lqos_scheduler</span>
+</pre></div>
+</div>
+<p>The service lqos_scheduler is dependent on the lqosd service being in a healthy, running state.</p>
+</section>
+<section id="service-lqosd-is-not-running-or-failed-to-start">
+<h3>Service lqosd is not running or failed to start<a class="headerlink" href="#service-lqosd-is-not-running-or-failed-to-start" title="Permalink to this heading"></a></h3>
+<p>Check to see the state of the lqosd service:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">status</span> <span class="n">lqosd</span>
+</pre></div>
+</div>
+<p>If the status is ‘failed’, examine why using journalctl, which shows the full status of the service:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">journalctl</span> <span class="o">-</span><span class="n">u</span> <span class="n">lqosd</span> <span class="o">--</span><span class="n">since</span> <span class="s2">&quot;10 minutes ago&quot;</span>
+</pre></div>
+</div>
+<p>Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.</p>
+<p>Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.</p>
+</section>
+<section id="advanced-lqosd-debug">
+<h3>Advanced lqosd debug<a class="headerlink" href="#advanced-lqosd-debug" title="Permalink to this heading"></a></h3>
+<p>At the command-line, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">RUST_LOG=info</span> <span class="pre">/opt/libreqos/src/bin/lqosd</span></code> which runs lqosd manually, and will provide specifics regarding why it failed to start.</p>
+</section>
+<section id="rtnetlink-answers-invalid-argument">
+<h3>RTNETLINK answers: Invalid argument<a class="headerlink" href="#rtnetlink-answers-invalid-argument" title="Permalink to this heading"></a></h3>
+<p>This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the <a class="reference internal" href="#../../SystemRequirements/Compute.md#network-interface-requirements"><span class="xref myst">recommended NICs</span></a>.</p>
+</section>
+<section id="python-modulenotfounderror-in-ubuntu-24-04">
+<h3>Python ModuleNotFoundError in Ubuntu 24.04<a class="headerlink" href="#python-modulenotfounderror-in-ubuntu-24-04" title="Permalink to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">uninstall</span> <span class="n">binpacking</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">uninstall</span> <span class="n">binpacking</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">binpacking</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span>
+<span class="n">pip</span> <span class="n">uninstall</span> <span class="n">apscheduler</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">uninstall</span> <span class="n">apscheduler</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">apscheduler</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span>
+<span class="n">pip</span> <span class="n">uninstall</span> <span class="n">deepdiff</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">uninstall</span> <span class="n">deepdiff</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span> <span class="o">--</span><span class="n">yes</span>
+<span class="n">sudo</span> <span class="n">pip</span> <span class="n">install</span> <span class="n">deepdiff</span> <span class="o">--</span><span class="k">break</span><span class="o">-</span><span class="n">system</span><span class="o">-</span><span class="n">packages</span>
+</pre></div>
+</div>
+</section>
+<section id="all-customer-ips-are-listed-under-unknown-ips-rather-than-shaped-devices-in-gui">
+<h3>All customer IPs are listed under Unknown IPs, rather than Shaped Devices in GUI<a class="headerlink" href="#all-customer-ips-are-listed-under-unknown-ips-rather-than-shaped-devices-in-gui" title="Permalink to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span>
+<span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">stop</span> <span class="n">lqos_scheduler</span>
+<span class="n">sudo</span> <span class="n">python3</span> <span class="n">LibreQoS</span><span class="o">.</span><span class="n">py</span>
+</pre></div>
+</div>
+<p>The console output from running LibreQoS.py directly provides more specific errors regarding issues with ShapedDevices.csv and network.json
+Once you have identified the error and fixed ShapedDevices.csv and/or Network.json, please then run</p>
+<p><code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">start</span> <span class="pre">lqos_scheduler</span></code></p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

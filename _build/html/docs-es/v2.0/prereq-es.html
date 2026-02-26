@@ -1,0 +1,170 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Requisitos previos para la configuración del servidor &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Requisitos previos para la configuración del servidor</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs-es/v2.0/prereq-es.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="requisitos-previos-para-la-configuracion-del-servidor">
+<h1>Requisitos previos para la configuración del servidor<a class="headerlink" href="#requisitos-previos-para-la-configuracion-del-servidor" title="Permalink to this heading"></a></h1>
+<section id="servidores-e-hipervisores">
+<h2>Servidores e hipervisores<a class="headerlink" href="#servidores-e-hipervisores" title="Permalink to this heading"></a></h2>
+<section id="desactivar-hyper-threading">
+<h3>Desactivar Hyper-Threading<a class="headerlink" href="#desactivar-hyper-threading" title="Permalink to this heading"></a></h3>
+<p>Desactiva el Hyper-Threading en la BIOS/UEFI de tu sistema host. El Hyper-Threading también se conoce como Simultaneous Multi Threading (SMT) en sistemas AMD. Desactivarlo es muy importante para obtener un rendimiento óptimo del filtrado cpumap con XDP y, por ende, mejorar el rendimiento y la latencia.</p>
+<ul class="simple">
+<li><p>Inicia el sistema y presiona la tecla correspondiente para entrar a la configuración de la BIOS.</p></li>
+<li><p>En sistemas AMD, deberás navegar por las opciones hasta encontrar la opción llamada “SMT Control”. Normalmente se encuentra en: <code class="docutils literal notranslate"><span class="pre">Advanced</span> <span class="pre">-&gt;</span> <span class="pre">AMD</span> <span class="pre">CBS</span> <span class="pre">-&gt;</span> <span class="pre">CPU</span> <span class="pre">Common</span> <span class="pre">Options</span> <span class="pre">-&gt;</span> <span class="pre">Thread</span> <span class="pre">Enablement</span> <span class="pre">-&gt;</span> <span class="pre">SMT</span> <span class="pre">Control</span></code> Una vez localizada, cambia la opción a “Disabled” o “Off”.</p></li>
+<li><p>En sistemas Intel, también deberás buscar la opción para desactivar el Hyper-Threading en ajustes. En servidores HP, por ejemplo, está ubicada en: <code class="docutils literal notranslate"><span class="pre">System</span> <span class="pre">Configuration</span> <span class="pre">&gt;</span> <span class="pre">BIOS/Platform</span> <span class="pre">Configuration</span> <span class="pre">(RBSU)</span> <span class="pre">&gt;</span> <span class="pre">Processor</span> <span class="pre">Options</span> <span class="pre">&gt;</span> <span class="pre">Intel</span> <span class="pre">(R)</span> <span class="pre">Hyperthreading</span> <span class="pre">Options</span></code></p></li>
+<li><p>Guarda los cambios y reinicia el sistema.</p></li>
+</ul>
+</section>
+<section id="desactivar-sr-iov-en-la-bios">
+<h3>Desactivar SR-IOV en la BIOS<a class="headerlink" href="#desactivar-sr-iov-en-la-bios" title="Permalink to this heading"></a></h3>
+<p>SR-IOV puede desactivar XDP nativo (modo controlador) en las Funciones Físicas (PF), forzando XDP Genérico (SKB) y reduciendo el rendimiento y la estabilidad de LibreQoS. Desactive SR-IOV en la BIOS/UEFI para las tarjetas de red (NIC) utilizadas por LibreQoS. Si existen opciones por ranura/por puerto, desactívelas.</p>
+</section>
+</section>
+<section id="hipervisores">
+<h2>Hipervisores<a class="headerlink" href="#hipervisores" title="Permalink to this heading"></a></h2>
+<section id="proxmox">
+<h3>Proxmox<a class="headerlink" href="#proxmox" title="Permalink to this heading"></a></h3>
+<p>Para las máquinas virtuales Proxmox, se requiere el paso a través de la tarjeta de red (NIC) para alcanzar un rendimiento superior a 10 Gbps (XDP vs. XDP genérico).</p>
+<p>LibreQoS requiere dos o más colas RX/TX, por lo que al usar Proxmox, asegúrese de habilitar <a class="reference external" href="https://forum.proxmox.com/threads/where-is-multiqueue.146783/">Multicola</a> para las interfaces de modelado asignadas a la máquina virtual. La multicola debe tener un valor igual al número de núcleos de vCPU asignados a la máquina virtual.</p>
+</section>
+<section id="hyper-v">
+<h3>Hyper-V<a class="headerlink" href="#hyper-v" title="Permalink to this heading"></a></h3>
+<section id="suplantacion-de-mac-en-hyper-v-si-esta-dentro-de-una-maquina-virtual">
+<h4>Suplantación de MAC en Hyper-V (Si está dentro de una máquina virtual)<a class="headerlink" href="#suplantacion-de-mac-en-hyper-v-si-esta-dentro-de-una-maquina-virtual" title="Permalink to this heading"></a></h4>
+<p>Si su sistema LibreQoS se ejecuta dentro de Hyper-V y ha conectado dos vNIC (eth1, eth2), Hyper-V bloqueará el tráfico del puente porque este genera tramas con direcciones MAC diferentes a la asignada a la vNIC. Para solucionar esto en un host Windows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Set</span><span class="o">-</span><span class="n">VMNetworkAdapter</span> <span class="o">-</span><span class="n">VMName</span> <span class="s2">&quot;YourLinuxVM&quot;</span> <span class="o">-</span><span class="n">MacAddressSpoofing</span> <span class="n">On</span>
+</pre></div>
+</div>
+<p>Luego, reinicie la máquina virtual.</p>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

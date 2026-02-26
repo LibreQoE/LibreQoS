@@ -1,0 +1,269 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LibreQoS Software Components &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="LibreQoS WebUI (Node Manager)" href="node-manager-ui.html" />
+    <link rel="prev" title="CRM/NMS Integrations" href="integrations.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">LibreQoS Software Components</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#systemd-services">Systemd Services</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#lqosd">lqosd</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#lqos-scheduler">lqos_scheduler</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#checking-service-status">Checking service status</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#debugging-lqos-scheduler">Debugging lqos_scheduler</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#troubleshooting-service-components">Troubleshooting Service Components</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#webui-privacy-mode">WebUI privacy mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#urgent-issue-channel">Urgent issue channel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scheduler-status-indicator">Scheduler status indicator</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">LibreQoS Software Components</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/components.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="libreqos-software-components">
+<h1>LibreQoS Software Components<a class="headerlink" href="#libreqos-software-components" title="Permalink to this heading"></a></h1>
+<section id="systemd-services">
+<h2>Systemd Services<a class="headerlink" href="#systemd-services" title="Permalink to this heading"></a></h2>
+<section id="lqosd">
+<h3>lqosd<a class="headerlink" href="#lqosd" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Manages actual XDP code.</p></li>
+<li><p>Coded in Rust.</p></li>
+<li><p>Runs the GUI available at http://a.b.c.d:9123</p></li>
+<li><p>Hosts WebUI pages such as:</p>
+<ul>
+<li><p>Flow Map</p></li>
+<li><p>Network Tree Overview</p></li>
+<li><p>ASN Explorer</p></li>
+<li><p>CPU Tree / CPU Weights</p></li>
+<li><p>Configuration editors for integrations (UISP, Splynx, Netzur, VISP, etc.)</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="lqos-scheduler">
+<h3>lqos_scheduler<a class="headerlink" href="#lqos-scheduler" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>lqos_scheduler performs continuous refreshes of LibreQoS’ shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).</p></li>
+<li><p>Actions:</p>
+<ul>
+<li><p>On start: Run a full setup of queues</p></li>
+<li><p>Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.</p>
+<ul>
+<li><p>The default minute interval is 30, so the refresh occurs every 30 minutes by default.</p></li>
+<li><p>The minute interval is adjustable with the setting <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="checking-service-status">
+<h3>Checking service status<a class="headerlink" href="#checking-service-status" title="Permalink to this heading"></a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">systemctl</span> <span class="n">status</span> <span class="n">lqosd</span> <span class="n">lqos_scheduler</span>
+</pre></div>
+</div>
+<p>If the status of one of the two services shows ‘failed’, examine why using journalctl, which shows the full status of the service. For example, if lqosd failed, you would run:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">journalctl</span> <span class="o">-</span><span class="n">u</span> <span class="n">lqosd</span> <span class="o">-</span><span class="n">b</span>
+</pre></div>
+</div>
+<p>Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.</p>
+<p>Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.</p>
+</section>
+<section id="debugging-lqos-scheduler">
+<h3>Debugging lqos_scheduler<a class="headerlink" href="#debugging-lqos-scheduler" title="Permalink to this heading"></a></h3>
+<p>In the background, lqos_scheduler runs the Python script scheduler.py, which in turn runs the Python script LibreQoS.py</p>
+<ul class="simple">
+<li><p>scheduler.py: performs continuous refreshes of LibreQoS’ shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).</p></li>
+<li><p>LibreQoS.py: creates and updates queues / shaping of devices</p></li>
+</ul>
+<p>One-time runs of these individual components can be very helpful for debugging and to make sure everything is correctly configured.</p>
+<p>First, stop lqos_scheduler</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>stop<span class="w"> </span>lqos_scheduler
+</pre></div>
+</div>
+<p>For one-time runs of LibreQoS.py, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>./LibreQoS.py
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>To use the debug mode with more verbose output, use:</p></li>
+</ul>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>./LibreQoS.py<span class="w"> </span>--debug
+</pre></div>
+</div>
+<p>To confirm that lqos_scheduler (scheduler.py) is able to work correctly, run:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>python3<span class="w"> </span>scheduler.py
+</pre></div>
+</div>
+<p>Once you have any errors eliminated, restart lqos_scheduler with</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>lqos_scheduler
+</pre></div>
+</div>
+</section>
+<section id="troubleshooting-service-components">
+<h3>Troubleshooting Service Components<a class="headerlink" href="#troubleshooting-service-components" title="Permalink to this heading"></a></h3>
+<p>Please see <a class="reference internal" href="troubleshooting.html"><span class="std std-doc">Troubleshooting</span></a>.</p>
+</section>
+</section>
+<section id="webui-privacy-mode">
+<h2>WebUI privacy mode<a class="headerlink" href="#webui-privacy-mode" title="Permalink to this heading"></a></h2>
+<p>WebUI (Node Manager) includes a client-side redaction mode for demos/screenshots:</p>
+<ul class="simple">
+<li><p>Toggle using the mask icon in the top navigation.</p></li>
+<li><p>Redaction preference is saved in browser local storage.</p></li>
+<li><p>This masks/redacts visible data in the browser UI; it does not modify source data files.</p></li>
+</ul>
+<p>For public screenshots, enable redaction before capture.</p>
+</section>
+<section id="urgent-issue-channel">
+<h2>Urgent issue channel<a class="headerlink" href="#urgent-issue-channel" title="Permalink to this heading"></a></h2>
+<p>WebUI (Node Manager) includes an urgent issue channel for high-priority events (for example, mapped-circuit limit enforcement and related operational warnings).</p>
+<ul class="simple">
+<li><p>Urgent issues appear in the top navigation indicator.</p></li>
+<li><p>They can be reviewed and acknowledged from the urgent issues modal.</p></li>
+<li><p>Use this as an at-a-glance operational signal; confirm details in <code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqosd</span></code>.</p></li>
+</ul>
+</section>
+<section id="scheduler-status-indicator">
+<h2>Scheduler status indicator<a class="headerlink" href="#scheduler-status-indicator" title="Permalink to this heading"></a></h2>
+<p>WebUI (Node Manager) includes scheduler status visibility for operator awareness.</p>
+<ul class="simple">
+<li><p>Use scheduler status as a quick health signal for recurring refresh jobs.</p></li>
+<li><p>If scheduler is not healthy, validate <code class="docutils literal notranslate"><span class="pre">lqosd</span></code> and <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code> service state first.</p></li>
+<li><p>Confirm details with:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqos_scheduler</span> <span class="pre">--since</span> <span class="pre">&quot;30</span> <span class="pre">minutes</span> <span class="pre">ago&quot;</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqosd</span> <span class="pre">--since</span> <span class="pre">&quot;30</span> <span class="pre">minutes</span> <span class="pre">ago&quot;</span></code></p></li>
+</ul>
+</li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="integrations.html" class="btn btn-neutral float-left" title="CRM/NMS Integrations" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="node-manager-ui.html" class="btn btn-neutral float-right" title="LibreQoS WebUI (Node Manager)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

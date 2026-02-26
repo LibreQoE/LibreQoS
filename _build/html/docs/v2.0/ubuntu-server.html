@@ -1,0 +1,162 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Install Ubuntu Server &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Configure Shaping Bridge" href="bridge.html" />
+    <link rel="prev" title="Prerequisites" href="prereq.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Install Ubuntu Server</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/ubuntu-server.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="install-ubuntu-server">
+<h1>Install Ubuntu Server<a class="headerlink" href="#install-ubuntu-server" title="Permalink to this heading"></a></h1>
+<p>You can download Ubuntu Server 24.04 LTS from <a href="https://ubuntu.com/download/server">here</a>.
+At this time, only Ubuntu Server 24.04 is supported. Please be sure not to use other versions.</p>
+<ol class="arabic simple">
+<li><p>Boot Ubuntu Server from USB.</p></li>
+<li><p>Follow the steps below to install Ubuntu Server.</p></li>
+</ol>
+<img width="1287" alt="01 select-language" src="https://github.com/user-attachments/assets/af33c525-129c-4ecc-9e35-0ca4fd69b192" />
+<img width="1295" alt="02 keyboard" src="https://github.com/user-attachments/assets/08d3cd73-5144-414a-817b-d2a93ce40e01" />
+<img width="1292" alt="03 version" src="https://github.com/user-attachments/assets/4917e389-5aa7-4636-a0f3-ba826b107d0b" />
+<p>For the network interfaces, disable the shaping interfaces entirely. Then, set a static IP address on the management interface (100.99.0.4 is just an example).
+<img width="1293" alt="04 net int" src="https://github.com/user-attachments/assets/6d9b10a6-ea4e-45cf-a993-b21342c86772" /></p>
+<img width="1351" alt="05 no proxy" src="https://github.com/user-attachments/assets/f86ace56-d1b2-4cd0-88b4-5af1267153ea" />
+<img width="1290" alt="06 download" src="https://github.com/user-attachments/assets/1a6b441d-548f-490c-89ae-3f1e9b8188ac" />
+<img width="1286" alt="07 continue without updating" src="https://github.com/user-attachments/assets/29d385ad-928d-44f2-9fbe-4a14c72e4110" />
+<img width="543" alt="08 use entire disk" src="https://github.com/user-attachments/assets/93c2cd00-229e-4206-9e51-a5c66b77ad5f" />
+<img width="1288" alt="09 summary" src="https://github.com/user-attachments/assets/115297d5-5758-47b7-8ae4-6875027c68fd" />
+<img width="1301" alt="10 user info" src="https://github.com/user-attachments/assets/03b521f2-cd8c-4178-bc0e-c6259a114059" />
+<img width="1293" alt="11 skip ubuntu pro" src="https://github.com/user-attachments/assets/6e9d6bd1-45e2-4933-bf38-bfb454d019ac" />
+<p>Ensure SSH server is enabled so you can more easily log into the server later.
+<img width="1291" alt="12 openssh" src="https://github.com/user-attachments/assets/983fa8c5-037c-435a-9e39-01d177615001" /></p>
+<img width="1291" alt="13 skip these" src="https://github.com/user-attachments/assets/e263bb76-678f-4bcf-b382-942fc48279ab" />
+<img width="1290" alt="14 reboot" src="https://github.com/user-attachments/assets/5dd24b80-3586-43b9-ac27-75fd2095728e" />
+<p>You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here’s how to access via scp or sftp using an <a class="reference external" href="https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/">Ubuntu</a> or <a class="reference external" href="https://winscp.net/eng/index.php">Windows</a> machine.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="prereq.html" class="btn btn-neutral float-left" title="Prerequisites" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="bridge.html" class="btn btn-neutral float-right" title="Configure Shaping Bridge" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

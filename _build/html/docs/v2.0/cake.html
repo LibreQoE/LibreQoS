@@ -1,0 +1,203 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CAKE &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Performance Tuning" href="performance-tuning.html" />
+    <link rel="prev" title="LibreQoS Node API" href="api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CAKE</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#dscp">DSCP</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#traffic-classes-and-dscp-tags-for-diffserv4">Traffic Classes and DSCP Tags for Diffserv4</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#list-of-known-diffserv-codepoints">List of known Diffserv codepoints:</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#list-of-traffic-classes-in-rfc-4594">List of traffic classes in RFC 4594:</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">CAKE</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/cake.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="cake">
+<h1>CAKE<a class="headerlink" href="#cake" title="Permalink to this heading"></a></h1>
+<p>By default, LibreQoS uses Common Applications Kept Enhanced (CAKE) using the diffserv4 parameter.</p>
+<section id="dscp">
+<h2>DSCP<a class="headerlink" href="#dscp" title="Permalink to this heading"></a></h2>
+<p><a class="reference external" href="https://www.iana.org/assignments/dscp-registry/dscp-registry.xhtml">https://www.iana.org/assignments/dscp-registry/dscp-registry.xhtml</a></p>
+<section id="traffic-classes-and-dscp-tags-for-diffserv4">
+<h3>Traffic Classes and DSCP Tags for Diffserv4<a class="headerlink" href="#traffic-classes-and-dscp-tags-for-diffserv4" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Latency Sensitive  (CS7, CS6, EF, VA, CS5, CS4)</p></li>
+<li><p>Streaming Media    (AF4x, AF3x, CS3, AF2x, TOS4, CS2, TOS1)</p></li>
+<li><p>Best Effort        (CS0, AF1x, TOS2, and those not specified)</p></li>
+<li><p>Background Traffic (CS1)</p></li>
+</ul>
+</section>
+<section id="list-of-known-diffserv-codepoints">
+<h3>List of known Diffserv codepoints:<a class="headerlink" href="#list-of-known-diffserv-codepoints" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Least Effort (CS1)</p></li>
+<li><p>Best Effort (CS0)</p></li>
+<li><p>Max Reliability &amp; LLT “Lo” (TOS1)</p></li>
+<li><p>Max Throughput (TOS2)</p></li>
+<li><p>Min Delay (TOS4)</p></li>
+<li><p>LLT “La” (TOS5)</p></li>
+<li><p>Assured Forwarding 1 (AF1x) - x3</p></li>
+<li><p>Assured Forwarding 2 (AF2x) - x3</p></li>
+<li><p>Assured Forwarding 3 (AF3x) - x3</p></li>
+<li><p>Assured Forwarding 4 (AF4x) - x3</p></li>
+<li><p>Precedence Class 2 (CS2)</p></li>
+<li><p>Precedence Class 3 (CS3)</p></li>
+<li><p>Precedence Class 4 (CS4)</p></li>
+<li><p>Precedence Class 5 (CS5)</p></li>
+<li><p>Precedence Class 6 (CS6)</p></li>
+<li><p>Precedence Class 7 (CS7)</p></li>
+<li><p>Voice Admit (VA)</p></li>
+<li><p>Expedited Forwarding (EF)</p></li>
+</ul>
+</section>
+<section id="list-of-traffic-classes-in-rfc-4594">
+<h3>List of traffic classes in RFC 4594:<a class="headerlink" href="#list-of-traffic-classes-in-rfc-4594" title="Permalink to this heading"></a></h3>
+<p>(roughly descending order of contended priority)</p>
+<p>(roughly ascending order of uncontended throughput)</p>
+<ul class="simple">
+<li><p>Network Control (CS6,CS7)      - routing traffic</p></li>
+<li><p>Telephony (EF,VA)         - aka. VoIP streams</p></li>
+<li><p>Signalling (CS5)               - VoIP setup</p></li>
+<li><p>Multimedia Conferencing (AF4x) - aka. video calls</p></li>
+<li><p>Realtime Interactive (CS4)     - eg. games</p></li>
+<li><p>Multimedia Streaming (AF3x)    - eg. YouTube, NetFlix, Twitch</p></li>
+<li><p>Broadcast Video (CS3)</p></li>
+<li><p>Low Latency Data (AF2x,TOS4)      - eg. database</p></li>
+<li><p>Ops, Admin, Management (CS2,TOS1) - eg. ssh</p></li>
+<li><p>Standard Service (CS0 &amp; unrecognised codepoints)</p></li>
+<li><p>High Throughput Data (AF1x,TOS2)  - eg. web traffic</p></li>
+<li><p>Low Priority Data (CS1)           - eg. BitTorrent</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api.html" class="btn btn-neutral float-left" title="LibreQoS Node API" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="performance-tuning.html" class="btn btn-neutral float-right" title="Performance Tuning" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
