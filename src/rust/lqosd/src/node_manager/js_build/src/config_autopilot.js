@@ -303,6 +303,21 @@ function validateConfig() {
     );
     if (!validateNonNegativeInt("Circuits RTT Missing Timeout", circuitsRttMissingSeconds)) return false;
 
+    const circuitsIdleUtilPct = parseFloat(document.getElementById("circuitsIdleUtilPct").value);
+    if (!validatePercent("Circuits Idle Utilization", circuitsIdleUtilPct)) return false;
+
+    const circuitsIdleMinMinutes = parseInt(document.getElementById("circuitsIdleMinMinutes").value);
+    if (!validateNonNegativeInt("Circuits Idle Minimum Duration", circuitsIdleMinMinutes)) return false;
+
+    const circuitsUpgradeUtilPct = parseFloat(
+        document.getElementById("circuitsUpgradeUtilPct").value,
+    );
+    if (!validatePercent("Circuits Upgrade Utilization", circuitsUpgradeUtilPct)) return false;
+    if (circuitsUpgradeUtilPct < circuitsIdleUtilPct) {
+        alert("Circuits Upgrade Utilization must be greater than or equal to Circuits Idle Utilization");
+        return false;
+    }
+
     const minSwitchDwellMinutes = parseInt(document.getElementById("minSwitchDwellMinutes").value);
     if (!validateNonNegativeInt("Minimum Switch Dwell", minSwitchDwellMinutes)) return false;
 
@@ -343,7 +358,10 @@ function updateConfig() {
             circuits: selectedCircuits,
             switching_enabled: document.getElementById("switchingEnabled").checked,
             independent_directions: document.getElementById("independentDirections").checked,
+            idle_util_pct: parseFloat(document.getElementById("circuitsIdleUtilPct").value),
+            idle_min_minutes: parseInt(document.getElementById("circuitsIdleMinMinutes").value),
             rtt_missing_seconds: parseInt(document.getElementById("circuitsRttMissingSeconds").value),
+            upgrade_util_pct: parseFloat(document.getElementById("circuitsUpgradeUtilPct").value),
             min_switch_dwell_minutes: parseInt(document.getElementById("minSwitchDwellMinutes").value),
             max_switches_per_hour: parseInt(document.getElementById("maxSwitchesPerHour").value),
             persist_sqm_overrides: document.getElementById("persistSqmOverrides").checked,
@@ -398,7 +416,10 @@ Promise.all([
     document.getElementById("switchingEnabled").checked = circuits.switching_enabled ?? true;
     document.getElementById("independentDirections").checked =
         circuits.independent_directions ?? true;
+    document.getElementById("circuitsIdleUtilPct").value = circuits.idle_util_pct ?? 2.0;
+    document.getElementById("circuitsIdleMinMinutes").value = circuits.idle_min_minutes ?? 15;
     document.getElementById("circuitsRttMissingSeconds").value = circuits.rtt_missing_seconds ?? 120;
+    document.getElementById("circuitsUpgradeUtilPct").value = circuits.upgrade_util_pct ?? 5.0;
     document.getElementById("minSwitchDwellMinutes").value = circuits.min_switch_dwell_minutes ?? 30;
     document.getElementById("maxSwitchesPerHour").value = circuits.max_switches_per_hour ?? 4;
     document.getElementById("persistSqmOverrides").checked =

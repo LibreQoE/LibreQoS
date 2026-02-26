@@ -191,8 +191,26 @@
             </div>
 
             <div class="mb-3">
+                <label for="circuitsIdleUtilPct" class="form-label">Idle Utilization (%)</label>
+                <input type="number" class="form-control" id="circuitsIdleUtilPct" min="0" max="100" step="0.1" value="2.0">
+                <div class="form-text">Utilization below which a circuit direction is considered idle (after smoothing)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsIdleMinMinutes" class="form-label">Idle Minimum Duration (minutes)</label>
+                <input type="number" class="form-control" id="circuitsIdleMinMinutes" min="0" step="1" value="15">
+                <div class="form-text">How long a circuit direction must remain idle before downgrading SQM</div>
+            </div>
+
+            <div class="mb-3">
                 <label for="circuitsRttMissingSeconds" class="form-label">RTT Missing Timeout (seconds)</label>
                 <input type="number" class="form-control" id="circuitsRttMissingSeconds" min="0" step="1" value="120">
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsUpgradeUtilPct" class="form-label">Upgrade Utilization (%)</label>
+                <input type="number" class="form-control" id="circuitsUpgradeUtilPct" min="0" max="100" step="0.1" value="5.0">
+                <div class="form-text">Utilization above which a downgraded direction upgrades back to CAKE</div>
             </div>
 
             <div class="mb-3">
