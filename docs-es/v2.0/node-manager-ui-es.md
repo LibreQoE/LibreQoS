@@ -1,6 +1,6 @@
-# Interfaz Node Manager de LibreQoS
+# Interfaz WebUI (Node Manager) de LibreQoS
 
-Esta página documenta las vistas clave del Node Manager y su comportamiento operativo en la interfaz local (`http://ip_del_shaper:9123`).
+Esta página documenta las vistas clave de la WebUI (Node Manager) y su comportamiento operativo en la interfaz local (`http://ip_del_shaper:9123`).
 
 ## Vistas principales
 
@@ -29,13 +29,13 @@ Esta página documenta las vistas clave del Node Manager y su comportamiento ope
 - Incluye paginación y filtros en versiones actuales.
 
 ### Problemas urgentes
-- Node Manager puede mostrar problemas operativos urgentes emitidos por servicios backend.
+- WebUI puede mostrar problemas operativos urgentes emitidos por servicios backend.
 - Ejemplos: advertencias de límites de mapeo/licencia y errores de alta prioridad.
 - Operadores pueden reconocer/limpiar eventos desde la UI.
 - Códigos comunes: `MAPPED_CIRCUIT_LIMIT` y `TC_U16_OVERFLOW` (ver [Solución de Problemas](troubleshooting-es.md#códigos-de-problemas-urgentes-y-primeras-acciones)).
 
 ### Estado del scheduler
-- Node Manager muestra salud/disponibilidad del scheduler.
+- WebUI muestra salud/disponibilidad del scheduler.
 - Úselo para validar refrescos periódicos después de cambios de configuración/integración.
 - Si hay errores, correlacione con:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`

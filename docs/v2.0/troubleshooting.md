@@ -1,6 +1,27 @@
 # Troubleshooting
 
+## Start Here: Symptom Triage
+
+Use this table to jump to the first checks quickly.
+
+| Symptom | First check | WebUI location | Next section |
+|---|---|---|---|
+| Cannot access WebUI | `systemctl status lqosd` | N/A (UI unavailable) | No WebUI at x.x.x.x:9123 |
+| Traffic is not shaping | verify `to_internet` / `to_network`, service state | WebUI Dashboard | LibreQoS Is Running, But Traffic Not Shaping |
+| Scheduler appears unhealthy | check `lqosd` and `lqos_scheduler` logs | WebUI -> Scheduler Status | Scheduler status in WebUI looks unhealthy |
+| Topology/flow views blank | confirm recent traffic and `lqosd` health | WebUI -> Flow Map / Tree / ASN Explorer | Flow Map / Tree Overview / ASN Explorer appears blank |
+| Urgent issue code appears | open issue details and map code | WebUI -> Urgent Issues | Urgent issue codes and first actions |
+| Mapped circuit cap events | validate license state and mapped counts | Insight UI + WebUI -> Urgent Issues | Mapped circuit limit reached |
+
 ## Common Issues
+
+### Where in WebUI
+
+- Service/health overview: `WebUI -> Dashboard`
+- Scheduler readiness: `WebUI -> Scheduler Status`
+- High-priority alerts: `WebUI -> Urgent Issues`
+- Topology/traffic visualization: `WebUI -> Network Tree Overview` and `Flow Map`
+- Shaped records review: `WebUI -> Shaped Devices Editor`
 
 ### User password not working
 
@@ -90,9 +111,9 @@ sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_lo
 ```
 This exports a log file to lqos_sched_log.txt. You can review this file to see what caused the scheduler to error out.
 
-### Scheduler status in Node Manager looks unhealthy
+### Scheduler status in WebUI looks unhealthy
 
-Recent builds expose scheduler readiness/state in the Node Manager UI.
+Recent builds expose scheduler readiness/state in the WebUI (Node Manager).
 
 If scheduler status appears down/stale:
 1. Verify both services:
@@ -176,7 +197,7 @@ Recommended checks:
 
 ### Urgent issue codes and first actions
 
-Node Manager urgent issues include machine-readable codes. Use them to triage quickly.
+WebUI urgent issues include machine-readable codes. Use them to triage quickly.
 
 | Code | Meaning | First checks | Typical fix path |
 |---|---|---|---|
@@ -184,7 +205,7 @@ Node Manager urgent issues include machine-readable codes. Use them to triage qu
 | `TC_U16_OVERFLOW` | Queue/class minor IDs exceeded the Linux tc u16 range on a CPU queue. | `journalctl -u lqos_scheduler -u lqosd`, topology depth/queue distribution. | Increase queue count and/or simplify/rebalance hierarchy (for example with integration strategy or root promotion changes). |
 
 Operational pattern:
-1. Open urgent issue details in Node Manager (code/message/context).
+1. Open urgent issue details in WebUI (code/message/context).
 2. Pull matching logs from `lqosd` and `lqos_scheduler`.
 3. Apply the immediate mitigation.
 4. Acknowledge/clear the issue in UI once stable.
@@ -220,3 +241,11 @@ Then, reboot, and confirm the systemd version with `systemctl --version`
 libreqos@libreqos:~$ systemctl --version
 systemd 257 (257.5)
 ```
+
+## Related Pages
+
+- [Quickstart](quickstart.md)
+- [Configure LibreQoS](configuration.md)
+- [CRM/NMS Integrations](integrations.md)
+- [Scale Planning and Topology Design](scale-topology.md)
+- [Performance Tuning](performance-tuning.md)

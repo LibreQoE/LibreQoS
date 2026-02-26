@@ -13,13 +13,14 @@ Bienvenido a la documentación de LibreQoS
    v2.0/ubuntu-server-es
    v2.0/bridge-es
    v2.0/quickstart-es
-   v2.0/git-install-es
 
 .. toctree::
    :maxdepth: 1
    :caption: Gestionando LibreQoS (v1.5 a v2.0):
    
    v2.0/configuration-es
+   v2.0/operating-modes-es
+   v2.0/configuration-advanced-es
    v2.0/integrations-es
    v2.0/components-es
    v2.0/node-manager-ui-es

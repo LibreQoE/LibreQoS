@@ -6,7 +6,7 @@ StormGuard es el subsistema de ajuste adaptativo de colas de LibreQoS para event
 
 - Monitorea señales en tiempo real (throughput, métricas RTT/pérdida y contexto de saturación).
 - Aplica ajustes acotados a límites de nodos configurados para proteger calidad bajo estrés.
-- Expone estado y depuración en Node Manager.
+- Expone estado y depuración en WebUI.
 
 ## Configuración
 
@@ -37,7 +37,7 @@ Si está probando, comience con `dry_run = true`.
 
 ## UI y depuración
 
-- Node Manager incluye vistas de estado y depuración de StormGuard.
+- WebUI (Node Manager) incluye vistas de estado y depuración de StormGuard.
 - La página de depuración muestra:
   - límites efectivos actuales
   - métricas de evaluación
@@ -70,5 +70,8 @@ También verifique:
 ## Páginas relacionadas
 
 - [Configuración](configuration-es.md)
+- [Escalado y diseño de topología](scale-topology-es.md)
+- [Ajuste de rendimiento](performance-tuning-es.md)
+- [Alta Disponibilidad y Dominios de Falla](high-availability-es.md)
 - [Componentes](components-es.md)
 - [Solución de Problemas](troubleshooting-es.md)

@@ -74,6 +74,8 @@ If you run BGP, use standard preference controls to make one path primary and on
 ## Related Documentation
 
 - [Scale Planning and Topology Design](scale-topology.md)
+- [Performance Tuning](performance-tuning.md)
+- [StormGuard](stormguard.md)
 - [Configuration](configuration.md)
 - [Integrations](integrations.md)
 - [Troubleshooting](troubleshooting.md)

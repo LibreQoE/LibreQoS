@@ -23,7 +23,7 @@ When shaping large hierarchies:
 
 - Prefer lower-depth integration strategies (`ap_only`/`ap_site`) unless full hierarchy is required.
 - Use `promote_to_root` for large multi-site topologies to avoid single-core choke points.
-- Validate Node Manager CPU Tree/CPU Weights after major topology changes.
+- Validate WebUI CPU Tree/CPU Weights after major topology changes.
 
 ## Scheduler Refresh and Load
 
@@ -33,7 +33,7 @@ When shaping large hierarchies:
 - Decrease interval only if your integration/API and host can handle the extra churn.
 - After changing interval, monitor:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`
-  - Node Manager scheduler status
+  - WebUI scheduler status
 
 ## StormGuard Rollout
 
@@ -67,3 +67,10 @@ For routed deployments, tune OSPF neighbor timers on core and edge routers to re
 
 - hello interval
 - dead interval
+
+## Related Optimization and Resilience Pages
+
+- [Scale Planning and Topology Design](scale-topology.md)
+- [StormGuard](stormguard.md)
+- [High Availability and Failure Domains](high-availability.md)
+- [Troubleshooting](troubleshooting.md)

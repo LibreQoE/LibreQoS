@@ -34,7 +34,7 @@ Warning signs:
 
 - One core persistently overloaded while others are mostly idle.
 - Frequent major queue rebuilds after small integration updates.
-- Node Manager CPU Tree shows skewed distribution not explained by demand.
+- WebUI CPU Tree shows skewed distribution not explained by demand.
 
 ## Virtual Nodes and Logical Grouping
 
@@ -59,7 +59,7 @@ See [Troubleshooting](troubleshooting.md#urgent-issue-codes-and-first-actions) f
 1. Export current `network.json` and `ShapedDevices.csv` backups.
 2. Apply one topology change set at a time.
 3. Run/observe `lqos_scheduler` and `lqosd` logs after each change.
-4. Validate Node Manager:
+4. Validate WebUI:
    - CPU Tree / CPU Weights distribution
    - Flow Map/ASN/Tree behavior
    - scheduler status and urgent issues
@@ -69,5 +69,7 @@ See [Troubleshooting](troubleshooting.md#urgent-issue-codes-and-first-actions) f
 
 - [Integrations](integrations.md)
 - [Performance Tuning](performance-tuning.md)
+- [StormGuard](stormguard.md)
+- [High Availability and Failure Domains](high-availability.md)
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)

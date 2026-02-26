@@ -6,7 +6,7 @@ StormGuard is LibreQoS' adaptive queue-adjustment subsystem for congestion and q
 
 - Monitors real-time signals (throughput, RTT/loss-related metrics, and saturation context).
 - Applies bounded adjustments to configured node limits to protect quality under stress.
-- Exposes status/debug data in the Node Manager UI.
+- Exposes status/debug data in the WebUI (Node Manager).
 
 ## Configuration
 
@@ -37,7 +37,7 @@ If you are testing, start with `dry_run = true` so you can observe decisions bef
 
 ## UI and Debugging
 
-- Node Manager provides StormGuard status and debug views.
+- WebUI provides StormGuard status and debug views.
 - The StormGuard debug page shows:
   - current effective limits
   - evaluation metrics
@@ -72,5 +72,8 @@ Also verify:
 ## Related Pages
 
 - [Configuration](configuration.md)
+- [Scale Planning and Topology Design](scale-topology.md)
+- [Performance Tuning](performance-tuning.md)
+- [High Availability and Failure Domains](high-availability.md)
 - [Components](components.md)
 - [Troubleshooting](troubleshooting.md)

@@ -34,7 +34,7 @@ Señales de alerta:
 
 - Un núcleo saturado de forma persistente y el resto ocioso.
 - Reconstrucciones grandes de colas por cambios menores.
-- CPU Tree de Node Manager con distribución muy sesgada.
+- CPU Tree de WebUI con distribución muy sesgada.
 
 ## Nodos virtuales y agrupación lógica
 
@@ -59,7 +59,7 @@ Consulte [Solución de Problemas](troubleshooting-es.md#códigos-de-problemas-ur
 1. Respaldar `network.json` y `ShapedDevices.csv`.
 2. Aplicar un conjunto de cambios por vez.
 3. Revisar logs de `lqos_scheduler` y `lqosd` tras cada cambio.
-4. Validar en Node Manager:
+4. Validar en WebUI:
    - CPU Tree / CPU Weights
    - comportamiento de mapa de flujos/ASN/árbol
    - estado del scheduler y problemas urgentes
@@ -69,5 +69,7 @@ Consulte [Solución de Problemas](troubleshooting-es.md#códigos-de-problemas-ur
 
 - [Integraciones](integrations-es.md)
 - [Ajuste de rendimiento](performance-tuning-es.md)
+- [StormGuard](stormguard-es.md)
+- [Alta Disponibilidad y Dominios de Falla](high-availability-es.md)
 - [Configuración](configuration-es.md)
 - [Solución de Problemas](troubleshooting-es.md)
