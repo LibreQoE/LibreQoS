@@ -1,35 +1,24 @@
-# Quickstart: Choose Your Deployment Path
+# Quickstart: ISP Deployment Path
 
-Use this page to choose the correct deployment path quickly, then execute only the steps for that path.
+Use this page to move from install to a safe pilot with minimal ambiguity.
 
 Need definitions for key terms? See the [Glossary](glossary.md).
 
-```{mermaid}
-flowchart TD
-    A[Start Here: Quickstart] --> B{Choose Path}
-    B --> C[Testbed / Lab]
-    B --> D[Supported Integration]
-    B --> E[Custom Script Integration]
-    B --> F[Manual Files <100 subscribers]
-    C --> G[Configure + Validate in WebUI]
-    D --> G
-    E --> G
-    F --> G
-    G --> H[Troubleshoot / Optimize / Scale]
-```
+## 1) Common Install Foundation
 
-## Common Install Foundation
+Complete this once:
 
-Complete this once before any path-specific steps.
+1. Review architecture and sizing:
+- [Deployment Scenarios](design.md)
+- [System Requirements](requirements.md)
 
-1. Review deployment assumptions and capacity:
-   - [Deployment Scenarios](design.md)
-   - [System Requirements](requirements.md)
 2. Prepare host and OS:
-   - [Server Setup - Prerequisites](prereq.md)
-   - [Install Ubuntu Server 24.04](ubuntu-server.md)
+- [Server Setup - Prerequisites](prereq.md)
+- [Install Ubuntu Server 24.04](ubuntu-server.md)
+
 3. Configure bridge mode:
-   - [Configure Shaping Bridge](bridge.md)
+- [Configure Shaping Bridge](bridge.md)
+
 4. Install LibreQoS (`.deb` recommended):
 
 ```bash
@@ -42,131 +31,107 @@ sudo apt install ./{deb_url_v1_5}
 
 5. Open WebUI at `http://your_shaper_ip:9123`.
 
-## After Install: What Good Looks Like (10-Minute Check)
+## 2) 10-Minute Health Gate (Required Before Pilot)
 
-Before deeper configuration, verify baseline health:
+Run:
 
-1. Services are active:
 ```bash
 sudo systemctl status lqosd lqos_scheduler
-```
-2. WebUI loads and updates (Dashboard + Scheduler Status).
-3. No urgent/fatal errors in recent logs:
-```bash
 journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 ```
-4. Your chosen source of truth is clear:
-- integration mode: integration owns refresh of shaping inputs
-- custom/manual mode: your files/scripts own persistence
 
-If these checks fail, continue in [Troubleshooting](troubleshooting.md) before pilot rollout.
+Confirm:
+- WebUI Dashboard loads.
+- Scheduler Status is healthy.
+- No urgent/fatal startup errors in logs.
 
-## Decide Source of Truth (Do This Once)
+If this fails, go to [Troubleshooting](troubleshooting.md) before proceeding.
 
-Before continuing, choose who owns ongoing shaping data updates:
+## 3) Decision A: Deployment Stage
 
-| If this describes you | Choose this mode | Next page |
+Choose one:
+
+- **Lab first**: validate behavior in a controlled environment before inline traffic.
+- **Inline pilot now**: proceed directly with limited production traffic.
+
+If lab-first:
+1. Build a lab topology.
+2. Generate test traffic.
+3. Validate Dashboard, Tree, Flow, Scheduler Status, and Urgent Issues.
+4. Continue to Decision B.
+
+## 4) Decision B: Source of Truth (Pick One Owner)
+
+| If this describes you | Mode | Owner of durable shaping data |
 |---|---|---|
-| You use a supported CRM/NMS integration | Built-in integration mode | [CRM/NMS Integrations](integrations.md) |
-| You generate `network.json` and `ShapedDevices.csv` from your own scripts | Custom source of truth mode | [Operating Modes and Source of Truth](operating-modes.md) |
-| You maintain files directly (small/simple networks) | Manual files mode | [Operating Modes and Source of Truth](operating-modes.md) |
+| You use a supported CRM/NMS integration | Built-in integration mode | Integration jobs |
+| You generate `network.json` and `ShapedDevices.csv` with your own scripts | Custom source of truth mode | Your scripts |
+| You maintain files manually for a small/simple network | Manual files mode | Manual edits |
 
-Rule: keep one owner for persistent shaping inputs to avoid overwrite conflicts.
+Rule: keep one owner for persistent shaping inputs.
 
-## Testbed / Lab
+## 5) Path Cards
 
-### When to choose
+### Built-In Integration Mode
 
-You want to validate behavior in a controlled environment before inline production.
+When to choose:
+- Your CRM/NMS is supported by built-in integrations.
 
-### Do this now
-
-1. Build a lab topology (LibreQoS + traffic generator endpoints + optional OSPF/BGP path simulation).
-2. Choose a lab track:
-   - **Lab with manual files**: validate `network.json` + `ShapedDevices.csv` behavior.
-   - **Lab with supported integration**: validate imported subscriber/topology data.
-3. Generate traffic and validate in WebUI (Dashboard, Tree, Flow, Scheduler Status, Urgent Issues).
-4. Confirm expected shaping behavior and stability.
-
-### Then go here
-
-- [Configure LibreQoS](configuration.md)
-- [Troubleshooting](troubleshooting.md)
-
-## Supported Integration
-
-### When to choose
-
-Your CRM/NMS is supported by built-in LibreQoS integrations.
-
-### Do this now
-
+Do this now:
 1. Configure integration settings in WebUI.
 2. Run initial sync and validate imported shaping/topology data.
 3. Place LibreQoS inline for pilot traffic.
-4. Validate WebUI health signals (Scheduler Status, Urgent Issues, topology/flow views).
+4. Validate Scheduler Status, Urgent Issues, and topology/flow views.
 5. Expand pilot scope after stable operation.
 
-Note:
-- In integration mode, `ShapedDevices.csv` is typically regenerated by sync jobs.
-- `network.json` overwrite behavior depends on integration settings (for example `always_overwrite_network_json`).
-
-### Then go here
-
+Next:
 - [CRM/NMS Integrations](integrations.md)
 - [Troubleshooting](troubleshooting.md)
 
-## Custom Script Integration
+### Custom Source of Truth (Your Scripts)
 
-### When to choose
+When to choose:
+- Your CRM/NMS is unsupported and you generate `network.json` + `ShapedDevices.csv` with your own pipeline.
 
-Your CRM/NMS is unsupported and you will generate `network.json` + `ShapedDevices.csv` with your own pipeline.
-
-### Do this now
-
+Do this now:
 1. Implement script/process to generate and refresh shaping files.
-2. Declare your script outputs as source of truth.
+2. Declare script outputs as your source of truth.
 3. Place LibreQoS inline for pilot traffic.
-4. Use WebUI for operational checks and quick adjustments.
-5. Move permanent changes back into your script workflow.
+4. Use WebUI for operational checks and short-term adjustments.
+5. Keep permanent changes in your external script workflow.
 
-Note:
-- WebUI edits are useful for quick operations.
-- Long-term state should be maintained by your external source of truth workflow.
-- File format reference: see `network.json` and `ShapedDevices.csv` sections in [Advanced Configuration Reference](configuration-advanced.md).
+Format reference:
+- See `network.json` and `ShapedDevices.csv` sections in [Advanced Configuration Reference](configuration-advanced.md).
 
-### Then go here
-
+Next:
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [Troubleshooting](troubleshooting.md)
 
-## Manual Files (<100 subscribers)
+### Manual Files Mode (<100 Subscribers)
 
-### When to choose
+When to choose:
+- You intentionally maintain `network.json` + `ShapedDevices.csv` without CRM/NMS synchronization.
 
-You intentionally maintain `network.json` + `ShapedDevices.csv` directly without CRM/NMS synchronization.
-
-Recommended only for networks under 100 subscribers.
-
-### Do this now
-
+Do this now:
 1. Build and maintain shaping files directly.
 2. Place LibreQoS inline for pilot traffic.
 3. Validate shaping and scheduler status in WebUI.
 4. Maintain strict manual change discipline.
-5. Plan migration to supported integration or custom scripts if scale/change volume grows.
+5. Plan migration to supported integration or scripts if scale/change volume grows.
 
-### Then go here
-
+Next:
 - [Advanced Configuration Reference](configuration-advanced.md)
 - [Troubleshooting](troubleshooting.md)
 
-## Common First-Run Mistakes
+## 6) Common First-Run Mistakes
 
 - Unclear source of truth ownership between integration and manual edits.
-- Choosing deeper topology strategy before confirming baseline health.
-- Skipping post-install service/log checks before pilot traffic.
+- Changing topology depth before passing the health gate.
+- Skipping post-change service/log validation before pilot traffic.
 
-Use:
+## 7) Related Pages
+
 - [Operating Modes and Source of Truth](operating-modes.md)
+- [CRM/NMS Integrations](integrations.md)
+- [Advanced Configuration Reference](configuration-advanced.md)
 - [Troubleshooting](troubleshooting.md)

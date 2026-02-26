@@ -1,21 +1,24 @@
-# Quickstart: Elija su ruta de despliegue
+# Quickstart: Ruta de Despliegue para ISP
 
-Use esta página para elegir rápidamente la ruta correcta y ejecutar solo los pasos de esa ruta.
+Use esta página para pasar de instalación a piloto seguro con mínima ambigüedad.
 
 ¿Necesita definiciones de términos clave? Vea el [Glosario](glossary-es.md).
 
-## Base de instalación común
+## 1) Base de instalación común
 
-Complete esto una vez antes de cualquier paso específico de ruta.
+Complete esto una vez:
 
-1. Revise supuestos de despliegue y capacidad:
-   - [Escenarios de Despliegue](design-es.md)
-   - [Requisitos del Sistema](requirements-es.md)
+1. Revise arquitectura y dimensionamiento:
+- [Escenarios de Despliegue](design-es.md)
+- [Requisitos del Sistema](requirements-es.md)
+
 2. Prepare host y sistema operativo:
-   - [Configuración del Servidor - Prerrequisitos](prereq-es.md)
-   - [Instalar Ubuntu Server 24.04](ubuntu-server-es.md)
+- [Configuración del Servidor - Prerrequisitos](prereq-es.md)
+- [Instalar Ubuntu Server 24.04](ubuntu-server-es.md)
+
 3. Configure el modo de puente:
-   - [Configurar Puente de Regulación](bridge-es.md)
+- [Configurar Puente de Regulación](bridge-es.md)
+
 4. Instale LibreQoS (`.deb` recomendado):
 
 ```bash
@@ -28,127 +31,107 @@ sudo apt install ./{deb_url_v1_5}
 
 5. Abra WebUI en `http://your_shaper_ip:9123`.
 
-## Después de instalar: estado esperado (10 minutos)
+## 2) Puerta de salud en 10 minutos (obligatoria antes del piloto)
 
-Antes de cambios profundos, valide base operativa:
+Ejecute:
 
-1. Servicios activos:
 ```bash
 sudo systemctl status lqosd lqos_scheduler
-```
-2. WebUI carga y actualiza (Dashboard + Scheduler Status).
-3. Sin errores críticos recientes:
-```bash
 journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 ```
-4. Fuente de verdad definida:
-- modo integración: la integración controla refresco de archivos
-- modo custom/manual: sus archivos/scripts controlan persistencia
 
-Si falla algo, pase a [Solución de problemas](troubleshooting-es.md) antes del piloto.
+Confirme:
+- Carga WebUI Dashboard.
+- Scheduler Status está saludable.
+- No hay errores urgentes/fatales de arranque en logs.
 
-## Decidir fuente de verdad (hágalo una vez)
+Si falla esto, vaya a [Solución de problemas](troubleshooting-es.md) antes de continuar.
 
-Antes de continuar, elija quién controla las actualizaciones persistentes de datos de shaping:
+## 3) Decisión A: Etapa de despliegue
 
-| Si esto describe su caso | Elija este modo | Siguiente página |
+Elija una:
+
+- **Laboratorio primero**: validar comportamiento en entorno controlado antes de tráfico inline.
+- **Piloto inline ahora**: avanzar directo con alcance limitado de tráfico productivo.
+
+Si elige laboratorio primero:
+1. Arme topología de laboratorio.
+2. Genere tráfico de prueba.
+3. Valide Dashboard, Tree, Flow, Scheduler Status y Urgent Issues.
+4. Continúe a la Decisión B.
+
+## 4) Decisión B: Fuente de verdad (elija un dueño)
+
+| Si esto describe su caso | Modo | Dueño de datos de shaping durables |
 |---|---|---|
-| Usa una integración CRM/NMS soportada | Modo integración incluida | [Integraciones CRM/NMS](integrations-es.md) |
-| Genera `network.json` y `ShapedDevices.csv` con scripts propios | Modo fuente de verdad personalizada | [Modos de operación y fuente de verdad](operating-modes-es.md) |
-| Mantiene archivos manualmente (redes pequeñas/simples) | Modo archivos manuales | [Modos de operación y fuente de verdad](operating-modes-es.md) |
+| Usa integración CRM/NMS soportada | Modo integración incluida | Jobs de integración |
+| Genera `network.json` y `ShapedDevices.csv` con scripts propios | Modo fuente de verdad personalizada | Sus scripts |
+| Mantiene archivos manualmente en red pequeña/simple | Modo archivos manuales | Edición manual |
 
-Regla: mantenga un único dueño para los insumos persistentes de shaping para evitar conflictos de sobrescritura.
+Regla: mantenga un único dueño para insumos persistentes de shaping.
 
-## Testbed / Lab
+## 5) Tarjetas de ruta
 
-### Cuándo elegir
+### Modo Integración Incluida
 
-Quiere validar comportamiento en un entorno controlado antes de producción inline.
+Cuándo elegir:
+- Su CRM/NMS está soportado por integraciones incluidas.
 
-### Haga esto ahora
-
-1. Arme topología de laboratorio (LibreQoS + endpoints generadores de tráfico + simulación opcional OSPF/BGP).
-2. Elija una pista de laboratorio:
-   - **Lab con archivos manuales**: validar comportamiento de `network.json` + `ShapedDevices.csv`.
-   - **Lab con integración soportada**: validar datos importados de suscriptores/topología.
-3. Genere tráfico y valide en WebUI (Dashboard, Tree, Flow, Scheduler Status, Urgent Issues).
-4. Confirme comportamiento de shaping y estabilidad esperada.
-
-### Luego vaya aquí
-
-- [Configurar LibreQoS](configuration-es.md)
-- [Solución de problemas](troubleshooting-es.md)
-
-## Integración Soportada
-
-### Cuándo elegir
-
-Su CRM/NMS está soportado por integraciones incluidas de LibreQoS.
-
-### Haga esto ahora
-
-1. Configure la integración en WebUI.
-2. Ejecute sincronización inicial y valide datos importados.
+Haga esto ahora:
+1. Configure integración en WebUI.
+2. Ejecute sincronización inicial y valide datos importados de shaping/topología.
 3. Coloque LibreQoS inline para tráfico piloto.
-4. Valide señales de salud en WebUI (Scheduler Status, Urgent Issues, vistas de topología/flujo).
-5. Expanda alcance del piloto tras operación estable.
+4. Valide Scheduler Status, Urgent Issues y vistas de topología/flujo.
+5. Expanda alcance del piloto tras estabilidad.
 
-Nota:
-- En modo integración, `ShapedDevices.csv` normalmente se regenera por los jobs de sincronización.
-- La sobrescritura de `network.json` depende de configuración (por ejemplo `always_overwrite_network_json`).
-
-### Luego vaya aquí
-
+Siguiente:
 - [Integraciones CRM/NMS](integrations-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
-## Errores comunes en primera puesta en marcha
+### Modo Fuente de Verdad Personalizada (Sus Scripts)
 
-- Fuente de verdad no definida entre integración y edición manual.
-- Elegir estrategia topológica profunda sin validar salud base.
-- Omitir checks de servicios/logs antes de tráfico piloto.
+Cuándo elegir:
+- Su CRM/NMS no está soportado y usted generará `network.json` + `ShapedDevices.csv` con su pipeline propio.
 
-## Integración con Script Personalizado
-
-### Cuándo elegir
-
-Su CRM/NMS no está soportado y usted generará `network.json` + `ShapedDevices.csv` con su propio pipeline.
-
-### Haga esto ahora
-
+Haga esto ahora:
 1. Implemente script/proceso para generar y refrescar archivos de shaping.
-2. Declare salidas del script como fuente de verdad.
+2. Declare salidas del script como su fuente de verdad.
 3. Coloque LibreQoS inline para tráfico piloto.
-4. Use WebUI para verificaciones operativas y ajustes rápidos.
-5. Lleve cambios permanentes de vuelta al flujo de scripts.
+4. Use WebUI para checks operativos y ajustes de corto plazo.
+5. Mantenga cambios permanentes en su flujo externo de scripts.
 
-Nota:
-- Las ediciones por WebUI son útiles para operación rápida.
-- El estado de largo plazo debe mantenerse en su flujo externo de fuente de verdad.
-- Referencia de formato de archivos: vea las secciones `network.json` y `ShapedDevices.csv` en la [Referencia avanzada de configuración](configuration-advanced-es.md).
+Referencia de formato:
+- Vea las secciones `network.json` y `ShapedDevices.csv` en [Referencia avanzada de configuración](configuration-advanced-es.md).
 
-### Luego vaya aquí
-
+Siguiente:
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
-## Archivos Manuales (<100 suscriptores)
+### Modo Archivos Manuales (<100 suscriptores)
 
-### Cuándo elegir
+Cuándo elegir:
+- Mantiene intencionalmente `network.json` + `ShapedDevices.csv` sin sincronización CRM/NMS.
 
-Mantiene intencionalmente `network.json` + `ShapedDevices.csv` sin sincronización CRM/NMS.
-
-Recomendado solo para redes menores a 100 suscriptores.
-
-### Haga esto ahora
-
+Haga esto ahora:
 1. Construya y mantenga archivos de shaping directamente.
 2. Coloque LibreQoS inline para tráfico piloto.
 3. Valide shaping y estado del scheduler en WebUI.
 4. Mantenga disciplina estricta de cambios manuales.
 5. Planifique migración a integración soportada o scripts si crece escala/volumen de cambios.
 
-### Luego vaya aquí
+Siguiente:
+- [Referencia avanzada de configuración](configuration-advanced-es.md)
+- [Solución de problemas](troubleshooting-es.md)
 
+## 6) Errores comunes en primera puesta en marcha
+
+- Propiedad poco clara de la fuente de verdad entre integración y edición manual.
+- Cambiar profundidad topológica antes de pasar la puerta de salud.
+- Omitir validación de servicios/logs antes de tráfico piloto.
+
+## 7) Páginas relacionadas
+
+- [Modos de operación y fuente de verdad](operating-modes-es.md)
+- [Integraciones CRM/NMS](integrations-es.md)
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
 - [Solución de problemas](troubleshooting-es.md)
