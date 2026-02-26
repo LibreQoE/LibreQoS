@@ -250,6 +250,36 @@ def merge_rows_replace_by_device_id(existing_rows, override_rows):
     return merged, changed
 
 
+def _self_test_persistent_device_overlay():
+    """Focused self-test: persistent devices overlay should patch only SQM."""
+    existing_rows = [[
+        "c1", "Circuit One", "dev1", "Device One", "ParentA", "aa:bb:cc:dd:ee:ff",
+        "192.0.2.1/32", "", "10", "10", "100", "100", "keep-me", "cake"
+    ]]
+    override_rows = [[
+        "cX", "Circuit Override", "dev1", "Device Override", "ParentX", "ff:ee:dd:cc:bb:aa",
+        "198.51.100.1/32", "", "1", "1", "1", "1", "overwrite-me", "fq_codel"
+    ]]
+
+    merged, changed = merge_rows_replace_by_device_id(existing_rows, override_rows)
+    assert changed is True, "Expected SQM overlay to report a change"
+    assert merged[0][13] == "fq_codel", "Expected SQM column to be patched"
+    # Ensure integration-owned fields were not overwritten
+    assert merged[0][0] == "c1"
+    assert merged[0][1] == "Circuit One"
+    assert merged[0][4] == "ParentA"
+    assert merged[0][12] == "keep-me"
+
+    # New device should be appended
+    override_rows2 = [[
+        "c2", "Circuit Two", "dev2", "Device Two", "ParentB", "",
+        "", "", "", "", "", "", "", "cake"
+    ]]
+    merged2, changed2 = merge_rows_replace_by_device_id(merged, override_rows2)
+    assert changed2 is True, "Expected append to report a change"
+    assert any(r[2] == "dev2" for r in merged2), "Expected new device to be appended"
+
+
 def write_shaped_devices_csv(path: str, header, rows):
     with open(path, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
@@ -469,6 +499,11 @@ def not_dead_yet():
 
 if __name__ == '__main__':
     try:
+        if '--self-test' in sys.argv:
+            _self_test_persistent_device_overlay()
+            print("scheduler self-test: ok")
+            sys.exit(0)
+
         importAndShapeFullReload()
         network_hash = calculate_hash()
 

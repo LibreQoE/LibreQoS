@@ -645,7 +645,7 @@ When you finish an item, change `[ ]` to `[x]`.
 
 ### 9) Tests (do not skip — NLNet deliverable quality matters)
 
-- [ ] Add unit tests for Autopilot decision logic:
+- [x] Add unit tests for Autopilot decision logic:
   - Add tests under `src/rust/lqosd/src/autopilot/` (e.g., `decisions.rs` or `mod tests` files).
   - Must cover:
     - allowlist-only ownership behavior
@@ -653,7 +653,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - RTT missing for 120s blocks/forces revert; QoO < 80 blocks/forces revert (when QoO is available)
     - independent down/up SQM switching and directional token formatting
 
-- [ ] Add tests for scheduler overlay behavior:
+- [x] Add tests for scheduler overlay behavior:
   - Add Python tests (if there is an existing test harness) or add a small focused test function near `src/scheduler.py` that can be run in CI/dev to ensure only SQM is patched.
 
 - [ ] Run the full workspace tests again:
