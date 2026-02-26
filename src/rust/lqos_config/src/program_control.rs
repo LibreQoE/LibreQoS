@@ -45,22 +45,56 @@ pub fn load_libreqos() -> Result<String, ProgramControlError> {
     let reload_stderr =
         String::from_utf8(reload_result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
 
-    // Also reload the scheduler service
-    let mut result_display = reload_stdout + &reload_stderr + "\n\nReloading Scheduler\n";
-    let restart_result = Command::new("/bin/systemctl")
+    let mut result_display = reload_stdout + &reload_stderr;
+    if !reload_result.status.success() {
+        let status = reload_result.status.to_string();
+        error!("LibreQoS.py exited with status {status}");
+        return Err(ProgramControlError::LibreQoSPyFailed {
+            status,
+            output: truncate_output(&result_display, 8192),
+        });
+    }
+
+    // Also reload the scheduler service (best-effort: missing systemd/service should not block reload).
+    result_display += "\n\nReloading Scheduler\n";
+    match Command::new("/bin/systemctl")
         .arg("restart")
         .arg("lqos_scheduler")
         .output()
-        .map_err(|_| ProgramControlError::CommandFailed)?;
-    let restart_stdout = String::from_utf8(restart_result.stdout)
-        .map_err(|_| ProgramControlError::StdInErrAccess)?;
-    let restart_stderr = String::from_utf8(restart_result.stderr)
-        .map_err(|_| ProgramControlError::StdInErrAccess)?;
-
-    result_display += &restart_stdout;
-    result_display += &restart_stderr;
+    {
+        Ok(restart_result) => {
+            let restart_stdout = String::from_utf8(restart_result.stdout)
+                .map_err(|_| ProgramControlError::StdInErrAccess)?;
+            let restart_stderr = String::from_utf8(restart_result.stderr)
+                .map_err(|_| ProgramControlError::StdInErrAccess)?;
+            if !restart_result.status.success() {
+                let status = restart_result.status.to_string();
+                error!("systemctl restart lqos_scheduler exited with status {status}");
+                result_display += &format!("Scheduler restart failed: {status}\n");
+            }
+            result_display += &restart_stdout;
+            result_display += &restart_stderr;
+        }
+        Err(e) => {
+            error!("Failed to restart lqos_scheduler via systemctl: {e}");
+            result_display += &format!("Scheduler restart failed to run: {e}\n");
+        }
+    }
 
     Ok(result_display)
+}
+
+/// Returns a best-effort truncated version of `s` limited to `max_len` bytes.
+///
+/// This function is pure: it has no side effects.
+fn truncate_output(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    let start = s.len().saturating_sub(max_len);
+    let mut out = String::from("…");
+    out.push_str(&s[start..]);
+    out
 }
 
 #[derive(Error, Debug)]
@@ -75,4 +109,6 @@ pub enum ProgramControlError {
     CommandFailed,
     #[error("Problem accessing stdin/stderr. This shouldn't happen")]
     StdInErrAccess,
+    #[error("LibreQoS.py failed (status {status}): {output}")]
+    LibreQoSPyFailed { status: String, output: String },
 }

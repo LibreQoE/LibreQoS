@@ -44,6 +44,16 @@ except Exception:
     def submit_urgent_issue(*_args, **_kwargs):
         return False
 
+# Optional: lqos_overrides helpers (available in newer liblqos_python)
+try:
+    from liblqos_python import overrides_persistent_devices, overrides_network_adjustments  # type: ignore
+except Exception:
+    def overrides_persistent_devices():
+        return []
+
+    def overrides_network_adjustments():
+        return []
+
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
@@ -117,6 +127,124 @@ def format_rate_for_tc(rate_mbps):
         return f"{rate_mbps:.1f}mbit"
     else:
         return f"{rate_mbps*1000:.0f}kbit"
+
+def apply_overrides_to_subscriber_circuits(subscriber_circuits):
+    """Apply persistent device overlays (SQM) from lqos_overrides.json in-memory."""
+    try:
+        devices = overrides_persistent_devices() or []
+    except Exception as e:
+        warnings.warn(f"Failed to read overrides_persistent_devices(): {e}", stacklevel=2)
+        return False
+
+    if not isinstance(devices, list) or len(devices) == 0:
+        return False
+
+    sqm_by_device = {}
+    for d in devices:
+        if not isinstance(d, dict):
+            continue
+        did = d.get("deviceID", "") or d.get("device_id", "")
+        token = d.get("sqm_override", "") or d.get("sqm", "")
+        if did and token:
+            sqm_by_device[str(did)] = str(token).strip()
+
+    if len(sqm_by_device) == 0:
+        return False
+
+    changed = False
+    applied = 0
+    for circuit in subscriber_circuits:
+        if not isinstance(circuit, dict):
+            continue
+        did = circuit.get("deviceID", "")
+        if did and did in sqm_by_device:
+            token = sqm_by_device[did]
+            if token and circuit.get("sqm", "") != token:
+                circuit["sqm"] = token
+                changed = True
+                applied += 1
+
+    if changed:
+        print(f"Applied SQM overrides to {applied} device(s) from lqos_overrides.json (in-memory).")
+    return changed
+
+
+def apply_overrides_to_network(network_json):
+    """Apply network adjustments (virtual nodes / speed) from lqos_overrides.json in-memory."""
+    try:
+        adjustments = overrides_network_adjustments() or []
+    except Exception as e:
+        warnings.warn(f"Failed to read overrides_network_adjustments(): {e}", stacklevel=2)
+        return False
+
+    if not isinstance(adjustments, list) or len(adjustments) == 0:
+        return False
+
+    virtual_by_node = {}
+    speed_by_site = {}
+    for adj in adjustments:
+        if not isinstance(adj, dict):
+            continue
+        t = adj.get("type", "")
+        if t == "set_node_virtual":
+            name = adj.get("node_name", "") or adj.get("nodeName", "")
+            v = adj.get("virtual", None)
+            if name and v is not None:
+                virtual_by_node[str(name)] = bool(v)
+        elif t == "adjust_site_speed":
+            name = adj.get("site_name", "") or adj.get("siteName", "")
+            if not name:
+                continue
+            dl = adj.get("download_bandwidth_mbps", None)
+            ul = adj.get("upload_bandwidth_mbps", None)
+            speed_by_site[str(name)] = (dl, ul)
+
+    if len(virtual_by_node) == 0 and len(speed_by_site) == 0:
+        return False
+
+    changed = False
+
+    def recurse(level):
+        nonlocal changed
+        if not isinstance(level, dict):
+            return
+        for name, node in level.items():
+            if not isinstance(name, str) or not isinstance(node, dict):
+                continue
+
+            if name in virtual_by_node:
+                v = virtual_by_node[name]
+                prev = bool(node.get("virtual", False))
+                if prev != v:
+                    node["virtual"] = v
+                    changed = True
+
+            if name in speed_by_site:
+                dl, ul = speed_by_site[name]
+                if dl is not None:
+                    try:
+                        node["downloadBandwidthMbps"] = int(dl)
+                        changed = True
+                    except Exception:
+                        pass
+                if ul is not None:
+                    try:
+                        node["uploadBandwidthMbps"] = int(ul)
+                        changed = True
+                    except Exception:
+                        pass
+
+            children = node.get("children", None)
+            if isinstance(children, dict):
+                recurse(children)
+
+    recurse(network_json)
+
+    if changed:
+        vcount = len(virtual_by_node)
+        scount = len(speed_by_site)
+        print(f"Applied {vcount} virtual + {scount} speed adjustment(s) from lqos_overrides.json (in-memory).")
+    return changed
 
 def shell(command):
     if enable_actual_shell_commands():
@@ -599,6 +727,8 @@ def refreshShapers():
 
         # Load Subscriber Circuits & Devices
         subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
+        # Apply SQM overrides from lqos_overrides.json without modifying ShapedDevices.csv
+        apply_overrides_to_subscriber_circuits(subscriberCircuits)
 
         # Preserve the logical parent (as configured in ShapedDevices.csv) before any shaping-time rewrites.
         for circuit in subscriberCircuits:
@@ -607,6 +737,8 @@ def refreshShapers():
         # Load network hierarchy
         with open(networkJSONfile, 'r') as j:
             network = json.loads(j.read())
+        # Apply network adjustments from lqos_overrides.json without modifying network.json
+        apply_overrides_to_network(network)
 
         # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
         # unparented so they can be distributed across generated parent nodes / CPUs.
