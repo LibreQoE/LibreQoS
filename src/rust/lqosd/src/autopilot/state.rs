@@ -26,6 +26,17 @@ impl Ewma {
         self.value = (alpha * sample) + ((1.0 - alpha) * self.value);
         self.value
     }
+
+    /// Returns the current EWMA value if it has been initialized.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn current(&self) -> Option<f64> {
+        if self.initialized {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
 }
 
 /// Virtualization state for a managed link/node.

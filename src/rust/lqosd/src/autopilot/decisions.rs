@@ -123,7 +123,7 @@ pub fn decide_link_virtualization(
             if !cpu_allows_saving(cpu_cfg, cpu_max_pct) {
                 return LinkVirtualDecision::NoChange;
             }
-            if sustained_idle && !rtt_missing && !qoo_bad {
+            if sustained_idle && !qoo_bad {
                 LinkVirtualDecision::Set(LinkVirtualState::Virtual)
             } else {
                 LinkVirtualDecision::NoChange
@@ -132,7 +132,7 @@ pub fn decide_link_virtualization(
         LinkVirtualState::Virtual => {
             let util_high = util_ewma_pct.down >= links_cfg.unvirtualize_util_pct as f64
                 || util_ewma_pct.up >= links_cfg.unvirtualize_util_pct as f64;
-            if util_high || rtt_missing || qoo_bad {
+            if util_high || qoo_bad || (rtt_missing && !sustained_idle) {
                 LinkVirtualDecision::Set(LinkVirtualState::Physical)
             } else {
                 LinkVirtualDecision::NoChange
@@ -168,6 +168,14 @@ pub fn decide_circuit_sqm(
     let decide_direction = |dir_qoo: Option<f32>,
                             dir_state: &crate::autopilot::state::CircuitDirectionState|
      -> Option<CircuitSqmState> {
+        let sustained_idle = dir_state.idle_since_unix.is_some_and(|since| {
+            let min_secs = circuits_cfg.idle_min_minutes.saturating_mul(60);
+            now_unix.saturating_sub(since) >= min_secs
+        });
+
+        let util_pct = dir_state.util_ewma_pct.current().unwrap_or(0.0);
+        let util_high = util_pct >= circuits_cfg.upgrade_util_pct as f64;
+
         if in_dwell_window(
             now_unix,
             dir_state.last_change_unix,
@@ -191,14 +199,20 @@ pub fn decide_circuit_sqm(
 
         match dir_state.desired {
             CircuitSqmState::Cake => {
-                if cpu_allows_saving(cpu_cfg, cpu_max_pct) && !rtt_missing && !qoo_bad {
+                if !sustained_idle {
+                    None
+                } else if cpu_allows_saving(cpu_cfg, cpu_max_pct) && !qoo_bad {
                     Some(CircuitSqmState::FqCodel)
                 } else {
                     None
                 }
             }
             CircuitSqmState::FqCodel => {
-                if rtt_missing || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
+                if util_high
+                    || qoo_bad
+                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
+                    || (rtt_missing && !sustained_idle)
+                {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -211,13 +225,59 @@ pub fn decide_circuit_sqm(
         decision.down = decide_direction(qoo.down, &state.down);
         decision.up = decide_direction(qoo.up, &state.up);
     } else {
-        // Non-independent: decide using worst-direction QoO, apply to both.
+        // Non-independent: decide using worst-direction QoO, apply to both directions.
         let worst_qoo = match (qoo.down, qoo.up) {
             (Some(d), Some(u)) => Some(d.min(u)),
             (Some(v), None) | (None, Some(v)) => Some(v),
             (None, None) => None,
         };
-        let proposed = decide_direction(worst_qoo, &state.down);
+
+        let sustained_idle = crate::autopilot::state::is_sustained_idle(
+            now_unix,
+            state.down.idle_since_unix,
+            state.up.idle_since_unix,
+            circuits_cfg.idle_min_minutes,
+        );
+        let util_down = state.down.util_ewma_pct.current().unwrap_or(0.0);
+        let util_up = state.up.util_ewma_pct.current().unwrap_or(0.0);
+        let util_high = util_down >= circuits_cfg.upgrade_util_pct as f64
+            || util_up >= circuits_cfg.upgrade_util_pct as f64;
+
+        let qoo_bad = if qoo_cfg.enabled {
+            worst_qoo.is_some_and(|score| score < qoo_cfg.min_score)
+        } else {
+            false
+        };
+
+        let desired = if state.down.desired == CircuitSqmState::FqCodel
+            && state.up.desired == CircuitSqmState::FqCodel
+        {
+            CircuitSqmState::FqCodel
+        } else {
+            CircuitSqmState::Cake
+        };
+
+        let proposed = match desired {
+            CircuitSqmState::Cake => {
+                if sustained_idle && cpu_allows_saving(cpu_cfg, cpu_max_pct) && !qoo_bad {
+                    Some(CircuitSqmState::FqCodel)
+                } else {
+                    None
+                }
+            }
+            CircuitSqmState::FqCodel => {
+                if util_high
+                    || qoo_bad
+                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
+                    || (rtt_missing && !sustained_idle)
+                {
+                    Some(CircuitSqmState::Cake)
+                } else {
+                    None
+                }
+            }
+        };
+
         if let Some(s) = proposed {
             decision.down = Some(s);
             decision.up = Some(s);
@@ -411,13 +471,40 @@ mod tests {
                 up: Some(100.0),
             },
             DownUpOrder { down: 1.0, up: 1.0 },
-            true,
+            false,
             &state,
         );
         assert_eq!(
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Physical)
         );
+    }
+
+    #[test]
+    fn link_stays_virtual_when_idle_even_if_rtt_missing() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = LinkState::default();
+        state.desired = LinkVirtualState::Virtual;
+
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            true,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
     #[test]
@@ -498,11 +585,15 @@ mod tests {
     }
 
     #[test]
-    fn circuit_downgrades_under_cpu_pressure() {
+    fn circuit_downgrades_when_sustained_idle_and_cpu_high() {
         let cpu = AutopilotCpuConfig::default();
         let circuits = AutopilotCircuitsConfig::default();
         let qoo_cfg = AutopilotQooConfig::default();
-        let state = CircuitState::default();
+        let mut state = CircuitState::default();
+        state.down.idle_since_unix = Some(1000 - 900);
+        state.up.idle_since_unix = Some(1000 - 900);
+        state.down.util_ewma_pct.update(1.0, 0.1);
+        state.up.util_ewma_pct.update(1.0, 0.1);
         let decision = decide_circuit_sqm(
             1000,
             true,
@@ -526,7 +617,11 @@ mod tests {
         let cpu = AutopilotCpuConfig::default();
         let circuits = AutopilotCircuitsConfig::default();
         let qoo_cfg = AutopilotQooConfig::default();
-        let state = CircuitState::default();
+        let mut state = CircuitState::default();
+        state.down.idle_since_unix = Some(1000 - 900);
+        state.up.idle_since_unix = Some(1000 - 900);
+        state.down.util_ewma_pct.update(1.0, 0.1);
+        state.up.util_ewma_pct.update(1.0, 0.1);
         let decision = decide_circuit_sqm(
             1000,
             true,
@@ -579,11 +674,15 @@ mod tests {
     }
 
     #[test]
-    fn circuit_missing_rtt_blocks_downgrade() {
+    fn circuit_missing_rtt_does_not_block_downgrade_when_idle() {
         let cpu = AutopilotCpuConfig::default();
         let circuits = AutopilotCircuitsConfig::default();
         let qoo_cfg = AutopilotQooConfig::default();
-        let state = CircuitState::default();
+        let mut state = CircuitState::default();
+        state.down.idle_since_unix = Some(1000 - 900);
+        state.up.idle_since_unix = Some(1000 - 900);
+        state.down.util_ewma_pct.update(1.0, 0.1);
+        state.up.util_ewma_pct.update(1.0, 0.1);
 
         let decision = decide_circuit_sqm(
             1000,
@@ -599,7 +698,37 @@ mod tests {
             },
             &state,
         );
-        assert_eq!(decision, CircuitSqmDecision::default());
+        assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
+        assert_eq!(decision.up, Some(CircuitSqmState::FqCodel));
+    }
+
+    #[test]
+    fn circuit_reverts_when_utilization_rises() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = CircuitState::default();
+        state.down.desired = CircuitSqmState::FqCodel;
+        state.up.desired = CircuitSqmState::FqCodel;
+        state.down.util_ewma_pct.update(10.0, 0.1);
+        state.up.util_ewma_pct.update(10.0, 0.1);
+
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision.down, Some(CircuitSqmState::Cake));
+        assert_eq!(decision.up, Some(CircuitSqmState::Cake));
     }
 
     #[test]

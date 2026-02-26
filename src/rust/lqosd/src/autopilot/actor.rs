@@ -1165,7 +1165,7 @@ fn run_tick(
 
             let decision = decisions::decide_circuit_sqm(
                 now_unix,
-                allowlisted_circuits.contains(circuit_id),
+                allowlisted_circuits.contains(circuit_id) && capacity_known,
                 cpu_max_pct,
                 &ap.cpu,
                 &ap.circuits,
