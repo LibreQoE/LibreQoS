@@ -1,5 +1,13 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 
+function formatUnixSecondsToLocalTime(unixSeconds) {
+    const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+        return "";
+    }
+    return new Date(n * 1000).toLocaleString();
+}
+
 export class AutopilotActivityDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
@@ -29,7 +37,7 @@ export class AutopilotActivityDashlet extends BaseDashlet {
 
         const thead = document.createElement("thead");
         const headRow = document.createElement("tr");
-        ["Time", "Entity", "Action", "Persisted", "Reason"].forEach((h) => {
+        ["Local Time", "Entity", "Action", "Persisted", "Reason"].forEach((h) => {
             const th = document.createElement("th");
             th.textContent = h;
             headRow.appendChild(th);
@@ -69,7 +77,7 @@ export class AutopilotActivityDashlet extends BaseDashlet {
             const tr = document.createElement("tr");
 
             const tdTime = document.createElement("td");
-            tdTime.textContent = e.time ?? "";
+            tdTime.textContent = formatUnixSecondsToLocalTime(e.time);
 
             const tdEntity = document.createElement("td");
             const et = e.entity_type ?? "";
@@ -94,4 +102,3 @@ export class AutopilotActivityDashlet extends BaseDashlet {
         });
     }
 }
-
