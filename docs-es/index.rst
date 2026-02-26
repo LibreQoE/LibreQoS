@@ -19,6 +19,7 @@ Bienvenido a la documentación de LibreQoS
    :caption: Gestionando LibreQoS (v1.5 a v2.0):
    
    v2.0/configuration-es
+   v2.0/glossary-es
    v2.0/operating-modes-es
    v2.0/configuration-advanced-es
    v2.0/integrations-es

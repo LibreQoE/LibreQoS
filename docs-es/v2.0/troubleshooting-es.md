@@ -4,6 +4,8 @@
 
 Use esta tabla para ir al primer check rápidamente.
 
+¿Necesita definiciones de términos de licencia/scheduler? Vea el [Glosario](glossary-es.md).
+
 | Síntoma | Primer check | Ubicación en WebUI | Siguiente sección |
 |---|---|---|---|
 | No se puede acceder a la WebUI | `systemctl status lqosd` | N/A (UI no disponible) | No hay WebUI en x.x.x.x:9123 |
@@ -59,10 +61,9 @@ La WebUI depende de `lqosd`. En builds actuales, la mayoría de fallas de acceso
 
 ```bash
 sudo systemctl status lqosd
-journalctl -u lqosd --since "10 minutes ago"
 ```
 
-`lqosd` suele mostrar causa específica (interfaz caída, falta de multi-queue, etc.).
+Luego siga el flujo completo en **El servicio lqosd no se ejecuta o falla al iniciar**.
 
 ### LibreQoS está en ejecución, pero no hace shaping
 
@@ -205,36 +206,6 @@ Patrón operativo:
 2. Recolecte logs correlacionados de `lqosd` y `lqos_scheduler`.
 3. Aplique mitigación inmediata.
 4. Reconozca/limpie el evento en UI cuando esté estable.
-
-### Segfault de systemd
-
-Si experimenta un segfault en systemd, es un problema conocido [1](https://github.com/systemd/systemd/issues/36031) [2](https://github.com/systemd/systemd/issues/33643).
-
-#### Instalar dependencias de compilación
-
-```bash
-sudo apt update
-sudo apt install build-essential git meson libcap-dev libmount-dev libseccomp-dev \
-libblkid-dev libacl1-dev libattr1-dev libcryptsetup-dev libaudit-dev \
-libpam0g-dev libselinux1-dev libzstd-dev libcurl4-openssl-dev
-```
-
-#### Clonar systemd desde GitHub
-
-```bash
-git clone https://github.com/systemd/systemd.git
-cd systemd
-git checkout v257.5
-meson setup build
-meson compile -C build
-sudo meson install -C build
-```
-
-Luego reinicie y valide con:
-
-```bash
-systemctl --version
-```
 
 ## Páginas relacionadas
 

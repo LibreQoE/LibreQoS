@@ -18,8 +18,17 @@ If you use MPLS with a different tag pattern, you would ideally want to terminat
 - Primary path (low cost) *through* the server running LibreQoS
 - Backup path (high cost) *bypassing* the server running LibreQoS.
 
-#### Diagram
-![Offical Configuration](https://github.com/user-attachments/assets/e5914a58-3ec6-4eb1-b016-8a57582dd082)
+```{mermaid}
+flowchart LR
+    A[Edge Router] -->|OSPF/BGP preferred path| B[LibreQoS inline path]
+    B --> C[Core Router/Switch]
+    A -->|Higher-cost backup path| C
+```
+
+Interpretation:
+1. In normal operation, routing prefers the low-cost inline path through LibreQoS.
+2. If the inline path fails, routing converges to the higher-cost bypass path.
+3. After recovery, routing preference returns traffic to the inline path.
 
 ### Option 1: Using Dynamic Routing (Strongly Recommended)
 

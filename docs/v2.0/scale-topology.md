@@ -13,6 +13,19 @@ This guide focuses on designing `network.json` and integration strategy choices 
 
 Use the simplest integration strategy that still meets operational needs:
 
+```{mermaid}
+flowchart TD
+    A[Need hierarchy visibility/control?] -->|No| B[flat]
+    A -->|Yes| C{Need site-level aggregation?}
+    C -->|No| D[ap_only]
+    C -->|Yes| E{Need full backhaul/path shaping?}
+    E -->|No| F[ap_site]
+    E -->|Yes| G[full]
+    G --> H{Single-core saturation?}
+    H -->|Yes| I[Use promote_to_root]
+    H -->|No| J[Keep full strategy]
+```
+
 | Strategy | Typical Scale Fit | Tradeoff |
 |---|---|---|
 | `flat` | Maximum performance, minimal hierarchy | Lowest topology visibility/aggregation |

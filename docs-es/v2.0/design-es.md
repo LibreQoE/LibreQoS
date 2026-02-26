@@ -18,8 +18,17 @@ Si tu despliegue MPLS usa un patrón distinto, lo ideal es terminar el tráfico 
 - Ruta primaria (bajo costo) *a través* del servidor que ejecuta LibreQoS.
 - Ruta de respaldo (alto costo) *evitando* el servidor que ejecuta LibreQoS.
 
-#### Diagrama
-![Offical Configuration](https://github.com/user-attachments/assets/e5914a58-3ec6-4eb1-b016-8a57582dd082)
+```{mermaid}
+flowchart LR
+    A[Router de borde] -->|Ruta preferida OSPF/BGP| B[Ruta inline de LibreQoS]
+    B --> C[Router/Switch core]
+    A -->|Ruta de respaldo de mayor costo| C
+```
+
+Interpretación:
+1. En operación normal, el enrutamiento prefiere la ruta inline de bajo costo a través de LibreQoS.
+2. Si la ruta inline falla, el enrutamiento converge hacia la ruta bypass de mayor costo.
+3. Tras la recuperación, la preferencia de rutas devuelve el tráfico a la ruta inline.
 
 ### Opción 1: Enrutamiento dinámico (recomendado)
 

@@ -10,9 +10,12 @@ Start with this baseline unless you have a known reason to deviate:
 
 - `strategy = "ap_only"` (default, lowest confusion)
 - `enable_splynx = true`
-- `always_overwrite_network_json = false` unless you explicitly want integration to overwrite each run
+- `always_overwrite_network_json = true` for integration-driven deployments
 
 Then run one manual sync and validate outputs before enabling frequent scheduler refresh cycles.
+
+Overwrite policy:
+- Recommended: keep `always_overwrite_network_json = true` so topology stays aligned with Splynx on each refresh cycle.
 
 ### Topology Strategies
 
@@ -98,12 +101,8 @@ To test the Splynx Integration, use
 python3 integrationSplynx.py
 ```
 
-On the first successful run, it will create a ShapedDevices.csv file and network.json.
+On the first successful run, it creates `ShapedDevices.csv` and `network.json`.
 ShapedDevices.csv will be overwritten every time the Splynx integration is run.
-
-To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
-Edit the file to set the value of `always_overwrite_network_json` to `true`.
-Then, run `sudo systemctl restart lqosd`.
 
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_splynx = true``` under the ```[splynx_integration]``` section in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.

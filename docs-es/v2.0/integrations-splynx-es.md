@@ -16,7 +16,7 @@ Base recomendada:
 
 - `strategy = "ap_only"` (menos confusión inicial)
 - `enable_splynx = true`
-- `always_overwrite_network_json = false` salvo que quiera sobrescritura en cada ejecución
+- `always_overwrite_network_json = true` para despliegues guiados por integración
 
 Después, ejecute una sincronización manual y valide salidas antes de aumentar frecuencia de refresh.
 
@@ -24,6 +24,7 @@ Después, ejecute una sincronización manual y valide salidas antes de aumentar 
 
 - `ShapedDevices.csv` se regenera en cada sincronización.
 - `network.json` depende de `always_overwrite_network_json`.
+- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con Splynx en cada ciclo.
 - Use WebUI para ajustes operativos diarios.
 
 ## Validación en 5 minutos después de cambios Splynx

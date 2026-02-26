@@ -4,7 +4,10 @@
 
 Use this page to choose and configure supported CRM/NMS integrations. Use per-integration pages for specific setup details.
 
-Most operators use built-in integrations. If you use your own scripts as the source of truth for `network.json` and `ShapedDevices.csv`, start with [Operating Modes and Source of Truth](operating-modes.md).
+Need definitions for overwrite/persistence terms? See the [Glossary](glossary.md).
+
+Most operators use built-in integrations.
+If you have not selected a deployment path yet, start with [Quickstart](quickstart.md).
 
 ```{mermaid}
 flowchart LR
@@ -22,7 +25,7 @@ flowchart LR
 | Path | Best fit | Primary source of truth |
 |---|---|---|
 | Built-in integration | Most operators using supported systems | CRM/NMS via LibreQoS integration jobs |
-| Custom source-of-truth | Operators with in-house CRM/NMS sync logic | External generated files (`network.json`, `ShapedDevices.csv`) |
+| Custom source of truth | Operators with in-house CRM/NMS sync logic | External generated files (`network.json`, `ShapedDevices.csv`) |
 
 ## Where in WebUI
 

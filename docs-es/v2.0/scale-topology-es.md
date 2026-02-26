@@ -13,6 +13,19 @@ Esta guía se centra en diseñar `network.json` y elegir estrategias de integrac
 
 Use la estrategia más simple que cumpla el objetivo operativo:
 
+```{mermaid}
+flowchart TD
+    A[¿Necesita visibilidad/control jerárquico?] -->|No| B[flat]
+    A -->|Sí| C{¿Necesita agregación por sitio?}
+    C -->|No| D[ap_only]
+    C -->|Sí| E{¿Necesita shaping de ruta/backhaul completo?}
+    E -->|No| F[ap_site]
+    E -->|Sí| G[full]
+    G --> H{¿Saturación de un solo núcleo?}
+    H -->|Sí| I[Usar promote_to_root]
+    H -->|No| J[Mantener estrategia full]
+```
+
 | Estrategia | Ajuste típico de escala | Tradeoff |
 |---|---|---|
 | `flat` | Máximo rendimiento, mínima jerarquía | Menor visibilidad/agregación |

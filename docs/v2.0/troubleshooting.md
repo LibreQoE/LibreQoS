@@ -4,6 +4,8 @@
 
 Use this table to jump to the first checks quickly.
 
+Need definitions for licensing/scheduler terms? See the [Glossary](glossary.md).
+
 | Symptom | First check | WebUI location | Next section |
 |---|---|---|---|
 | Cannot access WebUI | `systemctl status lqosd` | N/A (UI unavailable) | No WebUI at x.x.x.x:9123 |
@@ -56,19 +58,14 @@ This will allow you to set up the user again from scratch using the WebUI.
 
 ### No WebUI at x.x.x.x:9123
 
-The WebUI is controlled by the lqosd service. In current builds, most WebUI access failures are caused by `lqosd` not being healthy.
-Check to see if the lqosd service is running:
+The WebUI is controlled by the `lqosd` service. In current builds, most WebUI access failures are caused by `lqosd` not being healthy.
+
+Start by checking:
 ```
 sudo systemctl status lqosd
 ```
 
-If the status is 'failed', examine why using journalctl, which shows the full status of the service:
-```
-journalctl -u lqosd --since "10 minutes ago"
-```
-Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
-
-Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
+Then follow the full workflow in **Service lqosd is not running or failed to start** below.
 
 ### LibreQoS Is Running, But Traffic Not Shaping
 
@@ -114,7 +111,7 @@ journalctl -u lqosd --since "10 minutes ago"
 ```
 Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
 
-Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
+Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other concerns.
 
 ### Advanced lqosd debug
 
@@ -230,38 +227,6 @@ Operational pattern:
 2. Pull matching logs from `lqosd` and `lqos_scheduler`.
 3. Apply the immediate mitigation.
 4. Acknowledge/clear the issue in UI once stable.
-
-### Systemd segfault
-
-If you experience a segfault in systemd, this is a known issue in systemd [1](https://github.com/systemd/systemd/issues/36031) [2](https://github.com/systemd/systemd/issues/33643).
-To work around it, you can compile systemd from scratch:
-
-### Install build dependencies
-
-```
-sudo apt update
-sudo apt install build-essential git meson libcap-dev libmount-dev libseccomp-dev \
-libblkid-dev libacl1-dev libattr1-dev libcryptsetup-dev libaudit-dev \
-libpam0g-dev libselinux1-dev libzstd-dev libcurl4-openssl-dev
-```
-
-#### Clone systemd repository from github
-
-```
-git clone https://github.com/systemd/systemd.git
-cd systemd
-git checkout v257.5
-meson setup build
-meson compile -C build
-sudo meson install -C build
-```
-
-Then, reboot, and confirm the systemd version with `systemctl --version`
-
-```
-libreqos@libreqos:~$ systemctl --version
-systemd 257 (257.5)
-```
 
 ## Related Pages
 

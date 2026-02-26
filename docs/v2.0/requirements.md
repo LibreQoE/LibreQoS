@@ -2,6 +2,19 @@
 
 LibreQoS can be run either on a dedicated physical server (bare metal) or as a VM. Ubuntu Server 24.04 is the supported operating system.
 
+## Fast Sizing Guide (Start Here)
+
+Use this quick guide before reading full hardware tables:
+
+| Target profile | Typical fit | Starting point |
+|---|---|---|
+| Small | up to ~1,000 subscribers, up to ~1 Gbps | 2+ strong cores, 8 GB RAM, supported 10G-class NIC |
+| Medium | ~1,000-5,000 subscribers, ~1-10 Gbps | 6-16 strong cores, 32-64 GB RAM, supported 10/25G NIC |
+| Large | ~5,000-20,000 subscribers, ~10-50 Gbps | 16-64 strong cores, 64-128 GB RAM, supported 25/50/100G NIC |
+| High-throughput | 50 Gbps+ or deep hierarchy at scale | prioritize high single-thread score, queue/core balance, and validated NIC/XDP support |
+
+Then use the detailed tables below to choose specific hardware.
+
 ## Physical Server (Bare Metal)
 
 ### CPU
@@ -68,7 +81,7 @@ Please [disable Hyper-Threading](prereq.md) (Simultaneous Multi-Threading) in th
 
 ##### MS-01 Notes:
 
-As with any machine running LibreQoS, please be sure to [disable hyperthreading](prereq.md). Specific to the MS-01, please consider [replacing the thermal paste](https://www.youtube.com/watch?v=G70QtUAxomU) to lower CPU temps by about 20 degrees celcius (Note: this may void the warranty).
+As with any machine running LibreQoS, please be sure to [disable hyperthreading](prereq.md). Specific to the MS-01, please consider [replacing the thermal paste](https://www.youtube.com/watch?v=G70QtUAxomU) to lower CPU temps by about 20 degrees Celsius (Note: this may void the warranty).
 
 #### Rackmount Servers (10G to 100G)
 
@@ -113,7 +126,7 @@ Officially supported Network Interface Cards for the two shaping interfaces are 
 
 (*) Intel often vendor-locks SFP+ module compatibility. Check module compatibility before buying. Mellanox does not have this problem.
 
-**We will ONLY provide support for systems using a NIC listed above**. Some other NICs *may* work, but will not be officially supported by LibreQoS. If you want to *test* the compatability of another card, please be aware of these fundamental NIC requirements:
+**We will ONLY provide support for systems using a NIC listed above**. Some other NICs *may* work, but will not be officially supported by LibreQoS. If you want to *test* the compatibility of another card, please be aware of these fundamental NIC requirements:
   * NIC must have multiple TX/RX transmit queues, greater than or equal to the number of CPU cores. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
   * NIC must have [XDP driver support](https://github.com/xdp-project/xdp-project/blob/master/areas/drivers/README.org) for high-throughput (10 Gbps+).
 

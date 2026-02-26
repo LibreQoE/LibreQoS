@@ -11,11 +11,6 @@ The setup tool configures initial bridge, interface, bandwidth, IP range, and We
 
 Notes:
 - The setup tool is keyboard-driven (`Enter` to select, `Q` to quit without saving).
-- If you need to relaunch it after closing:
-  ```
-  sudo apt remove libreqos
-  sudo apt install ./{deb_url_v1_5}
-  ```
 
 ### Next Steps
 
@@ -67,22 +62,11 @@ qoo_profile_id = "web_browsing"
 - Changes to `qoo_profiles.json` are picked up automatically.
 - If you change `/etc/lqos.conf`, restart `lqosd`.
 
-## Advanced Configuration Reference
+## Need CLI or File-Level Changes?
 
-CLI-driven configuration, direct file editing, and deep reference content were moved here:
+For direct file editing (`/etc/lqos.conf`, `network.json`, `ShapedDevices.csv`), overrides, and deeper topology/circuit reference material, use:
+
 - [Advanced Configuration Reference](configuration-advanced.md)
-
-## Configuration via Command Line
-
-This section moved to [Advanced Configuration Reference](configuration-advanced.md#configuration-via-command-line).
-
-## Network Hierarchy
-
-This section moved to [Advanced Configuration Reference](configuration-advanced.md#network-hierarchy).
-
-## Circuits
-
-This section moved to [Advanced Configuration Reference](configuration-advanced.md#circuits).
 
 ## Related Pages
 

@@ -25,6 +25,9 @@ python3 integrationNetzur.py
 
 The integration regenerates `ShapedDevices.csv` and, unless `always_overwrite_network_json` is disabled, updates `network.json`. Adjust the Integration → Common settings if you need to preserve an existing network map between Netzur syncs.
 
+Overwrite policy:
+- Recommended: keep `always_overwrite_network_json = true` for integration-driven deployments so topology stays aligned with Netzur syncs.
+
 
 ## Related Pages
 

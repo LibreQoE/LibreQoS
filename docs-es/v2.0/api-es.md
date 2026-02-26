@@ -2,175 +2,140 @@
 
 ## Requisitos
 
-La API del nodo LibreQoS requiere una suscripción activa a LibreQoS Insight.
+El servicio `lqos_api` (API del nodo) requiere una suscripción activa a LibreQoS Insight.
 
-## Instalación
+Esto es independiente de los límites base de shaping:
+- El shaping base de LibreQoS puede operar hasta 1000 suscriptores sin Insight.
+- Límites superiores dependen de una licencia Insight activa.
 
-### Si instaló vía `.deb` (recomendado)
+## Fuente de verdad y pruebas
 
-`lqos_api` se instala con LibreQoS en:
+Use Swagger en su nodo como referencia completa y superficie de prueba para la versión instalada:
 
-`/opt/libreqos/src/bin/lqos_api`
+- `http://<node-ip>:9122/api-docs`
 
-### Ejecución de prueba
+Use esta página como mapa de capacidades. Use Swagger para inventario completo de endpoints, esquemas request/response y pruebas en vivo.
 
-```bash
-/opt/libreqos/src/bin/lqos_api
-```
+¿Necesita definiciones de persistencia e impacto en runtime? Vea el [Glosario](glossary-es.md).
 
-### Servicio systemd
+## Instalar y habilitar
 
-El paquete incluye un archivo de servicio de ejemplo:
+Si instaló vía `.deb` (recomendado), `lqos_api` ya está en:
+
+- `/opt/libreqos/src/bin/lqos_api`
+
+Habilitar servicio:
 
 ```bash
 sudo cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
-```
-
-Luego ejecute:
-
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
 ```
 
-### Actualizar solo el binario de la API
-
-Use el script de ayuda:
+Actualizar solo el binario de la API:
 
 ```bash
 cd /opt/libreqos/src
 ./update_api.sh
 ```
 
-Esto descarga el `lqos_api` más reciente e instala en `/opt/libreqos/src/bin/lqos_api`.
-
-Puede omitir el reinicio del servicio:
-
-```bash
-./update_api.sh --no-restart
-```
-
-O instalar en otra ruta:
-
-```bash
-./update_api.sh --bin-dir /alguna/ruta/bin --no-restart
-```
-
-### Archivo de servicio manual (si es necesario)
-
-Si crea el servicio manualmente, use:
-
-```
-[Unit]
-After=network.service lqosd.service
-Requires=lqosd.service
-
-[Service]
-WorkingDirectory=/opt/libreqos/src/bin
-ExecStart=/opt/libreqos/src/bin/lqos_api
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-
-Luego ejecute:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable lqos_api
-sudo systemctl start lqos_api
-```
-
-## Uso
-
-Vea `localhost:9122/api-docs` para la interfaz Swagger.
-
-`/api-docs` es la fuente de verdad para su versión instalada. La disponibilidad de endpoints puede cambiar entre versiones.
-
-## Guía de despliegue y hardening
-
-Postura recomendada para producción:
-
-1. Mantenga la API accesible solo desde redes de gestión confiables.
-2. No exponga la API directamente a Internet público.
-3. Si requiere acceso remoto, publíquela detrás de un reverse proxy con TLS y autenticación.
-4. Restrinja acceso entrante con allowlists de firewall (host/red).
-5. Monitoree logs de API/servicio para detectar accesos anómalos.
-
-Si la API no se necesita en un nodo, deshabilite el servicio:
-
-```bash
-sudo systemctl disable --now lqos_api
-```
-
-Si está habilitada, verifique el estado tras actualizaciones:
+Verificar estado del servicio:
 
 ```bash
 sudo systemctl status lqos_api
 ```
 
-## Endpoints de la API
+## Autenticación
 
-### Salud y sistema
-- `/health` - Verificación de salud del servicio
-- `/reload_libreqos` - Recarga configuración de LibreQoS
-- `/validate_shaped_devices` - Valida CSV de Shaped Devices
-- `/lqos_stats` - Estadísticas internas de lqosd
-- `/stormguard_stats` - Estadísticas de StormGuard
-- `/bakery_stats` - Conteo de circuitos activos de Bakery
+La mayoría de endpoints requieren:
 
-### Métricas de tráfico
-- `/current_throughput` - Throughput actual de red
-- `/top_n_downloaders/{start}/{end}` - Top descargadores por tráfico
-- `/worst_rtt/{start}/{end}` - Hosts con peor RTT
-- `/worst_retransmits/{start}/{end}` - Hosts con más retransmisiones TCP
-- `/best_rtt/{start}/{end}` - Hosts con mejor RTT
-- `/host_counter` - Contadores de tráfico por host
+- Header: `x-bearer`
+- Valor: su clave de licencia Insight
 
-### Topología de red
-- `/network_map/{parent}` - Mapa de red desde nodo padre
-- `/full_network_map` - Topología completa
-- `/top_map_queues/{n}` - Top N colas por tráfico
-- `/node_names` - Nombres de nodos por ID
-- `/funnel/{target}` - Análisis de embudo hacia circuito
+## Qué pueden hacer los ISPs con la API
 
-### Gestión de circuitos
-- `/all_circuits` - Lista de todos los circuitos
-- `/raw_queue_data/{circuit_id}` - Datos de cola en bruto por circuito
+### 1) Ciclo de vida de suscriptores/circuitos
 
-### Análisis de flujos
-- `/dump_active_flows` - Volcado de flujos activos (lento)
-- `/count_active_flows` - Conteo de flujos activos
-- `/top_flows/{flow_type}/{n}` - Top flujos por tipo de métrica
-- `/flows_by_ip/{ip}` - Flujos por IP específica
-- `/flow_duration` - Estadísticas de duración de flujos
+Aprovisionar, actualizar y eliminar registros de suscriptor/dispositivo.
 
-### Geo y protocolos
-- `/current_endpoints_by_country` - Endpoints de tráfico por país
-- `/current_endpoint_latlon` - Coordenadas geográficas de endpoints
-- `/ether_protocol_summary` - Resumen de protocolos Ethernet
-- `/ip_protocol_summary` - Resumen de protocolos IP
+- Alta o reemplazo:
+  - `POST /overrides/persistent_devices`
+  - `POST /shaped_devices/update`
+- Ajustes de velocidad:
+  - `POST /overrides/adjustments/circuit_speed`
+  - `POST /overrides/adjustments/device_speed`
+- Bajas:
+  - `DELETE /overrides/persistent_devices/by_circuit/{circuit_id}`
+  - `DELETE /overrides/persistent_devices/by_device/{device_id}`
+  - `POST /overrides/adjustments/remove_circuit`
+  - `POST /overrides/adjustments/remove_device`
 
-## Cobertura de API en versiones recientes
+### 2) Gestión de overrides y políticas
 
-Compilaciones recientes ampliaron cobertura en algunas áreas. Dependiendo de su versión, la API también puede incluir:
+Mantener políticas persistentes para circuitos, dispositivos, sitios y overrides específicos de UISP.
 
-- Resúmenes de alertas y warnings
-- Resúmenes de conteo de dispositivos y circuitos
-- Consulta de detalle para circuito individual
-- Helpers de búsqueda para flujos de UI
-- Endpoints de detalle de scheduler y estadísticas de colas
+- `GET/POST/DELETE /overrides/adjustments*`
+- `GET/POST/DELETE /overrides/network_adjustments*`
+- `GET/POST/DELETE /overrides/uisp/bandwidth*`
+- `GET/POST/DELETE /overrides/uisp/routes*`
 
-Use `localhost:9122/api-docs` para confirmar rutas y esquemas exactos en su nodo.
+### 3) Topología y archivos de entrada de shaping
 
-## Capturar inventario de endpoints por release
+Inspeccionar y actualizar archivos de topología/shaping usados por los flujos de runtime.
 
-Para notas de release o runbooks internos, capture un snapshot de rutas API desde el nodo:
+- `GET /network_json/json`
+- `GET /network_json/text`
+- `POST /network_json/update`
+- `POST /network_json/set_site_speed`
+- `POST /network_json/set_site_speed_batch`
+- `GET /shaped_devices`
+- `POST /shaped_devices/update`
 
-```bash
-curl -s http://localhost:9122/api-docs | jq -r '.paths | keys[]' | sort
-```
+### 4) Monitoreo y diagnóstico
 
-Guarde esta salida junto con artefactos del release para comparar diferencias entre versiones.
+Leer estado de salud, scheduler, throughput, flujos, colas y circuitos.
+
+Endpoints representativos:
+- `GET /health`
+- `GET /status_snapshot`
+- `GET /scheduler_status`
+- `GET /circuit/{circuit_id}`
+- `GET /search`
+- `GET /current_throughput`
+- `GET /queue_stats_total`
+- `GET /warnings`
+- `GET /urgent`, `GET /urgent/status`
+
+### 5) Operaciones de control y reload
+
+Disparar acciones de control operativo cuando sea necesario.
+
+- `POST /reload_libreqos`
+- `POST /clear_hot_cache`
+
+Trátelas como operaciones de mayor riesgo en producción.
+
+## Modelo de persistencia (importante)
+
+No todas las escrituras persisten del mismo modo:
+
+- `overrides/*`: estado de política persistente.
+- `network_json/set_site_speed*`: ediciones transitorias.
+- `network_json/update` y `shaped_devices/update`: reemplazo directo de archivos, generalmente sobrescribible por integración.
+
+Si hay integraciones habilitadas, sus ciclos de refresco pueden sobrescribir ediciones directas de archivos.
+
+## Flujo recomendado para producción
+
+1. Validar comportamiento del endpoint y esquema de payload en Swagger.
+2. Aplicar el cambio mínimo necesario.
+3. Verificar resultado con checks de solo lectura (`/health`, `/scheduler_status`, vistas de circuito/throughput).
+4. Mantener snapshots de rollback para operaciones que cambien config/datos.
+
+## Hardening de despliegue
+
+- Limite acceso de API a redes de gestión confiables.
+- No exponga la API directamente a Internet público.
+- Si necesita acceso remoto, use reverse proxy con TLS y autenticación.
+- Restrinja acceso entrante con allowlists de firewall.

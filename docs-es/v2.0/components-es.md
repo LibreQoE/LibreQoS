@@ -2,6 +2,19 @@
 
 ## Servicios systemd
 
+```{mermaid}
+flowchart LR
+    A[Integraciones CRM/NMS] --> B[lqos_scheduler]
+    C[network.json + ShapedDevices.csv] --> B
+    D[lqos_overrides.json] --> B
+    B --> E[Refresco del plan de colas/shaping]
+    E --> F[lqosd]
+    F --> G[Shaping runtime XDP/TC]
+    F --> H[WebUI :9123]
+    B --> I[Estado del scheduler / problemas urgentes]
+    F --> I
+```
+
 ### lqosd
 
 - Administra la lógica de shaping/XDP.

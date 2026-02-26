@@ -4,6 +4,8 @@
 
 Use esta página para elegir y aplicar su política de fuente de verdad (integraciones incluidas vs fuente personalizada) antes de cambios en producción.
 
+¿Necesita definiciones de términos usados aquí? Vea el [Glosario](glossary-es.md).
+
 LibreQoS soporta dos modos de operación principales.
 
 ## Integraciones incluidas (recomendado para la mayoría de operadores)
@@ -15,7 +17,7 @@ Comportamiento clave:
 - El comportamiento de sobrescritura de `network.json` depende de la configuración de integración (por ejemplo `always_overwrite_network_json`).
 - Las ediciones manuales directas pueden sobrescribirse en el siguiente refresco del scheduler.
 
-## Fuente-de-verdad personalizada
+## Fuente de verdad personalizada
 
 En este modo, sus propios scripts/sistemas generan `network.json` y `ShapedDevices.csv`.
 
@@ -40,8 +42,9 @@ Comportamiento clave:
 
 Vea también:
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
-- [Integraciones CRM/NMS](integrations-es.md)
 - [Solución de problemas](troubleshooting-es.md)
+
+Si está usando integraciones incluidas, continúe en [Integraciones CRM/NMS](integrations-es.md).
 
 ## Páginas relacionadas
 
