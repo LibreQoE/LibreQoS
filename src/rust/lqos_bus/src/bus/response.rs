@@ -114,6 +114,9 @@ pub struct ExecutiveSummaryHeader {
     pub htb_class_count: u64,
     /// Number of CAKE queues being tracked.
     pub cake_queue_count: u64,
+    /// Number of fq_codel queues being tracked.
+    #[serde(default)]
+    pub fq_codel_queue_count: u64,
     /// Whether Insight is connected.
     pub insight_connected: bool,
 }

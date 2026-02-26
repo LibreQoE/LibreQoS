@@ -9,6 +9,8 @@ use std::collections::HashMap;
 pub struct QueueCounts {
     /// Number of CAKE queues.
     pub cake: usize,
+    /// Number of fq_codel queues.
+    pub fq_codel: usize,
     /// Number of HTB queues.
     pub htb: usize,
 }

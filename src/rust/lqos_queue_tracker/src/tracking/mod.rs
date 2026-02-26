@@ -83,6 +83,7 @@ fn count_queue_types(queues: &[QueueType]) -> QueueCounts {
     for queue in queues.iter() {
         match queue {
             QueueType::Cake(_) => counts.cake += 1,
+            QueueType::FqCodel(_) => counts.fq_codel += 1,
             QueueType::Htb(_) => counts.htb += 1,
             _ => {}
         }
@@ -192,6 +193,7 @@ fn all_queue_reader() {
                     .unwrap_or_default();
                 let counts = QueueCounts {
                     cake: counts_down.cake + counts_up.cake,
+                    fq_codel: counts_down.fq_codel + counts_up.fq_codel,
                     htb: counts_down.htb + counts_up.htb,
                 };
                 (download, upload, counts)

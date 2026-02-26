@@ -898,6 +898,7 @@ pub fn executive_summary_header() -> BusResponse {
         htb_queue_count: queue_counts.htb as u64,
         htb_class_count,
         cake_queue_count: queue_counts.cake as u64,
+        fq_codel_queue_count: queue_counts.fq_codel as u64,
         insight_connected,
     })
 }
