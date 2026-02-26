@@ -603,7 +603,7 @@ When you finish an item, change `[ ]` to `[x]`.
   - Reconciliation rule:
     - Remove overlays for devices that are no longer in allowlisted circuits or when Autopilot is disabled.
 
-- [ ] Update scheduler override application to prevent data loss:
+- [x] Update scheduler override application to prevent data loss:
   - Edit: `src/scheduler.py`:
     - `merge_rows_replace_by_device_id(...)` (`src/scheduler.py:219`)
     - `apply_lqos_overrides()` (`src/scheduler.py:247`)

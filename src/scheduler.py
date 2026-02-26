@@ -217,7 +217,15 @@ def override_devices_to_rows(devices):
 
 
 def merge_rows_replace_by_device_id(existing_rows, override_rows):
-    """Replace existing rows by device_id if present, else append."""
+    """Overlay persistent device rows by device_id.
+
+    For v1 Autopilot SQM persistence, "persistent devices" must be treated as *field overlays*
+    rather than full-row replacements to avoid overwriting integration-owned data.
+
+    Current behavior:
+    - If device_id exists in ShapedDevices.csv, patch only the SQM column (index 13).
+    - If device_id is missing, append the override row (full row) as a new device.
+    """
     index_by_device = {}
     for idx, row in enumerate(existing_rows):
         if len(row) >= 3:
@@ -226,10 +234,15 @@ def merge_rows_replace_by_device_id(existing_rows, override_rows):
     changed = False
     for o in override_rows:
         device_id = o[2] if len(o) >= 3 else ''
+        override_sqm = o[13] if len(o) > 13 else ''
         if device_id in index_by_device:
             idx = index_by_device[device_id]
-            if merged[idx] != o:
-                merged[idx] = o
+            # Ensure target row has SQM column
+            if len(merged[idx]) <= 13:
+                merged[idx].extend([""] * (14 - len(merged[idx])))
+            current_sqm = merged[idx][13] if len(merged[idx]) > 13 else ''
+            if override_sqm and current_sqm != override_sqm:
+                merged[idx][13] = override_sqm
                 changed = True
         else:
             merged.append(o)
@@ -249,7 +262,7 @@ def apply_lqos_overrides():
     path = shaped_devices_csv_path()
     header, rows = read_shaped_devices_csv(path)
 
-    # 1) Persistent devices: replace by device_id or append
+    # 1) Persistent devices: overlay SQM by device_id (or append new devices)
     extra = overrides_persistent_devices()
     override_rows = override_devices_to_rows(extra or [])
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
