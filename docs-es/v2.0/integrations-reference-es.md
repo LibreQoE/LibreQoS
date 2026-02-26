@@ -1,7 +1,7 @@
 # Integraciones CRM/NMS
 
-Esta página conserva la referencia detallada heredada de integraciones.
-Para el punto de entrada orientado a tareas, use [Integraciones CRM/NMS](integrations-es.md).
+Esta página conserva material heredado de referencia detallada.
+La guía canónica y orientada a tareas está en las páginas por integración enlazadas desde [Integraciones CRM/NMS](integrations-es.md).
 
   * [Integración con Splynx](#integración-con-splynx)
     + [Estrategias de Topología](#estrategias-de-topología)
@@ -22,7 +22,7 @@ Para el punto de entrada orientado a tareas, use [Integraciones CRM/NMS](integra
   * [Integración con Sonar](#integración-con-sonar)
 
 La mayoría de operadores usan este camino de integraciones incluidas.
-Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevices.csv`, comience por [Modos de operación y fuente de verdad](configuration-es.md#modos-de-operación-y-fuente-de-verdad).
+Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevices.csv`, comience por [Modos de operación y fuente de verdad](operating-modes-es.md).
 
 Comportamiento importante cuando hay integraciones habilitadas:
 - `ShapedDevices.csv` normalmente se regenera por los jobs de sincronización.
@@ -218,12 +218,12 @@ LibreQoS soporta múltiples estrategias de topología para la integración con U
 | `flat` | Solo regula suscriptores por velocidad del plan de servicio | Mínimo | Máximo rendimiento, regulación simple solo de suscriptores |
 | `ap_only` | Regula por plan de servicio y Punto de Acceso | Bajo | Buen equilibrio entre rendimiento y control a nivel de AP |
 | `ap_site` | Regula por plan de servicio, Punto de Acceso y Sitio | Medio | Agregación a nivel de sitio con complejidad moderada |
-| `full` | Regula toda la red incluyendo backhauls, Sitios, APs y clientes | Alto | **Recomendado para la mayoría de implementaciones**. Jerarquía completa de red con reconocimiento de backhaul |
+| `full` | Regula toda la red incluyendo backhauls, Sitios, APs y clientes | Alto | Mejor cuando topología/overrides ya están validados y estables |
 
 **Cómo Elegir la Estrategia Correcta:**
-- Use `full` para la mayoría de implementaciones para obtener reconocimiento completo de la topología de red incluyendo enlaces de backhaul
-- Use `ap_site` si necesita control a nivel de sitio pero no necesita regulación de backhaul
-- Use `ap_only` para mejor rendimiento cuando no se necesita agregación de sitios
+- Comience con `ap_only` en despliegues nuevos y validación inicial
+- Pase a `ap_site` cuando necesite control por sitio sin regulación de backhaul
+- Pase a `full` cuando la calidad de topología y overrides esté validada y exista margen de CPU
 - Use `flat` solo cuando el máximo rendimiento es crítico y no necesita ninguna jerarquía
 
 **Nota de Rendimiento:** Cuando use la estrategia `full` con redes grandes, considere usar la función **promote_to_root** (vea [Promover Nodos a Raíz](#promover-nodos-a-raíz-optimización-de-rendimiento) arriba) para distribuir la carga del CPU entre múltiples núcleos.
@@ -276,7 +276,7 @@ url = "https://uisp.su_dominio.com"
 site = "Nombre_Sitio_Raiz"  # Sitio raíz para perspectiva de topología
 
 # Estrategia de Topología (ver tabla arriba)
-strategy = "full"  # Recomendado para la mayoría de implementaciones
+strategy = "ap_only"  # Punto de inicio recomendado para nuevos despliegues UISP
 
 # Manejo de Suspensiones (ver tabla arriba)
 suspended_strategy = "none"
@@ -296,7 +296,7 @@ commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR
 
 # Opciones Avanzadas
 ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
-always_overwrite_network_json = false  # Establecer true para reconstruir topología en cada ejecución
+always_overwrite_network_json = true  # Recomendado para despliegues guiados por integración
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 squash_sites = []  # Opcional: sitios a compactar
 enable_squashing = false  # Opcional: habilita lógica adicional de compactación
@@ -338,7 +338,7 @@ ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de U
 Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
 Luego ejecute: `sudo systemctl restart lqosd`.
 
-Tiene la opción de ejecutar integrationUISP.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_uisp = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
+Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_uisp = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
 ### Sobrescrituras de UISP
 

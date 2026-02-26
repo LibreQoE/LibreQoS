@@ -2,14 +2,16 @@
 
 ## Page Purpose
 
-Use this page to choose and enforce your source-of-truth policy (built-in integrations vs custom source-of-truth) before production changes.
+Use this page to choose and enforce your source of truth policy (built-in integrations vs custom source of truth) before production changes.
+
+Need definitions for terms on this page? See the [Glossary](glossary.md).
 
 ```{mermaid}
 flowchart TD
     A[Choose Source of Truth] --> B{Using built-in CRM/NMS integration?}
     B -->|Yes| C[Built-in Integrations Mode]
     B -->|No| D{Generating files from your own scripts/systems?}
-    D -->|Yes| E[Custom Source-of-Truth Mode]
+    D -->|Yes| E[Custom Source of Truth Mode]
     D -->|No| F[Manual Files Mode]
     C --> G[Integration sync jobs own file refresh]
     E --> H[External script pipeline owns persistence]
@@ -27,14 +29,14 @@ Key behavior:
 - `network.json` overwrite behavior depends on integration settings (for example `always_overwrite_network_json`).
 - Direct manual edits may be overwritten on the next scheduler refresh.
 
-## Custom Source-of-Truth
+## Custom Source of Truth
 
 In this mode, your own scripts/systems generate `network.json` and `ShapedDevices.csv`.
 
 Key behavior:
 - Your external workflow owns persistence.
 - WebUI edits are valid for quick operational changes.
-- Permanent changes should be made in your external source-of-truth workflow.
+- Permanent changes should be made in your external source of truth workflow.
 
 ## Mode Declaration Checklist (Before Go-Live)
 
@@ -48,12 +50,13 @@ Key behavior:
 
 - Single-interface (on-a-stick) and VLAN-heavy designs are valid, but require explicit queue/interface planning and careful validation after changes.
 - Integration mode is best when you want CRM/NMS-driven topology and subscriber lifecycle data to own shaping inputs.
-- If you need strict custom topology behavior not represented by integration output, use custom source-of-truth mode and keep ownership explicit.
+- If you need strict custom topology behavior not represented by integration output, use custom source of truth mode and keep ownership explicit.
 
 See:
 - [Advanced Configuration Reference](configuration-advanced.md)
-- [CRM/NMS Integrations](integrations.md)
 - [Troubleshooting](troubleshooting.md)
+
+If you are running built-in integrations, continue to [CRM/NMS Integrations](integrations.md).
 
 ## Related Pages
 

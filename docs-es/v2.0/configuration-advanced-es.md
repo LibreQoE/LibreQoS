@@ -12,6 +12,10 @@ Antes de ajustes profundos:
 
 Si el resultado no coincide con lo esperado, use [Solución de problemas](troubleshooting-es.md) antes de seguir cambiando parámetros.
 
+```{warning}
+Si el modo integración está habilitado, las ediciones directas a `network.json` y `ShapedDevices.csv` pueden ser sobrescritas por los ciclos de refresco de integración. Use configuración de integración y overrides para cambios durables.
+```
+
 ## Configuración por línea de comando
 
 También puedes modificar ajustes usando la CLI.
@@ -57,12 +61,26 @@ do_not_track_subnets = ["192.168.0.0/16"]
 
 Más información sobre [configuración de integraciones aquí.](integrations-es.md).
 
-### Límite de fuente de verdad para usuarios de integración
+### Límite de Fuente de Verdad para Usuarios de Integración
 
 Si el modo integración está habilitado, los ciclos de refresco suelen ser dueños de `ShapedDevices.csv` y, según configuración, también de `network.json`.
 
 - Use edición manual/WebUI para ajustes operativos temporales.
 - Mantenga cambios permanentes en el sistema de integración, overrides de integración o flujo externo declarado.
+
+### Overrides en runtime (`lqos_overrides.json`)
+
+LibreQoS también permite ajustes de runtime mediante `lqos_overrides.json` en el `lqos_directory`.
+
+```{mermaid}
+flowchart LR
+    A[CRM/NMS o archivos manuales] --> B[network.json + ShapedDevices.csv base]
+    C[API/CLI de overrides] --> D[lqos_overrides.json]
+    B --> E[Refresco de lqos_scheduler]
+    D --> E
+    E --> F[Plan de shaping combinado]
+    F --> G[Colas/clases activas en lqosd]
+```
 
 ## Jerarquía de Red
 ### Network.json
@@ -84,6 +102,15 @@ echo "{}" > network.json
 #### Nodos virtuales (solo lógicos)
 
 LibreQoS soporta **nodos virtuales** en `network.json` para agrupar y para monitoreo/agregación en la WebUI/Insight. Los nodos virtuales **no** se incluyen en el árbol físico de shaping HTB (no crean clases HTB y no aplican límites de ancho de banda).
+
+```{mermaid}
+flowchart TD
+    A[Árbol lógico incluye nodo virtual] --> B[Fase de armado del scheduler]
+    B --> C[Promover hijos virtuales al ancestro no virtual más cercano]
+    C --> D{¿Colisión de nombres entre hermanos tras promoción?}
+    D -->|No| E[Se genera el árbol físico de shaping]
+    D -->|Sí| F[Error de build: renombrar/reestructurar nodos]
+```
 
 Para marcar un nodo como virtual, configura `"virtual": true` en ese nodo.
 

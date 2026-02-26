@@ -2,6 +2,8 @@
 
 Use this page to choose the correct deployment path quickly, then execute only the steps for that path.
 
+Need definitions for key terms? See the [Glossary](glossary.md).
+
 ```{mermaid}
 flowchart TD
     A[Start Here: Quickstart] --> B{Choose Path}
@@ -19,14 +21,6 @@ flowchart TD
 ## Common Install Foundation
 
 Complete this once before any path-specific steps.
-
-```{mermaid}
-flowchart LR
-    A[Review Design + Requirements] --> B[Host Prerequisites + Ubuntu]
-    B --> C[Configure Bridge]
-    C --> D[Install LibreQoS .deb]
-    D --> E[Open WebUI]
-```
 
 1. Review deployment assumptions and capacity:
    - [Deployment Scenarios](design.md)
@@ -61,11 +55,23 @@ sudo systemctl status lqosd lqos_scheduler
 ```bash
 journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 ```
-4. Your chosen source-of-truth is clear:
+4. Your chosen source of truth is clear:
 - integration mode: integration owns refresh of shaping inputs
 - custom/manual mode: your files/scripts own persistence
 
 If these checks fail, continue in [Troubleshooting](troubleshooting.md) before pilot rollout.
+
+## Decide Source of Truth (Do This Once)
+
+Before continuing, choose who owns ongoing shaping data updates:
+
+| If this describes you | Choose this mode | Next page |
+|---|---|---|
+| You use a supported CRM/NMS integration | Built-in integration mode | [CRM/NMS Integrations](integrations.md) |
+| You generate `network.json` and `ShapedDevices.csv` from your own scripts | Custom source of truth mode | [Operating Modes and Source of Truth](operating-modes.md) |
+| You maintain files directly (small/simple networks) | Manual files mode | [Operating Modes and Source of Truth](operating-modes.md) |
+
+Rule: keep one owner for persistent shaping inputs to avoid overwrite conflicts.
 
 ## Testbed / Lab
 
@@ -85,8 +91,6 @@ You want to validate behavior in a controlled environment before inline producti
 ### Then go here
 
 - [Configure LibreQoS](configuration.md)
-- [Operating Modes and Source of Truth](operating-modes.md)
-- [CRM/NMS Integrations](integrations.md)
 - [Troubleshooting](troubleshooting.md)
 
 ## Supported Integration
@@ -110,7 +114,6 @@ Note:
 ### Then go here
 
 - [CRM/NMS Integrations](integrations.md)
-- [Scale Planning and Topology Design](scale-topology.md)
 - [Troubleshooting](troubleshooting.md)
 
 ## Custom Script Integration
@@ -122,20 +125,19 @@ Your CRM/NMS is unsupported and you will generate `network.json` + `ShapedDevice
 ### Do this now
 
 1. Implement script/process to generate and refresh shaping files.
-2. Declare your script outputs as source-of-truth.
+2. Declare your script outputs as source of truth.
 3. Place LibreQoS inline for pilot traffic.
 4. Use WebUI for operational checks and quick adjustments.
 5. Move permanent changes back into your script workflow.
 
 Note:
 - WebUI edits are useful for quick operations.
-- Long-term state should be maintained by your external source-of-truth workflow.
+- Long-term state should be maintained by your external source of truth workflow.
+- File format reference: see `network.json` and `ShapedDevices.csv` sections in [Advanced Configuration Reference](configuration-advanced.md).
 
 ### Then go here
 
 - [Operating Modes and Source of Truth](operating-modes.md)
-- [Advanced Configuration Reference](configuration-advanced.md)
-- [Scale Planning and Topology Design](scale-topology.md)
 - [Troubleshooting](troubleshooting.md)
 
 ## Manual Files (<100 subscribers)
@@ -157,13 +159,11 @@ Recommended only for networks under 100 subscribers.
 ### Then go here
 
 - [Advanced Configuration Reference](configuration-advanced.md)
-- [Operating Modes and Source of Truth](operating-modes.md)
-- [Scale Planning and Topology Design](scale-topology.md)
 - [Troubleshooting](troubleshooting.md)
 
 ## Common First-Run Mistakes
 
-- Unclear source-of-truth ownership between integration and manual edits.
+- Unclear source of truth ownership between integration and manual edits.
 - Choosing deeper topology strategy before confirming baseline health.
 - Skipping post-install service/log checks before pilot traffic.
 

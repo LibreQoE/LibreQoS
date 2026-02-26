@@ -12,6 +12,10 @@ Use these guardrails before deeper tuning:
 
 If results diverge from expectations after edits, use [Troubleshooting](troubleshooting.md) before additional changes.
 
+```{warning}
+If integration mode is enabled, direct edits to `network.json` and `ShapedDevices.csv` can be overwritten by integration refresh cycles. Use integration settings and overrides for durable changes.
+```
+
 ## Configuration via Command Line
 
 You can also modify settings using the command line.
@@ -70,12 +74,12 @@ If shaping appears asymmetric in on-a-stick deployments, verify:
 
 See also [Troubleshooting](troubleshooting.md).
 
-#### Source-of-truth boundary for integration users
+#### Source of Truth Boundary for Integration Users
 
 If integration mode is enabled, integration refresh cycles typically own `ShapedDevices.csv` and may also own `network.json` depending on settings.
 
 - Use WebUI/manual edits for short operational adjustments only.
-- Put permanent changes in your integration system, integration overrides, or declared external source-of-truth workflow.
+- Put permanent changes in your integration system, integration overrides, or declared external source of truth workflow.
 
 #### CRM/NMS Integrations
 
@@ -84,6 +88,16 @@ Learn more about [configuring integrations here](integrations.md).
 ### Runtime overrides (`lqos_overrides.json`)
 
 LibreQoS supports runtime-friendly adjustments via `lqos_overrides.json` in your `lqos_directory`.
+
+```{mermaid}
+flowchart LR
+    A[CRM/NMS or manual files] --> B[Base network.json + ShapedDevices.csv]
+    C[lqos_overrides API/CLI] --> D[lqos_overrides.json]
+    B --> E[lqos_scheduler refresh]
+    D --> E
+    E --> F[Merged shaping plan]
+    F --> G[lqosd active queues/classes]
+```
 
 Use the `lqos_overrides` CLI:
 
@@ -132,6 +146,15 @@ echo "{}" > network.json
 ##### Virtual (logical-only) nodes
 
 LibreQoS supports **virtual nodes** in `network.json` for organizational grouping and monitoring/aggregation in the WebUI/Insight. Virtual nodes are **not** included in the physical HTB shaping tree (they won’t create HTB classes and won’t enforce bandwidth limits).
+
+```{mermaid}
+flowchart TD
+    A[Logical tree includes virtual node] --> B[Scheduler build phase]
+    B --> C[Promote virtual children to nearest non-virtual ancestor]
+    C --> D{Sibling name collision after promotion?}
+    D -->|No| E[Physical shaping tree generated]
+    D -->|Yes| F[Build error: rename/restructure nodes]
+```
 
 To mark a node as virtual, set `"virtual": true` on that node.
 

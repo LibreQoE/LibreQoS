@@ -14,6 +14,7 @@ Use esta integración cuando Netzur sea su fuente de verdad CRM/NMS.
 
 - La integración regenera `ShapedDevices.csv`.
 - `network.json` depende de su configuración de sobrescritura.
+- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con los ciclos de Netzur.
 
 ## Referencia completa
 

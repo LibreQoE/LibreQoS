@@ -14,6 +14,7 @@ Use esta integración cuando Sonar sea su fuente de verdad CRM/NMS.
 
 - `ShapedDevices.csv` se regenera en cada sincronización.
 - `network.json` depende de su configuración de sobrescritura.
+- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con Sonar en cada ciclo.
 
 ## Referencia completa
 

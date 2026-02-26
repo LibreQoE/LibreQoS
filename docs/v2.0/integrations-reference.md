@@ -1,7 +1,7 @@
 # CRM/NMS Integrations
 
-This page preserves the detailed legacy integration reference.
-For the task-oriented entrypoint, use [CRM/NMS Integrations](integrations.md).
+This page preserves detailed legacy integration reference material.
+Canonical, task-oriented guidance lives in the per-integration pages linked from [CRM/NMS Integrations](integrations.md).
 
   * [Splynx Integration](#splynx-integration)
     + [Topology Strategies](#topology-strategies)
@@ -22,7 +22,7 @@ For the task-oriented entrypoint, use [CRM/NMS Integrations](integrations.md).
   * [Sonar Integration](#sonar-integration)
 
 Most operators use this built-in integration path.
-If you use your own scripts as the source of truth for `network.json` and `ShapedDevices.csv`, start with [Operating Modes and Source of Truth](configuration.md#operating-modes-and-source-of-truth).
+If you use your own scripts as the source of truth for `network.json` and `ShapedDevices.csv`, start with [Operating Modes and Source of Truth](operating-modes.md).
 
 ## What these integrations do
 
@@ -221,12 +221,12 @@ LibreQoS supports multiple topology strategies for UISP integration to balance C
 | `flat` | Only shapes subscribers by service plan speed | Lowest | Maximum performance, simple subscriber-only shaping |
 | `ap_only` | Shapes by service plan and Access Point | Low | Good balance of performance and AP-level control |
 | `ap_site` | Shapes by service plan, Access Point, and Site | Medium | Site-level aggregation with moderate complexity |
-| `full` | Shapes entire network including backhauls, Sites, APs, and clients | Highest | **Recommended for most deployments**. Complete network hierarchy with backhaul awareness |
+| `full` | Shapes entire network including backhauls, Sites, APs, and clients | Highest | Best after topology/overrides are validated and stable |
 
 **Choosing the Right Strategy:**
-- Use `full` for most deployments to get complete network topology awareness including backhaul links
-- Use `ap_site` if you need site-level control but don't need backhaul shaping
-- Use `ap_only` for better performance when site aggregation isn't needed
+- Start with `ap_only` for new deployments and initial validation
+- Move to `ap_site` when you need site-level control but not backhaul shaping
+- Move to `full` after topology quality and overrides are validated, and CPU headroom is confirmed
 - Use `flat` only when maximum performance is critical and you don't need any hierarchy
 
 **Performance Note:** When using `full` strategy with large networks, consider using the **promote_to_root** feature (see [Promote to Root Nodes](#promote-to-root-nodes-performance-optimization) above) to distribute CPU load across multiple cores.
@@ -279,7 +279,7 @@ url = "https://uisp.your_domain.com"
 site = "Root_Site_Name"  # Root site for topology perspective
 
 # Topology Strategy (see table above)
-strategy = "full"  # Recommended for most deployments
+strategy = "ap_only"  # Recommended starting point for new UISP deployments
 
 # Suspension Handling (see table above)
 suspended_strategy = "none"
@@ -299,7 +299,7 @@ commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 
 # Advanced Options
 ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
-always_overwrite_network_json = false  # Set true to rebuild topology each run
+always_overwrite_network_json = true  # Recommended for integration-driven deployments
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 squash_sites = []  # Optional: sites to squash
 enable_squashing = false  # Optional: enable AP/single-entry squashing logic
@@ -342,7 +342,7 @@ To ensure the network.json is always overwritten with the newest version pulled 
 Edit the file to set the value of `always_overwrite_network_json` to `true`.
 Then, run `sudo systemctl restart lqosd`.
 
-You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
+You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ### UISP Overrides
 

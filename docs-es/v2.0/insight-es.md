@@ -75,9 +75,12 @@ Permite identificar la topología general de la red desde la perspectiva de Insi
 
 <img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
 
-Libby es el asistente IA de Insight. Puede ayudarte con dudas sobre LibreQoS o Insight basándose en la documentación oficial. Libby accede a datos en vivo y de largo plazo tanto de los shapers sincronizados como de Insight. Puede responder en la mayoría de los idiomas mediante traducción automática.
+Libby es una interfaz de chat asistiva para operaciones de Insight y consulta de documentación.
 
-Si encuentras nuevos casos de uso para Libby, comparte con nosotros cómo te ayuda en el flujo de trabajo.
+Guía operativa:
+- Trate la salida de Libby como guía asistiva, no como comando autoritativo de cambio.
+- Valide recomendaciones contra estado actual del nodo, logs y procedimientos documentados antes de aplicar cambios en producción.
+- Para acciones sensibles/de alto impacto, confirme con el flujo estándar del operador (estado de servicios, estado del scheduler y ruta de rollback).
 
 ### Site Heatmap
 

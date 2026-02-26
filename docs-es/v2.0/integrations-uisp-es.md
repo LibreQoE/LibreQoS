@@ -16,7 +16,7 @@ Use esta guía para evitar confusión con opciones:
 
 1. Si está empezando, use `strategy = "ap_only"`.
 2. Cambie a `ap_site` cuando necesite agregación explícita por sitio.
-3. Use `full` cuando necesite jerarquía/backhaul completo y tenga margen de CPU.
+3. Use `full` cuando necesite jerarquía/backhaul completo, tenga margen de CPU y ya haya validado topología/overrides.
 4. Use `flat` solo si la jerarquía no es necesaria y prioriza rendimiento máximo.
 
 ## Expectativas en router mode
@@ -29,6 +29,7 @@ Use esta guía para evitar confusión con opciones:
 
 - `ShapedDevices.csv` se regenera en cada sincronización.
 - `network.json` depende de `always_overwrite_network_json`.
+- Para despliegues guiados por integración, use `always_overwrite_network_json = true` para mantener la topología alineada con UISP en cada ciclo.
 - En modo integración, trate ediciones de archivos como temporales.
 
 ## Validación en 5 minutos después de cambios UISP

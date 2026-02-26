@@ -14,6 +14,7 @@ Use esta integración cuando VISP sea su fuente de verdad CRM/NMS.
 
 - `ShapedDevices.csv` se reescribe en cada ejecución.
 - `network.json` se sobrescribe solo cuando está habilitado.
+- Recomendado: mantener `always_overwrite_network_json = true` para despliegues guiados por integración VISP.
 
 ## Referencia completa
 

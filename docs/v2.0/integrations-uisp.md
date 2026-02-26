@@ -26,13 +26,7 @@ LibreQoS supports multiple topology strategies for UISP integration to balance C
 | `flat` | Only shapes subscribers by service plan speed | Lowest | Maximum performance, simple subscriber-only shaping |
 | `ap_only` | Shapes by service plan and Access Point | Low | Good balance of performance and AP-level control |
 | `ap_site` | Shapes by service plan, Access Point, and Site | Medium | Site-level aggregation with moderate complexity |
-| `full` | Shapes entire network including backhauls, Sites, APs, and clients | Highest | **Recommended for most deployments**. Complete network hierarchy with backhaul awareness |
-
-**Choosing the Right Strategy:**
-- Use `full` for most deployments to get complete network topology awareness including backhaul links
-- Use `ap_site` if you need site-level control but don't need backhaul shaping
-- Use `ap_only` for better performance when site aggregation isn't needed
-- Use `flat` only when maximum performance is critical and you don't need any hierarchy
+| `full` | Shapes entire network including backhauls, Sites, APs, and clients | Highest | Best after topology/overrides are validated and stable |
 
 **Performance Note:** When using `full` strategy with large networks, consider using `promote_to_root` to distribute CPU load across multiple cores.
 
@@ -127,7 +121,7 @@ url = "https://uisp.your_domain.com"
 site = "Root_Site_Name"  # Root site for topology perspective
 
 # Topology Strategy (see table above)
-strategy = "full"  # Recommended for most deployments
+strategy = "ap_only"  # Recommended starting point for new UISP deployments
 
 # Suspension Handling (see table above)
 suspended_strategy = "none"
@@ -147,7 +141,7 @@ commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 
 # Advanced Options
 ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
-always_overwrite_network_json = false  # Set true to rebuild topology each run
+always_overwrite_network_json = true  # Recommended when using UISP integration in production
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 squash_sites = []  # Optional: sites to squash
 enable_squashing = false  # Optional: enable AP/single-entry squashing logic
@@ -174,27 +168,18 @@ Recommended use:
 2. Use `exclude_sites` and `do_not_squash_sites` first for safer topology changes.
 3. Apply `squash_sites`/`enable_squashing` incrementally and validate queue placement after each change.
 
-To test the UISP Integration, use
-
-```shell
-cd /opt/libreqos/src
-sudo /opt/libreqos/src/bin/uisp_integration
-```
-
-On the first successful run, it will create a network.json and ShapedDevices.csv file.
-If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
+On the first successful run, the integration creates `network.json` and `ShapedDevices.csv`.
+If a `network.json` file exists, it is only overwritten when `always_overwrite_network_json = true`.
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
-To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
-Edit the file to set the value of `always_overwrite_network_json` to `true`.
-Then, run `sudo systemctl restart lqosd`.
+For integration-driven deployments, keep `always_overwrite_network_json = true` so topology stays aligned with UISP on each refresh cycle.
 
-You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
+You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ### UISP Overrides
 
-You can also modify the the following files to more accurately reflect your network:
+You can also modify the following files to more accurately reflect your network:
 - integrationUISPbandwidths.csv
 - integrationUISProutes.csv
 

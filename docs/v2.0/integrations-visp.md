@@ -20,6 +20,7 @@ Notes:
 - VISP import is GraphQL-based and currently defaults to a flat topology strategy.
 - The integration writes `ShapedDevices.csv` every run.
 - `network.json` is only overwritten when `always_overwrite_network_json = true` (under `[integration_common]`).
+- Recommended: keep `always_overwrite_network_json = true` for integration-driven deployments so topology stays aligned with VISP syncs.
 - VISP auth tokens are cached in `<lqos_directory>/.visp_token_cache_*.json`.
 
 Run a manual import with:

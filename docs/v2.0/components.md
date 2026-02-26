@@ -1,6 +1,20 @@
 # LibreQoS Software Components
 
 ## Systemd Services
+
+```{mermaid}
+flowchart LR
+    A[CRM/NMS Integrations] --> B[lqos_scheduler]
+    C[network.json + ShapedDevices.csv] --> B
+    D[lqos_overrides.json] --> B
+    B --> E[Queue/shaping plan refresh]
+    E --> F[lqosd]
+    F --> G[XDP/TC shaping runtime]
+    F --> H[WebUI :9123]
+    B --> I[Scheduler Status / Urgent Issues]
+    F --> I
+```
+
 ### lqosd
 
 - Manages actual XDP code.
@@ -34,7 +48,7 @@ sudo journalctl -u lqosd -b
 ```
 Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
 
-Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
+Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other concerns.
 
 ### Debugging lqos_scheduler
 

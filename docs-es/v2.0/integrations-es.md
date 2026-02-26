@@ -4,14 +4,17 @@
 
 Use esta página para elegir y configurar integraciones CRM/NMS soportadas. Use las páginas por integración para detalles específicos.
 
-La mayoría de operadores usan las integraciones incluidas. Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevices.csv`, comience por [Modos de operación y fuente de verdad](operating-modes-es.md).
+¿Necesita definiciones de términos de sobrescritura/persistencia? Vea el [Glosario](glossary-es.md).
+
+La mayoría de operadores usan las integraciones incluidas.
+Si todavía no eligió ruta de despliegue, empiece por [Quickstart](quickstart-es.md).
 
 ## Elegir ruta de integración
 
 | Ruta | Mejor para | Fuente de verdad principal |
 |---|---|---|
 | Integración incluida | La mayoría de operadores con sistemas soportados | CRM/NMS por jobs de integración de LibreQoS |
-| Fuente-de-verdad personalizada | Operadores con sincronización propia de CRM/NMS | Archivos externos generados (`network.json`, `ShapedDevices.csv`) |
+| Fuente de verdad personalizada | Operadores con sincronización propia de CRM/NMS | Archivos externos generados (`network.json`, `ShapedDevices.csv`) |
 
 ## Dónde en la WebUI
 

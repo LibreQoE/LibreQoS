@@ -13,6 +13,16 @@ Esta página describe un modelo práctico de activo/respaldo para LibreQoS.
 
 Una ruta está activa (preferida) y otra está en respaldo (espera). La política de enrutamiento controla la selección de ruta y la conmutación por falla.
 
+```{mermaid}
+stateDiagram-v2
+    [*] --> PrimariaActiva
+    PrimariaActiva: Ruta primaria preferida (costo 1)
+    PrimariaActiva --> ConvergenciaFailover: Falla primaria detectada
+    ConvergenciaFailover --> RespaldoActivo: Enrutamiento convergió al respaldo (costo 100)
+    RespaldoActivo --> ValidacionRecuperacion: Primaria reparada
+    ValidacionRecuperacion --> PrimariaActiva: Preferencia restaurada y estable
+```
+
 ## Ejemplo OSPF (Costo 1 Primario, Costo 100 Respaldo)
 
 Use el costo de interfaz OSPF para preferir la ruta activa.

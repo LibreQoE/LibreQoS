@@ -13,6 +13,16 @@ This page describes a practical active/backup model for LibreQoS.
 
 One path is active (preferred), and one path is backup (standby). Routing policy controls path selection and failover.
 
+```{mermaid}
+stateDiagram-v2
+    [*] --> PrimaryActive
+    PrimaryActive: Primary path preferred (cost 1)
+    PrimaryActive --> FailoverConverging: Primary failure detected
+    FailoverConverging --> BackupActive: Routing converged to backup (cost 100)
+    BackupActive --> RecoveryValidation: Primary repaired
+    RecoveryValidation --> PrimaryActive: Preference restored and stable
+```
+
 ## OSPF Example (Primary Cost 1, Backup Cost 100)
 
 Use OSPF interface cost to prefer the active path.

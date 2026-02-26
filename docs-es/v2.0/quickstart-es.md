@@ -2,6 +2,8 @@
 
 Use esta página para elegir rápidamente la ruta correcta y ejecutar solo los pasos de esa ruta.
 
+¿Necesita definiciones de términos clave? Vea el [Glosario](glossary-es.md).
+
 ## Base de instalación común
 
 Complete esto una vez antes de cualquier paso específico de ruta.
@@ -45,6 +47,18 @@ journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 
 Si falla algo, pase a [Solución de problemas](troubleshooting-es.md) antes del piloto.
 
+## Decidir fuente de verdad (hágalo una vez)
+
+Antes de continuar, elija quién controla las actualizaciones persistentes de datos de shaping:
+
+| Si esto describe su caso | Elija este modo | Siguiente página |
+|---|---|---|
+| Usa una integración CRM/NMS soportada | Modo integración incluida | [Integraciones CRM/NMS](integrations-es.md) |
+| Genera `network.json` y `ShapedDevices.csv` con scripts propios | Modo fuente de verdad personalizada | [Modos de operación y fuente de verdad](operating-modes-es.md) |
+| Mantiene archivos manualmente (redes pequeñas/simples) | Modo archivos manuales | [Modos de operación y fuente de verdad](operating-modes-es.md) |
+
+Regla: mantenga un único dueño para los insumos persistentes de shaping para evitar conflictos de sobrescritura.
+
 ## Testbed / Lab
 
 ### Cuándo elegir
@@ -63,8 +77,6 @@ Quiere validar comportamiento en un entorno controlado antes de producción inli
 ### Luego vaya aquí
 
 - [Configurar LibreQoS](configuration-es.md)
-- [Modos de operación y fuente de verdad](operating-modes-es.md)
-- [Integraciones CRM/NMS](integrations-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
 ## Integración Soportada
@@ -88,7 +100,6 @@ Nota:
 ### Luego vaya aquí
 
 - [Integraciones CRM/NMS](integrations-es.md)
-- [Escalado y diseño de topología](scale-topology-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
 ## Errores comunes en primera puesta en marcha
@@ -114,12 +125,11 @@ Su CRM/NMS no está soportado y usted generará `network.json` + `ShapedDevices.
 Nota:
 - Las ediciones por WebUI son útiles para operación rápida.
 - El estado de largo plazo debe mantenerse en su flujo externo de fuente de verdad.
+- Referencia de formato de archivos: vea las secciones `network.json` y `ShapedDevices.csv` en la [Referencia avanzada de configuración](configuration-advanced-es.md).
 
 ### Luego vaya aquí
 
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
-- [Referencia avanzada de configuración](configuration-advanced-es.md)
-- [Escalado y diseño de topología](scale-topology-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
 ## Archivos Manuales (<100 suscriptores)
@@ -141,6 +151,4 @@ Recomendado solo para redes menores a 100 suscriptores.
 ### Luego vaya aquí
 
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
-- [Modos de operación y fuente de verdad](operating-modes-es.md)
-- [Escalado y diseño de topología](scale-topology-es.md)
 - [Solución de problemas](troubleshooting-es.md)

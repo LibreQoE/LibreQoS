@@ -11,11 +11,6 @@ La herramienta de instalación configura puente, interfaces, ancho de banda, ran
 
 Notas:
 - La herramienta se controla con teclado (`Enter` para seleccionar, `Q` para salir sin guardar).
-- Si necesita volver a abrirla:
-  ```
-  sudo apt remove libreqos
-  sudo apt install ./{deb_url_v1_5}
-  ```
 
 ### Próximos pasos
 
@@ -42,22 +37,11 @@ La mayoría de cambios operativos diarios se realizan en la WebUI (`http://tu_ip
 Lea esto primero antes de cambios en producción:
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 
-## Referencia avanzada de configuración
+## ¿Necesita cambios por CLI o por archivos?
 
-La configuración por CLI, edición directa de archivos y referencia detallada se movió aquí:
+Para edición directa de archivos (`/etc/lqos.conf`, `network.json`, `ShapedDevices.csv`), overrides y material de referencia profundo sobre topología/circuitos, use:
+
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
-
-## Configuración por línea de comando
-
-Esta sección se movió a [Referencia avanzada de configuración](configuration-advanced-es.md#configuración-por-línea-de-comando).
-
-## Jerarquía de red
-
-Esta sección se movió a [Referencia avanzada de configuración](configuration-advanced-es.md#jerarquía-de-red).
-
-## Circuitos
-
-Esta sección se movió a [Referencia avanzada de configuración](configuration-advanced-es.md#circuitos).
 
 ## Páginas relacionadas
 

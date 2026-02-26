@@ -2,175 +2,140 @@
 
 ## Requirements
 
-The LibreQoS Node API requires an active LibreQoS Insight subscription.
+The `lqos_api` (Node API service) requires an active LibreQoS Insight subscription.
 
-## Installation
+This is separate from base shaping limits:
+- Core LibreQoS shaping can run up to 1000 subscribers without Insight.
+- Higher subscriber limits depend on active Insight licensing.
 
-### If installed via `.deb` (recommended)
+## Source of Truth and Testing
 
-`lqos_api` is installed with LibreQoS into:
+Use Swagger on your node as the complete reference and test surface for your installed build:
 
-`/opt/libreqos/src/bin/lqos_api`
+- `http://<node-ip>:9122/api-docs`
 
-### Test run
+Use this page as a capability map. Use Swagger for full endpoint inventory, request/response schemas, and live testing.
 
-```bash
-/opt/libreqos/src/bin/lqos_api
-```
+Need definitions for persistence and runtime-impact terms? See the [Glossary](glossary.md).
 
-### Systemd Service
+## Install and Enable
 
-The package includes a template service file:
+If installed via `.deb` (recommended), `lqos_api` is included at:
+
+- `/opt/libreqos/src/bin/lqos_api`
+
+Enable service:
 
 ```bash
 sudo cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
-```
-
-Then run:
-
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
 ```
 
-### Update just the API binary
-
-Use the helper script:
+Update only the API binary:
 
 ```bash
 cd /opt/libreqos/src
 ./update_api.sh
 ```
 
-This downloads the latest `lqos_api` and installs it to `/opt/libreqos/src/bin/lqos_api`.
-
-You can optionally skip service restart:
-
-```bash
-./update_api.sh --no-restart
-```
-
-Or install to an alternate location:
-
-```bash
-./update_api.sh --bin-dir /some/path/bin --no-restart
-```
-
-### Manual service file (if needed)
-
-If you are creating the service manually, use:
-
-```
-[Unit]
-After=network.service lqosd.service
-Requires=lqosd.service
-
-[Service]
-WorkingDirectory=/opt/libreqos/src/bin
-ExecStart=/opt/libreqos/src/bin/lqos_api
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-
-Then run:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable lqos_api
-sudo systemctl start lqos_api
-```
-
-## Usage
-
-See `localhost:9122/api-docs` for the Swagger UI.
-
-`/api-docs` is the source of truth for your installed version. Endpoint availability can change between releases.
-
-## Deployment and Hardening Guidance
-
-Recommended production posture:
-
-1. Keep the Node API reachable only from trusted management networks.
-2. Do not expose the API directly to the public Internet.
-3. If remote access is required, place it behind a reverse proxy with TLS and authentication.
-4. Restrict inbound access with host/network firewall allowlists.
-5. Monitor API and service logs for abnormal access patterns.
-
-If the API is not needed on a node, disable the service:
-
-```bash
-sudo systemctl disable --now lqos_api
-```
-
-If enabled for operations, verify service state after upgrades:
+Verify service state:
 
 ```bash
 sudo systemctl status lqos_api
 ```
 
-## API Endpoints
+## Authentication
 
-### Health & System
-- `/health` - Service health check
-- `/reload_libreqos` - Reload LibreQoS configuration
-- `/validate_shaped_devices` - Validate shaped devices CSV
-- `/lqos_stats` - Get lqosd internal statistics
-- `/stormguard_stats` - Get Stormguard statistics
-- `/bakery_stats` - Get Bakery active circuits count
+Most endpoints require:
 
-### Traffic Metrics
-- `/current_throughput` - Current network throughput stats
-- `/top_n_downloaders/{start}/{end}` - Top downloaders by traffic
-- `/worst_rtt/{start}/{end}` - Hosts with worst round-trip time
-- `/worst_retransmits/{start}/{end}` - Hosts with worst TCP retransmits
-- `/best_rtt/{start}/{end}` - Hosts with best round-trip time
-- `/host_counter` - All host traffic counters
+- Header: `x-bearer`
+- Value: your Insight license key
 
-### Network Topology
-- `/network_map/{parent}` - Network map from parent node
-- `/full_network_map` - Complete network topology
-- `/top_map_queues/{n}` - Top N queues by traffic
-- `/node_names` - Get node names from IDs
-- `/funnel/{target}` - Analyze traffic funnel to circuit
+## What ISPs Can Do with the API
 
-### Circuit Management
-- `/all_circuits` - List all circuits
-- `/raw_queue_data/{circuit_id}` - Raw queue data for circuit
+### 1) Subscriber/Circuit Lifecycle
 
-### Flow Analysis
-- `/dump_active_flows` - Dump all active flows (slow)
-- `/count_active_flows` - Count of active flows
-- `/top_flows/{flow_type}/{n}` - Top flows by metric type
-- `/flows_by_ip/{ip}` - Flows for specific IP
-- `/flow_duration` - Flow duration statistics
+Provision, update, and remove subscriber/device records.
 
-### Geo & Protocol Stats
-- `/current_endpoints_by_country` - Traffic endpoints by country
-- `/current_endpoint_latlon` - Endpoint geographic coordinates
-- `/ether_protocol_summary` - Ethernet protocol statistics
-- `/ip_protocol_summary` - IP protocol statistics
+- Add or replace:
+  - `POST /overrides/persistent_devices`
+  - `POST /shaped_devices/update`
+- Adjust speeds:
+  - `POST /overrides/adjustments/circuit_speed`
+  - `POST /overrides/adjustments/device_speed`
+- Remove:
+  - `DELETE /overrides/persistent_devices/by_circuit/{circuit_id}`
+  - `DELETE /overrides/persistent_devices/by_device/{device_id}`
+  - `POST /overrides/adjustments/remove_circuit`
+  - `POST /overrides/adjustments/remove_device`
 
-## Newer API Coverage Areas
+### 2) Override and Policy Management
 
-Recent builds expanded API coverage in a few areas. Depending on your version, the API may also include:
+Maintain persistent override policies for circuits, devices, sites, and UISP-specific overrides.
 
-- Alerts and warnings summaries
-- Device and circuit count summaries
-- Single-circuit detail lookups
-- Search result helpers for UI workflows
-- Scheduler and queue-stat detail endpoints
+- `GET/POST/DELETE /overrides/adjustments*`
+- `GET/POST/DELETE /overrides/network_adjustments*`
+- `GET/POST/DELETE /overrides/uisp/bandwidth*`
+- `GET/POST/DELETE /overrides/uisp/routes*`
 
-Use `localhost:9122/api-docs` to confirm exact paths and schemas on your node.
+### 3) Topology and Shaping Input Files
 
-## Capturing an endpoint inventory for your release
+Inspect and update shaping/topology files used by runtime workflows.
 
-For release notes or internal runbooks, capture a snapshot of API paths from your node:
+- `GET /network_json/json`
+- `GET /network_json/text`
+- `POST /network_json/update`
+- `POST /network_json/set_site_speed`
+- `POST /network_json/set_site_speed_batch`
+- `GET /shaped_devices`
+- `POST /shaped_devices/update`
 
-```bash
-curl -s http://localhost:9122/api-docs | jq -r '.paths | keys[]' | sort
-```
+### 4) Monitoring and Diagnostics
 
-Save this output with your release artifacts so operators can compare endpoint differences between versions.
+Read health, scheduler, throughput, flow, queue, and circuit status.
+
+Representative endpoints:
+- `GET /health`
+- `GET /status_snapshot`
+- `GET /scheduler_status`
+- `GET /circuit/{circuit_id}`
+- `GET /search`
+- `GET /current_throughput`
+- `GET /queue_stats_total`
+- `GET /warnings`
+- `GET /urgent`, `GET /urgent/status`
+
+### 5) Control and Reload Operations
+
+Trigger operational control actions when needed.
+
+- `POST /reload_libreqos`
+- `POST /clear_hot_cache`
+
+Treat these as higher-risk actions in production.
+
+## Persistence Model (Important)
+
+Not all writes persist the same way:
+
+- `overrides/*`: persistent policy state.
+- `network_json/set_site_speed*`: transient edits.
+- `network_json/update` and `shaped_devices/update`: direct file replacement, often integration-overwritable.
+
+If integrations are enabled, integration refresh cycles may overwrite direct file edits.
+
+## Recommended Production Workflow
+
+1. Validate endpoint behavior and payload schema in Swagger.
+2. Apply the smallest change needed.
+3. Verify result with read-only checks (`/health`, `/scheduler_status`, circuit/throughput views).
+4. Keep rollback snapshots for config/data-changing operations.
+
+## Deployment Hardening
+
+- Keep API access limited to trusted management networks.
+- Do not expose the API directly to the public Internet.
+- If remote access is needed, use a reverse proxy with TLS and authentication.
+- Restrict inbound access with firewall allowlists.

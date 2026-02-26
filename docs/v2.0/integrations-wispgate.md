@@ -21,10 +21,7 @@ python3 integrationWISPGate.py
 
 On the first successful run, it will create a ShapedDevices.csv file and network.json.
 ShapedDevices.csv will be overwritten every time the WISPGate integration is run.
-
-To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
-Edit the file to set the value of `always_overwrite_network_json` to `true`.
-Then, run `sudo systemctl restart lqosd`.
+Recommended: keep `always_overwrite_network_json = true` for integration-driven deployments so topology stays aligned with WISPGate syncs.
 
 You have the option to run integrationWISPGate.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_wispgate = true``` in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
