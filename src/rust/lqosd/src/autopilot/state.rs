@@ -81,6 +81,10 @@ pub struct CircuitDirectionState {
     pub last_change_unix: Option<u64>,
     /// History of recent SQM switches (seconds since UNIX epoch), newest at the back.
     pub recent_changes_unix: VecDeque<u64>,
+    /// Smoothed utilization percentage.
+    pub util_ewma_pct: Ewma,
+    /// When the circuit direction first went idle (seconds since UNIX epoch), if currently idle.
+    pub idle_since_unix: Option<u64>,
 }
 
 /// Per-circuit SQM switching tracking state.

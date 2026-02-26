@@ -1028,8 +1028,24 @@ fn run_tick(
             Some(enrolled_circuits.iter().map(|id| hash_to_i64(id)).collect())
         };
 
-        // Aggregate worst (minimum) QoO per circuit hash across devices/hosts.
+        // Capacity lookup by circuit hash (max down/up Mbps across devices in the circuit).
+        let mut capacity_by_circuit: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
+        capacity_by_circuit.reserve(shaped.devices.len());
+        for device in shaped.devices.iter() {
+            let entry = capacity_by_circuit
+                .entry(device.circuit_hash)
+                .or_insert((device.download_max_mbps, device.upload_max_mbps));
+            if device.download_max_mbps > entry.0 {
+                entry.0 = device.download_max_mbps;
+            }
+            if device.upload_max_mbps > entry.1 {
+                entry.1 = device.upload_max_mbps;
+            }
+        }
+
+        // Aggregate worst (minimum) QoO and throughput per circuit hash across devices/hosts.
         let mut qoo_by_circuit: FxHashMap<i64, DownUpOrder<Option<f32>>> = FxHashMap::default();
+        let mut bps_by_circuit: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
         {
             let raw = THROUGHPUT_TRACKER.raw_data.lock();
             for entry in raw.values() {
@@ -1048,6 +1064,10 @@ fn run_tick(
                 });
                 slot.down = min_opt_f32(slot.down, down);
                 slot.up = min_opt_f32(slot.up, up);
+
+                let bps = bps_by_circuit.entry(ch).or_insert(DownUpOrder { down: 0, up: 0 });
+                bps.down = bps.down.saturating_add(entry.bytes_per_second.down);
+                bps.up = bps.up.saturating_add(entry.bytes_per_second.up);
             }
         }
 
@@ -1075,6 +1095,46 @@ fn run_tick(
             prune_recent_changes(&mut state.up.recent_changes_unix, now_unix);
 
             let circuit_hash = hash_to_i64(circuit_id);
+            let (cap_down, cap_up) = capacity_by_circuit
+                .get(&circuit_hash)
+                .copied()
+                .unwrap_or((0.0, 0.0));
+            let capacity_known = cap_down > 0.0 && cap_up > 0.0;
+            if !capacity_known {
+                status.warnings.push(format!(
+                    "Autopilot circuits: circuit '{circuit_id}' has unknown capacity; no changes will be made."
+                ));
+                state.down.idle_since_unix = None;
+                state.up.idle_since_unix = None;
+            } else {
+                let bps = bps_by_circuit
+                    .get(&circuit_hash)
+                    .copied()
+                    .unwrap_or(DownUpOrder { down: 0, up: 0 });
+                let mbps_down = (bps.down as f64 * 8.0) / 1_000_000.0;
+                let mbps_up = (bps.up as f64 * 8.0) / 1_000_000.0;
+                let util_down_pct = (mbps_down / cap_down as f64) * 100.0;
+                let util_up_pct = (mbps_up / cap_up as f64) * 100.0;
+
+                let ewma_down = state
+                    .down
+                    .util_ewma_pct
+                    .update(util_down_pct, UTIL_EWMA_ALPHA);
+                let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
+
+                update_idle_since(
+                    &mut state.down.idle_since_unix,
+                    now_unix,
+                    ewma_down,
+                    ap.circuits.idle_util_pct as f64,
+                );
+                update_idle_since(
+                    &mut state.up.idle_since_unix,
+                    now_unix,
+                    ewma_up,
+                    ap.circuits.idle_util_pct as f64,
+                );
+            }
 
             let rtt_missing = match now_nanos_since_boot {
                 None => true,

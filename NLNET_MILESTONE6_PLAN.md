@@ -559,7 +559,7 @@ When you finish an item, change `[ ]` to `[x]`.
   - In Autopilot, snapshot per-circuit QoO (down/up). **QoO is an optional guard**: enforce only when the value is `Some(score)`.
   - Use `autopilot.qoo.min_score = 80.0` as the “safe to optimize” threshold.
 
-- [ ] Circuit utilization sampling:
+- [x] Circuit utilization sampling:
   - Aggregate per-circuit `bytes_per_second` from `THROUGHPUT_TRACKER.raw_data` (sum across devices/hosts per circuit hash).
   - Capacity:
     - derive per-circuit max down/up Mbps from ShapedDevices (max across devices in the circuit).
