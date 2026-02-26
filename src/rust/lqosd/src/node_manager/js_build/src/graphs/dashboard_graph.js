@@ -4,7 +4,20 @@ export class DashboardGraph {
     constructor(id) {
         this.id = id;
         this.dom = document.getElementById(id);
+        if (!this.dom) {
+            throw new Error(`DashboardGraph: missing DOM element '${id}'`);
+        }
         this.dom.classList.add("muted");
+
+        // If a chart already exists for this DOM (e.g. time period change, zoom open/close),
+        // dispose it before re-initializing to prevent memory growth.
+        if (typeof echarts !== "undefined" && echarts.getInstanceByDom) {
+            const existing = echarts.getInstanceByDom(this.dom);
+            if (existing) {
+                existing.dispose();
+            }
+        }
+
         if (isDarkMode()) {
             window.graphPalette = [
                 '#4992ff',
@@ -38,10 +51,19 @@ export class DashboardGraph {
 
         // Apply to the global list of graphs
         if (window.graphList === undefined) {
-            window.graphList = [ this ];
-        } else {
-            window.graphList.push(this);
+            window.graphList = [];
         }
+        const domId = this.dom.id;
+        // De-dupe by DOM id and remove graphs whose DOM has been detached (e.g. closed zoom).
+        window.graphList = window.graphList.filter((g) => {
+            if (!g || !g.dom || !g.dom.id) return false;
+            if (g.dom.id === domId) return false;
+            if (typeof g.dom.isConnected === "boolean") {
+                return g.dom.isConnected;
+            }
+            return document.body && document.body.contains ? document.body.contains(g.dom) : true;
+        });
+        window.graphList.push(this);
     }
 
     onThemeChange() {

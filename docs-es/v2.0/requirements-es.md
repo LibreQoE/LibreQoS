@@ -2,6 +2,19 @@
 
 LibreQoS puede ejecutarse en un servidor físico dedicado (bare metal) o como una máquina virtual (VM). El sistema operativo soportado es Ubuntu Server 24.04.
 
+## Guía rápida de dimensionamiento (empiece aquí)
+
+Use esta guía rápida antes de entrar a las tablas completas de hardware:
+
+| Perfil objetivo | Ajuste típico | Punto de inicio |
+|---|---|---|
+| Pequeño | hasta ~1,000 suscriptores, hasta ~1 Gbps | 2+ núcleos fuertes, 8 GB RAM, NIC soportada clase 10G |
+| Mediano | ~1,000-5,000 suscriptores, ~1-10 Gbps | 6-16 núcleos fuertes, 32-64 GB RAM, NIC soportada 10/25G |
+| Grande | ~5,000-20,000 suscriptores, ~10-50 Gbps | 16-64 núcleos fuertes, 64-128 GB RAM, NIC soportada 25/50/100G |
+| Alto throughput | 50 Gbps+ o jerarquía profunda a escala | priorice alto rendimiento por hilo, balance cola/núcleo y soporte NIC/XDP validado |
+
+Luego use las tablas detalladas de esta página para escoger hardware específico.
+
 ## Servidor Físico (Bare Metal)
 
 ### CPU

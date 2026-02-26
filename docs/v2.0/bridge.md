@@ -7,7 +7,7 @@ There are two options for the bridge to pass data through your two interfaces:
 - Option A: Regular Linux Bridge (Recommended)
 - Option B: Bifrost XDP-Accelerated Bridge
 
-The regular Linux bridge is recommended for most installations. The Linux Bridge continues to move data even if the lqosd service is in a failed state, making this a generally safer option in scenatios where a backup route is not in place. It works best with Nvidia/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The  Bifrost XDP Bridge is recommended for 40G-100G Intel NICs with XDP support.
+The regular Linux bridge is recommended for most installations. The Linux Bridge continues to move data even if the lqosd service is in a failed state, making this a generally safer option in scenarios where a backup route is not in place. It works best with Nvidia/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost XDP Bridge is recommended for 40G-100G Intel NICs with XDP support.
 
 Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
 

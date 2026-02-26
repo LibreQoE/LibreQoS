@@ -16,7 +16,7 @@ author = "LibreQoE, LLC"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["myst_parser"]
+extensions = ["myst_parser", "sphinxcontrib.mermaid"]
 
 myst_enable_extensions = [
     'substitution'

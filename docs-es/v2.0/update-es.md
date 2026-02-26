@@ -23,6 +23,22 @@ sudo reboot
 
 Esto limpiará los mapas eBPF antiguos y cargará la última versión de LibreQoS.
 
+### Validación obligatoria post-actualización
+
+Después de actualizar/reiniciar, ejecute:
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqosd -u lqos_scheduler --since "20 minutes ago"
+```
+
+Luego valide:
+1. Dashboard y Scheduler Status saludables en WebUI.
+2. En modo integración: sincronización reciente con resultados esperados en `ShapedDevices.csv`/`network.json`.
+3. Profundidad topológica consistente con la estrategia seleccionada.
+
+Si algo falla, vaya a [Solución de problemas](troubleshooting-es.md) antes de otros cambios.
+
 ## Si instalaste desde Git
 
 1. Cambia a tu directorio `LibreQoS` (por ejemplo `cd /opt/LibreQoS`)
@@ -36,3 +52,11 @@ Ejecuta los siguientes comandos para recargar los servicios de LibreQoS:
 ```shell
 sudo systemctl restart lqosd lqos_scheduler
 ```
+
+## Síntomas para pausar y hacer triage
+
+Detenga el rollout y haga triage si aparece:
+
+- `lqosd` o `lqos_scheduler` no saludable tras reinicio
+- cambio inesperado de jerarquía tras sync de integración
+- scheduler persistentemente no saludable en WebUI

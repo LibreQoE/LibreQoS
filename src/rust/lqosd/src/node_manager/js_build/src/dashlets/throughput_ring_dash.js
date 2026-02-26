@@ -72,9 +72,26 @@ export class ThroughputRingDash extends DashletBaseInsight{
         window.timeGraphs.push(this);
     }
 
+    setupZoomed() {
+        const period = this.currentPeriod();
+        if (period === "Live") {
+            this.zoomGraph = new ThroughputRingBufferGraph(this.zoomGraphDivId());
+        } else {
+            this.zoomGraph = new ThroughputRingBufferGraphTimescale(this.zoomGraphDivId(), period);
+        }
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.data.shaped_bps, msg.data.bps);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data.shaped_bps, msg.data.bps);
+            }
 
             this.counter++;
             if (this.counter > 120) {
@@ -145,6 +162,10 @@ export class ThroughputRingDash extends DashletBaseInsight{
             this.graph = new ThroughputRingBufferGraph(this.graphDivId());
         } else {
             this.graph = new ThroughputRingBufferGraphTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
+        if (this.zoomed) {
+            this.teardownZoomed();
+            this.setupZoomed();
         }
     }
 }

@@ -35,9 +35,21 @@ export class RttHisto3dDash extends DashletBaseInsight{
         this.graph = new RttHistogram3D(this.graphDivId());
     }
 
+    setupZoomed() {
+        this.zoomGraph = new RttHistogram3D(this.zoomGraphDivId());
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "RttHistogram") {
             this.graph.update(msg.data);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data);
+            }
         }
     }
 }
