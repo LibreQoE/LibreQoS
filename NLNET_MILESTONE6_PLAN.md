@@ -642,6 +642,13 @@ When you finish an item, change `[ ]` to `[x]`.
     - backoff on failure
     - user-visible warning (Autopilot Activity/Audit dashlet + urgent issue if appropriate)
 
+- [x] Ensure reload picks up overrides without scheduler:
+  - Edit: `src/LibreQoS.py`
+  - Apply `lqos_overrides.json` adjustments in-memory at shaping time:
+    - persistent device overlays (SQM tokens by `deviceID`)
+    - network adjustments (e.g., `set_node_virtual`)
+  - Do not modify `ShapedDevices.csv` or `network.json` on disk.
+
 ### 8) Connect Autopilot to the UI tickers (status + activity)
 
 - [x] Implement status snapshot API in Autopilot:
