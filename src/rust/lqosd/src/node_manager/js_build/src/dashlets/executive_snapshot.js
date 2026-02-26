@@ -88,9 +88,9 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     queuesCard(header) {
         const items = [
+            { label: "HTB nodes", value: formatCount(header.htb_class_count) },
+            { label: "CAKE qdisc", value: formatCount(header.cake_queue_count) },
             { label: "HTB qdisc", value: formatCount(header.htb_queue_count) },
-            { label: "HTB classes", value: formatCount(header.htb_class_count) },
-            { label: "CAKE", value: formatCount(header.cake_queue_count) },
         ];
         return this.groupCard("Queues", "fa-stream", "text-secondary", items, false, true);
     }

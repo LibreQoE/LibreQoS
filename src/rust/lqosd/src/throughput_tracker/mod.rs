@@ -878,7 +878,11 @@ pub fn executive_summary_header() -> BusResponse {
         .load()
         .maybe_queues
         .as_ref()
-        .map(|q| q.len() as u64)
+        .map(|q| {
+            q.iter()
+                .filter(|n| n.circuit_id.is_none() && n.device_id.is_none())
+                .count() as u64
+        })
         .unwrap_or(0);
     let insight_connected = !matches!(
         get_lts_license_status().0,
