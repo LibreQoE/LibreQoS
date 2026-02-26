@@ -8,6 +8,7 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
+mod cpu_topology;
 mod etc;
 mod network_json;
 mod program_control;
@@ -15,6 +16,7 @@ mod qoo_profiles;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUser, WebUsers};
+pub use cpu_topology::{CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus};
 pub use etc::{
     AutopilotCircuitsConfig, AutopilotConfig, AutopilotCpuConfig, AutopilotCpuMode,
     AutopilotLinksConfig, AutopilotQooConfig, BridgeConfig, Config, LazyQueueMode,

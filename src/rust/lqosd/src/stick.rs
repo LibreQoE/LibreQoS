@@ -33,7 +33,9 @@ fn compute_stick_offset(config: &Config) -> Result<u32> {
         count_tx_queues(&interface)?
     };
 
-    let cpu_count = lqos_sys::num_possible_cpus().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    // Keep stick_offset consistent with CPU binning / cpumap behavior. On hybrid CPUs this may
+    // exclude efficiency cores, reducing the number of usable shaping CPUs.
+    let cpu_count = lqos_config::detect_shaping_cpus(config).shaping.len() as u32;
 
     let queues_available = u32::min(queues_available, cpu_count);
     let queues_per_direction = queues_available / 2;
@@ -83,4 +85,3 @@ fn count_tx_queues(interface: &str) -> Result<u32> {
         Ok(tx_queues)
     }
 }
-

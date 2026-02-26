@@ -18,22 +18,21 @@ If you use MPLS with a different tag pattern, you would ideally want to terminat
 - Primary path (low cost) *through* the server running LibreQoS
 - Backup path (high cost) *bypassing* the server running LibreQoS.
 
-#### Diagram
-![Offical Configuration](https://github.com/user-attachments/assets/e5914a58-3ec6-4eb1-b016-8a57582dd082)
+```{mermaid}
+flowchart LR
+    A[Edge Router] -->|OSPF/BGP preferred path| B[LibreQoS inline path]
+    B --> C[Core Router/Switch]
+    A -->|Higher-cost backup path| C
+```
+
+Interpretation:
+1. In normal operation, routing prefers the low-cost inline path through LibreQoS.
+2. If the inline path fails, routing converges to the higher-cost bypass path.
+3. After recovery, routing preference returns traffic to the inline path.
 
 ### Option 1: Using Dynamic Routing (Strongly Recommended)
 
 We recommend using dynamic routing protocols such as OSPF to create a high cost and low cost path between the edge router and core distribution router/switch. The low cost path should pass "through" the LibreQoS shaper bridge interfaces to allow LibreQoS to observe and shape traffic. For example, a low cost OSPF path may be set to a value of 1. The high-cost (backup) link would completely bypass LibreQoS, being set to a higher cost (perhaps 100 for OSPF) to ensure that traffic only takes that path when the LibreQoS shaper bridge is not operational.
-
-### Option 2: Using Spanning Tree Protocol (Not Recommended)
-
-You can also use the Spanning Tree Protocol with path costs if OSPF or another dynamic routing protocol is not an option.
-
-```{note}
-Most of the same considerations apply to the alternate configuration as they do to the officially supported configuation
-```
-
-Keep in mind that if you use different bandwidth links, for example, 10 Gbps through LibreQoS, and 1 Gbps between core switch and edge router, you may need to be more intentional with your STP costs.
 
 ## Testbed Deployment (Optional)
 When you are first testing out LibreQoS, you can deploy a small-scale testbed to see it in action on a test network.

@@ -273,11 +273,30 @@ pub fn attach_xdp_and_tc_to_interface(
     };
 
     // Configure CPU Maps
+    let shaping_physical_cpus: Vec<u32> = match lqos_config::load_config() {
+        Ok(cfg) => {
+            let det = lqos_config::detect_shaping_cpus(cfg.as_ref());
+            info!(
+                "CPU topology: exclude_efficiency_cores={} source={:?} possible={} performance={} efficiency={} shaping={}",
+                det.exclude_efficiency_cores,
+                det.source,
+                det.possible.len(),
+                det.performance.len(),
+                det.efficiency.len(),
+                det.shaping.len()
+            );
+            det.shaping
+        }
+        Err(e) => {
+            warn!("Unable to load config for CPU topology detection: {:?}", e);
+            Vec::new()
+        }
+    };
     {
         let cpu_map = CpuMapping::new()?;
         crate::cpu_map::xps_setup_default_disable(interface_name)?;
-        cpu_map.mark_cpus_available()?;
-        cpu_map.setup_base_txq_config()?;
+        cpu_map.mark_cpus_available(&shaping_physical_cpus)?;
+        cpu_map.setup_base_txq_config(&shaping_physical_cpus)?;
     } // Scope block to ensure the CPU maps are closed
 
     // Attach the TC program

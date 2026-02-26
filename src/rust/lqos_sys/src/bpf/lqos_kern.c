@@ -288,6 +288,12 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
                 // We can short-circuit the redirect and bypass the second
                 // LPM lookup! Yay!
                 skb->priority = meta->tc_handle;
+                // Ensure the selected MQ queue matches the TC handle's major.
+                // This decouples shaping correctness from CPU selection.
+                __u16 major = meta->tc_handle >> 16;
+                if (major != 0) {
+                    skb->queue_mapping = major;
+                }
                 #ifdef TRACING
                 {
                     __u64 now = bpf_ktime_get_ns();
@@ -336,6 +342,11 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
         bpf_debug("(TC) Mapped to TC handle %x", ip_info.tc_handle);
 #endif
         skb->priority = ip_info.tc_handle;
+        // Ensure the selected MQ queue matches the TC handle's major.
+        __u16 major = ip_info.tc_handle >> 16;
+        if (major != 0) {
+            skb->queue_mapping = major;
+        }
         #ifdef TRACING
         {
             __u64 now = bpf_ktime_get_ns();

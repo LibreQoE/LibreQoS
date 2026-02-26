@@ -45,6 +45,12 @@ impl PrivateState {
         }
     }
 
+    pub fn control_tx(
+        &self,
+    ) -> tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand> {
+        self.control_tx.clone()
+    }
+
     pub async fn handle_request(&mut self, request: PrivateRequest) {
         match request {
             PrivateRequest::CircuitWatcher { circuit } => {

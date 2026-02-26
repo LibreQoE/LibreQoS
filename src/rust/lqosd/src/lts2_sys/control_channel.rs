@@ -15,7 +15,10 @@ use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 
 mod messages;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
-pub use messages::{RemoteInsightRequest, WsMessage};
+pub use messages::{
+    RemoteInsightRequest, SupportTicket, SupportTicketComment, SupportTicketStatus,
+    SupportTicketSummary, WsMessage,
+};
 
 #[derive(Debug)]
 pub struct HistoryQueryResultPayload {
@@ -46,6 +49,27 @@ pub enum ControlChannelCommand {
     ChatStop {
         request_id: u64,
     },
+    SupportTicketList {
+        responder: oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>,
+    },
+    SupportTicketGet {
+        ticket_id: i64,
+        responder: oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>,
+    },
+    SupportTicketCreate {
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+        responder: oneshot::Sender<Result<messages::SupportTicket, ()>>,
+    },
+    SupportTicketAddComment {
+        ticket_id: i64,
+        commentor: String,
+        body: String,
+        date: i64,
+        responder: oneshot::Sender<Result<(), ()>>,
+    },
 }
 
 pub enum ConnectionCommand {
@@ -69,6 +93,27 @@ pub enum ConnectionCommand {
     },
     ChatStop {
         request_id: u64,
+    },
+    SupportTicketList {
+        responder: oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>,
+    },
+    SupportTicketGet {
+        ticket_id: i64,
+        responder: oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>,
+    },
+    SupportTicketCreate {
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+        responder: oneshot::Sender<Result<messages::SupportTicket, ()>>,
+    },
+    SupportTicketAddComment {
+        ticket_id: i64,
+        commentor: String,
+        body: String,
+        date: i64,
+        responder: oneshot::Sender<Result<(), ()>>,
     },
 }
 
@@ -136,6 +181,87 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
             ControlChannelCommand::ChatStop { request_id } => {
                 let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
             }
+            ControlChannelCommand::SupportTicketList { responder } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketList { responder },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketList { responder },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketGet {
+                ticket_id,
+                responder,
+            } => {
+                if let Err(err) =
+                    tx.try_send(ConnectionCommand::SupportTicketGet { ticket_id, responder })
+                {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketGet { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketGet { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketCreate {
+                subject,
+                priority,
+                body,
+                commentor,
+                responder,
+            } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketCreate {
+                    subject,
+                    priority,
+                    body,
+                    commentor,
+                    responder,
+                }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketCreate { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketCreate { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketAddComment {
+                ticket_id,
+                commentor,
+                body,
+                date,
+                responder,
+            } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketAddComment {
+                    ticket_id,
+                    commentor,
+                    body,
+                    date,
+                    responder,
+                }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketAddComment { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketAddComment { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
         }
     }
     warn!("Control channel loop exiting");
@@ -175,11 +301,19 @@ async fn persistent_connection(
                 u64,
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
+            enum PendingSupportTicket {
+                List(oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>),
+                Get(oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>),
+                Create(oneshot::Sender<Result<messages::SupportTicket, ()>>),
+                AddComment(oneshot::Sender<Result<(), ()>>),
+            }
+            let mut pending_support: HashMap<u64, PendingSupportTicket> = HashMap::new();
             let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> =
                 HashMap::new();
             // Queue chatbot control messages until the connection is permitted (Welcome received)
             let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
+            let mut next_support_request_id: u64 = 1;
             let queue_license_grant_request = |socket_sender_tx: &tokio::sync::mpsc::Sender<
                 Message,
             >| {
@@ -319,6 +453,261 @@ async fn persistent_connection(
                                         TrySendError::Closed(_) => {
                                             error!("Failed to queue history query: channel closed");
                                             if let Some(responder) = pending_history.remove(&request_id) {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketList { responder }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::List(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketList { request_id };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketList");
+                                    if let Some(PendingSupportTicket::List(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket list queue full; dropping request");
+                                            if let Some(PendingSupportTicket::List(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket list: channel closed");
+                                            if let Some(PendingSupportTicket::List(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketGet { ticket_id, responder }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::Get(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketGet {
+                                    request_id,
+                                    ticket_id,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketGet");
+                                    if let Some(PendingSupportTicket::Get(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket get queue full; dropping request");
+                                            if let Some(PendingSupportTicket::Get(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket get: channel closed");
+                                            if let Some(PendingSupportTicket::Get(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketCreate {
+                                subject,
+                                priority,
+                                body,
+                                commentor,
+                                responder,
+                            }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::Create(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketCreate {
+                                    request_id,
+                                    subject,
+                                    priority,
+                                    body,
+                                    commentor,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketCreate");
+                                    if let Some(PendingSupportTicket::Create(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket create queue full; dropping request");
+                                            if let Some(PendingSupportTicket::Create(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket create: channel closed");
+                                            if let Some(PendingSupportTicket::Create(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketAddComment {
+                                ticket_id,
+                                commentor,
+                                body,
+                                date,
+                                responder,
+                            }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::AddComment(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketAddComment {
+                                    request_id,
+                                    ticket_id,
+                                    commentor,
+                                    date,
+                                    body,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketAddComment");
+                                    if let Some(PendingSupportTicket::AddComment(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket add comment queue full; dropping request");
+                                            if let Some(PendingSupportTicket::AddComment(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket add comment: channel closed");
+                                            if let Some(PendingSupportTicket::AddComment(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
                                                 let _ = responder.send(Err(()));
                                             }
                                             break 'message_pump;
@@ -500,6 +889,80 @@ async fn persistent_connection(
                                             warn!("History query result for unknown request id {request_id}");
                                         }
                                     }
+                                    messages::WsMessage::SupportTicketListResult {
+                                        request_id,
+                                        tickets,
+                                    } => {
+                                        if let Some(PendingSupportTicket::List(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(tickets));
+                                        } else {
+                                            warn!(
+                                                "Support ticket list result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketGetResult {
+                                        request_id,
+                                        ticket,
+                                    } => {
+                                        if let Some(PendingSupportTicket::Get(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(ticket));
+                                        } else {
+                                            warn!(
+                                                "Support ticket get result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketCreateResult {
+                                        request_id,
+                                        ticket,
+                                    } => {
+                                        if let Some(PendingSupportTicket::Create(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(ticket));
+                                        } else {
+                                            warn!(
+                                                "Support ticket create result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketAddCommentResult {
+                                        request_id,
+                                    } => {
+                                        if let Some(PendingSupportTicket::AddComment(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(()));
+                                        } else {
+                                            warn!(
+                                                "Support ticket add comment result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketError { request_id, message } => {
+                                        warn!("Support ticket request {request_id} failed: {message}");
+                                        if let Some(pending) = pending_support.remove(&request_id) {
+                                            match pending {
+                                                PendingSupportTicket::List(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::Get(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::Create(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::AddComment(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                            }
+                                        }
+                                    }
                                     messages::WsMessage::MakeApiRequest { request_id, method, url_suffix, body } => {
                                         let socket_sender_tx = socket_sender_tx.clone();
                                         tokio::spawn(async move {
@@ -631,6 +1094,22 @@ async fn persistent_connection(
             } // End of message pump
             for (_, responder) in pending_history.drain() {
                 let _ = responder.send(Err(()));
+            }
+            for (_, pending) in pending_support.drain() {
+                match pending {
+                    PendingSupportTicket::List(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::Get(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::Create(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::AddComment(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                }
             }
         }
         debug!("Sleeping before reconnecting the persistent channel");
