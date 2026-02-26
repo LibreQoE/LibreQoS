@@ -656,7 +656,7 @@ When you finish an item, change `[ ]` to `[x]`.
 - [x] Add tests for scheduler overlay behavior:
   - Add Python tests (if there is an existing test harness) or add a small focused test function near `src/scheduler.py` that can be run in CI/dev to ensure only SQM is patched.
 
-- [ ] Run the full workspace tests again:
+- [x] Run the full workspace tests again:
   - `cd src/rust && cargo test --workspace`
 
 ### 10) Manual validation checklist (what to verify before calling it “done”)
