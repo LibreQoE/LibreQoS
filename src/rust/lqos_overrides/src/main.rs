@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use clap::{Args, Parser, Subcommand};
 
 use lqos_config::ShapedDevice;
-use lqos_overrides::{CircuitAdjustment, NetworkAdjustment, OverrideFile};
+use lqos_overrides::{CircuitAdjustment, NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 
 #[derive(Parser, Debug)]
 #[command(name = "lqos_overrides")]
@@ -36,6 +36,21 @@ enum Commands {
         #[command(subcommand)]
         command: UispCommand,
     },
+    /// Migrate selected operator overrides into the Autopilot overrides layer file
+    AutopilotMigrate(AutopilotMigrateArgs),
+}
+
+#[derive(Args, Debug, Default)]
+struct AutopilotMigrateArgs {
+    /// Network.json node names to migrate (set_node_virtual entries).
+    #[arg(long, value_name = "NODE")]
+    node: Vec<String>,
+    /// Device IDs to migrate (persistent device entries).
+    #[arg(long = "device-id", value_name = "DEVICE_ID")]
+    device_id: Vec<String>,
+    /// Show what would change, but don't write any files.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -448,6 +463,92 @@ fn main() -> Result<()> {
                 }
             }
         },
+        Commands::AutopilotMigrate(args) => {
+            let mut nodes = args.node;
+            nodes.sort();
+            nodes.dedup();
+
+            let mut device_ids = args.device_id;
+            device_ids.sort();
+            device_ids.dedup();
+
+            if nodes.is_empty() && device_ids.is_empty() {
+                println!("Nothing to migrate. Provide --node and/or --device-id.");
+                return Ok(());
+            }
+
+            let mut autopilot = OverrideStore::load_layer(OverrideLayer::Autopilot)?;
+
+            // --- Collect node migrations ---
+            let mut node_moves: Vec<(String, bool)> = Vec::new();
+            for node_name in nodes.iter() {
+                let value = overrides.network_adjustments().iter().find_map(|adj| match adj {
+                    NetworkAdjustment::SetNodeVirtual {
+                        node_name: n,
+                        virtual_node,
+                    } if n == node_name => Some(*virtual_node),
+                    _ => None,
+                });
+                if let Some(v) = value {
+                    node_moves.push((node_name.clone(), v));
+                } else {
+                    println!("Node '{node_name}': no set_node_virtual entry found in operator overrides.");
+                }
+            }
+
+            // --- Collect device migrations ---
+            let mut device_moves: Vec<ShapedDevice> = Vec::new();
+            for device_id in device_ids.iter() {
+                let matches: Vec<ShapedDevice> = overrides
+                    .persistent_devices()
+                    .iter()
+                    .filter(|d| d.device_id == *device_id)
+                    .cloned()
+                    .collect();
+                if matches.is_empty() {
+                    println!(
+                        "Device '{device_id}': no persistent device entry found in operator overrides."
+                    );
+                } else {
+                    device_moves.extend(matches);
+                }
+            }
+
+            if node_moves.is_empty() && device_moves.is_empty() {
+                println!("No matching entries found to migrate.");
+                return Ok(());
+            }
+
+            println!("Planned migrations:");
+            for (node_name, v) in node_moves.iter() {
+                println!("  node: '{node_name}' set_node_virtual -> {v}");
+            }
+            for dev in device_moves.iter() {
+                println!("  device: '{}' (circuit '{}')", dev.device_id, dev.circuit_id);
+            }
+
+            if args.dry_run {
+                println!("Dry-run: no files written.");
+                return Ok(());
+            }
+
+            // Apply node moves
+            for (node_name, v) in node_moves.iter() {
+                overrides.remove_network_node_virtual_by_name_count(node_name);
+                autopilot.set_network_node_virtual(node_name.clone(), *v);
+            }
+
+            // Apply device moves
+            for dev in device_moves.iter() {
+                overrides.remove_persistent_shaped_device_by_device_count(&dev.device_id);
+                let _ = autopilot.add_persistent_shaped_device_return_changed(dev.clone());
+            }
+
+            // Persist both layers
+            overrides.save()?;
+            OverrideStore::save_layer(OverrideLayer::Autopilot, &autopilot)?;
+            println!("Migration complete. Updated operator + autopilot override files.");
+        }
     }
 
     Ok(())

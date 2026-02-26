@@ -4,7 +4,7 @@
 
 use crate::autopilot::AutopilotError;
 use lqos_config::ShapedDevice;
-use lqos_overrides::{NetworkAdjustment, OverrideFile};
+use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 
 /// Returns the current virtual override value for `node_name`, if present.
 ///
@@ -31,7 +31,8 @@ pub(crate) fn set_node_virtual(
     node_name: &str,
     virtual_node: bool,
 ) -> Result<bool, AutopilotError> {
-    let mut overrides = OverrideFile::load().map_err(|e| AutopilotError::OverridesLoad {
+    let mut overrides =
+        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -40,11 +41,11 @@ pub(crate) fn set_node_virtual(
     }
 
     overrides.set_network_node_virtual(node_name.to_string(), virtual_node);
-    overrides
-        .save()
-        .map_err(|e| AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
+        AutopilotError::OverridesSave {
             details: e.to_string(),
-        })?;
+        }
+    })?;
     Ok(true)
 }
 
@@ -54,7 +55,8 @@ pub(crate) fn set_node_virtual(
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError> {
-    let mut overrides = OverrideFile::load().map_err(|e| AutopilotError::OverridesLoad {
+    let mut overrides =
+        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -63,11 +65,11 @@ pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError
         return Ok(false);
     }
 
-    overrides
-        .save()
-        .map_err(|e| AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
+        AutopilotError::OverridesSave {
             details: e.to_string(),
-        })?;
+        }
+    })?;
     Ok(true)
 }
 
@@ -81,7 +83,8 @@ pub(crate) fn set_devices_sqm_override(
     base_devices: &[ShapedDevice],
     sqm_override: &str,
 ) -> Result<bool, AutopilotError> {
-    let mut overrides = OverrideFile::load().map_err(|e| AutopilotError::OverridesLoad {
+    let mut overrides =
+        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -98,11 +101,11 @@ pub(crate) fn set_devices_sqm_override(
         return Ok(false);
     }
 
-    overrides
-        .save()
-        .map_err(|e| AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
+        AutopilotError::OverridesSave {
             details: e.to_string(),
-        })?;
+        }
+    })?;
     Ok(true)
 }
 
@@ -112,7 +115,8 @@ pub(crate) fn set_devices_sqm_override(
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, AutopilotError> {
-    let mut overrides = OverrideFile::load().map_err(|e| AutopilotError::OverridesLoad {
+    let mut overrides =
+        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -128,10 +132,10 @@ pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, Auto
         return Ok(false);
     }
 
-    overrides
-        .save()
-        .map_err(|e| AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
+        AutopilotError::OverridesSave {
             details: e.to_string(),
-        })?;
+        }
+    })?;
     Ok(true)
 }

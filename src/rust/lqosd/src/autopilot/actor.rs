@@ -18,7 +18,7 @@ use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{UrgentSeverity, UrgentSource};
 use lqos_config::load_config;
-use lqos_overrides::{NetworkAdjustment, OverrideFile};
+use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
@@ -296,19 +296,62 @@ fn run_tick(
     status.managed_circuits = managed_circuits_count;
     status.warnings = warnings;
 
-    let overrides_snapshot = if ap.enabled && (ap.links.enabled || ap.circuits.enabled) {
-        match OverrideFile::load() {
-            Ok(o) => Some(o),
-            Err(e) => {
-                status
-                    .warnings
-                    .push(format!("Autopilot: unable to load overrides file: {e}"));
-                None
-            }
-        }
-    } else {
-        None
-    };
+    let (operator_overrides_snapshot, autopilot_overrides_snapshot) =
+        if ap.enabled && (ap.links.enabled || ap.circuits.enabled) {
+            let operator = match OverrideStore::load_layer(OverrideLayer::Operator) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot: unable to load operator overrides file: {e}"
+                    ));
+                    None
+                }
+            };
+            let autopilot = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot: unable to load autopilot overrides file: {e}"
+                    ));
+                    None
+                }
+            };
+            (operator, autopilot)
+        } else {
+            (None, None)
+        };
+
+    // Conflict detection: if operator-defined overrides exist for an enrolled entity, Autopilot
+    // will refuse to manage it to avoid fights/surprises.
+    let operator_virtual_node_overrides: FxHashSet<String> = operator_overrides_snapshot
+        .as_ref()
+        .map(|o| {
+            o.network_adjustments()
+                .iter()
+                .filter_map(|adj| match adj {
+                    NetworkAdjustment::SetNodeVirtual { node_name, .. } => {
+                        Some(node_name.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let operator_sqm_device_overrides: FxHashSet<String> = operator_overrides_snapshot
+        .as_ref()
+        .map(|o| {
+            o.persistent_devices()
+                .iter()
+                .filter(|d| {
+                    d.sqm_override
+                        .as_deref()
+                        .is_some_and(|t| !t.trim().is_empty())
+                })
+                .map(|d| d.device_id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
 
     // --- Link sampling + decisions (virtualization) ---
     let manage_links = ap.enabled && ap.links.enabled;
@@ -318,7 +361,24 @@ fn run_tick(
 
     // Cleanup for removed nodes or disabled links.
     if !manage_links {
-        let removed: Vec<String> = managed_nodes.iter().cloned().collect();
+        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+            Ok(of) => of
+                .network_adjustments()
+                .iter()
+                .filter_map(|adj| match adj {
+                    NetworkAdjustment::SetNodeVirtual { node_name, .. } => {
+                        Some(node_name.clone())
+                    }
+                    _ => None,
+                })
+                .collect(),
+            Err(e) => {
+                status.warnings.push(format!(
+                    "Autopilot links: unable to load autopilot overrides for cleanup: {e}"
+                ));
+                Vec::new()
+            }
+        };
         for node_name in removed {
             match overrides::clear_node_virtual(&node_name) {
                 Ok(changed) => {
@@ -368,6 +428,21 @@ fn run_tick(
         let reader = NETWORK_JSON.read();
 
         // Reconcile nodes removed from allowlist, or removed from network.json.
+        let autopilot_nodes_with_overrides: FxHashSet<String> = autopilot_overrides_snapshot
+            .as_ref()
+            .map(|of| {
+                of.network_adjustments()
+                    .iter()
+                    .filter_map(|adj| match adj {
+                        NetworkAdjustment::SetNodeVirtual { node_name, .. } => {
+                            Some(node_name.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let removed: Vec<String> = if ap.links.all_nodes {
             let current: FxHashSet<&str> = reader
                 .get_nodes_when_ready()
@@ -375,13 +450,13 @@ fn run_tick(
                 .filter(|n| n.name != "Root")
                 .map(|n| n.name.as_str())
                 .collect();
-            managed_nodes
+            autopilot_nodes_with_overrides
                 .iter()
                 .filter(|n| !current.contains(n.as_str()))
                 .cloned()
                 .collect()
         } else {
-            managed_nodes
+            autopilot_nodes_with_overrides
                 .iter()
                 .filter(|n| !allowlisted_nodes.contains(*n))
                 .cloned()
@@ -439,6 +514,46 @@ fn run_tick(
                     continue;
                 }
 
+                if operator_virtual_node_overrides.contains(node_name) {
+                    status.warnings.push(format!(
+                        "Autopilot links: node '{node_name}' has an operator virtual override; Autopilot will not manage it."
+                    ));
+                    match overrides::clear_node_virtual(node_name) {
+                        Ok(changed) => {
+                            if changed {
+                                reload_requested = true;
+                                if reload_request_reason.is_none() {
+                                    reload_request_reason = Some(format!(
+                                        "Cleared virtual override for node '{node_name}' due to operator conflict"
+                                    ));
+                                } else {
+                                    reload_request_reason =
+                                        Some("Multiple node topology changes".to_string());
+                                }
+                                push_activity(
+                                    activity,
+                                    AutopilotActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "node".to_string(),
+                                        entity_id: node_name.to_string(),
+                                        action: "clear_virtual_override_conflict".to_string(),
+                                        persisted: true,
+                                        reason: "Operator override present; Autopilot will not manage this node.".to_string(),
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            status.warnings.push(format!(
+                                "Autopilot links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
+                            ));
+                        }
+                    }
+                    managed_nodes.remove(node_name);
+                    link_states.remove(node_name);
+                    continue;
+                }
+
                 if node.virtual_node {
                     status.warnings.push(format!(
                         "Autopilot links: node '{node_name}' is marked virtual in base network.json; Autopilot will not manage it."
@@ -466,7 +581,7 @@ fn run_tick(
                     .entry(node_name.to_string())
                     .or_insert_with(|| {
                         let mut state = LinkState::default();
-                        if let Some(overrides) = overrides_snapshot.as_ref() {
+                        if let Some(overrides) = autopilot_overrides_snapshot.as_ref() {
                             if let Some(v) = overrides_node_virtual(overrides, node_name) {
                                 state.desired = if v {
                                     LinkVirtualState::Virtual
@@ -643,6 +758,45 @@ fn run_tick(
             }
         } else {
             for node_name in ap.links.nodes.iter() {
+            if operator_virtual_node_overrides.contains(node_name) {
+                status.warnings.push(format!(
+                    "Autopilot links: node '{node_name}' has an operator virtual override; Autopilot will not manage it."
+                ));
+                match overrides::clear_node_virtual(node_name) {
+                    Ok(changed) => {
+                        if changed {
+                            reload_requested = true;
+                            if reload_request_reason.is_none() {
+                                reload_request_reason = Some(format!(
+                                    "Cleared virtual override for node '{node_name}' due to operator conflict"
+                                ));
+                            } else {
+                                reload_request_reason =
+                                    Some("Multiple node topology changes".to_string());
+                            }
+                            push_activity(
+                                activity,
+                                AutopilotActivityEntry {
+                                    time: now_unix.to_string(),
+                                    entity_type: "node".to_string(),
+                                    entity_id: node_name.clone(),
+                                    action: "clear_virtual_override_conflict".to_string(),
+                                    persisted: true,
+                                    reason: "Operator override present; Autopilot will not manage this node.".to_string(),
+                                },
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        status.warnings.push(format!(
+                            "Autopilot links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
+                        ));
+                    }
+                }
+                managed_nodes.remove(node_name);
+                link_states.remove(node_name);
+                continue;
+            }
             let Some(index) = reader.get_index_for_name(node_name) else {
                 status.warnings.push(format!(
                     "Autopilot links allowlist: node '{node_name}' not found in network.json."
@@ -683,7 +837,7 @@ fn run_tick(
                 .entry(node_name.clone())
                 .or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = overrides_snapshot.as_ref() {
+                    if let Some(overrides) = autopilot_overrides_snapshot.as_ref() {
                         if let Some(v) = overrides_node_virtual(overrides, node_name) {
                             state.desired = if v {
                                 LinkVirtualState::Virtual
@@ -974,49 +1128,82 @@ fn run_tick(
 
     // Cleanup for removed circuits or disabled circuits/autopilot.
     if !manage_circuits {
-        let removed: Vec<String> = managed_device_ids.iter().cloned().collect();
-        if !removed.is_empty() {
-            let removed_vec: Vec<String> = removed;
-            let _ = overrides::clear_device_overrides(&removed_vec);
-            for device_id in removed_vec {
-                managed_device_ids.remove(&device_id);
+        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+            Ok(of) => of
+                .persistent_devices()
+                .iter()
+                .map(|d| d.device_id.clone())
+                .collect(),
+            Err(e) => {
+                status.warnings.push(format!(
+                    "Autopilot circuits: unable to load autopilot overrides for cleanup: {e}"
+                ));
+                Vec::new()
             }
-            push_activity(
-                activity,
-                AutopilotActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "circuits".to_string(),
-                    entity_id: "*".to_string(),
-                    action: "clear_sqm_overrides".to_string(),
-                    persisted: true,
-                    reason: "Autopilot disabled or circuits disabled".to_string(),
-                },
-            );
+        };
+        if !removed.is_empty() {
+            match overrides::clear_device_overrides(&removed) {
+                Ok(changed) => {
+                    if changed {
+                        push_activity(
+                            activity,
+                            AutopilotActivityEntry {
+                                time: now_unix.to_string(),
+                                entity_type: "circuits".to_string(),
+                                entity_id: "*".to_string(),
+                                action: "clear_sqm_overrides".to_string(),
+                                persisted: true,
+                                reason: "Autopilot disabled or circuits disabled".to_string(),
+                            },
+                        );
+                    }
+                }
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot circuits: failed to clear autopilot SQM overlays during cleanup: {e}"
+                    ));
+                }
+            }
         }
+        managed_device_ids.clear();
         circuit_states.clear();
     } else {
         // Reconcile device IDs removed from allowlisted circuits.
-        let removed: Vec<String> = managed_device_ids
+        let autopilot_device_ids_with_overrides: FxHashSet<String> = autopilot_overrides_snapshot
+            .as_ref()
+            .map(|of| of.persistent_devices().iter().map(|d| d.device_id.clone()).collect())
+            .unwrap_or_default();
+        let removed: Vec<String> = autopilot_device_ids_with_overrides
             .iter()
             .filter(|d| !desired_device_ids.contains(*d))
             .cloned()
             .collect();
         if !removed.is_empty() {
-            let _ = overrides::clear_device_overrides(&removed);
+            match overrides::clear_device_overrides(&removed) {
+                Ok(changed) => {
+                    if changed {
+                        push_activity(
+                            activity,
+                            AutopilotActivityEntry {
+                                time: now_unix.to_string(),
+                                entity_type: "circuits".to_string(),
+                                entity_id: "*".to_string(),
+                                action: "clear_sqm_overrides".to_string(),
+                                persisted: true,
+                                reason: "Device removed from allowlisted circuits".to_string(),
+                            },
+                        );
+                    }
+                }
+                Err(e) => {
+                    status.warnings.push(format!(
+                        "Autopilot circuits: failed to clear autopilot SQM overlays for removed devices: {e}"
+                    ));
+                }
+            }
             for device_id in removed.iter() {
                 managed_device_ids.remove(device_id);
             }
-            push_activity(
-                activity,
-                AutopilotActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "circuits".to_string(),
-                    entity_id: "*".to_string(),
-                    action: "clear_sqm_overrides".to_string(),
-                    persisted: true,
-                    reason: "Device removed from allowlisted circuits".to_string(),
-                },
-            );
         }
 
         // Snapshot RTT buffers by circuit hash.
@@ -1079,7 +1266,7 @@ fn run_tick(
                     if let Some(token) = infer_circuit_sqm_override_token(
                         circuit_id,
                         &shaped.devices,
-                        overrides_snapshot.as_ref(),
+                        autopilot_overrides_snapshot.as_ref(),
                     ) {
                         let parsed = decisions::parse_directional_sqm_override(&token);
                         if let Some(down) = parsed.down {
@@ -1162,6 +1349,49 @@ fn run_tick(
                     down: None,
                     up: None,
                 });
+
+            let circuit_device_ids: Vec<String> = shaped
+                .devices
+                .iter()
+                .filter(|d| d.circuit_id == circuit_id.as_str())
+                .map(|d| d.device_id.clone())
+                .collect();
+            let operator_conflict = circuit_device_ids
+                .iter()
+                .any(|did| operator_sqm_device_overrides.contains(did));
+            if operator_conflict {
+                status.warnings.push(format!(
+                    "Autopilot circuits: circuit '{circuit_id}' has operator SQM overrides; Autopilot will not manage it."
+                ));
+                if !circuit_device_ids.is_empty() {
+                    match overrides::clear_device_overrides(&circuit_device_ids) {
+                        Ok(changed) => {
+                            if changed {
+                                push_activity(
+                                    activity,
+                                    AutopilotActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "circuit".to_string(),
+                                        entity_id: circuit_id.clone(),
+                                        action: "clear_sqm_overrides_conflict".to_string(),
+                                        persisted: true,
+                                        reason: "Operator SQM overrides present; cleared Autopilot SQM overlays.".to_string(),
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            status.warnings.push(format!(
+                                "Autopilot circuits: failed to clear Autopilot SQM overlays for circuit '{circuit_id}' during conflict cleanup: {e}"
+                            ));
+                        }
+                    }
+                    for did in circuit_device_ids.iter() {
+                        managed_device_ids.remove(did);
+                    }
+                }
+                continue;
+            }
 
             let decision = decisions::decide_circuit_sqm(
                 now_unix,

@@ -46,6 +46,12 @@ except Exception:
 
 # Optional: lqos_overrides helpers (available in newer liblqos_python)
 try:
+    from liblqos_python import overrides_persistent_devices_effective, overrides_network_adjustments_effective  # type: ignore
+except Exception:
+    overrides_persistent_devices_effective = None
+    overrides_network_adjustments_effective = None
+
+try:
     from liblqos_python import overrides_persistent_devices, overrides_network_adjustments  # type: ignore
 except Exception:
     def overrides_persistent_devices():
@@ -131,7 +137,10 @@ def format_rate_for_tc(rate_mbps):
 def apply_overrides_to_subscriber_circuits(subscriber_circuits):
     """Apply persistent device overlays (SQM) from lqos_overrides.json in-memory."""
     try:
-        devices = overrides_persistent_devices() or []
+        if overrides_persistent_devices_effective is not None:
+            devices = overrides_persistent_devices_effective() or []
+        else:
+            devices = overrides_persistent_devices() or []
     except Exception as e:
         warnings.warn(f"Failed to read overrides_persistent_devices(): {e}", stacklevel=2)
         return False
@@ -172,7 +181,10 @@ def apply_overrides_to_subscriber_circuits(subscriber_circuits):
 def apply_overrides_to_network(network_json):
     """Apply network adjustments (virtual nodes / speed) from lqos_overrides.json in-memory."""
     try:
-        adjustments = overrides_network_adjustments() or []
+        if overrides_network_adjustments_effective is not None:
+            adjustments = overrides_network_adjustments_effective() or []
+        else:
+            adjustments = overrides_network_adjustments() or []
     except Exception as e:
         warnings.warn(f"Failed to read overrides_network_adjustments(): {e}", stacklevel=2)
         return False
