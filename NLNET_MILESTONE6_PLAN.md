@@ -176,7 +176,10 @@ all_circuits = false            # if true, manage all circuits found in ShapedDe
 circuits = []                   # circuit IDs (strings, as in ShapedDevices.csv)
 switching_enabled = true
 independent_directions = true   # allow different SQM decisions for down vs up (directional sqm_override)
+idle_util_pct = 2.0             # "very low utilization" (starting default; tune in production)
+idle_min_minutes = 15
 rtt_missing_seconds = 120       # treat missing RTT as unsafe after 2 minutes
+upgrade_util_pct = 5.0          # "traffic starts to tick up" (starting default; tune in production)
 min_switch_dwell_minutes = 30
 max_switches_per_hour = 4
 persist_sqm_overrides = true    # MUST be true if we want to avoid scheduler fights
@@ -202,7 +205,7 @@ For each enrolled node:
 - use per-direction p95 RTT from the in-memory `NetworkJsonNode` RTT buffer.
 - if RTT samples are missing for >= `rtt_missing_seconds` (2 minutes), treat RTT as unknown and unsafe:
   - do not virtualize, and
-  - if currently virtualized, plan to unvirtualize (subject to rate limits/cooldowns).
+  - if currently virtualized and the link is not sustained-idle, plan to unvirtualize (subject to rate limits/cooldowns).
 
 ### CPU usage (milestone d)
 Autopilot uses:
@@ -226,8 +229,7 @@ Autopilot must maintain:
 Virtualize only when ALL are true:
 - sustained idle for `idle_min_minutes`:
   - `max(util_ewma_down, util_ewma_up) < idle_util_pct`
-- RTT/QoO healthy:
-  - RTT is not missing for >= `rtt_missing_seconds` (2 minutes), and
+- QoO healthy:
   - if QoO is available, QoO >= `autopilot.qoo.min_score` (80) for the relevant direction(s)
 - CPU pressure:
   - `cpu_max_pct >= cpu_high_pct`
@@ -236,7 +238,7 @@ Virtualize only when ALL are true:
 Unvirtualize when ANY are true (with short confirmation window to avoid oscillation):
 - `max(util_ewma_down, util_ewma_up) >= unvirtualize_util_pct`
 - if QoO is available, QoO < `autopilot.qoo.min_score` (80) for the relevant direction(s)
-- RTT becomes unknown for >= `rtt_missing_seconds` (2 minutes)
+- RTT becomes unknown for >= `rtt_missing_seconds` (2 minutes) while not sustained-idle
 
 ### Persistence & actuation (required)
 - Persist desired `virtual` flag via `lqos_overrides.json` using `set_node_virtual` (autopilot-owned entry).
@@ -247,10 +249,10 @@ Unvirtualize when ANY are true (with short confirmation window to avoid oscillat
 ## Circuit shaping behavior (milestone c)
 
 ### Chosen behavior: dynamic SQM switching (CAKE ↔ fq_codel)
-Under CPU pressure, Autopilot may downgrade SQM to reduce CPU usage when RTT is good:
+When mostly idle, Autopilot may downgrade SQM to reduce CPU/RAM overhead when guardrails permit:
 - CAKE → fq_codel
 
-When CPU pressure subsides or RTT worsens, revert:
+When demand increases (or guardrails indicate risk), revert:
 - fq_codel → CAKE
 
 ### Directionality (chosen v1)
@@ -259,7 +261,7 @@ SQM decisions are made **independently by direction** (download vs upload). Pers
 ### QoO guard (chosen v1)
 If QoO scores are available (0..100), Autopilot should avoid CPU-saving actions when QoO is poor:
 - if QoO < `autopilot.qoo.min_score`, do not downgrade SQM and do not virtualize links
-- if RTT becomes unknown for >= 2 minutes, revert to the safer state (CAKE, non-virtual)
+- if RTT becomes unknown for >= 2 minutes while not sustained-idle, revert to the safer state (CAKE, non-virtual)
 
 ### Guardrails & anti-flap
 - QoO must be >= `autopilot.qoo.min_score` (80) to allow downgrade (when QoO is available).
@@ -337,10 +339,10 @@ Instead, Autopilot persists SQM decisions using the existing `persistent_devices
   - sustained idle → virtualize
   - util spike or QoO drop → unvirtualize
   - dwell time and rate limiting enforced
-  - missing RTT blocks virtualization
+  - missing RTT while not sustained-idle causes safe unvirtualize
 - Circuit SQM logic:
-  - CPU high + QoO good → fq_codel
-  - CPU low or QoO bad/missing → CAKE
+  - sustained idle + CPU allows saving + QoO good (if available) → fq_codel
+  - utilization increase / CPU low / QoO bad (if available) / missing RTT while not sustained-idle → CAKE
   - dwell and rate limiting enforced
 - Overrides ownership:
   - Autopilot updates only autopilot-owned entries
@@ -365,7 +367,7 @@ Milestone (d)
 
 Decisions locked in for v1:
 - Enrollment is explicit allowlists by default (`nodes = [...]`, `circuits = [...]`), with optional `all_nodes` / `all_circuits` convenience toggles.
-- Missing RTT for >= 2 minutes is treated as unsafe (no new CPU-saving actions; revert when applicable).
+- Missing RTT for >= 2 minutes is treated as unsafe **when an entity is not sustained-idle** (block new CPU-saving actions; revert when applicable). On sustained-idle links/circuits, missing RTT is expected and does not block “idle wind-down” decisions.
 - Unknown/missing capacity means **no changes** (warn in UI instead).
 - QoO threshold default is **80**; no additional safety signals beyond utilization + RTT availability + QoO.
 - All thresholds must be editable via config/UI; expect iterative tuning in real deployments.
@@ -387,7 +389,7 @@ These are the remaining decisions that can materially affect implementation comp
 - On truly idle links/circuits, RTT may naturally go missing (no TCP timestamp samples). Should we:
   - A) keep the strict rule (missing RTT triggers revert), or
   - B) only treat missing RTT as a *blocker* for taking new actions, but not as a reason to revert unless utilization is rising?
-- Proposed v1 default: **A** (strict, conservative) unless it makes Autopilot ineffective in real deployments.
+- Proposed v1 default: **B** (missing RTT is expected on sustained-idle links/circuits; do not force reverts while still sustained-idle).
 
 3) **Override ownership when allowlisting**
 - If an operator already has manual overrides for a node/circuit and then adds it to the Autopilot allowlist, should Autopilot:
@@ -557,6 +559,12 @@ When you finish an item, change `[ ]` to `[x]`.
   - In Autopilot, snapshot per-circuit QoO (down/up). **QoO is an optional guard**: enforce only when the value is `Some(score)`.
   - Use `autopilot.qoo.min_score = 80.0` as the “safe to optimize” threshold.
 
+- [ ] Circuit utilization sampling:
+  - Aggregate per-circuit `bytes_per_second` from `THROUGHPUT_TRACKER.raw_data` (sum across devices/hosts per circuit hash).
+  - Capacity:
+    - derive per-circuit max down/up Mbps from ShapedDevices (max across devices in the circuit).
+    - if 0/unknown, **do not make changes** and record a warning.
+
 ### 6) Implement decision logic (pure functions + state machines)
 
 - [x] Implement EWMA + sustained-idle tracking:
@@ -567,13 +575,12 @@ When you finish an item, change `[ ]` to `[x]`.
   - Implement in `src/rust/lqosd/src/autopilot/decisions.rs` (pure).
   - Virtualize only if:
     - sustained idle (>= 15 minutes)
-    - RTT is not missing for >= 120s
     - QoO (if available) >= 80 for relevant direction(s)
     - CPU pressure meets `cpu_high_pct`
   - Unvirtualize if:
     - utilization rises above `unvirtualize_util_pct`, OR
     - QoO (if available) < 80, OR
-    - RTT becomes missing for >= 120s
+    - RTT becomes missing for >= 120s while not sustained-idle
   - Enforce:
     - dwell time (`min_state_dwell_minutes`)
     - rate limit (`max_link_changes_per_hour`)
@@ -581,12 +588,14 @@ When you finish an item, change `[ ]` to `[x]`.
 - [x] Circuit SQM switching state machine (per allowlisted circuit, per direction):
   - Implement in `src/rust/lqosd/src/autopilot/decisions.rs` (pure).
   - Downgrade CAKE → fq_codel only if:
-    - CPU pressure meets `cpu_high_pct`
-    - QoO >= 80 (if available) and not missing for >= 120s
+    - sustained idle for >= `idle_min_minutes` (per direction)
+    - CPU pressure meets `cpu_high_pct` (or `traffic_rtt_only` mode is enabled)
+    - QoO >= 80 (if available)
   - Revert fq_codel → CAKE if:
+    - utilization rises above `upgrade_util_pct`, OR
     - CPU <= `cpu_low_pct`, OR
     - QoO < 80 (if available), OR
-    - RTT missing for >= 120s
+    - RTT missing for >= 120s while not sustained-idle
   - Persist decisions as directional tokens (`"down/up"`) because `independent_directions = true`.
 
 ### 7) Apply changes (persistence, live updates, reloads)
@@ -671,4 +680,4 @@ When you finish an item, change `[ ]` to `[x]`.
   - circuit SQM changes persist via overrides and survive scheduler runs
   - down/up decisions can differ and appear correctly in UI
 - [ ] Confirm “unknown capacity” nodes never change but are clearly warned in UI.
-- [ ] Confirm missing RTT for >= 2 minutes causes safe reverts (and that users see it in the Activity/Audit dashlet).
+- [ ] Confirm missing RTT for >= 2 minutes causes safe reverts when not sustained-idle (and that users see it in the Activity/Audit dashlet).

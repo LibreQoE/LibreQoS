@@ -173,7 +173,7 @@ impl Config {
     }
 }
 
-/// Normalizes historical misspellings of Splynx keys in the TOML configuration.
+/// Normalizes historical configuration compatibility shims.
 ///
 /// This operates purely in-memory so existing installations don't have their `/etc/lqos.conf`
 /// rewritten just by upgrading. The canonical schema uses:
@@ -183,6 +183,9 @@ impl Config {
 /// Compatibility shims accepted:
 /// - `[spylnx_integration]`
 /// - `enable_spylnx = true/false`
+///
+/// It also normalizes deprecated values:
+/// - `autopilot.cpu.mode = "manual_profiles"` -> `"cpu_aware"`
 fn normalize_splynx_compat_keys(raw: &str) -> Result<String, String> {
     let mut doc = raw
         .parse::<DocumentMut>()
@@ -210,6 +213,22 @@ fn normalize_splynx_compat_keys(raw: &str) -> Result<String, String> {
         } else if table.get("enable_spylnx").is_some() {
             // If both exist, prefer the canonical key.
             table.remove("enable_spylnx");
+        }
+    }
+
+    // Deprecated value: autopilot.cpu.mode = "manual_profiles" -> "cpu_aware"
+    if let Some(cpu) = doc
+        .get_mut("autopilot")
+        .and_then(|item| item.as_table_mut())
+        .and_then(|table| table.get_mut("cpu"))
+        .and_then(|item| item.as_table_mut())
+    {
+        if cpu
+            .get("mode")
+            .and_then(|item| item.as_str())
+            .is_some_and(|mode| mode == "manual_profiles")
+        {
+            cpu.insert("mode", toml_edit::value("cpu_aware"));
         }
     }
 

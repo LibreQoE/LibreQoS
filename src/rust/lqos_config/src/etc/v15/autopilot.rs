@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Autopilot (intelligent node management) configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+#[serde(default)]
 pub struct AutopilotConfig {
     /// Whether Autopilot is enabled.
     pub enabled: bool,
@@ -41,7 +42,6 @@ impl Default for AutopilotConfig {
 #[serde(rename_all = "snake_case")]
 pub enum AutopilotCpuMode {
     /// Autopilot makes CPU-saving decisions based on CPU usage and other guardrails.
-    #[serde(alias = "manual_profiles")]
     CpuAware,
     /// Autopilot ignores CPU usage and uses only traffic/RTT/QoO guardrails.
     TrafficRttOnly,
@@ -55,6 +55,7 @@ impl Default for AutopilotCpuMode {
 
 /// Autopilot CPU-related configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+#[serde(default)]
 pub struct AutopilotCpuConfig {
     /// CPU control mode.
     pub mode: AutopilotCpuMode,
@@ -76,6 +77,7 @@ impl Default for AutopilotCpuConfig {
 
 /// Autopilot link/node virtualization configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+#[serde(default)]
 pub struct AutopilotLinksConfig {
     /// Whether link/node virtualization is enabled.
     pub enabled: bool,
@@ -121,6 +123,7 @@ impl Default for AutopilotLinksConfig {
 
 /// Autopilot circuit SQM switching configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+#[serde(default)]
 pub struct AutopilotCircuitsConfig {
     /// Whether per-circuit management is enabled.
     pub enabled: bool,
@@ -135,8 +138,14 @@ pub struct AutopilotCircuitsConfig {
     pub switching_enabled: bool,
     /// Whether Autopilot may make independent decisions for down vs up directions.
     pub independent_directions: bool,
+    /// Utilization percentage below which a circuit direction is considered idle.
+    pub idle_util_pct: f32,
+    /// Minimum sustained idle duration in minutes before downgrading SQM for a direction.
+    pub idle_min_minutes: u64,
     /// RTT sample age in seconds at/above which RTT is treated as missing/unsafe.
     pub rtt_missing_seconds: u64,
+    /// Utilization percentage above which a downgraded direction should be upgraded back to CAKE.
+    pub upgrade_util_pct: f32,
     /// Minimum dwell time in minutes before a circuit may switch again.
     pub min_switch_dwell_minutes: u64,
     /// Maximum number of SQM switches per hour.
@@ -153,7 +162,10 @@ impl Default for AutopilotCircuitsConfig {
             circuits: Vec::new(),
             switching_enabled: true,
             independent_directions: true,
+            idle_util_pct: 2.0,
+            idle_min_minutes: 15,
             rtt_missing_seconds: 120,
+            upgrade_util_pct: 5.0,
             min_switch_dwell_minutes: 30,
             max_switches_per_hour: 4,
             persist_sqm_overrides: true,
@@ -163,6 +175,7 @@ impl Default for AutopilotCircuitsConfig {
 
 /// Autopilot QoO guardrail configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+#[serde(default)]
 pub struct AutopilotQooConfig {
     /// Whether QoO guardrails are enabled.
     pub enabled: bool,
