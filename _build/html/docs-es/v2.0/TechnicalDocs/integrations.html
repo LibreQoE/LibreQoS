@@ -1,0 +1,308 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Integrations &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css" />
+
+  
+      <script src="../../../_static/jquery.js"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+      <script src="../../../_static/doctools.js"></script>
+      <script src="../../../_static/sphinx_highlight.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Integrations</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/docs-es/v2.0/TechnicalDocs/integrations.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="integrations">
+<h1>Integrations<a class="headerlink" href="#integrations" title="Permalink to this heading"></a></h1>
+<section id="splynx-integration">
+<h2>Splynx Integration<a class="headerlink" href="#splynx-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<section id="splynx-api-access">
+<h3>Splynx API Access<a class="headerlink" href="#splynx-api-access" title="Permalink to this heading"></a></h3>
+<p>The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable <a class="reference external" href="https://splynx.docs.apiary.io/#introduction/authentication">Unsecure access</a> in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.</p>
+<ul class="simple">
+<li><p>Tariff Plans -&gt; Internet -&gt; view</p></li>
+<li><p>Tariff Plans -&gt; Bundle -&gt; view</p></li>
+<li><p>Tariff Plans -&gt; One time -&gt; view</p></li>
+<li><p>Tariff Plans -&gt; Recurring  -&gt; view</p></li>
+<li><p>FUP -&gt; Counter -&gt; view</p></li>
+<li><p>FUP -&gt; Compiler -&gt; view</p></li>
+<li><p>FUP -&gt; Policies -&gt; view</p></li>
+<li><p>FUP -&gt; Capped Data -&gt; view</p></li>
+<li><p>FUP -&gt; CAP Tariff -&gt; view</p></li>
+<li><p>FUP -&gt; FUP Limits -&gt; view</p></li>
+<li><p>FUP -&gt; Traffic Usage -&gt; view</p></li>
+<li><p>Customers -&gt; customer -&gt; view</p></li>
+<li><p>Customers -&gt; customer information -&gt; view</p></li>
+<li><p>Customers -&gt; Customers online -&gt; view</p></li>
+<li><p>Customers -&gt; customer bundle services -&gt; view</p></li>
+<li><p>Customers -&gt; customer internet services -&gt; view</p></li>
+<li><p>Customers -&gt; traffic counter -&gt; view</p></li>
+<li><p>Customers -&gt; customer recurring services -&gt; view</p></li>
+<li><p>Customers -&gt; bonus traffic counter -&gt; view</p></li>
+<li><p>Customers -&gt; CAP history -&gt; view</p></li>
+<li><p>Networking -&gt; routers -&gt; view</p></li>
+<li><p>Networking -&gt; network sites &gt;view</p></li>
+<li><p>Networking -&gt; router contention -&gt; view</p></li>
+<li><p>Networking -&gt; IPv4 networks -&gt; view</p></li>
+<li><p>Networking -&gt; IPv4 networks IP -&gt; view</p></li>
+</ul>
+<p>To test the Splynx Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationSplynx.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file and network.json.
+ShapedDevices.csv will be overwritten every time the Splynx integration is run.</p>
+<p>To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> with the command <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">nano</span> <span class="pre">/etc/lqos.conf</span></code>.
+Edit the file to set the value of <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+Then, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>.</p>
+<p>You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_splynx</span> <span class="pre">=</span> <span class="pre">true</span></code> under the <code class="docutils literal notranslate"><span class="pre">[splynx_integration]</span></code> section in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.
+Once set, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+<section id="splynx-overrides">
+<h3>Splynx Overrides<a class="headerlink" href="#splynx-overrides" title="Permalink to this heading"></a></h3>
+<p>You can also modify the the file <code class="docutils literal notranslate"><span class="pre">integrationSplynxBandwidths.csv</span></code> to override the default bandwidths for each Node (Site, AP).</p>
+<p>A template is available in the <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src</span></code> folder. To utilize the template, copy the file <code class="docutils literal notranslate"><span class="pre">integrationSplynxBandwidths.template.csv</span></code> (removing the <code class="docutils literal notranslate"><span class="pre">.template</span></code> part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">cp</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationSplynxBandwidths</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">csv</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationSplynxBandwidths</span><span class="o">.</span><span class="n">csv</span>
+</pre></div>
+</div>
+<p>And edit the CSV using LibreOffice or your preferred CSV editor.</p>
+</section>
+</section>
+<section id="uisp-integration">
+<h2>UISP Integration<a class="headerlink" href="#uisp-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for UISP (token, url, automatic_import_uisp, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Whether to run the UISP integration automatically in the lqos_scheduler service</span>
+<span class="n">enable_uisp</span> <span class="o">=</span> <span class="n">true</span>
+
+<span class="c1"># Your UISP API Access Token</span>
+<span class="n">token</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+<span class="c1"># Your UISP URL (include https://, but omit anything past .com, .net, etc)</span>
+<span class="n">url</span> <span class="o">=</span> <span class="s2">&quot;https://uisp.your_domain.com&quot;</span>
+
+<span class="c1"># The site here refers to the Root site you want UISP to base its topology &quot;perspective&quot; from.</span>
+<span class="c1"># Default value is a blank string.</span>
+<span class="n">site</span> <span class="o">=</span> <span class="s2">&quot;Site_name&quot;</span>
+
+<span class="c1"># Strategy type. &quot;full&quot; is recommended. &quot;flat&quot; can be used if only client shaping is desired.</span>
+<span class="n">strategy</span> <span class="o">=</span> <span class="s2">&quot;full&quot;</span>
+
+<span class="c1"># Suspension strategy:</span>
+<span class="c1"># * &quot;none&quot; - do not handle suspensions</span>
+<span class="c1"># * &quot;ignore&quot; - do not add suspended customers to the network map</span>
+<span class="c1"># * &quot;slow&quot; - limit suspended customers to 0.1 Mbps</span>
+<span class="n">suspended_strategy</span> <span class="o">=</span> <span class="s2">&quot;none&quot;</span>
+
+<span class="c1"># UISP&#39;s reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit</span>
+<span class="c1"># to 65% of what UISP claims an AP&#39;s capacity is, by default. This is adjustable.</span>
+<span class="n">airmax_capacity</span> <span class="o">=</span> <span class="mf">0.65</span>
+
+<span class="c1"># UISP&#39;s reported AP capacities for LTU are more accurate, but to be safe we adjust to 95%</span>
+<span class="c1"># of those capacities. This is adjustable.</span>
+<span class="n">ltu_capacity</span> <span class="o">=</span> <span class="mf">0.95</span>
+
+<span class="c1"># If you want to exclude sites in UISP from appearing in your LibreQoS network.json, simply</span>
+<span class="c1"># include them here. For example, exclude_sites = [&quot;Site_1&quot;, &quot;Site_2&quot;]</span>
+<span class="n">exclude_sites</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># If you use DHCPv6, and want to pull in IPv6 CIDRs corresponding to each customer&#39;s IPv4</span>
+<span class="c1"># address, you can do so with this. If enabled, be sure to fill out mikrotikDHCPRouterList.csv</span>
+<span class="c1"># and run `python3 mikrotikFindIPv6.py` to test its functionality.</span>
+<span class="n">ipv6_with_mikrotik</span> <span class="o">=</span> <span class="n">false</span>
+
+<span class="c1"># If you want customers to recieve a bit more of less than their allocated speed plan, set</span>
+<span class="c1"># it here. For example, 1.15 is 15% above their alloted speed plan.</span>
+<span class="n">bandwidth_overhead_factor</span> <span class="o">=</span> <span class="mf">1.15</span>
+
+<span class="c1"># By default, the customer &quot;minimum&quot; is set to 98% of the maximuum (CIR).</span>
+<span class="n">commit_bandwidth_multiplier</span> <span class="o">=</span> <span class="mf">0.98</span>
+<span class="n">exception_cpes</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># If you have some sites branched off PtMP Access Points, set `true`</span>
+<span class="n">use_ptmp_as_parent</span> <span class="o">=</span> <span class="n">true</span>
+</pre></div>
+</div>
+<p>To test the UISP Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos/src
+sudo<span class="w"> </span>/opt/libreqos/src/bin/uisp_integration
+</pre></div>
+</div>
+<p>On the first successful run, it will create a network.json and ShapedDevices.csv file.
+If a network.json file exists, it will not be overwritten, unless you set <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span> <span class="pre">=</span> <span class="pre">true</span></code>.</p>
+<p>ShapedDevices.csv will be overwritten every time the UISP integration is run.</p>
+<p>To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> with the command <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">nano</span> <span class="pre">/etc/lqos.conf</span></code>.
+Edit the file to set the value of <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+Then, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>.</p>
+<p>You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_uisp</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>. Once set, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+<section id="uisp-overrides">
+<h3>UISP Overrides<a class="headerlink" href="#uisp-overrides" title="Permalink to this heading"></a></h3>
+<p>You can also modify the the following files to more accurately reflect your network:</p>
+<ul class="simple">
+<li><p>integrationUISPbandwidths.csv</p></li>
+<li><p>integrationUISProutes.csv</p></li>
+</ul>
+<p>Each of the files above have templates available in the <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src</span></code> folder. If you don’t find them there, you can navigate <a class="reference external" href="https://github.com/LibreQoE/LibreQoS/tree/develop/src">here</a>. To utilize the template, copy the file (removing the <code class="docutils literal notranslate"><span class="pre">.template</span></code> part of the filename) and set the appropriate information inside each file.
+For example, if you want to change the set bandwidth for a site, you would do:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">cp</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationUISPbandwidths</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">csv</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationUISPbandwidths</span><span class="o">.</span><span class="n">csv</span>
+</pre></div>
+</div>
+<p>And edit the CSV using LibreOffice or your preferred CSV editor.</p>
+<section id="uisp-route-overrides">
+<h4>UISP Route Overrides<a class="headerlink" href="#uisp-route-overrides" title="Permalink to this heading"></a></h4>
+<p>The default cost between nodes is 10.</p>
+<p>Say you have Site 1, Site 2, and Site 3.
+A backup path exists between Site 1 and Site 3, but is not the preferred path.
+Your preference is Site 1 &gt; Site 2 &gt; Site 3, but the integration by default connects Site 1 &gt; Site 3 directly.</p>
+<p>To fix this, add a cost above the default for the path between Site 1 and Site 3.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Site</span> <span class="mi">1</span><span class="p">,</span> <span class="n">Site</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">100</span>
+</pre></div>
+</div>
+<p>With this, data will flow Site 1 &gt; Site 2 &gt; Site 3.</p>
+<p>To make the change, perform a reload of the integration with <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+</section>
+</section>
+<section id="powercode-integration">
+<h2>Powercode Integration<a class="headerlink" href="#powercode-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for Powercode (powercode_api_key, powercode_api_url, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<p>To test the Powercode Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationPowercode.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file.
+You can modify the network.json file manually to reflect Site/AP bandwidth limits.
+ShapedDevices.csv will be overwritten every time the Powercode integration is run.
+You have the option to run integrationPowercode.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_powercode</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+</section>
+<section id="sonar-integration">
+<h2>Sonar Integration<a class="headerlink" href="#sonar-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for Sonar (sonar_api_key, sonar_api_url, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<p>To test the Sonar Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationSonar.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file.
+If a network.json file exists, it will not be overwritten, unless you set <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span> <span class="pre">=</span> <span class="pre">true</span></code>.
+You can modify the network.json file to more accurately reflect bandwidth limits.
+ShapedDevices.csv will be overwritten every time the Sonar integration is run.
+You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_sonar</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

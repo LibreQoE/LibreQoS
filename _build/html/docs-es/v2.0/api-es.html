@@ -1,0 +1,310 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API del Nodo de LibreQoS &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API del Nodo de LibreQoS</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs-es/v2.0/api-es.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="api-del-nodo-de-libreqos">
+<h1>API del Nodo de LibreQoS<a class="headerlink" href="#api-del-nodo-de-libreqos" title="Permalink to this heading"></a></h1>
+<section id="requisitos">
+<h2>Requisitos<a class="headerlink" href="#requisitos" title="Permalink to this heading"></a></h2>
+<p>La API del nodo LibreQoS requiere una suscripción activa a LibreQoS Insight.</p>
+</section>
+<section id="instalacion">
+<h2>Instalación<a class="headerlink" href="#instalacion" title="Permalink to this heading"></a></h2>
+<section id="si-instalo-via-deb-recomendado">
+<h3>Si instaló vía <code class="docutils literal notranslate"><span class="pre">.deb</span></code> (recomendado)<a class="headerlink" href="#si-instalo-via-deb-recomendado" title="Permalink to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">lqos_api</span></code> se instala con LibreQoS en:</p>
+<p><code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src/bin/lqos_api</span></code></p>
+</section>
+<section id="ejecucion-de-prueba">
+<h3>Ejecución de prueba<a class="headerlink" href="#ejecucion-de-prueba" title="Permalink to this heading"></a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>/opt/libreqos/src/bin/lqos_api
+</pre></div>
+</div>
+</section>
+<section id="servicio-systemd">
+<h3>Servicio systemd<a class="headerlink" href="#servicio-systemd" title="Permalink to this heading"></a></h3>
+<p>El paquete incluye un archivo de servicio de ejemplo:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>cp<span class="w"> </span>/opt/libreqos/src/bin/lqos_api.service.example<span class="w"> </span>/etc/systemd/system/lqos_api.service
+</pre></div>
+</div>
+<p>Luego ejecute:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>lqos_api
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>lqos_api
+</pre></div>
+</div>
+</section>
+<section id="actualizar-solo-el-binario-de-la-api">
+<h3>Actualizar solo el binario de la API<a class="headerlink" href="#actualizar-solo-el-binario-de-la-api" title="Permalink to this heading"></a></h3>
+<p>Use el script de ayuda:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos/src
+./update_api.sh
+</pre></div>
+</div>
+<p>Esto descarga el <code class="docutils literal notranslate"><span class="pre">lqos_api</span></code> más reciente e instala en <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src/bin/lqos_api</span></code>.</p>
+<p>Puede omitir el reinicio del servicio:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./update_api.sh<span class="w"> </span>--no-restart
+</pre></div>
+</div>
+<p>O instalar en otra ruta:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./update_api.sh<span class="w"> </span>--bin-dir<span class="w"> </span>/alguna/ruta/bin<span class="w"> </span>--no-restart
+</pre></div>
+</div>
+</section>
+<section id="archivo-de-servicio-manual-si-es-necesario">
+<h3>Archivo de servicio manual (si es necesario)<a class="headerlink" href="#archivo-de-servicio-manual-si-es-necesario" title="Permalink to this heading"></a></h3>
+<p>Si crea el servicio manualmente, use:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">Unit</span><span class="p">]</span>
+<span class="n">After</span><span class="o">=</span><span class="n">network</span><span class="o">.</span><span class="n">service</span> <span class="n">lqosd</span><span class="o">.</span><span class="n">service</span>
+<span class="n">Requires</span><span class="o">=</span><span class="n">lqosd</span><span class="o">.</span><span class="n">service</span>
+
+<span class="p">[</span><span class="n">Service</span><span class="p">]</span>
+<span class="n">WorkingDirectory</span><span class="o">=/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="nb">bin</span>
+<span class="n">ExecStart</span><span class="o">=/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="nb">bin</span><span class="o">/</span><span class="n">lqos_api</span>
+<span class="n">Restart</span><span class="o">=</span><span class="n">always</span>
+
+<span class="p">[</span><span class="n">Install</span><span class="p">]</span>
+<span class="n">WantedBy</span><span class="o">=</span><span class="n">default</span><span class="o">.</span><span class="n">target</span>
+</pre></div>
+</div>
+<p>Luego ejecute:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>lqos_api
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>lqos_api
+</pre></div>
+</div>
+</section>
+</section>
+<section id="uso">
+<h2>Uso<a class="headerlink" href="#uso" title="Permalink to this heading"></a></h2>
+<p>Vea <code class="docutils literal notranslate"><span class="pre">localhost:9122/api-docs</span></code> para la interfaz Swagger.</p>
+<p><code class="docutils literal notranslate"><span class="pre">/api-docs</span></code> es la fuente de verdad para su versión instalada. La disponibilidad de endpoints puede cambiar entre versiones.</p>
+</section>
+<section id="guia-de-despliegue-y-hardening">
+<h2>Guía de despliegue y hardening<a class="headerlink" href="#guia-de-despliegue-y-hardening" title="Permalink to this heading"></a></h2>
+<p>Postura recomendada para producción:</p>
+<ol class="arabic simple">
+<li><p>Mantenga la API accesible solo desde redes de gestión confiables.</p></li>
+<li><p>No exponga la API directamente a Internet público.</p></li>
+<li><p>Si requiere acceso remoto, publíquela detrás de un reverse proxy con TLS y autenticación.</p></li>
+<li><p>Restrinja acceso entrante con allowlists de firewall (host/red).</p></li>
+<li><p>Monitoree logs de API/servicio para detectar accesos anómalos.</p></li>
+</ol>
+<p>Si la API no se necesita en un nodo, deshabilite el servicio:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>disable<span class="w"> </span>--now<span class="w"> </span>lqos_api
+</pre></div>
+</div>
+<p>Si está habilitada, verifique el estado tras actualizaciones:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>lqos_api
+</pre></div>
+</div>
+</section>
+<section id="endpoints-de-la-api">
+<h2>Endpoints de la API<a class="headerlink" href="#endpoints-de-la-api" title="Permalink to this heading"></a></h2>
+<section id="salud-y-sistema">
+<h3>Salud y sistema<a class="headerlink" href="#salud-y-sistema" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/health</span></code> - Verificación de salud del servicio</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/reload_libreqos</span></code> - Recarga configuración de LibreQoS</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/validate_shaped_devices</span></code> - Valida CSV de Shaped Devices</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/lqos_stats</span></code> - Estadísticas internas de lqosd</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/stormguard_stats</span></code> - Estadísticas de StormGuard</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/bakery_stats</span></code> - Conteo de circuitos activos de Bakery</p></li>
+</ul>
+</section>
+<section id="metricas-de-trafico">
+<h3>Métricas de tráfico<a class="headerlink" href="#metricas-de-trafico" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/current_throughput</span></code> - Throughput actual de red</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/top_n_downloaders/{start}/{end}</span></code> - Top descargadores por tráfico</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/worst_rtt/{start}/{end}</span></code> - Hosts con peor RTT</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/worst_retransmits/{start}/{end}</span></code> - Hosts con más retransmisiones TCP</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/best_rtt/{start}/{end}</span></code> - Hosts con mejor RTT</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/host_counter</span></code> - Contadores de tráfico por host</p></li>
+</ul>
+</section>
+<section id="topologia-de-red">
+<h3>Topología de red<a class="headerlink" href="#topologia-de-red" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/network_map/{parent}</span></code> - Mapa de red desde nodo padre</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/full_network_map</span></code> - Topología completa</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/top_map_queues/{n}</span></code> - Top N colas por tráfico</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/node_names</span></code> - Nombres de nodos por ID</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/funnel/{target}</span></code> - Análisis de embudo hacia circuito</p></li>
+</ul>
+</section>
+<section id="gestion-de-circuitos">
+<h3>Gestión de circuitos<a class="headerlink" href="#gestion-de-circuitos" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/all_circuits</span></code> - Lista de todos los circuitos</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/raw_queue_data/{circuit_id}</span></code> - Datos de cola en bruto por circuito</p></li>
+</ul>
+</section>
+<section id="analisis-de-flujos">
+<h3>Análisis de flujos<a class="headerlink" href="#analisis-de-flujos" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/dump_active_flows</span></code> - Volcado de flujos activos (lento)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/count_active_flows</span></code> - Conteo de flujos activos</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/top_flows/{flow_type}/{n}</span></code> - Top flujos por tipo de métrica</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/flows_by_ip/{ip}</span></code> - Flujos por IP específica</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/flow_duration</span></code> - Estadísticas de duración de flujos</p></li>
+</ul>
+</section>
+<section id="geo-y-protocolos">
+<h3>Geo y protocolos<a class="headerlink" href="#geo-y-protocolos" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/current_endpoints_by_country</span></code> - Endpoints de tráfico por país</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/current_endpoint_latlon</span></code> - Coordenadas geográficas de endpoints</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/ether_protocol_summary</span></code> - Resumen de protocolos Ethernet</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/ip_protocol_summary</span></code> - Resumen de protocolos IP</p></li>
+</ul>
+</section>
+</section>
+<section id="cobertura-de-api-en-versiones-recientes">
+<h2>Cobertura de API en versiones recientes<a class="headerlink" href="#cobertura-de-api-en-versiones-recientes" title="Permalink to this heading"></a></h2>
+<p>Compilaciones recientes ampliaron cobertura en algunas áreas. Dependiendo de su versión, la API también puede incluir:</p>
+<ul class="simple">
+<li><p>Resúmenes de alertas y warnings</p></li>
+<li><p>Resúmenes de conteo de dispositivos y circuitos</p></li>
+<li><p>Consulta de detalle para circuito individual</p></li>
+<li><p>Helpers de búsqueda para flujos de UI</p></li>
+<li><p>Endpoints de detalle de scheduler y estadísticas de colas</p></li>
+</ul>
+<p>Use <code class="docutils literal notranslate"><span class="pre">localhost:9122/api-docs</span></code> para confirmar rutas y esquemas exactos en su nodo.</p>
+</section>
+<section id="capturar-inventario-de-endpoints-por-release">
+<h2>Capturar inventario de endpoints por release<a class="headerlink" href="#capturar-inventario-de-endpoints-por-release" title="Permalink to this heading"></a></h2>
+<p>Para notas de release o runbooks internos, capture un snapshot de rutas API desde el nodo:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:9122/api-docs<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;.paths | keys[]&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sort
+</pre></div>
+</div>
+<p>Guarde esta salida junto con artefactos del release para comparar diferencias entre versiones.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

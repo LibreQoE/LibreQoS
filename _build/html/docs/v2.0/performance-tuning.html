@@ -1,0 +1,223 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Performance Tuning &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Extras" href="extras.html" />
+    <link rel="prev" title="CAKE" href="cake.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Performance Tuning</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#cpu-and-irq-baseline">CPU and IRQ Baseline</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#topology-queue-pressure">Topology/Queue Pressure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scheduler-refresh-and-load">Scheduler Refresh and Load</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#stormguard-rollout">StormGuard Rollout</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#startup-boot-delays">Startup/Boot Delays</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#routing-convergence-ospf">Routing Convergence (OSPF)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#related-optimization-and-resilience-pages">Related Optimization and Resilience Pages</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Performance Tuning</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/performance-tuning.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="performance-tuning">
+<h1>Performance Tuning<a class="headerlink" href="#performance-tuning" title="Permalink to this heading"></a></h1>
+<section id="cpu-and-irq-baseline">
+<h2>CPU and IRQ Baseline<a class="headerlink" href="#cpu-and-irq-baseline" title="Permalink to this heading"></a></h2>
+<p>Set CPU frequency governor to performance on bare metal/hypervisor hosts:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>cpupower<span class="w"> </span>frequency-set<span class="w"> </span>--governor<span class="w"> </span>performance
+</pre></div>
+</div>
+<p>Confirm NIC queue count and CPU distribution are sensible for your hardware:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>ethtool<span class="w"> </span>-l<span class="w"> </span>&lt;interface&gt;
+grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;CPU\\(|IRQ&#39;</span><span class="w"> </span>/proc/interrupts<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-n<span class="w"> </span><span class="m">50</span>
+</pre></div>
+</div>
+<p>If a single queue/CPU is saturated while others are idle, rebalance queue/IRQ affinity and revisit queue-count settings in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+</section>
+<section id="topology-queue-pressure">
+<h2>Topology/Queue Pressure<a class="headerlink" href="#topology-queue-pressure" title="Permalink to this heading"></a></h2>
+<p>When shaping large hierarchies:</p>
+<ul class="simple">
+<li><p>Prefer lower-depth integration strategies (<code class="docutils literal notranslate"><span class="pre">ap_only</span></code>/<code class="docutils literal notranslate"><span class="pre">ap_site</span></code>) unless full hierarchy is required.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">promote_to_root</span></code> for large multi-site topologies to avoid single-core choke points.</p></li>
+<li><p>Validate WebUI CPU Tree/CPU Weights after major topology changes.</p></li>
+</ul>
+</section>
+<section id="scheduler-refresh-and-load">
+<h2>Scheduler Refresh and Load<a class="headerlink" href="#scheduler-refresh-and-load" title="Permalink to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code> refresh cadence affects control-plane load and change responsiveness.</p>
+<ul class="simple">
+<li><p>Start with a conservative <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>.</p></li>
+<li><p>Decrease interval only if your integration/API and host can handle the extra churn.</p></li>
+<li><p>After changing interval, monitor:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqos_scheduler</span> <span class="pre">--since</span> <span class="pre">&quot;30</span> <span class="pre">minutes</span> <span class="pre">ago&quot;</span></code></p></li>
+<li><p>WebUI scheduler status</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="stormguard-rollout">
+<h2>StormGuard Rollout<a class="headerlink" href="#stormguard-rollout" title="Permalink to this heading"></a></h2>
+<p>If using StormGuard:</p>
+<ol class="arabic simple">
+<li><p>Start with <code class="docutils literal notranslate"><span class="pre">dry_run</span> <span class="pre">=</span> <span class="pre">true</span></code>.</p></li>
+<li><p>Observe at least one busy period.</p></li>
+<li><p>Move to live mode only after reviewing debug/status behavior.</p></li>
+</ol>
+<p>See <a class="reference internal" href="stormguard.html"><span class="std std-doc">StormGuard</span></a> for details.</p>
+</section>
+<section id="startup-boot-delays">
+<h2>Startup/Boot Delays<a class="headerlink" href="#startup-boot-delays" title="Permalink to this heading"></a></h2>
+<p>If Ubuntu startup is slow due to network-online dependencies, inspect target dependencies:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>systemctl<span class="w"> </span>show<span class="w"> </span>-p<span class="w"> </span>WantedBy<span class="w"> </span>network-online.target
+</pre></div>
+</div>
+<p>On some Ubuntu installs, disabling unused cloud/iSCSI services may help:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>disable<span class="w"> </span>cloud-config<span class="w"> </span>iscsid<span class="w"> </span>cloud-final
+</pre></div>
+</div>
+<p>Validate this against your environment before disabling services.</p>
+</section>
+<section id="routing-convergence-ospf">
+<h2>Routing Convergence (OSPF)<a class="headerlink" href="#routing-convergence-ospf" title="Permalink to this heading"></a></h2>
+<p>For routed deployments, tune OSPF neighbor timers on core and edge routers to reduce outage windows during reboots:</p>
+<ul class="simple">
+<li><p>hello interval</p></li>
+<li><p>dead interval</p></li>
+</ul>
+</section>
+<section id="related-optimization-and-resilience-pages">
+<h2>Related Optimization and Resilience Pages<a class="headerlink" href="#related-optimization-and-resilience-pages" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="scale-topology.html"><span class="std std-doc">Scale Planning and Topology Design</span></a></p></li>
+<li><p><a class="reference internal" href="stormguard.html"><span class="std std-doc">StormGuard</span></a></p></li>
+<li><p><a class="reference internal" href="high-availability.html"><span class="std std-doc">High Availability and Failure Domains</span></a></p></li>
+<li><p><a class="reference internal" href="troubleshooting.html"><span class="std std-doc">Troubleshooting</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="cake.html" class="btn btn-neutral float-left" title="CAKE" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="extras.html" class="btn btn-neutral float-right" title="Extras" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

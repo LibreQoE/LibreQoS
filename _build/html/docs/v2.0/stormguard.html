@@ -1,0 +1,235 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StormGuard &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="High Availability and Failure Domains" href="high-availability.html" />
+    <link rel="prev" title="Scale Planning and Topology Design" href="scale-topology.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">StormGuard</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-stormguard-does">What StormGuard Does</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#ui-and-debugging">UI and Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#safe-rollout-pattern">Safe Rollout Pattern</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#related-pages">Related Pages</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">StormGuard</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/stormguard.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="stormguard">
+<h1>StormGuard<a class="headerlink" href="#stormguard" title="Permalink to this heading"></a></h1>
+<p>StormGuard is LibreQoS’ adaptive queue-adjustment subsystem for congestion and quality events.</p>
+<blockquote>
+<div><p><strong>Important Scope Warning</strong>
+StormGuard is intended for specific use cases, such as controlling congestion on variable-bandwidth WAN links (for example maritime networks), or a small number of access points with highly variable capacity.
+It is not intended to manage dozens or hundreds of nodes at the same time.</p>
+</div></blockquote>
+<section id="what-stormguard-does">
+<h2>What StormGuard Does<a class="headerlink" href="#what-stormguard-does" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Monitors real-time signals (throughput, RTT/loss-related metrics, and saturation context).</p></li>
+<li><p>Applies bounded adjustments to configured node limits to protect quality under stress.</p></li>
+<li><p>Exposes status/debug data in the WebUI (Node Manager).</p></li>
+</ul>
+</section>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Permalink to this heading"></a></h2>
+<p>StormGuard is configured in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> under <code class="docutils literal notranslate"><span class="pre">[stormguard]</span></code>.</p>
+<p>Common keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">enabled</span></code>: turns StormGuard on/off.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dry_run</span></code>: calculate decisions without applying live queue changes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">targets</span></code>: list of top-level node names to manage.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum_download_percentage</span></code>: minimum floor ratio for download limits.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum_upload_percentage</span></code>: minimum floor ratio for upload limits.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log_file</span></code>: optional CSV output path for decision/change telemetry.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="k">[stormguard]</span>
+<span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">dry_run</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">log_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/var/log/stormguard.csv&quot;</span>
+<span class="n">targets</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;SITE_A&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;SITE_B&quot;</span><span class="p">]</span>
+<span class="n">minimum_download_percentage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span>
+<span class="n">minimum_upload_percentage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span>
+</pre></div>
+</div>
+<p>If you are testing, start with <code class="docutils literal notranslate"><span class="pre">dry_run</span> <span class="pre">=</span> <span class="pre">true</span></code> so you can observe decisions before allowing live limit changes.</p>
+</section>
+<section id="ui-and-debugging">
+<h2>UI and Debugging<a class="headerlink" href="#ui-and-debugging" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>WebUI provides StormGuard status and debug views.</p></li>
+<li><p>The StormGuard debug page shows:</p>
+<ul>
+<li><p>current effective limits</p></li>
+<li><p>evaluation metrics</p></li>
+<li><p>rule/decision context</p></li>
+</ul>
+</li>
+</ul>
+<p>Use this during rollout validation.</p>
+</section>
+<section id="safe-rollout-pattern">
+<h2>Safe Rollout Pattern<a class="headerlink" href="#safe-rollout-pattern" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Enable StormGuard with <code class="docutils literal notranslate"><span class="pre">dry_run</span> <span class="pre">=</span> <span class="pre">true</span></code>.</p></li>
+<li><p>Observe behavior for multiple peak periods.</p></li>
+<li><p>Validate there are no undesirable limit oscillations.</p></li>
+<li><p>Switch <code class="docutils literal notranslate"><span class="pre">dry_run</span> <span class="pre">=</span> <span class="pre">false</span></code>.</p></li>
+<li><p>Continue monitoring after each major topology/integration change.</p></li>
+</ol>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permalink to this heading"></a></h2>
+<p>If StormGuard behavior seems incorrect:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>lqosd<span class="w"> </span>lqos_scheduler
+journalctl<span class="w"> </span>-u<span class="w"> </span>lqosd<span class="w"> </span>--since<span class="w"> </span><span class="s2">&quot;30 minutes ago&quot;</span>
+</pre></div>
+</div>
+<p>Also verify:</p>
+<ul class="simple">
+<li><p>target node names still match your current <code class="docutils literal notranslate"><span class="pre">network.json</span></code> hierarchy</p></li>
+<li><p>integration updates have not renamed key nodes/APs</p></li>
+<li><p>your minimum percentage floors are reasonable for expected traffic profiles</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log_file</span></code> path (if configured) is writable by the service user</p></li>
+</ul>
+</section>
+<section id="related-pages">
+<h2>Related Pages<a class="headerlink" href="#related-pages" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="configuration.html"><span class="std std-doc">Configuration</span></a></p></li>
+<li><p><a class="reference internal" href="scale-topology.html"><span class="std std-doc">Scale Planning and Topology Design</span></a></p></li>
+<li><p><a class="reference internal" href="performance-tuning.html"><span class="std std-doc">Performance Tuning</span></a></p></li>
+<li><p><a class="reference internal" href="high-availability.html"><span class="std std-doc">High Availability and Failure Domains</span></a></p></li>
+<li><p><a class="reference internal" href="components.html"><span class="std std-doc">Components</span></a></p></li>
+<li><p><a class="reference internal" href="troubleshooting.html"><span class="std std-doc">Troubleshooting</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="scale-topology.html" class="btn btn-neutral float-left" title="Scale Planning and Topology Design" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="high-availability.html" class="btn btn-neutral float-right" title="High Availability and Failure Domains" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

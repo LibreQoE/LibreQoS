@@ -1,0 +1,715 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM/NMS Integrations &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">CRM/NMS Integrations</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/integrations-reference.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="crm-nms-integrations">
+<h1>CRM/NMS Integrations<a class="headerlink" href="#crm-nms-integrations" title="Permalink to this heading"></a></h1>
+<p>This page preserves the detailed legacy integration reference.
+For the task-oriented entrypoint, use <a class="reference internal" href="integrations.html"><span class="std std-doc">CRM/NMS Integrations</span></a>.</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#splynx-integration"><span class="xref myst">Splynx Integration</span></a></p>
+<ul>
+<li><p><a class="reference internal" href="#topology-strategies"><span class="xref myst">Topology Strategies</span></a></p></li>
+<li><p><a class="reference internal" href="#promote-to-root-nodes-performance-optimization"><span class="xref myst">Promote to Root Nodes (Performance Optimization)</span></a></p></li>
+<li><p><a class="reference internal" href="#splynx-api-access"><span class="xref myst">Splynx API Access</span></a></p></li>
+<li><p><a class="reference internal" href="#splynx-overrides"><span class="xref myst">Splynx Overrides</span></a></p></li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#netzur-integration"><span class="xref myst">Netzur Integration</span></a></p></li>
+<li><p><a class="reference internal" href="#visp-integration"><span class="xref myst">VISP Integration</span></a></p></li>
+<li><p><a class="reference internal" href="#uisp-integration"><span class="xref myst">UISP Integration</span></a></p>
+<ul>
+<li><p><a class="reference internal" href="#topology-strategies-1"><span class="xref myst">Topology Strategies</span></a></p></li>
+<li><p><a class="reference internal" href="#suspension-handling-strategies"><span class="xref myst">Suspension Handling Strategies</span></a></p></li>
+<li><p><a class="reference internal" href="#burst"><span class="xref myst">Burst</span></a></p></li>
+<li><p><a class="reference internal" href="#configuration-example"><span class="xref myst">Configuration Example</span></a></p></li>
+<li><p><a class="reference internal" href="#uisp-overrides"><span class="xref myst">UISP Overrides</span></a></p>
+<ul>
+<li><p><a class="reference internal" href="#uisp-route-overrides"><span class="xref myst">UISP Route Overrides</span></a></p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><a class="reference internal" href="#wispgate-integration"><span class="xref myst">WISPGate Integration</span></a></p></li>
+<li><p><a class="reference internal" href="#powercode-integration"><span class="xref myst">Powercode Integration</span></a></p></li>
+<li><p><a class="reference internal" href="#sonar-integration"><span class="xref myst">Sonar Integration</span></a></p></li>
+</ul>
+<p>Most operators use this built-in integration path.
+If you use your own scripts as the source of truth for <code class="docutils literal notranslate"><span class="pre">network.json</span></code> and <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>, start with <a class="reference internal" href="configuration.html#operating-modes-and-source-of-truth"><span class="std std-ref">Operating Modes and Source of Truth</span></a>.</p>
+<section id="what-these-integrations-do">
+<h2>What these integrations do<a class="headerlink" href="#what-these-integrations-do" title="Permalink to this heading"></a></h2>
+<p>These integrations work by synchronizing with your CRM/NMS system to produce the two files LibreQoS requires for shaping - <a class="reference internal" href="configuration.html#network-hierarchy"><span class="std std-ref">network.json</span></a> and <a class="reference internal" href="configuration.html#circuits"><span class="std std-ref">ShapedDevices.csv</span></a>.</p>
+<p>Important behavior when integrations are enabled:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> is typically regenerated by integration sync jobs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">network.json</span></code> overwrite behavior depends on your integration settings (for example <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code>).</p></li>
+<li><p>Manual edits may be overwritten on the next refresh cycle.</p></li>
+</ul>
+</section>
+<section id="splynx-integration">
+<h2>Splynx Integration<a class="headerlink" href="#splynx-integration" title="Permalink to this heading"></a></h2>
+<blockquote>
+<div><p><strong>⚠️ Breaking Change Notice</strong>: Prior to v1.5-RC-2, the default Splynx strategy was <code class="docutils literal notranslate"><span class="pre">full</span></code>. Starting with v1.5-RC-2, the default strategy is <code class="docutils literal notranslate"><span class="pre">ap_only</span></code> for improved CPU performance. If you require the previous behavior, explicitly set <code class="docutils literal notranslate"><span class="pre">strategy</span> <span class="pre">=</span> <span class="pre">&quot;full&quot;</span></code> in your Splynx configuration section.</p>
+</div></blockquote>
+<p>First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<section id="topology-strategies">
+<h3>Topology Strategies<a class="headerlink" href="#topology-strategies" title="Permalink to this heading"></a></h3>
+<p>LibreQoS supports multiple topology strategies for Splynx integration to balance CPU performance with network hierarchy needs:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Strategy</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>CPU Impact</p></th>
+<th class="head"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">flat</span></code></p></td>
+<td><p>Only shapes subscribers, no hierarchy</p></td>
+<td><p>Lowest</p></td>
+<td><p>Maximum performance, simple subscriber-only shaping</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ap_only</span></code></p></td>
+<td><p>Single layer: AP → Clients</p></td>
+<td><p>Low</p></td>
+<td><p><strong>Default</strong>. Best balance of performance and structure</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ap_site</span></code></p></td>
+<td><p>Two layers: Site → AP → Clients</p></td>
+<td><p>Medium</p></td>
+<td><p>Site-level aggregation with moderate complexity</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">full</span></code></p></td>
+<td><p>Complete topology mapping</p></td>
+<td><p>Highest</p></td>
+<td><p>Full network hierarchy representation</p></td>
+</tr>
+</tbody>
+</table>
+<p>Configure the strategy in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> under the <code class="docutils literal notranslate"><span class="pre">[splynx_integration]</span></code> section:</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="k">[splynx_integration]</span>
+<span class="c1"># ... other splynx settings ...</span>
+<span class="na">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;ap_only&quot;</span>
+</pre></div>
+</div>
+<p><strong>Performance Considerations:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">flat</span></code> and <code class="docutils literal notranslate"><span class="pre">ap_only</span></code> strategies significantly reduce CPU load by limiting network depth</p></li>
+<li><p>Choose <code class="docutils literal notranslate"><span class="pre">ap_only</span></code> for most deployments unless you need site-level traffic aggregation</p></li>
+<li><p>Only use <code class="docutils literal notranslate"><span class="pre">full</span></code> if you require complete network topology representation and have adequate CPU resources</p></li>
+</ul>
+</section>
+<section id="promote-to-root-nodes-performance-optimization">
+<h3>Promote to Root Nodes (Performance Optimization)<a class="headerlink" href="#promote-to-root-nodes-performance-optimization" title="Permalink to this heading"></a></h3>
+<p>When using <code class="docutils literal notranslate"><span class="pre">full</span></code> topology strategy, you may encounter CPU performance bottlenecks where all traffic flows through a single root site, limiting throughput to what one CPU core can handle.</p>
+<p>The <strong>promote_to_root</strong> feature solves this by promoting specific sites to root-level nodes, distributing traffic shaping across multiple CPU cores.</p>
+<p><strong>Configuration:</strong></p>
+<ol class="arabic simple">
+<li><p>Navigate to Integration → Common in the WebUI</p></li>
+<li><p>In the “Promote to Root Nodes” field, enter one site name per line:</p></li>
+</ol>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Remote_Site_Alpha</span>
+<span class="n">Remote_Site_Beta</span>
+<span class="n">Datacenter_West</span>
+</pre></div>
+</div>
+<p><strong>Benefits:</strong></p>
+<ul class="simple">
+<li><p>Eliminates single-CPU bottleneck for networks with remote sites</p></li>
+<li><p>Distributes traffic shaping across multiple CPU cores</p></li>
+<li><p>Improves overall network performance for large topologies</p></li>
+<li><p>Works with both Splynx and UISP integrations</p></li>
+</ul>
+<p><strong>When to Use:</strong></p>
+<ul class="simple">
+<li><p>Networks with multiple high-capacity remote sites</p></li>
+<li><p>When using <code class="docutils literal notranslate"><span class="pre">full</span></code> topology strategy and experiencing CPU limitations</p></li>
+<li><p>Large networks where root site traffic exceeds single-core capacity</p></li>
+</ul>
+</section>
+<section id="splynx-api-access">
+<h3>Splynx API Access<a class="headerlink" href="#splynx-api-access" title="Permalink to this heading"></a></h3>
+<p>The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable <a class="reference external" href="https://splynx.docs.apiary.io/#introduction/authentication">Unsecure access</a> in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Category</p></th>
+<th class="head"><p>Name</p></th>
+<th class="head"><p>Permission</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Tariff Plans</p></td>
+<td><p>Internet</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>FUP</p></td>
+<td><p>Compiler</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>FUP</p></td>
+<td><p>Policies</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>FUP</p></td>
+<td><p>Capped Data</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>FUP</p></td>
+<td><p>CAP Tariff</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>FUP</p></td>
+<td><p>FUP Limits</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Customers</p></td>
+<td><p>Customer</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Customers</p></td>
+<td><p>Customers Online</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Customers</p></td>
+<td><p>Customer Internet services</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>Routers</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Networking</p></td>
+<td><p>Router contention</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>MikroTik</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Networking</p></td>
+<td><p>Monitoring</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>Network Sites</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Networking</p></td>
+<td><p>IPv4 Networks</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>IPv4 Networks IP</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Networking</p></td>
+<td><p>CPE</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>CPE AP</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Networking</p></td>
+<td><p>IPv6 Networks</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-odd"><td><p>Networking</p></td>
+<td><p>IPv6 Networks IP (Addresses)</p></td>
+<td><p>View</p></td>
+</tr>
+<tr class="row-even"><td><p>Administration</p></td>
+<td><p>Locations</p></td>
+<td><p>View</p></td>
+</tr>
+</tbody>
+</table>
+<p>To test the Splynx Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationSplynx.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file and network.json.
+ShapedDevices.csv will be overwritten every time the Splynx integration is run.</p>
+<p>To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> with the command <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">nano</span> <span class="pre">/etc/lqos.conf</span></code>.
+Edit the file to set the value of <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+Then, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>.</p>
+<p>You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_splynx</span> <span class="pre">=</span> <span class="pre">true</span></code> under the <code class="docutils literal notranslate"><span class="pre">[splynx_integration]</span></code> section in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.
+Once set, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+<section id="splynx-overrides">
+<h3>Splynx Overrides<a class="headerlink" href="#splynx-overrides" title="Permalink to this heading"></a></h3>
+<p>You can also modify the the file <code class="docutils literal notranslate"><span class="pre">integrationSplynxBandwidths.csv</span></code> to override the default bandwidths for each Node (Site, AP).</p>
+<p>A template is available in the <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src</span></code> folder. To utilize the template, copy the file <code class="docutils literal notranslate"><span class="pre">integrationSplynxBandwidths.template.csv</span></code> (removing the <code class="docutils literal notranslate"><span class="pre">.template</span></code> part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">cp</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationSplynxBandwidths</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">csv</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationSplynxBandwidths</span><span class="o">.</span><span class="n">csv</span>
+</pre></div>
+</div>
+<p>And edit the CSV using LibreOffice or your preferred CSV editor.</p>
+</section>
+</section>
+<section id="netzur-integration">
+<h2>Netzur Integration<a class="headerlink" href="#netzur-integration" title="Permalink to this heading"></a></h2>
+<p>Netzur deployments expose subscriber and zone inventories via a REST endpoint secured with a Bearer token. Configure <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> as follows:</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="k">[netzur_integration]</span>
+<span class="na">enable_netzur</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+<span class="na">api_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;your-netzur-token&quot;</span>
+<span class="na">api_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;https://netzur.example.com/api/libreqos&quot;</span>
+<span class="na">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">60</span>
+<span class="na">use_mikrotik_ipv6</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">enable_netzur</span></code> toggles automatic imports by <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">api_key</span></code> is the Bearer token generated inside Netzur.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">api_url</span></code> must return JSON containing <code class="docutils literal notranslate"><span class="pre">zones</span></code> (mapped to sites) and <code class="docutils literal notranslate"><span class="pre">customers</span></code> (mapped to client circuits and devices).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout_secs</span></code> overrides the default HTTP timeout (60 seconds) when the API is slow.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">use_mikrotik_ipv6</span></code> enriches subscriber devices with IPv6 prefixes discovered via <code class="docutils literal notranslate"><span class="pre">mikrotikDHCPRouterList.csv</span></code>.</p></li>
+</ul>
+<p>Run a manual import with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationNetzur.py
+</pre></div>
+</div>
+<p>The integration regenerates <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> and, unless <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> is disabled, updates <code class="docutils literal notranslate"><span class="pre">network.json</span></code>. Adjust the Integration → Common settings if you need to preserve an existing network map between Netzur syncs.</p>
+</section>
+<section id="visp-integration">
+<h2>VISP Integration<a class="headerlink" href="#visp-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for VISP in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>:</p>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="k">[visp_integration]</span>
+<span class="na">enable_visp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+<span class="na">client_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;your-client-id&quot;</span>
+<span class="na">client_secret</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;your-client-secret&quot;</span>
+<span class="na">username</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;appuser-username&quot;</span>
+<span class="na">password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;appuser-password&quot;</span>
+<span class="c1"># Optional: leave unset/blank to auto-select first ISP ID returned by token payload</span>
+<span class="c1"># isp_id = 0</span>
+<span class="na">timeout_secs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">20</span>
+<span class="c1"># Optional: used for online session enrichment</span>
+<span class="c1"># online_users_domain = &quot;&quot;</span>
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>VISP import is GraphQL-based and currently defaults to a flat topology strategy.</p></li>
+<li><p>The integration writes <code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code> every run.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">network.json</span></code> is only overwritten when <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span> <span class="pre">=</span> <span class="pre">true</span></code> (under <code class="docutils literal notranslate"><span class="pre">[integration_common]</span></code>).</p></li>
+<li><p>VISP auth tokens are cached in <code class="docutils literal notranslate"><span class="pre">&lt;lqos_directory&gt;/.visp_token_cache_*.json</span></code>.</p></li>
+</ul>
+<p>Run a manual import with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationVISP.py
+</pre></div>
+</div>
+<p>To run automatically through <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code>, set:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">[visp_integration]</span> <span class="pre">enable_visp</span> <span class="pre">=</span> <span class="pre">true</span></code></p></li>
+<li><p>then restart scheduler:</p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lqos_scheduler
+</pre></div>
+</div>
+</section>
+<section id="uisp-integration">
+<h2>UISP Integration<a class="headerlink" href="#uisp-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for UISP in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<section id="id1">
+<h3>Topology Strategies<a class="headerlink" href="#id1" title="Permalink to this heading"></a></h3>
+<p>LibreQoS supports multiple topology strategies for UISP integration to balance CPU performance with network hierarchy needs:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Strategy</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>CPU Impact</p></th>
+<th class="head"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">flat</span></code></p></td>
+<td><p>Only shapes subscribers by service plan speed</p></td>
+<td><p>Lowest</p></td>
+<td><p>Maximum performance, simple subscriber-only shaping</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ap_only</span></code></p></td>
+<td><p>Shapes by service plan and Access Point</p></td>
+<td><p>Low</p></td>
+<td><p>Good balance of performance and AP-level control</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ap_site</span></code></p></td>
+<td><p>Shapes by service plan, Access Point, and Site</p></td>
+<td><p>Medium</p></td>
+<td><p>Site-level aggregation with moderate complexity</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">full</span></code></p></td>
+<td><p>Shapes entire network including backhauls, Sites, APs, and clients</p></td>
+<td><p>Highest</p></td>
+<td><p><strong>Recommended for most deployments</strong>. Complete network hierarchy with backhaul awareness</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Choosing the Right Strategy:</strong></p>
+<ul class="simple">
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">full</span></code> for most deployments to get complete network topology awareness including backhaul links</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">ap_site</span></code> if you need site-level control but don’t need backhaul shaping</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">ap_only</span></code> for better performance when site aggregation isn’t needed</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">flat</span></code> only when maximum performance is critical and you don’t need any hierarchy</p></li>
+</ul>
+<p><strong>Performance Note:</strong> When using <code class="docutils literal notranslate"><span class="pre">full</span></code> strategy with large networks, consider using the <strong>promote_to_root</strong> feature (see <a class="reference internal" href="#promote-to-root-nodes-performance-optimization"><span class="xref myst">Promote to Root Nodes</span></a> above) to distribute CPU load across multiple cores.</p>
+</section>
+<section id="suspension-handling-strategies">
+<h3>Suspension Handling Strategies<a class="headerlink" href="#suspension-handling-strategies" title="Permalink to this heading"></a></h3>
+<p>Configure how LibreQoS handles suspended customer accounts:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Strategy</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">none</span></code></p></td>
+<td><p>Do not handle suspensions</p></td>
+<td><p>When suspension handling is managed elsewhere</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ignore</span></code></p></td>
+<td><p>Do not add suspended customers to network map</p></td>
+<td><p>Reduces queue count and improves performance for networks with many suspended accounts</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">slow</span></code></p></td>
+<td><p>Limit suspended customers to 0.1 Mbps</p></td>
+<td><p>Maintains minimal connectivity for suspended accounts (e.g., payment portals)</p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Choosing a Suspension Strategy:</strong></p>
+<ul class="simple">
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">none</span></code> if your edge router or another system handles suspensions</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">ignore</span></code> to reduce system load by not creating queues for suspended customers</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">slow</span></code> to maintain minimal connectivity (useful for payment portals or service messages)</p></li>
+</ul>
+</section>
+<section id="burst">
+<h3>Burst<a class="headerlink" href="#burst" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>In UISP, Download Speed and Upload Speed are configured in Mbps (for example, 100 Mbps).</p></li>
+<li><p>In UISP, Download Burst and Upload Burst are configured in kilobytes per second (kB/s).</p></li>
+<li><p>Conversion and shaping:</p>
+<ul>
+<li><p>burst_mbps = kB/s × 8 / 1000</p></li>
+<li><p>Download Min = Download Speed (Mbps) × commit_bandwidth_multiplier</p></li>
+<li><p>Download Max = (Download Speed (Mbps) + burst_mbps) × bandwidth_overhead_factor</p></li>
+<li><p>Upload Min/Max are computed the same way from Upload Speed (Mbps) and Upload Burst (kB/s)</p></li>
+</ul>
+</li>
+<li><p>Example:</p>
+<ul>
+<li><p>UISP values: Download Speed = 100 Mbps, Download Burst = 12,500 kB/s</p></li>
+<li><p>Burst adds 12,500 × 8 / 1000 = 100 Mbps</p></li>
+<li><p>Download Min = 100 × commit_bandwidth_multiplier</p></li>
+<li><p>Download Max = (100 + 100) × bandwidth_overhead_factor</p></li>
+</ul>
+</li>
+<li><p>Quick reference (burst kB/s → added Mbps):</p>
+<ul>
+<li><p>6,250 kB/s → +50 Mbps</p></li>
+<li><p>12,500 kB/s → +100 Mbps</p></li>
+<li><p>25,000 kB/s → +200 Mbps</p></li>
+</ul>
+</li>
+<li><p>Notes:</p>
+<ul>
+<li><p>Leave burst empty/null in UISP to disable burst.</p></li>
+<li><p>If suspended_strategy is set to slow, both Min and Max are set to 0.1 Mbps.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="configuration-example">
+<h3>Configuration Example<a class="headerlink" href="#configuration-example" title="Permalink to this heading"></a></h3>
+<div class="highlight-ini notranslate"><div class="highlight"><pre><span></span><span class="k">[uisp_integration]</span>
+<span class="c1"># Core Settings</span>
+<span class="na">enable_uisp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span>
+<span class="na">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;your-api-token-here&quot;</span>
+<span class="na">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;https://uisp.your_domain.com&quot;</span>
+<span class="na">site</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Root_Site_Name&quot;</span><span class="w">  </span><span class="c1"># Root site for topology perspective</span>
+
+<span class="c1"># Topology Strategy (see table above)</span>
+<span class="na">strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;full&quot;</span><span class="w">  </span><span class="c1"># Recommended for most deployments</span>
+
+<span class="c1"># Suspension Handling (see table above)</span>
+<span class="na">suspended_strategy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;none&quot;</span>
+
+<span class="c1"># Capacity Adjustments</span>
+<span class="c1"># UISP&#39;s reported AP capacities can be optimistic</span>
+<span class="na">airmax_capacity</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0.65</span><span class="w">  </span><span class="c1"># Use 65% of reported AirMax capacity</span>
+<span class="na">ltu_capacity</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0.95</span><span class="w">     </span><span class="c1"># Use 95% of reported LTU capacity</span>
+
+<span class="c1"># Site Management</span>
+<span class="na">exclude_sites</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[]</span><span class="w">  </span><span class="c1"># Sites to exclude, e.g., [&quot;Test_Site&quot;, &quot;Lab_Site&quot;]</span>
+<span class="na">use_ptmp_as_parent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">true</span><span class="w">  </span><span class="c1"># For sites branched off PtMP Access Points</span>
+
+<span class="c1"># Bandwidth Adjustments</span>
+<span class="na">bandwidth_overhead_factor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">1.15</span><span class="w">  </span><span class="c1"># Give customers 15% above plan speed</span>
+<span class="na">commit_bandwidth_multiplier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">0.98</span><span class="w">  </span><span class="c1"># Set minimum to 98% of maximum (CIR)</span>
+
+<span class="c1"># Advanced Options</span>
+<span class="na">ipv6_with_mikrotik</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span><span class="w">  </span><span class="c1"># Enable if using DHCPv6 with MikroTik</span>
+<span class="na">always_overwrite_network_json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span><span class="w">  </span><span class="c1"># Set true to rebuild topology each run</span>
+<span class="na">exception_cpes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[]</span><span class="w">  </span><span class="c1"># CPE exceptions in [&quot;cpe:parent&quot;] format</span>
+<span class="na">squash_sites</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[]</span><span class="w">  </span><span class="c1"># Optional: sites to squash</span>
+<span class="na">enable_squashing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span><span class="w">  </span><span class="c1"># Optional: enable AP/single-entry squashing logic</span>
+<span class="na">do_not_squash_sites</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[]</span><span class="w">  </span><span class="c1"># Optional: never squash these sites</span>
+<span class="na">ignore_calculated_capacity</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span><span class="w">  </span><span class="c1"># Optional: keep configured capacities even if calculated differs</span>
+<span class="na">insecure_ssl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">false</span><span class="w">  </span><span class="c1"># Optional: ignore UISP TLS certificate validation</span>
+</pre></div>
+</div>
+</section>
+<section id="uisp-advanced-operational-options">
+<h3>UISP Advanced/Operational Options<a class="headerlink" href="#uisp-advanced-operational-options" title="Permalink to this heading"></a></h3>
+<p>The following UISP options are available in current builds and WebUI (Node Manager) config editors:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">exclude_sites</span></code>: list of site names to exclude from import.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">exception_cpes</span></code>: list of <code class="docutils literal notranslate"><span class="pre">cpe:parent</span></code> overrides for ambiguous parent assignment.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">squash_sites</span></code>: optional list of sites to squash in full strategy workflows.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enable_squashing</span></code>: enables additional squashing behavior where supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">do_not_squash_sites</span></code>: explicit exclusions from squashing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">use_ptmp_as_parent</span></code>: prefer PtMP AP as parent for relevant topology paths.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignore_calculated_capacity</span></code>: prefer configured capacities instead of integration-calculated values.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">insecure_ssl</span></code>: disables TLS certificate verification for UISP API calls.</p></li>
+</ul>
+<p>Recommended use:</p>
+<ol class="arabic simple">
+<li><p>Keep <code class="docutils literal notranslate"><span class="pre">insecure_ssl</span> <span class="pre">=</span> <span class="pre">false</span></code> unless you have a known internal PKI/self-signed requirement.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">exclude_sites</span></code> and <code class="docutils literal notranslate"><span class="pre">do_not_squash_sites</span></code> first for safer topology changes.</p></li>
+<li><p>Apply <code class="docutils literal notranslate"><span class="pre">squash_sites</span></code>/<code class="docutils literal notranslate"><span class="pre">enable_squashing</span></code> incrementally and validate queue placement after each change.</p></li>
+</ol>
+<p>To test the UISP Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/opt/libreqos/src
+sudo<span class="w"> </span>/opt/libreqos/src/bin/uisp_integration
+</pre></div>
+</div>
+<p>On the first successful run, it will create a network.json and ShapedDevices.csv file.
+If a network.json file exists, it will not be overwritten, unless you set <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span> <span class="pre">=</span> <span class="pre">true</span></code>.</p>
+<p>ShapedDevices.csv will be overwritten every time the UISP integration is run.</p>
+<p>To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> with the command <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">nano</span> <span class="pre">/etc/lqos.conf</span></code>.
+Edit the file to set the value of <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+Then, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>.</p>
+<p>You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_uisp</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>. Once set, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+<section id="uisp-overrides">
+<h3>UISP Overrides<a class="headerlink" href="#uisp-overrides" title="Permalink to this heading"></a></h3>
+<p>You can also modify the the following files to more accurately reflect your network:</p>
+<ul class="simple">
+<li><p>integrationUISPbandwidths.csv</p></li>
+<li><p>integrationUISProutes.csv</p></li>
+</ul>
+<p>Each of the files above have templates available in the <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src</span></code> folder. If you don’t find them there, you can navigate <a class="reference external" href="https://github.com/LibreQoE/LibreQoS/tree/develop/src">here</a>. To utilize the template, copy the file (removing the <code class="docutils literal notranslate"><span class="pre">.template</span></code> part of the filename) and set the appropriate information inside each file.
+For example, if you want to change the set bandwidth for a site, you would do:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">cp</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationUISPbandwidths</span><span class="o">.</span><span class="n">template</span><span class="o">.</span><span class="n">csv</span> <span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">libreqos</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">integrationUISPbandwidths</span><span class="o">.</span><span class="n">csv</span>
+</pre></div>
+</div>
+<p>And edit the CSV using LibreOffice or your preferred CSV editor.</p>
+<section id="uisp-route-overrides">
+<h4>UISP Route Overrides<a class="headerlink" href="#uisp-route-overrides" title="Permalink to this heading"></a></h4>
+<p>The default cost between nodes is typically 10. The integration creates a dot graph file <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src/graph.dot</span></code> which can be rendered using <a class="reference external" href="https://dreampuf.github.io/GraphvizOnline/">Graphviz</a>. This renders a map with the associated costs of all links.</p>
+<p><img alt="image" src="https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859" /></p>
+<p>Say you have Site 1, Site 2, and Site 3.
+A backup path exists between Site 1 and Site 3, but is not the preferred path.
+Your preference is Site 1 &gt; Site 2 &gt; Site 3, but the integration by default connects Site 1 &gt; Site 3 directly.</p>
+<p>To fix this, add a cost above the default for the path between Site 1 and Site 3.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Site</span> <span class="mi">1</span><span class="p">,</span> <span class="n">Site</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">100</span>
+<span class="n">Site</span> <span class="mi">3</span><span class="p">,</span> <span class="n">Site</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span>
+</pre></div>
+</div>
+<p>With this, data will flow Site 1 &gt; Site 2 &gt; Site 3.</p>
+<p>To make the change, perform a reload of the integration with <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+</section>
+</section>
+<section id="wispgate-integration">
+<h2>WISPGate Integration<a class="headerlink" href="#wispgate-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for WISPGate in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.
+There should be a section as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">wispgate_integration</span><span class="p">]</span>
+<span class="n">enable_wispgate</span> <span class="o">=</span> <span class="n">false</span>
+<span class="n">wispgate_api_token</span> <span class="o">=</span> <span class="s2">&quot;token&quot;</span>
+<span class="n">wispgate_api_url</span> <span class="o">=</span> <span class="s2">&quot;https://your_wispgate_url.com&quot;</span>
+</pre></div>
+</div>
+<p>If the section is missing, you can add it by copying the section above.
+Set the appropriate values for wispgate_api_token and wispgate_api_url, then save the file.</p>
+<p>To test the WISPGate Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationWISPGate.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file and network.json.
+ShapedDevices.csv will be overwritten every time the WISPGate integration is run.</p>
+<p>To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> with the command <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">nano</span> <span class="pre">/etc/lqos.conf</span></code>.
+Edit the file to set the value of <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code>.
+Then, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqosd</span></code>.</p>
+<p>You have the option to run integrationWISPGate.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_wispgate</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.
+Once set, run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">restart</span> <span class="pre">lqos_scheduler</span></code>.</p>
+</section>
+<section id="powercode-integration">
+<h2>Powercode Integration<a class="headerlink" href="#powercode-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for Powercode (powercode_api_key, powercode_api_url, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<p>To test the Powercode Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationPowercode.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file.
+You can modify the network.json file manually to reflect Site/AP bandwidth limits.
+ShapedDevices.csv will be overwritten every time the Powercode integration is run.
+You have the option to run integrationPowercode.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_powercode</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+</section>
+<section id="sonar-integration">
+<h2>Sonar Integration<a class="headerlink" href="#sonar-integration" title="Permalink to this heading"></a></h2>
+<p>First, set the relevant parameters for Sonar (sonar_api_key, sonar_api_url, etc.) in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+<p>To test the Sonar Integration, use</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationSonar.py
+</pre></div>
+</div>
+<p>On the first successful run, it will create a ShapedDevices.csv file.
+If a network.json file exists, it will not be overwritten, unless you set <code class="docutils literal notranslate"><span class="pre">always_overwrite_network_json</span> <span class="pre">=</span> <span class="pre">true</span></code>.
+You can modify the network.json file to more accurately reflect bandwidth limits.
+ShapedDevices.csv will be overwritten every time the Sonar integration is run.
+You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter <code class="docutils literal notranslate"><span class="pre">queue_refresh_interval_mins</span></code>), which is highly recommended. This can be enabled by setting <code class="docutils literal notranslate"><span class="pre">enable_sonar</span> <span class="pre">=</span> <span class="pre">true</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>.</p>
+</section>
+<section id="third-party-tools">
+<h2>Third-Party Tools<a class="headerlink" href="#third-party-tools" title="Permalink to this heading"></a></h2>
+<section id="jesync-ui-tool-dashboard">
+<h3>Jesync UI Tool Dashboard<a class="headerlink" href="#jesync-ui-tool-dashboard" title="Permalink to this heading"></a></h3>
+<p>Jesync UI Tool Dashboard is a modern, web-based control panel designed to make managing LibreQoS and its integration files easier, faster, and more user-friendly.</p>
+<p><a class="reference external" href="https://github.com/jesienazareth/jesync_dashboard">https://github.com/jesienazareth/jesync_dashboard</a></p>
+</section>
+<section id="mikrotik-pppoe-integration">
+<h3>MikroTik PPPoE Integration<a class="headerlink" href="#mikrotik-pppoe-integration" title="Permalink to this heading"></a></h3>
+<p>This script automates the synchronization of MikroTik PPP secrets (e.g., PPPoE users) and active hotspot users with a LibreQoS-compatible CSV file (ShapedDevices.csv). It continuously monitors the MikroTik router for changes to PPP secrets and active hotspot users, such as additions, updates, or deletions, and updates the CSV file accordingly. The script also calculates rate limits (download/upload speeds) based on the assigned PPP profile and ensures the CSV file is always up-to-date.</p>
+<p>The script is designed to run as a background service using systemd, ensuring it starts automatically on boot and restarts in case of failures.</p>
+<p><a class="reference external" href="https://github.com/Kintoyyy/MikroTik-LibreQos-Integration">https://github.com/Kintoyyy/MikroTik-LibreQos-Integration</a></p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

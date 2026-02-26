@@ -1,0 +1,267 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configure LibreQoS &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Operating Modes and Source of Truth" href="operating-modes.html" />
+    <link rel="prev" title="Configure Shaping Bridge" href="bridge.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Configure LibreQoS</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#page-purpose">Page Purpose</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#initial-configuration-via-setup-tool-from-the-deb-installer">Initial Configuration Via Setup Tool (From the .deb installer)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#next-steps">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-via-web-interface">Configuration Via Web Interface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#where-in-webui">Where in WebUI</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#operating-modes-and-source-of-truth">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#qoo-quality-of-outcome-profiles-qoo-profiles-json">QoO (Quality of Outcome) profiles (<code class="docutils literal notranslate"><span class="pre">qoo_profiles.json</span></code>)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#where-the-file-lives">Where the file lives</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#selecting-a-profile">Selecting a profile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#applying-changes">Applying changes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#advanced-configuration-reference">Advanced Configuration Reference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-via-command-line">Configuration via Command Line</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#network-hierarchy">Network Hierarchy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#circuits">Circuits</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#related-pages">Related Pages</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Configure LibreQoS</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs/v2.0/configuration.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="configure-libreqos">
+<h1>Configure LibreQoS<a class="headerlink" href="#configure-libreqos" title="Permalink to this heading"></a></h1>
+<section id="page-purpose">
+<h2>Page Purpose<a class="headerlink" href="#page-purpose" title="Permalink to this heading"></a></h2>
+<p>Use this page for daily operations and WebUI configuration. Use <a class="reference internal" href="configuration-advanced.html"><span class="std std-doc">Advanced Configuration Reference</span></a> for direct file editing and CLI-heavy workflows.</p>
+</section>
+<section id="initial-configuration-via-setup-tool-from-the-deb-installer">
+<h2>Initial Configuration Via Setup Tool (From the .deb installer)<a class="headerlink" href="#initial-configuration-via-setup-tool-from-the-deb-installer" title="Permalink to this heading"></a></h2>
+<img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
+<p>The setup tool configures initial bridge, interface, bandwidth, IP range, and WebUI user settings.</p>
+<p>Notes:</p>
+<ul>
+<li><p>The setup tool is keyboard-driven (<code class="docutils literal notranslate"><span class="pre">Enter</span></code> to select, <code class="docutils literal notranslate"><span class="pre">Q</span></code> to quit without saving).</p></li>
+<li><p>If you need to relaunch it after closing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">apt</span> <span class="n">remove</span> <span class="n">libreqos</span>
+<span class="n">sudo</span> <span class="n">apt</span> <span class="n">install</span> <span class="o">./</span><span class="n">libreqos_1</span><span class="mf">.5</span><span class="o">-</span><span class="n">RC3</span><span class="mf">.202512062019</span><span class="o">-</span><span class="mi">1</span><span class="n">_amd64</span><span class="o">.</span><span class="n">deb</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<section id="next-steps">
+<h3>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading"></a></h3>
+<p>After install, sign in to WebUI at <code class="docutils literal notranslate"><span class="pre">http://your_shaper_ip:9123</span></code>.</p>
+<p>For most operators:</p>
+<ol class="arabic simple">
+<li><p>Choose your operating mode: <a class="reference internal" href="operating-modes.html"><span class="std std-doc">Operating Modes and Source of Truth</span></a></p></li>
+<li><p>Configure integration settings in WebUI: <a class="reference internal" href="integrations.html"><span class="std std-doc">CRM/NMS Integrations</span></a></p></li>
+<li><p>Validate scheduler and shaping behavior in WebUI: <a class="reference internal" href="node-manager-ui.html"><span class="std std-doc">LibreQoS WebUI (Node Manager)</span></a></p></li>
+</ol>
+</section>
+</section>
+<section id="configuration-via-web-interface">
+<h2>Configuration Via Web Interface<a class="headerlink" href="#configuration-via-web-interface" title="Permalink to this heading"></a></h2>
+<p>Most day-to-day LibreQoS configuration is handled in WebUI (<code class="docutils literal notranslate"><span class="pre">http://your_shaper_ip:9123/config_general.html</span></code>).</p>
+<section id="where-in-webui">
+<h3>Where in WebUI<a class="headerlink" href="#where-in-webui" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>General settings: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">General</span></code></p></li>
+<li><p>Integration settings: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Integrations</span></code></p></li>
+<li><p>Shaped devices editor: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Shaped</span> <span class="pre">Devices</span></code></p></li>
+<li><p>Runtime operational validation: <code class="docutils literal notranslate"><span class="pre">WebUI</span> <span class="pre">(Node</span> <span class="pre">Manager)</span></code> pages (dashboard/tree/flow/scheduler)</p></li>
+</ul>
+</section>
+</section>
+<section id="operating-modes-and-source-of-truth">
+<h2>Operating Modes and Source of Truth<a class="headerlink" href="#operating-modes-and-source-of-truth" title="Permalink to this heading"></a></h2>
+<p>Read this first before production changes:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="operating-modes.html"><span class="std std-doc">Operating Modes and Source of Truth</span></a></p></li>
+</ul>
+</section>
+<section id="qoo-quality-of-outcome-profiles-qoo-profiles-json">
+<h2>QoO (Quality of Outcome) profiles (<code class="docutils literal notranslate"><span class="pre">qoo_profiles.json</span></code>)<a class="headerlink" href="#qoo-quality-of-outcome-profiles-qoo-profiles-json" title="Permalink to this heading"></a></h2>
+<p>LibreQoS displays QoO as an estimate of internet quality based on latency and loss.</p>
+<section id="where-the-file-lives">
+<h3>Where the file lives<a class="headerlink" href="#where-the-file-lives" title="Permalink to this heading"></a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">&lt;lqos_directory&gt;/qoo_profiles.json</span></code></p>
+</section>
+<section id="selecting-a-profile">
+<h3>Selecting a profile<a class="headerlink" href="#selecting-a-profile" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>WebUI</strong>: Configuration -&gt; General -&gt; QoO Profile</p></li>
+<li><p><strong>Config file</strong>: set <code class="docutils literal notranslate"><span class="pre">qoo_profile_id</span></code> in <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code></p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># /etc/lqos.conf</span>
+<span class="n">qoo_profile_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;web_browsing&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="applying-changes">
+<h3>Applying changes<a class="headerlink" href="#applying-changes" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Changes to <code class="docutils literal notranslate"><span class="pre">qoo_profiles.json</span></code> are picked up automatically.</p></li>
+<li><p>If you change <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code>, restart <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>.</p></li>
+</ul>
+</section>
+</section>
+<section id="advanced-configuration-reference">
+<h2>Advanced Configuration Reference<a class="headerlink" href="#advanced-configuration-reference" title="Permalink to this heading"></a></h2>
+<p>CLI-driven configuration, direct file editing, and deep reference content were moved here:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="configuration-advanced.html"><span class="std std-doc">Advanced Configuration Reference</span></a></p></li>
+</ul>
+</section>
+<section id="configuration-via-command-line">
+<h2>Configuration via Command Line<a class="headerlink" href="#configuration-via-command-line" title="Permalink to this heading"></a></h2>
+<p>This section moved to <a class="reference internal" href="configuration-advanced.html#configuration-via-command-line"><span class="std std-ref">Advanced Configuration Reference</span></a>.</p>
+</section>
+<section id="network-hierarchy">
+<h2>Network Hierarchy<a class="headerlink" href="#network-hierarchy" title="Permalink to this heading"></a></h2>
+<p>This section moved to <a class="reference internal" href="configuration-advanced.html#network-hierarchy"><span class="std std-ref">Advanced Configuration Reference</span></a>.</p>
+</section>
+<section id="circuits">
+<h2>Circuits<a class="headerlink" href="#circuits" title="Permalink to this heading"></a></h2>
+<p>This section moved to <a class="reference internal" href="configuration-advanced.html#circuits"><span class="std std-ref">Advanced Configuration Reference</span></a>.</p>
+</section>
+<section id="related-pages">
+<h2>Related Pages<a class="headerlink" href="#related-pages" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="quickstart.html"><span class="std std-doc">Quickstart</span></a></p></li>
+<li><p><a class="reference internal" href="operating-modes.html"><span class="std std-doc">Operating Modes and Source of Truth</span></a></p></li>
+<li><p><a class="reference internal" href="integrations.html"><span class="std std-doc">CRM/NMS Integrations</span></a></p></li>
+<li><p><a class="reference internal" href="configuration-advanced.html"><span class="std std-doc">Advanced Configuration Reference</span></a></p></li>
+<li><p><a class="reference internal" href="troubleshooting.html"><span class="std std-doc">Troubleshooting</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="bridge.html" class="btn btn-neutral float-left" title="Configure Shaping Bridge" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="operating-modes.html" class="btn btn-neutral float-right" title="Operating Modes and Source of Truth" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

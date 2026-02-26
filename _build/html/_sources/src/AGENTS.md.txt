@@ -1,0 +1,141 @@
+# AGENTS.md (LibreQoS local development guide)
+
+Purpose: provide consistent, machine-local instructions for AI coding agents working in `/opt/libreqos/src`.
+
+Status: draft v0.1, pending maintainer answers in the "Open Questions" section.
+
+## Scope and Priorities
+
+- Repository context: LibreQoS traffic-shaping stack for ISP/enterprise QoE, with Rust daemons and Python scheduler/integrations.
+- Primary goals for development work in this folder:
+  - Keep shaping behavior correct and safe for production networks.
+  - Preserve low-latency/low-loss QoE outcomes.
+  - Minimize operational risk to running systems.
+  - Keep changes small, focused, and testable.
+
+## Source-of-Truth References
+
+- Product/site: `https://libreqos.io/`
+- Docs in this workspace: `../docs/v2.0/`
+  - `quickstart.md`, `configuration.md`, `integrations.md`, `components.md`, `requirements.md`, `design.md`, `troubleshooting.md`, `update.md`, `performance-tuning.md`, `api.md`
+- Repo policies:
+  - `../README.md`
+  - `../CONTRIBUTING.md`
+
+When instructions conflict: prefer explicit maintainer direction > local AGENTS.md > repo docs.
+
+## Architecture Map (quick orientation)
+
+- Rust executables in `bin/`:
+  - `lqosd` (XDP/bridge + WebUI on :9123)
+  - `lqtop`, `lqusers`, `xdp_pping`, `xdp_iphash_to_cpu_cmdline`, `uisp_integration`, etc.
+- Rust source crates in `rust/` (notably `lqosd`, `lqos_config`, `lqos_queue_tracker`, `lqos_python`).
+- Python orchestration in this directory:
+  - `scheduler.py` (periodic refresh + integration orchestration)
+  - `LibreQoS.py` (queue/shaper setup logic)
+  - `integration*.py` (CRM/NMS imports: UISP/Splynx/Netzur/etc.)
+- System service examples:
+  - `bin/lqosd.service.example`
+  - `bin/lqos_scheduler.service.example`
+  - `bin/lqos_api.service.example`
+
+## Operational Safety Rules
+
+- Assume this host may be a live shaper node unless told otherwise.
+- Do not restart `lqosd`, `lqos_scheduler`, or `lqos_api` unless user explicitly asks.
+- Do not run destructive cleanup (`rm`, database/file wipes, map removal scripts) unless explicitly requested.
+- Treat these as runtime/generated artifacts; avoid manual edits unless task explicitly targets them:
+  - `ShapedDevices.csv`, `network.json`, `lastGoodConfig.*`, `statsBy*.json`, `queuingStructure.json`, `linux_tc*.txt`, `graph.*`
+- For `/etc/lqos.conf` guidance, provide exact diffs/commands but do not edit system files without confirmation.
+
+## Development Workflow Expectations
+
+- Keep each change set focused on one behavior or bug.
+- Prefer minimal invasive changes over refactors.
+- For Rust changes:
+  - Format: `cargo fmt` (crate or workspace as applicable).
+  - Build targeted crate(s) first; workspace build only when needed.
+  - Add/adjust unit tests when behavior changes are testable.
+- For Python changes:
+  - Run the narrowest script that validates the edited path.
+  - Keep integration failures non-fatal for scheduler loops unless behavior requires hard-fail.
+- For integration changes:
+  - Validate expected write targets (`ShapedDevices.csv`, optional `network.json`) and error logging paths.
+
+## Practical Command Reference
+
+- Build Rust + deploy binaries to `bin/`:
+  - `./build_rust.sh`
+- Build Debian package:
+  - `./build_dpkg.sh`
+- Update API binary:
+  - `./update_api.sh`
+- Manual scheduler debug:
+  - `python3 scheduler.py`
+- One-time shaping run/debug:
+  - `python3 LibreQoS.py`
+  - `python3 LibreQoS.py --debug`
+- Service health checks:
+  - `sudo systemctl status lqosd lqos_scheduler`
+  - `journalctl -u lqosd --since "10 minutes ago"`
+
+## Change Validation Checklist
+
+Before handing work back, agent should do what is feasible locally:
+
+- Confirm files compile/run for touched language area.
+- Confirm formatting/lint expectations for touched language area.
+- Run targeted tests for affected modules/crates if available.
+- Report exactly what was validated vs not validated.
+- Flag any need for privileged/system-level validation (services, NIC/XDP behavior, bridge traffic).
+
+## Communication Expectations for Agents
+
+- Be explicit about assumptions (especially if environment may be production).
+- Use absolute paths when referencing edited files.
+- If uncertain about operational impact, stop and ask before risky actions.
+- When suggesting troubleshooting, prefer commands documented in `../docs/v2.0/troubleshooting.md`.
+
+## Maintainer Decisions (Confirmed)
+
+These are explicit maintainer preferences and should be treated as policy on this machine/repo:
+
+- Insight terminology policy:
+  - LTS is deprecated for operator-facing docs.
+  - Do not reintroduce LTS as an active/current feature in docs.
+  - Legacy terms may appear in code/UI identifiers (`lts_*`), but docs should explain them as Insight-related legacy naming.
+
+- Sphinx release version handling:
+  - Keep `../conf.py` replacement values edited manually at major releases.
+  - Do not switch to environment-driven/version-auto-substitution workflow unless maintainers explicitly request it.
+
+- Documentation parity policy (EN/ES):
+  - Keep `../docs/v2.0` and `../docs-es/v2.0` aligned for operationally important content.
+  - When adding/removing major EN pages, update `../docs-es/index.rst` and provide ES counterparts.
+  - Prioritize parity for: install/update, configuration, integrations, troubleshooting, API, Insight, Node Manager, StormGuard, and scale/performance guidance.
+
+- Current docs structure expectations:
+  - EN docs include `node-manager-ui`, `stormguard`, and `scale-topology`.
+  - ES docs should include corresponding `*-es` pages and toctree entries.
+
+## Resolved Decisions (Additional)
+
+1. Service restarts:
+   - Agents must not restart services automatically.
+   - Restarting `lqosd`, `lqos_scheduler`, or `lqos_api` requires explicit maintainer request.
+
+2. Rust build strategy:
+   - Prefer targeted crate builds/tests first.
+   - Run full `./build_rust.sh` only when requested or when change scope requires it.
+
+3. Runtime data edits:
+   - Do not edit runtime data files (`ShapedDevices.csv`, `network.json`) during routine debugging unless explicitly requested.
+
+4. Privileged actions / service manipulation:
+   - Any `sudo` action that changes service/system state requires explicit maintainer direction.
+
+## Remaining Open Questions
+
+1. Which test commands are mandatory for PR-ready changes in this repo (Rust, Python, both)?
+2. Which branch workflow should agents assume on this machine (`develop` only, or current checked-out branch)?
+3. Any directories/files that must never be touched by agents beyond `.keys/` and generated artifacts?

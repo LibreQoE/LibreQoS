@@ -1,0 +1,212 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configurar LibreQoS &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css" />
+
+  
+      <script src="../../_static/jquery.js"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+      <script src="../../_static/doctools.js"></script>
+      <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Configurar LibreQoS</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/docs-es/v2.0/configuration-es.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="configurar-libreqos">
+<h1>Configurar LibreQoS<a class="headerlink" href="#configurar-libreqos" title="Permalink to this heading"></a></h1>
+<section id="proposito-de-esta-pagina">
+<h2>Propósito de esta página<a class="headerlink" href="#proposito-de-esta-pagina" title="Permalink to this heading"></a></h2>
+<p>Use esta página para operaciones diarias y configuración por WebUI. Use <a class="reference internal" href="configuration-advanced-es.html"><span class="std std-doc">Referencia avanzada de configuración</span></a> para edición directa de archivos y flujos centrados en CLI.</p>
+</section>
+<section id="configuracion-inicial-mediante-la-herramienta-de-instalacion-desde-el-deb">
+<h2>Configuración inicial mediante la herramienta de instalación (desde el .deb)<a class="headerlink" href="#configuracion-inicial-mediante-la-herramienta-de-instalacion-desde-el-deb" title="Permalink to this heading"></a></h2>
+<img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
+<p>La herramienta de instalación configura puente, interfaces, ancho de banda, rangos IP y usuarios de WebUI.</p>
+<p>Notas:</p>
+<ul>
+<li><p>La herramienta se controla con teclado (<code class="docutils literal notranslate"><span class="pre">Enter</span></code> para seleccionar, <code class="docutils literal notranslate"><span class="pre">Q</span></code> para salir sin guardar).</p></li>
+<li><p>Si necesita volver a abrirla:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">apt</span> <span class="n">remove</span> <span class="n">libreqos</span>
+<span class="n">sudo</span> <span class="n">apt</span> <span class="n">install</span> <span class="o">./</span><span class="n">libreqos_1</span><span class="mf">.5</span><span class="o">-</span><span class="n">RC3</span><span class="mf">.202512062019</span><span class="o">-</span><span class="mi">1</span><span class="n">_amd64</span><span class="o">.</span><span class="n">deb</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<section id="proximos-pasos">
+<h3>Próximos pasos<a class="headerlink" href="#proximos-pasos" title="Permalink to this heading"></a></h3>
+<p>Después de instalar, ingrese a la WebUI en <code class="docutils literal notranslate"><span class="pre">http://tu_ip_del_shaper:9123</span></code>.</p>
+<p>Para la mayoría de operadores:</p>
+<ol class="arabic simple">
+<li><p>Elegir modo de operación: <a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a></p></li>
+<li><p>Configurar integración en WebUI: <a class="reference internal" href="integrations-es.html"><span class="std std-doc">Integraciones CRM/NMS</span></a></p></li>
+<li><p>Validar scheduler y shaping en WebUI: <a class="reference internal" href="node-manager-ui-es.html"><span class="std std-doc">LibreQoS WebUI (Node Manager)</span></a></p></li>
+</ol>
+</section>
+</section>
+<section id="configuracion-mediante-la-interfaz-web">
+<h2>Configuración mediante la interfaz web<a class="headerlink" href="#configuracion-mediante-la-interfaz-web" title="Permalink to this heading"></a></h2>
+<p>La mayoría de cambios operativos diarios se realizan en la WebUI (<code class="docutils literal notranslate"><span class="pre">http://tu_ip_del_shaper:9123/config_general.html</span></code>).</p>
+<section id="donde-en-la-webui">
+<h3>Dónde en la WebUI<a class="headerlink" href="#donde-en-la-webui" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Ajustes generales: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">General</span></code></p></li>
+<li><p>Ajustes de integración: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Integrations</span></code></p></li>
+<li><p>Editor de dispositivos regulados: <code class="docutils literal notranslate"><span class="pre">Configuration</span> <span class="pre">-&gt;</span> <span class="pre">Shaped</span> <span class="pre">Devices</span></code></p></li>
+<li><p>Validación operativa: páginas de <code class="docutils literal notranslate"><span class="pre">WebUI</span> <span class="pre">(Node</span> <span class="pre">Manager)</span></code> (dashboard/tree/flow/scheduler)</p></li>
+</ul>
+</section>
+</section>
+<section id="modos-de-operacion-y-fuente-de-verdad">
+<h2>Modos de operación y fuente de verdad<a class="headerlink" href="#modos-de-operacion-y-fuente-de-verdad" title="Permalink to this heading"></a></h2>
+<p>Lea esto primero antes de cambios en producción:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a></p></li>
+</ul>
+</section>
+<section id="referencia-avanzada-de-configuracion">
+<h2>Referencia avanzada de configuración<a class="headerlink" href="#referencia-avanzada-de-configuracion" title="Permalink to this heading"></a></h2>
+<p>La configuración por CLI, edición directa de archivos y referencia detallada se movió aquí:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="configuration-advanced-es.html"><span class="std std-doc">Referencia avanzada de configuración</span></a></p></li>
+</ul>
+</section>
+<section id="configuracion-por-linea-de-comando">
+<h2>Configuración por línea de comando<a class="headerlink" href="#configuracion-por-linea-de-comando" title="Permalink to this heading"></a></h2>
+<p>Esta sección se movió a <a class="reference internal" href="configuration-advanced-es.html#configuración-por-línea-de-comando"><span class="std std-ref">Referencia avanzada de configuración</span></a>.</p>
+</section>
+<section id="jerarquia-de-red">
+<h2>Jerarquía de red<a class="headerlink" href="#jerarquia-de-red" title="Permalink to this heading"></a></h2>
+<p>Esta sección se movió a <a class="reference internal" href="configuration-advanced-es.html#jerarquía-de-red"><span class="std std-ref">Referencia avanzada de configuración</span></a>.</p>
+</section>
+<section id="circuitos">
+<h2>Circuitos<a class="headerlink" href="#circuitos" title="Permalink to this heading"></a></h2>
+<p>Esta sección se movió a <a class="reference internal" href="configuration-advanced-es.html#circuitos"><span class="std std-ref">Referencia avanzada de configuración</span></a>.</p>
+</section>
+<section id="paginas-relacionadas">
+<h2>Páginas relacionadas<a class="headerlink" href="#paginas-relacionadas" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="quickstart-es.html"><span class="std std-doc">Quickstart</span></a></p></li>
+<li><p><a class="reference internal" href="operating-modes-es.html"><span class="std std-doc">Modos de operación y fuente de verdad</span></a></p></li>
+<li><p><a class="reference internal" href="integrations-es.html"><span class="std std-doc">Integraciones CRM/NMS</span></a></p></li>
+<li><p><a class="reference internal" href="configuration-advanced-es.html"><span class="std std-doc">Referencia avanzada de configuración</span></a></p></li>
+<li><p><a class="reference internal" href="troubleshooting-es.html"><span class="std std-doc">Solución de problemas</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

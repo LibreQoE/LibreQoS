@@ -1,0 +1,357 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGENTS.md (LibreQoS local development guide) &mdash; LibreQoE  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
+
+  
+      <script src="../_static/jquery.js"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+      <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+      <script src="../_static/doctools.js"></script>
+      <script src="../_static/sphinx_highlight.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            LibreQoE
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/quickstart.html">Quickstart (Start Here)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/design.html">Deployment Scenarios</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/requirements.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/prereq.html">Prerequisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/ubuntu-server.html">Install Ubuntu Server</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/bridge.html">Configure Shaping Bridge</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Managing LibreQoS (v1.5 to v2.0):</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/operating-modes.html">Operating Modes and Source of Truth</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/configuration-advanced.html">Advanced Configuration Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/integrations.html">CRM/NMS Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/components.html">LibreQoS Software Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/node-manager-ui.html">LibreQoS WebUI (Node Manager)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/scale-topology.html">Scale Planning and Topology Design</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/stormguard.html">StormGuard</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/high-availability.html">High Availability and Failure Domains</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/update.html">Upgrading</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/troubleshooting.html">Troubleshooting</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Insight</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/insight.html">LibreQoS Insight (Insight)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/api.html">LibreQoS Node API</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Misc:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/cake.html">CAKE</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docs/v2.0/extras.html">Extras</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">LibreQoE</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">AGENTS.md (LibreQoS local development guide)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/src/AGENTS.md.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="agents-md-libreqos-local-development-guide">
+<h1>AGENTS.md (LibreQoS local development guide)<a class="headerlink" href="#agents-md-libreqos-local-development-guide" title="Permalink to this heading"></a></h1>
+<p>Purpose: provide consistent, machine-local instructions for AI coding agents working in <code class="docutils literal notranslate"><span class="pre">/opt/libreqos/src</span></code>.</p>
+<p>Status: draft v0.1, pending maintainer answers in the “Open Questions” section.</p>
+<section id="scope-and-priorities">
+<h2>Scope and Priorities<a class="headerlink" href="#scope-and-priorities" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Repository context: LibreQoS traffic-shaping stack for ISP/enterprise QoE, with Rust daemons and Python scheduler/integrations.</p></li>
+<li><p>Primary goals for development work in this folder:</p>
+<ul>
+<li><p>Keep shaping behavior correct and safe for production networks.</p></li>
+<li><p>Preserve low-latency/low-loss QoE outcomes.</p></li>
+<li><p>Minimize operational risk to running systems.</p></li>
+<li><p>Keep changes small, focused, and testable.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="source-of-truth-references">
+<h2>Source-of-Truth References<a class="headerlink" href="#source-of-truth-references" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Product/site: <code class="docutils literal notranslate"><span class="pre">https://libreqos.io/</span></code></p></li>
+<li><p>Docs in this workspace: <code class="docutils literal notranslate"><span class="pre">../docs/v2.0/</span></code></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">quickstart.md</span></code>, <code class="docutils literal notranslate"><span class="pre">configuration.md</span></code>, <code class="docutils literal notranslate"><span class="pre">integrations.md</span></code>, <code class="docutils literal notranslate"><span class="pre">components.md</span></code>, <code class="docutils literal notranslate"><span class="pre">requirements.md</span></code>, <code class="docutils literal notranslate"><span class="pre">design.md</span></code>, <code class="docutils literal notranslate"><span class="pre">troubleshooting.md</span></code>, <code class="docutils literal notranslate"><span class="pre">update.md</span></code>, <code class="docutils literal notranslate"><span class="pre">performance-tuning.md</span></code>, <code class="docutils literal notranslate"><span class="pre">api.md</span></code></p></li>
+</ul>
+</li>
+<li><p>Repo policies:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">../README.md</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">../CONTRIBUTING.md</span></code></p></li>
+</ul>
+</li>
+</ul>
+<p>When instructions conflict: prefer explicit maintainer direction &gt; local AGENTS.md &gt; repo docs.</p>
+</section>
+<section id="architecture-map-quick-orientation">
+<h2>Architecture Map (quick orientation)<a class="headerlink" href="#architecture-map-quick-orientation" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Rust executables in <code class="docutils literal notranslate"><span class="pre">bin/</span></code>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">lqosd</span></code> (XDP/bridge + WebUI on :9123)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lqtop</span></code>, <code class="docutils literal notranslate"><span class="pre">lqusers</span></code>, <code class="docutils literal notranslate"><span class="pre">xdp_pping</span></code>, <code class="docutils literal notranslate"><span class="pre">xdp_iphash_to_cpu_cmdline</span></code>, <code class="docutils literal notranslate"><span class="pre">uisp_integration</span></code>, etc.</p></li>
+</ul>
+</li>
+<li><p>Rust source crates in <code class="docutils literal notranslate"><span class="pre">rust/</span></code> (notably <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>, <code class="docutils literal notranslate"><span class="pre">lqos_config</span></code>, <code class="docutils literal notranslate"><span class="pre">lqos_queue_tracker</span></code>, <code class="docutils literal notranslate"><span class="pre">lqos_python</span></code>).</p></li>
+<li><p>Python orchestration in this directory:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">scheduler.py</span></code> (periodic refresh + integration orchestration)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">LibreQoS.py</span></code> (queue/shaper setup logic)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">integration*.py</span></code> (CRM/NMS imports: UISP/Splynx/Netzur/etc.)</p></li>
+</ul>
+</li>
+<li><p>System service examples:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">bin/lqosd.service.example</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bin/lqos_scheduler.service.example</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bin/lqos_api.service.example</span></code></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="operational-safety-rules">
+<h2>Operational Safety Rules<a class="headerlink" href="#operational-safety-rules" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Assume this host may be a live shaper node unless told otherwise.</p></li>
+<li><p>Do not restart <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>, <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code>, or <code class="docutils literal notranslate"><span class="pre">lqos_api</span></code> unless user explicitly asks.</p></li>
+<li><p>Do not run destructive cleanup (<code class="docutils literal notranslate"><span class="pre">rm</span></code>, database/file wipes, map removal scripts) unless explicitly requested.</p></li>
+<li><p>Treat these as runtime/generated artifacts; avoid manual edits unless task explicitly targets them:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>, <code class="docutils literal notranslate"><span class="pre">network.json</span></code>, <code class="docutils literal notranslate"><span class="pre">lastGoodConfig.*</span></code>, <code class="docutils literal notranslate"><span class="pre">statsBy*.json</span></code>, <code class="docutils literal notranslate"><span class="pre">queuingStructure.json</span></code>, <code class="docutils literal notranslate"><span class="pre">linux_tc*.txt</span></code>, <code class="docutils literal notranslate"><span class="pre">graph.*</span></code></p></li>
+</ul>
+</li>
+<li><p>For <code class="docutils literal notranslate"><span class="pre">/etc/lqos.conf</span></code> guidance, provide exact diffs/commands but do not edit system files without confirmation.</p></li>
+</ul>
+</section>
+<section id="development-workflow-expectations">
+<h2>Development Workflow Expectations<a class="headerlink" href="#development-workflow-expectations" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Keep each change set focused on one behavior or bug.</p></li>
+<li><p>Prefer minimal invasive changes over refactors.</p></li>
+<li><p>For Rust changes:</p>
+<ul>
+<li><p>Format: <code class="docutils literal notranslate"><span class="pre">cargo</span> <span class="pre">fmt</span></code> (crate or workspace as applicable).</p></li>
+<li><p>Build targeted crate(s) first; workspace build only when needed.</p></li>
+<li><p>Add/adjust unit tests when behavior changes are testable.</p></li>
+</ul>
+</li>
+<li><p>For Python changes:</p>
+<ul>
+<li><p>Run the narrowest script that validates the edited path.</p></li>
+<li><p>Keep integration failures non-fatal for scheduler loops unless behavior requires hard-fail.</p></li>
+</ul>
+</li>
+<li><p>For integration changes:</p>
+<ul>
+<li><p>Validate expected write targets (<code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>, optional <code class="docutils literal notranslate"><span class="pre">network.json</span></code>) and error logging paths.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="practical-command-reference">
+<h2>Practical Command Reference<a class="headerlink" href="#practical-command-reference" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Build Rust + deploy binaries to <code class="docutils literal notranslate"><span class="pre">bin/</span></code>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">./build_rust.sh</span></code></p></li>
+</ul>
+</li>
+<li><p>Build Debian package:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">./build_dpkg.sh</span></code></p></li>
+</ul>
+</li>
+<li><p>Update API binary:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">./update_api.sh</span></code></p></li>
+</ul>
+</li>
+<li><p>Manual scheduler debug:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">python3</span> <span class="pre">scheduler.py</span></code></p></li>
+</ul>
+</li>
+<li><p>One-time shaping run/debug:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">python3</span> <span class="pre">LibreQoS.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">python3</span> <span class="pre">LibreQoS.py</span> <span class="pre">--debug</span></code></p></li>
+</ul>
+</li>
+<li><p>Service health checks:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">systemctl</span> <span class="pre">status</span> <span class="pre">lqosd</span> <span class="pre">lqos_scheduler</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">journalctl</span> <span class="pre">-u</span> <span class="pre">lqosd</span> <span class="pre">--since</span> <span class="pre">&quot;10</span> <span class="pre">minutes</span> <span class="pre">ago&quot;</span></code></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="change-validation-checklist">
+<h2>Change Validation Checklist<a class="headerlink" href="#change-validation-checklist" title="Permalink to this heading"></a></h2>
+<p>Before handing work back, agent should do what is feasible locally:</p>
+<ul class="simple">
+<li><p>Confirm files compile/run for touched language area.</p></li>
+<li><p>Confirm formatting/lint expectations for touched language area.</p></li>
+<li><p>Run targeted tests for affected modules/crates if available.</p></li>
+<li><p>Report exactly what was validated vs not validated.</p></li>
+<li><p>Flag any need for privileged/system-level validation (services, NIC/XDP behavior, bridge traffic).</p></li>
+</ul>
+</section>
+<section id="communication-expectations-for-agents">
+<h2>Communication Expectations for Agents<a class="headerlink" href="#communication-expectations-for-agents" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Be explicit about assumptions (especially if environment may be production).</p></li>
+<li><p>Use absolute paths when referencing edited files.</p></li>
+<li><p>If uncertain about operational impact, stop and ask before risky actions.</p></li>
+<li><p>When suggesting troubleshooting, prefer commands documented in <code class="docutils literal notranslate"><span class="pre">../docs/v2.0/troubleshooting.md</span></code>.</p></li>
+</ul>
+</section>
+<section id="maintainer-decisions-confirmed">
+<h2>Maintainer Decisions (Confirmed)<a class="headerlink" href="#maintainer-decisions-confirmed" title="Permalink to this heading"></a></h2>
+<p>These are explicit maintainer preferences and should be treated as policy on this machine/repo:</p>
+<ul class="simple">
+<li><p>Insight terminology policy:</p>
+<ul>
+<li><p>LTS is deprecated for operator-facing docs.</p></li>
+<li><p>Do not reintroduce LTS as an active/current feature in docs.</p></li>
+<li><p>Legacy terms may appear in code/UI identifiers (<code class="docutils literal notranslate"><span class="pre">lts_*</span></code>), but docs should explain them as Insight-related legacy naming.</p></li>
+</ul>
+</li>
+<li><p>Sphinx release version handling:</p>
+<ul>
+<li><p>Keep <code class="docutils literal notranslate"><span class="pre">../conf.py</span></code> replacement values edited manually at major releases.</p></li>
+<li><p>Do not switch to environment-driven/version-auto-substitution workflow unless maintainers explicitly request it.</p></li>
+</ul>
+</li>
+<li><p>Documentation parity policy (EN/ES):</p>
+<ul>
+<li><p>Keep <code class="docutils literal notranslate"><span class="pre">../docs/v2.0</span></code> and <code class="docutils literal notranslate"><span class="pre">../docs-es/v2.0</span></code> aligned for operationally important content.</p></li>
+<li><p>When adding/removing major EN pages, update <code class="docutils literal notranslate"><span class="pre">../docs-es/index.rst</span></code> and provide ES counterparts.</p></li>
+<li><p>Prioritize parity for: install/update, configuration, integrations, troubleshooting, API, Insight, Node Manager, StormGuard, and scale/performance guidance.</p></li>
+</ul>
+</li>
+<li><p>Current docs structure expectations:</p>
+<ul>
+<li><p>EN docs include <code class="docutils literal notranslate"><span class="pre">node-manager-ui</span></code>, <code class="docutils literal notranslate"><span class="pre">stormguard</span></code>, and <code class="docutils literal notranslate"><span class="pre">scale-topology</span></code>.</p></li>
+<li><p>ES docs should include corresponding <code class="docutils literal notranslate"><span class="pre">*-es</span></code> pages and toctree entries.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="resolved-decisions-additional">
+<h2>Resolved Decisions (Additional)<a class="headerlink" href="#resolved-decisions-additional" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Service restarts:</p>
+<ul class="simple">
+<li><p>Agents must not restart services automatically.</p></li>
+<li><p>Restarting <code class="docutils literal notranslate"><span class="pre">lqosd</span></code>, <code class="docutils literal notranslate"><span class="pre">lqos_scheduler</span></code>, or <code class="docutils literal notranslate"><span class="pre">lqos_api</span></code> requires explicit maintainer request.</p></li>
+</ul>
+</li>
+<li><p>Rust build strategy:</p>
+<ul class="simple">
+<li><p>Prefer targeted crate builds/tests first.</p></li>
+<li><p>Run full <code class="docutils literal notranslate"><span class="pre">./build_rust.sh</span></code> only when requested or when change scope requires it.</p></li>
+</ul>
+</li>
+<li><p>Runtime data edits:</p>
+<ul class="simple">
+<li><p>Do not edit runtime data files (<code class="docutils literal notranslate"><span class="pre">ShapedDevices.csv</span></code>, <code class="docutils literal notranslate"><span class="pre">network.json</span></code>) during routine debugging unless explicitly requested.</p></li>
+</ul>
+</li>
+<li><p>Privileged actions / service manipulation:</p>
+<ul class="simple">
+<li><p>Any <code class="docutils literal notranslate"><span class="pre">sudo</span></code> action that changes service/system state requires explicit maintainer direction.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="remaining-open-questions">
+<h2>Remaining Open Questions<a class="headerlink" href="#remaining-open-questions" title="Permalink to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p>Which test commands are mandatory for PR-ready changes in this repo (Rust, Python, both)?</p></li>
+<li><p>Which branch workflow should agents assume on this machine (<code class="docutils literal notranslate"><span class="pre">develop</span></code> only, or current checked-out branch)?</p></li>
+<li><p>Any directories/files that must never be touched by agents beyond <code class="docutils literal notranslate"><span class="pre">.keys/</span></code> and generated artifacts?</p></li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, LibreQoE, LLC.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
