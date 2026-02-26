@@ -1,5 +1,9 @@
 # Configurar LibreQoS
 
+## Propósito de esta página
+
+Use esta página para operaciones diarias y configuración por WebUI. Use [Referencia avanzada de configuración](configuration-advanced-es.md) para edición directa de archivos y flujos centrados en CLI.
+
 ## Configuración inicial mediante la herramienta de instalación (desde el .deb)
 <img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
 

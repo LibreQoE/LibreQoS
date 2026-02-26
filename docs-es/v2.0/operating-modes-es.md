@@ -1,5 +1,9 @@
 # Modos de operación y fuente de verdad
 
+## Propósito de esta página
+
+Use esta página para elegir y aplicar su política de fuente de verdad (integraciones incluidas vs fuente personalizada) antes de cambios en producción.
+
 LibreQoS soporta dos modos de operación principales.
 
 ## Integraciones incluidas (recomendado para la mayoría de operadores)
