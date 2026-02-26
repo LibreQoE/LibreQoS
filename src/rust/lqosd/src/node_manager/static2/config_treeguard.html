@@ -5,17 +5,17 @@
         <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
             <i class="fa fa-exclamation-triangle me-2"></i>
             <div>
-                <strong>Advanced Feature:</strong> Autopilot can write persistent changes to <code>lqos_overrides.json</code>
+                <strong>Advanced Feature:</strong> TreeGuard can write persistent changes to <code>lqos_overrides.treeguard.json</code>
                 and may change link virtualization and per-circuit SQM settings. Start with <strong>Dry Run</strong> enabled and a small
                 allowlist.
             </div>
         </div>
 
         <form>
-            <!-- Enable/Disable Autopilot -->
+            <!-- Enable/Disable TreeGuard -->
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enabled">
-                <label class="form-check-label" for="enabled">Enable Autopilot</label>
+                <label class="form-check-label" for="enabled">Enable TreeGuard</label>
                 <div class="form-text">Enable intelligent node management (virtualization + SQM switching)</div>
             </div>
 
@@ -30,7 +30,7 @@
             <div class="mb-3">
                 <label for="tickSeconds" class="form-label">Tick Interval (seconds)</label>
                 <input type="number" class="form-control" id="tickSeconds" min="1" step="1" value="1">
-                <div class="form-text">How often Autopilot evaluates telemetry and makes decisions</div>
+                <div class="form-text">How often TreeGuard evaluates telemetry and makes decisions</div>
             </div>
 
             <hr class="my-4" />
@@ -42,19 +42,19 @@
                     <option value="cpu_aware">CPU-aware</option>
                     <option value="traffic_rtt_only">Traffic/RTT only</option>
                 </select>
-                <div class="form-text">Controls how CPU usage influences Autopilot decisions</div>
+                <div class="form-text">Controls how CPU usage influences TreeGuard decisions</div>
             </div>
 
             <div class="mb-3">
                 <label for="cpuHighPct" class="form-label">CPU High Threshold (%)</label>
                 <input type="number" class="form-control" id="cpuHighPct" min="0" max="100" step="1" value="75">
-                <div class="form-text">At/above this CPU%, Autopilot may take CPU-saving actions</div>
+                <div class="form-text">At/above this CPU%, TreeGuard may take CPU-saving actions</div>
             </div>
 
             <div class="mb-3">
                 <label for="cpuLowPct" class="form-label">CPU Low Threshold (%)</label>
                 <input type="number" class="form-control" id="cpuLowPct" min="0" max="100" step="1" value="55">
-                <div class="form-text">At/below this CPU%, Autopilot should revert CPU-saving actions</div>
+                <div class="form-text">At/below this CPU%, TreeGuard should revert CPU-saving actions</div>
             </div>
 
             <hr class="my-4" />
@@ -63,7 +63,7 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="linksEnabled">
                 <label class="form-check-label" for="linksEnabled">Enable Link Virtualization</label>
-                <div class="form-text">Allow Autopilot to mark enrolled nodes as virtual/unvirtual</div>
+                <div class="form-text">Allow TreeGuard to mark enrolled nodes as virtual/unvirtual</div>
             </div>
 
             <div class="mb-3">
@@ -72,11 +72,11 @@
                 <div class="mb-2 form-check">
                     <input type="checkbox" class="form-check-input" id="linksAllNodes">
                     <label class="form-check-label" for="linksAllNodes">All links</label>
-                    <div class="form-text">If enabled, Autopilot manages all non-root nodes in network.json (allowlist ignored)</div>
+                    <div class="form-text">If enabled, TreeGuard manages all non-root nodes in network.json (allowlist ignored)</div>
                 </div>
 
                 <div id="nodesAllowlistSection">
-                    <div class="form-text">Autopilot will only manage nodes explicitly listed here</div>
+                    <div class="form-text">TreeGuard will only manage nodes explicitly listed here</div>
 
                     <div class="input-group mb-2">
                         <select class="form-select" id="nodeSelector">
@@ -114,7 +114,7 @@
             <div class="mb-3">
                 <label for="unvirtualizeUtilPct" class="form-label">Unvirtualize Utilization (%)</label>
                 <input type="number" class="form-control" id="unvirtualizeUtilPct" min="0" max="100" step="0.1" value="5.0">
-                <div class="form-text">If utilization rises above this threshold, Autopilot should unvirtualize</div>
+                <div class="form-text">If utilization rises above this threshold, TreeGuard should unvirtualize</div>
             </div>
 
             <div class="mb-3">
@@ -141,7 +141,7 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="circuitsEnabled">
                 <label class="form-check-label" for="circuitsEnabled">Enable Circuit Management</label>
-                <div class="form-text">Allow Autopilot to manage per-circuit SQM for enrolled circuits</div>
+                <div class="form-text">Allow TreeGuard to manage per-circuit SQM for enrolled circuits</div>
             </div>
 
             <div class="mb-3">
@@ -150,7 +150,7 @@
                 <div class="mb-2 form-check">
                     <input type="checkbox" class="form-check-input" id="circuitsAllCircuits">
                     <label class="form-check-label" for="circuitsAllCircuits">All circuits</label>
-                    <div class="form-text">If enabled, Autopilot manages all circuits found in ShapedDevices (allowlist ignored)</div>
+                    <div class="form-text">If enabled, TreeGuard manages all circuits found in ShapedDevices (allowlist ignored)</div>
                 </div>
 
                 <div id="circuitsAllowlistSection">
@@ -181,7 +181,7 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="switchingEnabled">
                 <label class="form-check-label" for="switchingEnabled">Enable SQM Switching</label>
-                <div class="form-text">Allow Autopilot to switch CAKE ↔ fq_codel</div>
+                <div class="form-text">Allow TreeGuard to switch CAKE ↔ fq_codel</div>
             </div>
 
             <div class="mb-3 form-check">
@@ -226,7 +226,7 @@
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="persistSqmOverrides">
                 <label class="form-check-label" for="persistSqmOverrides">Persist SQM Overrides</label>
-                <div class="form-text">Write SQM overrides to lqos_overrides.json to avoid scheduler fights</div>
+                <div class="form-text">Write SQM overrides to lqos_overrides.treeguard.json to avoid scheduler fights</div>
             </div>
 
             <hr class="my-4" />
@@ -249,4 +249,4 @@
     </div>
 </div>
 
-<script src="config_autopilot.js%CACHEBUSTERS%"></script>
+<script src="config_treeguard.js%CACHEBUSTERS%"></script>

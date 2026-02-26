@@ -1,8 +1,8 @@
-//! Bakery live-update helpers for Autopilot.
+//! Bakery live-update helpers for TreeGuard.
 //!
 //! This module implements live SQM switching via Bakery commands.
 
-use crate::autopilot::AutopilotError;
+use crate::treeguard::TreeguardError;
 use lqos_bakery::BakeryCommands;
 use lqos_config::ShapedDevice;
 use lqos_queue_tracker::QUEUE_STRUCTURE;
@@ -16,14 +16,14 @@ pub(crate) fn apply_circuit_sqm_override_live(
     circuit_id: &str,
     devices: &[ShapedDevice],
     sqm_override: &str,
-) -> Result<(), AutopilotError> {
+) -> Result<(), TreeguardError> {
     let Some(sender) = lqos_bakery::BAKERY_SENDER.get() else {
-        return Err(AutopilotError::BakeryNotReady);
+        return Err(TreeguardError::BakeryNotReady);
     };
 
     let snapshot = QUEUE_STRUCTURE.load();
     let Some(queues) = snapshot.maybe_queues.as_ref() else {
-        return Err(AutopilotError::QueueStructureUnavailable {
+        return Err(TreeguardError::QueueStructureUnavailable {
             details: "queueingStructure.json not loaded".to_string(),
         });
     };
@@ -53,23 +53,23 @@ pub(crate) fn apply_circuit_sqm_override_live(
     }
 
     let Some(node) = found else {
-        return Err(AutopilotError::CircuitNotFound {
+        return Err(TreeguardError::CircuitNotFound {
             circuit_id: circuit_id.to_string(),
         });
     };
 
     let class_minor = u16::try_from(node.class_minor).map_err(|_| {
-        AutopilotError::InvalidClassId {
+        TreeguardError::InvalidClassId {
             details: format!("class_minor too large: {}", node.class_minor),
         }
     })?;
     let class_major = u16::try_from(node.class_major).map_err(|_| {
-        AutopilotError::InvalidClassId {
+        TreeguardError::InvalidClassId {
             details: format!("class_major too large: {}", node.class_major),
         }
     })?;
     let up_class_major = u16::try_from(node.up_class_major).map_err(|_| {
-        AutopilotError::InvalidClassId {
+        TreeguardError::InvalidClassId {
             details: format!("up_class_major too large: {}", node.up_class_major),
         }
     })?;
@@ -92,7 +92,7 @@ pub(crate) fn apply_circuit_sqm_override_live(
             ip_addresses,
             sqm_override: Some(sqm_override.to_string()),
         })
-        .map_err(|e| AutopilotError::BakerySend {
+        .map_err(|e| TreeguardError::BakerySend {
             details: e.to_string(),
         })?;
 

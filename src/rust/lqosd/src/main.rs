@@ -4,7 +4,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
-mod autopilot;
+mod treeguard;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
@@ -250,8 +250,8 @@ fn main() -> Result<()> {
     )?;
     spawn_queue_monitor()?;
 
-    if let Err(err) = autopilot::actor::start_autopilot_actor(system_usage_tx.clone()) {
-        warn!("Failed to start Autopilot actor: {err}");
+    if let Err(err) = treeguard::actor::start_treeguard_actor(system_usage_tx.clone()) {
+        warn!("Failed to start TreeGuard actor: {err}");
     }
 
     lqos_sys::bpf_garbage_collector();

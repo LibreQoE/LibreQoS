@@ -1,0 +1,61 @@
+//! TreeGuard status snapshots for UI visibility.
+
+use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
+use crate::treeguard::actor;
+use lqos_config::load_config;
+
+/// Takes a snapshot of TreeGuard status for UI publication.
+///
+/// This function is not pure: it sends a request to the TreeGuard actor, and may fall back to
+/// reading the current configuration from disk (via the config cache).
+pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
+    if let Some(snapshot) = actor::request_status_snapshot().await {
+        return snapshot;
+    }
+
+    let Ok(config) = load_config() else {
+        return TreeguardStatusData {
+            enabled: false,
+            dry_run: true,
+            cpu_max_pct: None,
+            managed_nodes: 0,
+            managed_circuits: 0,
+            virtualized_nodes: 0,
+            fq_codel_circuits: 0,
+            last_action_summary: None,
+            warnings: vec!["Unable to load configuration; TreeGuard status unavailable.".to_string()],
+        };
+    };
+
+    let tg = &config.treeguard;
+    let mut warnings = Vec::new();
+
+    if tg.enabled && tg.links.nodes.is_empty() && tg.circuits.circuits.is_empty() {
+        warnings.push(
+            "TreeGuard is enabled but no nodes/circuits are allowlisted. No actions will occur."
+                .to_string(),
+        );
+    }
+
+    TreeguardStatusData {
+        enabled: tg.enabled,
+        dry_run: tg.dry_run,
+        cpu_max_pct: None,
+        managed_nodes: tg.links.nodes.len(),
+        managed_circuits: tg.circuits.circuits.len(),
+        virtualized_nodes: 0,
+        fq_codel_circuits: 0,
+        last_action_summary: None,
+        warnings,
+    }
+}
+
+/// Takes a snapshot of recent TreeGuard activity for UI publication.
+///
+/// This function is not pure: it sends a request to the TreeGuard actor.
+/// If the actor isn't available, it returns an empty list.
+pub async fn treeguard_activity_snapshot() -> Vec<TreeguardActivityEntry> {
+    actor::request_activity_snapshot()
+        .await
+        .unwrap_or_default()
+}

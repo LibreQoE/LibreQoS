@@ -36,12 +36,12 @@ enum Commands {
         #[command(subcommand)]
         command: UispCommand,
     },
-    /// Migrate selected operator overrides into the Autopilot overrides layer file
-    AutopilotMigrate(AutopilotMigrateArgs),
+    /// Migrate selected operator overrides into the TreeGuard overrides layer file
+    TreeguardMigrate(TreeguardMigrateArgs),
 }
 
 #[derive(Args, Debug, Default)]
-struct AutopilotMigrateArgs {
+struct TreeguardMigrateArgs {
     /// Network.json node names to migrate (set_node_virtual entries).
     #[arg(long, value_name = "NODE")]
     node: Vec<String>,
@@ -463,7 +463,7 @@ fn main() -> Result<()> {
                 }
             }
         },
-        Commands::AutopilotMigrate(args) => {
+        Commands::TreeguardMigrate(args) => {
             let mut nodes = args.node;
             nodes.sort();
             nodes.dedup();
@@ -477,7 +477,7 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let mut autopilot = OverrideStore::load_layer(OverrideLayer::Autopilot)?;
+            let mut treeguard = OverrideStore::load_layer(OverrideLayer::Treeguard)?;
 
             // --- Collect node migrations ---
             let mut node_moves: Vec<(String, bool)> = Vec::new();
@@ -535,19 +535,19 @@ fn main() -> Result<()> {
             // Apply node moves
             for (node_name, v) in node_moves.iter() {
                 overrides.remove_network_node_virtual_by_name_count(node_name);
-                autopilot.set_network_node_virtual(node_name.clone(), *v);
+                treeguard.set_network_node_virtual(node_name.clone(), *v);
             }
 
             // Apply device moves
             for dev in device_moves.iter() {
                 overrides.remove_persistent_shaped_device_by_device_count(&dev.device_id);
-                let _ = autopilot.add_persistent_shaped_device_return_changed(dev.clone());
+                let _ = treeguard.add_persistent_shaped_device_return_changed(dev.clone());
             }
 
             // Persist both layers
             overrides.save()?;
-            OverrideStore::save_layer(OverrideLayer::Autopilot, &autopilot)?;
-            println!("Migration complete. Updated operator + autopilot override files.");
+            OverrideStore::save_layer(OverrideLayer::Treeguard, &treeguard)?;
+            println!("Migration complete. Updated operator + treeguard override files.");
         }
     }
 

@@ -331,7 +331,7 @@ function validateConfig() {
 }
 
 function updateConfig() {
-    window.config.autopilot = {
+    window.config.treeguard = {
         enabled: document.getElementById("enabled").checked,
         dry_run: document.getElementById("dryRun").checked,
         tick_seconds: parseInt(document.getElementById("tickSeconds").value),
@@ -373,7 +373,7 @@ function updateConfig() {
     };
 }
 
-renderConfigMenu("autopilot");
+renderConfigMenu("treeguard");
 
 Promise.all([
     loadNetworkData().catch(() => null),
@@ -382,15 +382,15 @@ Promise.all([
         loadConfig(() => resolve());
     }),
 ]).then(() => {
-    const ap = window.config?.autopilot ?? {};
-    const cpu = ap.cpu ?? {};
-    const links = ap.links ?? {};
-    const circuits = ap.circuits ?? {};
-    const qoo = ap.qoo ?? {};
+    const tg = window.config?.treeguard ?? {};
+    const cpu = tg.cpu ?? {};
+    const links = tg.links ?? {};
+    const circuits = tg.circuits ?? {};
+    const qoo = tg.qoo ?? {};
 
-    document.getElementById("enabled").checked = ap.enabled ?? false;
-    document.getElementById("dryRun").checked = ap.dry_run ?? true;
-    document.getElementById("tickSeconds").value = ap.tick_seconds ?? 1;
+    document.getElementById("enabled").checked = tg.enabled ?? false;
+    document.getElementById("dryRun").checked = tg.dry_run ?? true;
+    document.getElementById("tickSeconds").value = tg.tick_seconds ?? 1;
 
     document.getElementById("cpuMode").value = cpu.mode ?? "cpu_aware";
     document.getElementById("cpuHighPct").value = cpu.cpu_high_pct ?? 75;
@@ -465,7 +465,7 @@ Promise.all([
         }
         updateConfig();
         saveConfig(() => {
-            alert("Autopilot configuration saved successfully!");
+            alert("TreeGuard configuration saved successfully!");
         });
     });
 });

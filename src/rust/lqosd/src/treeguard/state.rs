@@ -1,4 +1,4 @@
-//! Autopilot per-entity state.
+//! TreeGuard per-entity state.
 //!
 //! This module will hold per-node and per-circuit state such as dwell timers,
 //! last-seen timestamps, and smoothed telemetry.
@@ -71,7 +71,7 @@ pub struct LinkDirectionState {
 /// Per-node link virtualization tracking state.
 #[derive(Clone, Debug, Default)]
 pub struct LinkState {
-    /// Current desired virtualization state as managed by Autopilot.
+    /// Current desired virtualization state as managed by TreeGuard.
     pub desired: LinkVirtualState,
     /// Last state change time (seconds since UNIX epoch), if any.
     pub last_change_unix: Option<u64>,

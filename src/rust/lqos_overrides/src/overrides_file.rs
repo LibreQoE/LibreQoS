@@ -12,15 +12,16 @@ use crate::overrides_file::file_lock::FileLock;
 mod file_lock;
 
 const OPERATOR_OVERRIDES_FILE: &str = "lqos_overrides.json";
-const AUTOPILOT_OVERRIDES_FILE: &str = "lqos_overrides.autopilot.json";
+const TREEGUARD_OVERRIDES_FILE: &str = "lqos_overrides.treeguard.json";
+const LEGACY_AUTOPILOT_OVERRIDES_FILE: &str = "lqos_overrides.autopilot.json";
 
 /// Selects which overrides file to load/save.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OverrideLayer {
     /// Operator-owned overrides (`lqos_overrides.json`).
     Operator,
-    /// Autopilot-owned overrides (`lqos_overrides.autopilot.json`).
-    Autopilot,
+    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
+    Treeguard,
 }
 
 /// Helper for working with layered override files.
@@ -99,9 +100,22 @@ pub struct OverrideFile {
 fn overrides_path(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
     let file = match layer {
         OverrideLayer::Operator => OPERATOR_OVERRIDES_FILE,
-        OverrideLayer::Autopilot => AUTOPILOT_OVERRIDES_FILE,
+        OverrideLayer::Treeguard => TREEGUARD_OVERRIDES_FILE,
     };
     Path::new(&config.lqos_directory).join(file)
+}
+
+fn treeguard_read_path(config: &lqos_config::Config) -> PathBuf {
+    let canonical = Path::new(&config.lqos_directory).join(TREEGUARD_OVERRIDES_FILE);
+    if canonical.exists() {
+        return canonical;
+    }
+    let legacy = Path::new(&config.lqos_directory).join(LEGACY_AUTOPILOT_OVERRIDES_FILE);
+    if legacy.exists() {
+        legacy
+    } else {
+        canonical
+    }
 }
 
 fn load_from_path(path: &Path) -> Result<OverrideFile> {
@@ -129,7 +143,7 @@ fn save_to_path(path: &Path, overrides: &OverrideFile) -> Result<()> {
 
 fn merge_persistent_devices_by_id(
     operator_devices: &[ShapedDevice],
-    autopilot_devices: &[ShapedDevice],
+    treeguard_devices: &[ShapedDevice],
 ) -> Vec<ShapedDevice> {
     use std::collections::{HashMap, HashSet};
 
@@ -137,7 +151,7 @@ fn merge_persistent_devices_by_id(
     for dev in operator_devices {
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
-    for dev in autopilot_devices {
+    for dev in treeguard_devices {
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
 
@@ -155,7 +169,7 @@ fn merge_persistent_devices_by_id(
         }
     }
 
-    for dev in autopilot_devices {
+    for dev in treeguard_devices {
         let did = dev.device_id.as_str();
         if seen.contains(did) {
             continue;
@@ -171,31 +185,31 @@ fn merge_persistent_devices_by_id(
 
 fn merge_network_adjustments_owned(
     operator_adjustments: &[NetworkAdjustment],
-    autopilot_adjustments: &[NetworkAdjustment],
+    treeguard_adjustments: &[NetworkAdjustment],
 ) -> Vec<NetworkAdjustment> {
     use std::collections::{HashMap, HashSet};
 
-    let mut autopilot_virtual: HashMap<&str, bool> = HashMap::new();
-    let mut autopilot_virtual_order: Vec<&str> = Vec::new();
-    let mut autopilot_virtual_seen: HashSet<&str> = HashSet::new();
+    let mut treeguard_virtual: HashMap<&str, bool> = HashMap::new();
+    let mut treeguard_virtual_order: Vec<&str> = Vec::new();
+    let mut treeguard_virtual_seen: HashSet<&str> = HashSet::new();
 
-    for adj in autopilot_adjustments {
+    for adj in treeguard_adjustments {
         if let NetworkAdjustment::SetNodeVirtual {
             node_name,
             virtual_node,
         } = adj
         {
             let name = node_name.as_str();
-            autopilot_virtual.insert(name, *virtual_node);
-            if !autopilot_virtual_seen.contains(name) {
-                autopilot_virtual_order.push(name);
-                autopilot_virtual_seen.insert(name);
+            treeguard_virtual.insert(name, *virtual_node);
+            if !treeguard_virtual_seen.contains(name) {
+                treeguard_virtual_order.push(name);
+                treeguard_virtual_seen.insert(name);
             }
         }
     }
 
     let mut out = Vec::new();
-    let mut used_autopilot_virtual: HashSet<&str> = HashSet::new();
+    let mut used_treeguard_virtual: HashSet<&str> = HashSet::new();
     let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
 
     for adj in operator_adjustments {
@@ -210,12 +224,12 @@ fn merge_network_adjustments_owned(
                 }
                 operator_virtual_seen.insert(name);
 
-                if let Some(v) = autopilot_virtual.get(name) {
+                if let Some(v) = treeguard_virtual.get(name) {
                     out.push(NetworkAdjustment::SetNodeVirtual {
                         node_name: node_name.clone(),
                         virtual_node: *v,
                     });
-                    used_autopilot_virtual.insert(name);
+                    used_treeguard_virtual.insert(name);
                 } else {
                     out.push(NetworkAdjustment::SetNodeVirtual {
                         node_name: node_name.clone(),
@@ -230,12 +244,12 @@ fn merge_network_adjustments_owned(
         }
     }
 
-    // Append Autopilot-only virtual-node entries (ignore other network adjustments).
-    for name in autopilot_virtual_order {
-        if used_autopilot_virtual.contains(name) {
+    // Append TreeGuard-only virtual-node entries (ignore other network adjustments).
+    for name in treeguard_virtual_order {
+        if used_treeguard_virtual.contains(name) {
             continue;
         }
-        let Some(v) = autopilot_virtual.get(name) else {
+        let Some(v) = treeguard_virtual.get(name) else {
             continue;
         };
         out.push(NetworkAdjustment::SetNodeVirtual {
@@ -247,14 +261,14 @@ fn merge_network_adjustments_owned(
     out
 }
 
-fn merge_owned_sections(mut operator: OverrideFile, autopilot: OverrideFile) -> OverrideFile {
+fn merge_owned_sections(mut operator: OverrideFile, treeguard: OverrideFile) -> OverrideFile {
     let operator_devices = std::mem::take(&mut operator.persistent_devices);
     operator.persistent_devices =
-        merge_persistent_devices_by_id(&operator_devices, &autopilot.persistent_devices);
+        merge_persistent_devices_by_id(&operator_devices, &treeguard.persistent_devices);
 
     let operator_network = std::mem::take(&mut operator.network_adjustments);
     operator.network_adjustments =
-        merge_network_adjustments_owned(&operator_network, &autopilot.network_adjustments);
+        merge_network_adjustments_owned(&operator_network, &treeguard.network_adjustments);
 
     operator
 }
@@ -422,13 +436,16 @@ impl OverrideStore {
     pub fn load_layer(layer: OverrideLayer) -> Result<OverrideFile> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
-        let path = overrides_path(&config, layer);
+        let path = match layer {
+            OverrideLayer::Operator => overrides_path(&config, layer),
+            OverrideLayer::Treeguard => treeguard_read_path(&config),
+        };
         let overrides = match layer {
             OverrideLayer::Operator => {
                 ensure_exists_default(&path)?;
                 load_from_path(&path)?
             }
-            OverrideLayer::Autopilot => {
+            OverrideLayer::Treeguard => {
                 if !path.exists() {
                     OverrideFile::default()
                 } else {
@@ -454,10 +471,10 @@ impl OverrideStore {
 
     /// Loads the effective overrides view used during shaping.
     ///
-    /// When `apply_autopilot` is false, this is equivalent to loading the operator layer only.
+    /// When `apply_treeguard` is false, this is equivalent to loading the operator layer only.
     ///
     /// Side effects: acquires the global overrides lock and may create the operator overrides file.
-    pub fn load_effective(apply_autopilot: bool) -> Result<OverrideFile> {
+    pub fn load_effective(apply_treeguard: bool) -> Result<OverrideFile> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
 
@@ -465,19 +482,19 @@ impl OverrideStore {
         ensure_exists_default(&operator_path)?;
         let operator = load_from_path(&operator_path)?;
 
-        if !apply_autopilot {
+        if !apply_treeguard {
             drop(lock);
             return Ok(operator);
         }
 
-        let autopilot_path = overrides_path(&config, OverrideLayer::Autopilot);
-        let autopilot = if !autopilot_path.exists() {
+        let treeguard_path = treeguard_read_path(&config);
+        let treeguard = if !treeguard_path.exists() {
             OverrideFile::default()
         } else {
-            load_from_path(&autopilot_path)?
+            load_from_path(&treeguard_path)?
         };
 
-        let merged = merge_owned_sections(operator, autopilot);
+        let merged = merge_owned_sections(operator, treeguard);
         drop(lock);
         Ok(merged)
     }
@@ -495,18 +512,18 @@ mod tests {
     }
 
     #[test]
-    fn effective_merge_autopilot_wins_for_persistent_devices() {
+    fn effective_merge_treeguard_wins_for_persistent_devices() {
         let mut operator = OverrideFile::default();
         operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
         operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev2", "cake"));
 
-        let mut autopilot = OverrideFile::default();
-        autopilot
+        let mut treeguard = OverrideFile::default();
+        treeguard
             .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "fq_codel"));
-        autopilot
+        treeguard
             .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev3", "fq_codel"));
 
-        let merged = merge_owned_sections(operator, autopilot);
+        let merged = merge_owned_sections(operator, treeguard);
         let sqm_by_id: std::collections::HashMap<&str, &str> = merged
             .persistent_devices
             .iter()
@@ -519,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_merge_autopilot_wins_for_node_virtual_only() {
+    fn effective_merge_treeguard_wins_for_node_virtual_only() {
         let mut operator = OverrideFile::default();
         operator.set_network_node_virtual("NodeA".to_string(), false);
         operator.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
@@ -528,15 +545,15 @@ mod tests {
             upload_bandwidth_mbps: Some(50),
         });
 
-        let mut autopilot = OverrideFile::default();
-        autopilot.set_network_node_virtual("NodeA".to_string(), true);
-        autopilot.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+        let mut treeguard = OverrideFile::default();
+        treeguard.set_network_node_virtual("NodeA".to_string(), true);
+        treeguard.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
             site_name: "Site2".to_string(),
             download_bandwidth_mbps: Some(200),
             upload_bandwidth_mbps: Some(100),
         });
 
-        let merged = merge_owned_sections(operator, autopilot);
+        let merged = merge_owned_sections(operator, treeguard);
 
         let node_a_virtual = merged.network_adjustments().iter().find_map(|adj| match adj {
             NetworkAdjustment::SetNodeVirtual {
@@ -547,7 +564,7 @@ mod tests {
         });
         assert_eq!(node_a_virtual, Some(true));
 
-        // Operator-only site speed should remain; Autopilot site speed should be ignored.
+        // Operator-only site speed should remain; TreeGuard site speed should be ignored.
         let site_speed_names: Vec<&str> = merged.network_adjustments().iter().filter_map(|adj| match adj {
             NetworkAdjustment::AdjustSiteSpeed { site_name, .. } => Some(site_name.as_str()),
             _ => None,

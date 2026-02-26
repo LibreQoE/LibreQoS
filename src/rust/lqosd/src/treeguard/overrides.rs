@@ -1,8 +1,8 @@
-//! Persistence helpers for Autopilot.
+//! Persistence helpers for TreeGuard.
 //!
-//! This module will implement writing Autopilot-owned changes to `lqos_overrides.json`.
+//! This module writes TreeGuard-owned changes to `lqos_overrides.treeguard.json`.
 
-use crate::autopilot::AutopilotError;
+use crate::treeguard::TreeguardError;
 use lqos_config::ShapedDevice;
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 
@@ -24,15 +24,15 @@ fn current_node_virtual_override(overrides: &OverrideFile, node_name: &str) -> O
 
 /// Sets (adds or replaces) a node-virtualization override for a `network.json` node.
 ///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
+/// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn set_node_virtual(
     node_name: &str,
     virtual_node: bool,
-) -> Result<bool, AutopilotError> {
+) -> Result<bool, TreeguardError> {
     let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
+        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -41,8 +41,8 @@ pub(crate) fn set_node_virtual(
     }
 
     overrides.set_network_node_virtual(node_name.to_string(), virtual_node);
-    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
-        AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Treeguard, &overrides).map_err(|e| {
+        TreeguardError::OverridesSave {
             details: e.to_string(),
         }
     })?;
@@ -51,12 +51,12 @@ pub(crate) fn set_node_virtual(
 
 /// Removes any node-virtualization overrides for a `network.json` node.
 ///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
+/// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
-pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError> {
+pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, TreeguardError> {
     let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
+        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -65,8 +65,8 @@ pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError
         return Ok(false);
     }
 
-    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
-        AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Treeguard, &overrides).map_err(|e| {
+        TreeguardError::OverridesSave {
             details: e.to_string(),
         }
     })?;
@@ -76,15 +76,15 @@ pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, AutopilotError
 /// Persists a per-device SQM override token for a list of devices by storing persistent shaped
 /// device overlays.
 ///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
+/// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn set_devices_sqm_override(
     base_devices: &[ShapedDevice],
     sqm_override: &str,
-) -> Result<bool, AutopilotError> {
+) -> Result<bool, TreeguardError> {
     let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
+        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -101,8 +101,8 @@ pub(crate) fn set_devices_sqm_override(
         return Ok(false);
     }
 
-    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
-        AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Treeguard, &overrides).map_err(|e| {
+        TreeguardError::OverridesSave {
             details: e.to_string(),
         }
     })?;
@@ -111,12 +111,12 @@ pub(crate) fn set_devices_sqm_override(
 
 /// Removes any persistent shaped device overlay entries for a list of device IDs.
 ///
-/// This function is not pure: it reads and writes `lqos_overrides.json`.
+/// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
-pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, AutopilotError> {
+pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, TreeguardError> {
     let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Autopilot).map_err(|e| AutopilotError::OverridesLoad {
+        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
         details: e.to_string(),
     })?;
 
@@ -132,8 +132,8 @@ pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, Auto
         return Ok(false);
     }
 
-    OverrideStore::save_layer(OverrideLayer::Autopilot, &overrides).map_err(|e| {
-        AutopilotError::OverridesSave {
+    OverrideStore::save_layer(OverrideLayer::Treeguard, &overrides).map_err(|e| {
+        TreeguardError::OverridesSave {
             details: e.to_string(),
         }
     })?;

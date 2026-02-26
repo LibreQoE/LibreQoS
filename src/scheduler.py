@@ -219,7 +219,7 @@ def override_devices_to_rows(devices):
 def merge_rows_replace_by_device_id(existing_rows, override_rows):
     """Overlay persistent device rows by device_id.
 
-    For v1 Autopilot SQM persistence, "persistent devices" must be treated as *field overlays*
+    For v1 TreeGuard SQM persistence, "persistent devices" must be treated as *field overlays*
     rather than full-row replacements to avoid overwriting integration-owned data.
 
     Current behavior:

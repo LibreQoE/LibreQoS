@@ -1,6 +1,6 @@
 //! Top-level configuration file for LibreQoS.
 
-use super::AutopilotConfig;
+use super::TreeguardConfig;
 use super::tuning::Tunables;
 use crate::etc::v15::stormguard;
 use allocative::Allocative;
@@ -106,9 +106,9 @@ pub struct Config {
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
 
-    /// Autopilot (intelligent node management) configuration.
+    /// TreeGuard (intelligent node management) configuration.
     #[serde(default)]
-    pub autopilot: AutopilotConfig,
+    pub treeguard: TreeguardConfig,
 
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
@@ -172,7 +172,7 @@ impl Config {
     /// Loads a config file from a string (used for testing only)
     #[allow(dead_code)]
     pub fn load_from_string(s: &str) -> Result<Self, String> {
-        let normalized = normalize_splynx_compat_keys(s)?;
+        let normalized = normalize_compat_keys(s)?;
         let config: Config =
             toml::from_str(&normalized).map_err(|e| format!("Error parsing config: {}", e))?;
         config.validate()?;
@@ -192,8 +192,8 @@ impl Config {
 /// - `enable_spylnx = true/false`
 ///
 /// It also normalizes deprecated values:
-/// - `autopilot.cpu.mode = "manual_profiles"` -> `"cpu_aware"`
-fn normalize_splynx_compat_keys(raw: &str) -> Result<String, String> {
+/// - `treeguard.cpu.mode = "manual_profiles"` -> `"cpu_aware"`
+fn normalize_compat_keys(raw: &str) -> Result<String, String> {
     let mut doc = raw
         .parse::<DocumentMut>()
         .map_err(|e| format!("Error parsing config: {}", e))?;
@@ -223,9 +223,9 @@ fn normalize_splynx_compat_keys(raw: &str) -> Result<String, String> {
         }
     }
 
-    // Deprecated value: autopilot.cpu.mode = "manual_profiles" -> "cpu_aware"
+    // Deprecated value: treeguard.cpu.mode = "manual_profiles" -> "cpu_aware"
     if let Some(cpu) = doc
-        .get_mut("autopilot")
+        .get_mut("treeguard")
         .and_then(|item| item.as_table_mut())
         .and_then(|table| table.get_mut("cpu"))
         .and_then(|item| item.as_table_mut())
@@ -271,7 +271,7 @@ impl Default for Config {
             disable_webserver: None,
             webserver_listen: None,
             stormguard: None,
-            autopilot: AutopilotConfig::default(),
+            treeguard: TreeguardConfig::default(),
             disable_icmp_ping: Some(false),
             exclude_efficiency_cores: true,
             enable_circuit_heatmaps: true,

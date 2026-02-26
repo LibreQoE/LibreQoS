@@ -72,7 +72,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_users.html",
         "config_wispgate.html",
         "config_stormguard.html",
-        "config_autopilot.html",
+        "config_treeguard.html",
         "stormguard_debug.html",
         "api.html",
         "cpu_weights.html",

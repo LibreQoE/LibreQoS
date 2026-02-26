@@ -1,21 +1,21 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 
-export class AutopilotStatusDashlet extends BaseDashlet {
+export class TreeGuardStatusDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 6;
     }
 
     title() {
-        return "Autopilot Status";
+        return "TreeGuard Status";
     }
 
     tooltip() {
-        return "<h5>Autopilot Status</h5><p>Shows Autopilot enablement, dry-run state, CPU pressure, managed allowlists, current virtualization/SQM states, and warnings.</p>";
+        return "<h5>TreeGuard Status</h5><p>Shows TreeGuard enablement, dry-run state, CPU pressure, managed allowlists, current virtualization/SQM states, and warnings.</p>";
     }
 
     subscribeTo() {
-        return ["AutopilotStatus"];
+        return ["TreeGuardStatus"];
     }
 
     buildContainer() {
@@ -76,7 +76,7 @@ export class AutopilotStatusDashlet extends BaseDashlet {
     }
 
     onMessage(msg) {
-        if (msg.event !== "AutopilotStatus") {
+        if (msg.event !== "TreeGuardStatus") {
             return;
         }
 

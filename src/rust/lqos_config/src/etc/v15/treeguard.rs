@@ -1,92 +1,92 @@
-//! Autopilot (intelligent node management) configuration.
+//! TreeGuard (intelligent node management) configuration.
 
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-/// Autopilot (intelligent node management) configuration.
+/// TreeGuard (intelligent node management) configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(default)]
-pub struct AutopilotConfig {
-    /// Whether Autopilot is enabled.
+pub struct TreeguardConfig {
+    /// Whether TreeGuard is enabled.
     pub enabled: bool,
-    /// Whether Autopilot operates in dry-run mode (no persistent writes or live applies).
+    /// Whether TreeGuard operates in dry-run mode (no persistent writes or live applies).
     pub dry_run: bool,
-    /// Autopilot tick cadence in seconds.
+    /// TreeGuard tick cadence in seconds.
     pub tick_seconds: u64,
     /// CPU-related behavior configuration.
-    pub cpu: AutopilotCpuConfig,
+    pub cpu: TreeguardCpuConfig,
     /// Link/node virtualization configuration.
-    pub links: AutopilotLinksConfig,
+    pub links: TreeguardLinksConfig,
     /// Circuit SQM switching configuration.
-    pub circuits: AutopilotCircuitsConfig,
+    pub circuits: TreeguardCircuitsConfig,
     /// QoO guardrail configuration.
-    pub qoo: AutopilotQooConfig,
+    pub qoo: TreeguardQooConfig,
 }
 
-impl Default for AutopilotConfig {
+impl Default for TreeguardConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             dry_run: true,
             tick_seconds: 1,
-            cpu: AutopilotCpuConfig::default(),
-            links: AutopilotLinksConfig::default(),
-            circuits: AutopilotCircuitsConfig::default(),
-            qoo: AutopilotQooConfig::default(),
+            cpu: TreeguardCpuConfig::default(),
+            links: TreeguardLinksConfig::default(),
+            circuits: TreeguardCircuitsConfig::default(),
+            qoo: TreeguardQooConfig::default(),
         }
     }
 }
 
-/// Autopilot CPU control mode.
+/// TreeGuard CPU control mode.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(rename_all = "snake_case")]
-pub enum AutopilotCpuMode {
-    /// Autopilot makes CPU-saving decisions based on CPU usage and other guardrails.
+pub enum TreeguardCpuMode {
+    /// TreeGuard makes CPU-saving decisions based on CPU usage and other guardrails.
     CpuAware,
-    /// Autopilot ignores CPU usage and uses only traffic/RTT/QoO guardrails.
+    /// TreeGuard ignores CPU usage and uses only traffic/RTT/QoO guardrails.
     TrafficRttOnly,
 }
 
-impl Default for AutopilotCpuMode {
+impl Default for TreeguardCpuMode {
     fn default() -> Self {
         Self::CpuAware
     }
 }
 
-/// Autopilot CPU-related configuration.
+/// TreeGuard CPU-related configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(default)]
-pub struct AutopilotCpuConfig {
+pub struct TreeguardCpuConfig {
     /// CPU control mode.
-    pub mode: AutopilotCpuMode,
-    /// CPU usage percentage at/above which Autopilot may take CPU-saving actions.
+    pub mode: TreeguardCpuMode,
+    /// CPU usage percentage at/above which TreeGuard may take CPU-saving actions.
     pub cpu_high_pct: u8,
-    /// CPU usage percentage at/below which Autopilot should revert CPU-saving actions.
+    /// CPU usage percentage at/below which TreeGuard should revert CPU-saving actions.
     pub cpu_low_pct: u8,
 }
 
-impl Default for AutopilotCpuConfig {
+impl Default for TreeguardCpuConfig {
     fn default() -> Self {
         Self {
-            mode: AutopilotCpuMode::CpuAware,
+            mode: TreeguardCpuMode::CpuAware,
             cpu_high_pct: 75,
             cpu_low_pct: 55,
         }
     }
 }
 
-/// Autopilot link/node virtualization configuration.
+/// TreeGuard link/node virtualization configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(default)]
-pub struct AutopilotLinksConfig {
+pub struct TreeguardLinksConfig {
     /// Whether link/node virtualization is enabled.
     pub enabled: bool,
-    /// Whether Autopilot may manage all non-root nodes in `network.json`.
+    /// Whether TreeGuard may manage all non-root nodes in `network.json`.
     ///
     /// When enabled, the `nodes` allowlist is ignored.
     #[serde(default)]
     pub all_nodes: bool,
-    /// Node allowlist: network.json node names that Autopilot may manage.
+    /// Node allowlist: network.json node names that TreeGuard may manage.
     pub nodes: Vec<String>,
     /// Utilization percentage below which a link is considered idle.
     pub idle_util_pct: f32,
@@ -104,7 +104,7 @@ pub struct AutopilotLinksConfig {
     pub reload_cooldown_minutes: u64,
 }
 
-impl Default for AutopilotLinksConfig {
+impl Default for TreeguardLinksConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -121,22 +121,22 @@ impl Default for AutopilotLinksConfig {
     }
 }
 
-/// Autopilot circuit SQM switching configuration.
+/// TreeGuard circuit SQM switching configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(default)]
-pub struct AutopilotCircuitsConfig {
+pub struct TreeguardCircuitsConfig {
     /// Whether per-circuit management is enabled.
     pub enabled: bool,
-    /// Whether Autopilot may manage all circuits found in ShapedDevices.
+    /// Whether TreeGuard may manage all circuits found in ShapedDevices.
     ///
     /// When enabled, the `circuits` allowlist is ignored.
     #[serde(default)]
     pub all_circuits: bool,
-    /// Circuit allowlist: circuit IDs (strings, as in ShapedDevices.csv) that Autopilot may manage.
+    /// Circuit allowlist: circuit IDs (strings, as in ShapedDevices.csv) that TreeGuard may manage.
     pub circuits: Vec<String>,
     /// Whether SQM switching is enabled.
     pub switching_enabled: bool,
-    /// Whether Autopilot may make independent decisions for down vs up directions.
+    /// Whether TreeGuard may make independent decisions for down vs up directions.
     pub independent_directions: bool,
     /// Utilization percentage below which a circuit direction is considered idle.
     pub idle_util_pct: f32,
@@ -150,11 +150,11 @@ pub struct AutopilotCircuitsConfig {
     pub min_switch_dwell_minutes: u64,
     /// Maximum number of SQM switches per hour.
     pub max_switches_per_hour: u32,
-    /// Whether Autopilot should persist SQM overrides to avoid scheduler fights.
+    /// Whether TreeGuard should persist SQM overrides to avoid scheduler fights.
     pub persist_sqm_overrides: bool,
 }
 
-impl Default for AutopilotCircuitsConfig {
+impl Default for TreeguardCircuitsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
@@ -173,17 +173,17 @@ impl Default for AutopilotCircuitsConfig {
     }
 }
 
-/// Autopilot QoO guardrail configuration.
+/// TreeGuard QoO guardrail configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 #[serde(default)]
-pub struct AutopilotQooConfig {
+pub struct TreeguardQooConfig {
     /// Whether QoO guardrails are enabled.
     pub enabled: bool,
-    /// Minimum QoO score (0..100) required for Autopilot to take CPU-saving actions when QoO is available.
+    /// Minimum QoO score (0..100) required for TreeGuard to take CPU-saving actions when QoO is available.
     pub min_score: f32,
 }
 
-impl Default for AutopilotQooConfig {
+impl Default for TreeguardQooConfig {
     fn default() -> Self {
         Self {
             enabled: true,

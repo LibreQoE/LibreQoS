@@ -1,12 +1,12 @@
-//! Autopilot error types.
+//! TreeGuard error types.
 
 use thiserror::Error;
 
-/// Errors returned by Autopilot APIs.
+/// Errors returned by TreeGuard APIs.
 #[derive(Error, Debug)]
-pub enum AutopilotError {
-    /// The Autopilot actor thread could not be spawned.
-    #[error("failed to spawn Autopilot actor thread: {0}")]
+pub enum TreeguardError {
+    /// The TreeGuard actor thread could not be spawned.
+    #[error("failed to spawn TreeGuard actor thread: {0}")]
     SpawnThread(#[from] std::io::Error),
 
     /// The overrides file could not be loaded.

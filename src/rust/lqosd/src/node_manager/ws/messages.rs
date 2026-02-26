@@ -215,7 +215,7 @@ pub struct BakeryStatusData {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct AutopilotStatusData {
+pub struct TreeguardStatusData {
     pub enabled: bool,
     pub dry_run: bool,
     pub cpu_max_pct: Option<u8>,
@@ -228,7 +228,7 @@ pub struct AutopilotStatusData {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct AutopilotActivityEntry {
+pub struct TreeguardActivityEntry {
     pub time: String,
     pub entity_type: String,
     pub entity_id: String,
@@ -477,8 +477,8 @@ pub enum WsResponse {
     StormguardStatus { data: Vec<(String, u64, u64)> },
     StormguardDebug { data: Vec<StormguardDebugEntry> },
     BakeryStatus { data: BakeryStatusData },
-    AutopilotStatus { data: AutopilotStatusData },
-    AutopilotActivity { data: Vec<AutopilotActivityEntry> },
+    TreeGuardStatus { data: TreeguardStatusData },
+    TreeGuardActivity { data: Vec<TreeguardActivityEntry> },
     ExecutiveHeatmaps { data: ExecutiveHeatmapsData },
     CircuitWatcher {
         circuit_id: String,

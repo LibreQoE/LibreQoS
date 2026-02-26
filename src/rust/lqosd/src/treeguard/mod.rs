@@ -1,4 +1,4 @@
-//! Autopilot subsystem for intelligent node management.
+//! TreeGuard subsystem for intelligent node management.
 //!
 //! This module provides an actor-driven control loop that can:
 //! - monitor link utilization and RTT,
@@ -14,5 +14,4 @@ pub(crate) mod reload;
 pub(crate) mod state;
 pub(crate) mod status;
 
-pub(crate) use errors::AutopilotError;
-
+pub(crate) use errors::TreeguardError;

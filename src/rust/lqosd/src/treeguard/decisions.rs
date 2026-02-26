@@ -1,12 +1,12 @@
-//! Pure decision logic for Autopilot.
+//! Pure decision logic for TreeGuard.
 //!
 //! Functions in this module should be pure: they must not perform I/O, mutate globals,
 //! or have side effects beyond returning a decision.
 
-use crate::autopilot::state::{CircuitSqmState, CircuitState, LinkState, LinkVirtualState};
+use crate::treeguard::state::{CircuitSqmState, CircuitState, LinkState, LinkVirtualState};
 use lqos_config::{
-    AutopilotCircuitsConfig, AutopilotCpuConfig, AutopilotCpuMode, AutopilotLinksConfig,
-    AutopilotQooConfig,
+    TreeguardCircuitsConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
+    TreeguardQooConfig,
 };
 use lqos_utils::units::DownUpOrder;
 
@@ -31,27 +31,27 @@ pub struct CircuitSqmDecision {
 /// Returns true if CPU pressure permits taking CPU-saving actions.
 ///
 /// This function is pure: it has no side effects.
-fn cpu_allows_saving(cpu: &AutopilotCpuConfig, cpu_max_pct: Option<u8>) -> bool {
+fn cpu_allows_saving(cpu: &TreeguardCpuConfig, cpu_max_pct: Option<u8>) -> bool {
     match cpu.mode {
-        AutopilotCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct >= cpu.cpu_high_pct),
-        AutopilotCpuMode::TrafficRttOnly => true,
+        TreeguardCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct >= cpu.cpu_high_pct),
+        TreeguardCpuMode::TrafficRttOnly => true,
     }
 }
 
 /// Returns true if CPU headroom calls for reverting CPU-saving actions.
 ///
 /// This function is pure: it has no side effects.
-fn cpu_calls_for_revert(cpu: &AutopilotCpuConfig, cpu_max_pct: Option<u8>) -> bool {
+fn cpu_calls_for_revert(cpu: &TreeguardCpuConfig, cpu_max_pct: Option<u8>) -> bool {
     match cpu.mode {
-        AutopilotCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct <= cpu.cpu_low_pct),
-        AutopilotCpuMode::TrafficRttOnly => false,
+        TreeguardCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct <= cpu.cpu_low_pct),
+        TreeguardCpuMode::TrafficRttOnly => false,
     }
 }
 
 /// Returns true if QoO (when available) is below the configured threshold for any direction.
 ///
 /// This function is pure: it has no side effects.
-fn qoo_below_threshold(qoo_cfg: &AutopilotQooConfig, qoo: DownUpOrder<Option<f32>>) -> bool {
+fn qoo_below_threshold(qoo_cfg: &TreeguardQooConfig, qoo: DownUpOrder<Option<f32>>) -> bool {
     if !qoo_cfg.enabled {
         return false;
     }
@@ -88,9 +88,9 @@ pub fn decide_link_virtualization(
     now_unix: u64,
     allowlisted: bool,
     cpu_max_pct: Option<u8>,
-    cpu_cfg: &AutopilotCpuConfig,
-    links_cfg: &AutopilotLinksConfig,
-    qoo_cfg: &AutopilotQooConfig,
+    cpu_cfg: &TreeguardCpuConfig,
+    links_cfg: &TreeguardLinksConfig,
+    qoo_cfg: &TreeguardQooConfig,
     rtt_missing: bool,
     qoo: DownUpOrder<Option<f32>>,
     util_ewma_pct: DownUpOrder<f64>,
@@ -148,9 +148,9 @@ pub fn decide_circuit_sqm(
     now_unix: u64,
     allowlisted: bool,
     cpu_max_pct: Option<u8>,
-    cpu_cfg: &AutopilotCpuConfig,
-    circuits_cfg: &AutopilotCircuitsConfig,
-    qoo_cfg: &AutopilotQooConfig,
+    cpu_cfg: &TreeguardCpuConfig,
+    circuits_cfg: &TreeguardCircuitsConfig,
+    qoo_cfg: &TreeguardQooConfig,
     rtt_missing: bool,
     qoo: DownUpOrder<Option<f32>>,
     state: &CircuitState,
@@ -166,7 +166,7 @@ pub fn decide_circuit_sqm(
     let mut decision = CircuitSqmDecision::default();
 
     let decide_direction = |dir_qoo: Option<f32>,
-                            dir_state: &crate::autopilot::state::CircuitDirectionState|
+                            dir_state: &crate::treeguard::state::CircuitDirectionState|
      -> Option<CircuitSqmState> {
         let sustained_idle = dir_state.idle_since_unix.is_some_and(|since| {
             let min_secs = circuits_cfg.idle_min_minutes.saturating_mul(60);
@@ -232,7 +232,7 @@ pub fn decide_circuit_sqm(
             (None, None) => None,
         };
 
-        let sustained_idle = crate::autopilot::state::is_sustained_idle(
+        let sustained_idle = crate::treeguard::state::is_sustained_idle(
             now_unix,
             state.down.idle_since_unix,
             state.up.idle_since_unix,
@@ -342,14 +342,14 @@ pub fn parse_directional_sqm_override(token: &str) -> DownUpOrder<Option<Circuit
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::autopilot::state::{CircuitDirectionState, CircuitState, LinkState};
+    use crate::treeguard::state::{CircuitDirectionState, CircuitState, LinkState};
     use std::collections::VecDeque;
 
     #[test]
     fn link_decision_requires_allowlist() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
         let decision = decide_link_virtualization(
             1000,
@@ -372,9 +372,9 @@ mod tests {
 
     #[test]
     fn link_virtualizes_when_idle_and_cpu_high() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
         let decision = decide_link_virtualization(
             1000,
@@ -397,9 +397,9 @@ mod tests {
 
     #[test]
     fn link_does_not_virtualize_when_cpu_low() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
         let decision = decide_link_virtualization(
             1000,
@@ -422,9 +422,9 @@ mod tests {
 
     #[test]
     fn link_unvirtualizes_on_util_spike() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
@@ -452,9 +452,9 @@ mod tests {
 
     #[test]
     fn link_unvirtualizes_when_rtt_missing() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
@@ -482,9 +482,9 @@ mod tests {
 
     #[test]
     fn link_stays_virtual_when_idle_even_if_rtt_missing() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
@@ -509,9 +509,9 @@ mod tests {
 
     #[test]
     fn link_dwell_time_blocks_changes() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = LinkState::default();
         state.last_change_unix = Some(1000 - 60);
 
@@ -536,9 +536,9 @@ mod tests {
 
     #[test]
     fn link_rate_limit_blocks_changes() {
-        let cpu = AutopilotCpuConfig::default();
-        let links = AutopilotLinksConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = LinkState::default();
         state.recent_changes_unix = VecDeque::from(vec![1, 2, 3, 4]);
 
@@ -563,9 +563,9 @@ mod tests {
 
     #[test]
     fn circuit_decision_requires_allowlist() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let state = CircuitState::default();
         let decision = decide_circuit_sqm(
             1000,
@@ -586,9 +586,9 @@ mod tests {
 
     #[test]
     fn circuit_downgrades_when_sustained_idle_and_cpu_high() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down.idle_since_unix = Some(1000 - 900);
         state.up.idle_since_unix = Some(1000 - 900);
@@ -614,9 +614,9 @@ mod tests {
 
     #[test]
     fn circuit_independent_directions_respect_qoo() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down.idle_since_unix = Some(1000 - 900);
         state.up.idle_since_unix = Some(1000 - 900);
@@ -642,9 +642,9 @@ mod tests {
 
     #[test]
     fn circuit_reverts_when_cpu_low() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down = CircuitDirectionState {
             desired: CircuitSqmState::FqCodel,
@@ -675,9 +675,9 @@ mod tests {
 
     #[test]
     fn circuit_missing_rtt_does_not_block_downgrade_when_idle() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down.idle_since_unix = Some(1000 - 900);
         state.up.idle_since_unix = Some(1000 - 900);
@@ -704,9 +704,9 @@ mod tests {
 
     #[test]
     fn circuit_reverts_when_utilization_rises() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down.desired = CircuitSqmState::FqCodel;
         state.up.desired = CircuitSqmState::FqCodel;
@@ -733,9 +733,9 @@ mod tests {
 
     #[test]
     fn circuit_dwell_time_blocks_switch() {
-        let cpu = AutopilotCpuConfig::default();
-        let circuits = AutopilotCircuitsConfig::default();
-        let qoo_cfg = AutopilotQooConfig::default();
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
         let mut state = CircuitState::default();
         state.down.last_change_unix = Some(1000 - 60);
         state.up.last_change_unix = Some(1000 - 60);

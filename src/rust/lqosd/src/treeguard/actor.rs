@@ -1,15 +1,15 @@
-//! Autopilot actor loop.
+//! TreeGuard actor loop.
 //!
 //! The actor is responsible for sampling telemetry, maintaining state machines,
 //! and applying (or dry-running) any decisions.
 
-use crate::node_manager::ws::messages::{AutopilotActivityEntry, AutopilotStatusData};
-use crate::autopilot::AutopilotError;
-use crate::autopilot::reload::{ReloadController, ReloadOutcome};
-use crate::autopilot::state::{
+use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
+use crate::treeguard::TreeguardError;
+use crate::treeguard::reload::{ReloadController, ReloadOutcome};
+use crate::treeguard::state::{
     is_sustained_idle, CircuitSqmState, CircuitState, LinkState, LinkVirtualState,
 };
-use crate::autopilot::{bakery, decisions, overrides};
+use crate::treeguard::{bakery, decisions, overrides};
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::{CIRCUIT_RTT_BUFFERS, THROUGHPUT_TRACKER};
@@ -27,55 +27,55 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
-static AUTOPILOT_SENDER: OnceLock<Sender<AutopilotCommand>> = OnceLock::new();
+static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
 
-/// A message sent to the Autopilot actor.
+/// A message sent to the TreeGuard actor.
 #[derive(Debug)]
-pub(crate) enum AutopilotCommand {
+pub(crate) enum TreeguardCommand {
     /// Request a status snapshot.
     GetStatus {
         /// One-shot reply channel. Side effect: sends a snapshot to the requester.
-        reply: tokio::sync::oneshot::Sender<AutopilotStatusData>,
+        reply: tokio::sync::oneshot::Sender<TreeguardStatusData>,
     },
     /// Request an activity snapshot.
     GetActivity {
         /// One-shot reply channel. Side effect: sends a snapshot to the requester.
-        reply: tokio::sync::oneshot::Sender<Vec<AutopilotActivityEntry>>,
+        reply: tokio::sync::oneshot::Sender<Vec<TreeguardActivityEntry>>,
     },
 }
 
-/// Starts the Autopilot actor.
+/// Starts the TreeGuard actor.
 ///
-/// This function has side effects: it spawns the Autopilot background thread and registers a
+/// This function has side effects: it spawns the TreeGuard background thread and registers a
 /// global sender used for UI snapshot requests.
-pub(crate) fn start_autopilot_actor(
+pub(crate) fn start_treeguard_actor(
     system_usage_tx: Sender<tokio::sync::oneshot::Sender<SystemStats>>,
-) -> Result<(), AutopilotError> {
-    if AUTOPILOT_SENDER.get().is_some() {
+) -> Result<(), TreeguardError> {
+    if TREEGUARD_SENDER.get().is_some() {
         return Ok(());
     }
 
-    let (tx, rx) = crossbeam_channel::bounded::<AutopilotCommand>(64);
-    let _ = AUTOPILOT_SENDER.set(tx);
+    let (tx, rx) = crossbeam_channel::bounded::<TreeguardCommand>(64);
+    let _ = TREEGUARD_SENDER.set(tx);
 
     std::thread::Builder::new()
-        .name("Autopilot".to_string())
-        .spawn(move || autopilot_actor_loop(rx, system_usage_tx))?;
+        .name("TreeGuard".to_string())
+        .spawn(move || treeguard_actor_loop(rx, system_usage_tx))?;
 
     Ok(())
 }
 
-/// Requests a status snapshot from the Autopilot actor.
+/// Requests a status snapshot from the TreeGuard actor.
 ///
-/// This function is not pure: it sends a message to the Autopilot actor thread.
-pub(crate) async fn request_status_snapshot() -> Option<AutopilotStatusData> {
-    let sender = AUTOPILOT_SENDER.get()?;
+/// This function is not pure: it sends a message to the TreeGuard actor thread.
+pub(crate) async fn request_status_snapshot() -> Option<TreeguardStatusData> {
+    let sender = TREEGUARD_SENDER.get()?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     if sender
-        .try_send(AutopilotCommand::GetStatus { reply: tx })
+        .try_send(TreeguardCommand::GetStatus { reply: tx })
         .is_err()
     {
         return None;
@@ -83,14 +83,14 @@ pub(crate) async fn request_status_snapshot() -> Option<AutopilotStatusData> {
     rx.await.ok()
 }
 
-/// Requests an activity snapshot from the Autopilot actor.
+/// Requests an activity snapshot from the TreeGuard actor.
 ///
-/// This function is not pure: it sends a message to the Autopilot actor thread.
-pub(crate) async fn request_activity_snapshot() -> Option<Vec<AutopilotActivityEntry>> {
-    let sender = AUTOPILOT_SENDER.get()?;
+/// This function is not pure: it sends a message to the TreeGuard actor thread.
+pub(crate) async fn request_activity_snapshot() -> Option<Vec<TreeguardActivityEntry>> {
+    let sender = TREEGUARD_SENDER.get()?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     if sender
-        .try_send(AutopilotCommand::GetActivity { reply: tx })
+        .try_send(TreeguardCommand::GetActivity { reply: tx })
         .is_err()
     {
         return None;
@@ -98,17 +98,17 @@ pub(crate) async fn request_activity_snapshot() -> Option<Vec<AutopilotActivityE
     rx.await.ok()
 }
 
-/// Runs the Autopilot actor loop, processing commands and periodic ticks.
+/// Runs the TreeGuard actor loop, processing commands and periodic ticks.
 ///
 /// This function has side effects: it blocks the current thread, samples telemetry, and may write
 /// persistent changes (via overrides) depending on configuration.
-fn autopilot_actor_loop(
-    rx: Receiver<AutopilotCommand>,
+fn treeguard_actor_loop(
+    rx: Receiver<TreeguardCommand>,
     system_usage_tx: Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
-    debug!("Autopilot actor started");
+    debug!("TreeGuard actor started");
 
-    let mut status = AutopilotStatusData {
+    let mut status = TreeguardStatusData {
         enabled: false,
         dry_run: true,
         cpu_max_pct: None,
@@ -119,7 +119,7 @@ fn autopilot_actor_loop(
         last_action_summary: None,
         warnings: Vec::new(),
     };
-    let mut activity: VecDeque<AutopilotActivityEntry> = VecDeque::new();
+    let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
 
     let mut link_states: FxHashMap<String, LinkState> = FxHashMap::default();
     let mut circuit_states: FxHashMap<String, CircuitState> = FxHashMap::default();
@@ -153,7 +153,7 @@ fn autopilot_actor_loop(
                 );
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                warn!("Autopilot actor command channel disconnected; exiting actor");
+                warn!("TreeGuard actor command channel disconnected; exiting actor");
                 return;
             }
         }
@@ -164,28 +164,28 @@ fn autopilot_actor_loop(
 ///
 /// This function has side effects: it sends a snapshot reply over the provided one-shot channel.
 fn handle_command(
-    cmd: AutopilotCommand,
-    status: &AutopilotStatusData,
-    activity: &VecDeque<AutopilotActivityEntry>,
+    cmd: TreeguardCommand,
+    status: &TreeguardStatusData,
+    activity: &VecDeque<TreeguardActivityEntry>,
 ) {
     match cmd {
-        AutopilotCommand::GetStatus { reply } => {
+        TreeguardCommand::GetStatus { reply } => {
             let _ = reply.send(status.clone());
         }
-        AutopilotCommand::GetActivity { reply } => {
-            let data: Vec<AutopilotActivityEntry> = activity.iter().cloned().rev().collect();
+        TreeguardCommand::GetActivity { reply } => {
+            let data: Vec<TreeguardActivityEntry> = activity.iter().cloned().rev().collect();
             let _ = reply.send(data);
         }
     }
 }
 
-/// Executes a single Autopilot tick.
+/// Executes a single TreeGuard tick.
 ///
-/// This function has side effects: it samples telemetry, may read/write `lqos_overrides.json`,
+/// This function has side effects: it samples telemetry, may read/write `lqos_overrides.treeguard.json`,
 /// and appends to the activity ring buffer.
 fn run_tick(
-    status: &mut AutopilotStatusData,
-    activity: &mut VecDeque<AutopilotActivityEntry>,
+    status: &mut TreeguardStatusData,
+    activity: &mut VecDeque<TreeguardActivityEntry>,
     system_usage_tx: &Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     tick_seconds: &mut u64,
     link_states: &mut FxHashMap<String, LinkState>,
@@ -212,41 +212,41 @@ fn run_tick(
         status.virtualized_nodes = 0;
         status.fq_codel_circuits = 0;
         status.last_action_summary = None;
-        status.warnings = vec!["Unable to load configuration; Autopilot inactive.".to_string()];
+        status.warnings = vec!["Unable to load configuration; TreeGuard inactive.".to_string()];
         return;
     };
 
-    let ap = &config.autopilot;
-    *tick_seconds = ap.tick_seconds.max(1);
+    let tg = &config.treeguard;
+    *tick_seconds = tg.tick_seconds.max(1);
 
-    if last_dry_run.is_some_and(|prev| prev != ap.dry_run) {
+    if last_dry_run.is_some_and(|prev| prev != tg.dry_run) {
         link_states.clear();
         circuit_states.clear();
         push_activity(
             activity,
-            AutopilotActivityEntry {
+            TreeguardActivityEntry {
                 time: now_unix.to_string(),
-                entity_type: "autopilot".to_string(),
-                entity_id: "autopilot".to_string(),
+                entity_type: "treeguard".to_string(),
+                entity_id: "treeguard".to_string(),
                 action: "dry_run_toggled".to_string(),
                 persisted: false,
                 reason: "Dry-run mode changed; state machines reset.".to_string(),
             },
         );
     }
-    *last_dry_run = Some(ap.dry_run);
+    *last_dry_run = Some(tg.dry_run);
 
     let mut virtualized_nodes: usize = 0;
     let mut fq_codel_circuits: usize = 0;
 
-    if ap.enabled
-        && !ap.links.all_nodes
-        && ap.links.nodes.is_empty()
-        && !ap.circuits.all_circuits
-        && ap.circuits.circuits.is_empty()
+    if tg.enabled
+        && !tg.links.all_nodes
+        && tg.links.nodes.is_empty()
+        && !tg.circuits.all_circuits
+        && tg.circuits.circuits.is_empty()
     {
         warnings.push(
-            "Autopilot is enabled but no nodes/circuits are allowlisted. No actions will occur."
+            "TreeGuard is enabled but no nodes/circuits are allowlisted. No actions will occur."
                 .to_string(),
         );
     }
@@ -259,12 +259,12 @@ fn run_tick(
         Some(max.min(100) as u8)
     })();
 
-    if ap.enabled && cpu_max_pct.is_none() {
+    if tg.enabled && cpu_max_pct.is_none() {
         warnings
             .push("Unable to sample CPU usage; CPU-aware behavior may be degraded.".to_string());
     }
 
-    let managed_nodes_count: usize = if ap.links.all_nodes {
+    let managed_nodes_count: usize = if tg.links.all_nodes {
         let reader = NETWORK_JSON.read();
         reader
             .get_nodes_when_ready()
@@ -272,10 +272,10 @@ fn run_tick(
             .filter(|n| n.name != "Root")
             .count()
     } else {
-        ap.links.nodes.len()
+        tg.links.nodes.len()
     };
 
-    let managed_circuits_count: usize = if ap.circuits.all_circuits {
+    let managed_circuits_count: usize = if tg.circuits.all_circuits {
         let shaped = SHAPED_DEVICES.load();
         let mut circuits: FxHashSet<&str> = FxHashSet::default();
         for d in shaped.devices.iter() {
@@ -286,42 +286,42 @@ fn run_tick(
         }
         circuits.len()
     } else {
-        ap.circuits.circuits.len()
+        tg.circuits.circuits.len()
     };
 
-    status.enabled = ap.enabled;
-    status.dry_run = ap.dry_run;
+    status.enabled = tg.enabled;
+    status.dry_run = tg.dry_run;
     status.cpu_max_pct = cpu_max_pct;
     status.managed_nodes = managed_nodes_count;
     status.managed_circuits = managed_circuits_count;
     status.warnings = warnings;
 
-    let (operator_overrides_snapshot, autopilot_overrides_snapshot) =
-        if ap.enabled && (ap.links.enabled || ap.circuits.enabled) {
+    let (operator_overrides_snapshot, treeguard_overrides_snapshot) =
+        if tg.enabled && (tg.links.enabled || tg.circuits.enabled) {
             let operator = match OverrideStore::load_layer(OverrideLayer::Operator) {
                 Ok(o) => Some(o),
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot: unable to load operator overrides file: {e}"
+                        "TreeGuard: unable to load operator overrides file: {e}"
                     ));
                     None
                 }
             };
-            let autopilot = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+            let treeguard = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
                 Ok(o) => Some(o),
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot: unable to load autopilot overrides file: {e}"
+                        "TreeGuard: unable to load TreeGuard overrides file: {e}"
                     ));
                     None
                 }
             };
-            (operator, autopilot)
+            (operator, treeguard)
         } else {
             (None, None)
         };
 
-    // Conflict detection: if operator-defined overrides exist for an enrolled entity, Autopilot
+    // Conflict detection: if operator-defined overrides exist for an enrolled entity, TreeGuard
     // will refuse to manage it to avoid fights/surprises.
     let operator_virtual_node_overrides: FxHashSet<String> = operator_overrides_snapshot
         .as_ref()
@@ -354,14 +354,14 @@ fn run_tick(
         .unwrap_or_default();
 
     // --- Link sampling + decisions (virtualization) ---
-    let manage_links = ap.enabled && ap.links.enabled;
-    let allowlisted_nodes: FxHashSet<String> = ap.links.nodes.iter().cloned().collect();
+    let manage_links = tg.enabled && tg.links.enabled;
+    let allowlisted_nodes: FxHashSet<String> = tg.links.nodes.iter().cloned().collect();
     let mut reload_requested = false;
     let mut reload_request_reason: Option<String> = None;
 
     // Cleanup for removed nodes or disabled links.
     if !manage_links {
-        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
             Ok(of) => of
                 .network_adjustments()
                 .iter()
@@ -374,7 +374,7 @@ fn run_tick(
                 .collect(),
             Err(e) => {
                 status.warnings.push(format!(
-                    "Autopilot links: unable to load autopilot overrides for cleanup: {e}"
+                    "TreeGuard links: unable to load TreeGuard overrides for cleanup: {e}"
                 ));
                 Vec::new()
             }
@@ -393,13 +393,13 @@ fn run_tick(
                         }
                         push_activity(
                             activity,
-                            AutopilotActivityEntry {
+                            TreeguardActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "node".to_string(),
                                 entity_id: node_name.clone(),
                                 action: "clear_virtual_override".to_string(),
                                 persisted: true,
-                                reason: "Autopilot disabled or links disabled".to_string(),
+                                reason: "TreeGuard disabled or links disabled".to_string(),
                             },
                         );
                     }
@@ -408,11 +408,11 @@ fn run_tick(
                 }
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot links: failed to clear virtual override for node '{node_name}': {e}"
+                        "TreeGuard links: failed to clear virtual override for node '{node_name}': {e}"
                     ));
                     push_activity(
                         activity,
-                        AutopilotActivityEntry {
+                        TreeguardActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "node".to_string(),
                             entity_id: node_name,
@@ -428,7 +428,7 @@ fn run_tick(
         let reader = NETWORK_JSON.read();
 
         // Reconcile nodes removed from allowlist, or removed from network.json.
-        let autopilot_nodes_with_overrides: FxHashSet<String> = autopilot_overrides_snapshot
+        let treeguard_nodes_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
             .map(|of| {
                 of.network_adjustments()
@@ -443,20 +443,20 @@ fn run_tick(
             })
             .unwrap_or_default();
 
-        let removed: Vec<String> = if ap.links.all_nodes {
+        let removed: Vec<String> = if tg.links.all_nodes {
             let current: FxHashSet<&str> = reader
                 .get_nodes_when_ready()
                 .iter()
                 .filter(|n| n.name != "Root")
                 .map(|n| n.name.as_str())
                 .collect();
-            autopilot_nodes_with_overrides
+            treeguard_nodes_with_overrides
                 .iter()
                 .filter(|n| !current.contains(n.as_str()))
                 .cloned()
                 .collect()
         } else {
-            autopilot_nodes_with_overrides
+            treeguard_nodes_with_overrides
                 .iter()
                 .filter(|n| !allowlisted_nodes.contains(*n))
                 .cloned()
@@ -476,7 +476,7 @@ fn run_tick(
                         }
                         push_activity(
                             activity,
-                            AutopilotActivityEntry {
+                            TreeguardActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "node".to_string(),
                                 entity_id: node_name.clone(),
@@ -491,11 +491,11 @@ fn run_tick(
                 }
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot links: failed to clear virtual override for node '{node_name}': {e}"
+                        "TreeGuard links: failed to clear virtual override for node '{node_name}': {e}"
                     ));
                     push_activity(
                         activity,
-                        AutopilotActivityEntry {
+                        TreeguardActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "node".to_string(),
                             entity_id: node_name,
@@ -507,7 +507,7 @@ fn run_tick(
                 }
             }
         }
-        if ap.links.all_nodes {
+        if tg.links.all_nodes {
             for node in reader.get_nodes_when_ready().iter() {
                 let node_name = node.name.as_str();
                 if node_name == "Root" {
@@ -516,7 +516,7 @@ fn run_tick(
 
                 if operator_virtual_node_overrides.contains(node_name) {
                     status.warnings.push(format!(
-                        "Autopilot links: node '{node_name}' has an operator virtual override; Autopilot will not manage it."
+                        "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
                     ));
                     match overrides::clear_node_virtual(node_name) {
                         Ok(changed) => {
@@ -532,20 +532,20 @@ fn run_tick(
                                 }
                                 push_activity(
                                     activity,
-                                    AutopilotActivityEntry {
+                                    TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "node".to_string(),
                                         entity_id: node_name.to_string(),
                                         action: "clear_virtual_override_conflict".to_string(),
                                         persisted: true,
-                                        reason: "Operator override present; Autopilot will not manage this node.".to_string(),
+                                        reason: "Operator override present; TreeGuard will not manage this node.".to_string(),
                                     },
                                 );
                             }
                         }
                         Err(e) => {
                             status.warnings.push(format!(
-                                "Autopilot links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
+                                "TreeGuard links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
                             ));
                         }
                     }
@@ -556,7 +556,7 @@ fn run_tick(
 
                 if node.virtual_node {
                     status.warnings.push(format!(
-                        "Autopilot links: node '{node_name}' is marked virtual in base network.json; Autopilot will not manage it."
+                        "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
                     continue;
                 }
@@ -565,7 +565,7 @@ fn run_tick(
                 let cap_up = node.max_throughput.1;
                 if cap_down <= 0.0 || cap_up <= 0.0 {
                     status.warnings.push(format!(
-                        "Autopilot links: node '{node_name}' has unknown capacity; no changes will be made."
+                        "TreeGuard links: node '{node_name}' has unknown capacity; no changes will be made."
                     ));
                     continue;
                 }
@@ -581,7 +581,7 @@ fn run_tick(
                     .entry(node_name.to_string())
                     .or_insert_with(|| {
                         let mut state = LinkState::default();
-                        if let Some(overrides) = autopilot_overrides_snapshot.as_ref() {
+                        if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
                             if let Some(v) = overrides_node_virtual(overrides, node_name) {
                                 state.desired = if v {
                                     LinkVirtualState::Virtual
@@ -605,20 +605,20 @@ fn run_tick(
                     &mut state.down.idle_since_unix,
                     now_unix,
                     ewma_down,
-                    ap.links.idle_util_pct as f64,
+                    tg.links.idle_util_pct as f64,
                 );
                 update_idle_since(
                     &mut state.up.idle_since_unix,
                     now_unix,
                     ewma_up,
-                    ap.links.idle_util_pct as f64,
+                    tg.links.idle_util_pct as f64,
                 );
 
                 let sustained_idle = is_sustained_idle(
                     now_unix,
                     state.down.idle_since_unix,
                     state.up.idle_since_unix,
-                    ap.links.idle_min_minutes,
+                    tg.links.idle_min_minutes,
                 );
 
                 let rtt_missing = match now_nanos_since_boot {
@@ -629,7 +629,7 @@ fn run_tick(
                         } else {
                             let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
                             age_nanos
-                                >= ap.links.rtt_missing_seconds.saturating_mul(1_000_000_000)
+                                >= tg.links.rtt_missing_seconds.saturating_mul(1_000_000_000)
                         }
                     }
                 };
@@ -660,9 +660,9 @@ fn run_tick(
                     now_unix,
                     true,
                     cpu_max_pct,
-                    &ap.cpu,
-                    &ap.links,
-                    &ap.qoo,
+                    &tg.cpu,
+                    &tg.links,
+                    &tg.qoo,
                     rtt_missing,
                     qoo,
                     util_ewma_pct,
@@ -675,7 +675,7 @@ fn run_tick(
                         continue;
                     }
 
-                    let persist = !ap.dry_run;
+                    let persist = !tg.dry_run;
                     let mut persisted_ok = false;
                     let mut override_changed = false;
 
@@ -688,12 +688,12 @@ fn run_tick(
                             }
                             Err(e) => {
                                 status.warnings.push(format!(
-                                    "Autopilot links: failed to persist virtual override for node '{node_name}': {e}"
+                                    "TreeGuard links: failed to persist virtual override for node '{node_name}': {e}"
                                 ));
                                 managed_nodes.insert(node_name.to_string());
                                 push_activity(
                                     activity,
-                                    AutopilotActivityEntry {
+                                    TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "node".to_string(),
                                         entity_id: node_name.to_string(),
@@ -727,7 +727,7 @@ fn run_tick(
 
                     push_activity(
                         activity,
-                        AutopilotActivityEntry {
+                        TreeguardActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "node".to_string(),
                             entity_id: node_name.to_string(),
@@ -757,12 +757,12 @@ fn run_tick(
                 }
             }
         } else {
-            for node_name in ap.links.nodes.iter() {
-            if operator_virtual_node_overrides.contains(node_name) {
-                status.warnings.push(format!(
-                    "Autopilot links: node '{node_name}' has an operator virtual override; Autopilot will not manage it."
-                ));
-                match overrides::clear_node_virtual(node_name) {
+            for node_name in tg.links.nodes.iter() {
+                if operator_virtual_node_overrides.contains(node_name) {
+                    status.warnings.push(format!(
+                        "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
+                    ));
+                    match overrides::clear_node_virtual(node_name) {
                     Ok(changed) => {
                         if changed {
                             reload_requested = true;
@@ -776,20 +776,20 @@ fn run_tick(
                             }
                             push_activity(
                                 activity,
-                                AutopilotActivityEntry {
+                                TreeguardActivityEntry {
                                     time: now_unix.to_string(),
                                     entity_type: "node".to_string(),
                                     entity_id: node_name.clone(),
                                     action: "clear_virtual_override_conflict".to_string(),
                                     persisted: true,
-                                    reason: "Operator override present; Autopilot will not manage this node.".to_string(),
+                                    reason: "Operator override present; TreeGuard will not manage this node.".to_string(),
                                 },
                             );
                         }
                     }
                     Err(e) => {
                         status.warnings.push(format!(
-                            "Autopilot links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
+                            "TreeGuard links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
                         ));
                     }
                 }
@@ -799,20 +799,20 @@ fn run_tick(
             }
             let Some(index) = reader.get_index_for_name(node_name) else {
                 status.warnings.push(format!(
-                    "Autopilot links allowlist: node '{node_name}' not found in network.json."
+                    "TreeGuard links allowlist: node '{node_name}' not found in network.json."
                 ));
                 continue;
             };
             let Some(node) = reader.get_nodes_when_ready().get(index) else {
                 status.warnings.push(format!(
-                    "Autopilot links allowlist: node '{node_name}' index not present."
+                    "TreeGuard links allowlist: node '{node_name}' index not present."
                 ));
                 continue;
             };
 
             if node.virtual_node {
                 status.warnings.push(format!(
-                    "Autopilot links: node '{node_name}' is marked virtual in base network.json; Autopilot will not manage it."
+                    "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                 ));
                 continue;
             }
@@ -821,7 +821,7 @@ fn run_tick(
             let cap_up = node.max_throughput.1;
             if cap_down <= 0.0 || cap_up <= 0.0 {
                 status.warnings.push(format!(
-                    "Autopilot links: node '{node_name}' has unknown capacity; no changes will be made."
+                    "TreeGuard links: node '{node_name}' has unknown capacity; no changes will be made."
                 ));
                 continue;
             }
@@ -837,7 +837,7 @@ fn run_tick(
                 .entry(node_name.clone())
                 .or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = autopilot_overrides_snapshot.as_ref() {
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
                         if let Some(v) = overrides_node_virtual(overrides, node_name) {
                             state.desired = if v {
                                 LinkVirtualState::Virtual
@@ -861,20 +861,20 @@ fn run_tick(
                 &mut state.down.idle_since_unix,
                 now_unix,
                 ewma_down,
-                ap.links.idle_util_pct as f64,
+                tg.links.idle_util_pct as f64,
             );
             update_idle_since(
                 &mut state.up.idle_since_unix,
                 now_unix,
                 ewma_up,
-                ap.links.idle_util_pct as f64,
+                tg.links.idle_util_pct as f64,
             );
 
             let sustained_idle = is_sustained_idle(
                 now_unix,
                 state.down.idle_since_unix,
                 state.up.idle_since_unix,
-                ap.links.idle_min_minutes,
+                tg.links.idle_min_minutes,
             );
 
             let rtt_missing = match now_nanos_since_boot {
@@ -884,7 +884,7 @@ fn run_tick(
                         true
                     } else {
                         let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
-                        age_nanos >= ap.links.rtt_missing_seconds.saturating_mul(1_000_000_000)
+                        age_nanos >= tg.links.rtt_missing_seconds.saturating_mul(1_000_000_000)
                     }
                 }
             };
@@ -915,9 +915,9 @@ fn run_tick(
                 now_unix,
                 allowlisted_nodes.contains(node_name),
                 cpu_max_pct,
-                &ap.cpu,
-                &ap.links,
-                &ap.qoo,
+                &tg.cpu,
+                &tg.links,
+                &tg.qoo,
                 rtt_missing,
                 qoo,
                 util_ewma_pct,
@@ -930,7 +930,7 @@ fn run_tick(
                     continue;
                 }
 
-                let persist = !ap.dry_run;
+                let persist = !tg.dry_run;
                 let mut persisted_ok = false;
                 let mut override_changed = false;
 
@@ -943,12 +943,12 @@ fn run_tick(
                         }
                         Err(e) => {
                             status.warnings.push(format!(
-                                "Autopilot links: failed to persist virtual override for node '{node_name}': {e}"
+                                "TreeGuard links: failed to persist virtual override for node '{node_name}': {e}"
                             ));
                             managed_nodes.insert(node_name.clone());
                             push_activity(
                                 activity,
-                                AutopilotActivityEntry {
+                                TreeguardActivityEntry {
                                     time: now_unix.to_string(),
                                     entity_type: "node".to_string(),
                                     entity_id: node_name.clone(),
@@ -982,7 +982,7 @@ fn run_tick(
 
                 push_activity(
                     activity,
-                    AutopilotActivityEntry {
+                    TreeguardActivityEntry {
                         time: now_unix.to_string(),
                         entity_type: "node".to_string(),
                         entity_id: node_name.clone(),
@@ -1018,13 +1018,13 @@ fn run_tick(
         let why = reload_request_reason
             .clone()
             .unwrap_or_else(|| "Topology change".to_string());
-        match reload_controller.try_reload(now_unix, ap.links.reload_cooldown_minutes) {
+        match reload_controller.try_reload(now_unix, tg.links.reload_cooldown_minutes) {
             ReloadOutcome::Success { message: _ } => {
                 push_activity(
                     activity,
-                    AutopilotActivityEntry {
+                    TreeguardActivityEntry {
                         time: now_unix.to_string(),
-                        entity_type: "autopilot".to_string(),
+                        entity_type: "treeguard".to_string(),
                         entity_id: "reload".to_string(),
                         action: "reload_success".to_string(),
                         persisted: true,
@@ -1042,9 +1042,9 @@ fn run_tick(
                     .unwrap_or_default();
                 push_activity(
                     activity,
-                    AutopilotActivityEntry {
+                    TreeguardActivityEntry {
                         time: now_unix.to_string(),
-                        entity_type: "autopilot".to_string(),
+                        entity_type: "treeguard".to_string(),
                         entity_id: "reload".to_string(),
                         action: "reload_skipped".to_string(),
                         persisted: false,
@@ -1059,12 +1059,12 @@ fn run_tick(
                 let extra = next_allowed_unix
                     .map(|t| format!(" next_allowed_unix={t}"))
                     .unwrap_or_default();
-                status.warnings.push(format!("Autopilot reload failed: {error}.{extra}"));
+                status.warnings.push(format!("TreeGuard reload failed: {error}.{extra}"));
                 push_activity(
                     activity,
-                    AutopilotActivityEntry {
+                    TreeguardActivityEntry {
                         time: now_unix.to_string(),
-                        entity_type: "autopilot".to_string(),
+                        entity_type: "treeguard".to_string(),
                         entity_id: "reload".to_string(),
                         action: "reload_failed".to_string(),
                         persisted: false,
@@ -1074,22 +1074,22 @@ fn run_tick(
                 urgent::submit(
                     UrgentSource::System,
                     UrgentSeverity::Error,
-                    "autopilot_reload_failed".to_string(),
-                    format!("Autopilot failed to reload LibreQoS: {error}"),
+                    "treeguard_reload_failed".to_string(),
+                    format!("TreeGuard failed to reload LibreQoS: {error}"),
                     Some(why),
-                    Some("autopilot_reload".to_string()),
+                    Some("treeguard_reload".to_string()),
                 );
             }
         }
     }
 
     // --- Circuit sampling + decisions (SQM switching) ---
-    let manage_circuits = ap.enabled && ap.circuits.enabled;
+    let manage_circuits = tg.enabled && tg.circuits.enabled;
 
     // Snapshot shaped devices so we can compute the enrolled circuit set.
     let shaped = SHAPED_DEVICES.load();
 
-    let enrolled_circuits: Vec<String> = if ap.circuits.all_circuits {
+    let enrolled_circuits: Vec<String> = if tg.circuits.all_circuits {
         let mut set: FxHashSet<String> = FxHashSet::default();
         for d in shaped.devices.iter() {
             let id = d.circuit_id.trim();
@@ -1101,7 +1101,7 @@ fn run_tick(
         v.sort();
         v
     } else {
-        let mut v = ap.circuits.circuits.clone();
+        let mut v = tg.circuits.circuits.clone();
         v.sort();
         v.dedup();
         v
@@ -1112,7 +1112,7 @@ fn run_tick(
 
     // Compute desired device_id set from enrolled circuits.
     let desired_device_ids: FxHashSet<String> = if manage_circuits {
-        if ap.circuits.all_circuits {
+        if tg.circuits.all_circuits {
             shaped.devices.iter().map(|d| d.device_id.clone()).collect()
         } else {
             shaped
@@ -1126,9 +1126,9 @@ fn run_tick(
         FxHashSet::default()
     };
 
-    // Cleanup for removed circuits or disabled circuits/autopilot.
+    // Cleanup for removed circuits or disabled circuits/TreeGuard.
     if !manage_circuits {
-        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Autopilot) {
+        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
             Ok(of) => of
                 .persistent_devices()
                 .iter()
@@ -1136,7 +1136,7 @@ fn run_tick(
                 .collect(),
             Err(e) => {
                 status.warnings.push(format!(
-                    "Autopilot circuits: unable to load autopilot overrides for cleanup: {e}"
+                    "TreeGuard circuits: unable to load TreeGuard overrides for cleanup: {e}"
                 ));
                 Vec::new()
             }
@@ -1147,20 +1147,20 @@ fn run_tick(
                     if changed {
                         push_activity(
                             activity,
-                            AutopilotActivityEntry {
+                            TreeguardActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "circuits".to_string(),
                                 entity_id: "*".to_string(),
                                 action: "clear_sqm_overrides".to_string(),
                                 persisted: true,
-                                reason: "Autopilot disabled or circuits disabled".to_string(),
+                                reason: "TreeGuard disabled or circuits disabled".to_string(),
                             },
                         );
                     }
                 }
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot circuits: failed to clear autopilot SQM overlays during cleanup: {e}"
+                        "TreeGuard circuits: failed to clear TreeGuard SQM overlays during cleanup: {e}"
                     ));
                 }
             }
@@ -1169,11 +1169,11 @@ fn run_tick(
         circuit_states.clear();
     } else {
         // Reconcile device IDs removed from allowlisted circuits.
-        let autopilot_device_ids_with_overrides: FxHashSet<String> = autopilot_overrides_snapshot
+        let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
             .map(|of| of.persistent_devices().iter().map(|d| d.device_id.clone()).collect())
             .unwrap_or_default();
-        let removed: Vec<String> = autopilot_device_ids_with_overrides
+        let removed: Vec<String> = treeguard_device_ids_with_overrides
             .iter()
             .filter(|d| !desired_device_ids.contains(*d))
             .cloned()
@@ -1184,7 +1184,7 @@ fn run_tick(
                     if changed {
                         push_activity(
                             activity,
-                            AutopilotActivityEntry {
+                            TreeguardActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "circuits".to_string(),
                                 entity_id: "*".to_string(),
@@ -1197,7 +1197,7 @@ fn run_tick(
                 }
                 Err(e) => {
                     status.warnings.push(format!(
-                        "Autopilot circuits: failed to clear autopilot SQM overlays for removed devices: {e}"
+                        "TreeGuard circuits: failed to clear TreeGuard SQM overlays for removed devices: {e}"
                     ));
                 }
             }
@@ -1209,7 +1209,7 @@ fn run_tick(
         // Snapshot RTT buffers by circuit hash.
         let rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
 
-        let allow_hashes: Option<FxHashSet<i64>> = if ap.circuits.all_circuits {
+        let allow_hashes: Option<FxHashSet<i64>> = if tg.circuits.all_circuits {
             None
         } else {
             Some(enrolled_circuits.iter().map(|id| hash_to_i64(id)).collect())
@@ -1266,7 +1266,7 @@ fn run_tick(
                     if let Some(token) = infer_circuit_sqm_override_token(
                         circuit_id,
                         &shaped.devices,
-                        autopilot_overrides_snapshot.as_ref(),
+                        treeguard_overrides_snapshot.as_ref(),
                     ) {
                         let parsed = decisions::parse_directional_sqm_override(&token);
                         if let Some(down) = parsed.down {
@@ -1289,7 +1289,7 @@ fn run_tick(
             let capacity_known = cap_down > 0.0 && cap_up > 0.0;
             if !capacity_known {
                 status.warnings.push(format!(
-                    "Autopilot circuits: circuit '{circuit_id}' has unknown capacity; no changes will be made."
+                    "TreeGuard circuits: circuit '{circuit_id}' has unknown capacity; no changes will be made."
                 ));
                 state.down.idle_since_unix = None;
                 state.up.idle_since_unix = None;
@@ -1313,13 +1313,13 @@ fn run_tick(
                     &mut state.down.idle_since_unix,
                     now_unix,
                     ewma_down,
-                    ap.circuits.idle_util_pct as f64,
+                    tg.circuits.idle_util_pct as f64,
                 );
                 update_idle_since(
                     &mut state.up.idle_since_unix,
                     now_unix,
                     ewma_up,
-                    ap.circuits.idle_util_pct as f64,
+                    tg.circuits.idle_util_pct as f64,
                 );
             }
 
@@ -1333,7 +1333,7 @@ fn run_tick(
                         } else {
                             let age_nanos = now_nanos.saturating_sub(buf.last_seen);
                             age_nanos
-                                >= ap
+                                >= tg
                                     .circuits
                                     .rtt_missing_seconds
                                     .saturating_mul(1_000_000_000)
@@ -1380,7 +1380,7 @@ fn run_tick(
                 .any(|did| operator_sqm_device_overrides.contains(did));
             if operator_conflict {
                 status.warnings.push(format!(
-                    "Autopilot circuits: circuit '{circuit_id}' has operator SQM overrides; Autopilot will not manage it."
+                    "TreeGuard circuits: circuit '{circuit_id}' has operator SQM overrides; TreeGuard will not manage it."
                 ));
                 if !circuit_device_ids.is_empty() {
                     match overrides::clear_device_overrides(&circuit_device_ids) {
@@ -1388,20 +1388,20 @@ fn run_tick(
                             if changed {
                                 push_activity(
                                     activity,
-                                    AutopilotActivityEntry {
+                                    TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
                                         entity_id: circuit_entity_id.clone(),
                                         action: "clear_sqm_overrides_conflict".to_string(),
                                         persisted: true,
-                                        reason: "Operator SQM overrides present; cleared Autopilot SQM overlays.".to_string(),
+                                        reason: "Operator SQM overrides present; cleared TreeGuard SQM overlays.".to_string(),
                                     },
                                 );
                             }
                         }
                         Err(e) => {
                             status.warnings.push(format!(
-                                "Autopilot circuits: failed to clear Autopilot SQM overlays for circuit '{circuit_id}' during conflict cleanup: {e}"
+                                "TreeGuard circuits: failed to clear TreeGuard SQM overlays for circuit '{circuit_id}' during conflict cleanup: {e}"
                             ));
                         }
                     }
@@ -1416,9 +1416,9 @@ fn run_tick(
                 now_unix,
                 allowlisted_circuits.contains(circuit_id) && capacity_known,
                 cpu_max_pct,
-                &ap.cpu,
-                &ap.circuits,
-                &ap.qoo,
+                &tg.cpu,
+                &tg.circuits,
+                &tg.qoo,
                 rtt_missing,
                 qoo,
                 state,
@@ -1439,7 +1439,7 @@ fn run_tick(
 
             if devices.is_empty() {
                 status.warnings.push(format!(
-                    "Autopilot circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
+                    "TreeGuard circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
                 ));
             } else {
                 for dev in devices.iter() {
@@ -1451,7 +1451,7 @@ fn run_tick(
                 let token =
                     decisions::format_directional_sqm_override(proposed_down, proposed_up);
 
-                if ap.dry_run {
+                if tg.dry_run {
                     if changed_down {
                         state.down.desired = proposed_down;
                         state.down.last_change_unix = Some(now_unix);
@@ -1467,7 +1467,7 @@ fn run_tick(
 
                     push_activity(
                         activity,
-                        AutopilotActivityEntry {
+                        TreeguardActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "circuit".to_string(),
                             entity_id: circuit_entity_id.clone(),
@@ -1483,7 +1483,7 @@ fn run_tick(
                 } else {
                     let mut persisted_ok = false;
                     let mut can_apply_live = true;
-                    if ap.circuits.persist_sqm_overrides {
+                    if tg.circuits.persist_sqm_overrides {
                         match overrides::set_devices_sqm_override(&devices, &token) {
                             Ok(_) => {
                                 persisted_ok = true;
@@ -1491,11 +1491,11 @@ fn run_tick(
                             Err(e) => {
                                 can_apply_live = false;
                                 status.warnings.push(format!(
-                                    "Autopilot circuits: failed to persist SQM overrides for circuit '{circuit_id}': {e}"
+                                    "TreeGuard circuits: failed to persist SQM overrides for circuit '{circuit_id}': {e}"
                                 ));
                                 push_activity(
                                     activity,
-                                    AutopilotActivityEntry {
+                                    TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
                                         entity_id: circuit_entity_id.clone(),
@@ -1517,11 +1517,11 @@ fn run_tick(
                             Ok(()) => true,
                             Err(e) => {
                                 status.warnings.push(format!(
-                                    "Autopilot circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
+                                    "TreeGuard circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
                                 ));
                                 push_activity(
                                     activity,
-                                    AutopilotActivityEntry {
+                                    TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
                                         entity_id: circuit_entity_id.clone(),
@@ -1571,7 +1571,7 @@ fn run_tick(
                         };
                         push_activity(
                             activity,
-                            AutopilotActivityEntry {
+                            TreeguardActivityEntry {
                                 time: now_unix.to_string(),
                                 entity_type: "circuit".to_string(),
                                 entity_id: circuit_entity_id.clone(),
@@ -1660,7 +1660,7 @@ fn infer_circuit_sqm_override_token(
 /// Appends an entry to the activity ring buffer.
 ///
 /// This function is not pure: it mutates `activity`.
-fn push_activity(activity: &mut VecDeque<AutopilotActivityEntry>, entry: AutopilotActivityEntry) {
+fn push_activity(activity: &mut VecDeque<TreeguardActivityEntry>, entry: TreeguardActivityEntry) {
     if activity.len() >= ACTIVITY_RING_CAPACITY {
         activity.pop_front();
     }

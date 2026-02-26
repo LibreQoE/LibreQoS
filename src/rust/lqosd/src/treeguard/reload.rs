@@ -1,4 +1,4 @@
-//! Topology reload helpers for Autopilot.
+//! Topology reload helpers for TreeGuard.
 //!
 //! Link virtualization changes require a scheduler reload to take effect. This module provides a
 //! simple cooldown + exponential backoff controller to avoid flapping reloads.
