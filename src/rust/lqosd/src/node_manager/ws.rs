@@ -561,6 +561,295 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::SupportTicketList => {
+            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Support tickets require an Insight subscription".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let control_tx = private_state.control_tx();
+                if control_tx
+                    .send(
+                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketList {
+                            responder: reply_tx,
+                        },
+                    )
+                    .await
+                    .is_err()
+                {
+                    if send_ws_response(
+                        &tx,
+                        WsResponse::Error {
+                            message: "Insight control channel unavailable".to_string(),
+                        },
+                    )
+                    .await
+                    {
+                        return true;
+                    }
+                } else {
+                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
+                        .await;
+                    match result {
+                        Ok(Ok(Ok(tickets))) => {
+                            if send_ws_response(&tx, WsResponse::SupportTicketListResult { tickets })
+                                .await
+                            {
+                                return true;
+                            }
+                        }
+                        _ => {
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::Error {
+                                    message: "Support ticket list request failed".to_string(),
+                                },
+                            )
+                            .await
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        WsRequest::SupportTicketGet { ticket_id } => {
+            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Support tickets require an Insight subscription".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let control_tx = private_state.control_tx();
+                if control_tx
+                    .send(
+                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketGet {
+                            ticket_id,
+                            responder: reply_tx,
+                        },
+                    )
+                    .await
+                    .is_err()
+                {
+                    if send_ws_response(
+                        &tx,
+                        WsResponse::Error {
+                            message: "Insight control channel unavailable".to_string(),
+                        },
+                    )
+                    .await
+                    {
+                        return true;
+                    }
+                } else {
+                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
+                        .await;
+                    match result {
+                        Ok(Ok(Ok(ticket))) => {
+                            if send_ws_response(&tx, WsResponse::SupportTicketGetResult { ticket })
+                                .await
+                            {
+                                return true;
+                            }
+                        }
+                        _ => {
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::Error {
+                                    message: "Support ticket request failed".to_string(),
+                                },
+                            )
+                            .await
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        WsRequest::SupportTicketCreate {
+            subject,
+            priority,
+            body,
+            commentor,
+        } => {
+            if *login != LoginResult::Admin {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Support tickets require an Insight subscription".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let control_tx = private_state.control_tx();
+                if control_tx
+                    .send(
+                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketCreate {
+                            subject,
+                            priority,
+                            body,
+                            commentor,
+                            responder: reply_tx,
+                        },
+                    )
+                    .await
+                    .is_err()
+                {
+                    if send_ws_response(
+                        &tx,
+                        WsResponse::Error {
+                            message: "Insight control channel unavailable".to_string(),
+                        },
+                    )
+                    .await
+                    {
+                        return true;
+                    }
+                } else {
+                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
+                        .await;
+                    match result {
+                        Ok(Ok(Ok(ticket))) => {
+                            if send_ws_response(&tx, WsResponse::SupportTicketCreateResult { ticket })
+                                .await
+                            {
+                                return true;
+                            }
+                        }
+                        _ => {
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::Error {
+                                    message: "Support ticket creation failed".to_string(),
+                                },
+                            )
+                            .await
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        WsRequest::SupportTicketAddComment {
+            ticket_id,
+            commentor,
+            body,
+        } => {
+            if *login != LoginResult::Admin {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "Support tickets require an Insight subscription".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            } else {
+                let date = lqos_utils::unix_time::unix_now()
+                    .ok()
+                    .map(|t| t as i64)
+                    .unwrap_or(0);
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let control_tx = private_state.control_tx();
+                if control_tx
+                    .send(
+                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketAddComment {
+                            ticket_id,
+                            commentor,
+                            body,
+                            date,
+                            responder: reply_tx,
+                        },
+                    )
+                    .await
+                    .is_err()
+                {
+                    if send_ws_response(
+                        &tx,
+                        WsResponse::Error {
+                            message: "Insight control channel unavailable".to_string(),
+                        },
+                    )
+                    .await
+                    {
+                        return true;
+                    }
+                } else {
+                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
+                        .await;
+                    match result {
+                        Ok(Ok(Ok(()))) => {
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::SupportTicketAddCommentResult { ok: true },
+                            )
+                            .await
+                            {
+                                return true;
+                            }
+                        }
+                        _ => {
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::SupportTicketAddCommentResult { ok: false },
+                            )
+                            .await
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         WsRequest::Search { term } => {
             let results = search::search_results(search::SearchRequest { term: term.clone() });
             let response = WsResponse::SearchResults { term, results };

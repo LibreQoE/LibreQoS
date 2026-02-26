@@ -39,6 +39,16 @@ pub(crate) async fn insight_gate() -> Result<(), StatusCode> {
     }
 }
 
+pub(crate) async fn support_ticket_gate() -> Result<(), StatusCode> {
+    let (status, _) = crate::lts2_sys::get_lts_license_status_async().await;
+    match status {
+        LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full => {
+            Ok(())
+        }
+        _ => Err(StatusCode::FORBIDDEN),
+    }
+}
+
 pub async fn lts_trial_signup_data(license_key: String) -> Result<(), StatusCode> {
     info!("Received license key, enabling free trial: {}", license_key);
     if license_key == "FAIL" {
