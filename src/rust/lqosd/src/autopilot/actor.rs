@@ -9,7 +9,7 @@ use crate::autopilot::reload::{ReloadController, ReloadOutcome};
 use crate::autopilot::state::{
     is_sustained_idle, CircuitSqmState, CircuitState, LinkState, LinkVirtualState,
 };
-use crate::autopilot::{decisions, overrides};
+use crate::autopilot::{bakery, decisions, overrides};
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::{CIRCUIT_RTT_BUFFERS, THROUGHPUT_TRACKER};
@@ -834,50 +834,51 @@ fn run_tick(
                 state,
             );
 
-            // Apply decision to in-memory state.
-            let mut changed = false;
+            let mut proposed_down = state.down.desired;
+            let mut proposed_up = state.up.desired;
             if let Some(down) = decision.down {
-                if down != state.down.desired {
-                    state.down.desired = down;
-                    state.down.last_change_unix = Some(now_unix);
-                    state.down.recent_changes_unix.push_back(now_unix);
-                    prune_recent_changes(&mut state.down.recent_changes_unix, now_unix);
-                    changed = true;
-                }
+                proposed_down = down;
             }
             if let Some(up) = decision.up {
-                if up != state.up.desired {
-                    state.up.desired = up;
-                    state.up.last_change_unix = Some(now_unix);
-                    state.up.recent_changes_unix.push_back(now_unix);
-                    prune_recent_changes(&mut state.up.recent_changes_unix, now_unix);
-                    changed = true;
+                proposed_up = up;
+            }
+
+            let changed_down = proposed_down != state.down.desired;
+            let changed_up = proposed_up != state.up.desired;
+            let changed = changed_down || changed_up;
+
+            let devices: Vec<lqos_config::ShapedDevice> = shaped
+                .devices
+                .iter()
+                .filter(|d| d.circuit_id == circuit_id.as_str())
+                .cloned()
+                .collect();
+            if devices.is_empty() {
+                status.warnings.push(format!(
+                    "Autopilot circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
+                ));
+            } else {
+                for dev in devices.iter() {
+                    managed_device_ids.insert(dev.device_id.clone());
                 }
             }
 
-            // If state changed and persistence is enabled, write overrides for all devices in the circuit.
-            if changed && ap.circuits.persist_sqm_overrides && !ap.dry_run {
-                let token = decisions::format_directional_sqm_override(
-                    state.down.desired,
-                    state.up.desired,
-                );
+            if changed && !devices.is_empty() {
+                let token =
+                    decisions::format_directional_sqm_override(proposed_down, proposed_up);
 
-                let devices: Vec<lqos_config::ShapedDevice> = shaped
-                    .devices
-                    .iter()
-                    .filter(|d| d.circuit_id == circuit_id.as_str())
-                    .cloned()
-                    .collect();
-
-                if devices.is_empty() {
-                    status.warnings.push(format!(
-                        "Autopilot circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
-                    ));
-                } else {
-                    let persisted_ok =
-                        overrides::set_devices_sqm_override(&devices, &token).unwrap_or(false);
-                    for dev in devices.iter() {
-                        managed_device_ids.insert(dev.device_id.clone());
+                if ap.dry_run {
+                    if changed_down {
+                        state.down.desired = proposed_down;
+                        state.down.last_change_unix = Some(now_unix);
+                        state.down.recent_changes_unix.push_back(now_unix);
+                        prune_recent_changes(&mut state.down.recent_changes_unix, now_unix);
+                    }
+                    if changed_up {
+                        state.up.desired = proposed_up;
+                        state.up.last_change_unix = Some(now_unix);
+                        state.up.recent_changes_unix.push_back(now_unix);
+                        prune_recent_changes(&mut state.up.recent_changes_unix, now_unix);
                     }
 
                     push_activity(
@@ -886,38 +887,121 @@ fn run_tick(
                             time: now_unix.to_string(),
                             entity_type: "circuit".to_string(),
                             entity_id: circuit_id.clone(),
-                            action: format!("set_sqm_override:{token}"),
-                            persisted: persisted_ok,
-                            reason: "Decision policy matched".to_string(),
-                        },
-                    );
-                    status.last_action_summary = Some(format!(
-                        "SQM override for circuit '{}' -> {}",
-                        circuit_id, token
-                    ));
-                }
-            } else {
-                // Track device IDs for allowlisted circuits even if no state changes occurred.
-                for dev in shaped
-                    .devices
-                    .iter()
-                    .filter(|d| d.circuit_id == circuit_id.as_str())
-                {
-                    managed_device_ids.insert(dev.device_id.clone());
-                }
-
-                if changed && ap.dry_run {
-                    push_activity(
-                        activity,
-                        AutopilotActivityEntry {
-                            time: now_unix.to_string(),
-                            entity_type: "circuit".to_string(),
-                            entity_id: circuit_id.clone(),
-                            action: "would_change_sqm".to_string(),
+                            action: format!("would_set_sqm_override:{token}"),
                             persisted: false,
                             reason: "Dry-run".to_string(),
                         },
                     );
+                    status.last_action_summary = Some(format!(
+                        "Would set SQM override for circuit '{}' -> {}",
+                        circuit_id, token
+                    ));
+                } else {
+                    let mut persisted_ok = false;
+                    let mut can_apply_live = true;
+                    if ap.circuits.persist_sqm_overrides {
+                        match overrides::set_devices_sqm_override(&devices, &token) {
+                            Ok(_) => {
+                                persisted_ok = true;
+                            }
+                            Err(e) => {
+                                can_apply_live = false;
+                                status.warnings.push(format!(
+                                    "Autopilot circuits: failed to persist SQM overrides for circuit '{circuit_id}': {e}"
+                                ));
+                                push_activity(
+                                    activity,
+                                    AutopilotActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "circuit".to_string(),
+                                        entity_id: circuit_id.clone(),
+                                        action: "set_sqm_override_failed".to_string(),
+                                        persisted: false,
+                                        reason: format!("Overrides write failed: {e}"),
+                                    },
+                                );
+                            }
+                        }
+                    }
+
+                    let live_ok = if can_apply_live {
+                        match bakery::apply_circuit_sqm_override_live(
+                            circuit_id,
+                            &devices,
+                            &token,
+                        ) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                status.warnings.push(format!(
+                                    "Autopilot circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
+                                ));
+                                push_activity(
+                                    activity,
+                                    AutopilotActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "circuit".to_string(),
+                                        entity_id: circuit_id.clone(),
+                                        action: format!("apply_sqm_live_failed:{token}"),
+                                        persisted: persisted_ok,
+                                        reason: format!("Bakery live apply failed: {e}"),
+                                    },
+                                );
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    };
+
+                    if live_ok || persisted_ok {
+                        if changed_down {
+                            state.down.desired = proposed_down;
+                            state.down.last_change_unix = Some(now_unix);
+                            state.down.recent_changes_unix.push_back(now_unix);
+                            prune_recent_changes(&mut state.down.recent_changes_unix, now_unix);
+                        }
+                        if changed_up {
+                            state.up.desired = proposed_up;
+                            state.up.last_change_unix = Some(now_unix);
+                            state.up.recent_changes_unix.push_back(now_unix);
+                            prune_recent_changes(&mut state.up.recent_changes_unix, now_unix);
+                        }
+
+                        let (action, reason) = match (persisted_ok, live_ok) {
+                            (true, true) => (
+                                "set_sqm_override".to_string(),
+                                "Applied live + persisted".to_string(),
+                            ),
+                            (true, false) => (
+                                "set_sqm_override".to_string(),
+                                "Persisted (live apply failed)".to_string(),
+                            ),
+                            (false, true) => (
+                                "set_sqm_live".to_string(),
+                                "Applied live".to_string(),
+                            ),
+                            (false, false) => (
+                                "set_sqm_live".to_string(),
+                                "Not applied".to_string(),
+                            ),
+                        };
+                        push_activity(
+                            activity,
+                            AutopilotActivityEntry {
+                                time: now_unix.to_string(),
+                                entity_type: "circuit".to_string(),
+                                entity_id: circuit_id.clone(),
+                                action: format!("{action}:{token}"),
+                                persisted: persisted_ok,
+                                reason,
+                            },
+                        );
+
+                        status.last_action_summary = Some(format!(
+                            "SQM override for circuit '{}' -> {}",
+                            circuit_id, token
+                        ));
+                    }
                 }
             }
 

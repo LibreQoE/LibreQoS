@@ -611,7 +611,7 @@ When you finish an item, change `[ ]` to `[x]`.
     - Patch only the SQM column (row index 13) for matching `device_id`.
     - Do NOT overwrite integration-owned fields (names, IPs, rates, parent).
 
-- [ ] Apply circuit SQM changes live (Bakery):
+- [x] Apply circuit SQM changes live (Bakery):
   - Implement in `src/rust/lqosd/src/autopilot/bakery.rs`.
   - Source of class ids: `QUEUE_STRUCTURE` in `src/rust/lqos_queue_tracker/src/queue_structure/queing_structure_json_monitor.rs:14`.
   - Use `queueingStructure.json` parsed nodes (see `QueueNode` in `src/rust/lqos_queue_tracker/src/queue_structure/queue_node.rs:9`) to obtain:
