@@ -152,7 +152,7 @@ dry_run = true
 tick_seconds = 1
 
 [autopilot.cpu]
-mode = "cpu_aware"          # cpu_aware|traffic_rtt_only|manual_profiles
+mode = "cpu_aware"          # cpu_aware|traffic_rtt_only
 cpu_high_pct = 75           # max CPU% to start CPU-saving actions
 cpu_low_pct  = 55           # max CPU% to revert actions
 

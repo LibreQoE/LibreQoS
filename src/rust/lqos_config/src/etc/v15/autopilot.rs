@@ -41,11 +41,10 @@ impl Default for AutopilotConfig {
 #[serde(rename_all = "snake_case")]
 pub enum AutopilotCpuMode {
     /// Autopilot makes CPU-saving decisions based on CPU usage and other guardrails.
+    #[serde(alias = "manual_profiles")]
     CpuAware,
     /// Autopilot ignores CPU usage and uses only traffic/RTT/QoO guardrails.
     TrafficRttOnly,
-    /// Autopilot uses operator-defined profiles for decisioning.
-    ManualProfiles,
 }
 
 impl Default for AutopilotCpuMode {
@@ -167,4 +166,3 @@ impl Default for AutopilotQooConfig {
         }
     }
 }
-

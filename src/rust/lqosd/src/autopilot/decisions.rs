@@ -35,7 +35,6 @@ fn cpu_allows_saving(cpu: &AutopilotCpuConfig, cpu_max_pct: Option<u8>) -> bool 
     match cpu.mode {
         AutopilotCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct >= cpu.cpu_high_pct),
         AutopilotCpuMode::TrafficRttOnly => true,
-        AutopilotCpuMode::ManualProfiles => false,
     }
 }
 
@@ -46,7 +45,6 @@ fn cpu_calls_for_revert(cpu: &AutopilotCpuConfig, cpu_max_pct: Option<u8>) -> bo
     match cpu.mode {
         AutopilotCpuMode::CpuAware => cpu_max_pct.is_some_and(|pct| pct <= cpu.cpu_low_pct),
         AutopilotCpuMode::TrafficRttOnly => false,
-        AutopilotCpuMode::ManualProfiles => false,
     }
 }
 
