@@ -23,6 +23,25 @@ Use esta tabla para ir al primer check rápidamente.
 - Visualización de topología/tráfico: `WebUI -> Network Tree Overview` y `Flow Map`
 - Revisión de datos de shaping: `WebUI -> Shaped Devices Editor`
 
+### Antes de pedir ayuda en chat: recolecte esta evidencia
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqosd --since "30 minutes ago"
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+
+Si el problema es de integración, agregue:
+
+```bash
+ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+```
+
+Incluya también:
+- versión/build actual
+- tipo de integración y estrategia
+- síntoma exacto y hora de inicio
+
 ### La contraseña de usuario no funciona
 
 Elimine el archivo de usuarios:
@@ -36,7 +55,7 @@ Luego abra: `IP_CAJA:9123/index.html`.
 
 ### No hay WebUI en x.x.x.x:9123
 
-La WebUI depende de `lqosd`. Cuando no carga, normalmente `lqosd` está fallando.
+La WebUI depende de `lqosd`. En builds actuales, la mayoría de fallas de acceso WebUI se explican por `lqosd` no saludable.
 
 ```bash
 sudo systemctl status lqosd

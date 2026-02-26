@@ -21,6 +21,22 @@ sudo reboot
 ```
 This will flush the old eBPF maps and load the latest LibreQoS version.
 
+### Post-Upgrade Validation (Required)
+
+Run these checks after upgrade/reboot:
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqosd -u lqos_scheduler --since "20 minutes ago"
+```
+
+Then verify:
+1. WebUI Dashboard and Scheduler Status are healthy.
+2. Integration users: a fresh sync produces expected `ShapedDevices.csv`/`network.json` behavior.
+3. Topology depth matches your chosen integration strategy.
+
+If checks fail, go directly to [Troubleshooting](troubleshooting.md) before further config changes.
+
 ## If you installed with Git
 
 1. Change to your LibreQoS directory (e.g. `cd /opt/libreqos`)
@@ -46,3 +62,15 @@ If you use Git installs, keep this order:
 2. stop/restart services as needed
 3. run `sudo rust/remove_pinned_maps.sh`
 4. restart `lqosd` and `lqos_scheduler`
+
+## Stop-and-Triage Symptoms
+
+Pause rollout and triage immediately if you see:
+
+- `lqosd` or `lqos_scheduler` not healthy after restart
+- unexpected hierarchy collapse/expansion after integration sync
+- persistent scheduler unhealthy state in WebUI
+
+Primary references:
+- [Troubleshooting](troubleshooting.md)
+- [CRM/NMS Integrations](integrations.md)

@@ -1,5 +1,13 @@
 # Performance Tuning
 
+## Symptom-First Triage
+
+| Symptom | First checks | Likely next action |
+|---|---|---|
+| Throughput lower than expected | queue/CPU distribution, integration strategy depth, scheduler health | reduce hierarchy depth or use `promote_to_root`, then retest |
+| High CPU on one core | IRQ/queue imbalance, root-node bottlenecks | rebalance queue/IRQ affinity and/or promote heavy remote sites to root |
+| Performance changed after integration edits | strategy and topology depth changed unintentionally | confirm strategy (`flat`/`ap_only`/`ap_site`/`full`) and validate tree/flow shape |
+
 ## CPU and IRQ Baseline
 
 Set CPU frequency governor to performance on bare metal/hypervisor hosts:

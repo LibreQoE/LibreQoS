@@ -2,6 +2,21 @@
 
 First, set the relevant parameters for UISP in `/etc/lqos.conf`.
 
+## New Operator Quick Chooser
+
+Use this section first to avoid common strategy confusion.
+
+1. If you are new to UISP integration, start with `strategy = "ap_only"`.
+2. Move to `ap_site` when you need explicit site-level aggregation.
+3. Use `full` when you need full hierarchy/backhaul representation and have CPU headroom.
+4. Use `flat` only when hierarchy is not needed and maximum performance is the priority.
+
+## Router-Mode Expectations
+
+- UISP router mode is supported, but parent/route discovery quality depends on your UISP topology data quality.
+- LibreQoS focuses on shaping/queue hierarchy, not subscriber lifecycle enforcement.
+- Account suspension enforcement is usually handled by your edge/BNG/auth platform. Use `suspended_strategy` only for LibreQoS-side shaping behavior.
+
 ### Topology Strategies
 
 LibreQoS supports multiple topology strategies for UISP integration to balance CPU performance with network hierarchy needs:
@@ -20,6 +35,28 @@ LibreQoS supports multiple topology strategies for UISP integration to balance C
 - Use `flat` only when maximum performance is critical and you don't need any hierarchy
 
 **Performance Note:** When using `full` strategy with large networks, consider using `promote_to_root` to distribute CPU load across multiple cores.
+
+## 5-Minute Validation After UISP Config Changes
+
+1. Run the integration once:
+```shell
+cd /opt/libreqos/src
+sudo /opt/libreqos/src/bin/uisp_integration
+```
+2. Confirm outputs were generated/refreshed as expected:
+```shell
+ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+```
+3. Confirm scheduler and shaper health:
+```shell
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+4. Validate result in WebUI:
+- Scheduler Status is healthy
+- Tree/Flow views reflect expected hierarchy depth for selected strategy
+
+If hierarchy depth or parent mapping is not what you expect, revisit `strategy`, `use_ptmp_as_parent`, `exclude_sites`, and `exception_cpes` before changing other settings.
 
 ### Promote to Root Nodes (Performance Optimization)
 

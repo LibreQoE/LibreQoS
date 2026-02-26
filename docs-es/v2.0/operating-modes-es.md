@@ -32,6 +32,17 @@ Comportamiento clave:
 4. Documente su flujo de cambios rápidos (WebUI, editor externo, o ambos).
 5. No mantenga ediciones en competencia en varios sistemas para los mismos objetos.
 
+## Expectativas de topología y modo
+
+- Diseños single-interface (on-a-stick) y con VLAN son válidos, pero requieren validación explícita de colas/interfaces después de cambios.
+- Modo integración es ideal cuando CRM/NMS debe controlar topología y datos de suscriptores.
+- Si necesita topología estrictamente personalizada no representada por integración, use modo fuente personalizada y mantenga propiedad clara.
+
+Vea también:
+- [Referencia avanzada de configuración](configuration-advanced-es.md)
+- [Integraciones CRM/NMS](integrations-es.md)
+- [Solución de problemas](troubleshooting-es.md)
+
 ## Páginas relacionadas
 
 - [Configurar LibreQoS](configuration-es.md)

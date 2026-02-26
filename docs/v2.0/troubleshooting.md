@@ -23,6 +23,27 @@ Use this table to jump to the first checks quickly.
 - Topology/traffic visualization: `WebUI -> Network Tree Overview` and `Flow Map`
 - Shaped records review: `WebUI -> Shaped Devices Editor`
 
+### Before asking in chat: collect this evidence
+
+Collect these first to reduce back-and-forth:
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqosd --since "30 minutes ago"
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+
+If integration-related, also include:
+
+```bash
+ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+```
+
+And include:
+- current version/build
+- integration type and strategy (if used)
+- exact symptom and when it started
+
 ### User password not working
 
 Delete the lqusers file:
@@ -35,7 +56,7 @@ This will allow you to set up the user again from scratch using the WebUI.
 
 ### No WebUI at x.x.x.x:9123
 
-The WebUI is controlled by the lqosd service. Usually, when the WebUI doesn't start, it is related to lqosd being in a failed state.
+The WebUI is controlled by the lqosd service. In current builds, most WebUI access failures are caused by `lqosd` not being healthy.
 Check to see if the lqosd service is running:
 ```
 sudo systemctl status lqosd
