@@ -7,12 +7,12 @@ Bienvenido a la documentación de LibreQoS
    :maxdepth: 1
    :caption: Primeros Pasos
 
+   Quickstart (Empieza Aquí) <v2.0/quickstart-es>
    v2.0/design-es
    v2.0/requirements-es
    v2.0/prereq-es
    v2.0/ubuntu-server-es
    v2.0/bridge-es
-   v2.0/quickstart-es
 
 .. toctree::
    :maxdepth: 1

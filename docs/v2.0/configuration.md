@@ -1,5 +1,9 @@
 # Configure LibreQoS
 
+## Page Purpose
+
+Use this page for daily operations and WebUI configuration. Use [Advanced Configuration Reference](configuration-advanced.md) for direct file editing and CLI-heavy workflows.
+
 ## Initial Configuration Via Setup Tool (From the .deb installer)
 <img width="1605" height="1030" alt="setup_tool" src="https://github.com/user-attachments/assets/5a645da8-c411-4635-9777-a881966981df" />
 

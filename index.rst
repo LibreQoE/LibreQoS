@@ -10,12 +10,12 @@ Welcome to the LibreQoS documentation
    :maxdepth: 1
    :caption: Getting Started
 
+   Quickstart (Start Here) <docs/v2.0/quickstart>
    docs/v2.0/design
    docs/v2.0/requirements
    docs/v2.0/prereq
    docs/v2.0/ubuntu-server
    docs/v2.0/bridge
-   docs/v2.0/quickstart
 
 .. toctree::
    :maxdepth: 1

@@ -1,5 +1,9 @@
 # Operating Modes and Source of Truth
 
+## Page Purpose
+
+Use this page to choose and enforce your source-of-truth policy (built-in integrations vs custom source-of-truth) before production changes.
+
 LibreQoS supports two first-class operating modes.
 
 ## Built-in Integrations (Recommended for Most Operators)

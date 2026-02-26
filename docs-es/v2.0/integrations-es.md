@@ -1,5 +1,9 @@
 # Integraciones CRM/NMS
 
+## Propósito de esta página
+
+Use esta página para elegir y configurar integraciones CRM/NMS soportadas. Use las páginas por integración para detalles específicos.
+
 La mayoría de operadores usan las integraciones incluidas. Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevices.csv`, comience por [Modos de operación y fuente de verdad](operating-modes-es.md).
 
 ## Elegir ruta de integración

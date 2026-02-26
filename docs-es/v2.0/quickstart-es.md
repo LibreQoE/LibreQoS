@@ -1,27 +1,20 @@
 # Quickstart: Elija su ruta de despliegue
 
-LibreQoS soporta múltiples rutas reales de despliegue. Comience eligiendo una ruta y mantenga un único modelo de fuente de verdad para los datos de shaping.
+Use esta página para elegir rápidamente la ruta correcta y ejecutar solo los pasos de esa ruta.
 
-## Antes de empezar
+## Base de instalación común
 
-- La WebUI es la interfaz operativa principal después de instalar.
-- Elija un modelo de fuente de verdad para `network.json` y `ShapedDevices.csv`.
-- Evite ediciones en competencia entre múltiples sistemas para los mismos objetos.
+Complete esto una vez antes de cualquier paso específico de ruta.
 
-## Testbed / Lab
-
-Use esta ruta cuando quiera validar el comportamiento de LibreQoS en un entorno controlado antes de desplegar inline en producción.
-
-### Flujo de configuración de laboratorio
-
-1. Arme una topología de laboratorio (caja LibreQoS + endpoints generadores de tráfico + routers opcionales para simular rutas OSPF/BGP).
-2. Complete plataforma y prerrequisitos de instalación:
+1. Revise supuestos de despliegue y capacidad:
    - [Escenarios de Despliegue](design-es.md)
    - [Requisitos del Sistema](requirements-es.md)
+2. Prepare host y sistema operativo:
    - [Configuración del Servidor - Prerrequisitos](prereq-es.md)
    - [Instalar Ubuntu Server 24.04](ubuntu-server-es.md)
+3. Configure el modo de puente:
    - [Configurar Puente de Regulación](bridge-es.md)
-3. Instale LibreQoS con paquete `.deb` (recomendado):
+4. Instale LibreQoS (`.deb` recomendado):
 
 ```bash
 cd ~
@@ -31,16 +24,24 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
-4. Elija una pista de prueba:
-   - **Lab con archivos manuales**: use `network.json` y `ShapedDevices.csv` manuales/de ejemplo.
-   - **Lab con integración soportada**: configure integración y valide datos importados.
-5. Genere tráfico de prueba y valide en WebUI:
-   - comportamiento de Dashboard/Tree/Flow
-   - estado del scheduler
-   - problemas urgentes
-6. Cuando el comportamiento sea el esperado, avance a una ruta de piloto inline.
+5. Abra WebUI en `http://your_shaper_ip:9123`.
 
-### Después de esta ruta
+## Testbed / Lab
+
+### Cuándo elegir
+
+Quiere validar comportamiento en un entorno controlado antes de producción inline.
+
+### Haga esto ahora
+
+1. Arme topología de laboratorio (LibreQoS + endpoints generadores de tráfico + simulación opcional OSPF/BGP).
+2. Elija una pista de laboratorio:
+   - **Lab con archivos manuales**: validar comportamiento de `network.json` + `ShapedDevices.csv`.
+   - **Lab con integración soportada**: validar datos importados de suscriptores/topología.
+3. Genere tráfico y valide en WebUI (Dashboard, Tree, Flow, Scheduler Status, Urgent Issues).
+4. Confirme comportamiento de shaping y estabilidad esperada.
+
+### Luego vaya aquí
 
 - [Configurar LibreQoS](configuration-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
@@ -49,42 +50,47 @@ sudo apt install ./{deb_url_v1_5}
 
 ## Integración Soportada
 
-Use esta ruta cuando su CRM/NMS esté soportado por las integraciones incluidas de LibreQoS.
+### Cuándo elegir
 
-1. Complete prerrequisitos e instale LibreQoS (mismos enlaces/pasos anteriores).
-2. Configure la integración en WebUI.
-3. Valide en WebUI los datos importados de shaping y topología.
-4. Coloque la caja LibreQoS inline para tráfico piloto.
-5. Monitoree en WebUI la salud del scheduler, comportamiento de shaping y problemas urgentes.
-6. Expanda del piloto a un despliegue más amplio tras observar estabilidad.
+Su CRM/NMS está soportado por integraciones incluidas de LibreQoS.
+
+### Haga esto ahora
+
+1. Configure la integración en WebUI.
+2. Ejecute sincronización inicial y valide datos importados.
+3. Coloque LibreQoS inline para tráfico piloto.
+4. Valide señales de salud en WebUI (Scheduler Status, Urgent Issues, vistas de topología/flujo).
+5. Expanda alcance del piloto tras operación estable.
 
 Nota:
 - En modo integración, `ShapedDevices.csv` normalmente se regenera por los jobs de sincronización.
-- El comportamiento de sobrescritura de `network.json` depende de la configuración (por ejemplo `always_overwrite_network_json`).
+- La sobrescritura de `network.json` depende de configuración (por ejemplo `always_overwrite_network_json`).
 
-### Después de esta ruta
+### Luego vaya aquí
 
-- [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Integraciones CRM/NMS](integrations-es.md)
 - [Escalado y diseño de topología](scale-topology-es.md)
 - [Solución de problemas](troubleshooting-es.md)
 
 ## Integración con Script Personalizado
 
-Use esta ruta cuando su CRM/NMS no esté soportado y usted generará `network.json` y `ShapedDevices.csv` con scripts propios.
+### Cuándo elegir
 
-1. Complete prerrequisitos e instale LibreQoS (mismos enlaces/pasos anteriores).
-2. Implemente script/proceso para generar y refrescar `network.json` y `ShapedDevices.csv`.
-3. Trate las salidas del script como fuente de verdad para persistencia de largo plazo.
-4. Coloque la caja LibreQoS inline para tráfico piloto.
-5. Use WebUI para verificaciones operativas y cambios rápidos.
-6. Lleve cambios lógicos/de datos permanentes de vuelta a su pipeline de scripts.
+Su CRM/NMS no está soportado y usted generará `network.json` + `ShapedDevices.csv` con su propio pipeline.
+
+### Haga esto ahora
+
+1. Implemente script/proceso para generar y refrescar archivos de shaping.
+2. Declare salidas del script como fuente de verdad.
+3. Coloque LibreQoS inline para tráfico piloto.
+4. Use WebUI para verificaciones operativas y ajustes rápidos.
+5. Lleve cambios permanentes de vuelta al flujo de scripts.
 
 Nota:
-- Las ediciones por WebUI son útiles para cambios operativos rápidos.
+- Las ediciones por WebUI son útiles para operación rápida.
 - El estado de largo plazo debe mantenerse en su flujo externo de fuente de verdad.
 
-### Después de esta ruta
+### Luego vaya aquí
 
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
@@ -93,18 +99,21 @@ Nota:
 
 ## Archivos Manuales (<100 suscriptores)
 
-Use esta ruta cuando mantenga intencionalmente `network.json` y `ShapedDevices.csv` de forma directa, sin sincronización CRM/NMS.
+### Cuándo elegir
+
+Mantiene intencionalmente `network.json` + `ShapedDevices.csv` sin sincronización CRM/NMS.
 
 Recomendado solo para redes menores a 100 suscriptores.
 
-1. Complete prerrequisitos e instale LibreQoS (mismos enlaces/pasos anteriores).
-2. Construya y mantenga `network.json` y `ShapedDevices.csv` directamente.
-3. Coloque la caja LibreQoS inline para tráfico piloto.
-4. Use WebUI para validar shaping, estado del scheduler y comportamiento de topología.
-5. Mantenga disciplina estricta en actualizaciones manuales (calidad de datos, consistencia y cadencia).
-6. Si crece el número de suscriptores o el volumen de cambios, planifique migrar a integración soportada o integración con scripts.
+### Haga esto ahora
 
-### Después de esta ruta
+1. Construya y mantenga archivos de shaping directamente.
+2. Coloque LibreQoS inline para tráfico piloto.
+3. Valide shaping y estado del scheduler en WebUI.
+4. Mantenga disciplina estricta de cambios manuales.
+5. Planifique migración a integración soportada o scripts si crece escala/volumen de cambios.
+
+### Luego vaya aquí
 
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
@@ -113,5 +122,5 @@ Recomendado solo para redes menores a 100 suscriptores.
 
 ## Instalación para desarrolladores (No recomendada para operadores)
 
-La instalación basada en Git sigue disponible aquí:
+La instalación basada en Git está aquí:
 - [Git Install (Para Desarrolladores)](git-install-es.md)
