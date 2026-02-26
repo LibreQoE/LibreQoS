@@ -3,6 +3,37 @@
 ## Acerca de Insight
 Conoce más sobre Insight en nuestro sitio web, [aquí](https://libreqos.io/insight/).
 
+## Comportamiento de licenciamiento de Insight (lado nodo)
+
+### Material de claves local y grants offline
+
+LibreQoS guarda material de claves de Insight en:
+
+`<lqos_directory>/.keys/`
+
+Las compilaciones actuales pueden cachear grants firmados localmente para que el nodo siga operando durante pérdidas temporales de conectividad con servicios de control de Insight. La validez y expiración del grant se aplica localmente.
+
+Notas operativas:
+
+- Mantenga `.keys/` persistente entre reinicios.
+- Trate `.keys/` como material sensible.
+- Si hay estado inválido de grant/clave, `lqosd` mostrará errores de licencia/grant en logs.
+
+### Límites de circuitos mapeados y estado de licencia
+
+Compilaciones recientes aplican límites de circuitos mapeados según estado de licencia.
+
+Si su nodo está sin licencia/válido, LibreQoS puede aplicar un límite predeterminado de circuitos mapeados. Cuando se excede, los logs incluyen mensajes como:
+
+- `Mapped circuit limit reached`
+- `Bakery mapped circuit cap enforced`
+
+Cuando ocurra:
+
+1. Revise estado de licencia Insight en la UI.
+2. Revise `journalctl -u lqosd` para conteos requested/allowed/dropped.
+3. Verifique si la cantidad de circuitos mapeados excede su licencia.
+
 ## Interfaz de Insight
 
 ### Barra de tareas

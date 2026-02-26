@@ -44,6 +44,21 @@ sudo systemctl status lqosd lqos_scheduler
 
 The service lqos_scheduler is dependent on the lqosd service being in a healthy, running state.
 
+### On-a-stick shaping looks wrong or one direction is weak
+
+On-a-stick mode depends on queue splitting per direction. If TX queue discovery is wrong or `override_available_queues` is mis-set, directional mapping can be degraded.
+
+Check:
+```
+sudo systemctl status lqosd
+journalctl -u lqosd --since "10 minutes ago"
+```
+
+Then verify queue-related config in `/etc/lqos.conf` and restart:
+```
+sudo systemctl restart lqosd lqos_scheduler
+```
+
 ### Service lqosd is not running or failed to start
 
 Check to see the state of the lqosd service:
@@ -75,6 +90,30 @@ sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_lo
 ```
 This exports a log file to lqos_sched_log.txt. You can review this file to see what caused the scheduler to error out.
 
+### Scheduler status in Node Manager looks unhealthy
+
+Recent builds expose scheduler readiness/state in the Node Manager UI.
+
+If scheduler status appears down/stale:
+1. Verify both services:
+```
+sudo systemctl status lqosd lqos_scheduler
+```
+2. Check recent scheduler logs:
+```
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+3. Check lqosd bus/log state for scheduler-ready or scheduler-error messages:
+```
+journalctl -u lqosd --since "30 minutes ago"
+```
+4. If config/integration changes were recent, restart services cleanly:
+```
+sudo systemctl restart lqosd lqos_scheduler
+```
+
+If status repeatedly oscillates between ready/error, collect both logs and confirm integration credentials/timeouts in `/etc/lqos.conf`.
+
 ### RTNETLINK answers: Invalid argument
 
 This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](requirements.md).
@@ -103,11 +142,52 @@ Once you have identified the error and fixed ShapedDevices.csv and/or Network.js
 
 ```sudo systemctl start lqos_scheduler```
 
+### Flow Map / Tree Overview / ASN Explorer appears blank
+
+Some views require enough recent data to render meaningfully. If pages look empty:
+1. Confirm `lqosd` is healthy.
+2. Wait for traffic/data to accumulate.
+3. Reload the page after 1-2 minutes.
+4. Check logs for websocket or ticker warnings:
+```
+journalctl -u lqosd --since "10 minutes ago"
+```
+
+If still blank under normal traffic, collect recent logs and open an issue.
+
 ### Virtual node promotion collision (network.json)
 
 If LibreQoS.py fails with an error like `Virtual node promotion collision: 'AP_A' already exists at this level.`, you have a `"virtual": true` node whose children get promoted into a parent level where a node with the same name already exists.
 
 Rename one of the colliding nodes (names must be unique among siblings after virtual-node promotion), or restructure the hierarchy so promoted children won’t collide.
+
+### Mapped circuit limit reached
+
+If logs mention messages like:
+- `Mapped circuit limit reached`
+- `Bakery mapped circuit cap enforced`
+
+LibreQoS is enforcing a mapped-circuit cap. In current builds, default behavior without active Insight licensing enforces a finite mapped-circuit limit.
+
+Recommended checks:
+1. Confirm Insight/license status in the UI.
+2. Review `lqosd` logs for requested/allowed/dropped counts.
+3. Reduce mapped circuit count (short term) or update licensing/limits (long term).
+
+### Urgent issue codes and first actions
+
+Node Manager urgent issues include machine-readable codes. Use them to triage quickly.
+
+| Code | Meaning | First checks | Typical fix path |
+|---|---|---|---|
+| `MAPPED_CIRCUIT_LIMIT` | Bakery is enforcing a mapped-circuit limit. | Insight license status, `journalctl -u lqosd` for requested/allowed/dropped counts. | Reduce mapped circuits immediately or update license/limits. |
+| `TC_U16_OVERFLOW` | Queue/class minor IDs exceeded the Linux tc u16 range on a CPU queue. | `journalctl -u lqos_scheduler -u lqosd`, topology depth/queue distribution. | Increase queue count and/or simplify/rebalance hierarchy (for example with integration strategy or root promotion changes). |
+
+Operational pattern:
+1. Open urgent issue details in Node Manager (code/message/context).
+2. Pull matching logs from `lqosd` and `lqos_scheduler`.
+3. Apply the immediate mitigation.
+4. Acknowledge/clear the issue in UI once stable.
 
 ### Systemd segfault
 
