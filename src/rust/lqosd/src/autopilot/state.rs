@@ -115,3 +115,24 @@ pub fn is_sustained_idle(
     let min_secs = idle_min_minutes.saturating_mul(60);
     now_unix.saturating_sub(down_since) >= min_secs && now_unix.saturating_sub(up_since) >= min_secs
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_sustained_idle;
+
+    #[test]
+    fn sustained_idle_requires_both_directions() {
+        assert!(!is_sustained_idle(1000, Some(0), None, 15));
+        assert!(!is_sustained_idle(1000, None, Some(0), 15));
+        assert!(!is_sustained_idle(1000, None, None, 15));
+    }
+
+    #[test]
+    fn sustained_idle_requires_full_duration() {
+        let now = 1_000_000u64;
+        // 14:59 is not enough for 15 minutes
+        assert!(!is_sustained_idle(now, Some(now - 899), Some(now - 899), 15));
+        // Exactly 15 minutes is enough
+        assert!(is_sustained_idle(now, Some(now - 900), Some(now - 900), 15));
+    }
+}

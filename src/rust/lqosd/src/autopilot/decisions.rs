@@ -88,6 +88,7 @@ fn rate_limited(recent_changes: usize, max_changes_per_hour: u32) -> bool {
 /// This function is pure: it has no side effects.
 pub fn decide_link_virtualization(
     now_unix: u64,
+    allowlisted: bool,
     cpu_max_pct: Option<u8>,
     cpu_cfg: &AutopilotCpuConfig,
     links_cfg: &AutopilotLinksConfig,
@@ -98,6 +99,10 @@ pub fn decide_link_virtualization(
     sustained_idle: bool,
     state: &LinkState,
 ) -> LinkVirtualDecision {
+    if !allowlisted {
+        return LinkVirtualDecision::NoChange;
+    }
+
     if in_dwell_window(
         now_unix,
         state.last_change_unix,
@@ -143,6 +148,7 @@ pub fn decide_link_virtualization(
 /// This function is pure: it has no side effects.
 pub fn decide_circuit_sqm(
     now_unix: u64,
+    allowlisted: bool,
     cpu_max_pct: Option<u8>,
     cpu_cfg: &AutopilotCpuConfig,
     circuits_cfg: &AutopilotCircuitsConfig,
@@ -151,6 +157,10 @@ pub fn decide_circuit_sqm(
     qoo: DownUpOrder<Option<f32>>,
     state: &CircuitState,
 ) -> CircuitSqmDecision {
+    if !allowlisted {
+        return CircuitSqmDecision::default();
+    }
+
     if !circuits_cfg.switching_enabled {
         return CircuitSqmDecision::default();
     }
@@ -269,4 +279,378 @@ pub fn parse_directional_sqm_override(token: &str) -> DownUpOrder<Option<Circuit
 
     let v = parse_one(token);
     DownUpOrder { down: v, up: v }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::autopilot::state::{CircuitDirectionState, CircuitState, LinkState};
+    use std::collections::VecDeque;
+
+    #[test]
+    fn link_decision_requires_allowlist() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = LinkState::default();
+        let decision = decide_link_virtualization(
+            1000,
+            false,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 0.5, up: 0.5 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn link_virtualizes_when_idle_and_cpu_high() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = LinkState::default();
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::Set(LinkVirtualState::Virtual));
+    }
+
+    #[test]
+    fn link_does_not_virtualize_when_cpu_low() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = LinkState::default();
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(10),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn link_unvirtualizes_on_util_spike() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = LinkState::default();
+        state.desired = LinkVirtualState::Virtual;
+
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 10.0, up: 1.0 },
+            false,
+            &state,
+        );
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Physical)
+        );
+    }
+
+    #[test]
+    fn link_unvirtualizes_when_rtt_missing() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = LinkState::default();
+        state.desired = LinkVirtualState::Virtual;
+
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            true,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Physical)
+        );
+    }
+
+    #[test]
+    fn link_dwell_time_blocks_changes() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = LinkState::default();
+        state.last_change_unix = Some(1000 - 60);
+
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn link_rate_limit_blocks_changes() {
+        let cpu = AutopilotCpuConfig::default();
+        let links = AutopilotLinksConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = LinkState::default();
+        state.recent_changes_unix = VecDeque::from(vec![1, 2, 3, 4]);
+
+        let decision = decide_link_virtualization(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &links,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            DownUpOrder { down: 1.0, up: 1.0 },
+            true,
+            &state,
+        );
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn circuit_decision_requires_allowlist() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = CircuitState::default();
+        let decision = decide_circuit_sqm(
+            1000,
+            false,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision, CircuitSqmDecision::default());
+    }
+
+    #[test]
+    fn circuit_downgrades_under_cpu_pressure() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = CircuitState::default();
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
+        assert_eq!(decision.up, Some(CircuitSqmState::FqCodel));
+    }
+
+    #[test]
+    fn circuit_independent_directions_respect_qoo() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = CircuitState::default();
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(50.0),
+            },
+            &state,
+        );
+        assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
+        assert_eq!(decision.up, None);
+    }
+
+    #[test]
+    fn circuit_reverts_when_cpu_low() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = CircuitState::default();
+        state.down = CircuitDirectionState {
+            desired: CircuitSqmState::FqCodel,
+            ..Default::default()
+        };
+        state.up = CircuitDirectionState {
+            desired: CircuitSqmState::FqCodel,
+            ..Default::default()
+        };
+
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(10),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision.down, Some(CircuitSqmState::Cake));
+        assert_eq!(decision.up, Some(CircuitSqmState::Cake));
+    }
+
+    #[test]
+    fn circuit_missing_rtt_blocks_downgrade() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let state = CircuitState::default();
+
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            true,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision, CircuitSqmDecision::default());
+    }
+
+    #[test]
+    fn circuit_dwell_time_blocks_switch() {
+        let cpu = AutopilotCpuConfig::default();
+        let circuits = AutopilotCircuitsConfig::default();
+        let qoo_cfg = AutopilotQooConfig::default();
+        let mut state = CircuitState::default();
+        state.down.last_change_unix = Some(1000 - 60);
+        state.up.last_change_unix = Some(1000 - 60);
+
+        let decision = decide_circuit_sqm(
+            1000,
+            true,
+            Some(90),
+            &cpu,
+            &circuits,
+            &qoo_cfg,
+            false,
+            DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            &state,
+        );
+        assert_eq!(decision, CircuitSqmDecision::default());
+    }
+
+    #[test]
+    fn directional_token_format_and_parse() {
+        assert_eq!(
+            format_directional_sqm_override(CircuitSqmState::Cake, CircuitSqmState::FqCodel),
+            "cake/fq_codel"
+        );
+
+        let parsed = parse_directional_sqm_override("cake/fq_codel");
+        assert_eq!(parsed.down, Some(CircuitSqmState::Cake));
+        assert_eq!(parsed.up, Some(CircuitSqmState::FqCodel));
+
+        let parsed = parse_directional_sqm_override("fq_codel");
+        assert_eq!(parsed.down, Some(CircuitSqmState::FqCodel));
+        assert_eq!(parsed.up, Some(CircuitSqmState::FqCodel));
+
+        let parsed = parse_directional_sqm_override("none");
+        assert_eq!(parsed.down, None);
+        assert_eq!(parsed.up, None);
+
+        let parsed = parse_directional_sqm_override("/fq_codel");
+        assert_eq!(parsed.down, None);
+        assert_eq!(parsed.up, Some(CircuitSqmState::FqCodel));
+    }
 }

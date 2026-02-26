@@ -505,6 +505,7 @@ fn run_tick(
 
             let decision = decisions::decide_link_virtualization(
                 now_unix,
+                allowlisted_nodes.contains(node_name),
                 cpu_max_pct,
                 &ap.cpu,
                 &ap.links,
@@ -825,6 +826,7 @@ fn run_tick(
 
             let decision = decisions::decide_circuit_sqm(
                 now_unix,
+                allowlisted_circuits.contains(circuit_id),
                 cpu_max_pct,
                 &ap.cpu,
                 &ap.circuits,
