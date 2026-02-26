@@ -109,6 +109,9 @@ pub struct ExecutiveSummaryHeader {
     pub unmapped_ip_count: u64,
     /// Number of HTB queues being tracked.
     pub htb_queue_count: u64,
+    /// Number of HTB classes in the current shaping tree (from `queueingStructure.json`).
+    #[serde(default)]
+    pub htb_class_count: u64,
     /// Number of CAKE queues being tracked.
     pub cake_queue_count: u64,
     /// Whether Insight is connected.

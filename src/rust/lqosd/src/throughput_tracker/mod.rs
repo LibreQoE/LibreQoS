@@ -23,7 +23,7 @@ use lqos_bus::{
     AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
     IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
 };
-use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
+use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, QUEUE_STRUCTURE};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
@@ -874,6 +874,12 @@ pub fn executive_summary_header() -> BusResponse {
     let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
 
     let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
+    let htb_class_count: u64 = QUEUE_STRUCTURE
+        .load()
+        .maybe_queues
+        .as_ref()
+        .map(|q| q.len() as u64)
+        .unwrap_or(0);
     let insight_connected = !matches!(
         get_lts_license_status().0,
         LtsStatus::Invalid | LtsStatus::NotChecked
@@ -886,6 +892,7 @@ pub fn executive_summary_header() -> BusResponse {
         mapped_ip_count,
         unmapped_ip_count,
         htb_queue_count: queue_counts.htb as u64,
+        htb_class_count,
         cake_queue_count: queue_counts.cake as u64,
         insight_connected,
     })
