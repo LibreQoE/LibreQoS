@@ -6,7 +6,134 @@ function formatUnixSecondsToLocalTime(unixSeconds) {
     if (!Number.isFinite(n) || n <= 0) {
         return "";
     }
-    return new Date(n * 1000).toLocaleString();
+    return new Date(n * 1000).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
+function splitOnce(s, sep) {
+    const str = (s ?? "").toString();
+    const idx = str.indexOf(sep);
+    if (idx === -1) return [str, ""];
+    return [str.slice(0, idx), str.slice(idx + sep.length)];
+}
+
+function parseDirectionalSqmToken(token) {
+    const t = (token ?? "").toString().trim();
+    if (!t) return { down: "", up: "" };
+    if (!t.includes("/")) return { down: t, up: t };
+    const [down, up] = splitOnce(t, "/");
+    return { down: (down ?? "").toString().trim(), up: (up ?? "").toString().trim() };
+}
+
+function formatSqmLabel(prefix, token) {
+    const { down, up } = parseDirectionalSqmToken(token);
+    if (!down && !up) return prefix;
+    if (down === up) return `${prefix}: ${down}`;
+    return `${prefix}: DL ${down}, UL ${up}`;
+}
+
+function mkIcon(iconClass, extraClasses = []) {
+    const icon = document.createElement("i");
+    icon.classList.add("fa", "fa-fw", iconClass);
+    extraClasses.forEach((c) => icon.classList.add(c));
+    return icon;
+}
+
+function renderAction(actionRaw) {
+    const raw = (actionRaw ?? "").toString();
+    const [verbRaw, payloadRaw] = splitOnce(raw, ":");
+    const verb = (verbRaw ?? "").toString().trim();
+    const payload = (payloadRaw ?? "").toString().trim();
+
+    const lowerVerb = verb.toLowerCase();
+
+    // Defaults
+    let iconClass = "fa-question-circle";
+    let iconExtra = ["text-muted"];
+    let label = raw;
+
+    const isFailed = lowerVerb.endsWith("_failed") || lowerVerb.includes("failed");
+
+    if (lowerVerb === "virtualize") {
+        iconClass = "fa-compress";
+        iconExtra = [];
+        label = "Virtualize";
+    } else if (lowerVerb === "unvirtualize") {
+        iconClass = "fa-expand";
+        iconExtra = [];
+        label = "Unvirtualize";
+    } else if (lowerVerb === "dry_run_toggled") {
+        iconClass = "fa-toggle-on";
+        iconExtra = ["text-muted"];
+        label = "Dry-run toggled";
+    } else if (lowerVerb === "reload_success") {
+        iconClass = "fa-refresh";
+        iconExtra = ["text-success"];
+        label = "Reload success";
+    } else if (lowerVerb === "reload_skipped") {
+        iconClass = "fa-refresh";
+        iconExtra = ["text-muted"];
+        label = "Reload skipped";
+    } else if (lowerVerb === "reload_failed") {
+        iconClass = "fa-refresh";
+        iconExtra = ["text-danger"];
+        label = "Reload failed";
+    } else if (lowerVerb.startsWith("clear_virtual_override")) {
+        iconClass = "fa-eraser";
+        iconExtra = ["text-warning"];
+        label = "Clear virtual override";
+        if (lowerVerb.endsWith("_conflict")) label += " (conflict)";
+        if (lowerVerb.endsWith("_failed")) label += " failed";
+    } else if (lowerVerb.startsWith("set_virtual_override")) {
+        iconClass = "fa-compress";
+        iconExtra = isFailed ? ["text-danger"] : [];
+        label = isFailed ? "Set virtual override failed" : "Set virtual override";
+    } else if (lowerVerb.startsWith("clear_sqm_overrides")) {
+        iconClass = "fa-eraser";
+        iconExtra = ["text-warning"];
+        label = "Clear SQM overrides";
+        if (lowerVerb.endsWith("_conflict")) label += " (conflict)";
+    } else if (lowerVerb === "set_sqm_override_failed") {
+        iconClass = "fa-exclamation-circle";
+        iconExtra = ["text-danger"];
+        label = "SQM override failed";
+    } else if (lowerVerb === "apply_sqm_live_failed") {
+        iconClass = "fa-exclamation-circle";
+        iconExtra = ["text-danger"];
+        label = formatSqmLabel("SQM live apply failed", payload);
+    } else if (lowerVerb === "would_set_sqm_override") {
+        iconClass = "fa-eye";
+        iconExtra = ["text-muted"];
+        label = formatSqmLabel("Dry-run SQM override", payload);
+    } else if (lowerVerb === "set_sqm_override") {
+        if (payload.toLowerCase().includes("cake")) {
+            iconClass = "fa-birthday-cake";
+        } else if (payload.toLowerCase().includes("fq_codel")) {
+            iconClass = "fa-tachometer";
+        } else {
+            iconClass = "fa-sliders";
+        }
+        iconExtra = [];
+        label = formatSqmLabel("SQM override", payload);
+    } else if (lowerVerb === "set_sqm_live") {
+        iconClass = "fa-bolt";
+        iconExtra = [];
+        label = formatSqmLabel("SQM live apply", payload);
+    } else if (isFailed) {
+        iconClass = "fa-exclamation-circle";
+        iconExtra = ["text-danger"];
+        label = verb;
+    }
+
+    return {
+        raw,
+        label,
+        iconClass,
+        iconExtra,
+    };
 }
 
 export class TreeGuardActivityDashlet extends BaseDashlet {
@@ -14,6 +141,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         super(slot);
         this.size = 12;
         this.circuitNameById = new Map();
+        this.nodeIdByName = new Map();
     }
 
     title() {
@@ -44,6 +172,23 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         };
         wsClient.on("AllShapedDevices", wrapped);
         wsClient.send({ AllShapedDevices: {} });
+
+        const treeWrapped = (msg) => {
+            wsClient.off("NetworkTree", treeWrapped);
+            const data = msg && Array.isArray(msg.data) ? msg.data : [];
+            data.forEach((entry) => {
+                if (!Array.isArray(entry) || entry.length < 2) return;
+                const id = entry[0];
+                const node = entry[1];
+                const name = (node && node.name ? String(node.name) : "").trim();
+                if (!name) return;
+                if (!this.nodeIdByName.has(name)) {
+                    this.nodeIdByName.set(name, id);
+                }
+            });
+        };
+        wsClient.on("NetworkTree", treeWrapped);
+        wsClient.send({ NetworkTree: {} });
     }
 
     buildContainer() {
@@ -53,9 +198,10 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         wrap.classList.add("p-2");
 
         const table = document.createElement("table");
-        table.classList.add("table", "table-sm", "table-striped", "mb-0");
+        table.classList.add("table", "table-sm", "table-striped", "mb-0", "small");
 
         const thead = document.createElement("thead");
+        thead.classList.add("small");
         const headRow = document.createElement("tr");
         ["Local Time", "Entity", "Action", "Persisted", "Reason"].forEach((h) => {
             const th = document.createElement("th");
@@ -95,32 +241,78 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
 
         entries.slice(0, 50).forEach((e) => {
             const tr = document.createElement("tr");
+            tr.classList.add("small");
 
             const tdTime = document.createElement("td");
             tdTime.textContent = formatUnixSecondsToLocalTime(e.time);
 
             const tdEntity = document.createElement("td");
-            const et = e.entity_type ?? "";
-            const eid = e.entity_id ?? "";
-            const entityType = (et || "").toString().toLowerCase();
-            const entityId = (eid || "").toString();
-            let display = entityId;
-            if (entityType === "circuit") {
-                const name = this.circuitNameById.get(entityId.trim());
-                if (name) {
-                    display = name;
-                    if (name !== entityId) {
-                        tdEntity.title = entityId;
-                    }
+            const et = (e.entity_type ?? "").toString();
+            const eid = (e.entity_id ?? "").toString();
+            const entityType = et.toLowerCase().trim();
+            const entityId = eid.trim();
+
+            const prefix = document.createElement("span");
+            prefix.classList.add("text-muted");
+            prefix.textContent = et ? `${et}: ` : "";
+            tdEntity.appendChild(prefix);
+
+            const mkLink = (href, text, title = "") => {
+                const a = document.createElement("a");
+                a.href = href;
+                a.textContent = text;
+                a.classList.add("redactable");
+                if (title) a.title = title;
+                return a;
+            };
+
+            if (entityType === "circuit" && entityId) {
+                const name = this.circuitNameById.get(entityId);
+                const display = (name ?? "").toString().trim() || entityId;
+                const title = name ? entityId : "";
+                tdEntity.appendChild(
+                    mkLink(`circuit.html?id=${encodeURIComponent(entityId)}`, display, title),
+                );
+            } else if (entityType === "node" && entityId) {
+                const nodeId = this.nodeIdByName.get(entityId);
+                if (nodeId !== undefined && nodeId !== null) {
+                    tdEntity.appendChild(
+                        mkLink(
+                            `tree.html?parent=${encodeURIComponent(String(nodeId))}`,
+                            entityId,
+                            `Node ID: ${nodeId}`,
+                        ),
+                    );
+                } else {
+                    const span = document.createElement("span");
+                    span.textContent = entityId;
+                    span.classList.add("redactable");
+                    tdEntity.appendChild(span);
                 }
+            } else {
+                const span = document.createElement("span");
+                span.textContent = entityId || et || "";
+                span.classList.add("redactable");
+                tdEntity.appendChild(span);
             }
-            tdEntity.textContent = et && display ? `${et}: ${display}` : (display || et);
 
             const tdAction = document.createElement("td");
-            tdAction.textContent = e.action ?? "";
+            const a = renderAction(e.action);
+            tdAction.title = a.raw;
+            tdAction.appendChild(mkIcon(a.iconClass, a.iconExtra));
+            const actionText = document.createElement("span");
+            actionText.textContent = ` ${a.label}`;
+            tdAction.appendChild(actionText);
 
             const tdPersisted = document.createElement("td");
-            tdPersisted.textContent = e.persisted ? "Yes" : "No";
+            tdPersisted.classList.add("text-center");
+            const persisted = !!e.persisted;
+            const persistedIcon = persisted
+                ? mkIcon("fa-check", ["text-success"])
+                : mkIcon("fa-times", ["text-muted"]);
+            persistedIcon.setAttribute("aria-label", persisted ? "Persisted" : "Not persisted");
+            persistedIcon.title = persisted ? "Persisted" : "Not persisted";
+            tdPersisted.appendChild(persistedIcon);
 
             const tdReason = document.createElement("td");
             tdReason.textContent = e.reason ?? "";
