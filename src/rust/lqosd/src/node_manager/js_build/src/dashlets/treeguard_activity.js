@@ -13,6 +13,22 @@ function formatUnixSecondsToLocalTime(unixSeconds) {
     });
 }
 
+function parseCircuitEntityId(entityIdRaw) {
+    const s = (entityIdRaw ?? "").toString().trim();
+    if (!s) return { circuitId: "", display: "", hasName: false };
+
+    const m = s.match(/^(.*)\s*\(([^)]+)\)\s*$/);
+    if (m) {
+        const name = (m[1] ?? "").toString().trim();
+        const id = (m[2] ?? "").toString().trim();
+        if (id) {
+            return { circuitId: id, display: name || id, hasName: !!name };
+        }
+    }
+
+    return { circuitId: s, display: s, hasName: false };
+}
+
 function splitOnce(s, sep) {
     const str = (s ?? "").toString();
     const idx = str.indexOf(sep);
@@ -267,11 +283,19 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             };
 
             if (entityType === "circuit" && entityId) {
-                const name = this.circuitNameById.get(entityId);
-                const display = (name ?? "").toString().trim() || entityId;
-                const title = name ? entityId : "";
+                const parsed = parseCircuitEntityId(entityId);
+                const circuitId = parsed.circuitId;
+                let display = parsed.display;
+                let title = parsed.hasName ? circuitId : "";
+                if (!parsed.hasName && circuitId) {
+                    const name = this.circuitNameById.get(circuitId);
+                    if (name) {
+                        display = name;
+                        title = circuitId;
+                    }
+                }
                 tdEntity.appendChild(
-                    mkLink(`circuit.html?id=${encodeURIComponent(entityId)}`, display, title),
+                    mkLink(`circuit.html?id=${encodeURIComponent(circuitId)}`, display, title),
                 );
             } else if (entityType === "node" && entityId) {
                 const nodeId = this.nodeIdByName.get(entityId);
