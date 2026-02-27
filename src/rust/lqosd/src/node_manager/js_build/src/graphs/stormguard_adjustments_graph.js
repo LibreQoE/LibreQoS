@@ -12,7 +12,8 @@ function formatTime(ts) {
 export class StormguardAdjustmentsGraph extends DashboardGraph {
     constructor(id) {
         super(id);
-        this.ringbuffer = new StormguardRingBuffer(RING_SIZE);
+        this.timestamps = new Array(RING_SIZE).fill(0);
+        this.seriesBySite = new Map(); // siteName -> { downloadSeries, uploadSeries }
         this.siteColorMap = new Map(); // Track colors for consistent site coloring
         this.colorIndex = 0;
 
@@ -82,7 +83,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
             formatter: (params) => {
                 if (!params || params.length === 0) return '';
                 const idx = params[0].dataIndex;
-                const ts = this.ringbuffer.getTimestamp(idx);
+                const ts = this.getTimestamp(idx);
                 let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
                 
                 // Group by site to show download/upload together
@@ -119,6 +120,15 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
         };
 
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
+    }
+
+    getTimestamp(idx) {
+        const i = Number(idx);
+        if (!Number.isFinite(i) || i < 0 || i >= this.timestamps.length) {
+            return 0;
+        }
+        return this.timestamps[i] || 0;
     }
 
     onThemeChange() {
@@ -154,10 +164,61 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
 
     getColorForSite(siteName) {
         if (!this.siteColorMap.has(siteName)) {
-            this.siteColorMap.set(siteName, window.graphPalette[this.colorIndex % window.graphPalette.length]);
+            // Store a stable palette index so theme changes can re-map colors cleanly.
+            this.siteColorMap.set(siteName, this.colorIndex);
             this.colorIndex++;
         }
-        return this.siteColorMap.get(siteName);
+        const idx = this.siteColorMap.get(siteName) || 0;
+        return window.graphPalette[idx % window.graphPalette.length];
+    }
+
+    ensureSiteSeries(siteName) {
+        if (this.seriesBySite.has(siteName)) {
+            return false;
+        }
+
+        const color = this.getColorForSite(siteName);
+        const zeros = new Array(RING_SIZE).fill(0);
+
+        const downloadSeries = {
+            name: `${siteName} Download`,
+            data: zeros.slice(),
+            type: 'line',
+            lineStyle: {
+                width: 2,
+                color: color,
+            },
+            symbol: 'none',
+            smooth: true,
+            animation: false,
+        };
+
+        const uploadSeries = {
+            name: `${siteName} Upload`,
+            data: zeros.slice(),
+            type: 'line',
+            lineStyle: {
+                width: 2,
+                color: color,
+                type: 'dashed',
+            },
+            symbol: 'none',
+            smooth: true,
+            animation: false,
+        };
+
+        this.seriesBySite.set(siteName, { downloadSeries, uploadSeries });
+        this.option.series.push(downloadSeries);
+        this.option.series.push(uploadSeries);
+
+        // One legend entry per site (visual key); series names include direction.
+        this.option.legend.data.push({
+            name: siteName,
+            icon: 'rect',
+            itemStyle: { color: color },
+        });
+
+        return true;
     }
 
     update(sites) {
@@ -169,151 +230,54 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
             return;
         }
 
-        // Push to ringbuffer
-        this.ringbuffer.push(sites, Date.now());
+        const now = Date.now();
+        // Maintain timestamps as "oldest -> newest" so tooltip index maps naturally.
+        this.timestamps.shift();
+        this.timestamps.push(now);
 
-        // Get all unique sites from the ringbuffer
-        const allSites = this.ringbuffer.getAllSites();
-        
-        // Rebuild series based on current sites
-        const newSeries = [this.option.series[0]]; // Keep zero line
-        const newLegendData = [];
-
-        // Create series for each site
-        for (const siteName of allSites) {
-            const color = this.getColorForSite(siteName);
-            
-            // Download series (positive line)
-            newSeries.push({
-                name: `${siteName} Download`,
-                data: this.ringbuffer.getSeriesForSite(siteName, 'download'),
-                type: 'line',
-                lineStyle: {
-                    width: 2,
-                    color: color,
-                },
-                symbol: 'none',
-                smooth: true
-            });
-
-            // Upload series (negative line)
-            newSeries.push({
-                name: `${siteName} Upload`,
-                data: this.ringbuffer.getSeriesForSite(siteName, 'upload'),
-                type: 'line',
-                lineStyle: {
-                    width: 2,
-                    color: color,
-                    type: 'dashed'
-                },
-                symbol: 'none',
-                smooth: true
-            });
-
-            // Add to legend (one entry per site showing both download and upload)
-            if (!newLegendData.find(item => item.name === siteName)) {
-                newLegendData.push({
-                    name: siteName,
-                    icon: 'rect',
-                    itemStyle: {
-                        color: color
-                    }
-                });
-            }
-        }
-
-        this.option.series = newSeries;
-        this.option.legend.data = newLegendData;
-        this.chart.setOption(this.option);
-    }
-}
-
-class StormguardRingBuffer {
-    constructor(size) {
-        this.size = size;
-        this.data = [];
-        for (let i = 0; i < size; i++) {
-            this.data.push({
-                sites: new Map(), // Map<siteName, {download: u64, upload: u64}>
-                timestamp: 0
-            });
-        }
-        this.head = 0;
-        this.allSites = new Set(); // Track all sites we've seen
-    }
-
-    push(sites, timestamp) {
-        // sites is an array of [siteName, download, upload]
-        // Values are in Mbps, need to convert to bps
-        const siteMap = new Map();
-        
+        // Build a map of this tick's site values (bps).
+        const valuesBySite = new Map();
         for (const site of sites) {
-            if (Array.isArray(site) && site.length === 3) {
-                const [name, downloadMbps, uploadMbps] = site;
-                // Convert from Mbps to bps
-                siteMap.set(name, { 
-                    download: toNumber(downloadMbps, 0) * 1000000, 
-                    upload: toNumber(uploadMbps, 0) * 1000000 
-                });
-                this.allSites.add(name);
+            if (!Array.isArray(site) || site.length !== 3) {
+                continue;
+            }
+            const name = String(site[0] ?? "").trim();
+            if (!name) continue;
+            valuesBySite.set(name, {
+                download: toNumber(site[1], 0) * 1_000_000,
+                upload: toNumber(site[2], 0) * 1_000_000,
+            });
+        }
+
+        // Lazily create series for new sites.
+        let addedSeries = false;
+        for (const name of valuesBySite.keys()) {
+            if (this.ensureSiteSeries(name)) {
+                addedSeries = true;
             }
         }
-        
-        this.data[this.head] = {
-            sites: siteMap,
-            timestamp: timestamp || Date.now()
-        };
-        
-        this.head = (this.head + 1) % this.size;
-    }
 
-    getTimestamp(idx) {
-        const physical = (this.head + idx) % this.size;
-        return this.data[physical].timestamp;
-    }
+        // Advance each series by 1 tick (fixed window) without allocating new arrays.
+        for (const [name, seriesPair] of this.seriesBySite.entries()) {
+            const v = valuesBySite.get(name);
+            const down = v ? v.download : 0;
+            const up = v ? v.upload : 0;
 
-    getDataAt(idx) {
-        const physical = (this.head + idx) % this.size;
-        return this.data[physical];
-    }
+            const downData = seriesPair.downloadSeries.data;
+            downData.shift();
+            downData.push(down);
 
-    getAllSites() {
-        return Array.from(this.allSites).sort();
-    }
-
-    getSeriesForSite(siteName, type) {
-        const series = [];
-        
-        // Start from head and wrap around to get chronological order
-        for (let i = this.head; i < this.size; i++) {
-            const siteData = this.data[i].sites.get(siteName);
-            if (siteData) {
-                if (type === 'download') {
-                    series.push(siteData.download || 0);
-                } else if (type === 'upload') {
-                    // Invert upload values (negative)
-                    series.push(-(siteData.upload || 0));
-                }
-            } else {
-                series.push(0);
-            }
+            const upData = seriesPair.uploadSeries.data;
+            upData.shift();
+            upData.push(-(up || 0));
         }
-        
-        // Continue from beginning to head
-        for (let i = 0; i < this.head; i++) {
-            const siteData = this.data[i].sites.get(siteName);
-            if (siteData) {
-                if (type === 'download') {
-                    series.push(siteData.download || 0);
-                } else if (type === 'upload') {
-                    // Invert upload values (negative)
-                    series.push(-(siteData.upload || 0));
-                }
-            } else {
-                series.push(0);
-            }
+
+        if (addedSeries) {
+            // Structural change (new series): replace to ensure ECharts drops any stale state.
+            this.chart.setOption(this.option, true);
+        } else {
+            // Data-only update: avoid full option merges to reduce memory churn.
+            this.chart.setOption(this._seriesOnly, false, true);
         }
-        
-        return series;
     }
 }

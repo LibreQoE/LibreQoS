@@ -205,6 +205,7 @@ let prevFlowBytes = new Map();
 let tickCount = 0;
 let trafficSortColumn = 'rate'; // Default sort by rate
 let trafficSortDirection = 'desc'; // 'asc' or 'desc'
+const MAX_FLOW_CACHE_TICKS = 120; // ~2 minutes at 1Hz updates
 
 function diffToNumber(current, previous, fallback = 0) {
     if (typeof current === "bigint" && typeof previous === "bigint") {
@@ -302,16 +303,24 @@ function updateTrafficTab(msg) {
             rate = down + up;
         }
         if (movingAverages.has(flowKey)) {
-            let avg = movingAverages.get(flowKey);
-            avg.push(rate);
-            if (avg.length > 10) {
-                avg.shift();
+            const entry = movingAverages.get(flowKey);
+            entry.rates.push(rate);
+            if (entry.rates.length > 10) {
+                entry.rates.shift();
             }
-            movingAverages.set(flowKey, avg);
+            entry.lastTick = tickCount;
         } else {
-            movingAverages.set(flowKey, [ rate ]);
+            movingAverages.set(flowKey, { rates: [rate], lastTick: tickCount });
         }
     });
+
+    // Prune caches to avoid unbounded growth as flows churn.
+    for (const [k, v] of movingAverages.entries()) {
+        const last = v && typeof v.lastTick === "number" ? v.lastTick : 0;
+        if (tickCount - last > MAX_FLOW_CACHE_TICKS) {
+            movingAverages.delete(k);
+        }
+    }
 
     // Process flows and collect data
     msg.flows.forEach((flow) => {
@@ -366,8 +375,11 @@ function updateTrafficTab(msg) {
         // Get average rate for sorting
         let avgRate = down + up;
         if (movingAverages.has(flowKey)) {
-            const avg = movingAverages.get(flowKey);
-            avgRate = avg.reduce((a, b) => a + b, 0) / avg.length;
+            const entry = movingAverages.get(flowKey);
+            const avg = entry && Array.isArray(entry.rates) ? entry.rates : null;
+            if (avg && avg.length > 0) {
+                avgRate = avg.reduce((a, b) => a + b, 0) / avg.length;
+            }
         }
         
         const bytesSentDown = toNumber(flow[1].bytes_sent.down, 0);
@@ -416,6 +428,13 @@ function updateTrafficTab(msg) {
             visible: visible
         });
     });
+
+    for (const [k, v] of prevFlowBytes.entries()) {
+        const last = Array.isArray(v) ? Number(v[2] || 0) : 0;
+        if (tickCount - last > MAX_FLOW_CACHE_TICKS) {
+            prevFlowBytes.delete(k);
+        }
+    }
     
     // Sort tableRows based on current sort preferences
     tableRows.sort((a, b) => {

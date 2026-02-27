@@ -17,6 +17,7 @@ export class FlowDurationsGraph extends DashboardGraph {
                 type: 'scatter',
             }
         };
+        this.option.animation = false;
         this.option && this.chart.setOption(this.option);
     }
 
@@ -31,6 +32,7 @@ export class FlowDurationsGraph extends DashboardGraph {
 
         this.option.series.data = points;
 
-        this.chart.setOption(this.option);
+        // Replace instead of merge to avoid ECharts retaining stale point clouds.
+        this.chart.setOption(this.option, true);
     }
 }

@@ -14,6 +14,7 @@ export class RetransmitsGraph extends DashboardGraph {
             .withSequenceAxis(0, RING_SIZE)
             .withScaledAbsYAxisPercent("Retransmits", 40)
             .build();
+        this.option.animation = false;
 
         this.option.legend = {
             orient: "horizontal",
@@ -49,6 +50,7 @@ export class RetransmitsGraph extends DashboardGraph {
             },
         ];
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     update(down, up, tcp_down, tcp_up) {
@@ -67,6 +69,6 @@ export class RetransmitsGraph extends DashboardGraph {
         this.option.series[0].data = series[0];
         this.option.series[1].data = series[1];
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }

@@ -14,6 +14,7 @@ export class FlowCountGraph extends DashboardGraph {
             .withScaledAbsYAxis("Tracked Flows", 30)
             .withLeftGridSize("15%")
             .build();
+        this.option.animation = false;
 
         this.option.series = [
             {
@@ -50,6 +51,7 @@ export class FlowCountGraph extends DashboardGraph {
         };
 
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     update(recent, completed) {
@@ -60,6 +62,6 @@ export class FlowCountGraph extends DashboardGraph {
         // ECharts expects array of {timestamp, value}
         this.option.series[0].data = series[0];
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }

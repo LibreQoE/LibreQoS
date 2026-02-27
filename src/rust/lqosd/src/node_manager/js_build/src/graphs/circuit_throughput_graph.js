@@ -16,6 +16,11 @@ export class CircuitTotalGraph extends DashboardGraph {
         this.title = title;
         this.ringbuffer = new RingBuffer(RING_SIZE);
 
+        let xaxis = [];
+        for (let i=0; i<RING_SIZE; i++) {
+            xaxis.push(i);
+        }
+
         // Capture references for closure
         const ringbuffer = this.ringbuffer;
         const formatTimeRef = formatTime;
@@ -52,7 +57,8 @@ export class CircuitTotalGraph extends DashboardGraph {
             },
             xAxis: {
                 type: 'category',
-                data: [] // will be set in update()
+                data: xaxis,
+                axisLabel: { show: false },
             },
             yAxis: {
                 type: 'value',
@@ -91,7 +97,6 @@ export class CircuitTotalGraph extends DashboardGraph {
                     }
                 },
                 formatter: function(params) {
-                    console.log(params);
                     if (!params || params.length === 0) return '';
                     const idx = params[0].dataIndex;
                     const ts = ringbuffer.getTimestamp(idx);
@@ -102,8 +107,10 @@ export class CircuitTotalGraph extends DashboardGraph {
                     return s;
                 }
             },
+            animation: false,
         }
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
@@ -120,15 +127,11 @@ export class CircuitTotalGraph extends DashboardGraph {
         this.ringbuffer.push(download, upload, Date.now());
 
         let data = this.ringbuffer.series();
-        let timestamps = this.ringbuffer.getTimestamps();
-        // Format xAxis labels as HH:MM:SS
-        let xLabels = timestamps.map(ts => formatTime(ts));
 
         this.option.series[0].data = data[0];
         this.option.series[1].data = data[1];
-        this.option.xAxis.data = xLabels;
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }
 
@@ -141,6 +144,7 @@ class RingBuffer {
         }
         this.head = 0;
         this.data = data;
+        this._seriesCache = [new Array(size).fill(0), new Array(size).fill(0)];
     }
 
     push(download, upload, timestamp) {
@@ -152,31 +156,19 @@ class RingBuffer {
     }
 
     series() {
-        let result = [
-            [], []
-        ];
+        const out = this._seriesCache;
+        let idx = 0;
         for (let i=this.head; i<this.size; i++) {
-            for (let j=0; j<2; j++) {
-                result[j].push(this.data[i][j]);
-            }
+            out[0][idx] = this.data[i][0];
+            out[1][idx] = this.data[i][1];
+            idx++;
         }
         for (let i=0; i<this.head; i++) {
-            for (let j=0; j<2; j++) {
-                result[j].push(this.data[i][j]);
-            }
+            out[0][idx] = this.data[i][0];
+            out[1][idx] = this.data[i][1];
+            idx++;
         }
-        return result;
-    }
-
-    getTimestamps() {
-        let result = [];
-        for (let i=this.head; i<this.size; i++) {
-            result.push(this.data[i][2]);
-        }
-        for (let i=0; i<this.head; i++) {
-            result.push(this.data[i][2]);
-        }
-        return result;
+        return out;
     }
 
     getTimestamp(idx) {

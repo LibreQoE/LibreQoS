@@ -64,6 +64,10 @@ export class Dashboard {
         this.#buildTabContents();
         this.#buildChannelList(this.dashlets);
         this.#webSocketSubscription();
+
+        if (typeof window !== "undefined") {
+            window.__lqos_active_dashboard_tab = this.layout.activeTab;
+        }
     }
 
     #buildTabUI() {
@@ -135,6 +139,9 @@ export class Dashboard {
         // Update active tab in layout
         this.layout.activeTab = tabIndex;
         this.layout.save(this.layout);
+        if (typeof window !== "undefined") {
+            window.__lqos_active_dashboard_tab = tabIndex;
+        }
         
         // Update tab navigation
         let tabs = document.querySelectorAll('#' + this.divName + '_tabs .nav-link');
@@ -252,6 +259,16 @@ export class Dashboard {
                     this.tickCounter++;
                     this.tickCounter %= this.cadence;
                     for (let i = 0; i < this.dashlets.length; i++) {
+                        // Only update dashlets on the currently active tab.
+                        // Hidden ECharts instances can be extremely memory-hungry when continuously fed data.
+                        // Dashlets still receive fresh data as soon as the tab is activated (next WS tick).
+                        if (
+                            this.dashlets[i] &&
+                            typeof this.dashlets[i].tabIndex === "number" &&
+                            this.dashlets[i].tabIndex !== this.layout.activeTab
+                        ) {
+                            continue;
+                        }
                         if (this.dashlets[i].canBeSlowedDown()) {
                             if (this.tickCounter === 0) {
                                 this.dashlets[i].onMessage(msg);

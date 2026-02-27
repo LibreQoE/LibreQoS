@@ -361,7 +361,8 @@ class AllTreeSankey extends DashboardGraph {
         this.option.series[0].data = data;
         this.option.series[0].links = links;
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        // Replace instead of merge to avoid unbounded Sankey node/link accumulation in ECharts.
+        this.chart.setOption(this.option, true);
     }
 }
 

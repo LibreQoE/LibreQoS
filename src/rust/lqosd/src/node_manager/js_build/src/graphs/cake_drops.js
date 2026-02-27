@@ -134,6 +134,7 @@ export class CakeDrops extends DashboardGraph {
             animation: false,
         }
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
@@ -157,7 +158,7 @@ export class CakeDrops extends DashboardGraph {
         this.chart.hideLoading();
 
         for (let i=0; i<8; i++) {
-            this.option.series[i].data = [];
+            this.option.series[i].data.length = 0;
         }
         //console.log(msg);
         for (let i=msg.history_head; i<600; i++) {
@@ -175,6 +176,6 @@ export class CakeDrops extends DashboardGraph {
             }
         }
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }

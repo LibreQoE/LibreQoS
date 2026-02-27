@@ -17,6 +17,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
             .withSequenceAxis(0, RING_SIZE)
             .withScaledAbsYAxis("Circuits", 40)
             .build();
+        this.option.animation = false;
 
         this.option.legend = {
             orient: "horizontal",
@@ -77,16 +78,18 @@ export class BakeryCircuitsGraph extends DashboardGraph {
             }
         };
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
         super.onThemeChange();
-        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
-        this.option.legend.data[1].itemStyle.color = window.graphPalette[2];
-        this.option.series[0].lineStyle.color = window.graphPalette[2];
-        this.option.series[0].areaStyle.color = window.graphPalette[2];
-        this.option.series[1].lineStyle.color = window.graphPalette[0];
-        this.option.series[1].areaStyle.color = window.graphPalette[0];
+        if (this.option.legend && this.option.legend.data && this.option.legend.data[0]) {
+            this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
+        }
+        if (this.option.series && this.option.series[0]) {
+            this.option.series[0].lineStyle.color = window.graphPalette[0];
+            this.option.series[0].areaStyle.color = window.graphPalette[0];
+        }
 
         this.chart.setOption(this.option);
     }
@@ -98,7 +101,7 @@ export class BakeryCircuitsGraph extends DashboardGraph {
         let data = this.ringbuffer.series();
         this.option.series[0].data = data[0];
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }
 
@@ -111,6 +114,7 @@ class BakeryRingBuffer {
         }
         this.head = 0;
         this.data = data;
+        this._seriesCache = [new Array(size).fill(0)];
     }
 
     push(active, timestamp) {
@@ -128,13 +132,16 @@ class BakeryRingBuffer {
     }
 
     series() {
-        let result = [[], []]; // lazy, active
+        const out = this._seriesCache;
+        let idx = 0;
         for (let i=this.head; i<this.size; i++) {
-            result[0].push(this.data[i][0]);
+            out[0][idx] = this.data[i][0];
+            idx++;
         }
         for (let i=0; i<this.head; i++) {
-            result[0].push(this.data[i][0]);
+            out[0][idx] = this.data[i][0];
+            idx++;
         }
-        return result;
+        return out;
     }
 }

@@ -18,6 +18,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
             .withSequenceAxis(0, RING_SIZE)
             .withScaledAbsYAxis("Throughput (bps)", 40)
             .build();
+        this.option.animation = false;
 
         this.option.legend = {
             orient: "horizontal",
@@ -117,6 +118,8 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
             }
         };
         this.option && this.chart.setOption(this.option);
+        // Reuse this wrapper object to avoid allocating a new options object per tick.
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
@@ -143,7 +146,8 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
         this.option.series[2].data = data[2];
         this.option.series[3].data = data[3];
 
-        this.chart.setOption(this.option);
+        // Update only the series data to avoid repeated full option merges (and reduce memory churn).
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }
 
@@ -156,6 +160,12 @@ class RingBuffer {
         }
         this.head = 0;
         this.data = data;
+        this._seriesCache = [
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+        ];
     }
 
     push(shaped, unshaped, timestamp) {
@@ -176,19 +186,22 @@ class RingBuffer {
     }
 
     series() {
-        let result = [
-            [], [], [], []
-        ];
+        const out = this._seriesCache;
+        let idx = 0;
         for (let i=this.head; i<this.size; i++) {
-            for (let j=0; j<4; j++) {
-                result[j].push(this.data[i][j]);
-            }
+            out[0][idx] = this.data[i][0];
+            out[1][idx] = this.data[i][1];
+            out[2][idx] = this.data[i][2];
+            out[3][idx] = this.data[i][3];
+            idx++;
         }
         for (let i=0; i<this.head; i++) {
-            for (let j=0; j<4; j++) {
-                result[j].push(this.data[i][j]);
-            }
+            out[0][idx] = this.data[i][0];
+            out[1][idx] = this.data[i][1];
+            out[2][idx] = this.data[i][2];
+            out[3][idx] = this.data[i][3];
+            idx++;
         }
-        return result;
+        return out;
     }
 }

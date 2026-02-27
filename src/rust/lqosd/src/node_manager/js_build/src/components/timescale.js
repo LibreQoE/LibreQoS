@@ -36,8 +36,20 @@ class TimeControls {
                     }
                 });
                 if (window.timeGraphs !== undefined) {
+                    const activeTab =
+                        typeof window.__lqos_active_dashboard_tab === "number"
+                            ? window.__lqos_active_dashboard_tab
+                            : null;
                     window.timeGraphs.forEach((graph) => {
-                        if (graph !== null) graph.onTimeChange();
+                        if (graph === null) return;
+                        if (
+                            activeTab !== null &&
+                            typeof graph.tabIndex === "number" &&
+                            graph.tabIndex !== activeTab
+                        ) {
+                            return;
+                        }
+                        graph.onTimeChange();
                     });
                 }
             };

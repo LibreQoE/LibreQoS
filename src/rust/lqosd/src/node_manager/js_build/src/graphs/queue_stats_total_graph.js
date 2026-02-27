@@ -105,6 +105,7 @@ export class QueueStatsTotalGraph extends DashboardGraph {
             animation: false,
         }
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
@@ -121,17 +122,13 @@ export class QueueStatsTotalGraph extends DashboardGraph {
         this.chart.hideLoading();
         this.ringbuffer.push(marks, drops);
     
-        let { series, times } = this.ringbuffer.seriesWithTimestamps();
+        const series = this.ringbuffer.series();
         for (let i=0; i<this.option.series.length; i++) {
             this.option.series[i].data = series[i];
         }
-        // Update xAxis with formatted times
-        this.option.xAxis.data = times.map(ts => {
-            const d = new Date(ts);
-            return d.toLocaleTimeString('en-US', { hour12: false });
-        });
-    
-        this.chart.setOption(this.option);
+
+        // Tooltip already provides timestamp; keep x-axis labels empty to avoid per-tick allocations.
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }
 
@@ -144,54 +141,45 @@ class RingBuffer {
         }
         this.head = 0;
         this.data = data;
+        this._seriesCache = [
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+            new Array(size).fill(0),
+        ];
     }
 
     push(marks, drops) {
-        this.data[this.head] = {
-            marks: marks,
-            drops: drops,
-            timestamp: Date.now(),
-        };
+        const entry = this.data[this.head];
+        entry.marks.down = Number(marks?.down || 0);
+        entry.marks.up = Number(marks?.up || 0);
+        entry.drops.down = Number(drops?.down || 0);
+        entry.drops.up = Number(drops?.up || 0);
+        entry.timestamp = Date.now();
         this.head += 1;
         this.head %= this.size;
     }
 
     series() {
-        let result = [[], [], [], []];
+        const out = this._seriesCache;
+        let idx = 0;
         for (let i=this.head; i<this.size; i++) {
-            result[0].push(this.data[i].marks.down);
-            result[1].push(0 - this.data[i].marks.up);
-            result[2].push(this.data[i].drops.down);
-            result[3].push(0 - this.data[i].drops.up);
+            const e = this.data[i];
+            out[0][idx] = e.marks.down;
+            out[1][idx] = 0 - e.marks.up;
+            out[2][idx] = e.drops.down;
+            out[3][idx] = 0 - e.drops.up;
+            idx++;
         }
         for (let i=0; i<this.head; i++) {
-            result[0].push(this.data[i].marks.down);
-            result[1].push(0 - this.data[i].marks.up);
-            result[2].push(this.data[i].drops.down);
-            result[3].push(0 - this.data[i].drops.up);
+            const e = this.data[i];
+            out[0][idx] = e.marks.down;
+            out[1][idx] = 0 - e.marks.up;
+            out[2][idx] = e.drops.down;
+            out[3][idx] = 0 - e.drops.up;
+            idx++;
         }
-        return result;
-    }
-    
-    // Returns both series and timestamps for xAxis
-    seriesWithTimestamps() {
-        let series = [[], [], [], []];
-        let times = [];
-        for (let i=this.head; i<this.size; i++) {
-            series[0].push(this.data[i].marks.down);
-            series[1].push(0 - this.data[i].marks.up);
-            series[2].push(this.data[i].drops.down);
-            series[3].push(0 - this.data[i].drops.up);
-            times.push(this.data[i].timestamp);
-        }
-        for (let i=0; i<this.head; i++) {
-            series[0].push(this.data[i].marks.down);
-            series[1].push(0 - this.data[i].marks.up);
-            series[2].push(this.data[i].drops.down);
-            series[3].push(0 - this.data[i].drops.up);
-            times.push(this.data[i].timestamp);
-        }
-        return { series, times };
+        return out;
     }
     
     // Get timestamp for a given index in the logical ring order

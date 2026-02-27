@@ -68,6 +68,7 @@ export class CakeQueueLength extends DashboardGraph {
             animation: false,
         }
         this.option && this.chart.setOption(this.option);
+        this._seriesOnly = { series: this.option.series };
     }
 
     onThemeChange() {
@@ -76,15 +77,15 @@ export class CakeQueueLength extends DashboardGraph {
         this.option.series[0].lineStyle.color = window.graphPalette[0];
         this.option.series[0].itemStyle = window.graphPalette[0];
         this.option.series[1].lineStyle.color = window.graphPalette[0];
-        this.option.series[1].itemStyle = window.graphPalette
+        this.option.series[1].itemStyle = window.graphPalette[0];
         this.chart.setOption(this.option);
     }
 
     update(msg) {
         this.chart.hideLoading();
 
-        this.option.series[0].data = [];
-        this.option.series[1].data = [];
+        this.option.series[0].data.length = 0;
+        this.option.series[1].data.length = 0;
 
         //console.log(msg);
         for (let i=msg.history_head; i<600; i++) {
@@ -96,6 +97,6 @@ export class CakeQueueLength extends DashboardGraph {
             this.option.series[1].data.push(0 - msg.history[i][1].qlen);
         }
 
-        this.chart.setOption(this.option);
+        this.chart.setOption(this._seriesOnly, false, true);
     }
 }

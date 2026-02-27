@@ -29,13 +29,25 @@ function ensureWorldMap() {
 class WorldMap3DGraph extends _WorldMap3DGraph {}
 
 export class ShaperWorldMapUp extends BaseDashlet {
-    constructor(slot){ super(slot); this.last = null; this._emptyId = this.id + "_empty"; }
+    constructor(slot){
+        super(slot);
+        this.last = null;
+        this._emptyId = this.id + "_empty";
+        this._lastRenderMs = 0;
+    }
     canBeSlowedDown(){ return true; }
     title(){ return "Shaper World Map (Upload)"; }
     tooltip(){ return "<h5>World Map</h5><p>Endpoint locations sized by traffic and colored by RTT."; }
     subscribeTo(){ return ["EndpointLatLon"]; }
     buildContainer(){ let b=super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
-    setup(){ this.graph = new WorldMap3DGraph(this.graphDivId()); if (this.last) this.graph.update(this.last); }
+    setup(){
+        // Lazy-init the heavy WebGL chart only once we actually have data to render.
+        this.graph = null;
+        if (this.last) {
+            this.graph = new WorldMap3DGraph(this.graphDivId());
+            this.graph.update(this.last);
+        }
+    }
     _showEmpty(show, msg = "No recent data"){
         const card = document.getElementById(this.id);
         if (!card) return;
@@ -59,15 +71,23 @@ export class ShaperWorldMapUp extends BaseDashlet {
     }
     onMessage(msg){
         if (msg.event !== "EndpointLatLon") return;
+        const now = Date.now();
+        // WebGL + large scatter sets can be extremely memory-hungry; throttle updates.
+        if (now - (this._lastRenderMs || 0) < 5000) {
+            return;
+        }
+        this._lastRenderMs = now;
         const rows = msg.data || [];
+        const MAX_POINTS = 5000;
+        const step = rows.length > MAX_POINTS ? Math.ceil(rows.length / MAX_POINTS) : 1;
         let maxBytes = 0;
-        for (let i=0;i<rows.length;i++) {
+        for (let i=0;i<rows.length;i+=step) {
             const b = Number(rows[i][3] || 0);
             if (b > maxBytes) maxBytes = b;
         }
         const minSize = 1, maxSize = 8;
         const out = [];
-        for (let i=0;i<rows.length;i++) {
+        for (let i=0;i<rows.length;i+=step) {
             const lat = rows[i][0], lon = rows[i][1];
             const bytes = Number(rows[i][3] || 0);
             const rtt = Math.min(200, Number(rows[i][4]||0));
@@ -86,8 +106,10 @@ export class ShaperWorldMapUp extends BaseDashlet {
         if (hasData) {
             this.last = out;
             ensureWorldMap().then(() => {
+                if (!this.graph) this.graph = new WorldMap3DGraph(this.graphDivId());
                 this.graph.update(out);
             }).catch(() => {
+                if (!this.graph) this.graph = new WorldMap3DGraph(this.graphDivId());
                 this.graph.update(out);
             });
         }

@@ -150,7 +150,8 @@ export class FlowsSankey extends DashboardGraph {
         // console.log(data);
         // console.log(links);
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        // Replace instead of merge to avoid unbounded node/link accumulation in ECharts.
+        this.chart.setOption(this.option, true);
         return flowCount;
     }
 }
