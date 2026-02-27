@@ -58,6 +58,28 @@ function mkIcon(iconClass, extraClasses = []) {
     return icon;
 }
 
+function formatReason(reasonRaw) {
+    const raw = (reasonRaw ?? "").toString().trim();
+    if (!raw) return { label: "", title: "" };
+
+    const lower = raw.toLowerCase();
+    if (!lower.includes("next_allowed_unix=")) {
+        return { label: raw, title: "" };
+    }
+
+    const m = raw.match(/next_allowed_unix=(\d+)/i);
+    if (!m) return { label: raw, title: "" };
+
+    const next = formatUnixSecondsToLocalTime(parseInt(m[1], 10));
+    if (!next) return { label: raw, title: "" };
+
+    if (lower.startsWith("reload cooldown active")) {
+        return { label: `Reload on cooldown - next allowed ${next}`, title: raw };
+    }
+
+    return { label: raw.replace(m[0], `next allowed ${next}`), title: raw };
+}
+
 function renderAction(actionRaw) {
     const raw = (actionRaw ?? "").toString();
     const [verbRaw, payloadRaw] = splitOnce(raw, ":");
@@ -339,7 +361,9 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             tdPersisted.appendChild(persistedIcon);
 
             const tdReason = document.createElement("td");
-            tdReason.textContent = e.reason ?? "";
+            const r = formatReason(e.reason);
+            tdReason.textContent = r.label;
+            if (r.title) tdReason.title = r.title;
 
             tr.appendChild(tdTime);
             tr.appendChild(tdEntity);
