@@ -5,7 +5,7 @@
 
 use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
 use crate::treeguard::TreeguardError;
-use crate::treeguard::reload::{ReloadController, ReloadOutcome};
+use crate::treeguard::reload::{ReloadController, ReloadOutcome, ReloadPriority};
 use crate::treeguard::state::{
     is_sustained_idle, is_sustained_window, CircuitSqmState, CircuitState, LinkState,
     LinkVirtualState,
@@ -380,8 +380,6 @@ fn run_tick(
     // --- Link sampling + decisions (virtualization) ---
     let manage_links = tg.enabled && tg.links.enabled;
     let allowlisted_nodes: FxHashSet<String> = tg.links.nodes.iter().cloned().collect();
-    let mut reload_requested = false;
-    let mut reload_request_reason: Option<String> = None;
 
     // Cleanup for removed nodes or disabled links.
     if !manage_links {
@@ -407,14 +405,10 @@ fn run_tick(
             match overrides::clear_node_virtual(&node_name) {
                 Ok(changed) => {
                     if changed {
-                        reload_requested = true;
-                        if reload_request_reason.is_none() {
-                            reload_request_reason =
-                                Some(format!("Cleared virtual override for node '{node_name}'"));
-                        } else {
-                            reload_request_reason =
-                                Some("Multiple node topology changes".to_string());
-                        }
+                        reload_controller.request_reload(
+                            ReloadPriority::Normal,
+                            format!("Cleared virtual override for node '{node_name}'"),
+                        );
                         push_activity(
                             activity,
                             TreeguardActivityEntry {
@@ -501,14 +495,10 @@ fn run_tick(
             match overrides::clear_node_virtual(&node_name) {
                 Ok(changed) => {
                     if changed {
-                        reload_requested = true;
-                        if reload_request_reason.is_none() {
-                            reload_request_reason =
-                                Some(format!("Cleared virtual override for node '{node_name}'"));
-                        } else {
-                            reload_request_reason =
-                                Some("Multiple node topology changes".to_string());
-                        }
+                        reload_controller.request_reload(
+                            ReloadPriority::Normal,
+                            format!("Cleared virtual override for node '{node_name}'"),
+                        );
                         push_activity(
                             activity,
                             TreeguardActivityEntry {
@@ -556,15 +546,12 @@ fn run_tick(
                     match overrides::clear_node_virtual(node_name) {
                         Ok(changed) => {
                             if changed {
-                                reload_requested = true;
-                                if reload_request_reason.is_none() {
-                                    reload_request_reason = Some(format!(
+                                reload_controller.request_reload(
+                                    ReloadPriority::Normal,
+                                    format!(
                                         "Cleared virtual override for node '{node_name}' due to operator conflict"
-                                    ));
-                                } else {
-                                    reload_request_reason =
-                                        Some("Multiple node topology changes".to_string());
-                                }
+                                    ),
+                                );
                                 push_activity(
                                     activity,
                                     TreeguardActivityEntry {
@@ -802,15 +789,15 @@ fn run_tick(
                     }
 
                     if override_changed {
-                        reload_requested = true;
-                        if reload_request_reason.is_none() {
-                            reload_request_reason = Some(format!(
-                                "Node '{}' virtualization changed",
-                                node_name.to_string()
-                            ));
+                        let priority = if target == LinkVirtualState::Physical {
+                            ReloadPriority::Urgent
                         } else {
-                            reload_request_reason = Some("Multiple node topology changes".to_string());
-                        }
+                            ReloadPriority::Normal
+                        };
+                        reload_controller.request_reload(
+                            priority,
+                            format!("Node '{}' virtualization changed", node_name.to_string()),
+                        );
                     }
 
                     state.desired = target;
@@ -877,21 +864,18 @@ fn run_tick(
                         "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
                     ));
                     match overrides::clear_node_virtual(node_name) {
-                    Ok(changed) => {
-                        if changed {
-                            reload_requested = true;
-                            if reload_request_reason.is_none() {
-                                reload_request_reason = Some(format!(
-                                    "Cleared virtual override for node '{node_name}' due to operator conflict"
-                                ));
-                            } else {
-                                reload_request_reason =
-                                    Some("Multiple node topology changes".to_string());
-                            }
-                            push_activity(
-                                activity,
-                                TreeguardActivityEntry {
-                                    time: now_unix.to_string(),
+	                    Ok(changed) => {
+	                        if changed {
+	                            reload_controller.request_reload(
+	                                ReloadPriority::Normal,
+	                                format!(
+	                                    "Cleared virtual override for node '{node_name}' due to operator conflict"
+	                                ),
+	                            );
+	                            push_activity(
+	                                activity,
+	                                TreeguardActivityEntry {
+	                                    time: now_unix.to_string(),
                                     entity_type: "node".to_string(),
                                     entity_id: node_name.clone(),
                                     action: "clear_virtual_override_conflict".to_string(),
@@ -1135,15 +1119,15 @@ fn run_tick(
                 }
 
                 if override_changed {
-                    reload_requested = true;
-                    if reload_request_reason.is_none() {
-                        reload_request_reason = Some(format!(
-                            "Node '{}' virtualization changed",
-                            node_name.clone()
-                        ));
+                    let priority = if target == LinkVirtualState::Physical {
+                        ReloadPriority::Urgent
                     } else {
-                        reload_request_reason = Some("Multiple node topology changes".to_string());
-                    }
+                        ReloadPriority::Normal
+                    };
+                    reload_controller.request_reload(
+                        priority,
+                        format!("Node '{}' virtualization changed", node_name.clone()),
+                    );
                 }
 
                 state.desired = target;
@@ -1199,12 +1183,16 @@ fn run_tick(
         }
     }
 
-    if reload_requested {
-        let why = reload_request_reason
-            .clone()
-            .unwrap_or_else(|| "Topology change".to_string());
-        match reload_controller.try_reload(now_unix, tg.links.reload_cooldown_minutes) {
+    if let Some(attempt) = reload_controller.poll_reload(now_unix, tg.links.reload_cooldown_minutes)
+    {
+        let crate::treeguard::reload::ReloadAttempt {
+            outcome,
+            request_reason,
+        } = attempt;
+
+        match outcome {
             ReloadOutcome::Success { message: _ } => {
+                let why = request_reason.unwrap_or_else(|| "Topology change".to_string());
                 push_activity(
                     activity,
                     TreeguardActivityEntry {
@@ -1241,6 +1229,7 @@ fn run_tick(
                 error,
                 next_allowed_unix,
             } => {
+                let why = request_reason.unwrap_or_else(|| "Topology change".to_string());
                 let extra = next_allowed_unix
                     .map(|t| format!(" next_allowed_unix={t}"))
                     .unwrap_or_default();

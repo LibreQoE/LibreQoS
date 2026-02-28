@@ -13,6 +13,7 @@ pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
 mod program_control;
+mod reload_lock;
 mod remote_commands;
 mod scheduler_control;
 mod shaped_devices_tracker;
