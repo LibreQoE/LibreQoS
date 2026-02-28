@@ -283,6 +283,9 @@ function validateConfig() {
     const unvirtualizeUtilPct = parseFloat(document.getElementById("unvirtualizeUtilPct").value);
     if (!validatePercent("Unvirtualize Utilization", unvirtualizeUtilPct)) return false;
 
+    const topLevelSafeUtilPct = parseFloat(document.getElementById("topLevelSafeUtilPct").value);
+    if (!validatePercent("Top-Level Safe Utilization", topLevelSafeUtilPct)) return false;
+
     const idleMinMinutes = parseInt(document.getElementById("idleMinMinutes").value);
     if (!validateNonNegativeInt("Idle Minimum Duration", idleMinMinutes)) return false;
 
@@ -351,6 +354,8 @@ function updateConfig() {
             min_state_dwell_minutes: parseInt(document.getElementById("minStateDwellMinutes").value),
             max_link_changes_per_hour: parseInt(document.getElementById("maxLinkChangesPerHour").value),
             reload_cooldown_minutes: parseInt(document.getElementById("reloadCooldownMinutes").value),
+            top_level_auto_virtualize: document.getElementById("topLevelAutoVirtualize").checked,
+            top_level_safe_util_pct: parseFloat(document.getElementById("topLevelSafeUtilPct").value),
         },
         circuits: {
             enabled: document.getElementById("circuitsEnabled").checked,
@@ -398,6 +403,9 @@ Promise.all([
 
     document.getElementById("linksEnabled").checked = links.enabled ?? true;
     document.getElementById("linksAllNodes").checked = links.all_nodes ?? false;
+    document.getElementById("topLevelAutoVirtualize").checked =
+        links.top_level_auto_virtualize ?? true;
+    document.getElementById("topLevelSafeUtilPct").value = links.top_level_safe_util_pct ?? 85.0;
     document.getElementById("idleUtilPct").value = links.idle_util_pct ?? 2.0;
     document.getElementById("idleMinMinutes").value = links.idle_min_minutes ?? 15;
     document.getElementById("linksRttMissingSeconds").value = links.rtt_missing_seconds ?? 120;

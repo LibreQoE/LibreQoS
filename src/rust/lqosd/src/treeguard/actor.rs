@@ -7,7 +7,8 @@ use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusD
 use crate::treeguard::TreeguardError;
 use crate::treeguard::reload::{ReloadController, ReloadOutcome};
 use crate::treeguard::state::{
-    is_sustained_idle, CircuitSqmState, CircuitState, LinkState, LinkVirtualState,
+    is_sustained_idle, is_sustained_window, CircuitSqmState, CircuitState, LinkState,
+    LinkVirtualState,
 };
 use crate::treeguard::{bakery, decisions, overrides};
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
@@ -31,6 +32,7 @@ static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
+const TOP_LEVEL_SAFE_SUSTAIN_MINUTES: u64 = 15;
 
 /// A message sent to the TreeGuard actor.
 #[derive(Debug)]
@@ -239,14 +241,27 @@ fn run_tick(
     let mut virtualized_nodes: usize = 0;
     let mut fq_codel_circuits: usize = 0;
 
+    let top_level_auto_virtualize = tg.links.enabled && tg.links.top_level_auto_virtualize;
     if tg.enabled
         && !tg.links.all_nodes
         && tg.links.nodes.is_empty()
+        && !top_level_auto_virtualize
         && !tg.circuits.all_circuits
         && tg.circuits.circuits.is_empty()
     {
         warnings.push(
             "TreeGuard is enabled but no nodes/circuits are allowlisted. No actions will occur."
+                .to_string(),
+        );
+    } else if tg.enabled
+        && !tg.links.all_nodes
+        && tg.links.nodes.is_empty()
+        && top_level_auto_virtualize
+        && !tg.circuits.all_circuits
+        && tg.circuits.circuits.is_empty()
+    {
+        warnings.push(
+            "TreeGuard is enabled with empty allowlists; only top-level auto-virtualization may occur."
                 .to_string(),
         );
     }
@@ -272,7 +287,16 @@ fn run_tick(
             .filter(|n| n.name != "Root")
             .count()
     } else {
-        tg.links.nodes.len()
+        let mut enrolled: FxHashSet<String> = tg.links.nodes.iter().cloned().collect();
+        if top_level_auto_virtualize {
+            let reader = NETWORK_JSON.read();
+            for node in reader.get_nodes_when_ready().iter() {
+                if node.name != "Root" && node.immediate_parent == Some(0) {
+                    enrolled.insert(node.name.clone());
+                }
+            }
+        }
+        enrolled.len()
     };
 
     let managed_circuits_count: usize = if tg.circuits.all_circuits {
@@ -426,6 +450,17 @@ fn run_tick(
         }
     } else {
         let reader = NETWORK_JSON.read();
+        let top_level_nodes: FxHashSet<String> = if top_level_auto_virtualize && !tg.links.all_nodes
+        {
+            reader
+                .get_nodes_when_ready()
+                .iter()
+                .filter(|n| n.name != "Root" && n.immediate_parent == Some(0))
+                .map(|n| n.name.clone())
+                .collect()
+        } else {
+            FxHashSet::default()
+        };
 
         // Reconcile nodes removed from allowlist, or removed from network.json.
         let treeguard_nodes_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
@@ -458,7 +493,7 @@ fn run_tick(
         } else {
             treeguard_nodes_with_overrides
                 .iter()
-                .filter(|n| !allowlisted_nodes.contains(*n))
+                .filter(|n| !allowlisted_nodes.contains(*n) && !top_level_nodes.contains(*n))
                 .cloned()
                 .collect()
         };
@@ -621,6 +656,24 @@ fn run_tick(
                     tg.links.idle_min_minutes,
                 );
 
+                let is_top_level = top_level_auto_virtualize && node.immediate_parent == Some(0);
+                let top_level_safe_util_pct =
+                    tg.links.top_level_safe_util_pct.clamp(0.0, 100.0) as f64;
+                if is_top_level {
+                    update_below_since(
+                        &mut state.down.top_level_safe_since_unix,
+                        now_unix,
+                        ewma_down,
+                        top_level_safe_util_pct,
+                    );
+                    update_below_since(
+                        &mut state.up.top_level_safe_since_unix,
+                        now_unix,
+                        ewma_up,
+                        top_level_safe_util_pct,
+                    );
+                }
+
                 let rtt_missing = match now_nanos_since_boot {
                     None => true,
                     Some(now_nanos) => {
@@ -656,19 +709,60 @@ fn run_tick(
                     up: ewma_up,
                 };
 
-                let decision = decisions::decide_link_virtualization(
-                    now_unix,
-                    true,
-                    cpu_max_pct,
-                    &tg.cpu,
-                    &tg.links,
-                    &tg.qoo,
-                    rtt_missing,
-                    qoo,
-                    util_ewma_pct,
-                    sustained_idle,
-                    state,
-                );
+                let decision = if is_top_level {
+                    let dwell_secs = tg.links.min_state_dwell_minutes.saturating_mul(60);
+                    let in_dwell_window = state
+                        .last_change_unix
+                        .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
+                    let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
+                        true
+                    } else {
+                        state.recent_changes_unix.len()
+                            >= tg.links.max_link_changes_per_hour as usize
+                    };
+                    if in_dwell_window || rate_limited {
+                        decisions::LinkVirtualDecision::NoChange
+                    } else {
+                        let sustained_safe = is_sustained_window(
+                            now_unix,
+                            state.down.top_level_safe_since_unix,
+                            state.up.top_level_safe_since_unix,
+                            TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
+                        );
+                        let util_high = util_ewma_pct.down >= top_level_safe_util_pct
+                            || util_ewma_pct.up >= top_level_safe_util_pct;
+                        match state.desired {
+                            LinkVirtualState::Physical => {
+                                if sustained_safe {
+                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+                                } else {
+                                    decisions::LinkVirtualDecision::NoChange
+                                }
+                            }
+                            LinkVirtualState::Virtual => {
+                                if util_high {
+                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Physical)
+                                } else {
+                                    decisions::LinkVirtualDecision::NoChange
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    decisions::decide_link_virtualization(
+                        now_unix,
+                        true,
+                        cpu_max_pct,
+                        &tg.cpu,
+                        &tg.links,
+                        &tg.qoo,
+                        rtt_missing,
+                        qoo,
+                        util_ewma_pct,
+                        sustained_idle,
+                        state,
+                    )
+                };
 
                 if let decisions::LinkVirtualDecision::Set(target) = decision {
                     if target == state.desired {
@@ -736,7 +830,20 @@ fn run_tick(
                                 LinkVirtualState::Virtual => "virtualize".to_string(),
                             },
                             persisted: persist && persisted_ok,
-                            reason: "Decision policy matched".to_string(),
+                            reason: if is_top_level {
+                                match target {
+                                    LinkVirtualState::Virtual => format!(
+                                        "Top-level safe: sustained utilization below {:.1}% for {} minutes",
+                                        top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
+                                    ),
+                                    LinkVirtualState::Physical => format!(
+                                        "Top-level unsafe: utilization above {:.1}%",
+                                        top_level_safe_util_pct
+                                    ),
+                                }
+                            } else {
+                                "Decision policy matched".to_string()
+                            },
                         },
                     );
                     status.last_action_summary = Some(format!(
@@ -757,7 +864,14 @@ fn run_tick(
                 }
             }
         } else {
-            for node_name in tg.links.nodes.iter() {
+            let mut enrolled_nodes: Vec<String> = tg.links.nodes.clone();
+            if top_level_auto_virtualize {
+                enrolled_nodes.extend(top_level_nodes.iter().cloned());
+            }
+            enrolled_nodes.sort();
+            enrolled_nodes.dedup();
+
+            for node_name in enrolled_nodes.iter() {
                 if operator_virtual_node_overrides.contains(node_name) {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
@@ -877,6 +991,24 @@ fn run_tick(
                 tg.links.idle_min_minutes,
             );
 
+            let is_top_level = top_level_auto_virtualize && node.immediate_parent == Some(0);
+            let top_level_safe_util_pct =
+                tg.links.top_level_safe_util_pct.clamp(0.0, 100.0) as f64;
+            if is_top_level {
+                update_below_since(
+                    &mut state.down.top_level_safe_since_unix,
+                    now_unix,
+                    ewma_down,
+                    top_level_safe_util_pct,
+                );
+                update_below_since(
+                    &mut state.up.top_level_safe_since_unix,
+                    now_unix,
+                    ewma_up,
+                    top_level_safe_util_pct,
+                );
+            }
+
             let rtt_missing = match now_nanos_since_boot {
                 None => true,
                 Some(now_nanos) => {
@@ -911,19 +1043,59 @@ fn run_tick(
                 up: ewma_up,
             };
 
-            let decision = decisions::decide_link_virtualization(
-                now_unix,
-                allowlisted_nodes.contains(node_name),
-                cpu_max_pct,
-                &tg.cpu,
-                &tg.links,
-                &tg.qoo,
-                rtt_missing,
-                qoo,
-                util_ewma_pct,
-                sustained_idle,
-                state,
-            );
+            let decision = if is_top_level {
+                let dwell_secs = tg.links.min_state_dwell_minutes.saturating_mul(60);
+                let in_dwell_window = state
+                    .last_change_unix
+                    .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
+                let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
+                    true
+                } else {
+                    state.recent_changes_unix.len() >= tg.links.max_link_changes_per_hour as usize
+                };
+                if in_dwell_window || rate_limited {
+                    decisions::LinkVirtualDecision::NoChange
+                } else {
+                    let sustained_safe = is_sustained_window(
+                        now_unix,
+                        state.down.top_level_safe_since_unix,
+                        state.up.top_level_safe_since_unix,
+                        TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
+                    );
+                    let util_high = util_ewma_pct.down >= top_level_safe_util_pct
+                        || util_ewma_pct.up >= top_level_safe_util_pct;
+                    match state.desired {
+                        LinkVirtualState::Physical => {
+                            if sustained_safe {
+                                decisions::LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+                            } else {
+                                decisions::LinkVirtualDecision::NoChange
+                            }
+                        }
+                        LinkVirtualState::Virtual => {
+                            if util_high {
+                                decisions::LinkVirtualDecision::Set(LinkVirtualState::Physical)
+                            } else {
+                                decisions::LinkVirtualDecision::NoChange
+                            }
+                        }
+                    }
+                }
+            } else {
+                decisions::decide_link_virtualization(
+                    now_unix,
+                    allowlisted_nodes.contains(node_name),
+                    cpu_max_pct,
+                    &tg.cpu,
+                    &tg.links,
+                    &tg.qoo,
+                    rtt_missing,
+                    qoo,
+                    util_ewma_pct,
+                    sustained_idle,
+                    state,
+                )
+            };
 
             if let decisions::LinkVirtualDecision::Set(target) = decision {
                 if target == state.desired {
@@ -991,7 +1163,20 @@ fn run_tick(
                             LinkVirtualState::Virtual => "virtualize".to_string(),
                         },
                         persisted: persist && persisted_ok,
-                        reason: "Decision policy matched".to_string(),
+                        reason: if is_top_level {
+                            match target {
+                                LinkVirtualState::Virtual => format!(
+                                    "Top-level safe: sustained utilization below {:.1}% for {} minutes",
+                                    top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
+                                ),
+                                LinkVirtualState::Physical => format!(
+                                    "Top-level unsafe: utilization above {:.1}%",
+                                    top_level_safe_util_pct
+                                ),
+                            }
+                        } else {
+                            "Decision policy matched".to_string()
+                        },
                     },
                 );
                 status.last_action_summary = Some(format!(
@@ -1689,6 +1874,24 @@ fn update_idle_since(idle_since: &mut Option<u64>, now_unix: u64, util_pct: f64,
         }
     } else {
         *idle_since = None;
+    }
+}
+
+/// Updates a "below threshold since" timestamp based on utilization and a threshold.
+///
+/// This function is not pure: it mutates `below_since`.
+fn update_below_since(
+    below_since: &mut Option<u64>,
+    now_unix: u64,
+    util_pct: f64,
+    threshold_pct: f64,
+) {
+    if util_pct < threshold_pct {
+        if below_since.is_none() {
+            *below_since = Some(now_unix);
+        }
+    } else {
+        *below_since = None;
     }
 }
 

@@ -94,6 +94,25 @@
             </div>
 
             <div class="mb-3">
+                <label class="form-label">Top-Level Nodes</label>
+
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="topLevelAutoVirtualize">
+                    <label class="form-check-label" for="topLevelAutoVirtualize">Auto-virtualize top-level nodes</label>
+                    <div class="form-text">
+                        Top-level nodes are keys of the root object in <code>network.json</code> (e.g. <code>Site_1</code>). If enabled,
+                        TreeGuard may virtualize them even if not allowlisted.
+                    </div>
+                </div>
+
+                <div>
+                    <label for="topLevelSafeUtilPct" class="form-label">Top-Level Safe Utilization (%)</label>
+                    <input type="number" class="form-control" id="topLevelSafeUtilPct" min="0" max="100" step="0.1" value="85.0">
+                    <div class="form-text">If sustained below this threshold for 15 minutes, TreeGuard may virtualize top-level nodes.</div>
+                </div>
+            </div>
+
+            <div class="mb-3">
                 <label for="idleUtilPct" class="form-label">Idle Utilization (%)</label>
                 <input type="number" class="form-control" id="idleUtilPct" min="0" max="100" step="0.1" value="2.0">
                 <div class="form-text">Utilization below which a link is considered idle (after smoothing)</div>

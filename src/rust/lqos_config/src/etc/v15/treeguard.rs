@@ -102,6 +102,12 @@ pub struct TreeguardLinksConfig {
     pub max_link_changes_per_hour: u32,
     /// Cooldown in minutes between topology reload attempts.
     pub reload_cooldown_minutes: u64,
+    /// Whether TreeGuard should automatically virtualize top-level nodes (root object keys in
+    /// `network.json`) when they appear safe.
+    pub top_level_auto_virtualize: bool,
+    /// Utilization percentage below which a top-level node is considered safe to virtualize
+    /// (sustained for a fixed window).
+    pub top_level_safe_util_pct: f32,
 }
 
 impl Default for TreeguardLinksConfig {
@@ -117,6 +123,8 @@ impl Default for TreeguardLinksConfig {
             min_state_dwell_minutes: 30,
             max_link_changes_per_hour: 4,
             reload_cooldown_minutes: 10,
+            top_level_auto_virtualize: true,
+            top_level_safe_util_pct: 85.0,
         }
     }
 }

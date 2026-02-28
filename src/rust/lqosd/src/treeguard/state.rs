@@ -66,6 +66,9 @@ pub struct LinkDirectionState {
     pub util_ewma_pct: Ewma,
     /// When the link first went idle (seconds since UNIX epoch), if currently idle.
     pub idle_since_unix: Option<u64>,
+    /// When the link first went below the configured top-level safe-util threshold (seconds since
+    /// UNIX epoch), if currently below.
+    pub top_level_safe_since_unix: Option<u64>,
 }
 
 /// Per-node link virtualization tracking state.
@@ -110,18 +113,32 @@ pub struct CircuitState {
 /// Returns true if both directions have been idle for at least `idle_min_minutes`.
 ///
 /// This function is pure: it has no side effects.
+pub fn is_sustained_window(
+    now_unix: u64,
+    down_since_unix: Option<u64>,
+    up_since_unix: Option<u64>,
+    min_minutes: u64,
+) -> bool {
+    let (Some(down_since), Some(up_since)) = (down_since_unix, up_since_unix) else {
+        return false;
+    };
+
+    let min_secs = min_minutes.saturating_mul(60);
+    now_unix.saturating_sub(down_since) >= min_secs && now_unix.saturating_sub(up_since) >= min_secs
+}
+
 pub fn is_sustained_idle(
     now_unix: u64,
     down_idle_since_unix: Option<u64>,
     up_idle_since_unix: Option<u64>,
     idle_min_minutes: u64,
 ) -> bool {
-    let (Some(down_since), Some(up_since)) = (down_idle_since_unix, up_idle_since_unix) else {
-        return false;
-    };
-
-    let min_secs = idle_min_minutes.saturating_mul(60);
-    now_unix.saturating_sub(down_since) >= min_secs && now_unix.saturating_sub(up_since) >= min_secs
+    is_sustained_window(
+        now_unix,
+        down_idle_since_unix,
+        up_idle_since_unix,
+        idle_min_minutes,
+    )
 }
 
 #[cfg(test)]
