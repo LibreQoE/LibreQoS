@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 Welcome to the LibreQoS documentation
-====================================
+=====================================
 
 .. toctree::
    :maxdepth: 1
@@ -24,6 +24,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/configuration
    docs/v2.0/glossary
    docs/v2.0/operating-modes
+   docs/v2.0/best-practices
    docs/v2.0/configuration-advanced
    docs/v2.0/integrations
    docs/v2.0/components
