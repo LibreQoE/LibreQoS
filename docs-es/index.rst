@@ -28,6 +28,9 @@ Bienvenido a la documentación de LibreQoS
    v2.0/stormguard-es
    v2.0/high-availability-es
    v2.0/scale-topology-es
+   v2.0/recipes-es
+   v2.0/case-studies-es
+   v2.0/future-development-inputs-es
    v2.0/update-es
    v2.0/troubleshooting-es
 
