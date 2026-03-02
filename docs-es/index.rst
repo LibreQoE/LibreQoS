@@ -45,6 +45,7 @@ Bienvenido a la documentación de LibreQoS
    :maxdepth: 1
    :caption: Misceláneo
 
+   v2.0/libreqos-backend-architecture-es
    v2.0/cake-es
    v2.0/performance-tuning-es
    v2.0/extras-es

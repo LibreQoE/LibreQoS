@@ -49,6 +49,7 @@ Welcome to the LibreQoS documentation
    :maxdepth: 1
    :caption: Misc:
 
+   docs/v2.0/libreqos-backend-architecture
    docs/v2.0/cake
    docs/v2.0/performance-tuning
    docs/v2.0/extras
