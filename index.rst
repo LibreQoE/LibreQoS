@@ -31,6 +31,9 @@ Welcome to the LibreQoS documentation
    docs/v2.0/scale-topology
    docs/v2.0/stormguard
    docs/v2.0/high-availability
+   docs/v2.0/recipes
+   docs/v2.0/case-studies
+   docs/v2.0/future-development-inputs
    docs/v2.0/update
    docs/v2.0/troubleshooting
 
