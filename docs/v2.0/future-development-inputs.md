@@ -1,6 +1,6 @@
 # Future Development Inputs
 
-This page summarizes recurring operator feedback inputs reviewed for LibreQoS, supported by NLNet deliverable work.
+This page summarizes recurring operator feedback patterns reviewed for LibreQoS, supported by NLNet deliverable work.
 
 ## Scope and Method
 
@@ -11,39 +11,34 @@ Review window:
 Input sources:
 
 - GitHub issues from the LibreQoS repository
-- Community support channels
+- Zulip channels:
+  - `6-Community-Help-Chat`
+  - `1-general`
+  - `17-LibreQoS-Support-(Requires-Insight)`
+- Additional operator support streams used for technical pattern validation
+
+Method update:
+
+- Message-level review was performed on raw Zulip message text (not topic names alone).
+- Findings were normalized into recurring symptom patterns and sanitized for public documentation.
 
 Reviewed volume:
 
 - 139 GitHub issues
-- 10,275 community-channel messages
+- 10,275 Zulip messages
 
 ## Recurring Themes
 
 These themes are intended to help prioritize future work. They are not release commitments.
 
-## 1) UI clarity and operator confidence
+## 1) Source-of-truth safety and integration data hygiene
 
 Example symptoms:
 
-- Blank or partially empty data views
-- Missing context when diagnosing state
-- Inconsistent status cues across screens
-
-Representative issues:
-
-- [#922 - Flowmap doesn't render](https://github.com/LibreQoE/LibreQoS/issues/922)
-- [#921 - ASN Explorer dropdowns are empty](https://github.com/LibreQoE/LibreQoS/issues/921)
-- [#920 - Tree Overview shows blank on low-traffic boxes](https://github.com/LibreQoE/LibreQoS/issues/920)
-- [#831 - Dashboard goes blank when used by same user in multiple locations](https://github.com/LibreQoE/LibreQoS/issues/831)
-
-## 2) Integration behavior and source-of-truth safety
-
-Example symptoms:
-
-- Confusion around overwrite ownership of shaping files
-- Integration matching edge cases
-- Unclear defaults during integration onboarding
+- Duplicate IP assignments causing reload failures or partial shaping
+- Parent-node mismatches and invalid topology references
+- Confusion around overwrite ownership for `network.json` and `ShapedDevices.csv`
+- Edge cases in CRM/NMS matching and stale assignment state
 
 Representative issues:
 
@@ -52,13 +47,14 @@ Representative issues:
 - [#845 - UISP: multi-services with same site name](https://github.com/LibreQoE/LibreQoS/issues/845)
 - [#699 - UISP: trailing spaces break matching](https://github.com/LibreQoE/LibreQoS/issues/699)
 
-## 3) Onboarding and early deployment friction
+## 2) Startup reliability and onboarding friction
 
 Example symptoms:
 
-- First-run setup breakpoints
-- Startup/configuration workflow confusion
-- Installer/default behavior mismatches
+- Scheduler/service startup failures after reboot/update
+- Missing dependencies, file ownership mismatches, or service ordering races
+- First-run install and mode-selection confusion (bridge/single-interface assumptions)
+- Setup workflow breakpoints that reduce operator confidence early
 
 Representative issues:
 
@@ -67,28 +63,30 @@ Representative issues:
 - [#728 - Default installation bridge-mode mismatch](https://github.com/LibreQoE/LibreQoS/issues/728)
 - [#667 - Add YAML creation to setup installer](https://github.com/LibreQoE/LibreQoS/issues/667)
 
-## 4) Scale/topology guardrails and proactive warnings
+## 3) Topology/path modeling, scale guardrails, and operator control
 
 Example symptoms:
 
-- Queue depth pressure in complex hierarchies
-- Overflow-risk visibility needs
-- Parent-node hygiene and topology clarity concerns
+- Deep hierarchy pressure and queue complexity under scale
+- Dashboard "stuck/loading" or confusing UI states tied to topology validity problems
+- Need for stronger validation and warnings for parent/path correctness
+- Multi-edge and failover environments requiring explicit operator-controlled path intent
 
 Representative issues:
 
 - [#913 - Tree verbosity and HTB depth pressure](https://github.com/LibreQoE/LibreQoS/issues/913)
-- [#801 - Visible warning for TC ID overflow](https://github.com/LibreQoE/LibreQoS/issues/801)
 - [#856 - Improve no-parent circuit warnings](https://github.com/LibreQoE/LibreQoS/issues/856)
-- [#560 - htb too many events under load](https://github.com/LibreQoE/LibreQoS/issues/560)
+- [#801 - Visible warning for TC ID overflow](https://github.com/LibreQoE/LibreQoS/issues/801)
+- [#920 - Tree Overview shows blank on low-traffic boxes](https://github.com/LibreQoE/LibreQoS/issues/920)
 
-## 5) Performance and hardware-fit tuning
+## 4) Performance fit, hardware profile, and runtime stability
 
 Example symptoms:
 
-- Core utilization behavior on heterogeneous CPU platforms
-- Memory growth concerns
-- Throughput/headroom fit on different hardware classes
+- Throughput shortfalls on unsupported NICs or low single-thread CPUs
+- Reload-related instability under high churn
+- Memory-growth concerns and high-scale capacity planning pressure
+- MTU/encapsulation mismatches that mimic shaping faults
 
 Representative issues:
 
@@ -99,12 +97,12 @@ Representative issues:
 
 ## Candidate Directions Under Evaluation
 
-1. Improve guided diagnostics and empty-state clarity in WebUI.
-2. Make source-of-truth ownership and overwrite behavior more explicit.
-3. Expand integration pre-flight validation and edge-case handling.
-4. Strengthen scale guardrails and early warning ergonomics.
-5. Expand deployment runbooks for common architecture patterns.
-6. Improve performance-fit guidance by hardware and topology profile.
+1. Add stronger pre-flight validation for integration-managed deployments.
+2. Improve source-of-truth ownership visibility and overwrite safety cues.
+3. Harden startup reliability and installer default-path checks.
+4. Expand topology linting and parent/path correctness guardrails.
+5. Improve operator-facing diagnostics for "loading/blank" UI states.
+6. Extend hardware-fit and peak-load guidance by deployment profile.
 
 ## Out of Scope
 
