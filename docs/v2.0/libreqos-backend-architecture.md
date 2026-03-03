@@ -7,6 +7,8 @@ This page explains how LibreQoS backend systems fit together at runtime:
 3. AQM behavior (`fq_codel`, `CAKE`) and why benefits can appear below strict line rate
 4. Control-path updates (Scheduler, `lqosd`, Bakery, incremental vs full reload)
 5. Practical design boundaries for operators
+
+For a full queueing deep-dive, see [HTB + fq_codel + CAKE: Detailed Queueing Behavior](htb_fq_codel_cake.md).
  
 ## Source Context
 
@@ -358,10 +360,11 @@ Recommended order:
 
 ## Related Reading
 
-- [CAKE](cake.md)
+- [HTB + fq_codel + CAKE: Detailed Queueing Behavior](htb_fq_codel_cake.md)
+- [CAKE (DSCP quick reference)](cake.md)
 - [Performance Tuning](performance-tuning.md)
 - [Scale Planning and Topology Design](scale-topology.md)
 - [Best Practices Guide for ISP Operations](best-practices.md)
 - [Deployment Recipes](recipes.md)
-- [Introducing the LibreQoS Bakery (Herbert)](https://devblog.libreqos.com/posts/0005-lqos-bakery/)
-- [Fixing the Reload Penalty in LibreQoS (Herbert)](https://devblog.libreqos.com/posts/0013-no-more-locks/)
+- [Introducing the LibreQoS Bakery](https://devblog.libreqos.com/posts/0005-lqos-bakery/)
+- [Fixing the Reload Penalty in LibreQoS](https://devblog.libreqos.com/posts/0013-no-more-locks/)

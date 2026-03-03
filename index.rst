@@ -31,6 +31,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/node-manager-ui
    docs/v2.0/scale-topology
    docs/v2.0/stormguard
+   docs/v2.0/treeguard
    docs/v2.0/high-availability
    docs/v2.0/recipes
    docs/v2.0/case-studies

@@ -26,6 +26,7 @@ Bienvenido a la documentación de LibreQoS
    v2.0/components-es
    v2.0/node-manager-ui-es
    v2.0/stormguard-es
+   v2.0/treeguard-es
    v2.0/high-availability-es
    v2.0/scale-topology-es
    v2.0/recipes-es
@@ -46,6 +47,7 @@ Bienvenido a la documentación de LibreQoS
    :caption: Misceláneo
 
    v2.0/libreqos-backend-architecture-es
+   v2.0/htb_fq_codel_cake-es
    v2.0/cake-es
    v2.0/performance-tuning-es
    v2.0/extras-es
