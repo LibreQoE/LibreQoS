@@ -238,6 +238,16 @@ Examples:
 
 If `sqm` is empty/missing, global queue defaults apply.
 
+#### TreeGuard and per-circuit SQM (upcoming feature)
+
+TreeGuard is an upcoming v2.0 feature that can dynamically adjust per-circuit SQM (`cake`/`fq_codel`) based on circuit conditions.
+
+Important:
+- TreeGuard is not enabled by default.
+- Default LibreQoS behavior remains your configured/global SQM unless you explicitly enable TreeGuard.
+
+See [TreeGuard (Upcoming v2.0 Feature)](treeguard.md).
+
 Here is an example of an entry in the ShapedDevices.csv file:
 | Circuit ID | Circuit Name                                        | Device ID | Device Name | Parent Node | MAC | IPv4                    | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
 |------------|-----------------------------------------------------|-----------|-------------|-------------|-----|-------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|

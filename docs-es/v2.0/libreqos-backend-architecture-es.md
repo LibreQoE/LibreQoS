@@ -8,6 +8,8 @@ Esta página explica cómo se integran los sistemas backend de LibreQoS en tiemp
 4. Actualizaciones del plano de control (Scheduler, `lqosd`, Bakery, incremental vs recarga completa)
 5. Límites de diseño prácticos para operadores
 
+Para un análisis profundo de colas, consulte [HTB + fq_codel + CAKE: Comportamiento Detallado de Colas](htb_fq_codel_cake-es.md).
+
 ## Contexto de Fuente
 
 Esta página incorpora detalles de publicaciones públicas del devblog:
@@ -350,6 +352,7 @@ Orden recomendado:
 
 ## Lectura Relacionada
 
+- [HTB + fq_codel + CAKE: Comportamiento Detallado de Colas](htb_fq_codel_cake-es.md)
 - [CAKE](cake-es.md)
 - [Ajuste de Rendimiento](performance-tuning-es.md)
 - [Planificación de Escala y Diseño de Topología](scale-topology-es.md)
