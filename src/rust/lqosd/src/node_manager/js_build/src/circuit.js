@@ -8,6 +8,7 @@ import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey} from "./graphs/flow_sankey";
@@ -324,6 +325,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
+    thead.appendChild(theading("RTT Exclude"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
@@ -421,6 +423,19 @@ function updateTrafficTab(msg) {
         const qooUp = qoq ? qoq.upload_total : null;
         const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
 
+        const remoteIp = String(flow[0].remote_ip || "").trim();
+        const excludeBtn = document.createElement("button");
+        excludeBtn.type = "button";
+        excludeBtn.className = "btn btn-outline-secondary btn-sm";
+        excludeBtn.textContent = "Exclude RTT…";
+        excludeBtn.disabled = !remoteIp;
+        excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+        excludeBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+        });
+
         // Collect row data
         tableRows.push({
             sortKeys: {
@@ -433,7 +448,7 @@ function updateTrafficTab(msg) {
                 qoo: qooForSort,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
-                ip: flow[0].remote_ip
+                ip: remoteIp
             },
             columns: [
                 flow[0].protocol_name,
@@ -451,7 +466,8 @@ function updateTrafficTab(msg) {
                 formatQooScore(qooUp),
                 flow[0].asn_name,
                 flow[0].asn_country,
-                flow[0].remote_ip
+                remoteIp,
+                excludeBtn,
             ],
             opacity: 1.0 - opacity,
             visible: visible
@@ -486,6 +502,14 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
+            const isNode = col && typeof col === "object" && typeof col.nodeType === "number";
+            if (isNode) {
+                const td = document.createElement("td");
+                td.classList.add("text-center");
+                td.appendChild(col);
+                row.appendChild(td);
+                return;
+            }
             if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));

@@ -1,5 +1,8 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
+const urlParams = new URLSearchParams(window.location.search);
+const prefillDoNotTrack = String(urlParams.get("prefillDoNotTrack") || "").trim();
+
 function isValidCIDR(cidr) {
     try {
         const [ip, mask] = String(cidr).trim().split('/');
@@ -196,6 +199,64 @@ loadConfig(() => {
                 });
             }
         });
+
+        // Optional prefill from other UI pages (e.g. Circuit/ASN Explorer).
+        if (prefillDoNotTrack) {
+            const select = document.getElementById("doNotTrackSubnets");
+            const input = document.getElementById("newDoNotTrackSubnet");
+            const cardBody = select ? select.closest(".card-body") : null;
+            const card = cardBody ? cardBody.closest(".card") : null;
+
+            const existingNotice = document.getElementById("doNotTrackPrefillNotice");
+            if (existingNotice) existingNotice.remove();
+
+            const valid = isValidCIDR(prefillDoNotTrack);
+            const already = getSubnetsFromList("doNotTrackSubnets").includes(prefillDoNotTrack);
+
+            if (cardBody) {
+                const notice = document.createElement("div");
+                notice.id = "doNotTrackPrefillNotice";
+                notice.className = valid ? "alert alert-info py-2 small" : "alert alert-warning py-2 small";
+
+                const line1 = document.createElement("div");
+                const strong = document.createElement("strong");
+                strong.textContent = "Prefilled exclusion: ";
+                const code = document.createElement("code");
+                code.textContent = prefillDoNotTrack;
+                line1.appendChild(strong);
+                line1.appendChild(code);
+                notice.appendChild(line1);
+
+                const line2 = document.createElement("div");
+                if (!valid) {
+                    line2.textContent = "This doesn’t look like valid CIDR notation. Please verify/edit it manually.";
+                } else if (already) {
+                    line2.textContent = "This entry is already present in the list.";
+                } else {
+                    line2.textContent = "Click Add, then Save Changes to apply it.";
+                }
+                notice.appendChild(line2);
+
+                cardBody.insertBefore(notice, cardBody.firstChild);
+            }
+
+            if (valid) {
+                if (input) {
+                    input.value = prefillDoNotTrack;
+                    input.focus();
+                }
+                if (already && select) {
+                    select.value = prefillDoNotTrack;
+                }
+                if (card) {
+                    card.scrollIntoView({ behavior: "smooth", block: "center" });
+                    card.classList.add("border", "border-info");
+                    setTimeout(() => {
+                        card.classList.remove("border", "border-info");
+                    }, 3000);
+                }
+            }
+        }
     } else {
         console.error("Flows configuration not found in window.config");
     }
