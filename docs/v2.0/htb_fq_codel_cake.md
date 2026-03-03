@@ -411,4 +411,4 @@ Modern translation notes:
 - [FQ_Codel wiki (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/FQ_Codel/)
 - [CAKE vs FQ_Codel (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/Cake_vs_FQ_CODEL/)
 - [CoDel/fq_codel project wiki index (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/)
-- Toke Høiland-Jorgensen, Dave Taht, Jonathan Morton. *Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways*, IEEE LANMAN, 2018.
+- [Toke Høiland-Jorgensen, Dave Taht, Jonathan Morton. *Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways*, IEEE LANMAN, 2018.](https://arxiv.org/abs/1804.07617)
