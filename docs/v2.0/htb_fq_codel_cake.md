@@ -401,7 +401,6 @@ Modern translation notes:
 ## 11) References
 
 - [LibreQoS Backend Architecture](libreqos-backend-architecture.md)
-- [CAKE (DSCP quick reference)](cake.md)
 - [tc-htb man page (man7)](https://man7.org/linux/man-pages/man8/tc-htb.8.html)
 - [tc-fq_codel man page (man7)](https://man7.org/linux/man-pages/man8/tc-fq_codel.8.html)
 - [tc-cake man page (man7)](https://man7.org/linux/man-pages/man8/tc-cake.8.html)

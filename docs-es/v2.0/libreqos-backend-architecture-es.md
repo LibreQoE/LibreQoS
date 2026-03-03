@@ -353,7 +353,6 @@ Orden recomendado:
 ## Lectura Relacionada
 
 - [HTB + fq_codel + CAKE: Comportamiento Detallado de Colas](htb_fq_codel_cake-es.md)
-- [CAKE](cake-es.md)
 - [Ajuste de Rendimiento](performance-tuning-es.md)
 - [Planificación de Escala y Diseño de Topología](scale-topology-es.md)
 - [Recetas de Despliegue](recipes-es.md)

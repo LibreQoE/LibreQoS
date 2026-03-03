@@ -46,5 +46,5 @@ HTL-ROOM-1204,Room1204-Device,HTL-ROOM-1204,Room1204-DeviceA,Floor12,,100.70.12.
 
 - [Requisitos del Sistema](requirements-es.md)
 - [Planeacion de Escala y Topologia](scale-topology-es.md)
-- [CAKE](cake-es.md)
+- [HTB + fq-codel / CAKE](htb_fq_codel_cake-es.md)
 - [Troubleshooting](troubleshooting-es.md)

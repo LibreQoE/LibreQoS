@@ -16,8 +16,9 @@ Use recipes after you have completed base install and health validation in [Quic
 2. [Maritime variable WAN with StormGuard](recipes-maritime-stormguard.md)
 3. [Event WiFi with subnet-group shaping](recipes-event-wifi.md)
 4. [Hotel and hospitality per-device shaping](recipes-hospitality.md)
-5. [Switch-centric fabric with maintenance bypass (plus SD-WAN variant)](recipes-switch-fabric-sdwan.md)
-6. [Proxmox VM deployment with 3 NICs](recipes-proxmox-vm.md)
+5. [Education / university per-IP shaping for real-time calls](recipes-education.md)
+6. [Switch-centric fabric with maintenance bypass (plus SD-WAN variant)](recipes-switch-fabric-sdwan.md)
+7. [Proxmox VM deployment with 3 NICs](recipes-proxmox-vm.md)
 
 ```{toctree}
 :hidden:
@@ -26,6 +27,7 @@ recipes-wisp-fisp-integration
 recipes-maritime-stormguard
 recipes-event-wifi
 recipes-hospitality
+recipes-education
 recipes-switch-fabric-sdwan
 recipes-proxmox-vm
 ```

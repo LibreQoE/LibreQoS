@@ -401,7 +401,6 @@ Notas de traducción moderna:
 ## 11) Referencias
 
 - [Arquitectura Backend de LibreQoS](libreqos-backend-architecture-es.md)
-- [CAKE (referencia rápida DSCP)](cake-es.md)
 - [TreeGuard (Función Próxima de v2.0)](treeguard-es.md)
 - [tc-htb man page (man7)](https://man7.org/linux/man-pages/man8/tc-htb.8.html)
 - [tc-fq_codel man page (man7)](https://man7.org/linux/man-pages/man8/tc-fq_codel.8.html)
