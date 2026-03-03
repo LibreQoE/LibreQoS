@@ -361,7 +361,7 @@ Recommended order:
 ## Related Reading
 
 - [HTB + fq_codel + CAKE: Detailed Queueing Behavior](htb_fq_codel_cake.md)
-- [CAKE (DSCP quick reference)](cake.md)
+- [HTB + fq-codel / CAKE](htb_fq_codel_cake.md)
 - [Performance Tuning](performance-tuning.md)
 - [Scale Planning and Topology Design](scale-topology.md)
 - [Best Practices Guide for ISP Operations](best-practices.md)

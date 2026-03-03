@@ -47,7 +47,6 @@ Bienvenido a la documentación de LibreQoS
    :caption: Misceláneo
 
    v2.0/libreqos-backend-architecture-es
-   v2.0/htb_fq_codel_cake-es
-   v2.0/cake-es
+   HTB + fq-codel / CAKE <v2.0/htb_fq_codel_cake-es>
    v2.0/performance-tuning-es
    v2.0/extras-es
