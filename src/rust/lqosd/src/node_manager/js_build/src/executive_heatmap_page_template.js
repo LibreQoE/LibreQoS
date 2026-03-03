@@ -14,7 +14,7 @@ const metricConfigs = {
     rtt: {
         title: "RTT (p50/p90) Heatmap",
         metricKey: "rtt",
-        colorFn: (v) => colorByRttMs(v, 200),
+        colorFn: (v) => colorByRttMs(v),
         formatFn: (v) => formatLatest(v, "ms"),
         icon: "fa-stopwatch",
         description: "Full list of sites, circuits, and ASNs sorted by latest RTT (p50/p90 quadrants).",

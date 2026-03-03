@@ -2,6 +2,7 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
+import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 
 /**
@@ -134,10 +135,7 @@ export class TopTreeSankey extends BaseDashlet {
                 rtt = lastRtt[name];
             }
             lastRtt[name] = rtt;
-            const rttPercent = Math.min(100, (rtt / 200) * 100);
-            const color = isColorBlindMode()
-                ? lerpViridis(rttPercent / 100)
-                : lerpGreenToRedViaOrange(200 - rtt, 200);
+            const color = colorByRttMs(rtt);
             return { itemStyle: { color } };
         };
 
@@ -226,10 +224,7 @@ export class TopTreeSankey extends BaseDashlet {
             } else {
                 lastRtt[name] = 0;
             }
-            let rttPercent = Math.min(100, (lastRtt[name] / 200) * 100);
-            let color = isColorBlindMode()
-                ? lerpViridis(rttPercent / 100)
-                : lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
+            let color = colorByRttMs(lastRtt[name]);
 
             if (downBitsPerSec > 0) {
                 nodes.push({ name: r[1].name, label, itemStyle: { color } });

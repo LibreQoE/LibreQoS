@@ -2,7 +2,7 @@
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
-import {colorByQoqScore} from "./helpers/color_scales";
+import {colorByQoqScore, colorByRttMs} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
@@ -37,6 +37,9 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let excludeRttToggle = null;
+let excludeRttLastValue = false;
+let excludeRttBusy = false;
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -87,6 +90,40 @@ function requestCircuitById(onSuccess, onError) {
     wsClient.send({ CircuitById: { id: circuit_id } });
 }
 
+function initExcludeRttToggle() {
+    excludeRttToggle = document.getElementById("excludeRttToggle");
+    if (!excludeRttToggle) return;
+
+    const listenOnceMatch = (eventName, predicate, handler) => {
+        const wrapped = (msg) => {
+            if (!predicate(msg)) return;
+            wsClient.off(eventName, wrapped);
+            handler(msg);
+        };
+        wsClient.on(eventName, wrapped);
+    };
+
+    excludeRttToggle.addEventListener("change", () => {
+        if (excludeRttBusy) return;
+        const desired = !!excludeRttToggle.checked;
+        excludeRttBusy = true;
+        listenOnceMatch(
+            "SetCircuitRttExcludedResult",
+            (msg) => !msg?.circuit_id || msg.circuit_id === circuit_id,
+            (msg) => {
+                excludeRttBusy = false;
+                if (!msg || !msg.ok) {
+                    alert((msg && msg.message) ? msg.message : "Failed to update RTT exclusion");
+                    excludeRttToggle.checked = !!excludeRttLastValue;
+                    return;
+                }
+                excludeRttLastValue = desired;
+            },
+        );
+        wsClient.send({ SetCircuitRttExcluded: { circuit_id, excluded: desired } });
+    });
+}
+
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
         CircuitWatcher: {
@@ -99,6 +136,10 @@ function connectPrivateChannel() {
             updateSpeedometer(msg.devices);
             if (qooGauge !== null) {
                 qooGauge.update(msg.qoo_score);
+            }
+            if (excludeRttToggle && msg.rtt_excluded !== undefined) {
+                excludeRttLastValue = !!msg.rtt_excluded;
+                excludeRttToggle.checked = excludeRttLastValue;
             }
         }
     });
@@ -232,8 +273,8 @@ function formatRttNanos(rttNanos) {
     if (n === 0) {
         return "<span class='muted' style='color: var(--bs-border-color)'>■</span>-";
     }
-    const rttInMs = Math.min(200, n / 1000000);
-    const color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    const rttInMs = n / 1000000;
+    const color = colorByRttMs(rttInMs);
     return "<span class='muted' style='color: " + color + "'>■</span>" + scaleNanos(n);
 }
 
@@ -1092,6 +1133,7 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
+    initExcludeRttToggle();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);

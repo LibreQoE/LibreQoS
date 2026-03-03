@@ -34,7 +34,7 @@ function render(data) {
             { header: "Site", render: (r) => renderSiteLink(r.name, siteIdMap) },
             { header: "Median RTT (ms)", render: (r) => {
                 if (r.rtt === null) return "—";
-                const color = colorByRttMs(r.rtt, 200);
+                const color = colorByRttMs(r.rtt);
                 return `${colorSwatch(color)}${r.rtt.toFixed(1)}`;
             }},
             { header: "Avg Down Util (%)", render: (r) => {

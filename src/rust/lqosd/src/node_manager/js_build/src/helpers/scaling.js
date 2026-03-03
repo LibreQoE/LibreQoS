@@ -1,6 +1,64 @@
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
+import {isColorBlindMode} from "./colorblind";
+
+function lerpViridis(t) {
+    const stops = [
+        [68, 1, 84],    // #440154
+        [59, 82, 139],  // #3B528B
+        [33, 145, 140], // #21918C
+        [94, 201, 98],  // #5EC962
+        [253, 231, 37], // #FDE725
+    ];
+    if (t <= 0) return "#440154";
+    if (t >= 1) return "#FDE725";
+    let idx = t * (stops.length - 1);
+    let i = Math.floor(idx);
+    let frac = idx - i;
+    let c0 = stops[i], c1 = stops[i + 1];
+    let r = Math.round(c0[0] + frac * (c1[0] - c0[0]));
+    let g = Math.round(c0[1] + frac * (c1[1] - c0[1]));
+    let b = Math.round(c0[2] + frac * (c1[2] - c0[2]));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+function getRttThresholds() {
+    const defaults = { greenMs: 0, yellowMs: 100, redMs: 200 };
+    const obj = window.rttThresholds || window.rtt_thresholds || window.config?.rtt_thresholds;
+    const g = toNumber(obj?.greenMs ?? obj?.green_ms ?? obj?.green, defaults.greenMs);
+    const y = toNumber(obj?.yellowMs ?? obj?.yellow_ms ?? obj?.yellow, defaults.yellowMs);
+    const r = toNumber(obj?.redMs ?? obj?.red_ms ?? obj?.red, defaults.redMs);
+
+    const greenMs = Math.max(0, Math.round(g));
+    const yellowMs = Math.max(greenMs, Math.round(y));
+    const redMs = Math.max(yellowMs, Math.round(r), 1);
+    return { greenMs, yellowMs, redMs };
+}
+
+function clamp01(x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    return x;
+}
+
+function colorByRttMs(rttMs) {
+    const t = getRttThresholds();
+    const raw = toNumber(rttMs, t.greenMs);
+    const clamped = Math.min(t.redMs, Math.max(t.greenMs, raw));
+
+    const frac = (clamped - t.greenMs) / Math.max(1, t.redMs - t.greenMs);
+    if (isColorBlindMode()) {
+        return lerpViridis(frac);
+    }
+
+    if (clamped <= t.yellowMs) {
+        const w = clamp01((clamped - t.greenMs) / Math.max(1, t.yellowMs - t.greenMs));
+        return lerpColor([0, 255, 0], [255, 255, 0], w);
+    }
+    const w = clamp01((clamped - t.yellowMs) / Math.max(1, t.redMs - t.yellowMs));
+    return lerpColor([255, 255, 0], [255, 0, 0], w);
+}
 
 export function colorRamp(n) {
     n = toNumber(n, 0);
@@ -55,12 +113,7 @@ export function formatRtt(rtt) {
         return "-";
     }
     rtt = toNumber(rtt, 0);
-    const limit = 200;
-    let percent = 0;
-    if (limit > 0) {
-        percent = (rtt / limit) * 100;
-    }
-    let color = lerpGreenToRedViaOrange(100-percent, 100);
+    let color = colorByRttMs(rtt);
     let blob = "<span class='muted' style='color: " + color + "'>■</span>";
     blob += "<span>" + parseFloat(rtt).toFixed(0) + "ms</span>";
     return blob;
@@ -126,8 +179,8 @@ export function formatPercent(percent, digits=0) {
 
 export function rttNanosAsSpan(rttNanos, precision=0) {
     rttNanos = toNumber(rttNanos, 0);
-    let rttInMs = Math.min(200, rttNanos / 1000000);
-    let color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    let rttInMs = rttNanos / 1000000;
+    let color = colorByRttMs(rttInMs);
     let html = "<span class='muted' style='color: " + color + "'>■</span> " + scaleNanos(rttNanos, precision);
     return html;
 }

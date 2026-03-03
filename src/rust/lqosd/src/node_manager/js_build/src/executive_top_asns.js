@@ -43,7 +43,7 @@ function render(data) {
         { header: "Total Traffic (15m)", render: (r) => formatBytes(r.totalBytes) },
         { header: "Median RTT (ms)", render: (r) => {
             if (r.medianRtt === null) return "—";
-            const color = colorByRttMs(r.medianRtt, 200);
+            const color = colorByRttMs(r.medianRtt);
             return `${colorSwatch(color)}${r.medianRtt.toFixed(1)}`;
         }},
         { header: "Median Retrans (%)", render: (r) => {

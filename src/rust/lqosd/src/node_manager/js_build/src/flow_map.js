@@ -1,5 +1,5 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
-import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {colorByRttMs} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client} from "./pubsub/ws";
 
@@ -9,7 +9,6 @@ const POLL_MS = 1000;
 const RESPONSE_TIMEOUT_MS = 2000;
 const MIN_POINTS = 3;
 const MIN_TOTAL_BYTES = 1_000_000;
-const RTT_LIMIT_MS = 200;
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -158,8 +157,8 @@ function updateMap() {
         } else {
             overlay.hide();
             const output = data.map((d) => {
-                const rttMs = Math.min(RTT_LIMIT_MS, toNumber(d?.[4], 0) / 1_000_000);
-                const color = lerpGreenToRedViaOrange(RTT_LIMIT_MS - rttMs, RTT_LIMIT_MS);
+                const rttMs = toNumber(d?.[4], 0) / 1_000_000;
+                const color = colorByRttMs(rttMs);
                 return {
                     value: [toNumber(d?.[1], 0), toNumber(d?.[0], 0)], // It wants lon/lat
                     itemStyle: { color },

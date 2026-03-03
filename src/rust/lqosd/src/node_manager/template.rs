@@ -12,7 +12,7 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use itertools::Itertools;
-use lqos_config::load_config;
+use lqos_config::{RttThresholds, load_config};
 use lqos_utils::unix_time::unix_now;
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
@@ -130,21 +130,21 @@ pub async fn apply_templates(
         }
 
         // Title and node_id
-        let mut title = "LibreQoS Node Manager".to_string();
-        let mut node_id_js = String::new();
-        if let Ok(config) = load_config() {
-            title = config.node_name.clone();
-            node_id_js = escape_html_attr(&config.node_id);
-        }
+        let title = config.node_name.clone();
+        let node_id_js = escape_html_attr(&config.node_id);
+        let rtt_thresholds: RttThresholds = config.rtt_thresholds.clone().unwrap_or_default();
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
             js_tf(script_has_support_tickets),
             js_tf(new_version),
-            node_id_js
+            node_id_js,
+            rtt_thresholds.green_ms,
+            rtt_thresholds.yellow_ms,
+            rtt_thresholds.red_ms,
         );
 
         // First Login

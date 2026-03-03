@@ -808,7 +808,15 @@ impl ThroughputTracker {
                             }
                         }
                         if enable_asn_heatmaps {
-                            let flow_rtt = combine_rtt_ms(this_flow.0.get_rtt_array());
+                            let excluded = raw_data
+                                .get(&key.local_ip)
+                                .and_then(|t| t.circuit_hash)
+                                .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                            let flow_rtt = if excluded {
+                                None
+                            } else {
+                                combine_rtt_ms(this_flow.0.get_rtt_array())
+                            };
                             add_asn_sample(
                                 this_flow.1.asn_id.0,
                                 delta_bytes,
@@ -893,7 +901,15 @@ impl ThroughputTracker {
                                 }
                             }
                             if enable_asn_heatmaps {
-                                let flow_rtt = rtt_for_circuit.and_then(combine_rtt_ms);
+                                let excluded = raw_data
+                                    .get(&key.local_ip)
+                                    .and_then(|t| t.circuit_hash)
+                                    .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                                let flow_rtt = if excluded {
+                                    None
+                                } else {
+                                    rtt_for_circuit.and_then(combine_rtt_ms)
+                                };
                                 let delta_retrans = DownUpOrder::new(
                                     data.tcp_retransmits.down as u64,
                                     data.tcp_retransmits.up as u64,
@@ -960,14 +976,19 @@ impl ThroughputTracker {
                         tracker.recent_rtt_data[0] = rtt_median;
                         tracker.last_fresh_rtt_data_cycle = self_cycle;
                         tracker.rtt_buffer = rtt_buffer;
-                        if let Some(circuit_hash) = tracker.circuit_hash {
-                            rtt_by_circuit
-                                .entry(circuit_hash)
-                                .or_default()
-                                .accumulate(&tracker.rtt_buffer);
-                        }
-                        if let Some(parents) = &tracker.network_json_parents {
-                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
+                        let excluded = tracker
+                            .circuit_hash
+                            .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                        if !excluded {
+                            if let Some(circuit_hash) = tracker.circuit_hash {
+                                rtt_by_circuit
+                                    .entry(circuit_hash)
+                                    .or_default()
+                                    .accumulate(&tracker.rtt_buffer);
+                            }
+                            if let Some(parents) = &tracker.network_json_parents {
+                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
+                            }
                         }
                     }
                 }
@@ -1004,6 +1025,13 @@ impl ThroughputTracker {
             // doesn't flap to unknown ("-") on idle seconds.
             if let Some(profile) = qoo_profile.as_ref() {
                 for tracker in raw_data.values_mut() {
+                    if tracker
+                        .circuit_hash
+                        .is_some_and(crate::rtt_exclusions::is_excluded_hash)
+                    {
+                        tracker.qoq = QoqScores::default();
+                        continue;
+                    }
                     let tcp_packets_delta = tracker
                         .tcp_packets
                         .checked_sub_or_zero(tracker.prev_tcp_packets);

@@ -223,7 +223,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                         row.label,
                         row.badge,
                         row.blocks,
-                        (v) => colorByRttMs(v, 200),
+                        (v) => colorByRttMs(v),
                         (v) => formatLatest(v, "ms"),
                     );
                 }
@@ -450,7 +450,7 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             title: "Median RTT",
             icon: "fa-stopwatch",
             metricKey: "rtt",
-            colorFn: (v) => colorByRttMs(v, 200),
+            colorFn: (v) => colorByRttMs(v),
             formatFn: (v) => formatLatest(v, "ms"),
             link: "executive_heatmap_rtt.html",
             countWeight: 100,

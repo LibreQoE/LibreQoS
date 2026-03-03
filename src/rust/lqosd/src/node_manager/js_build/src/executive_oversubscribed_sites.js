@@ -74,7 +74,7 @@ function render(data) {
             { header: "Subscribed (D/U)", render: (r) => `${fmtMbps(r.sub_down)} / ${fmtMbps(r.sub_up)}` },
             { header: "Median RTT (ms)", render: (r) => {
                 if (r.rtt === null || r.rtt === undefined) return "—";
-                const color = colorByRttMs(r.rtt, 200);
+                const color = colorByRttMs(r.rtt);
                 return `${colorSwatch(color)}${formatLatest(r.rtt, "ms", 1)}`;
             }},
             { header: "Avg Down Util (%)", render: (r) => {
