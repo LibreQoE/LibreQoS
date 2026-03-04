@@ -39,18 +39,19 @@
                 <div class="card-header">Do Not Track Subnets</div>
                 <div class="card-body">
                     <div class="form-text mb-2">
-                        Flow tracking will ignore RTT events where the <code>remote IP</code> matches a subnet in this list.
+                        Flow tracking will ignore RTT events where the <code>remote WAN IP</code> matches a subnet in this list.
                     </div>
                     <div class="mb-3">
                         <select class="form-select" id="doNotTrackSubnets" size="5">
                         </select>
                     </div>
                     <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="newDoNotTrackSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24)">
-                        <button class="btn btn-outline-secondary" type="button" id="addDoNotTrackSubnet">Add</button>
+                        <input type="text" class="form-control" id="newDoNotTrackSubnet" placeholder="Enter IP or CIDR (e.g. 8.8.8.8, 192.168.1.0/24)">
+                        <button class="btn btn-outline-primary" type="button" id="addDoNotTrackSubnet">Add</button>
                     </div>
                     <button class="btn btn-outline-danger" type="button" id="removeDoNotTrackSubnet">Remove Selected</button>
                     <div id="doNotTrackValidation" class="small mt-3"></div>
+                    <div id="doNotTrackLoadStatus" class="small mt-2"></div>
                 </div>
             </div>
 

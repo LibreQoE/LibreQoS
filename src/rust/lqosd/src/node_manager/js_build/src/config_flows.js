@@ -2,22 +2,51 @@ import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 const urlParams = new URLSearchParams(window.location.search);
 const prefillDoNotTrack = String(urlParams.get("prefillDoNotTrack") || "").trim();
+let configLoaded = false;
+let controlsBound = false;
+
+function isValidIPv4(ip) {
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;
+    const parts = ip.split('.').map((p) => parseInt(p, 10));
+    return parts.length === 4 && !parts.some((p) => Number.isNaN(p) || p < 0 || p > 255);
+}
+
+function isValidIPv6(ip) {
+    return ip.includes(':') && /^[0-9a-fA-F:]+$/.test(ip);
+}
+
+function normalizeSubnetInput(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.includes('/')) return raw;
+    if (isValidIPv4(raw)) return `${raw}/32`;
+    if (isValidIPv6(raw)) return `${raw}/128`;
+    return raw;
+}
+
+function setDoNotTrackLoadStatus(message, level = "warning") {
+    const el = document.getElementById("doNotTrackLoadStatus");
+    if (!el) return;
+    if (!message) {
+        el.textContent = "";
+        el.className = "small mt-2";
+        return;
+    }
+    el.textContent = message;
+    el.className = `small mt-2 text-${level}`;
+}
 
 function isValidCIDR(cidr) {
     try {
-        const [ip, mask] = String(cidr).trim().split('/');
-        if (!ip || !mask) return false;
+        const [ip, mask, extra] = String(cidr).trim().split('/');
+        if (!ip || !mask || extra !== undefined) return false;
 
         // Validate IP address (basic)
         if (ip.includes(':')) {
-            // IPv6 (very permissive: 2+ hex chars and colons; exact validation happens in backend)
-            if (!/^[0-9a-fA-F:]+$/.test(ip)) return false;
-        } else {
-            // IPv4
-            if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;
-            const parts = ip.split('.').map(p => parseInt(p, 10));
-            if (parts.length !== 4 || parts.some(p => Number.isNaN(p) || p < 0 || p > 255)) return false;
-        }
+            if (!isValidIPv6(ip)) return false;
+        } else if (!isValidIPv4(ip)) {
+            return false;
+        }        
 
         // Validate mask
         const maskNum = parseInt(mask, 10);
@@ -47,15 +76,15 @@ function populateDoNotTrackList(selectId, subnets) {
 
 function addSubnet(listId, inputId) {
     const input = document.getElementById(inputId);
-    const cidr = String(input.value || "").trim();
+    const cidr = normalizeSubnetInput(input.value);
     if (!isValidCIDR(cidr)) {
-        alert('Please enter a valid CIDR notation (e.g. 192.168.1.0/24 or 2001:db8::/32)');
+        alert('Please enter a valid IP or CIDR notation (e.g. 8.8.8.8, 192.168.1.0/24, or 2001:db8::/32)');
         return;
     }
 
     const select = document.getElementById(listId);
     for (let i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === cidr) {
+        if (select.options[i].value.toLowerCase() === cidr.toLowerCase()) {
             alert('This CIDR is already in the list');
             return;
         }
@@ -87,10 +116,16 @@ function updateDoNotTrackValidationUi() {
     const invalid = validateDoNotTrackList();
     const holder = document.getElementById("doNotTrackValidation");
     const save = document.getElementById("saveButton");
-    if (save) save.disabled = invalid.length > 0;
+    if (save) save.disabled = !configLoaded || invalid.length > 0;
     if (!holder) return;
 
-    if (invalid.length === 0) {
+    if (!configLoaded) {
+        holder.className = "small mt-3 text-warning";
+        holder.innerHTML = "Loading current configuration. Add/remove works now; Save will enable once loading completes.";
+        return;
+    }
+
+    if (invalid.length === 0) {        
         holder.className = "small mt-3 text-success";
         holder.innerHTML = `All entries look like valid CIDR notation. The flow tracker will honor this ignore list.`;
         return;
@@ -139,6 +174,10 @@ function validateConfig() {
 }
 
 function updateConfig() {
+    if (!window.config || typeof window.config !== "object") {
+        return;
+    }
+
     // Update only the flows section
     window.config.flows = {
         flow_timeout_seconds: parseInt(document.getElementById("flowTimeout").value),
@@ -152,8 +191,57 @@ function updateConfig() {
     };
 }
 
+function bindControls() {
+    if (controlsBound) return;
+    controlsBound = true;
+
+    const addBtn = document.getElementById('addDoNotTrackSubnet');
+    const removeBtn = document.getElementById('removeDoNotTrackSubnet');
+    const saveBtn = document.getElementById('saveButton');
+    const input = document.getElementById('newDoNotTrackSubnet');
+
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            addSubnet('doNotTrackSubnets', 'newDoNotTrackSubnet');
+            updateDoNotTrackValidationUi();
+        });
+    }
+    if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+            removeSubnet('doNotTrackSubnets');
+            updateDoNotTrackValidationUi();
+        });
+    }
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addSubnet('doNotTrackSubnets', 'newDoNotTrackSubnet');
+                updateDoNotTrackValidationUi();
+            }
+        });
+    }
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            if (!configLoaded) {
+                alert("Configuration is still loading. Please try again in a moment.");
+                return;
+            }
+            if (validateConfig()) {
+                updateConfig();
+                saveConfig(() => {
+                    alert("Configuration saved successfully!");
+                });
+            }
+        });
+    }
+}
+
 // Render the configuration menu
 renderConfigMenu('flows');
+bindControls();
+setDoNotTrackLoadStatus("Loading current configuration…", "warning");
+updateDoNotTrackValidationUi();
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -179,26 +267,9 @@ loadConfig(() => {
 
         // Populate do not track list
         populateDoNotTrackList('doNotTrackSubnets', flows.do_not_track_subnets || []);
+        configLoaded = true;
+        setDoNotTrackLoadStatus("");
         updateDoNotTrackValidationUi();
-
-        document.getElementById('addDoNotTrackSubnet').addEventListener('click', () => {
-            addSubnet('doNotTrackSubnets', 'newDoNotTrackSubnet');
-            updateDoNotTrackValidationUi();
-        });
-        document.getElementById('removeDoNotTrackSubnet').addEventListener('click', () => {
-            removeSubnet('doNotTrackSubnets');
-            updateDoNotTrackValidationUi();
-        });
-
-        // Add save button click handler
-        document.getElementById('saveButton').addEventListener('click', () => {
-            if (validateConfig()) {
-                updateConfig();
-                saveConfig(() => {
-                    alert("Configuration saved successfully!");
-                });
-            }
-        });
 
         // Optional prefill from other UI pages (e.g. Circuit/ASN Explorer).
         if (prefillDoNotTrack) {
@@ -258,6 +329,10 @@ loadConfig(() => {
             }
         }
     } else {
+        setDoNotTrackLoadStatus("Could not load configuration from server. Add/remove still works, but saving is disabled.", "danger");
         console.error("Flows configuration not found in window.config");
     }
+}, () => {
+    setDoNotTrackLoadStatus("Could not load configuration from server. Add/remove still works, but saving is disabled.", "danger");
+    updateDoNotTrackValidationUi();
 });
