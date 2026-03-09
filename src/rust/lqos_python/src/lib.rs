@@ -599,6 +599,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(use_bin_packing_to_balance_cpu, m)?)?;
     m.add_function(wrap_pyfunction!(monitor_mode_only, m)?)?;
     m.add_function(wrap_pyfunction!(shaping_cpu_count, m)?)?;
+    m.add_function(wrap_pyfunction!(efficiency_core_ids, m)?)?;
     m.add_function(wrap_pyfunction!(run_shell_commands_as_sudo, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_download_mbps, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_upload_mbps, m)?)?;
@@ -1188,6 +1189,19 @@ fn shaping_cpu_count() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
     let det = lqos_config::detect_shaping_cpus(config.as_ref());
     Ok(det.shaping.len() as u32)
+}
+
+/// Returns detected efficiency-core CPU IDs for scheduler affinity decisions.
+#[pyfunction]
+fn efficiency_core_ids() -> PyResult<Vec<u32>> {
+    let config = lqos_config::load_config().unwrap();
+    let det = lqos_config::detect_shaping_cpus(config.as_ref());
+    let efficiency = match det.source {
+        lqos_config::ShapingCpuSource::CpuCoreSysfs
+        | lqos_config::ShapingCpuSource::PossibleMinusAtomSysfs => det.efficiency,
+        _ => Vec::new(),
+    };
+    Ok(efficiency)
 }
 
 #[pyfunction]
