@@ -22,6 +22,7 @@ mod queue_stats_total;
 mod retransmits;
 mod rtt_histogram;
 mod stormguard;
+mod treeguard;
 pub mod system_info;
 mod throughput;
 mod top_10;
@@ -191,6 +192,14 @@ async fn one_second_cadence(
             ticker_with_timeout(
                 "bakery",
                 bakery::bakery_ticker(channels.clone(), bus_tx.clone())
+            ),
+            ticker_with_timeout(
+                "treeguard_status",
+                treeguard::treeguard_status(channels.clone())
+            ),
+            ticker_with_timeout(
+                "treeguard_activity",
+                treeguard::treeguard_activity(channels.clone())
             ),
             ticker_with_timeout(
                 "executive_heatmaps",

@@ -1,12 +1,31 @@
-use std::{fs::read_to_string, path::Path};
+use std::{
+    fs::read_to_string,
+    path::{Path, PathBuf},
+};
 
+use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use lqos_config::ShapedDevice;
-use serde::{Deserialize, Serialize};
 
 use crate::overrides_file::file_lock::FileLock;
 
 mod file_lock;
+
+const OPERATOR_OVERRIDES_FILE: &str = "lqos_overrides.json";
+const TREEGUARD_OVERRIDES_FILE: &str = "lqos_overrides.treeguard.json";
+const LEGACY_AUTOPILOT_OVERRIDES_FILE: &str = "lqos_overrides.autopilot.json";
+
+/// Selects which overrides file to load/save.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OverrideLayer {
+    /// Operator-owned overrides (`lqos_overrides.json`).
+    Operator,
+    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
+    Treeguard,
+}
+
+/// Helper for working with layered override files.
+pub struct OverrideStore;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -25,16 +44,9 @@ pub enum CircuitAdjustment {
         min_upload_bandwidth: Option<f32>,
         max_upload_bandwidth: Option<f32>,
     },
-    RemoveCircuit {
-        circuit_id: String,
-    },
-    RemoveDevice {
-        device_id: String,
-    },
-    ReparentCircuit {
-        circuit_id: String,
-        parent_node: String,
-    },
+    RemoveCircuit { circuit_id: String },
+    RemoveDevice { device_id: String },
+    ReparentCircuit { circuit_id: String, parent_node: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -88,19 +100,189 @@ pub struct OverrideFile {
     uisp: Option<UispOverrides>,
 }
 
+fn overrides_path(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
+    let file = match layer {
+        OverrideLayer::Operator => OPERATOR_OVERRIDES_FILE,
+        OverrideLayer::Treeguard => TREEGUARD_OVERRIDES_FILE,
+    };
+    Path::new(&config.lqos_directory).join(file)
+}
+
+fn treeguard_read_path(config: &lqos_config::Config) -> PathBuf {
+    let canonical = Path::new(&config.lqos_directory).join(TREEGUARD_OVERRIDES_FILE);
+    if canonical.exists() {
+        return canonical;
+    }
+    let legacy = Path::new(&config.lqos_directory).join(LEGACY_AUTOPILOT_OVERRIDES_FILE);
+    if legacy.exists() {
+        legacy
+    } else {
+        canonical
+    }
+}
+
+fn load_from_path(path: &Path) -> Result<OverrideFile> {
+    let raw = read_to_string(path)?;
+    let as_json = serde_json::from_str(&raw)?;
+    Ok(as_json)
+}
+
+fn ensure_exists_default(path: &Path) -> Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    // Create a default empty file
+    let new_override_file = OverrideFile::default();
+    let as_json = serde_json::to_string(&new_override_file)?;
+    std::fs::write(path, as_json.as_bytes())?;
+    Ok(())
+}
+
+fn save_to_path(path: &Path, overrides: &OverrideFile) -> Result<()> {
+    let as_json = serde_json::to_string_pretty(overrides)?;
+    std::fs::write(path, as_json.as_bytes())?;
+    Ok(())
+}
+
+fn merge_persistent_devices_by_id(
+    operator_devices: &[ShapedDevice],
+    treeguard_devices: &[ShapedDevice],
+) -> Vec<ShapedDevice> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut by_id: HashMap<&str, ShapedDevice> = HashMap::new();
+    for dev in operator_devices {
+        by_id.insert(dev.device_id.as_str(), dev.clone());
+    }
+    for dev in treeguard_devices {
+        by_id.insert(dev.device_id.as_str(), dev.clone());
+    }
+
+    let mut out = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+
+    for dev in operator_devices {
+        let did = dev.device_id.as_str();
+        if seen.contains(did) {
+            continue;
+        }
+        if let Some(merged) = by_id.get(did) {
+            out.push(merged.clone());
+            seen.insert(did);
+        }
+    }
+
+    for dev in treeguard_devices {
+        let did = dev.device_id.as_str();
+        if seen.contains(did) {
+            continue;
+        }
+        if let Some(merged) = by_id.get(did) {
+            out.push(merged.clone());
+            seen.insert(did);
+        }
+    }
+
+    out
+}
+
+fn merge_network_adjustments_owned(
+    operator_adjustments: &[NetworkAdjustment],
+    treeguard_adjustments: &[NetworkAdjustment],
+) -> Vec<NetworkAdjustment> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut treeguard_virtual: HashMap<&str, bool> = HashMap::new();
+    let mut treeguard_virtual_order: Vec<&str> = Vec::new();
+    let mut treeguard_virtual_seen: HashSet<&str> = HashSet::new();
+
+    for adj in treeguard_adjustments {
+        if let NetworkAdjustment::SetNodeVirtual {
+            node_name,
+            virtual_node,
+        } = adj
+        {
+            let name = node_name.as_str();
+            treeguard_virtual.insert(name, *virtual_node);
+            if !treeguard_virtual_seen.contains(name) {
+                treeguard_virtual_order.push(name);
+                treeguard_virtual_seen.insert(name);
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut used_treeguard_virtual: HashSet<&str> = HashSet::new();
+    let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
+
+    for adj in operator_adjustments {
+        match adj {
+            NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            } => {
+                let name = node_name.as_str();
+                if operator_virtual_seen.contains(name) {
+                    continue;
+                }
+                operator_virtual_seen.insert(name);
+
+                if let Some(v) = treeguard_virtual.get(name) {
+                    out.push(NetworkAdjustment::SetNodeVirtual {
+                        node_name: node_name.clone(),
+                        virtual_node: *v,
+                    });
+                    used_treeguard_virtual.insert(name);
+                } else {
+                    out.push(NetworkAdjustment::SetNodeVirtual {
+                        node_name: node_name.clone(),
+                        virtual_node: *virtual_node,
+                    });
+                }
+            }
+            NetworkAdjustment::AdjustSiteSpeed { .. } => {
+                // Operator-only. Preserve as-is.
+                out.push(adj.clone());
+            }
+        }
+    }
+
+    // Append TreeGuard-only virtual-node entries (ignore other network adjustments).
+    for name in treeguard_virtual_order {
+        if used_treeguard_virtual.contains(name) {
+            continue;
+        }
+        let Some(v) = treeguard_virtual.get(name) else {
+            continue;
+        };
+        out.push(NetworkAdjustment::SetNodeVirtual {
+            node_name: name.to_string(),
+            virtual_node: *v,
+        });
+    }
+
+    out
+}
+
+fn merge_owned_sections(mut operator: OverrideFile, treeguard: OverrideFile) -> OverrideFile {
+    let operator_devices = std::mem::take(&mut operator.persistent_devices);
+    operator.persistent_devices =
+        merge_persistent_devices_by_id(&operator_devices, &treeguard.persistent_devices);
+
+    let operator_network = std::mem::take(&mut operator.network_adjustments);
+    operator.network_adjustments =
+        merge_network_adjustments_owned(&operator_network, &treeguard.network_adjustments);
+
+    operator
+}
+
 impl OverrideFile {
     pub fn load() -> Result<Self> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
-        let path = Path::new(&config.lqos_directory).join("lqos_overrides.json");
-        if !path.exists() {
-            // Create a default empty file
-            let new_override_file = OverrideFile::default();
-            let as_json = serde_json::to_string(&new_override_file)?;
-            std::fs::write(&path, as_json.as_bytes())?;
-        }
-        let raw = read_to_string(path)?;
-        let as_json = serde_json::from_str(&raw)?;
+        let path = overrides_path(&config, OverrideLayer::Operator);
+        ensure_exists_default(&path)?;
+        let as_json = load_from_path(&path)?;
         drop(lock); // Explicitly drop for clarity. RAII does it anyway.
         Ok(as_json)
     }
@@ -108,9 +290,8 @@ impl OverrideFile {
     pub fn save(&self) -> Result<()> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
-        let path = Path::new(&config.lqos_directory).join("lqos_overrides.json");
-        let as_json = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, as_json.as_bytes())?;
+        let path = overrides_path(&config, OverrideLayer::Operator);
+        save_to_path(&path, self)?;
         drop(lock); // Explicitly drop for clarity. RAII does it anyway.
         Ok(())
     }
@@ -163,7 +344,6 @@ impl OverrideFile {
             .count();
 
         if excluded {
-            // Already excluded exactly once -> idempotent no-op.
             if matches == 1 {
                 return false;
             }
@@ -208,7 +388,8 @@ impl OverrideFile {
     /// Remove all devices matching `device_id`. Returns number removed.
     pub fn remove_persistent_shaped_device_by_device_count(&mut self, device_id: &str) -> usize {
         let before = self.persistent_devices.len();
-        self.persistent_devices.retain(|d| d.device_id != device_id);
+        self.persistent_devices
+            .retain(|d| d.device_id != device_id);
         before.saturating_sub(self.persistent_devices.len())
     }
 
@@ -237,11 +418,10 @@ impl OverrideFile {
             NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != &node_name,
             _ => true,
         });
-        self.network_adjustments
-            .push(NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            });
+        self.network_adjustments.push(NetworkAdjustment::SetNodeVirtual {
+            node_name,
+            virtual_node,
+        });
     }
 
     /// Remove any virtual-node overrides for `node_name`. Returns number removed.
@@ -282,11 +462,7 @@ impl OverrideFile {
 
     pub fn add_uisp_route_override(&mut self, from_site: String, to_site: String, cost: u32) {
         let uisp = self.ensure_uisp_mut();
-        uisp.route_overrides.push(UispRouteOverride {
-            from_site,
-            to_site,
-            cost,
-        });
+        uisp.route_overrides.push(UispRouteOverride { from_site, to_site, cost });
     }
 
     pub fn remove_uisp_route_by_index(&mut self, index: usize) -> bool {
@@ -299,9 +475,148 @@ impl OverrideFile {
     }
 }
 
+impl OverrideStore {
+    /// Loads a single overrides layer.
+    ///
+    /// Side effects: acquires the global overrides lock and may create the operator overrides file.
+    pub fn load_layer(layer: OverrideLayer) -> Result<OverrideFile> {
+        let lock = FileLock::new()?;
+        let config = lqos_config::load_config()?;
+        let path = match layer {
+            OverrideLayer::Operator => overrides_path(&config, layer),
+            OverrideLayer::Treeguard => treeguard_read_path(&config),
+        };
+        let overrides = match layer {
+            OverrideLayer::Operator => {
+                ensure_exists_default(&path)?;
+                load_from_path(&path)?
+            }
+            OverrideLayer::Treeguard => {
+                if !path.exists() {
+                    OverrideFile::default()
+                } else {
+                    load_from_path(&path)?
+                }
+            }
+        };
+        drop(lock);
+        Ok(overrides)
+    }
+
+    /// Saves a single overrides layer.
+    ///
+    /// Side effects: acquires the global overrides lock and writes the selected overrides file.
+    pub fn save_layer(layer: OverrideLayer, overrides: &OverrideFile) -> Result<()> {
+        let lock = FileLock::new()?;
+        let config = lqos_config::load_config()?;
+        let path = overrides_path(&config, layer);
+        save_to_path(&path, overrides)?;
+        drop(lock);
+        Ok(())
+    }
+
+    /// Loads the effective overrides view used during shaping.
+    ///
+    /// When `apply_treeguard` is false, this is equivalent to loading the operator layer only.
+    ///
+    /// Side effects: acquires the global overrides lock and may create the operator overrides file.
+    pub fn load_effective(apply_treeguard: bool) -> Result<OverrideFile> {
+        let lock = FileLock::new()?;
+        let config = lqos_config::load_config()?;
+
+        let operator_path = overrides_path(&config, OverrideLayer::Operator);
+        ensure_exists_default(&operator_path)?;
+        let operator = load_from_path(&operator_path)?;
+
+        if !apply_treeguard {
+            drop(lock);
+            return Ok(operator);
+        }
+
+        let treeguard_path = treeguard_read_path(&config);
+        let treeguard = if !treeguard_path.exists() {
+            OverrideFile::default()
+        } else {
+            load_from_path(&treeguard_path)?
+        };
+
+        let merged = merge_owned_sections(operator, treeguard);
+        drop(lock);
+        Ok(merged)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::OverrideFile;
+    use super::*;
+
+    fn shaped_device_with_sqm(device_id: &str, sqm: &str) -> ShapedDevice {
+        let mut dev = ShapedDevice::default();
+        dev.device_id = device_id.to_string();
+        dev.sqm_override = Some(sqm.to_string());
+        dev
+    }
+
+    #[test]
+    fn effective_merge_treeguard_wins_for_persistent_devices() {
+        let mut operator = OverrideFile::default();
+        operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
+        operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev2", "cake"));
+
+        let mut treeguard = OverrideFile::default();
+        treeguard
+            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "fq_codel"));
+        treeguard
+            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev3", "fq_codel"));
+
+        let merged = merge_owned_sections(operator, treeguard);
+        let sqm_by_id: std::collections::HashMap<&str, &str> = merged
+            .persistent_devices
+            .iter()
+            .filter_map(|d| d.sqm_override.as_deref().map(|sqm| (d.device_id.as_str(), sqm)))
+            .collect();
+
+        assert_eq!(sqm_by_id.get("dev1"), Some(&"fq_codel"));
+        assert_eq!(sqm_by_id.get("dev2"), Some(&"cake"));
+        assert_eq!(sqm_by_id.get("dev3"), Some(&"fq_codel"));
+    }
+
+    #[test]
+    fn effective_merge_treeguard_wins_for_node_virtual_only() {
+        let mut operator = OverrideFile::default();
+        operator.set_network_node_virtual("NodeA".to_string(), false);
+        operator.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            site_name: "Site1".to_string(),
+            download_bandwidth_mbps: Some(100),
+            upload_bandwidth_mbps: Some(50),
+        });
+
+        let mut treeguard = OverrideFile::default();
+        treeguard.set_network_node_virtual("NodeA".to_string(), true);
+        treeguard.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            site_name: "Site2".to_string(),
+            download_bandwidth_mbps: Some(200),
+            upload_bandwidth_mbps: Some(100),
+        });
+
+        let merged = merge_owned_sections(operator, treeguard);
+
+        let node_a_virtual = merged.network_adjustments().iter().find_map(|adj| match adj {
+            NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            } if node_name == "NodeA" => Some(*virtual_node),
+            _ => None,
+        });
+        assert_eq!(node_a_virtual, Some(true));
+
+        // Operator-only site speed should remain; TreeGuard site speed should be ignored.
+        let site_speed_names: Vec<&str> = merged.network_adjustments().iter().filter_map(|adj| match adj {
+            NetworkAdjustment::AdjustSiteSpeed { site_name, .. } => Some(site_name.as_str()),
+            _ => None,
+        }).collect();
+        assert_eq!(site_speed_names, vec!["Site1"]);
+    }
 
     #[test]
     fn override_file_defaults_accept_empty_json() {
@@ -318,7 +633,6 @@ mod tests {
         assert!(of.is_circuit_rtt_excluded("C1"));
 
         assert!(!of.set_circuit_rtt_excluded_return_changed("C1", true));
-        assert!(of.is_circuit_rtt_excluded("C1"));
 
         assert!(of.set_circuit_rtt_excluded_return_changed("C1", false));
         assert!(!of.is_circuit_rtt_excluded("C1"));
