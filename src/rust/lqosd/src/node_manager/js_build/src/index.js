@@ -75,7 +75,9 @@ const defaultLayout = {
         {
             name: "TreeGuard",
             dashlets: [
-                { tag: "treeguardStatus", size: 12 }
+                { tag: "treeguardControls", size: 6 },
+                { tag: "treeguardStatus", size: 6 },
+                { tag: "treeguardActivity", size: 12 }
             ]
         }
     ]
