@@ -11,7 +11,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_hash, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
+    automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -20,6 +20,67 @@ import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 network_hash = 0
+
+
+def get_integration_affinity_cpus():
+    """Return efficiency-core CPU IDs to prefer for integration subprocesses."""
+    try:
+        cpus = efficiency_core_ids()
+    except Exception as e:
+        msg = f"Failed to determine efficiency cores for integrations: {e}"
+        print(msg)
+        scheduler_error(msg)
+        return []
+
+    normalized = []
+    for cpu in cpus or []:
+        try:
+            normalized.append(int(cpu))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(cpu for cpu in normalized if cpu >= 0))
+
+
+def _affinity_preexec(cpu_ids):
+    cpu_set = set(cpu_ids)
+
+    def apply_affinity():
+        os.sched_setaffinity(0, cpu_set)
+
+    return apply_affinity
+
+
+def run_integration_subprocess(cmd, *, capture_output=True, text=True, cwd=None, label="integration"):
+    """
+    Launch a scheduler-managed integration subprocess.
+    Prefer detected efficiency cores when available, but retry unpinned on failure.
+    """
+    kwargs = {
+        "capture_output": capture_output,
+        "text": text,
+    }
+    if cwd is not None:
+        kwargs["cwd"] = cwd
+
+    cpu_ids = get_integration_affinity_cpus()
+    used_affinity = False
+    if cpu_ids and hasattr(os, "sched_setaffinity"):
+        kwargs["preexec_fn"] = _affinity_preexec(cpu_ids)
+        used_affinity = True
+
+    try:
+        return subprocess.run(cmd, **kwargs)
+    except Exception as e:
+        if not used_affinity:
+            raise
+        msg = (
+            f"Failed to pin {label} to efficiency cores {cpu_ids}: {e}. "
+            "Retrying without affinity."
+        )
+        print(msg)
+        scheduler_error(msg)
+        kwargs.pop("preexec_fn", None)
+        return subprocess.run(cmd, **kwargs)
 
 
 def capture_output_and_run(func):
@@ -57,14 +118,19 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
     try:
         code = f"from {module_name} import {func_name} as f; f()"
         cmd = [sys.executable, "-c", code]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        friendly = label or f"{module_name}.{func_name}"
+        result = run_integration_subprocess(
+            cmd,
+            capture_output=True,
+            text=True,
+            label=friendly,
+        )
         output = (result.stdout or "") + (result.stderr or "")
         if output:
             print(output)
             scheduler_error(output)
         if result.returncode != 0:
             # Non-zero exit shouldn't stop scheduling; log and continue
-            friendly = label or f"{module_name}.{func_name}"
             msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
             print(msg)
             scheduler_error(msg)
@@ -79,7 +145,12 @@ def importFromCRM():
         try:
             # Execute UISP integration in a subprocess and keep going on failure
             path = get_libreqos_directory() + "/bin/uisp_integration"
-            result = subprocess.run([path], capture_output=True, text=True)
+            result = run_integration_subprocess(
+                [path],
+                capture_output=True,
+                text=True,
+                label="UISP integration",
+            )
             output = (result.stdout or "") + (result.stderr or "")
             if output:
                 print(output)
