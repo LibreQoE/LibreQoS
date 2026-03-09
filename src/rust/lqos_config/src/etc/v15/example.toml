@@ -42,6 +42,48 @@ sudo = false
 #override_available_queues = 12 # This can be omitted and be 0 for Python
 use_binpacking = false
 
+[treeguard]
+enabled = true
+dry_run = false
+tick_seconds = 1
+
+[treeguard.cpu]
+mode = "traffic_rtt_only"
+cpu_high_pct = 75
+cpu_low_pct = 55
+
+[treeguard.links]
+enabled = true
+all_nodes = true
+nodes = []
+idle_util_pct = 2.0
+idle_min_minutes = 15
+rtt_missing_seconds = 120
+unvirtualize_util_pct = 5.0
+min_state_dwell_minutes = 30
+max_link_changes_per_hour = 4
+reload_cooldown_minutes = 10
+top_level_auto_virtualize = true
+top_level_safe_util_pct = 85.0
+
+[treeguard.circuits]
+enabled = true
+all_circuits = true
+circuits = []
+switching_enabled = true
+independent_directions = true
+idle_util_pct = 2.0
+idle_min_minutes = 15
+rtt_missing_seconds = 120
+upgrade_util_pct = 5.0
+min_switch_dwell_minutes = 30
+max_switches_per_hour = 4
+persist_sqm_overrides = true
+
+[treeguard.qoo]
+enabled = true
+min_score = 80.0
+
 [long_term_stats]
 gather_stats = true
 collation_period_seconds = 10

@@ -2,6 +2,7 @@
 
 use super::tuning::Tunables;
 use crate::etc::v15::stormguard;
+use crate::etc::v15::treeguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -152,6 +153,10 @@ pub struct Config {
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
 
+    /// TreeGuard intelligent node management.
+    #[serde(default)]
+    pub treeguard: treeguard::TreeguardConfig,
+
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
 
@@ -218,6 +223,7 @@ impl Config {
         if self.queues.default_sqm.trim().is_empty() {
             return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
         }
+        self.treeguard.validate()?;
         Ok(())
     }
 
@@ -305,6 +311,7 @@ impl Default for Config {
             disable_webserver: None,
             webserver_listen: None,
             stormguard: None,
+            treeguard: treeguard::TreeguardConfig::default(),
             disable_icmp_ping: Some(false),
             exclude_efficiency_cores: true,
             enable_circuit_heatmaps: true,
@@ -364,7 +371,12 @@ mod test {
             let trimmed = line.trim();
             if trimmed.starts_with('[') && trimmed.ends_with(']') {
                 let section_name = &trimmed[1..trimmed.len() - 1];
-                skip_section = sections.contains(&section_name);
+                skip_section = sections.iter().any(|section| {
+                    section_name == *section
+                        || section_name
+                            .strip_prefix(&format!("{section}."))
+                            .is_some()
+                });
             }
 
             if !skip_section {
@@ -482,6 +494,46 @@ mod test {
             yellow_ms: 0,
             red_ms: 0,
         });
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn treeguard_defaults_match_default_on_rollout() {
+        let cfg = Config::default();
+        assert!(cfg.treeguard.enabled);
+        assert!(!cfg.treeguard.dry_run);
+        assert_eq!(
+            cfg.treeguard.cpu.mode,
+            crate::etc::v15::treeguard::TreeguardCpuMode::TrafficRttOnly
+        );
+        assert!(cfg.treeguard.links.enabled);
+        assert!(cfg.treeguard.links.all_nodes);
+        assert!(cfg.treeguard.links.top_level_auto_virtualize);
+        assert!(cfg.treeguard.circuits.enabled);
+        assert!(cfg.treeguard.circuits.all_circuits);
+    }
+
+    #[test]
+    fn load_example_without_treeguard_section_uses_defaults() {
+        let stripped = remove_sections(include_str!("example.toml"), &["treeguard"]);
+        let config = Config::load_from_string(&stripped)
+            .expect("Config without treeguard should still deserialize");
+        assert!(config.treeguard.enabled);
+        assert!(!config.treeguard.dry_run);
+        assert!(config.treeguard.links.all_nodes);
+        assert!(config.treeguard.circuits.all_circuits);
+    }
+
+    #[test]
+    fn treeguard_validation_rejects_invalid_thresholds() {
+        let mut cfg = Config::default();
+        cfg.treeguard.cpu.cpu_low_pct = 90;
+        cfg.treeguard.cpu.cpu_high_pct = 80;
+        assert!(cfg.validate().is_err());
+
+        cfg = Config::default();
+        cfg.treeguard.circuits.idle_util_pct = 10.0;
+        cfg.treeguard.circuits.upgrade_util_pct = 5.0;
         assert!(cfg.validate().is_err());
     }
 }
