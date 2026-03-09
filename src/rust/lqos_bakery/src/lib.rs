@@ -279,7 +279,10 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
                 effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
             };
         };
-        let Ok(reply) = bus.request(vec![BusRequest::GetInsightLicenseSummary]).await else {
+        let Ok(reply) = bus
+            .request(vec![BusRequest::GetInsightLicenseSummary])
+            .await
+        else {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
@@ -415,9 +418,7 @@ fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
 
     let message = format!(
         "Mapped circuit limit reached: requested {} mapped circuits, allowed {}, dropped {}.",
-        stats.requested_mapped,
-        stats.allowed_mapped,
-        stats.dropped_mapped
+        stats.requested_mapped, stats.allowed_mapped, stats.dropped_mapped
     );
 
     let context = Some(format!(
@@ -547,7 +548,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     ) {
         // Best-effort deletion: if exact prefix was provided, remove that, else try common host prefixes
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
-        let key = MappingKey { ip: ip.clone(), prefix };
+        let key = MappingKey {
+            ip: ip.clone(),
+            prefix,
+        };
         if let Some(stage) = mapping_staged.as_mut() {
             stage.remove(&key);
         }
@@ -598,7 +602,13 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             // Unknown mapping (do not delete automatically)
                             mapping_unknown.insert(key.clone());
                         }
-                        mapping_current.insert(key, MappingVal { handle: m.tc_handle, cpu: m.cpu });
+                        mapping_current.insert(
+                            key,
+                            MappingVal {
+                                handle: m.tc_handle,
+                                cpu: m.cpu,
+                            },
+                        );
                     }
                 }
             }
@@ -1050,7 +1060,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     continue;
                 }
                 let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
-                    warn!("StormGuardAdjustment has invalid class_id [{}], skipping.", class_id);
+                    warn!(
+                        "StormGuardAdjustment has invalid class_id [{}], skipping.",
+                        class_id
+                    );
                     continue;
                 };
                 if !dry_run {
@@ -1318,7 +1331,10 @@ fn handle_commit_batch(
                     }
                     live_circuits.remove(&circuit_hash);
                 } else {
-                    debug!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
+                    debug!(
+                        "RemoveCircuit received for unknown circuit: {}",
+                        circuit_hash
+                    );
                 }
             }
         }
@@ -1907,8 +1923,11 @@ mod tests {
         }
         batch.push(mk_add_circuit(1001, "10.0.0.200/32"));
 
-        let (filtered, stats) =
-            filter_batch_by_mapped_circuit_limit(batch, &existing, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
+            batch,
+            &existing,
+            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+        );
         assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
         assert_eq!(stats.requested_mapped, 1001);
         assert_eq!(stats.allowed_mapped, 1000);
@@ -1931,8 +1950,11 @@ mod tests {
         }
         batch.push(mk_add_circuit(9001, ""));
 
-        let (filtered, stats) =
-            filter_batch_by_mapped_circuit_limit(batch, &existing, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
+            batch,
+            &existing,
+            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+        );
         assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
         assert_eq!(stats.requested_mapped, 1000);
         assert_eq!(stats.allowed_mapped, 1000);

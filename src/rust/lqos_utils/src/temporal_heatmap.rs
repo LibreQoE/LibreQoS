@@ -297,7 +297,16 @@ mod tests {
     #[test]
     fn add_sample_sets_current_block() {
         let mut heatmap = TemporalHeatmap::new();
-        heatmap.add_sample(10.0, 20.0, Some(30.0), None, None, None, Some(1.0), Some(3.0));
+        heatmap.add_sample(
+            10.0,
+            20.0,
+            Some(30.0),
+            None,
+            None,
+            None,
+            Some(1.0),
+            Some(3.0),
+        );
 
         let blocks = heatmap.blocks();
         assert_eq!(blocks.download[TOTAL_BLOCKS - 1], Some(10.0));
@@ -329,7 +338,16 @@ mod tests {
         let mut heatmap = TemporalHeatmap::new();
         for i in 1..=5 {
             let value = i as f32;
-            heatmap.add_sample(value, value, Some(value), Some(value), None, None, None, None);
+            heatmap.add_sample(
+                value,
+                value,
+                Some(value),
+                Some(value),
+                None,
+                None,
+                None,
+                None,
+            );
         }
 
         let blocks = heatmap.blocks();

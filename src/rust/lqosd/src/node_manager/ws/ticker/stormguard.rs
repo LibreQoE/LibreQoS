@@ -29,9 +29,7 @@ pub async fn stormguard_ticker(
                 for response in replies.responses {
                     if let BusResponse::StormguardStats(stats) = response {
                         let msg = WsResponse::StormguardStatus { data: stats };
-                        pubsub
-                            .send(PublishedChannels::StormguardStatus, msg)
-                            .await;
+                        pubsub.send(PublishedChannels::StormguardStatus, msg).await;
                     }
                 }
             }
@@ -47,9 +45,7 @@ pub async fn stormguard_ticker(
                     if let BusResponse::StormguardDebug(stats) = response {
                         let msg = WsResponse::StormguardDebug { data: stats };
 
-                        pubsub
-                            .send(PublishedChannels::StormguardDebug, msg)
-                            .await;
+                        pubsub.send(PublishedChannels::StormguardDebug, msg).await;
                     }
                 }
             }

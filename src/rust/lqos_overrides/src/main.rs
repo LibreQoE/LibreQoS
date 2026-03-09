@@ -1,6 +1,6 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Args, Parser, Subcommand};
 
 use lqos_config::ShapedDevice;
@@ -43,9 +43,15 @@ enum PersistentDevicesCommand {
     /// Add a persistent shaped device
     Add(AddArgs),
     /// Delete all persistent devices with a circuit ID
-    DeleteCircuitId { #[arg(long)] circuit_id: String },
+    DeleteCircuitId {
+        #[arg(long)]
+        circuit_id: String,
+    },
     /// Delete persistent device(s) by device ID
-    DeleteDeviceId { #[arg(long)] device_id: String },
+    DeleteDeviceId {
+        #[arg(long)]
+        device_id: String,
+    },
     /// List current persistent devices
     List,
 }
@@ -57,13 +63,27 @@ enum AdjustmentsCommand {
     /// Add a device speed adjustment
     AddDeviceSpeed(AddDeviceSpeedArgs),
     /// Add a circuit removal adjustment
-    AddRemoveCircuit { #[arg(long)] circuit_id: String },
+    AddRemoveCircuit {
+        #[arg(long)]
+        circuit_id: String,
+    },
     /// Add a device removal adjustment
-    AddRemoveDevice { #[arg(long)] device_id: String },
+    AddRemoveDevice {
+        #[arg(long)]
+        device_id: String,
+    },
     /// Add a circuit reparent adjustment
-    AddReparentCircuit { #[arg(long)] circuit_id: String, #[arg(long)] parent_node: String },
+    AddReparentCircuit {
+        #[arg(long)]
+        circuit_id: String,
+        #[arg(long)]
+        parent_node: String,
+    },
     /// Remove an adjustment by index (see list)
-    DeleteIndex { #[arg(long)] index: usize },
+    DeleteIndex {
+        #[arg(long)]
+        index: usize,
+    },
     /// List current adjustments
     List,
 }
@@ -83,7 +103,10 @@ enum NetworkAdjustmentsCommand {
     /// Remove any virtual-node override for a specific node name
     DeleteVirtual { node_name: String },
     /// Remove a network adjustment by index (see list)
-    DeleteIndex { #[arg(long)] index: usize },
+    DeleteIndex {
+        #[arg(long)]
+        index: usize,
+    },
     /// List current network adjustments
     List,
 }
@@ -91,15 +114,35 @@ enum NetworkAdjustmentsCommand {
 #[derive(Subcommand, Debug)]
 enum UispCommand {
     /// Set per-site bandwidth override
-    BandwidthSet { #[arg(long)] site_name: String, #[arg(long)] down: f32, #[arg(long)] up: f32 },
+    BandwidthSet {
+        #[arg(long)]
+        site_name: String,
+        #[arg(long)]
+        down: f32,
+        #[arg(long)]
+        up: f32,
+    },
     /// Remove a per-site bandwidth override
-    BandwidthRemove { #[arg(long)] site_name: String },
+    BandwidthRemove {
+        #[arg(long)]
+        site_name: String,
+    },
     /// List bandwidth overrides
     BandwidthList,
     /// Add a route override
-    RouteAdd { #[arg(long)] from_site: String, #[arg(long)] to_site: String, #[arg(long)] cost: u32 },
+    RouteAdd {
+        #[arg(long)]
+        from_site: String,
+        #[arg(long)]
+        to_site: String,
+        #[arg(long)]
+        cost: u32,
+    },
     /// Remove a route override by index
-    RouteRemoveIndex { #[arg(long)] index: usize },
+    RouteRemoveIndex {
+        #[arg(long)]
+        index: usize,
+    },
     /// List route overrides
     RouteList,
 }
@@ -286,7 +329,8 @@ fn main() -> Result<()> {
                 }
             }
             PersistentDevicesCommand::DeleteCircuitId { circuit_id } => {
-                let removed = overrides.remove_persistent_shaped_device_by_circuit_count(&circuit_id);
+                let removed =
+                    overrides.remove_persistent_shaped_device_by_circuit_count(&circuit_id);
                 if removed > 0 {
                     overrides.save()?;
                     println!("Removed {removed} device(s) by circuit_id; overrides saved.");
@@ -345,8 +389,14 @@ fn main() -> Result<()> {
                 overrides.save()?;
                 println!("Added remove-device adjustment; overrides saved.");
             }
-            AdjustmentsCommand::AddReparentCircuit { circuit_id, parent_node } => {
-                let adj = CircuitAdjustment::ReparentCircuit { circuit_id, parent_node };
+            AdjustmentsCommand::AddReparentCircuit {
+                circuit_id,
+                parent_node,
+            } => {
+                let adj = CircuitAdjustment::ReparentCircuit {
+                    circuit_id,
+                    parent_node,
+                };
                 overrides.add_circuit_adjustment(adj);
                 overrides.save()?;
                 println!("Added reparent-circuit adjustment; overrides saved.");
@@ -376,7 +426,10 @@ fn main() -> Result<()> {
                 overrides.save()?;
                 println!("Added site speed adjustment; overrides saved.");
             }
-            NetworkAdjustmentsCommand::SetVirtual { node_name, virtual_node } => {
+            NetworkAdjustmentsCommand::SetVirtual {
+                node_name,
+                virtual_node,
+            } => {
                 overrides.set_network_node_virtual(node_name, virtual_node);
                 overrides.save()?;
                 println!("Set node virtual flag; overrides saved.");
@@ -385,7 +438,9 @@ fn main() -> Result<()> {
                 let removed = overrides.remove_network_node_virtual_by_name_count(&node_name);
                 if removed > 0 {
                     overrides.save()?;
-                    println!("Removed {removed} virtual override(s) for node '{node_name}'; overrides saved.");
+                    println!(
+                        "Removed {removed} virtual override(s) for node '{node_name}'; overrides saved."
+                    );
                 } else {
                     println!("No virtual override found for node '{node_name}'.");
                 }
@@ -405,7 +460,11 @@ fn main() -> Result<()> {
             }
         },
         Commands::Uisp { command: cmd } => match cmd {
-            UispCommand::BandwidthSet { site_name, down, up } => {
+            UispCommand::BandwidthSet {
+                site_name,
+                down,
+                up,
+            } => {
                 overrides.set_uisp_bandwidth_override(site_name, down, up);
                 overrides.save()?;
                 println!("Set UISP bandwidth override; overrides saved.");
@@ -421,12 +480,19 @@ fn main() -> Result<()> {
             }
             UispCommand::BandwidthList => {
                 if let Some(uisp) = overrides.uisp() {
-                    println!("{}", serde_json::to_string_pretty(&uisp.bandwidth_overrides)?);
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&uisp.bandwidth_overrides)?
+                    );
                 } else {
                     println!("{}", "{}");
                 }
             }
-            UispCommand::RouteAdd { from_site, to_site, cost } => {
+            UispCommand::RouteAdd {
+                from_site,
+                to_site,
+                cost,
+            } => {
                 overrides.add_uisp_route_override(from_site, to_site, cost);
                 overrides.save()?;
                 println!("Added UISP route override; overrides saved.");

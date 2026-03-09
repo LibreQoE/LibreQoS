@@ -1,7 +1,6 @@
 use crate::MQ_CREATED;
 use crate::queue_math::{
-    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec,
-    sqm_tokens_for,
+    format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_tokens_for,
 };
 use allocative::Allocative;
 use lqos_bus::TcHandle;

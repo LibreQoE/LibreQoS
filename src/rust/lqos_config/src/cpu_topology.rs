@@ -80,8 +80,14 @@ fn parse_cpu_list(input: &str) -> Result<Vec<u32>, CpuListParseError> {
             continue;
         }
         if let Some((start_s, end_s)) = p.split_once('-') {
-            let start = start_s.trim().parse::<u32>().map_err(|_| CpuListParseError::ParseNumber)?;
-            let end = end_s.trim().parse::<u32>().map_err(|_| CpuListParseError::ParseNumber)?;
+            let start = start_s
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| CpuListParseError::ParseNumber)?;
+            let end = end_s
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| CpuListParseError::ParseNumber)?;
             if end < start {
                 return Err(CpuListParseError::InvalidRange);
             }
@@ -89,7 +95,9 @@ fn parse_cpu_list(input: &str) -> Result<Vec<u32>, CpuListParseError> {
                 out.push(cpu);
             }
         } else {
-            let cpu = p.parse::<u32>().map_err(|_| CpuListParseError::ParseNumber)?;
+            let cpu = p
+                .parse::<u32>()
+                .map_err(|_| CpuListParseError::ParseNumber)?;
             out.push(cpu);
         }
     }
@@ -186,7 +194,11 @@ pub fn detect_shaping_cpus(cfg: &Config) -> ShapingCpuDetection {
     if let Some(eff) = eff_opt.clone() {
         if !eff.is_empty() && !possible.is_empty() {
             let eff_set: HashSet<u32> = eff.iter().copied().collect();
-            let perf: Vec<u32> = possible.iter().copied().filter(|c| !eff_set.contains(c)).collect();
+            let perf: Vec<u32> = possible
+                .iter()
+                .copied()
+                .filter(|c| !eff_set.contains(c))
+                .collect();
             if !perf.is_empty() {
                 return ShapingCpuDetection {
                     exclude_efficiency_cores: exclude,
@@ -227,7 +239,10 @@ mod tests {
 
     #[test]
     fn parse_cpu_list_mixed() {
-        assert_eq!(parse_cpu_list("0-3,8,10-12").unwrap(), vec![0, 1, 2, 3, 8, 10, 11, 12]);
+        assert_eq!(
+            parse_cpu_list("0-3,8,10-12").unwrap(),
+            vec![0, 1, 2, 3, 8, 10, 11, 12]
+        );
     }
 
     #[test]
@@ -237,7 +252,10 @@ mod tests {
 
     #[test]
     fn parse_cpu_list_invalid_range() {
-        assert_eq!(parse_cpu_list("3-1").unwrap_err(), CpuListParseError::InvalidRange);
+        assert_eq!(
+            parse_cpu_list("3-1").unwrap_err(),
+            CpuListParseError::InvalidRange
+        );
     }
 
     #[test]
@@ -245,4 +263,3 @@ mod tests {
         assert_eq!(parse_cpu_list(" \n").unwrap_err(), CpuListParseError::Empty);
     }
 }
-

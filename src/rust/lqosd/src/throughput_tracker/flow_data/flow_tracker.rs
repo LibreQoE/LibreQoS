@@ -3,7 +3,8 @@
 
 use crate::throughput_tracker::tracking_data::MAX_RETRY_TIMES;
 
-use super::{RttData, flow_analysis::FlowAnalysis, RttBuffer};
+use super::{RttBuffer, RttData, flow_analysis::FlowAnalysis};
+use crate::throughput_tracker::flow_data::flow_analysis::FlowbeeEffectiveDirection;
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
@@ -16,7 +17,6 @@ use serde::ser::SerializeStruct;
 use serde::ser::SerializeTuple;
 use serde::{Serialize, Serializer};
 use smallvec::SmallVec;
-use crate::throughput_tracker::flow_data::flow_analysis::FlowbeeEffectiveDirection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct AsnId(pub u32);
@@ -253,11 +253,7 @@ impl FlowbeeLocalData {
         [
             tcp_info
                 .rtt
-                .percentile(
-                    RttBucket::Current,
-                    FlowbeeEffectiveDirection::Download,
-                    50,
-                )
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
                 .unwrap_or(RttData::from_nanos(0)),
             tcp_info
                 .rtt
@@ -339,7 +335,11 @@ impl FlowbeeLocalData {
         tcp_info.qoq = scores;
     }
 
-    pub fn record_tcp_retry_time(&mut self, direction: FlowbeeEffectiveDirection, timestamp_nanos: u64) {
+    pub fn record_tcp_retry_time(
+        &mut self,
+        direction: FlowbeeEffectiveDirection,
+        timestamp_nanos: u64,
+    ) {
         let Some(tcp_info) = &mut self.tcp_info else {
             return;
         };

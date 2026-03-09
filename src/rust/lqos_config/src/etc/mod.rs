@@ -169,7 +169,9 @@ pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
 
 #[derive(Debug, Error)]
 pub enum LibreQoSConfigError {
-    #[error("Unable to locate LibreQoS configuration at {path}. Set `LQOS_CONFIG` to override the path.")]
+    #[error(
+        "Unable to locate LibreQoS configuration at {path}. Set `LQOS_CONFIG` to override the path."
+    )]
     NotFound { path: String },
     #[error("Unable to read LibreQoS configuration at {path}: {source}")]
     CannotRead {

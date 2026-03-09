@@ -54,7 +54,9 @@ impl FlowTracker {
                             Some(mask) => match mask.parse::<u8>() {
                                 Ok(mask) if mask <= 128 => mask,
                                 _ => {
-                                    error!("Invalid IPv6 subnet mask in do_not_track_subnets: {subnet}");
+                                    error!(
+                                        "Invalid IPv6 subnet mask in do_not_track_subnets: {subnet}"
+                                    );
                                     continue;
                                 }
                             },
@@ -82,7 +84,9 @@ impl FlowTracker {
                             Some(mask) => match mask.parse::<u8>() {
                                 Ok(mask) if mask <= 32 => mask,
                                 _ => {
-                                    error!("Invalid IPv4 subnet mask in do_not_track_subnets: {subnet}");
+                                    error!(
+                                        "Invalid IPv4 subnet mask in do_not_track_subnets: {subnet}"
+                                    );
                                     continue;
                                 }
                             },

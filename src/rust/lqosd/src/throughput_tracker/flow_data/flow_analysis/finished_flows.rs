@@ -475,7 +475,11 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             .lock()
             .get(&key.local_ip)
             .and_then(|te| te.circuit_hash)
-            .or_else(|| SHAPED_DEVICES.load().get_circuit_hash_from_ip(&key.local_ip))
+            .or_else(|| {
+                SHAPED_DEVICES
+                    .load()
+                    .get_circuit_hash_from_ip(&key.local_ip)
+            })
     });
 
     if !one_way {

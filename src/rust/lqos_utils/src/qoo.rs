@@ -14,9 +14,9 @@ mod qoo_profile;
 
 pub use qoo_profile::{ProfileIoError, QooProfileSpec, QooProfilesFile};
 
+use crate::rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer};
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
-use crate::rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer};
 use smallvec::SmallVec;
 
 #[inline]
@@ -516,7 +516,9 @@ impl QoqScores {
 }
 
 fn score_to_u8(score: Option<f64>) -> u8 {
-    let Some(score) = score else { return QOQ_UNKNOWN };
+    let Some(score) = score else {
+        return QOQ_UNKNOWN;
+    };
     if !score.is_finite() {
         return QOQ_UNKNOWN;
     }
@@ -568,8 +570,13 @@ pub fn compute_qoq_scores(
     let ul_total = (rtt.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload)
         >= MIN_RTT_SAMPLES_FOR_QOO)
         .then(|| {
-            latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total)
-                .score
+            latency_for_direction(
+                profile,
+                rtt,
+                FlowbeeEffectiveDirection::Upload,
+                RttBucket::Total,
+            )
+            .score
         })
         .flatten();
 

@@ -186,36 +186,33 @@ fn compute_oversubscribed_sites() -> Vec<OversubscribedSite> {
     }
 
     // Helper to collect descendant names including the node itself.
-    let collect_descendants = |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<lqos_config::NetworkJsonNode>| {
-        let mut stack = vec![start];
-        let mut visited = HashSet::new();
-        let mut names = HashSet::new();
-        while let Some(idx) = stack.pop() {
-            if !visited.insert(idx) {
-                continue;
-            }
-            if let Some(name) = nodes.get(idx).map(|n| n.name.clone()) {
-                names.insert(name);
-            }
-            if let Some(kids) = children.get(idx) {
-                for &child in kids {
-                    stack.push(child);
+    let collect_descendants =
+        |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<lqos_config::NetworkJsonNode>| {
+            let mut stack = vec![start];
+            let mut visited = HashSet::new();
+            let mut names = HashSet::new();
+            while let Some(idx) = stack.pop() {
+                if !visited.insert(idx) {
+                    continue;
+                }
+                if let Some(name) = nodes.get(idx).map(|n| n.name.clone()) {
+                    names.insert(name);
+                }
+                if let Some(kids) = children.get(idx) {
+                    for &child in kids {
+                        stack.push(child);
+                    }
                 }
             }
-        }
-        names
-    };
+            names
+        };
 
     let mut results: Vec<(String, OversubTally)> = Vec::new();
     for (idx, node) in nodes.iter().enumerate() {
         if node.name == "Root" {
             continue;
         }
-        let node_type = node
-            .node_type
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let node_type = node.node_type.as_deref().unwrap_or("").to_ascii_lowercase();
         if node_type != "site" && !node_type.is_empty() && node_type != "ap" {
             continue;
         }

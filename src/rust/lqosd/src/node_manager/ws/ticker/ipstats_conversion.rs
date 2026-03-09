@@ -62,12 +62,18 @@ mod tests {
 
     #[test]
     fn truncates_ascii_to_exact_length() {
-        assert_eq!(truncate_by_chars("abcdefghijklmnopqrstuvwxyz", 20), "abcdefghijklmnopqrst");
+        assert_eq!(
+            truncate_by_chars("abcdefghijklmnopqrstuvwxyz", 20),
+            "abcdefghijklmnopqrst"
+        );
     }
 
     #[test]
     fn truncates_utf8_without_panicking_on_char_boundaries() {
-        assert_eq!(truncate_by_chars("Punčochářová, Věra", 15), "Punčochářová, V");
+        assert_eq!(
+            truncate_by_chars("Punčochářová, Věra", 15),
+            "Punčochářová, V"
+        );
     }
 
     #[test]

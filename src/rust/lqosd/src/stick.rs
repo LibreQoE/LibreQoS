@@ -23,15 +23,16 @@ fn compute_stick_offset(config: &Config) -> Result<u32> {
 
     let interface = config.internet_interface();
 
-    let queues_available = if let Some(override_available_queues) = config.queues.override_available_queues {
-        info!(
-            "On-a-stick: overriding available queues to {}",
+    let queues_available =
+        if let Some(override_available_queues) = config.queues.override_available_queues {
+            info!(
+                "On-a-stick: overriding available queues to {}",
+                override_available_queues
+            );
             override_available_queues
-        );
-        override_available_queues
-    } else {
-        count_tx_queues(&interface)?
-    };
+        } else {
+            count_tx_queues(&interface)?
+        };
 
     // Keep stick_offset consistent with CPU binning / cpumap behavior. On hybrid CPUs this may
     // exclude efficiency cores, reducing the number of usable shaping CPUs.

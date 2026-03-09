@@ -97,7 +97,10 @@ impl CpuMapping {
     }
 
     pub(crate) fn setup_base_txq_config(&self, shaping_physical_cpus: &[u32]) -> Result<()> {
-        Ok(map_txq_config_shaping(self.fd_txq_config, shaping_physical_cpus)?)
+        Ok(map_txq_config_shaping(
+            self.fd_txq_config,
+            shaping_physical_cpus,
+        )?)
     }
 }
 

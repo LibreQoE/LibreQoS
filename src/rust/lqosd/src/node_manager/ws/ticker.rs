@@ -35,11 +35,12 @@ pub use network_tree::all_circuits;
 
 const ONE_SECOND_TICKER_TIMEOUT: Duration = Duration::from_millis(950);
 
-async fn ticker_with_timeout<T>(
-    name: &'static str,
-    fut: impl std::future::Future<Output = T>,
-) {
-    let result = timeout(ONE_SECOND_TICKER_TIMEOUT, AssertUnwindSafe(fut).catch_unwind()).await;
+async fn ticker_with_timeout<T>(name: &'static str, fut: impl std::future::Future<Output = T>) {
+    let result = timeout(
+        ONE_SECOND_TICKER_TIMEOUT,
+        AssertUnwindSafe(fut).catch_unwind(),
+    )
+    .await;
     match result {
         Ok(Ok(_)) => {}
         Ok(Err(panic)) => warn!(
@@ -119,7 +120,10 @@ async fn one_second_cadence(
                 "top_flows_rate",
                 top_flows::top_flows_rate(channels.clone(), bus_tx.clone())
             ),
-            ticker_with_timeout("asn_top", asn_top::asn_top(channels.clone(), bus_tx.clone())),
+            ticker_with_timeout(
+                "asn_top",
+                asn_top::asn_top(channels.clone(), bus_tx.clone())
+            ),
             ticker_with_timeout(
                 "endpoints_by_country",
                 flow_endpoints::endpoints_by_country(channels.clone(), bus_tx.clone())
@@ -164,7 +168,10 @@ async fn one_second_cadence(
                 "circuit_capacity",
                 circuit_capacity::circuit_capacity(channels.clone())
             ),
-            ticker_with_timeout("tree_capacity", tree_capacity::tree_capacity(channels.clone())),
+            ticker_with_timeout(
+                "tree_capacity",
+                tree_capacity::tree_capacity(channels.clone())
+            ),
             ticker_with_timeout(
                 "cpu_info",
                 system_info::cpu_info(channels.clone(), system_usage_tx.clone())

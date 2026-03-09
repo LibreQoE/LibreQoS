@@ -198,9 +198,10 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                 ticket_id,
                 responder,
             } => {
-                if let Err(err) =
-                    tx.try_send(ConnectionCommand::SupportTicketGet { ticket_id, responder })
-                {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketGet {
+                    ticket_id,
+                    responder,
+                }) {
                     if let tokio::sync::mpsc::error::TrySendError::Full(
                         ConnectionCommand::SupportTicketGet { responder, .. },
                     )

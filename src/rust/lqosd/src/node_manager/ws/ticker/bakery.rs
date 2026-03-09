@@ -32,9 +32,7 @@ pub async fn bakery_ticker(
                         },
                     };
 
-                    pubsub
-                        .send(PublishedChannels::BakeryStatus, msg)
-                        .await;
+                    pubsub.send(PublishedChannels::BakeryStatus, msg).await;
                 }
             }
         }

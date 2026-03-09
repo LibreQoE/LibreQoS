@@ -15,9 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
-use crate::qoo::{
-    Baseline, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile,
-};
+use crate::qoo::{Baseline, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile};
 
 /// File containing a table of QoO profiles.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -249,7 +247,10 @@ impl QooProfileSpec {
 
         for l in &self.latency {
             if l.percentile > 100 {
-                errs.push(format!("latency percentile {} must be 0..100", l.percentile));
+                errs.push(format!(
+                    "latency percentile {} must be 0..100",
+                    l.percentile
+                ));
             }
             if !l.low_ms.is_finite() || !l.high_ms.is_finite() {
                 errs.push(format!("latency p{} values must be finite", l.percentile));
@@ -263,21 +264,26 @@ impl QooProfileSpec {
             LatencyNormalizationSpec::None => {}
             LatencyNormalizationSpec::ThresholdOffsetMs { ms } => {
                 if !ms.is_finite() || ms < 0.0 {
-                    errs.push("latency_normalization.threshold_offset_ms.ms must be finite and >= 0".into());
+                    errs.push(
+                        "latency_normalization.threshold_offset_ms.ms must be finite and >= 0"
+                            .into(),
+                    );
                 }
             }
-            LatencyNormalizationSpec::ExcessOverBaseline { baseline } => match baseline {
-                BaselineSpec::FixedMs { ms } => {
-                    if !ms.is_finite() || ms < 0.0 {
-                        errs.push("latency_normalization.excess_over_baseline.fixed_ms.ms must be finite and >= 0".into());
+            LatencyNormalizationSpec::ExcessOverBaseline { baseline } => {
+                match baseline {
+                    BaselineSpec::FixedMs { ms } => {
+                        if !ms.is_finite() || ms < 0.0 {
+                            errs.push("latency_normalization.excess_over_baseline.fixed_ms.ms must be finite and >= 0".into());
+                        }
+                    }
+                    BaselineSpec::Percentile { percentile } => {
+                        if percentile > 100 {
+                            errs.push("latency_normalization.excess_over_baseline.percentile must be 0..100".into());
+                        }
                     }
                 }
-                BaselineSpec::Percentile { percentile } => {
-                    if percentile > 100 {
-                        errs.push("latency_normalization.excess_over_baseline.percentile must be 0..100".into());
-                    }
-                }
-            },
+            }
         }
 
         errs
