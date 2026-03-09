@@ -159,20 +159,35 @@ Practical split:
 1. HTB: hierarchical bandwidth policy and limits
 2. `fq_codel`/`CAKE`: queue fairness and delay control within that policy
 
-### 6.2 Why gains can appear below strict line-rate events
+### 6.2 Why AQM still helps even below line-rate saturation
 
-AQM/fair-queueing improvements are not only about "100% saturated link" moments.
+Even when a link is not saturated, fq_codel and CAKE still affect packet behavior. The drop logic (CoDel/BLUE/COBALT) usually stays idle, but the fair-queueing scheduler continues to interleave flows, preventing bursts from one flow from monopolizing the serialization point of the link. This keeps latency-sensitive traffic responsive.
 
-Even when the aggregate interface is not pinned continuously, user-visible gains can appear because:
+Let's think about the way these work:
 
-1. microbursts still create queue pressure
-2. competing flows still contend for queue service
-3. per-flow scheduling reduces flow domination and queue-wait spikes
-4. delay-oriented drop/mark behavior can prevent long-standing queues from building
+A packet is enqueued for sending (from any source). It goes into TC and is matched to the SQM qdisc.
 
-So a safer operator claim is:
+A flow key is generated (and the tin determined if using CAKE with diffserv). The enqueue time is recorded so we know how long the packet has been waiting.
 
-- "AQM can improve responsiveness and latency consistency under real mixed-load conditions, including periods below hard ceiling, depending on traffic mix and topology."
+With both fq_codel and CAKE, the packet is now sitting in a queue specific to that flow (how specific depends on configuration and hashing).
+
+Now dequeue happens – the interface indicates that it can accept more packets. When the link is not saturated, this tends to happen quickly.
+
+fq_codel and CAKE then schedule packets between flows (conceptually round-robin using deficit scheduling; CAKE also applies tin priority).
+
+At dequeue time, the sojourn time (time spent in the queue) is evaluated. In congested conditions this can trigger the CoDel or BLUE/COBALT drop logic. However, when the link is not saturated those mechanisms are rarely active.
+
+However, the flow queueing itself still matters.
+
+Packets are drawn from multiple flow queues in a fair order before reaching the device queue. At the physical layer the link ultimately serializes traffic one bit at a time, so the order packets reach that serialization point still affects latency behavior.
+
+Even without sustained congestion:
+
+- Responsiveness of well-behaved flows remains stable. Short control packets (DNS, SSH, TCP ACKs, etc.) are less likely to get stuck behind bursts from another flow.
+
+- Burstiness is reduced before packets hit the serialization point. Instead of one flow dumping a large burst, flows are interleaved by the scheduler.
+
+So even when the AQM drop logic is mostly idle, the fair-queueing part of SQM is still doing useful work by controlling how packets reach the wire.
 
 ### 6.3 CAKE vs fq_codel in LibreQoS terms
 
