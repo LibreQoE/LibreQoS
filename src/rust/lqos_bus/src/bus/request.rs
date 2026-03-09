@@ -116,14 +116,14 @@ pub enum BusRequest {
 
         /// Hashed circuit identifier (from ShapedDevices.csv).
         ///
-        /// Defaults to `0` for backward compatibility.
-        #[serde(default)]
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for circuit attribution.
         circuit_id: u64,
 
         /// Hashed device identifier (from ShapedDevices.csv).
         ///
-        /// Defaults to `0` for backward compatibility.
-        #[serde(default)]
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for device attribution.
         device_id: u64,
 
         /// If true, this is a *second* flow for the same IP range on
