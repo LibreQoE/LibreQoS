@@ -374,9 +374,7 @@ Then:
 2. "Undefined traffic goes to an HTB default queue in LibreQoS"
    - False; LibreQoS passes undefined traffic through.
 3. "Only hard saturation events benefit from AQM"
-   - False. Benefits are often visible whenever a managed queue has persistent pressure (bursts, mixed-flow contention), even if total interface utilization is below 100%.
-   - From maintainer testing and deployment feedback: CAKE/HTB remain useful on very low and asymmetric links, where queue control still improves usability.
-   - From maintainer testing and deployment feedback: queue dynamics, not just "link fully pegged," drive AQM value; in current LibreQoS, undefined traffic is pass-through, so apply this principle to managed HTB leaves.
+   - False. See [Why AQM still helps even below line-rate saturation](libreqos-backend-architecture.md#why-aqm-still-helps-even-below-line-rate-saturation).
 4. "Leaf qdisc tuning can fix broken hierarchy/class mapping"
    - False; mapping/hierarchy errors must be corrected first.
 5. "`fq_codel` can rate-limit on its own"

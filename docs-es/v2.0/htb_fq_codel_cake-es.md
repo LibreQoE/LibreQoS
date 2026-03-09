@@ -374,9 +374,7 @@ Luego:
 2. "El tráfico no definido va a una cola HTB default en LibreQoS"
    - Falso; LibreQoS deja pasar el tráfico no definido.
 3. "Solo eventos de saturación dura se benefician de AQM"
-   - Falso. Los beneficios suelen verse cuando una cola gestionada tiene presión persistente (bursts, contención de flujos), incluso si la interfaz total está por debajo de 100%.
-   - Desde pruebas de mantenedor y feedback de despliegue: CAKE/HTB siguen siendo útiles en enlaces de baja tasa y asimétricos, donde el control de cola mejora usabilidad.
-   - Desde pruebas de mantenedor y feedback de despliegue: la dinámica de colas, no solo "enlace completamente pegado", determina el valor de AQM; en LibreQoS actual, el tráfico no definido es pass-through, por lo que esto se aplica a hojas HTB gestionadas.
+   - Falso. Vea [Por qué AQM sigue ayudando incluso por debajo de la saturación de la tasa de línea](libreqos-backend-architecture-es.md#por-que-aqm-sigue-ayudando-incluso-por-debajo-de-la-saturacion-de-la-tasa-de-linea).
 4. "Ajustar qdisc hoja arregla jerarquía/mapeo roto"
    - Falso; primero hay que corregir errores de mapeo/jerarquía.
 5. "`fq_codel` puede limitar velocidad por sí solo"
@@ -412,4 +410,4 @@ Notas de traducción moderna:
 - [FQ_Codel wiki (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/FQ_Codel/)
 - [CAKE vs FQ_Codel (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/Cake_vs_FQ_CODEL/)
 - [CoDel/fq_codel wiki index (Bufferbloat)](https://www.bufferbloat.net/projects/codel/wiki/)
-- Toke Hoiland-Jorgensen, Dave Taht, Jonathan Morton. *Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways*, IEEE LANMAN, 2018.
+- [Toke Hoiland-Jorgensen, Dave Taht, Jonathan Morton. *Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways*, IEEE LANMAN, 2018.](https://arxiv.org/abs/1804.07617)
