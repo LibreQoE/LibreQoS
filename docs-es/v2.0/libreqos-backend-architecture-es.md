@@ -154,20 +154,36 @@ División práctica:
 1. HTB: política jerárquica de ancho de banda y límites
 2. `fq_codel`/`CAKE`: equidad de cola y control de delay dentro de esa política
 
-### 6.2 Por qué puede haber beneficios por debajo de la tasa máxima
+<a id="por-que-aqm-sigue-ayudando-incluso-por-debajo-de-la-saturacion-de-la-tasa-de-linea"></a>
+### 6.2 Por qué AQM sigue ayudando incluso por debajo de la saturación de la tasa de línea
 
-Las mejoras de AQM/fair-queueing no dependen solo de "enlace al 100%".
+Incluso cuando un enlace no está saturado, fq_codel y CAKE siguen afectando el comportamiento de los paquetes. La lógica de drop (CoDel/BLUE/COBALT) suele permanecer inactiva, pero el scheduler de fair-queueing sigue intercalando flujos, evitando que las ráfagas de un flujo monopolicen el punto de serialización del enlace. Esto mantiene responsivo el tráfico sensible a la latencia.
 
-Incluso cuando la interfaz agregada no está constantemente al límite, pueden aparecer mejoras visibles porque:
+Veamos cómo funciona esto:
 
-1. los microbursts siguen creando presión de cola
-2. los flujos compiten por servicio de cola
-3. el scheduler por flujo reduce dominancia de ciertos flujos y picos de espera
-4. drops/marks orientados a delay evitan colas persistentes muy largas
+Un paquete se encola para ser enviado (desde cualquier origen). Entra en TC y se empareja con el qdisc de SQM.
 
-Afirmación segura para operadores:
+Se genera una clave de flujo (y se determina el tin si se usa CAKE con diffserv). Se registra el tiempo de encolado para saber cuánto tiempo ha estado esperando el paquete.
 
-- "AQM puede mejorar la respuesta y consistencia de latencia bajo carga mixta real, incluyendo periodos por debajo del techo duro, según mezcla de tráfico y topología."
+Con fq_codel y con CAKE, el paquete queda ahora en una cola específica de ese flujo (qué tan específica depende de la configuración y del hashing).
+
+Ahora ocurre el dequeue: la interfaz indica que puede aceptar más paquetes. Cuando el enlace no está saturado, esto tiende a suceder rápidamente.
+
+Luego, fq_codel y CAKE programan paquetes entre flujos (conceptualmente round-robin usando deficit scheduling; CAKE además aplica prioridad por tin).
+
+En el momento del dequeue se evalúa el tiempo de permanencia en cola (sojourn time). En condiciones de congestión esto puede activar la lógica de drop de CoDel o de BLUE/COBALT. Sin embargo, cuando el enlace no está saturado, esos mecanismos rara vez están activos.
+
+Sin embargo, el queueing por flujo sigue importando.
+
+Los paquetes se extraen de múltiples colas de flujo en un orden justo antes de llegar a la cola del dispositivo. En la capa física, el enlace finalmente serializa el tráfico un bit a la vez, por lo que el orden en que los paquetes llegan a ese punto de serialización sigue afectando el comportamiento de la latencia.
+
+Incluso sin congestión sostenida:
+
+- La capacidad de respuesta de los flujos bien comportados se mantiene estable. Es menos probable que paquetes cortos de control (DNS, SSH, ACKs de TCP, etc.) queden atrapados detrás de ráfagas de otro flujo.
+
+- La naturaleza de las ráfagas se reduce antes de que los paquetes lleguen al punto de serialización. En lugar de que un flujo descargue una gran ráfaga, el scheduler intercala los flujos.
+
+Así que, incluso cuando la lógica de drop de AQM está mayormente inactiva, la parte de fair-queueing de SQM sigue haciendo trabajo útil al controlar cómo los paquetes llegan al medio físico.
 
 ### 6.3 CAKE vs fq_codel en términos de LibreQoS
 
