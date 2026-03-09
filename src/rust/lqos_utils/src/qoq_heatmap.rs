@@ -85,7 +85,8 @@ impl TemporalQoqHeatmap {
 
         download_total[TOTAL_BLOCKS - 1] =
             Self::median_from_raw(&self.raw_download_total, self.raw_filled);
-        upload_total[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_upload_total, self.raw_filled);
+        upload_total[TOTAL_BLOCKS - 1] =
+            Self::median_from_raw(&self.raw_upload_total, self.raw_filled);
 
         QoqHeatmapBlocks {
             download_total,

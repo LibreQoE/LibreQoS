@@ -106,7 +106,10 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         ..
     } = a
     else {
-        debug!("classify_circuit_change called on non-circuit command: {:?}", a);
+        debug!(
+            "classify_circuit_change called on non-circuit command: {:?}",
+            a
+        );
         return CircuitChange::None;
     };
     let BakeryCommands::AddCircuit {
@@ -124,7 +127,10 @@ fn classify_circuit_change(a: &BakeryCommands, b: &BakeryCommands) -> CircuitCha
         ..
     } = b
     else {
-        debug!("classify_circuit_change called on non-circuit command: {:?}", b);
+        debug!(
+            "classify_circuit_change called on non-circuit command: {:?}",
+            b
+        );
         return CircuitChange::None;
     };
     // Structural change?

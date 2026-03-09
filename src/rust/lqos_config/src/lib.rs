@@ -16,11 +16,12 @@ mod qoo_profiles;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUser, WebUsers};
-pub use cpu_topology::{CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus};
+pub use cpu_topology::{
+    CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
+};
 pub use etc::{
     BridgeConfig, Config, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    Tunables,
-    disable_xdp_bridge, enable_long_term_stats, load_config, update_config,
+    Tunables, disable_xdp_bridge, enable_long_term_stats, load_config, update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;

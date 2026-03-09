@@ -10,11 +10,11 @@
 #![warn(missing_docs)]
 
 use lqos_bakery::BakeryCommands;
+use lqos_bus::StormguardDebugEntry;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
 use tracing::{debug, info};
-use lqos_bus::StormguardDebugEntry;
 
 mod config;
 mod datalog;

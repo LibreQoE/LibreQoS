@@ -1,8 +1,8 @@
 use std::{fs::read_to_string, path::Path};
 
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use lqos_config::ShapedDevice;
+use serde::{Deserialize, Serialize};
 
 use crate::overrides_file::file_lock::FileLock;
 
@@ -25,9 +25,16 @@ pub enum CircuitAdjustment {
         min_upload_bandwidth: Option<f32>,
         max_upload_bandwidth: Option<f32>,
     },
-    RemoveCircuit { circuit_id: String },
-    RemoveDevice { device_id: String },
-    ReparentCircuit { circuit_id: String, parent_node: String },
+    RemoveCircuit {
+        circuit_id: String,
+    },
+    RemoveDevice {
+        device_id: String,
+    },
+    ReparentCircuit {
+        circuit_id: String,
+        parent_node: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -201,8 +208,7 @@ impl OverrideFile {
     /// Remove all devices matching `device_id`. Returns number removed.
     pub fn remove_persistent_shaped_device_by_device_count(&mut self, device_id: &str) -> usize {
         let before = self.persistent_devices.len();
-        self.persistent_devices
-            .retain(|d| d.device_id != device_id);
+        self.persistent_devices.retain(|d| d.device_id != device_id);
         before.saturating_sub(self.persistent_devices.len())
     }
 
@@ -231,10 +237,11 @@ impl OverrideFile {
             NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != &node_name,
             _ => true,
         });
-        self.network_adjustments.push(NetworkAdjustment::SetNodeVirtual {
-            node_name,
-            virtual_node,
-        });
+        self.network_adjustments
+            .push(NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            });
     }
 
     /// Remove any virtual-node overrides for `node_name`. Returns number removed.
@@ -275,7 +282,11 @@ impl OverrideFile {
 
     pub fn add_uisp_route_override(&mut self, from_site: String, to_site: String, cost: u32) {
         let uisp = self.ensure_uisp_mut();
-        uisp.route_overrides.push(UispRouteOverride { from_site, to_site, cost });
+        uisp.route_overrides.push(UispRouteOverride {
+            from_site,
+            to_site,
+            cost,
+        });
     }
 
     pub fn remove_uisp_route_by_index(&mut self, index: usize) -> bool {

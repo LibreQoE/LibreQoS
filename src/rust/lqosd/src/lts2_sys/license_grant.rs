@@ -73,8 +73,8 @@ pub fn local_public_key_bytes() -> Option<Vec<u8>> {
 }
 
 pub fn update_insight_public_key_bytes(public_key: Vec<u8>) -> Result<()> {
-    let key = PublicKey::try_from(public_key.as_slice())
-        .context("Insight public key size mismatch")?;
+    let key =
+        PublicKey::try_from(public_key.as_slice()).context("Insight public key size mismatch")?;
     update_insight_public_key(key)
 }
 
@@ -167,9 +167,7 @@ fn update_insight_public_key(key: PublicKey) -> Result<()> {
         return Ok(());
     }
     stored.insight_public_key = Some(key);
-    let path = KEYPAIR_PATH
-        .get()
-        .context("Keypair path not initialized")?;
+    let path = KEYPAIR_PATH.get().context("Keypair path not initialized")?;
     save_keypair(path, &stored)?;
     info!("Stored Insight public key");
     Ok(())
@@ -381,13 +379,15 @@ mod tests {
             payload: tampered,
             signature: signature.as_slice().to_vec(),
         };
-        assert!(verify_grant_with_time_and_keys(
-            &envelope,
-            now,
-            &signer.public_key,
-            lqosd.public_key.as_slice(),
-        )
-        .is_err());
+        assert!(
+            verify_grant_with_time_and_keys(
+                &envelope,
+                now,
+                &signer.public_key,
+                lqosd.public_key.as_slice(),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -413,12 +413,14 @@ mod tests {
             payload,
             signature: signature.as_slice().to_vec(),
         };
-        assert!(verify_grant_with_time_and_keys(
-            &envelope,
-            now,
-            &wrong_signer.public_key,
-            lqosd.public_key.as_slice(),
-        )
-        .is_err());
+        assert!(
+            verify_grant_with_time_and_keys(
+                &envelope,
+                now,
+                &wrong_signer.public_key,
+                lqosd.public_key.as_slice(),
+            )
+            .is_err()
+        );
     }
 }

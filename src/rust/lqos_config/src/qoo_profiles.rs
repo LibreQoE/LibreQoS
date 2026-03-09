@@ -21,7 +21,8 @@ struct CachedProfiles {
     file: Arc<QooProfilesFile>,
 }
 
-static PROFILES: Lazy<ArcSwap<Option<Arc<CachedProfiles>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
+static PROFILES: Lazy<ArcSwap<Option<Arc<CachedProfiles>>>> =
+    Lazy::new(|| ArcSwap::from_pointee(None));
 
 /// Minimal profile metadata for UI selection lists.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,4 +138,3 @@ pub fn active_qoo_profile() -> Result<Arc<QooProfile>, QooProfilesError> {
 
     Ok(Arc::new(selected.to_runtime()))
 }
-

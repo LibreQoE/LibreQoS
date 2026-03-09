@@ -14,9 +14,9 @@ mod finished_flows;
 pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
 mod kernel_ringbuffer;
-pub use kernel_ringbuffer::*;
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 pub use finished_flows::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry};
+pub use kernel_ringbuffer::*;
 pub use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData};
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());

@@ -5,8 +5,8 @@ mod site;
 mod stormguard_state;
 
 use crate::config::StormguardConfig;
-use crate::site_state::analysis::SaturationLevel;
 use crate::datalog::LogCommand;
+use crate::site_state::analysis::SaturationLevel;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
 };
@@ -16,9 +16,7 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{
-    BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle,
-};
+use lqos_bus::{BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -132,7 +130,15 @@ impl SiteStateTracker {
 
                 let make_direction =
                     |direction: RecommendationDirection| -> StormguardDebugDirection {
-                        let (queue_mbps, min_mbps, max_mbps, throughput_mbps, throughput_ma_mbps, retrans, retrans_ma) = match direction {
+                        let (
+                            queue_mbps,
+                            min_mbps,
+                            max_mbps,
+                            throughput_mbps,
+                            throughput_ma_mbps,
+                            retrans,
+                            retrans_ma,
+                        ) = match direction {
                             RecommendationDirection::Download => (
                                 site.queue_download_mbps,
                                 site_config.min_download_mbps,
@@ -186,13 +192,13 @@ impl SiteStateTracker {
                                 RecommendationDirection::Download => {
                                     site_config.max_download_mbps as f64
                                 }
-                                RecommendationDirection::Upload => site_config.max_upload_mbps as f64,
+                                RecommendationDirection::Upload => {
+                                    site_config.max_upload_mbps as f64
+                                }
                             },
                         );
-                        let saturation_current = SaturationLevel::from_throughput(
-                            throughput_mbps,
-                            queue_mbps as f64,
-                        );
+                        let saturation_current =
+                            SaturationLevel::from_throughput(throughput_mbps, queue_mbps as f64);
 
                         let can_increase = queue_mbps < max_mbps;
                         let can_decrease = queue_mbps > min_mbps;

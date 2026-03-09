@@ -22,7 +22,9 @@ enum RadioRole {
     Station,
 }
 
-pub(crate) fn build_device_link_meta_map(devices_raw: &[Device]) -> HashMap<String, DeviceLinkMeta> {
+pub(crate) fn build_device_link_meta_map(
+    devices_raw: &[Device],
+) -> HashMap<String, DeviceLinkMeta> {
     devices_raw
         .iter()
         .map(|d| {
@@ -250,4 +252,3 @@ mod tests {
         assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
     }
 }
-

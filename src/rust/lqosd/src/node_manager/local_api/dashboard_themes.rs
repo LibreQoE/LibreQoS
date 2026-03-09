@@ -101,10 +101,8 @@ pub(crate) fn save_theme_data(data: &DashletSave) -> Result<(), String> {
     let base_path = dashboards_dir().ok_or_else(|| "Unable to load configuration".to_string())?;
     let filename = normalize_theme_filename(&data.name);
     let file_path = base_path.join(filename);
-    let serialized =
-        serde_json::to_string(data).map_err(|e| format!("Serialize error: {e}"))?;
-    std::fs::write(&file_path, serialized.as_bytes())
-        .map_err(|e| format!("Write error: {e}"))?;
+    let serialized = serde_json::to_string(data).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(&file_path, serialized.as_bytes()).map_err(|e| format!("Write error: {e}"))?;
     Ok(())
 }
 

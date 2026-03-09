@@ -54,11 +54,7 @@ where
         let mut value = V::default();
         let value_ptr: *mut V = &mut value;
         let err = unsafe {
-            bpf_map_lookup_elem(
-                self.fd,
-                key_ptr as *mut c_void,
-                value_ptr as *mut c_void,
-            )
+            bpf_map_lookup_elem(self.fd, key_ptr as *mut c_void, value_ptr as *mut c_void)
         };
         if err != 0 {
             if err == -2 {

@@ -1,5 +1,5 @@
-mod dot;
 mod directionality;
+mod dot;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
@@ -10,8 +10,10 @@ use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use crate::strategies::full2::directionality::{
+    build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
+};
 use crate::strategies::full2::dot::save_dot_file;
-use crate::strategies::full2::directionality::{build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps};
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
@@ -539,20 +541,21 @@ fn add_device_links_to_graph(
 
         let id_a = from_device.identification.id.as_str();
         let id_b = to_device.identification.id.as_str();
-        let (cap_ab, cap_ba) =
-            if let Some((cap_ab, cap_ba)) = directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b) {
-                (cap_ab, cap_ba)
-            } else {
-                warn!(
-                    link_id = %link.id,
-                    from_id = %id_a,
-                    to_id = %id_b,
-                    from_name = %from_device.identification.name,
-                    to_name = %to_device.identification.name,
-                    "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
-                );
-                get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
-            };
+        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) =
+            directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b)
+        {
+            (cap_ab, cap_ba)
+        } else {
+            warn!(
+                link_id = %link.id,
+                from_id = %id_a,
+                to_id = %id_b,
+                from_name = %from_device.identification.name,
+                to_name = %to_device.identification.name,
+                "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
+            );
+            get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
+        };
         graph.add_edge(
             *a_ref,
             *b_ref,

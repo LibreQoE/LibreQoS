@@ -16,7 +16,7 @@ use crate::node_manager::local_api::{
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
-    WsHello, WsRequest, WsResponse, encode_ws_message, WS_HANDSHAKE_REQUIREMENT,
+    WS_HANDSHAKE_REQUIREMENT, WsHello, WsRequest, WsResponse, encode_ws_message,
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -32,15 +32,15 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use lqos_bus::BusRequest;
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::mpsc::Sender;
+use lqos_bus::BusRequest;
 use serde_cbor::Value as CborValue;
+use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
 
+pub(crate) mod messages;
 mod publish_subscribe;
 mod published_channels;
-pub(crate) mod messages;
 mod single_user_channels;
 mod ticker;
 
@@ -91,9 +91,7 @@ async fn ws_handler(
         .get(header::USER_AGENT)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown");
-    info!(
-        "WS upgrade requested (cookie present: {has_cookie}, ua: {user_agent})"
-    );
+    info!("WS upgrade requested (cookie present: {has_cookie}, ua: {user_agent})");
     let channels = channels.clone();
     let browser_language = headers
         .get(header::ACCEPT_LANGUAGE)
@@ -137,9 +135,8 @@ async fn handle_socket(
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
     let mut login = LoginResult::Denied;
-    let handshake_timeout = tokio::time::sleep(std::time::Duration::from_secs(
-        HANDSHAKE_TIMEOUT_SECS,
-    ));
+    let handshake_timeout =
+        tokio::time::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
     tokio::pin!(handshake_timeout);
 
     let hello = WsResponse::Hello {
@@ -377,7 +374,10 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::SetCircuitRttExcluded { circuit_id, excluded } => {
+        WsRequest::SetCircuitRttExcluded {
+            circuit_id,
+            excluded,
+        } => {
             if *login != crate::node_manager::auth::LoginResult::Admin {
                 let response = WsResponse::SetCircuitRttExcludedResult {
                     ok: false,
@@ -686,8 +686,8 @@ async fn receive_channel_message(
                         return true;
                     }
                 } else {
-                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
-                        .await;
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await;
                     match result {
                         Ok(Ok(Ok(ticket))) => {
                             if send_ws_response(&tx, WsResponse::SupportTicketGetResult { ticket })
@@ -892,32 +892,30 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::LtsTrialConfig => {
-            match lts::lts_trial_config_data(*login) {
-                Ok(data) => {
-                    let response = WsResponse::LtsTrialConfigResult { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to load LTS config".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::LtsTrialConfig => match lts::lts_trial_config_data(*login) {
+            Ok(data) => {
+                let response = WsResponse::LtsTrialConfigResult { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load LTS config".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::CircuitCount => {
             let response = WsResponse::CircuitCountResult {
                 data: circuit_count::circuit_count_data(),
@@ -930,7 +928,9 @@ async fn receive_channel_message(
             let result = lts::lts_trial_signup_data(license_key).await;
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
-                Err(StatusCode::INTERNAL_SERVER_ERROR) => (false, "Invalid license key".to_string()),
+                Err(StatusCode::INTERNAL_SERVER_ERROR) => {
+                    (false, "Invalid license key".to_string())
+                }
                 Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
                 Err(_) => (false, "Error".to_string()),
             };
@@ -945,32 +945,30 @@ async fn receive_channel_message(
                 });
             }
         }
-        WsRequest::LtsShaperStatus => {
-            match lts::shaper_status_data().await {
-                Ok(data) => {
-                    let response = WsResponse::LtsShaperStatus { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to load shaper status".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::LtsShaperStatus => match lts::shaper_status_data().await {
+            Ok(data) => {
+                let response = WsResponse::LtsShaperStatus { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Insight not enabled".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load shaper status".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::LtsThroughput { seconds } => {
             match lts::throughput_period_data(shaper_query.clone(), seconds).await {
                 Ok(data) => {
@@ -1231,32 +1229,30 @@ async fn receive_channel_message(
                 }
             }
         }
-        WsRequest::LtsRecentMedian => {
-            match lts::recent_medians_data(shaper_query.clone()).await {
-                Ok(data) => {
-                    let response = WsResponse::LtsRecentMedian { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to load medians".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::LtsRecentMedian => match lts::recent_medians_data(shaper_query.clone()).await {
+            Ok(data) => {
+                let response = WsResponse::LtsRecentMedian { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Insight not enabled".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load medians".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::AdminCheck => {
             let response = WsResponse::AdminCheck {
                 ok: config::admin_check_data(*login),
@@ -1265,32 +1261,30 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::GetConfig => {
-            match config::get_config_data(*login) {
-                Ok(data) => {
-                    let response = WsResponse::GetConfig { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to load config".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::GetConfig => match config::get_config_data(*login) {
+            Ok(data) => {
+                let response = WsResponse::GetConfig { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load config".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::QooProfiles => {
             if *login != crate::node_manager::auth::LoginResult::Admin {
                 let response = WsResponse::Error {
@@ -1347,11 +1341,8 @@ async fn receive_channel_message(
             network_json,
             shaped_devices,
         } => {
-            let result = config::update_network_and_devices_data(
-                *login,
-                network_json,
-                shaped_devices,
-            );
+            let result =
+                config::update_network_and_devices_data(*login, network_json, shaped_devices);
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
                 Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
@@ -1362,32 +1353,30 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::ListNics => {
-            match config::list_nics_data(*login) {
-                Ok(data) => {
-                    let response = WsResponse::ListNics { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to list NICs".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::ListNics => match config::list_nics_data(*login) {
+            Ok(data) => {
+                let response = WsResponse::ListNics { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to list NICs".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::NetworkJson => {
             let response = WsResponse::NetworkJson {
                 data: config::network_json_data(),
@@ -1404,32 +1393,30 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::GetUsers => {
-            match config::get_users_data(*login) {
-                Ok(data) => {
-                    let response = WsResponse::GetUsers { data };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Unable to load users".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
+        WsRequest::GetUsers => match config::get_users_data(*login) {
+            Ok(data) => {
+                let response = WsResponse::GetUsers { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
                 }
             }
-        }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load users".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
         WsRequest::AddUser {
             username,
             password,
@@ -1533,8 +1520,7 @@ fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
                         let mut normalized_map = BTreeMap::new();
                         normalized_map.insert(key, CborValue::Null);
                         let normalized = CborValue::Map(normalized_map);
-                        if let Ok(request) =
-                            serde_cbor::value::from_value::<WsRequest>(normalized)
+                        if let Ok(request) = serde_cbor::value::from_value::<WsRequest>(normalized)
                         {
                             return Ok(request);
                         }

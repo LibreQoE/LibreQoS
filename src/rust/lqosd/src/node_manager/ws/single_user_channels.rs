@@ -126,10 +126,12 @@ impl PrivateState {
         };
         let _ = self
             .control_tx
-            .send(crate::lts2_sys::control_channel::ControlChannelCommand::ChatSend {
-                request_id,
-                text,
-            })
+            .send(
+                crate::lts2_sys::control_channel::ControlChannelCommand::ChatSend {
+                    request_id,
+                    text,
+                },
+            )
             .await;
     }
 }

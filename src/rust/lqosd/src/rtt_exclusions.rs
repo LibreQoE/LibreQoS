@@ -48,4 +48,3 @@ pub fn set_excluded_circuit_id(circuit_id: &str, excluded: bool) -> anyhow::Resu
     store_from_override_file(&of);
     Ok(changed)
 }
-

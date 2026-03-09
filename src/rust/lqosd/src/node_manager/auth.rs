@@ -145,17 +145,15 @@ pub async fn login_from_token(token: &str) -> LoginResult {
     let mut lock = WEB_USERS.lock().await;
     if lock.is_none() {
         match WebUsers::does_users_file_exist() {
-            Ok(true) => {
-                match WebUsers::load_or_create() {
-                    Ok(users) => {
-                        *lock = Some(users);
-                    }
-                    Err(e) => {
-                        warn!("Unable to load users file for websocket auth: {e}");
-                        return LoginResult::Denied;
-                    }
+            Ok(true) => match WebUsers::load_or_create() {
+                Ok(users) => {
+                    *lock = Some(users);
                 }
-            }
+                Err(e) => {
+                    warn!("Unable to load users file for websocket auth: {e}");
+                    return LoginResult::Denied;
+                }
+            },
             Ok(false) => {
                 return LoginResult::Denied;
             }
