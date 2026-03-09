@@ -130,7 +130,20 @@ token = ""
 
 [stormguard]
 enabled = false
-targets = [ ]
-dry_run = false
-minimum_download_percentage = 0.25
-minimum_upload_percentage = 0.25
+dry_run = true
+all_sites = false
+targets = []
+exclude_sites = []
+minimum_download_percentage = 0.5
+minimum_upload_percentage = 0.5
+increase_fast_multiplier = 1.30
+increase_multiplier = 1.15
+decrease_multiplier = 0.95
+decrease_fast_multiplier = 0.88
+increase_fast_cooldown_seconds = 2.0
+increase_cooldown_seconds = 1.0
+decrease_cooldown_seconds = 3.75
+decrease_fast_cooldown_seconds = 7.5
+circuit_fallback_enabled = false
+circuit_fallback_persist = true
+circuit_fallback_sqm = "fq_codel"

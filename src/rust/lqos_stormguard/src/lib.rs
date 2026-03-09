@@ -20,6 +20,7 @@ mod config;
 mod datalog;
 mod queue_structure;
 mod site_state;
+mod adaptive_actions;
 
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
@@ -68,8 +69,9 @@ pub async fn start_stormguard(
                         if log_sender.is_none() {
                             log_sender = datalog::start_datalog(&new_config).ok();
                         }
-                        site_state_tracker =
-                            Some(site_state::SiteStateTracker::from_config(&new_config));
+                        let mut tracker = site_state::SiteStateTracker::from_config(&new_config);
+                        tracker.replay_persisted_adjustments(&new_config, bakery.clone());
+                        site_state_tracker = Some(tracker);
                         config = Some(new_config);
                     }
                 }

@@ -223,6 +223,9 @@ impl Config {
         if self.queues.default_sqm.trim().is_empty() {
             return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
         }
+        if let Some(stormguard) = &self.stormguard {
+            stormguard.validate()?;
+        }
         self.treeguard.validate()?;
         Ok(())
     }
@@ -535,5 +538,73 @@ mod test {
         cfg.treeguard.circuits.idle_util_pct = 10.0;
         cfg.treeguard.circuits.upgrade_util_pct = 5.0;
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn stormguard_defaults_preserve_legacy_behavior() {
+        let cfg = crate::etc::v15::stormguard::StormguardConfig::default();
+        assert!(!cfg.enabled);
+        assert!(!cfg.all_sites);
+        assert!(cfg.targets.is_empty());
+        assert!(cfg.exclude_sites.is_empty());
+        assert!(cfg.dry_run);
+        assert_eq!(cfg.minimum_download_percentage, 0.5);
+        assert_eq!(cfg.minimum_upload_percentage, 0.5);
+        assert_eq!(cfg.increase_fast_multiplier, 1.30);
+        assert_eq!(cfg.increase_multiplier, 1.15);
+        assert_eq!(cfg.decrease_multiplier, 0.95);
+        assert_eq!(cfg.decrease_fast_multiplier, 0.88);
+        assert_eq!(cfg.increase_fast_cooldown_seconds, 2.0);
+        assert_eq!(cfg.increase_cooldown_seconds, 1.0);
+        assert_eq!(cfg.decrease_cooldown_seconds, 3.75);
+        assert_eq!(cfg.decrease_fast_cooldown_seconds, 7.5);
+        assert!(!cfg.circuit_fallback_enabled);
+        assert!(cfg.circuit_fallback_persist);
+        assert_eq!(cfg.circuit_fallback_sqm, "fq_codel");
+    }
+
+    #[test]
+    fn stormguard_validation_rejects_invalid_ranges() {
+        let mut cfg = Config::default();
+        cfg.stormguard = Some(crate::etc::v15::stormguard::StormguardConfig {
+            enabled: true,
+            targets: vec!["Site A".to_string()],
+            ..Default::default()
+        });
+
+        let stormguard = cfg.stormguard.as_mut().unwrap();
+        stormguard.minimum_download_percentage = 0.0;
+        assert!(cfg.validate().is_err());
+
+        let stormguard = cfg.stormguard.as_mut().unwrap();
+        stormguard.minimum_download_percentage = 0.5;
+        stormguard.decrease_multiplier = 1.1;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn legacy_stormguard_config_loads_with_new_defaults() {
+        let mut raw = include_str!("example.toml").to_string();
+        raw.push_str(
+            r#"
+
+[stormguard]
+enabled = true
+targets = ["Site A"]
+dry_run = true
+minimum_download_percentage = 0.5
+minimum_upload_percentage = 0.5
+"#,
+        );
+        let cfg = Config::load_from_string(&raw)
+            .expect("legacy stormguard config should deserialize");
+
+        let stormguard = cfg.stormguard.expect("stormguard section missing");
+        assert!(!stormguard.all_sites);
+        assert!(stormguard.exclude_sites.is_empty());
+        assert_eq!(stormguard.increase_fast_multiplier, 1.30);
+        assert_eq!(stormguard.decrease_fast_cooldown_seconds, 7.5);
+        assert!(!stormguard.circuit_fallback_enabled);
+        assert_eq!(stormguard.circuit_fallback_sqm, "fq_codel");
     }
 }

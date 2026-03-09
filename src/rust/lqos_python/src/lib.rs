@@ -951,13 +951,20 @@ fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
 }
 
 /// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv,
-/// using the effective overrides view (operator + TreeGuard layers when enabled).
+/// using the effective overrides view (operator + adaptive layers when enabled).
 #[pyfunction]
 fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(apply_treeguard) {
+    let overrides = match lqos_overrides::OverrideStore::load_effective(
+        apply_stormguard,
+        apply_treeguard,
+    ) {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
@@ -1126,13 +1133,20 @@ fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
 }
 
 /// Returns the list of network adjustments as Python dicts, using the effective overrides view
-/// (operator + TreeGuard layers when enabled).
+/// (operator + adaptive layers when enabled).
 #[pyfunction]
 fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(apply_treeguard) {
+    let overrides = match lqos_overrides::OverrideStore::load_effective(
+        apply_stormguard,
+        apply_treeguard,
+    ) {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
