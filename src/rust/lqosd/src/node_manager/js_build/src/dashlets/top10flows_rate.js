@@ -5,6 +5,8 @@ import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
+const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
+
 export class Top10FlowsRate extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
@@ -94,10 +96,11 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
+                const cacheKey = flowCacheKey(r);
                 if (r.rtt_nanos['down'] !== undefined) {
-                    this.rttCache.set(r.remote_ip + r.analysis, r.rtt_nanos);
+                    this.rttCache.set(cacheKey, r.rtt_nanos);
                 }
-                let rtt = this.rttCache.get(r.remote_ip + r.analysis);
+                let rtt = this.rttCache.get(cacheKey);
                 if (rtt === 0) {
                     rtt = { down: 0, up: 0 };
                 }

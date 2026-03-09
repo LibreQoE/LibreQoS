@@ -27,8 +27,10 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 let circuit_id = decodeURI(params.id);
 let plan = null;
 let channelLink = null;
+let cakeChannel = null;
 let pinger = null;
 let flowChannel = null;
+let funnelSubscription = null;
 let speedometer = null;
 let qooGauge = null;
 let totalThroughput = null;
@@ -220,9 +222,6 @@ function connectPingers(circuits) {
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
                     target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
-                // Initialize Bootstrap tooltips
-                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
-                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -928,7 +927,10 @@ function initialFunnel(parentNode) {
                 };
             });
             funnelParents = immediateParent.parents;
-            subscribeWS(["NetworkTree"], onTreeEvent);
+            if (funnelSubscription) {
+                funnelSubscription.dispose();
+            }
+            funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
         }, 0)});
     });
     wsClient.send({ NetworkTree: {} });
@@ -961,9 +963,6 @@ function onTreeEvent(msg) {
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
         rttGraph.updateManyMs(myMessage.rtts);
-        tpGraph.chart.resize();
-        rxmitGraph.chart.resize();
-        rttGraph.chart.resize();
     });
 }
 
@@ -988,7 +987,7 @@ function subscribeToCake() {
     // Set a timeout to show the message if no data arrives within 3 seconds
     noDataTimeout = setTimeout(showNoQueueMessage, 3000);
     
-    channelLink = new DirectChannel({
+    cakeChannel = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
@@ -1186,4 +1185,28 @@ function loadInitial() {
     });
 }
 
+function cleanupCircuitPage() {
+    if (channelLink) {
+        channelLink.close();
+        channelLink = null;
+    }
+    if (cakeChannel) {
+        cakeChannel.close();
+        cakeChannel = null;
+    }
+    if (pinger) {
+        pinger.close();
+        pinger = null;
+    }
+    if (flowChannel) {
+        flowChannel.close();
+        flowChannel = null;
+    }
+    if (funnelSubscription) {
+        funnelSubscription.dispose();
+        funnelSubscription = null;
+    }
+}
+
+window.addEventListener("beforeunload", cleanupCircuitPage);
 loadInitial();

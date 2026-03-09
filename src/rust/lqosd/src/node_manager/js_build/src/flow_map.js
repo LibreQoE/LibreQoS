@@ -145,9 +145,12 @@ class FlowMap extends DashboardGraph {
 
 const map = new FlowMap("flowMap");
 const overlay = makeOverlay(map.dom, "flowMapOverlay");
+let updateTimer = null;
+let pendingRequest = null;
 
 function updateMap() {
-    listenOnceWithTimeout("FlowMap", RESPONSE_TIMEOUT_MS, (msg) => {
+    pendingRequest = listenOnceWithTimeout("FlowMap", RESPONSE_TIMEOUT_MS, (msg) => {
+        pendingRequest = null;
         const data = msg && msg.data ? msg.data : [];
         const totalBytes = data.reduce((acc, d) => acc + toNumber(d?.[3], 0), 0);
 
@@ -167,13 +170,32 @@ function updateMap() {
             map.update(output);
         }
 
-        setTimeout(updateMap, POLL_MS);
+        updateTimer = setTimeout(updateMap, POLL_MS);
     }, () => {
+        pendingRequest = null;
         overlay.show("Waiting for data", "No FlowMap websocket response received yet.");
         map.update([]);
-        setTimeout(updateMap, POLL_MS);
+        updateTimer = setTimeout(updateMap, POLL_MS);
     });
     wsClient.send({ FlowMap: {} });
+}
+
+function stopUpdates() {
+    if (updateTimer) {
+        clearTimeout(updateTimer);
+        updateTimer = null;
+    }
+    if (pendingRequest) {
+        pendingRequest.cancel();
+        pendingRequest = null;
+    }
+}
+
+function resumeUpdates() {
+    if (!updateTimer && !pendingRequest) {
+        overlay.show("Waiting for data", "Requesting recent flow endpoints...");
+        updateMap();
+    }
 }
 
 window.addEventListener("resize", () => {
@@ -183,6 +205,14 @@ window.addEventListener("resize", () => {
         // ignore
     }
 });
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        stopUpdates();
+    } else {
+        resumeUpdates();
+    }
+});
+window.addEventListener("beforeunload", stopUpdates);
 
 overlay.show("Waiting for data", "Requesting recent flow endpoints...");
 updateMap();

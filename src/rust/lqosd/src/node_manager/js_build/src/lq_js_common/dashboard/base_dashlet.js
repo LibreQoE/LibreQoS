@@ -11,6 +11,7 @@ export class BaseDashlet {
         this.graphs = [];
         this.graphDivs = [];
         this.zoomed = false;
+        this.disposed = false;
     }
 
     canBeSlowedDown() {
@@ -51,6 +52,9 @@ export class BaseDashlet {
     }
 
     setupOnce(msg) {
+        if (this.disposed) {
+            return;
+        }
         if (!this.setupDone) {
             this.setup(msg);
         }
@@ -216,6 +220,37 @@ export class BaseDashlet {
             zoomDiv.remove();
         }
         this.zoomed = false;
+    }
+
+    dispose() {
+        if (this.disposed) {
+            return;
+        }
+        this.disposed = true;
+        this.closeZoom();
+        this.#disposeGraph(this.graph);
+        this.#disposeGraph(this.zoomGraph);
+        for (let i = 0; i < this.graphs.length; i++) {
+            this.#disposeGraph(this.graphs[i]);
+        }
+        if (window.timeGraphs !== undefined) {
+            window.timeGraphs = window.timeGraphs.filter((graph) => graph && graph !== this);
+        }
+    }
+
+    #disposeGraph(graph) {
+        if (!graph) {
+            return;
+        }
+        try {
+            if (graph.chart && graph.chart.dispose) {
+                graph.chart.dispose();
+            }
+        } catch (_) {}
+
+        if (window.graphList !== undefined) {
+            window.graphList = window.graphList.filter((entry) => entry && entry !== graph);
+        }
     }
 
     makePeriodBtn(name) {
