@@ -9,6 +9,8 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
     // Keep track of current tab and layout state
     let currentLayout = JSON.parse(JSON.stringify(layout)); // Deep copy
     let activeTabIndex = currentLayout.activeTab || 0;
+    const sortableInstances = [];
+    let committedLayout = null;
     
     // Create a lookup map for widget names by tag
     const widgetNameLookup = {};
@@ -17,8 +19,14 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
     });
     
     // Build modal HTML with tab support
+    const styleId = "dashboardEditorStyle";
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+        existingStyle.remove();
+    }
+
     var modalHtml = `
-  <style>
+  <style id="${styleId}">
     .border-dashed {
         border: 2px dashed #dee2e6 !important;
     }
@@ -127,26 +135,29 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
 
     // Drag & Drop overlay handlers
     const dropZone = document.getElementById('dropZone');
-    ['dragenter', 'dragover'].forEach(evtName => {
-        document.addEventListener(evtName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.classList.remove('d-none');
-        });
-    });
-    ;['dragleave', 'drop'].forEach(evtName => {
-        document.addEventListener(evtName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.classList.add('d-none');
-        });
-    });
-    document.addEventListener('drop', (e) => {
+    const onDragEnterOrOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('d-none');
+    };
+    const onDragLeaveOrDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('d-none');
+    };
+    const onDocumentDrop = (e) => {
         const dt = e.dataTransfer;
         if (dt && dt.files && dt.files.length) {
             uploadLayout(dt.files[0]);
         }
+    };
+    ['dragenter', 'dragover'].forEach((evtName) => {
+        document.addEventListener(evtName, onDragEnterOrOver);
     });
+    ['dragleave', 'drop'].forEach((evtName) => {
+        document.addEventListener(evtName, onDragLeaveOrDrop);
+    });
+    document.addEventListener('drop', onDocumentDrop);
 
     function renderTabs() {
         const $tabs = $('#editorTabs');
@@ -303,25 +314,24 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
     if (typeof Sortable === 'undefined') {
         console.warn('Dashboard editor: SortableJS is not loaded. Drag/drop will be disabled.');
     } else {
-    var dashboardSortable = new Sortable(document.getElementById('dashboardGrid'), {
-        animation: 150,
-        group: {
-            name: 'shared',
-            pull: true,
-            put: true
-        },
-        onEnd: function (evt) {
-            // Update the order in our data model
-            updateDashletOrder();
-        },
-        onAdd: function (evt) {
-            // When an item is dropped into the grid (from the available list),
-            // replace it with a fully rendered dashboard item.
-            var $item = $(evt.item);
-            var name = $item.data('name');
-            var size = $item.data('size');
-            var tag = $item.data('tag');
-            $item.replaceWith(`
+    const dashboardGridEl = document.getElementById('dashboardGrid');
+    if (dashboardGridEl) {
+        const dashboardSortable = new Sortable(dashboardGridEl, {
+            animation: 150,
+            group: {
+                name: 'shared',
+                pull: true,
+                put: true
+            },
+            onEnd: function () {
+                updateDashletOrder();
+            },
+            onAdd: function (evt) {
+                var $item = $(evt.item);
+                var name = $item.data('name');
+                var size = $item.data('size');
+                var tag = $item.data('tag');
+                $item.replaceWith(`
         <div class="dashboard-item col-${size}" data-size="${size}" data-name="${name}" data-tag="${tag}">
           <div class="card">
             <div class="card-body p-2">
@@ -337,9 +347,11 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
           </div>
         </div>
       `);
-            updateDashletOrder();
-        }
-    });
+                updateDashletOrder();
+            }
+        });
+        sortableInstances.push(dashboardSortable);
+    }
     }
 
     // Initialize SortableJS for all available elements lists in the accordion
@@ -347,7 +359,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
         if (typeof Sortable === 'undefined') {
             return;
         }
-        new Sortable(list, {
+        sortableInstances.push(new Sortable(list, {
             animation: 150,
             group: {
                 name: 'shared',
@@ -355,7 +367,7 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                 put: false
             },
             sort: false
-        });
+        }));
     });
 
     // Update the dashlet order in our data model based on DOM
@@ -542,45 +554,14 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
         }
     });
 
-    // Allow increasing the width of an item (up to 12).
-    $('#dashboardGrid').on('click', '.increase-width', function() {
-        var $item = $(this).closest('.dashboard-item');
-        var size = parseInt($item.data('size'), 10);
-        if (size < 12) {
-            size++;
-            $item.data('size', size);
-            // Remove previous col-* class and add the new one.
-            $item.removeClass(function(index, className) {
-                return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
-            }).addClass('col-' + size);
-            updateDashletOrder();
-        }
-    });
-
-    // Allow decreasing the width of an item (minimum 1).
-    $('#dashboardGrid').on('click', '.decrease-width', function() {
-        var $item = $(this).closest('.dashboard-item');
-        var size = parseInt($item.data('size'), 10);
-        if (size > 1) {
-            size--;
-            $item.data('size', size);
-            $item.removeClass(function(index, className) {
-                return (className.match(/(^|\s)col-\S+/g) || []).join(' ');
-            }).addClass('col-' + size);
-            updateDashletOrder();
-        }
-    });
-
     // When the "Done" button is clicked, collect the new layout and call the callback.
     $('#dashboardDone').on('click', function() {
-        // Hide and remove the modal.
-        $('#dashboardEditorModal').modal('hide').remove();
-        // Pass the new layout back to the caller.
-        callback({
+        committedLayout = {
             version: currentLayout.version || 2,
             tabs: currentLayout.tabs,
             activeTab: activeTabIndex
-        });
+        };
+        modal.hide();
     });
 
     // Show the modal using Bootstrap's modal API.
@@ -593,7 +574,25 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
 
     // Clean up when the modal is hidden.
     $('#dashboardEditorModal').on('hidden.bs.modal', function() {
+        sortableInstances.forEach((instance) => {
+            if (instance && instance.destroy) {
+                instance.destroy();
+            }
+        });
+        ['dragenter', 'dragover'].forEach((evtName) => {
+            document.removeEventListener(evtName, onDragEnterOrOver);
+        });
+        ['dragleave', 'drop'].forEach((evtName) => {
+            document.removeEventListener(evtName, onDragLeaveOrDrop);
+        });
+        document.removeEventListener('drop', onDocumentDrop);
+        const styleEl = document.getElementById(styleId);
+        if (styleEl) {
+            styleEl.remove();
+        }
         $(this).remove();
+        if (committedLayout) {
+            callback(committedLayout);
+        }
     });
 }
-

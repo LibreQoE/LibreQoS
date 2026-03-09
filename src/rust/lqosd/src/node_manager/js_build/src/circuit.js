@@ -2,12 +2,13 @@
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
-import {colorByQoqScore} from "./helpers/color_scales";
+import {colorByQoqScore, colorByRttMs} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey} from "./graphs/flow_sankey";
@@ -26,8 +27,10 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 let circuit_id = decodeURI(params.id);
 let plan = null;
 let channelLink = null;
+let cakeChannel = null;
 let pinger = null;
 let flowChannel = null;
+let funnelSubscription = null;
 let speedometer = null;
 let qooGauge = null;
 let totalThroughput = null;
@@ -37,6 +40,9 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let excludeRttToggle = null;
+let excludeRttLastValue = false;
+let excludeRttBusy = false;
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -87,6 +93,40 @@ function requestCircuitById(onSuccess, onError) {
     wsClient.send({ CircuitById: { id: circuit_id } });
 }
 
+function initExcludeRttToggle() {
+    excludeRttToggle = document.getElementById("excludeRttToggle");
+    if (!excludeRttToggle) return;
+
+    const listenOnceMatch = (eventName, predicate, handler) => {
+        const wrapped = (msg) => {
+            if (!predicate(msg)) return;
+            wsClient.off(eventName, wrapped);
+            handler(msg);
+        };
+        wsClient.on(eventName, wrapped);
+    };
+
+    excludeRttToggle.addEventListener("change", () => {
+        if (excludeRttBusy) return;
+        const desired = !!excludeRttToggle.checked;
+        excludeRttBusy = true;
+        listenOnceMatch(
+            "SetCircuitRttExcludedResult",
+            (msg) => !msg?.circuit_id || msg.circuit_id === circuit_id,
+            (msg) => {
+                excludeRttBusy = false;
+                if (!msg || !msg.ok) {
+                    alert((msg && msg.message) ? msg.message : "Failed to update RTT exclusion");
+                    excludeRttToggle.checked = !!excludeRttLastValue;
+                    return;
+                }
+                excludeRttLastValue = desired;
+            },
+        );
+        wsClient.send({ SetCircuitRttExcluded: { circuit_id, excluded: desired } });
+    });
+}
+
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
         CircuitWatcher: {
@@ -99,6 +139,10 @@ function connectPrivateChannel() {
             updateSpeedometer(msg.devices);
             if (qooGauge !== null) {
                 qooGauge.update(msg.qoo_score);
+            }
+            if (excludeRttToggle && msg.rtt_excluded !== undefined) {
+                excludeRttLastValue = !!msg.rtt_excluded;
+                excludeRttToggle.checked = excludeRttLastValue;
             }
         }
     });
@@ -178,9 +222,6 @@ function connectPingers(circuits) {
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
                     target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
-                // Initialize Bootstrap tooltips
-                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
-                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -232,8 +273,8 @@ function formatRttNanos(rttNanos) {
     if (n === 0) {
         return "<span class='muted' style='color: var(--bs-border-color)'>■</span>-";
     }
-    const rttInMs = Math.min(200, n / 1000000);
-    const color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    const rttInMs = n / 1000000;
+    const color = colorByRttMs(rttInMs);
     return "<span class='muted' style='color: " + color + "'>■</span>" + scaleNanos(n);
 }
 
@@ -283,6 +324,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
+    thead.appendChild(theading("RTT Exclude"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
@@ -380,6 +422,19 @@ function updateTrafficTab(msg) {
         const qooUp = qoq ? qoq.upload_total : null;
         const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
 
+        const remoteIp = String(flow[0].remote_ip || "").trim();
+        const excludeBtn = document.createElement("button");
+        excludeBtn.type = "button";
+        excludeBtn.className = "btn btn-outline-secondary btn-sm";
+        excludeBtn.textContent = "Exclude RTT…";
+        excludeBtn.disabled = !remoteIp;
+        excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+        excludeBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+        });
+
         // Collect row data
         tableRows.push({
             sortKeys: {
@@ -392,7 +447,7 @@ function updateTrafficTab(msg) {
                 qoo: qooForSort,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
-                ip: flow[0].remote_ip
+                ip: remoteIp
             },
             columns: [
                 flow[0].protocol_name,
@@ -410,7 +465,8 @@ function updateTrafficTab(msg) {
                 formatQooScore(qooUp),
                 flow[0].asn_name,
                 flow[0].asn_country,
-                flow[0].remote_ip
+                remoteIp,
+                excludeBtn,
             ],
             opacity: 1.0 - opacity,
             visible: visible
@@ -445,6 +501,14 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
+            const isNode = col && typeof col === "object" && typeof col.nodeType === "number";
+            if (isNode) {
+                const td = document.createElement("td");
+                td.classList.add("text-center");
+                td.appendChild(col);
+                row.appendChild(td);
+                return;
+            }
             if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));
@@ -863,7 +927,10 @@ function initialFunnel(parentNode) {
                 };
             });
             funnelParents = immediateParent.parents;
-            subscribeWS(["NetworkTree"], onTreeEvent);
+            if (funnelSubscription) {
+                funnelSubscription.dispose();
+            }
+            funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
         }, 0)});
     });
     wsClient.send({ NetworkTree: {} });
@@ -896,9 +963,6 @@ function onTreeEvent(msg) {
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
         rttGraph.updateManyMs(myMessage.rtts);
-        tpGraph.chart.resize();
-        rxmitGraph.chart.resize();
-        rttGraph.chart.resize();
     });
 }
 
@@ -923,7 +987,7 @@ function subscribeToCake() {
     // Set a timeout to show the message if no data arrives within 3 seconds
     noDataTimeout = setTimeout(showNoQueueMessage, 3000);
     
-    channelLink = new DirectChannel({
+    cakeChannel = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
@@ -1092,6 +1156,7 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
+    initExcludeRttToggle();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);
@@ -1120,4 +1185,28 @@ function loadInitial() {
     });
 }
 
+function cleanupCircuitPage() {
+    if (channelLink) {
+        channelLink.close();
+        channelLink = null;
+    }
+    if (cakeChannel) {
+        cakeChannel.close();
+        cakeChannel = null;
+    }
+    if (pinger) {
+        pinger.close();
+        pinger = null;
+    }
+    if (flowChannel) {
+        flowChannel.close();
+        flowChannel = null;
+    }
+    if (funnelSubscription) {
+        funnelSubscription.dispose();
+        funnelSubscription = null;
+    }
+}
+
+window.addEventListener("beforeunload", cleanupCircuitPage);
 loadInitial();

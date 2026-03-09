@@ -122,6 +122,7 @@ pub enum WsRequest {
     },
     DeleteUser { username: String },
     CircuitById { id: String },
+    SetCircuitRttExcluded { circuit_id: String, excluded: bool },
     RequestAnalysis { ip: String },
     CpuAffinitySummary,
     CpuAffinityCircuits {
@@ -459,6 +460,13 @@ pub enum WsResponse {
         circuit_id: String,
         devices: Vec<Circuit>,
         qoo_score: Option<f32>,
+        rtt_excluded: bool,
+    },
+    SetCircuitRttExcludedResult {
+        ok: bool,
+        message: String,
+        circuit_id: String,
+        excluded: bool,
     },
     PingMonitor { ip: String, result: PingState },
     FlowsByCircuit {

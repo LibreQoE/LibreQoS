@@ -73,6 +73,9 @@ pub struct OverrideFile {
     /// Adjustments that affect network.json structure/settings.
     #[serde(default)]
     network_adjustments: Vec<NetworkAdjustment>,
+    /// Circuit IDs excluded from RTT aggregation/summarization in the UI.
+    #[serde(default)]
+    rtt_excluded_circuits: Vec<String>,
     /// UISP integration consolidated overrides
     #[serde(default)]
     uisp: Option<UispOverrides>,
@@ -123,6 +126,50 @@ impl OverrideFile {
     /// Borrow UISP overrides if present
     pub fn uisp(&self) -> Option<&UispOverrides> {
         self.uisp.as_ref()
+    }
+
+    /// Borrow the list of circuit IDs excluded from RTT aggregation/summarization.
+    pub fn rtt_excluded_circuits(&self) -> &[String] {
+        &self.rtt_excluded_circuits
+    }
+
+    /// Returns true if the circuit ID is excluded from RTT aggregation/summarization.
+    pub fn is_circuit_rtt_excluded(&self, circuit_id: &str) -> bool {
+        self.rtt_excluded_circuits.iter().any(|c| c == circuit_id)
+    }
+
+    /// Add/remove a circuit ID from the RTT exclusion list. Returns true if changed.
+    pub fn set_circuit_rtt_excluded_return_changed(
+        &mut self,
+        circuit_id: &str,
+        excluded: bool,
+    ) -> bool {
+        let id = circuit_id.trim();
+        if id.is_empty() {
+            return false;
+        }
+
+        let matches = self
+            .rtt_excluded_circuits
+            .iter()
+            .filter(|c| c.trim() == id)
+            .count();
+
+        if excluded {
+            // Already excluded exactly once -> idempotent no-op.
+            if matches == 1 {
+                return false;
+            }
+            self.rtt_excluded_circuits.retain(|c| c.trim() != id);
+            self.rtt_excluded_circuits.push(id.to_string());
+            return true;
+        }
+
+        if matches == 0 {
+            return false;
+        }
+        self.rtt_excluded_circuits.retain(|c| c.trim() != id);
+        true
     }
 
     /// Add or replace a shaped device by `device_id`. Returns true if changed.
@@ -238,5 +285,33 @@ impl OverrideFile {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OverrideFile;
+
+    #[test]
+    fn override_file_defaults_accept_empty_json() {
+        let of: OverrideFile = serde_json::from_str("{}").expect("empty JSON should deserialize");
+        assert!(of.rtt_excluded_circuits().is_empty());
+    }
+
+    #[test]
+    fn rtt_excluded_set_unset_is_idempotent() {
+        let mut of = OverrideFile::default();
+        assert!(!of.is_circuit_rtt_excluded("C1"));
+
+        assert!(of.set_circuit_rtt_excluded_return_changed("C1", true));
+        assert!(of.is_circuit_rtt_excluded("C1"));
+
+        assert!(!of.set_circuit_rtt_excluded_return_changed("C1", true));
+        assert!(of.is_circuit_rtt_excluded("C1"));
+
+        assert!(of.set_circuit_rtt_excluded_return_changed("C1", false));
+        assert!(!of.is_circuit_rtt_excluded("C1"));
+
+        assert!(!of.set_circuit_rtt_excluded_return_changed("C1", false));
     }
 }

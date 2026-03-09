@@ -1,5 +1,5 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
-import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {colorByRttMs} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client} from "./pubsub/ws";
 
@@ -9,7 +9,6 @@ const POLL_MS = 1000;
 const RESPONSE_TIMEOUT_MS = 2000;
 const MIN_POINTS = 3;
 const MIN_TOTAL_BYTES = 1_000_000;
-const RTT_LIMIT_MS = 200;
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -146,9 +145,12 @@ class FlowMap extends DashboardGraph {
 
 const map = new FlowMap("flowMap");
 const overlay = makeOverlay(map.dom, "flowMapOverlay");
+let updateTimer = null;
+let pendingRequest = null;
 
 function updateMap() {
-    listenOnceWithTimeout("FlowMap", RESPONSE_TIMEOUT_MS, (msg) => {
+    pendingRequest = listenOnceWithTimeout("FlowMap", RESPONSE_TIMEOUT_MS, (msg) => {
+        pendingRequest = null;
         const data = msg && msg.data ? msg.data : [];
         const totalBytes = data.reduce((acc, d) => acc + toNumber(d?.[3], 0), 0);
 
@@ -158,8 +160,8 @@ function updateMap() {
         } else {
             overlay.hide();
             const output = data.map((d) => {
-                const rttMs = Math.min(RTT_LIMIT_MS, toNumber(d?.[4], 0) / 1_000_000);
-                const color = lerpGreenToRedViaOrange(RTT_LIMIT_MS - rttMs, RTT_LIMIT_MS);
+                const rttMs = toNumber(d?.[4], 0) / 1_000_000;
+                const color = colorByRttMs(rttMs);
                 return {
                     value: [toNumber(d?.[1], 0), toNumber(d?.[0], 0)], // It wants lon/lat
                     itemStyle: { color },
@@ -168,13 +170,32 @@ function updateMap() {
             map.update(output);
         }
 
-        setTimeout(updateMap, POLL_MS);
+        updateTimer = setTimeout(updateMap, POLL_MS);
     }, () => {
+        pendingRequest = null;
         overlay.show("Waiting for data", "No FlowMap websocket response received yet.");
         map.update([]);
-        setTimeout(updateMap, POLL_MS);
+        updateTimer = setTimeout(updateMap, POLL_MS);
     });
     wsClient.send({ FlowMap: {} });
+}
+
+function stopUpdates() {
+    if (updateTimer) {
+        clearTimeout(updateTimer);
+        updateTimer = null;
+    }
+    if (pendingRequest) {
+        pendingRequest.cancel();
+        pendingRequest = null;
+    }
+}
+
+function resumeUpdates() {
+    if (!updateTimer && !pendingRequest) {
+        overlay.show("Waiting for data", "Requesting recent flow endpoints...");
+        updateMap();
+    }
 }
 
 window.addEventListener("resize", () => {
@@ -184,6 +205,14 @@ window.addEventListener("resize", () => {
         // ignore
     }
 });
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        stopUpdates();
+    } else {
+        resumeUpdates();
+    }
+});
+window.addEventListener("beforeunload", stopUpdates);
 
 overlay.show("Waiting for data", "Requesting recent flow endpoints...");
 updateMap();

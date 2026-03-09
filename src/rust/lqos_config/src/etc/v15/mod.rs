@@ -2,6 +2,7 @@
 
 mod top_config;
 pub use top_config::Config;
+pub use top_config::RttThresholds;
 mod bridge;
 mod flows;
 pub mod influxdb;

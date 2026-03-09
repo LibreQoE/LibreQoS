@@ -775,48 +775,43 @@ fn parse_add_ip(
     classid: &str,
     cpu: &str,
     upload: bool,
-    circuit_id: Option<&str>,
-    device_id: Option<&str>,
+    circuit_id: &str,
+    device_id: &str,
 ) -> Result<BusRequest> {
     if !classid.contains(':') {
         return Err(Error::msg(format!(
             "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
         )));
     }
-    let circuit_id = circuit_id
-        .and_then(|s| (!s.is_empty()).then(|| lqos_utils::hash_to_i64(s) as u64))
-        .unwrap_or(0);
-    let device_id = device_id
-        .and_then(|s| (!s.is_empty()).then(|| lqos_utils::hash_to_i64(s) as u64))
-        .unwrap_or(0);
+    let circuit_id = circuit_id.trim();
+    if circuit_id.is_empty() {
+        return Err(Error::msg("circuit_id is required"));
+    }
+    let device_id = device_id.trim();
+    if device_id.is_empty() {
+        return Err(Error::msg("device_id is required"));
+    }
     Ok(BusRequest::MapIpToFlow {
         ip_address: ip.to_string(),
         tc_handle: TcHandle::from_string(classid)?,
         cpu: read_hex_string(cpu)?, // Force HEX representation
-        circuit_id,
-        device_id,
+        circuit_id: lqos_utils::hash_to_i64(circuit_id) as u64,
+        device_id: lqos_utils::hash_to_i64(device_id) as u64,
         upload,
     })
 }
 
 /// Adds an IP address mapping
-#[pyfunction(signature = (ip, classid, cpu, upload, circuit_id=None, device_id=None))]
+#[pyfunction(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
 fn add_ip_mapping(
     ip: String,
     classid: String,
     cpu: String, // In HEX
     upload: bool,
-    circuit_id: Option<String>,
-    device_id: Option<String>,
+    circuit_id: String,
+    device_id: String,
 ) -> PyResult<()> {
-    let request = parse_add_ip(
-        &ip,
-        &classid,
-        &cpu,
-        upload,
-        circuit_id.as_deref(),
-        device_id.as_deref(),
-    );
+    let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
     if let Ok(request) = request {
         run_query(vec![request]).unwrap();
         Ok(())
@@ -837,24 +832,17 @@ impl BatchedCommands {
         Ok(Self { batch: Vec::new() })
     }
 
-    #[pyo3(signature = (ip, classid, cpu, upload, circuit_id=None, device_id=None))]
+    #[pyo3(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
     pub fn add_ip_mapping(
         &mut self,
         ip: String,
         classid: String,
         cpu: String,
         upload: bool,
-        circuit_id: Option<String>,
-        device_id: Option<String>,
+        circuit_id: String,
+        device_id: String,
     ) -> PyResult<()> {
-        let request = parse_add_ip(
-            &ip,
-            &classid,
-            &cpu,
-            upload,
-            circuit_id.as_deref(),
-            device_id.as_deref(),
-        );
+        let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
         if let Ok(request) = request {
             self.batch.push(request);
             Ok(())
@@ -971,21 +959,49 @@ fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     for adj in overrides.circuit_adjustments().iter() {
         let d = PyDict::new(py);
         match adj {
-            lqos_overrides::CircuitAdjustment::CircuitAdjustSpeed { circuit_id, min_download_bandwidth, max_download_bandwidth, min_upload_bandwidth, max_upload_bandwidth } => {
+            lqos_overrides::CircuitAdjustment::CircuitAdjustSpeed {
+                circuit_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
                 d.set_item("type", "circuit_adjust_speed")?;
                 d.set_item("circuit_id", circuit_id.clone())?;
-                if let Some(v) = min_download_bandwidth { d.set_item("min_download_bandwidth", *v)?; }
-                if let Some(v) = max_download_bandwidth { d.set_item("max_download_bandwidth", *v)?; }
-                if let Some(v) = min_upload_bandwidth { d.set_item("min_upload_bandwidth", *v)?; }
-                if let Some(v) = max_upload_bandwidth { d.set_item("max_upload_bandwidth", *v)?; }
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
             }
-            lqos_overrides::CircuitAdjustment::DeviceAdjustSpeed { device_id, min_download_bandwidth, max_download_bandwidth, min_upload_bandwidth, max_upload_bandwidth } => {
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSpeed {
+                device_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
                 d.set_item("type", "device_adjust_speed")?;
                 d.set_item("device_id", device_id.clone())?;
-                if let Some(v) = min_download_bandwidth { d.set_item("min_download_bandwidth", *v)?; }
-                if let Some(v) = max_download_bandwidth { d.set_item("max_download_bandwidth", *v)?; }
-                if let Some(v) = min_upload_bandwidth { d.set_item("min_upload_bandwidth", *v)?; }
-                if let Some(v) = max_upload_bandwidth { d.set_item("max_upload_bandwidth", *v)?; }
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
             }
             lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
                 d.set_item("type", "remove_circuit")?;
@@ -995,7 +1011,10 @@ fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
                 d.set_item("type", "remove_device")?;
                 d.set_item("device_id", device_id.clone())?;
             }
-            lqos_overrides::CircuitAdjustment::ReparentCircuit { circuit_id, parent_node } => {
+            lqos_overrides::CircuitAdjustment::ReparentCircuit {
+                circuit_id,
+                parent_node,
+            } => {
                 d.set_item("type", "reparent_circuit")?;
                 d.set_item("circuit_id", circuit_id.clone())?;
                 d.set_item("parent_node", parent_node.clone())?;
@@ -1020,13 +1039,24 @@ fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
     for adj in overrides.network_adjustments().iter() {
         let d = PyDict::new(py);
         match adj {
-            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed { site_name, download_bandwidth_mbps, upload_bandwidth_mbps } => {
+            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+            } => {
                 d.set_item("type", "adjust_site_speed")?;
                 d.set_item("site_name", site_name.clone())?;
-                if let Some(v) = download_bandwidth_mbps { d.set_item("download_bandwidth_mbps", *v)?; }
-                if let Some(v) = upload_bandwidth_mbps { d.set_item("upload_bandwidth_mbps", *v)?; }
+                if let Some(v) = download_bandwidth_mbps {
+                    d.set_item("download_bandwidth_mbps", *v)?;
+                }
+                if let Some(v) = upload_bandwidth_mbps {
+                    d.set_item("upload_bandwidth_mbps", *v)?;
+                }
             }
-            lqos_overrides::NetworkAdjustment::SetNodeVirtual { node_name, virtual_node } => {
+            lqos_overrides::NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            } => {
                 d.set_item("type", "set_node_virtual")?;
                 d.set_item("node_name", node_name.clone())?;
                 d.set_item("virtual", *virtual_node)?;

@@ -8,6 +8,7 @@ import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
 
 const wsClient = get_ws_client();
+const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
 const listenOnceForSeconds = (eventName, seconds, handler) => {
     const wrapped = (msg) => {
         if (!msg || msg.seconds !== seconds) return;
@@ -107,10 +108,11 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
+                const cacheKey = flowCacheKey(r);
                 if (r.rtt_nanos['down'] !== undefined) {
-                    this.rttCache.set(r.remote_ip + r.analysis, r.rtt_nanos);
+                    this.rttCache.set(cacheKey, r.rtt_nanos);
                 }
-                let rtt = this.rttCache.get(r.remote_ip + r.analysis);
+                let rtt = this.rttCache.get(cacheKey);
                 if (rtt === 0) {
                     rtt = { down: 0, up: 0 };
                 }

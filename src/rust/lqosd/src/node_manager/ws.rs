@@ -377,6 +377,34 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::SetCircuitRttExcluded { circuit_id, excluded } => {
+            if *login != crate::node_manager::auth::LoginResult::Admin {
+                let response = WsResponse::SetCircuitRttExcludedResult {
+                    ok: false,
+                    message: "Unauthorized".to_string(),
+                    circuit_id,
+                    excluded,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            } else {
+                let (ok, message) =
+                    match crate::rtt_exclusions::set_excluded_circuit_id(&circuit_id, excluded) {
+                        Ok(_) => (true, "Ok".to_string()),
+                        Err(e) => (false, format!("{e:?}")),
+                    };
+                let response = WsResponse::SetCircuitRttExcludedResult {
+                    ok,
+                    message,
+                    circuit_id,
+                    excluded,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        }
         WsRequest::RequestAnalysis { ip } => {
             let response = WsResponse::RequestAnalysisResult {
                 data: packet_analysis::request_analysis_data(&ip),

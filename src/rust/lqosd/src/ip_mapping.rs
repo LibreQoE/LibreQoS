@@ -18,6 +18,11 @@ pub(crate) fn map_ip_to_flow(
     circuit_id: u64,
     device_id: u64,
 ) -> BusResponse {
+    if circuit_id == 0 || device_id == 0 {
+        return BusResponse::Fail(
+            "MapIpToFlow requires non-zero circuit_id and device_id hashes".to_string(),
+        );
+    }
     expect_ack(lqos_sys::add_ip_to_tc(
         ip_address, *tc_handle, cpu, upload, circuit_id, device_id,
     ))

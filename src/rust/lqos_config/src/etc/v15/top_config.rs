@@ -13,6 +13,47 @@ fn default_true() -> bool {
     true
 }
 
+fn default_rtt_green_ms() -> u32 {
+    0
+}
+
+fn default_rtt_yellow_ms() -> u32 {
+    100
+}
+
+fn default_rtt_red_ms() -> u32 {
+    200
+}
+
+/// RTT color scale thresholds (milliseconds) used by the web UI.
+///
+/// These represent the color "anchor points" for RTT:
+/// - `green_ms`: values at/below this are green
+/// - `yellow_ms`: this point is yellow
+/// - `red_ms`: values at/above this are red
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct RttThresholds {
+    /// RTT at/below this value (milliseconds) is colored green.
+    #[serde(default = "default_rtt_green_ms")]
+    pub green_ms: u32,
+    /// RTT at this value (milliseconds) is colored yellow.
+    #[serde(default = "default_rtt_yellow_ms")]
+    pub yellow_ms: u32,
+    /// RTT at/above this value (milliseconds) is colored red.
+    #[serde(default = "default_rtt_red_ms")]
+    pub red_ms: u32,
+}
+
+impl Default for RttThresholds {
+    fn default() -> Self {
+        Self {
+            green_ms: default_rtt_green_ms(),
+            yellow_ms: default_rtt_yellow_ms(),
+            red_ms: default_rtt_red_ms(),
+        }
+    }
+}
+
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct Config {
@@ -33,6 +74,12 @@ pub struct Config {
     /// Optional QoO profile id (loaded from `qoo_profiles.json`) used for QoO/QoQ scoring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qoo_profile_id: Option<String>,
+
+    /// Optional RTT thresholds used for RTT color scaling in the UI.
+    ///
+    /// Defaults to the executive-dashboard ramp: 0ms=green, 100ms=yellow, 200ms=red.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rtt_thresholds: Option<RttThresholds>,
 
     /// Packet capture time
     pub packet_capture_time: usize,
@@ -157,6 +204,16 @@ impl Config {
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
         }
+        if let Some(rtt) = &self.rtt_thresholds {
+            if rtt.red_ms == 0 {
+                return Err("rtt_thresholds.red_ms must be > 0".to_string());
+            }
+            if rtt.green_ms > rtt.yellow_ms || rtt.yellow_ms > rtt.red_ms {
+                return Err(
+                    "rtt_thresholds must satisfy green_ms <= yellow_ms <= red_ms".to_string(),
+                );
+            }
+        }
         // Validate that default_sqm is not empty to prevent incomplete TC commands
         if self.queues.default_sqm.trim().is_empty() {
             return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
@@ -226,6 +283,7 @@ impl Default for Config {
             node_id: Self::calculate_node_id(),
             node_name: "LibreQoS".to_string(),
             qoo_profile_id: None,
+            rtt_thresholds: None,
             tuning: Tunables::default(),
             bridge: Some(super::bridge::BridgeConfig::default()),
             single_interface: None,
@@ -296,7 +354,7 @@ impl Config {
 
 #[cfg(test)]
 mod test {
-    use super::Config;
+    use super::{Config, RttThresholds};
 
     fn remove_sections(raw: &str, sections: &[&str]) -> String {
         let mut output = Vec::new();
@@ -395,5 +453,35 @@ mod test {
         assert!(!serialized.contains("spylnx_integration"));
         assert!(serialized.contains("enable_splynx"));
         assert!(!serialized.contains("enable_spylnx"));
+    }
+
+    #[test]
+    fn rtt_thresholds_default_matches_executive_ramp() {
+        let d = RttThresholds::default();
+        assert_eq!(d.green_ms, 0);
+        assert_eq!(d.yellow_ms, 100);
+        assert_eq!(d.red_ms, 200);
+    }
+
+    #[test]
+    fn rtt_thresholds_validation_requires_ordered() {
+        let mut cfg = Config::default();
+        cfg.rtt_thresholds = Some(RttThresholds {
+            green_ms: 0,
+            yellow_ms: 200,
+            red_ms: 100,
+        });
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn rtt_thresholds_validation_rejects_zero_red() {
+        let mut cfg = Config::default();
+        cfg.rtt_thresholds = Some(RttThresholds {
+            green_ms: 0,
+            yellow_ms: 0,
+            red_ms: 0,
+        });
+        assert!(cfg.validate().is_err());
     }
 }

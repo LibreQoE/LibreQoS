@@ -13,6 +13,7 @@ mod node_manager;
 mod preflight_checks;
 mod program_control;
 mod remote_commands;
+mod rtt_exclusions;
 mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;

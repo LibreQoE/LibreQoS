@@ -29,11 +29,11 @@ enum Commands {
 
         /// Circuit ID (raw string). Hashed before being stored.
         #[arg(long)]
-        circuit_id: Option<String>,
+        circuit_id: String,
 
         /// Device ID (raw string). Hashed before being stored.
         #[arg(long)]
-        device_id: Option<String>,
+        device_id: String,
 
         /// Add "--upload 1" if you are using on-a-stick and need to map upload separately
         #[arg(long)]
@@ -98,8 +98,8 @@ fn parse_add_ip(
     classid: &str,
     cpu: &str,
     upload: &Option<String>,
-    circuit_id: &Option<String>,
-    device_id: &Option<String>,
+    circuit_id: &str,
+    device_id: &str,
 ) -> Result<BusRequest> {
     //if ip.parse::<IpAddr>().is_err() {
     //    return Err(Error::msg(format!("Unable to parse IP address: {ip}")));
@@ -109,22 +109,20 @@ fn parse_add_ip(
             "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
         )));
     }
-    let circuit_id = circuit_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|s| lqos_utils::hash_to_i64(s) as u64)
-        .unwrap_or(0);
-    let device_id = device_id
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|s| lqos_utils::hash_to_i64(s) as u64)
-        .unwrap_or(0);
+    let circuit_id = circuit_id.trim();
+    if circuit_id.is_empty() {
+        return Err(Error::msg("--circuit_id is required"));
+    }
+    let device_id = device_id.trim();
+    if device_id.is_empty() {
+        return Err(Error::msg("--device_id is required"));
+    }
     Ok(BusRequest::MapIpToFlow {
         ip_address: ip.to_string(),
         tc_handle: TcHandle::from_string(classid)?,
         cpu: read_hex_string(cpu)?, // Force HEX representation
-        circuit_id,
-        device_id,
+        circuit_id: lqos_utils::hash_to_i64(circuit_id) as u64,
+        device_id: lqos_utils::hash_to_i64(device_id) as u64,
         upload: upload.is_some(),
     })
 }
@@ -142,8 +140,15 @@ pub async fn main() -> Result<()> {
             device_id,
             upload,
         }) => {
-            talk_to_server(parse_add_ip(&ip, &classid, &cpu, &upload, &circuit_id, &device_id)?)
-                .await?;
+            talk_to_server(parse_add_ip(
+                &ip,
+                &classid,
+                &cpu,
+                &upload,
+                &circuit_id,
+                &device_id,
+            )?)
+            .await?;
         }
         Some(Commands::Del { ip, upload }) => {
             talk_to_server(BusRequest::DelIpFlow {

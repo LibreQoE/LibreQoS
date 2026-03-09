@@ -115,6 +115,9 @@ fn throughput_task(
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) {
+    // Load RTT exclusion overrides once on startup. UI/API calls will refresh this on update.
+    crate::rtt_exclusions::refresh_from_disk();
+
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
         if let Some(flow_config) = &config.flows {
@@ -532,6 +535,11 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, d)| {
+                d.circuit_hash
+                    .map(|h| !crate::rtt_exclusions::is_excluded_hash(h))
+                    .unwrap_or(true)
+            })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
                 (
@@ -628,6 +636,11 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, d)| {
+                d.circuit_hash
+                    .map(|h| !crate::rtt_exclusions::is_excluded_hash(h))
+                    .unwrap_or(true)
+            })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
                 (

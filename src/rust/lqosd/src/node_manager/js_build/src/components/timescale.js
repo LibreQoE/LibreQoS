@@ -36,6 +36,7 @@ class TimeControls {
                     }
                 });
                 if (window.timeGraphs !== undefined) {
+                    window.timeGraphs = window.timeGraphs.filter((graph) => graph && !graph.disposed);
                     window.timeGraphs.forEach((graph) => {
                         if (graph !== null) graph.onTimeChange();
                     });

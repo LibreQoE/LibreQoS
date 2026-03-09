@@ -34,14 +34,78 @@ export function colorByRetransmitPct(pct0to10) {
     }
 }
 
-// Color by RTT ms with a soft cap (default 200ms).
-export function colorByRttMs(rttMs, capMs = 200) {
-    const r = Math.min(capMs, Math.max(0, Number(rttMs) || 0));
-    if (isColorBlindMode()) {
-        return lerpViridis(r / capMs);
-    } else {
-        return lerpGreenToRedViaOrange(capMs - r, capMs);
+function resolveRttThresholds(scale) {
+    const defaults = { greenMs: 0, yellowMs: 100, redMs: 200 };
+
+    // Back-compat: if a number is provided, treat it as a cap (red point).
+    if (typeof scale === "number" && Number.isFinite(scale) && scale > 0) {
+        const red = Math.round(scale);
+        const yellow = Math.round(red / 2);
+        return { greenMs: 0, yellowMs: yellow, redMs: red };
     }
+
+    // Explicit thresholds object.
+    const fromObj = (obj) => {
+        if (!obj || typeof obj !== "object") return null;
+        const g = Number(obj.greenMs ?? obj.green_ms ?? obj.green ?? defaults.greenMs);
+        const y = Number(obj.yellowMs ?? obj.yellow_ms ?? obj.yellow ?? defaults.yellowMs);
+        const r = Number(obj.redMs ?? obj.red_ms ?? obj.red ?? defaults.redMs);
+        if (!Number.isFinite(g) || !Number.isFinite(y) || !Number.isFinite(r)) return null;
+        return { greenMs: Math.max(0, Math.round(g)), yellowMs: Math.max(0, Math.round(y)), redMs: Math.max(0, Math.round(r)) };
+    };
+
+    const fromScale = fromObj(scale);
+    const fromWindow = fromObj(window.rttThresholds || window.rtt_thresholds || window.config?.rtt_thresholds);
+    const t = fromScale || fromWindow || defaults;
+
+    // Normalize ordering.
+    const greenMs = t.greenMs;
+    const yellowMs = Math.max(t.yellowMs, greenMs);
+    const redMs = Math.max(t.redMs, yellowMs, 1);
+    return { greenMs, yellowMs, redMs };
+}
+
+function clamp01(x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    return x;
+}
+
+// Color by RTT ms using a 3-point ramp (green/yellow/red).
+export function colorByRttMs(rttMs, scale = null) {
+    const t = resolveRttThresholds(scale);
+    const raw = Number(rttMs);
+    const r = Number.isFinite(raw) ? raw : 0;
+
+    // Clamp into [green..red] for continuous scales.
+    const minV = t.greenMs;
+    const maxV = t.redMs;
+    const clamped = Math.min(maxV, Math.max(minV, r));
+    const denom = Math.max(1, maxV - minV);
+    const frac = (clamped - minV) / denom;
+
+    if (isColorBlindMode()) {
+        return lerpViridis(frac);
+    }
+
+    // Non-colorblind: piecewise interpolate green->yellow->red.
+    if (t.yellowMs <= t.greenMs) {
+        // Degenerate: no green->yellow region; go yellow->red.
+        const w = clamp01((clamped - t.yellowMs) / Math.max(1, t.redMs - t.yellowMs));
+        return lerpColor([255, 255, 0], [255, 0, 0], w);
+    }
+    if (t.redMs <= t.yellowMs) {
+        // Degenerate: no yellow->red region; go green->yellow.
+        const w = clamp01((clamped - t.greenMs) / Math.max(1, t.yellowMs - t.greenMs));
+        return lerpColor([0, 255, 0], [255, 255, 0], w);
+    }
+
+    if (clamped <= t.yellowMs) {
+        const w = clamp01((clamped - t.greenMs) / Math.max(1, t.yellowMs - t.greenMs));
+        return lerpColor([0, 255, 0], [255, 255, 0], w);
+    }
+    const w = clamp01((clamped - t.yellowMs) / Math.max(1, t.redMs - t.yellowMs));
+    return lerpColor([255, 255, 0], [255, 0, 0], w);
 }
 
 // Color by QoQ score (0..100, higher is better).

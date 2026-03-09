@@ -1,5 +1,6 @@
 import {clearDiv} from "./helpers/builders";
 import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
@@ -389,7 +390,21 @@ function renderAsn(asn, data) {
 
         let remoteCol = document.createElement("div");
         remoteCol.classList.add("col-1", "text-secondary", "small");
-        remoteCol.innerText = row.remote_ip;
+        const remoteIp = String(row.remote_ip || "").trim();
+        remoteCol.appendChild(document.createTextNode(remoteIp));
+        if (remoteIp) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-link btn-sm p-0 ms-1";
+            btn.title = "Exclude RTT for this remote endpoint (opens Flow Tracking config)";
+            btn.innerHTML = "<i class='fa fa-ban'></i>";
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openFlowRttExcludeWizard({ remoteIp, sourceLabel: "ASN Explorer" });
+            });
+            remoteCol.appendChild(btn);
+        }
         div.appendChild(remoteCol);
 
         let protocolCol = document.createElement("div");

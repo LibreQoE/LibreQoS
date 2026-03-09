@@ -61,6 +61,60 @@ struct CircuitHeatmapAggregate {
     tcp_packets: DownUpOrder<u64>,
 }
 
+struct ReducedHostCounters {
+    bytes: DownUpOrder<u64>,
+    packets: DownUpOrder<u64>,
+    tcp_packets: DownUpOrder<u64>,
+    udp_packets: DownUpOrder<u64>,
+    icmp_packets: DownUpOrder<u64>,
+    last_seen: u64,
+    tc_handle: TcHandle,
+    circuit_hash: Option<i64>,
+    device_hash: Option<i64>,
+}
+
+impl ReducedHostCounters {
+    fn from_counters(counts: &[lqos_sys::HostCounter]) -> Self {
+        let mut bytes = DownUpOrder::zeroed();
+        let mut packets = DownUpOrder::zeroed();
+        let mut tcp_packets = DownUpOrder::zeroed();
+        let mut udp_packets = DownUpOrder::zeroed();
+        let mut icmp_packets = DownUpOrder::zeroed();
+        let mut last_seen = 0u64;
+        let mut meta_last_seen = 0u64;
+        let mut meta_tc_handle = 0u32;
+        let mut meta_circuit_id = 0u64;
+        let mut meta_device_id = 0u64;
+
+        for c in counts {
+            bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
+            packets.checked_add_direct(c.download_packets, c.upload_packets);
+            tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
+            udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
+            icmp_packets.checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
+            last_seen = u64::max(last_seen, c.last_seen);
+            if c.last_seen > meta_last_seen {
+                meta_last_seen = c.last_seen;
+                meta_tc_handle = c.tc_handle;
+                meta_circuit_id = c.circuit_id;
+                meta_device_id = c.device_id;
+            }
+        }
+
+        Self {
+            bytes,
+            packets,
+            tcp_packets,
+            udp_packets,
+            icmp_packets,
+            last_seen,
+            tc_handle: TcHandle::from_u32(meta_tc_handle),
+            circuit_hash: (meta_circuit_id != 0).then_some(meta_circuit_id as i64),
+            device_hash: (meta_device_id != 0).then_some(meta_device_id as i64),
+        }
+    }
+}
+
 impl ThroughputTracker {
     pub(crate) fn new() -> Self {
         // The capacity used to be taken from MAX_TRACKED_IPs, but
@@ -402,63 +456,21 @@ impl ThroughputTracker {
         let cache = SHAPED_DEVICE_HASH_CACHE.load();
         let mut raw_data = self.raw_data.lock();
         throughput_for_each(&mut |xdp_ip, counts| {
+            let reduced = ReducedHostCounters::from_counters(counts);
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
                 // Zero the counter, we have to do a per-CPU sum
-                entry.bytes = DownUpOrder::zeroed();
-                entry.packets = DownUpOrder::zeroed();
-                entry.tcp_packets = DownUpOrder::zeroed();
-                entry.udp_packets = DownUpOrder::zeroed();
-                entry.icmp_packets = DownUpOrder::zeroed();
-                let mut last_seen = 0u64;
-                // Choose the most recent metadata to reduce staleness when mappings change.
-                let mut meta_last_seen = 0u64;
-                let mut meta_tc_handle = 0u32;
-                let mut meta_circuit_id = 0u64;
-                let mut meta_device_id = 0u64;
-                // Sum the counts across CPUs (it's a per-CPU map)
-                for c in counts {
-                    entry
-                        .bytes
-                        .checked_add_direct(c.download_bytes, c.upload_bytes);
-                    entry
-                        .packets
-                        .checked_add_direct(c.download_packets, c.upload_packets);
-                    entry
-                        .tcp_packets
-                        .checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
-                    entry
-                        .udp_packets
-                        .checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
-                    entry
-                        .icmp_packets
-                        .checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
-                    last_seen = u64::max(last_seen, c.last_seen);
-                    if c.last_seen > meta_last_seen {
-                        meta_last_seen = c.last_seen;
-                        meta_tc_handle = c.tc_handle;
-                        meta_circuit_id = c.circuit_id;
-                        meta_device_id = c.device_id;
-                    }
-                }
-                entry.last_seen = last_seen;
+                entry.bytes = reduced.bytes;
+                entry.packets = reduced.packets;
+                entry.tcp_packets = reduced.tcp_packets;
+                entry.udp_packets = reduced.udp_packets;
+                entry.icmp_packets = reduced.icmp_packets;
+                entry.last_seen = reduced.last_seen;
 
-                let new_tc_handle = TcHandle::from_u32(meta_tc_handle);
-                let new_circuit_hash = if meta_circuit_id != 0 {
-                    Some(meta_circuit_id as i64)
-                } else {
-                    None
-                };
-                let new_device_hash = if meta_device_id != 0 {
-                    Some(meta_device_id as i64)
-                } else {
-                    None
-                };
-
-                let hashes_changed =
-                    entry.circuit_hash != new_circuit_hash || entry.device_hash != new_device_hash;
-                entry.tc_handle = new_tc_handle;
-                entry.circuit_hash = new_circuit_hash;
-                entry.device_hash = new_device_hash;
+                let hashes_changed = entry.circuit_hash != reduced.circuit_hash
+                    || entry.device_hash != reduced.device_hash;
+                entry.tc_handle = reduced.tc_handle;
+                entry.circuit_hash = reduced.circuit_hash;
+                entry.device_hash = reduced.device_hash;
                 if hashes_changed {
                     let shaped_device = Self::shaped_device_for_hashes(
                         &shaped,
@@ -523,45 +535,8 @@ impl ThroughputTracker {
                     }
                 }
             } else {
-                let mut last_seen = 0u64;
-                let mut meta_last_seen = 0u64;
-                let mut meta_tc_handle = 0u32;
-                let mut meta_circuit_id = 0u64;
-                let mut meta_device_id = 0u64;
-                let mut total_bytes: DownUpOrder<u64> = DownUpOrder::zeroed();
-                let mut total_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
-                let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
-                let mut total_udp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
-                let mut total_icmp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
-                for c in counts {
-                    total_bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
-                    total_packets.checked_add_direct(c.download_packets, c.upload_packets);
-                    total_tcp_packets
-                        .checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
-                    total_udp_packets
-                        .checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
-                    total_icmp_packets
-                        .checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
-                    last_seen = u64::max(last_seen, c.last_seen);
-                    if c.last_seen > meta_last_seen {
-                        meta_last_seen = c.last_seen;
-                        meta_tc_handle = c.tc_handle;
-                        meta_circuit_id = c.circuit_id;
-                        meta_device_id = c.device_id;
-                    }
-                }
-
-                let tc_handle = TcHandle::from_u32(meta_tc_handle);
-                let circuit_hash = if meta_circuit_id != 0 {
-                    Some(meta_circuit_id as i64)
-                } else {
-                    None
-                };
-                let device_hash = if meta_device_id != 0 {
-                    Some(meta_device_id as i64)
-                } else {
-                    None
-                };
+                let circuit_hash = reduced.circuit_hash;
+                let device_hash = reduced.device_hash;
                 let shaped_device =
                     Self::shaped_device_for_hashes(&shaped, &cache, device_hash, circuit_hash);
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
@@ -573,7 +548,7 @@ impl ThroughputTracker {
 
                             if config.queues.lazy_threshold_bytes.is_some() {
                                 let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
-                                if total_bytes.down.saturating_add(total_bytes.up) < threshold {
+                                if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
                                     add = false;
                                 }
                             }
@@ -597,23 +572,23 @@ impl ThroughputTracker {
                     ),
                     first_cycle: self_cycle,
                     most_recent_cycle: 0,
-                    bytes: total_bytes,
-                    packets: total_packets,
+                    bytes: reduced.bytes,
+                    packets: reduced.packets,
                     prev_bytes: DownUpOrder::zeroed(),
                     prev_packets: DownUpOrder::zeroed(),
                     bytes_per_second: DownUpOrder::zeroed(),
                     packets_per_second: DownUpOrder::zeroed(),
-                    tcp_packets: total_tcp_packets,
-                    udp_packets: total_udp_packets,
-                    icmp_packets: total_icmp_packets,
+                    tcp_packets: reduced.tcp_packets,
+                    udp_packets: reduced.udp_packets,
+                    icmp_packets: reduced.icmp_packets,
                     prev_tcp_packets: DownUpOrder::zeroed(),
                     prev_udp_packets: DownUpOrder::zeroed(),
                     prev_icmp_packets: DownUpOrder::zeroed(),
-                    tc_handle,
+                    tc_handle: reduced.tc_handle,
                     rtt_buffer: RttBuffer::default(),
                     recent_rtt_data: [RttData::from_nanos(0); 60],
                     last_fresh_rtt_data_cycle: 0,
-                    last_seen,
+                    last_seen: reduced.last_seen,
                     tcp_retransmits: DownUpOrder::zeroed(),
                     prev_tcp_retransmits: DownUpOrder::zeroed(),
                     qoq: QoqScores::default(),
@@ -808,7 +783,15 @@ impl ThroughputTracker {
                             }
                         }
                         if enable_asn_heatmaps {
-                            let flow_rtt = combine_rtt_ms(this_flow.0.get_rtt_array());
+                            let excluded = raw_data
+                                .get(&key.local_ip)
+                                .and_then(|t| t.circuit_hash)
+                                .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                            let flow_rtt = if excluded {
+                                None
+                            } else {
+                                combine_rtt_ms(this_flow.0.get_rtt_array())
+                            };
                             add_asn_sample(
                                 this_flow.1.asn_id.0,
                                 delta_bytes,
@@ -893,7 +876,15 @@ impl ThroughputTracker {
                                 }
                             }
                             if enable_asn_heatmaps {
-                                let flow_rtt = rtt_for_circuit.and_then(combine_rtt_ms);
+                                let excluded = raw_data
+                                    .get(&key.local_ip)
+                                    .and_then(|t| t.circuit_hash)
+                                    .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                                let flow_rtt = if excluded {
+                                    None
+                                } else {
+                                    rtt_for_circuit.and_then(combine_rtt_ms)
+                                };
                                 let delta_retrans = DownUpOrder::new(
                                     data.tcp_retransmits.down as u64,
                                     data.tcp_retransmits.up as u64,
@@ -960,14 +951,19 @@ impl ThroughputTracker {
                         tracker.recent_rtt_data[0] = rtt_median;
                         tracker.last_fresh_rtt_data_cycle = self_cycle;
                         tracker.rtt_buffer = rtt_buffer;
-                        if let Some(circuit_hash) = tracker.circuit_hash {
-                            rtt_by_circuit
-                                .entry(circuit_hash)
-                                .or_default()
-                                .accumulate(&tracker.rtt_buffer);
-                        }
-                        if let Some(parents) = &tracker.network_json_parents {
-                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
+                        let excluded = tracker
+                            .circuit_hash
+                            .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                        if !excluded {
+                            if let Some(circuit_hash) = tracker.circuit_hash {
+                                rtt_by_circuit
+                                    .entry(circuit_hash)
+                                    .or_default()
+                                    .accumulate(&tracker.rtt_buffer);
+                            }
+                            if let Some(parents) = &tracker.network_json_parents {
+                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
+                            }
                         }
                     }
                 }
@@ -1004,6 +1000,13 @@ impl ThroughputTracker {
             // doesn't flap to unknown ("-") on idle seconds.
             if let Some(profile) = qoo_profile.as_ref() {
                 for tracker in raw_data.values_mut() {
+                    if tracker
+                        .circuit_hash
+                        .is_some_and(crate::rtt_exclusions::is_excluded_hash)
+                    {
+                        tracker.qoq = QoqScores::default();
+                        continue;
+                    }
                     let tcp_packets_delta = tracker
                         .tcp_packets
                         .checked_sub_or_zero(tracker.prev_tcp_packets);

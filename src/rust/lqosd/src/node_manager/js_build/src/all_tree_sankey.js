@@ -148,6 +148,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             let redact = isRedacted();
             let nodes = [];
             let links = [];
+            const linkMap = new Map();
 
             // Build the basic tree from the current head, to ensure
             // that we're displaying the most recent nodes.
@@ -226,6 +227,10 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         maxBitsPerSec: maxBitsPerSec,
                         n: 1,
                     });
+                    linkMap.set(
+                        `${head[immediateParent][1].name}\u0000${head[i][1].name}`,
+                        links[links.length - 1],
+                    );
                 }
             }
 
@@ -240,9 +245,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         if (immediateParent === null || immediateParent === undefined) continue;
                         if (!data[immediateParent] || !data[immediateParent][1]) continue;
 
-                        let link = links.find((link) => {
-                            return link.source === data[immediateParent][1].name && link.target === data[i][1].name;
-                        });
+                        const link = linkMap.get(
+                            `${data[immediateParent][1].name}\u0000${data[i][1].name}`,
+                        );
                         if (link !== undefined) {
                             link.value += toNumber(data[i][1].current_throughput?.[0], 0) * 8;
                             link.n++;
@@ -369,7 +374,10 @@ function start() {
     if (!paused) {
         graph.model.onTick(graph);
     }
-    setTimeout(start, 1000);
+    loopTimer = setTimeout(() => {
+        loopTimer = null;
+        start();
+    }, 1000);
 }
 
 function getMaxDepth() {
@@ -397,15 +405,42 @@ bindMaxDepth();
 let graph = new AllTreeSankey("sankey");
 sankeyOverlay = makeOverlay(graph.dom, "allTreeSankeyOverlay");
 sankeyOverlay.show("Waiting for data", "Requesting network tree...");
+let loopTimer = null;
 
 $("#btnPause").click(() => {
     paused = !paused;
     if (paused) {
         $("#btnPause").html("<i class='fa fa-play'></i> Resume");
         graph.model.cancelPending();
+        if (loopTimer) {
+            clearTimeout(loopTimer);
+            loopTimer = null;
+        }
     } else {
         $("#btnPause").html("<i class='fa fa-pause'></i>Pause");
-        graph.model.onTick(graph);
+        start();
+    }
+});
+
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        graph.model.cancelPending();
+        if (loopTimer) {
+            clearTimeout(loopTimer);
+            loopTimer = null;
+        }
+        return;
+    }
+    if (!paused && !loopTimer) {
+        start();
+    }
+});
+
+window.addEventListener("beforeunload", () => {
+    graph.model.cancelPending();
+    if (loopTimer) {
+        clearTimeout(loopTimer);
+        loopTimer = null;
     }
 });
 
