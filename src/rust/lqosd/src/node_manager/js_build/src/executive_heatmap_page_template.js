@@ -136,7 +136,9 @@ function renderHeatmapTable(targetId, metricKey) {
     if (!cfg) return;
     const target = document.getElementById(targetId);
     if (!target) return;
+    let lastData = null;
     const renderRows = (data) => {
+        lastData = data;
         getSiteIdMap().then((siteIdMap) => {
             const activeTarget = document.getElementById(targetId);
             if (!activeTarget) return;
@@ -182,6 +184,11 @@ function renderHeatmapTable(targetId, metricKey) {
             `;
         });
     };
+    window.addEventListener("colorBlindModeChanged", () => {
+        if (lastData) {
+            renderRows(lastData);
+        }
+    });
     listenExecutiveHeatmaps(renderRows);
     // initial placeholder
     target.innerHTML = `<div class="text-muted small">Waiting for heatmap data…</div>`;
