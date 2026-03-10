@@ -418,12 +418,14 @@ function ensureLayout() {
 
     const perPageWrap = document.createElement("div");
     perPageWrap.classList.add("d-flex", "align-items-center", "gap-1");
-    const perPageLabel = document.createElement("span");
+    const perPageLabel = document.createElement("label");
     perPageLabel.classList.add("small", "text-body-secondary");
     perPageLabel.innerText = "Per page";
     const perPageSelect = document.createElement("select");
     perPageSelect.id = "sdPerPage";
     perPageSelect.classList.add("form-select", "form-select-sm");
+    perPageLabel.htmlFor = perPageSelect.id;
+    perPageSelect.setAttribute("aria-label", "Devices per page");
     [12, 24, 48, 96].forEach((n) => {
         const opt = document.createElement("option");
         opt.value = String(n);
@@ -453,6 +455,8 @@ function ensureLayout() {
     prev.type = "button";
     prev.classList.add("btn", "btn-secondary");
     prev.innerHTML = "<i class='fa fa-arrow-left'></i>";
+    prev.setAttribute("aria-label", "Previous devices page");
+    prev.title = "Previous page";
     prev.onclick = () => {
         page = Math.max(0, page - 1);
         renderCards();
@@ -462,6 +466,8 @@ function ensureLayout() {
     next.type = "button";
     next.classList.add("btn", "btn-secondary");
     next.innerHTML = "<i class='fa fa-arrow-right'></i>";
+    next.setAttribute("aria-label", "Next devices page");
+    next.title = "Next page";
     next.onclick = () => {
         const totalPages = Math.max(1, Math.ceil(displayDevices.length / devicesPerPage));
         page = Math.min(totalPages - 1, page + 1);

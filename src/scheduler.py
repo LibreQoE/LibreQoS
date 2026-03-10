@@ -321,7 +321,14 @@ def apply_lqos_overrides():
     header, rows = read_shaped_devices_csv(path)
 
     # 1) Persistent devices: replace by device_id or append
-    extra = overrides_persistent_devices()
+    try:
+        extra = overrides_persistent_devices()
+    except Exception as e:
+        # Persistent device overrides are optional. Keep the scheduler healthy
+        # and continue applying the rest of the override sources if this loader
+        # is unavailable or temporarily broken.
+        print(f"Skipping persistent device overrides: {e}")
+        extra = []
     override_rows = override_devices_to_rows(extra or [])
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 

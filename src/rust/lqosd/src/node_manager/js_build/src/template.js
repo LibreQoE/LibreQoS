@@ -29,12 +29,15 @@ function loadSchedulerStatus() {
     listenOnce("SchedulerStatus", (msg) => {
         if (!msg || !msg.data) return;
         const data = msg.data;
-        const color = data.available ? 'text-success' : 'text-danger';
-        const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
+        const hasError = !!(data.error && String(data.error).trim().length > 0);
+        const isHealthy = !!data.available && !hasError;
+        const color = isHealthy ? 'text-success' : 'text-danger';
+        const icon = isHealthy ? 'fa-check-circle' : 'fa-triangle-exclamation';
+        const label = hasError ? 'Scheduler has an internal error' : (data.available ? 'Scheduler is available' : 'Scheduler is unavailable');
         container.innerHTML = `
-            <a class="nav-link ${color}" href="#" id="schedulerStatusLink">
-                <i class="fa fa-fw fa-centerline ${icon}"></i> Scheduler
-            </a>`;
+            <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color}" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Scheduler
+            </button>`;
 
         // Click opens details modal only; no tooltip
         $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
@@ -308,10 +311,10 @@ function initUrgentIssues() {
         const cls = count > 0 ? 'text-danger' : 'text-secondary';
         const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
         cont.innerHTML = `
-            <a class="nav-link ${cls}" href="#" id="${linkId}">
-                <i class="fa fa-fw fa-centerline ${icon}"></i> Urgent Issues
+            <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${cls}" type="button" id="${linkId}" aria-label="Urgent issues${count > 0 ? `: ${count} active` : ': none active'}" title="Urgent issues">
+                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Urgent Issues
                 <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
-            </a>`;
+            </button>`;
         $("#" + containerId).off("click").on("click", `#${linkId}`, (e) => {
             e.preventDefault();
             showModal();
@@ -354,7 +357,7 @@ function initUrgentIssues() {
                         <strong class="ms-2">${it.code}</strong>
                         <span class="text-muted ms-2">(${it.source})</span>
                         <span class="text-muted float-end">${when}</span>
-                        <a href="#" class="text-secondary float-end ms-3 urgent-clear" data-id="${it.id}" title="Acknowledge"><i class="fa fa-times"></i></a>
+                        <button type="button" class="btn btn-link btn-sm text-secondary float-end ms-3 p-0 urgent-clear" data-id="${it.id}" title="Acknowledge issue" aria-label="Acknowledge issue ${escapeAttr(it.code)}"><i class="fa fa-times" aria-hidden="true"></i></button>
                     </div>
                     <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
                     ${it.context ? `<pre class="mt-2">${it.context}</pre>` : ''}
@@ -365,7 +368,7 @@ function initUrgentIssues() {
             table.appendChild(tbody);
             holder.innerHTML = '';
             holder.appendChild(table);
-            $(holder).off('click').on('click', 'a.urgent-clear', function (e) {
+            $(holder).off('click').on('click', '.urgent-clear', function (e) {
                 e.preventDefault();
                 const id = $(this).data('id');
                 listenOnce("UrgentClearResult", () => {

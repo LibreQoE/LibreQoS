@@ -95,42 +95,61 @@ export function nonNullCount(values) {
     return values.filter(v => v !== null && v !== undefined).length;
 }
 
-export function heatmapRow(values, colorFn, formatValue) {
+function escapeHeatAttr(text) {
+    return String(text ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function latestDetailMarkup(latest, formatValue, describeValue) {
+    const detail = describeValue ? describeValue(latest) : "";
+    return `
+        <div>${formatValue(latest)}</div>
+        ${detail ? `<div class="text-body-secondary">${escapeHeatAttr(detail)}</div>` : ""}
+    `;
+}
+
+export function heatmapRow(values, colorFn, formatValue, describeValue = null) {
     const length = Array.isArray(values) && values.length ? values.length : 15;
     let cells = "";
     for (let i = 0; i < length; i++) {
         const val = values && values[i] !== undefined ? values[i] : null;
         if (val === null || val === undefined) {
-            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no data"></div>`;
             continue;
         }
         const numeric = Number(val) || 0;
         const color = colorFn(numeric);
         const title = formatValue(numeric);
-        cells += `<div class="exec-heat-cell" style="background:${color}" title="Block ${i + 1}: ${title}"></div>`;
+        const detail = describeValue ? describeValue(numeric) : "";
+        const label = detail ? `Block ${i + 1}: ${title}, ${detail}` : `Block ${i + 1}: ${title}`;
+        cells += `<div class="exec-heat-cell" style="background:${color}" title="${escapeHeatAttr(label)}" aria-label="${escapeHeatAttr(label)}"></div>`;
     }
     return cells;
 }
 
-export function heatRow(label, badge, values, colorFn, formatValue, link = null) {
+export function heatRow(label, badge, values, colorFn, formatValue, link = null, describeValue = null) {
     const latest = latestValue(values);
-    const formattedLatest = formatValue(latest);
+    const formattedLatest = latestDetailMarkup(latest, formatValue, describeValue);
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    const latestLabel = describeValue ? `${formatValue(latest)} ${describeValue(latest)}`.trim() : formatValue(latest);
     return `
-        <div class="exec-heat-row">
-            <div class="exec-heat-label text-truncate" title="${label}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(`${label} ${badge || ""} latest ${latestLabel}`)}">
+            <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
-            <div class="exec-heat-cells">${heatmapRow(values, colorFn, formatValue)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRow(values, colorFn, formatValue, describeValue)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
 }
 
-function heatmapRowQuadrants(quads, colorFn, formatValue) {
+function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) {
     const length = Array.isArray(quads?.ul_p50) && quads.ul_p50.length ? quads.ul_p50.length : 15;
     let cells = "";
     for (let i = 0; i < length; i++) {
@@ -145,17 +164,18 @@ function heatmapRowQuadrants(quads, colorFn, formatValue) {
             (dlP50 === null || dlP50 === undefined) &&
             (dlP90 === null || dlP90 === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no RTT data"></div>`;
             continue;
         }
 
         const fmt = (v) => formatValue(v);
+        const describe = (v) => describeValue ? ` (${describeValue(v)})` : "";
         const title = [
             `Block ${i + 1}`,
-            `UL p50: ${fmt(ulP50)}`,
-            `UL p90: ${fmt(ulP90)}`,
-            `DL p50: ${fmt(dlP50)}`,
-            `DL p90: ${fmt(dlP90)}`,
+            `UL p50: ${fmt(ulP50)}${describe(ulP50)}`,
+            `UL p90: ${fmt(ulP90)}${describe(ulP90)}`,
+            `DL p50: ${fmt(dlP50)}${describe(dlP50)}`,
+            `DL p90: ${fmt(dlP90)}${describe(dlP90)}`,
         ].join(" • ");
 
         const quad = (v) => {
@@ -172,7 +192,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue) {
 
         // Quadrants: upload at top, download at bottom. Left=p50, right=p90.
         cells += `
-            <div class="exec-heat-cell quad" title="${title}">
+            <div class="exec-heat-cell quad" title="${escapeHeatAttr(title)}" aria-label="${escapeHeatAttr(title)}">
                 <div class="exec-quad-grid">
                     ${quad(ulP50)}
                     ${quad(ulP90)}
@@ -185,7 +205,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue) {
     return cells;
 }
 
-export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
+export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = null, describeValue = null) {
     const quads = {
         ul_p50: blocks?.rtt_p50_up || [],
         ul_p90: blocks?.rtt_p90_up || [],
@@ -193,17 +213,18 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
         dl_p90: blocks?.rtt_p90_down || [],
     };
     const latest = latestValue(blocks?.rtt || []);
-    const formattedLatest = formatValue(latest);
+    const formattedLatest = latestDetailMarkup(latest, formatValue, describeValue);
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    const latestLabel = describeValue ? `${formatValue(latest)} ${describeValue(latest)}`.trim() : formatValue(latest);
     return `
-        <div class="exec-heat-row">
-            <div class="exec-heat-label text-truncate" title="${label}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(`${label} ${badge || ""} latest RTT ${latestLabel}`)}">
+            <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
                 <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
-            <div class="exec-heat-cells">${heatmapRowQuadrants(quads, colorFn, formatValue)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} RTT heatmap history`)}">${heatmapRowQuadrants(quads, colorFn, formatValue, describeValue)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
