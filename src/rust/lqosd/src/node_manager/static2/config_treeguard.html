@@ -1,0 +1,271 @@
+<div id="configMenuContainer"></div>
+<div class="row">
+    <div class="col-12">
+        <!-- Warning Message -->
+        <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
+            <i class="fa fa-exclamation-triangle me-2"></i>
+            <div>
+                <strong>Advanced Feature:</strong> TreeGuard can write persistent changes to <code>lqos_overrides.treeguard.json</code>
+                and may change link virtualization and per-circuit SQM settings. Defaults now manage <strong>all links</strong> and
+                <strong>all circuits</strong>; uncheck those boxes or re-enable <strong>Dry Run</strong> to reduce scope.
+            </div>
+        </div>
+
+        <form>
+            <!-- Enable/Disable TreeGuard -->
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enabled">
+                <label class="form-check-label" for="enabled">Enable TreeGuard</label>
+                <div class="form-text">Enable intelligent node management (virtualization + SQM switching)</div>
+            </div>
+
+            <!-- Dry Run Mode -->
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="dryRun">
+                <label class="form-check-label" for="dryRun">Dry Run Mode</label>
+                <div class="form-text">Test mode - record actions without applying persistent or live changes</div>
+            </div>
+
+            <!-- Tick Seconds -->
+            <div class="mb-3">
+                <label for="tickSeconds" class="form-label">Tick Interval (seconds)</label>
+                <input type="number" class="form-control" id="tickSeconds" min="1" step="1" value="1">
+                <div class="form-text">How often TreeGuard evaluates telemetry and makes decisions</div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>CPU</h5>
+
+            <div class="mb-3">
+                <label for="cpuMode" class="form-label">Mode</label>
+                <select class="form-select" id="cpuMode">
+                    <option value="cpu_aware">CPU-aware</option>
+                    <option value="traffic_rtt_only">Traffic/RTT only</option>
+                </select>
+                <div class="form-text">Controls how CPU usage influences TreeGuard decisions</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="cpuHighPct" class="form-label">CPU High Threshold (%)</label>
+                <input type="number" class="form-control" id="cpuHighPct" min="0" max="100" step="1" value="75">
+                <div class="form-text">At/above this CPU%, TreeGuard may take CPU-saving actions</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="cpuLowPct" class="form-label">CPU Low Threshold (%)</label>
+                <input type="number" class="form-control" id="cpuLowPct" min="0" max="100" step="1" value="55">
+                <div class="form-text">At/below this CPU%, TreeGuard should revert CPU-saving actions</div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>Links (Node Virtualization)</h5>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="linksEnabled">
+                <label class="form-check-label" for="linksEnabled">Enable Link Virtualization</label>
+                <div class="form-text">Allow TreeGuard to mark enrolled nodes as virtual/unvirtual</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Managed Nodes</label>
+
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="linksAllNodes">
+                    <label class="form-check-label" for="linksAllNodes">All links</label>
+                    <div class="form-text">If enabled, TreeGuard manages all non-root nodes in network.json (allowlist ignored)</div>
+                </div>
+
+                <div id="nodesAllowlistSection">
+                    <div class="form-text">TreeGuard will only manage nodes explicitly listed here</div>
+
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="nodeSelector">
+                            <option value="">Select a node...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" type="button" id="addNodeBtn">
+                            <i class="fa fa-plus"></i> Add Node
+                        </button>
+                    </div>
+
+                    <div id="selectedNodesList" class="list-group">
+                        <!-- Dynamically populated list with remove buttons -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Top-Level Nodes</label>
+
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="topLevelAutoVirtualize">
+                    <label class="form-check-label" for="topLevelAutoVirtualize">Auto-virtualize top-level nodes</label>
+                    <div class="form-text">
+                        Top-level nodes are keys of the root object in <code>network.json</code> (e.g. <code>Site_1</code>). If enabled,
+                        TreeGuard may virtualize them even if not allowlisted.
+                    </div>
+                </div>
+
+                <div>
+                    <label for="topLevelSafeUtilPct" class="form-label">Top-Level Safe Utilization (%)</label>
+                    <input type="number" class="form-control" id="topLevelSafeUtilPct" min="0" max="100" step="0.1" value="85.0">
+                    <div class="form-text">If sustained below this threshold for 15 minutes, TreeGuard may virtualize top-level nodes.</div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="idleUtilPct" class="form-label">Idle Utilization (%)</label>
+                <input type="number" class="form-control" id="idleUtilPct" min="0" max="100" step="0.1" value="2.0">
+                <div class="form-text">Utilization below which a link is considered idle (after smoothing)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="idleMinMinutes" class="form-label">Idle Minimum Duration (minutes)</label>
+                <input type="number" class="form-control" id="idleMinMinutes" min="0" step="1" value="15">
+                <div class="form-text">How long a link must remain idle before virtualizing</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="linksRttMissingSeconds" class="form-label">RTT Missing Timeout (seconds)</label>
+                <input type="number" class="form-control" id="linksRttMissingSeconds" min="0" step="1" value="120">
+                <div class="form-text">RTT sample age after which RTT is treated as missing/unsafe</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="unvirtualizeUtilPct" class="form-label">Unvirtualize Utilization (%)</label>
+                <input type="number" class="form-control" id="unvirtualizeUtilPct" min="0" max="100" step="0.1" value="5.0">
+                <div class="form-text">If utilization rises above this threshold, TreeGuard should unvirtualize</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="minStateDwellMinutes" class="form-label">Minimum State Dwell (minutes)</label>
+                <input type="number" class="form-control" id="minStateDwellMinutes" min="0" step="1" value="30">
+                <div class="form-text">Minimum time before a node may change state again</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="maxLinkChangesPerHour" class="form-label">Max Link Changes Per Hour</label>
+                <input type="number" class="form-control" id="maxLinkChangesPerHour" min="0" step="1" value="4">
+                <div class="form-text">Rate limit to prevent flapping</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="reloadCooldownMinutes" class="form-label">Reload Cooldown (minutes)</label>
+                <input type="number" class="form-control" id="reloadCooldownMinutes" min="0" step="1" value="10">
+                <div class="form-text">Minimum time between topology reload attempts</div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>Circuits (SQM Switching)</h5>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="circuitsEnabled">
+                <label class="form-check-label" for="circuitsEnabled">Enable Circuit Management</label>
+                <div class="form-text">Allow TreeGuard to manage per-circuit SQM for enrolled circuits</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Managed Circuits</label>
+
+                <div class="mb-2 form-check">
+                    <input type="checkbox" class="form-check-input" id="circuitsAllCircuits">
+                    <label class="form-check-label" for="circuitsAllCircuits">All circuits</label>
+                    <div class="form-text">If enabled, TreeGuard manages all circuits found in ShapedDevices (allowlist ignored)</div>
+                </div>
+
+                <div id="circuitsAllowlistSection">
+                    <div class="form-text">Circuit IDs as in ShapedDevices.csv</div>
+
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="circuitSelector">
+                            <option value="">Select a circuit...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" type="button" id="addCircuitBtn">
+                            <i class="fa fa-plus"></i> Add Circuit
+                        </button>
+                    </div>
+
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="circuitManual" placeholder="Or type a circuit ID...">
+                        <button class="btn btn-outline-primary" type="button" id="addCircuitManualBtn">
+                            <i class="fa fa-plus"></i> Add
+                        </button>
+                    </div>
+
+                    <div id="selectedCircuitsList" class="list-group">
+                        <!-- Dynamically populated list with remove buttons -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="switchingEnabled">
+                <label class="form-check-label" for="switchingEnabled">Enable SQM Switching</label>
+                <div class="form-text">Allow TreeGuard to switch CAKE ↔ fq_codel</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="independentDirections">
+                <label class="form-check-label" for="independentDirections">Independent Down/Up Decisions</label>
+                <div class="form-text">Allow different SQM tokens for down vs up</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsIdleUtilPct" class="form-label">Idle Utilization (%)</label>
+                <input type="number" class="form-control" id="circuitsIdleUtilPct" min="0" max="100" step="0.1" value="2.0">
+                <div class="form-text">Utilization below which a circuit direction is considered idle (after smoothing)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsIdleMinMinutes" class="form-label">Idle Minimum Duration (minutes)</label>
+                <input type="number" class="form-control" id="circuitsIdleMinMinutes" min="0" step="1" value="15">
+                <div class="form-text">How long a circuit direction must remain idle before downgrading SQM</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsRttMissingSeconds" class="form-label">RTT Missing Timeout (seconds)</label>
+                <input type="number" class="form-control" id="circuitsRttMissingSeconds" min="0" step="1" value="120">
+            </div>
+
+            <div class="mb-3">
+                <label for="circuitsUpgradeUtilPct" class="form-label">Upgrade Utilization (%)</label>
+                <input type="number" class="form-control" id="circuitsUpgradeUtilPct" min="0" max="100" step="0.1" value="5.0">
+                <div class="form-text">Utilization above which a downgraded direction upgrades back to CAKE</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="minSwitchDwellMinutes" class="form-label">Minimum Switch Dwell (minutes)</label>
+                <input type="number" class="form-control" id="minSwitchDwellMinutes" min="0" step="1" value="30">
+            </div>
+
+            <div class="mb-3">
+                <label for="maxSwitchesPerHour" class="form-label">Max Switches Per Hour</label>
+                <input type="number" class="form-control" id="maxSwitchesPerHour" min="0" step="1" value="4">
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="persistSqmOverrides">
+                <label class="form-check-label" for="persistSqmOverrides">Persist SQM Overrides</label>
+                <div class="form-text">Write SQM overrides to lqos_overrides.treeguard.json to avoid scheduler fights</div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>QoO Guardrail</h5>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="qooEnabled">
+                <label class="form-check-label" for="qooEnabled">Enable QoO Guardrail</label>
+                <div class="form-text">If QoO is available and below the threshold, do not take CPU-saving actions</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="minScore" class="form-label">Minimum QoO Score</label>
+                <input type="number" class="form-control" id="minScore" min="0" max="100" step="0.1" value="80.0">
+                <div class="form-text">0..100; enforced only when QoO is available</div>
+            </div>
+
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<script src="config_treeguard.js%CACHEBUSTERS%"></script>

@@ -5,7 +5,7 @@ mod shaper_queries_actor;
 mod static_pages;
 mod template;
 mod warnings;
-mod ws;
+pub(crate) mod ws;
 
 pub use local_api::circuit_count::circuit_count_data;
 pub use local_api::device_counts::device_count;

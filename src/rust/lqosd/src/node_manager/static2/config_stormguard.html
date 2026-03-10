@@ -17,23 +17,78 @@
                 <div class="form-text">Enable automatic rate adjustment based on network conditions</div>
             </div>
 
+            <!-- Dry Run Mode -->
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="dryRun">
+                <label class="form-check-label" for="dryRun">Dry Run Mode</label>
+                <div class="form-text">Test mode - log changes without applying them</div>
+            </div>
+
+            <!-- Log File Path -->
+            <div class="mb-3">
+                <label for="logFile" class="form-label">Log File Path (Optional)</label>
+                <input type="text" class="form-control" id="logFile" placeholder="/var/log/stormguard.csv">
+                <div class="form-text">Path to CSV file for logging site rates (leave empty to disable)</div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>Site Enrollment</h5>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="allSites">
+                <label class="form-check-label" for="allSites">Monitor All Sites</label>
+                <div class="form-text">If enabled, StormGuard monitors all sites except those in the exclude list</div>
+            </div>
+
             <!-- Monitored Sites Section -->
             <div class="mb-3">
-                <label class="form-label">Monitored Sites</label>
-                <div class="form-text">Select sites to monitor for automatic rate adjustment</div>
-                
-                <!-- Site Selection Dropdown + Add Button -->
+                <label class="form-label">Site Allowlist</label>
+                <div class="form-text">Used only when Monitor All Sites is unchecked</div>
+
+                <div id="targetsSection">
+                    <div class="input-group mb-2">
+                        <select class="form-select" id="targetSiteSelector">
+                            <option value="">Select a site...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" type="button" id="addTargetBtn">
+                            <i class="fa fa-plus"></i> Add Site
+                        </button>
+                    </div>
+
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="targetSiteManual" placeholder="Or type a site name...">
+                        <button class="btn btn-outline-primary" type="button" id="addTargetManualBtn">
+                            <i class="fa fa-plus"></i> Add
+                        </button>
+                    </div>
+
+                    <div id="selectedTargetsList" class="list-group">
+                        <!-- Dynamically populated list with remove buttons -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Exclude Sites</label>
+                <div class="form-text">Sites to exclude when Monitor All Sites is enabled</div>
+
                 <div class="input-group mb-2">
-                    <select class="form-select" id="siteSelector">
+                    <select class="form-select" id="excludeSiteSelector">
                         <option value="">Select a site...</option>
                     </select>
-                    <button class="btn btn-outline-primary" type="button" id="addSiteBtn">
+                    <button class="btn btn-outline-primary" type="button" id="addExcludeBtn">
                         <i class="fa fa-plus"></i> Add Site
                     </button>
                 </div>
-                
-                <!-- List of Selected Sites -->
-                <div id="selectedSitesList" class="list-group">
+
+                <div class="input-group mb-2">
+                    <input type="text" class="form-control" id="excludeSiteManual" placeholder="Or type a site name...">
+                    <button class="btn btn-outline-primary" type="button" id="addExcludeManualBtn">
+                        <i class="fa fa-plus"></i> Add
+                    </button>
+                </div>
+
+                <div id="excludedSitesList" class="list-group">
                     <!-- Dynamically populated list with remove buttons -->
                 </div>
             </div>
@@ -51,18 +106,76 @@
                 <div class="form-text">Minimum percentage of advertised upload speed (e.g., 50 for 50%)</div>
             </div>
 
-            <!-- Dry Run Mode -->
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="dryRun">
-                <label class="form-check-label" for="dryRun">Dry Run Mode</label>
-                <div class="form-text">Test mode - log changes without applying them</div>
+            <hr class="my-4" />
+            <h5>Adjustment Multipliers</h5>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="increaseFastMultiplier" class="form-label">Increase Fast Multiplier</label>
+                    <input type="number" class="form-control" id="increaseFastMultiplier" min="0.01" step="0.01" value="1.30">
+                    <div class="form-text">Used for aggressive recovery when conditions improve quickly</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="increaseMultiplier" class="form-label">Increase Multiplier</label>
+                    <input type="number" class="form-control" id="increaseMultiplier" min="0.01" step="0.01" value="1.15">
+                    <div class="form-text">Used for normal recovery when capacity can be raised</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="decreaseMultiplier" class="form-label">Decrease Multiplier</label>
+                    <input type="number" class="form-control" id="decreaseMultiplier" min="0.01" step="0.01" value="0.95">
+                    <div class="form-text">Used for normal reductions when instability is detected</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="decreaseFastMultiplier" class="form-label">Decrease Fast Multiplier</label>
+                    <input type="number" class="form-control" id="decreaseFastMultiplier" min="0.01" step="0.01" value="0.88">
+                    <div class="form-text">Used for aggressive reductions when conditions deteriorate quickly</div>
+                </div>
             </div>
 
-            <!-- Log File Path -->
+            <hr class="my-4" />
+            <h5>Cooldowns</h5>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="increaseFastCooldownSeconds" class="form-label">Increase Fast Cooldown (seconds)</label>
+                    <input type="number" class="form-control" id="increaseFastCooldownSeconds" min="0.25" step="0.25" value="2">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="increaseCooldownSeconds" class="form-label">Increase Cooldown (seconds)</label>
+                    <input type="number" class="form-control" id="increaseCooldownSeconds" min="0.25" step="0.25" value="1">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="decreaseCooldownSeconds" class="form-label">Decrease Cooldown (seconds)</label>
+                    <input type="number" class="form-control" id="decreaseCooldownSeconds" min="0.25" step="0.25" value="3.75">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="decreaseFastCooldownSeconds" class="form-label">Decrease Fast Cooldown (seconds)</label>
+                    <input type="number" class="form-control" id="decreaseFastCooldownSeconds" min="0.25" step="0.25" value="7.5">
+                </div>
+            </div>
+
+            <hr class="my-4" />
+            <h5>Circuit Fallback</h5>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="circuitFallbackEnabled">
+                <label class="form-check-label" for="circuitFallbackEnabled">Enable Circuit Fallback</label>
+                <div class="form-text">Allow StormGuard to request a circuit-level fallback action when direct site adjustment is not appropriate</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="circuitFallbackPersist">
+                <label class="form-check-label" for="circuitFallbackPersist">Persist Circuit Fallback Overrides</label>
+                <div class="form-text">Keep fallback overrides across scheduler runs when supported by the backend</div>
+            </div>
+
             <div class="mb-3">
-                <label for="logFile" class="form-label">Log File Path (Optional)</label>
-                <input type="text" class="form-control" id="logFile" placeholder="/var/log/stormguard.csv">
-                <div class="form-text">Path to CSV file for logging site rates (leave empty to disable)</div>
+                <label for="circuitFallbackSqm" class="form-label">Circuit Fallback SQM</label>
+                <select class="form-select" id="circuitFallbackSqm">
+                    <option value="fq_codel">fq_codel</option>
+                    <option value="cake">cake</option>
+                </select>
+                <div class="form-text">SQM token to request for fallback actions</div>
             </div>
 
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>

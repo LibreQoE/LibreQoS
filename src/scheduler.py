@@ -11,7 +11,8 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, overrides_persistent_devices, overrides_circuit_adjustments, overrides_network_adjustments
+    automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
+    overrides_persistent_devices_effective, overrides_circuit_adjustments, overrides_network_adjustments_effective
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -322,7 +323,7 @@ def apply_lqos_overrides():
 
     # 1) Persistent devices: replace by device_id or append
     try:
-        extra = overrides_persistent_devices()
+        extra = overrides_persistent_devices_effective()
     except Exception as e:
         # Persistent device overrides are optional. Keep the scheduler healthy
         # and continue applying the rest of the override sources if this loader
@@ -431,7 +432,7 @@ def apply_network_adjustments(network: dict) -> bool:
     Returns True if any changes were applied.
     """
     try:
-        adjustments = overrides_network_adjustments()
+        adjustments = overrides_network_adjustments_effective()
     except Exception as e:
         print(f"Failed to read network adjustments: {e}")
         return False

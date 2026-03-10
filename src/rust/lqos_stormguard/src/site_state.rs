@@ -6,6 +6,10 @@ mod stormguard_state;
 
 use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
+use crate::adaptive_actions::{
+    CircuitFallbackOutcome, SiteOverrideUpdate, apply_circuit_fallback,
+    apply_site_override_updates, clear_circuit_fallback, load_persisted_circuit_fallbacks,
+};
 use crate::site_state::analysis::SaturationLevel;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
@@ -18,11 +22,12 @@ use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
 use lqos_bus::{BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, info, warn};
 
 pub struct SiteStateTracker {
     sites: HashMap<String, SiteState>,
+    active_circuit_fallbacks: HashSet<String>,
 }
 
 impl SiteStateTracker {
@@ -45,15 +50,96 @@ impl SiteStateTracker {
                     retransmits_down_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
                     retransmits_up_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
                     round_trip_time_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
-                    queue_download_mbps: site.max_download_mbps,
-                    queue_upload_mbps: site.max_upload_mbps,
+                    queue_download_mbps: site.current_download_mbps,
+                    queue_upload_mbps: site.current_upload_mbps,
                     current_throughput: (0.0, 0.0),
                     ticks_since_last_probe_download: 0,
                     ticks_since_last_probe_upload: 0,
                 },
             );
         }
-        Self { sites }
+        Self {
+            sites,
+            active_circuit_fallbacks: HashSet::new(),
+        }
+    }
+
+    pub fn replay_persisted_adjustments(
+        &mut self,
+        config: &StormguardConfig,
+        bakery_sender: Sender<BakeryCommands>,
+    ) {
+        if config.dry_run {
+            return;
+        }
+
+        let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
+            info!("No queue structure - cannot replay StormGuard adjustments");
+            return;
+        };
+
+        match load_persisted_circuit_fallbacks() {
+            Ok(fallbacks) => {
+                for (circuit_id, fallback) in fallbacks {
+                    self.active_circuit_fallbacks.insert(circuit_id.clone());
+                    if let Err(e) = apply_circuit_fallback(
+                        &circuit_id,
+                        &fallback.sqm_override,
+                        false,
+                        false,
+                        bakery_sender.clone(),
+                    ) {
+                        warn!(
+                            "Failed to replay persisted StormGuard circuit fallback for {}: {}",
+                            circuit_id, e
+                        );
+                    }
+                }
+            }
+            Err(e) => warn!("Failed to load persisted StormGuard circuit fallbacks: {}", e),
+        }
+
+        for (name, site) in &self.sites {
+            let Some(queue) = queues.iter().find(|n| n.name.as_deref() == Some(name.as_str())) else {
+                continue;
+            };
+
+            if queue.circuit_id.is_some() {
+                continue;
+            }
+
+            for direction in [
+                RecommendationDirection::Download,
+                RecommendationDirection::Upload,
+            ] {
+                let current_rate = Self::site_rate(site, direction);
+                let planned_rate = Self::planned_rate(&site.config, direction);
+                if current_rate == planned_rate {
+                    continue;
+                }
+
+                let interface_name = Self::interface_name(config, direction);
+                info!(
+                    "Replaying persisted StormGuard {} override for {}: {} -> {}",
+                    direction, name, planned_rate, current_rate
+                );
+                Self::apply_dependents(
+                    &site.config,
+                    direction,
+                    current_rate,
+                    config,
+                    &interface_name,
+                    bakery_sender.clone(),
+                );
+                Self::apply_htb_change(
+                    config,
+                    &interface_name,
+                    queue.class_id,
+                    current_rate,
+                    bakery_sender.clone(),
+                );
+            }
+        }
     }
 
     pub async fn read_new_tick_data(&mut self) {
@@ -243,6 +329,7 @@ impl SiteStateTracker {
             info!("No queue structure - cannot get stats");
             return;
         };
+        let mut pending_site_updates: HashSet<String> = HashSet::new();
 
         for (recommendation, summary) in recommendations {
             // Find the Site Object
@@ -265,51 +352,40 @@ impl SiteStateTracker {
                 info!("Queue {} not found in queue structure", recommendation.site);
                 continue;
             };
-            // Skip circuit-level queues that host a qdisc (CAKE/fq_codel). Changing HTB at that
-            // level can deadlock the kernel; only adjust parent branch nodes.
-            if queue.circuit_id.is_some() {
-                warn!(
-                    "StormGuard skipped {} because it resolves to a circuit queue (qdisc host).",
-                    recommendation.site
+            let cooldown_secs = Self::cooldown_for_action(config, &recommendation.action);
+            debug!(
+                "Cooldown for {:?} set to {:.1}s",
+                recommendation.action, cooldown_secs
+            );
+
+            // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
+            if let Some(circuit_id) = queue.circuit_id.as_deref() {
+                Self::handle_circuit_queue_recommendation(
+                    &mut self.active_circuit_fallbacks,
+                    site,
+                    config,
+                    &recommendation,
+                    &summary,
+                    circuit_id,
+                    cooldown_secs,
+                    &log_sender,
+                    bakery_sender.clone(),
                 );
                 continue;
             }
 
-            // Find the interface
-            let interface_name = match recommendation.direction {
-                RecommendationDirection::Download => config.download_interface.clone(),
-                RecommendationDirection::Upload => config.upload_interface.clone(),
-            };
+            let interface_name = Self::interface_name(config, recommendation.direction);
 
             // Find the TC class
             let class_handle = queue.class_id;
 
             // Find the new bandwidth
-            let current_rate = match recommendation.direction {
-                RecommendationDirection::Download => site.queue_download_mbps,
-                RecommendationDirection::Upload => site.queue_upload_mbps,
-            } as f64;
+            let current_rate = Self::site_rate(site, recommendation.direction) as f64;
+            let max_rate = Self::planned_rate(site_config, recommendation.direction) as f64;
+            let min_rate = Self::minimum_rate(site_config, recommendation.direction) as f64;
 
-            let max_rate = match recommendation.direction {
-                RecommendationDirection::Download => site_config.max_download_mbps,
-                RecommendationDirection::Upload => site_config.max_upload_mbps,
-            } as f64;
-            let min_rate = match recommendation.direction {
-                RecommendationDirection::Download => site_config.min_download_mbps,
-                RecommendationDirection::Upload => site_config.min_upload_mbps,
-            } as f64;
-
-            let new_rate_multiplier = match recommendation.action {
-                RecommendationAction::Increase => 1.15,
-                RecommendationAction::IncreaseFast => 1.30,
-                RecommendationAction::Decrease => 0.95,
-                RecommendationAction::DecreaseFast => 0.88,
-            };
-            let new_rate = match recommendation.direction {
-                RecommendationDirection::Download => site.queue_download_mbps,
-                RecommendationDirection::Upload => site.queue_upload_mbps,
-            } as f64
-                * new_rate_multiplier;
+            let new_rate_multiplier = Self::multiplier_for_action(config, &recommendation.action);
+            let new_rate = current_rate * new_rate_multiplier;
             let new_rate = new_rate.round();
 
             // Are we allowed to do it?
@@ -327,67 +403,44 @@ impl SiteStateTracker {
                 continue;
             }
 
-            let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => {
-                    // Halved to allow quicker follow-up increases.
-                    (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(2.0)
-                }
-                RecommendationAction::Increase => {
-                    (READING_ACCUMULATOR_SIZE as f32 * 0.025).max(1.0)
-                }
-                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.25,
-                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32 * 0.5,
-            };
-            debug!(
-                "Cooldown for {:?} set to {:.1}s",
-                recommendation.action, cooldown_secs
-            );
-
-            // Apply to the site
-            match recommendation.direction {
-                RecommendationDirection::Download => {
-                    site.queue_download_mbps = new_rate;
-                    site.ticks_since_last_probe_download = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site)
-                    {
-                        site.1 = new_rate;
-                    }
-                }
-                RecommendationDirection::Upload => {
-                    site.queue_upload_mbps = new_rate;
-                    site.ticks_since_last_probe_upload = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site)
-                    {
-                        site.2 = new_rate;
-                    }
-                }
-            }
-
-            // Apply for dependents
-            for dependent in &site.config.dependent_nodes {
-                let max_rate = match recommendation.direction {
-                    RecommendationDirection::Download => dependent.original_max_download_mbps,
-                    RecommendationDirection::Upload => dependent.original_max_upload_mbps,
-                };
-                if max_rate < new_rate {
-                    continue;
-                }
-                info!(
-                    "Applying rate change to dependent {}: {} -> {}",
-                    dependent.name, dependent.original_max_download_mbps, new_rate
+            if config.dry_run {
+                Self::apply_dependents(
+                    &site.config,
+                    recommendation.direction,
+                    new_rate,
+                    config,
+                    &interface_name,
+                    bakery_sender.clone(),
                 );
                 Self::apply_htb_change(
                     config,
                     &interface_name,
-                    dependent.class_id,
+                    class_handle,
                     new_rate,
                     bakery_sender.clone(),
                 );
+                Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
+                let _ = log_sender.send(LogCommand::SpeedChange {
+                    site: recommendation.site.clone(),
+                    download: site.queue_download_mbps,
+                    upload: site.queue_upload_mbps,
+                    state: format!("{summary}; dry_run_target={new_rate}"),
+                });
+                continue;
             }
 
+            // Apply to the site
+            Self::set_site_rate(site, recommendation.direction, new_rate);
+
             // Actually make the change
+            Self::apply_dependents(
+                &site.config,
+                recommendation.direction,
+                new_rate,
+                config,
+                &interface_name,
+                bakery_sender.clone(),
+            );
             Self::apply_htb_change(
                 config,
                 &interface_name,
@@ -395,23 +448,11 @@ impl SiteStateTracker {
                 new_rate,
                 bakery_sender.clone(),
             );
+            pending_site_updates.insert(site.config.name.clone());
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
-            match recommendation.direction {
-                RecommendationDirection::Download => {
-                    site.download_state = StormguardState::Cooldown {
-                        start: std::time::Instant::now(),
-                        duration_secs: cooldown_secs,
-                    };
-                }
-                RecommendationDirection::Upload => {
-                    site.upload_state = StormguardState::Cooldown {
-                        start: std::time::Instant::now(),
-                        duration_secs: cooldown_secs,
-                    };
-                }
-            }
+            Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
 
             // Report
             let _ = log_sender.send(LogCommand::SpeedChange {
@@ -420,6 +461,264 @@ impl SiteStateTracker {
                 upload: site.queue_upload_mbps,
                 state: summary,
             });
+        }
+
+        if !pending_site_updates.is_empty() {
+            let updates: Vec<SiteOverrideUpdate> = pending_site_updates
+                .into_iter()
+                .filter_map(|site_name| {
+                    self.sites
+                        .get(&site_name)
+                        .map(Self::site_override_update_from_state)
+                })
+                .collect();
+            if let Err(e) = apply_site_override_updates(&updates) {
+                warn!("Failed to batch StormGuard site override updates: {}", e);
+            }
+        }
+    }
+
+    fn handle_circuit_queue_recommendation(
+        active_circuit_fallbacks: &mut HashSet<String>,
+        site: &mut SiteState,
+        config: &StormguardConfig,
+        recommendation: &Recommendation,
+        summary: &str,
+        circuit_id: &str,
+        cooldown_secs: f32,
+        log_sender: &std::sync::mpsc::Sender<LogCommand>,
+        bakery_sender: Sender<BakeryCommands>,
+    ) {
+        let outcome = if !config.circuit_fallback_enabled {
+            CircuitFallbackOutcome::Skipped {
+                reason: "Circuit fallback disabled in config.".to_string(),
+            }
+        } else if matches!(
+            recommendation.action,
+            RecommendationAction::Increase | RecommendationAction::IncreaseFast
+        ) && !active_circuit_fallbacks.contains(circuit_id)
+        {
+            CircuitFallbackOutcome::Skipped {
+                reason: "No active StormGuard circuit fallback to clear.".to_string(),
+            }
+        } else {
+            match recommendation.action {
+                RecommendationAction::Decrease | RecommendationAction::DecreaseFast => {
+                    match apply_circuit_fallback(
+                        circuit_id,
+                        &config.circuit_fallback_sqm,
+                        config.circuit_fallback_persist,
+                        config.dry_run,
+                        bakery_sender,
+                    ) {
+                        Ok(outcome) => outcome,
+                        Err(e) => {
+                            warn!(
+                                "StormGuard fallback failed for circuit {} ({}): {}",
+                                circuit_id, recommendation.site, e
+                            );
+                            CircuitFallbackOutcome::Skipped {
+                                reason: format!("Fallback error: {e}"),
+                            }
+                        }
+                    }
+                }
+                RecommendationAction::Increase | RecommendationAction::IncreaseFast => {
+                    match clear_circuit_fallback(circuit_id, config.dry_run, bakery_sender) {
+                        Ok(outcome) => outcome,
+                        Err(e) => {
+                            warn!(
+                                "StormGuard fallback clear failed for circuit {} ({}): {}",
+                                circuit_id, recommendation.site, e
+                            );
+                            CircuitFallbackOutcome::Skipped {
+                                reason: format!("Fallback clear error: {e}"),
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        let (outcome_text, enters_cooldown) = match outcome {
+            CircuitFallbackOutcome::Applied { persisted } => {
+                active_circuit_fallbacks.insert(circuit_id.to_string());
+                info!(
+                    "StormGuard applied circuit fallback for {} ({})",
+                    recommendation.site, circuit_id
+                );
+                (
+                    format!(
+                        "circuit_fallback=applied sqm={} persisted={persisted}",
+                        config.circuit_fallback_sqm
+                    ),
+                    true,
+                )
+            }
+            CircuitFallbackOutcome::Cleared { persisted } => {
+                active_circuit_fallbacks.remove(circuit_id);
+                info!(
+                    "StormGuard cleared circuit fallback for {} ({})",
+                    recommendation.site, circuit_id
+                );
+                (format!("circuit_fallback=cleared persisted={persisted}"), true)
+            }
+            CircuitFallbackOutcome::DryRun { action } => {
+                info!(
+                    "StormGuard dry-run circuit fallback for {} ({}): {}",
+                    recommendation.site, circuit_id, action
+                );
+                (format!("circuit_fallback=dry_run {action}"), true)
+            }
+            CircuitFallbackOutcome::Skipped { reason } => {
+                warn!(
+                    "StormGuard skipped circuit fallback for {} ({}): {}",
+                    recommendation.site, circuit_id, reason
+                );
+                (format!("circuit_fallback=skipped reason={reason}"), false)
+            }
+        };
+
+        if Self::circuit_outcome_enters_cooldown(&enters_cooldown) {
+            Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
+        }
+        let _ = log_sender.send(LogCommand::SpeedChange {
+            site: recommendation.site.clone(),
+            download: site.queue_download_mbps,
+            upload: site.queue_upload_mbps,
+            state: format!("{summary}; {outcome_text}"),
+        });
+    }
+
+    fn site_rate(site: &SiteState, direction: RecommendationDirection) -> u64 {
+        match direction {
+            RecommendationDirection::Download => site.queue_download_mbps,
+            RecommendationDirection::Upload => site.queue_upload_mbps,
+        }
+    }
+
+    fn planned_rate(site: &crate::config::WatchingSite, direction: RecommendationDirection) -> u64 {
+        match direction {
+            RecommendationDirection::Download => site.max_download_mbps,
+            RecommendationDirection::Upload => site.max_upload_mbps,
+        }
+    }
+
+    fn minimum_rate(site: &crate::config::WatchingSite, direction: RecommendationDirection) -> u64 {
+        match direction {
+            RecommendationDirection::Download => site.min_download_mbps,
+            RecommendationDirection::Upload => site.min_upload_mbps,
+        }
+    }
+
+    fn interface_name(config: &StormguardConfig, direction: RecommendationDirection) -> String {
+        match direction {
+            RecommendationDirection::Download => config.download_interface.clone(),
+            RecommendationDirection::Upload => config.upload_interface.clone(),
+        }
+    }
+
+    fn multiplier_for_action(config: &StormguardConfig, action: &RecommendationAction) -> f64 {
+        match action {
+            RecommendationAction::IncreaseFast => config.increase_fast_multiplier,
+            RecommendationAction::Increase => config.increase_multiplier,
+            RecommendationAction::Decrease => config.decrease_multiplier,
+            RecommendationAction::DecreaseFast => config.decrease_fast_multiplier,
+        }
+    }
+
+    fn cooldown_for_action(config: &StormguardConfig, action: &RecommendationAction) -> f32 {
+        match action {
+            RecommendationAction::IncreaseFast => config.increase_fast_cooldown_seconds,
+            RecommendationAction::Increase => config.increase_cooldown_seconds,
+            RecommendationAction::Decrease => config.decrease_cooldown_seconds,
+            RecommendationAction::DecreaseFast => config.decrease_fast_cooldown_seconds,
+        }
+    }
+
+    fn set_site_rate(site: &mut SiteState, direction: RecommendationDirection, new_rate: u64) {
+        match direction {
+                RecommendationDirection::Download => {
+                    site.queue_download_mbps = new_rate;
+                    site.ticks_since_last_probe_download = 0;
+                    let mut lock = crate::STORMGUARD_STATS.lock();
+                    if let Some(entry) =
+                        lock.iter_mut().find(|(n, _, _)| n == &site.config.name)
+                    {
+                        entry.1 = new_rate;
+                    }
+                }
+                RecommendationDirection::Upload => {
+                    site.queue_upload_mbps = new_rate;
+                    site.ticks_since_last_probe_upload = 0;
+                    let mut lock = crate::STORMGUARD_STATS.lock();
+                    if let Some(entry) =
+                        lock.iter_mut().find(|(n, _, _)| n == &site.config.name)
+                    {
+                        entry.2 = new_rate;
+                    }
+                }
+            }
+        }
+
+    fn apply_dependents(
+        site: &crate::config::WatchingSite,
+        direction: RecommendationDirection,
+        new_rate: u64,
+        config: &StormguardConfig,
+        interface_name: &str,
+        bakery_sender: Sender<BakeryCommands>,
+    ) {
+        for dependent in &site.dependent_nodes {
+            let max_rate = match direction {
+                RecommendationDirection::Download => dependent.original_max_download_mbps,
+                RecommendationDirection::Upload => dependent.original_max_upload_mbps,
+            };
+            if max_rate < new_rate {
+                continue;
+            }
+            info!(
+                "Applying rate change to dependent {}: {} -> {}",
+                dependent.name, max_rate, new_rate
+            );
+            Self::apply_htb_change(
+                config,
+                interface_name,
+                dependent.class_id,
+                new_rate,
+                bakery_sender.clone(),
+            );
+        }
+    }
+
+    fn site_override_update_from_state(site: &SiteState) -> SiteOverrideUpdate {
+        SiteOverrideUpdate {
+            site_name: site.config.name.clone(),
+            download_bandwidth_mbps: (site.queue_download_mbps != site.config.max_download_mbps)
+                .then_some(site.queue_download_mbps as u32),
+            upload_bandwidth_mbps: (site.queue_upload_mbps != site.config.max_upload_mbps)
+                .then_some(site.queue_upload_mbps as u32),
+        }
+    }
+
+    fn circuit_outcome_enters_cooldown(enters_cooldown: &bool) -> bool {
+        *enters_cooldown
+    }
+
+    fn enter_cooldown(site: &mut SiteState, direction: RecommendationDirection, cooldown_secs: f32) {
+        match direction {
+            RecommendationDirection::Download => {
+                site.download_state = StormguardState::Cooldown {
+                    start: std::time::Instant::now(),
+                    duration_secs: cooldown_secs,
+                };
+            }
+            RecommendationDirection::Upload => {
+                site.upload_state = StormguardState::Cooldown {
+                    start: std::time::Instant::now(),
+                    duration_secs: cooldown_secs,
+                };
+            }
         }
     }
 
@@ -473,5 +772,65 @@ impl SiteStateTracker {
         //         }
         //     }
         // }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::WatchingSite;
+
+    fn site_state(download: u64, upload: u64, max_down: u64, max_up: u64) -> SiteState {
+        SiteState {
+            config: WatchingSite {
+                name: "Site A".to_string(),
+                max_download_mbps: max_down,
+                max_upload_mbps: max_up,
+                min_download_mbps: 10,
+                min_upload_mbps: 10,
+                dependent_nodes: Vec::new(),
+                current_download_mbps: download,
+                current_upload_mbps: upload,
+            },
+            download_state: StormguardState::Running,
+            upload_state: StormguardState::Running,
+            throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+            throughput_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+            retransmits_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+            retransmits_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+            round_trip_time: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+            throughput_down_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+            throughput_up_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+            retransmits_down_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+            retransmits_up_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+            round_trip_time_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+            queue_download_mbps: download,
+            queue_upload_mbps: upload,
+            current_throughput: (0.0, 0.0),
+            ticks_since_last_probe_download: 0,
+            ticks_since_last_probe_upload: 0,
+        }
+    }
+
+    #[test]
+    fn site_override_update_omits_baseline_rates() {
+        let site = site_state(100, 50, 100, 50);
+        let update = SiteStateTracker::site_override_update_from_state(&site);
+        assert_eq!(update.download_bandwidth_mbps, None);
+        assert_eq!(update.upload_bandwidth_mbps, None);
+    }
+
+    #[test]
+    fn site_override_update_keeps_only_changed_directions() {
+        let site = site_state(75, 50, 100, 50);
+        let update = SiteStateTracker::site_override_update_from_state(&site);
+        assert_eq!(update.download_bandwidth_mbps, Some(75));
+        assert_eq!(update.upload_bandwidth_mbps, None);
+    }
+
+    #[test]
+    fn skipped_circuit_outcomes_do_not_enter_cooldown() {
+        assert!(!SiteStateTracker::circuit_outcome_enters_cooldown(&false));
+        assert!(SiteStateTracker::circuit_outcome_enters_cooldown(&true));
     }
 }
