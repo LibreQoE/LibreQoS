@@ -321,7 +321,7 @@ def apply_lqos_overrides():
     header, rows = read_shaped_devices_csv(path)
 
     # 1) Persistent devices: replace by device_id or append
-    extra = overrides_persistent_devices()
+    extra = overrides_persistent_devices_effective()
     override_rows = override_devices_to_rows(extra or [])
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 
@@ -424,7 +424,7 @@ def apply_network_adjustments(network: dict) -> bool:
     Returns True if any changes were applied.
     """
     try:
-        adjustments = overrides_network_adjustments()
+        adjustments = overrides_network_adjustments_effective()
     except Exception as e:
         print(f"Failed to read network adjustments: {e}")
         return False

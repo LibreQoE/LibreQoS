@@ -28,6 +28,9 @@ import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
 import {StormguardStatusDashlet} from "./stormguard_status";
 import {BakeryStatusDashlet} from "./bakery_status";
+import {TreeGuardStatusDashlet} from "./treeguard_status";
+import {TreeGuardActivityDashlet} from "./treeguard_activity";
+import {TreeguardControlsDashlet} from "./treeguard_controls";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
 // New Traffic Overview dashlets
@@ -80,6 +83,9 @@ export const DashletMenu = [
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
     { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
+    { name: "TreeGuard Controls", tag: "treeguardControls", size: 6, category: "TreeGuard" },
+    { name: "TreeGuard Status", tag: "treeguardStatus", size: 6, category: "TreeGuard" },
+    { name: "TreeGuard Activity", tag: "treeguardActivity", size: 12, category: "TreeGuard" },
     // Traffic Overview (Insight-like)
     { name: "Shaper Top ASN (Download)", tag: "shaperTopAsnDown", size: 6, category: "Traffic" },
     { name: "Shaper Top ASN (Upload)", tag: "shaperTopAsnUp", size: 6, category: "Traffic" },
@@ -131,6 +137,9 @@ export function widgetFactory(widgetName, count) {
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
+        case "treeguardControls": widget = new TreeguardControlsDashlet(count); break;
+        case "treeguardStatus"  : widget = new TreeGuardStatusDashlet(count); break;
+        case "treeguardActivity": widget = new TreeGuardActivityDashlet(count); break;
         // Traffic Overview
         case "shaperTopAsnDown"  : widget = new ShaperTopAsnDownload(count); break;
         case "shaperTopAsnUp"    : widget = new ShaperTopAsnUpload(count); break;

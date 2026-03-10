@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
+mod treeguard;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
@@ -12,6 +13,7 @@ pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
 mod program_control;
+mod reload_lock;
 mod remote_commands;
 mod rtt_exclusions;
 mod scheduler_control;
@@ -249,6 +251,11 @@ fn main() -> Result<()> {
         bakery_sender.clone(),
     )?;
     spawn_queue_monitor()?;
+
+    if let Err(err) = treeguard::actor::start_treeguard_actor(system_usage_tx.clone()) {
+        warn!("Failed to start TreeGuard actor: {err}");
+    }
+
     lqos_sys::bpf_garbage_collector();
     version_checks::start_version_check()?;
 

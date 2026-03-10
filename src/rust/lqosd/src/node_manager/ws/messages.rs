@@ -271,6 +271,29 @@ pub struct BakeryStatusData {
     pub current_state: BakeryStatusState,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct TreeguardStatusData {
+    pub enabled: bool,
+    pub dry_run: bool,
+    pub cpu_max_pct: Option<u8>,
+    pub managed_nodes: usize,
+    pub managed_circuits: usize,
+    pub virtualized_nodes: usize,
+    pub fq_codel_circuits: usize,
+    pub last_action_summary: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TreeguardActivityEntry {
+    pub time: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub action: String,
+    pub persisted: bool,
+    pub reason: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TopAsnRow {
     pub name: String,
@@ -647,6 +670,12 @@ pub enum WsResponse {
     },
     BakeryStatus {
         data: BakeryStatusData,
+    },
+    TreeGuardStatus {
+        data: TreeguardStatusData,
+    },
+    TreeGuardActivity {
+        data: Vec<TreeguardActivityEntry>,
     },
     ExecutiveHeatmaps {
         data: ExecutiveHeatmapsData,

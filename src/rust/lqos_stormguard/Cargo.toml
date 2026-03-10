@@ -13,6 +13,7 @@ tokio.workspace = true
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_bakery = { path = "../lqos_bakery" }
+lqos_overrides = { path = "../lqos_overrides" }
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 

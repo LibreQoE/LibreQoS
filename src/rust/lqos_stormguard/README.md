@@ -15,29 +15,49 @@ Add the following to your `lqos.conf`:
 enabled = true
 dry_run = true
 log_file = "/tmp/stormguard.csv" # Optional
+all_sites = false
 targets = [ "CALVIN 1" ]
+exclude_sites = []
 minimum_download_percentage = 0.5 # For 50% of download as minimum
 minimum_upload_percentage = 0.5 # For 50% of upload as minimum
+increase_fast_multiplier = 1.30
+increase_multiplier = 1.15
+decrease_multiplier = 0.95
+decrease_fast_multiplier = 0.88
+increase_fast_cooldown_seconds = 2.0
+increase_cooldown_seconds = 1.0
+decrease_cooldown_seconds = 3.75
+decrease_fast_cooldown_seconds = 7.5
+circuit_fallback_enabled = false
+circuit_fallback_persist = true
+circuit_fallback_sqm = "fq_codel"
 ```
 
 | **Entry Name** | **Description**                                                                                           |
 |----------------|-----------------------------------------------------------------------------------------------------------|
-| `enabled`      | Enable or disable Tornado. Default: `false`                                                               |
-| `dry_run`      | If true, Tornado will not change the rate. It will only log what it *would* have done. Default: `false`   |
+| `enabled`      | Enable or disable StormGuard. Default: `false`                                                            |
+| `dry_run`      | If true, StormGuard will not change or persist the rate. It only logs what it would have done. Default: `true` |
 | `log_file`     | If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent |
+| `all_sites`    | Monitor all eligible top-level sites. If `false`, only the `targets` allowlist is monitored.            |
+| `targets`      | Site allowlist used when `all_sites = false`.                                                             |
+| `exclude_sites`| Sites to skip when `all_sites = true`.                                                                    |
+| `*_multiplier` | Per-action rate multipliers used when StormGuard increases or decreases a site cap.                       |
+| `*_cooldown_seconds` | Per-action cooldowns that suppress repeated adjustments after a change.                            |
+| `circuit_fallback_*` | Optional TreeGuard-style per-circuit SQM fallback for circuit queues StormGuard cannot safely change with HTB. |
 
-You can list as many sites as you want in the `targets` array. I strongly recommend `dry_run` for now, which just
-emits what it *would* have done to the console!
+You can list as many sites as you want in `targets`, or turn on `all_sites` and carve out exceptions with `exclude_sites`.
+`dry_run` is the recommended starting point while tuning the thresholds for a network.
 
 ## How it works
 
 StormGuard maintains a ring-buffer of recent throughput, TCP retransmits and TCP round-trip times for each target site.
 These are updated once per second, when `lqosd` "ticks". A second buffer maintains a moving average of a larger time period.
 
-Each circuit also maintains a "current queue bandwidth", which is adjusted dynamically. If `dry_run` is not set,
-this is applied directly to the HTB queue associated with the monitoring.
+Each site also maintains a current queue bandwidth, which is adjusted dynamically. In live mode, StormGuard persists
+those adaptive site caps into its own override layer so scheduler rebuilds preserve the current StormGuard state.
 
-> *Warning*: Do not apply this to HTB circuits that have a directly attached CAKE instance.
+> *Warning*: StormGuard will not directly change HTB on qdisc-hosting circuit queues. When circuit fallback is enabled,
+> it can request a per-circuit SQM override instead.
 
 Periodically:
 
