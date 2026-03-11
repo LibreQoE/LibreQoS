@@ -35,6 +35,18 @@ export function toNumber(value, fallback = 0) {
     }
 }
 
+export function normalizeDownUpOrder(value, fallback = 0) {
+    return {
+        down: toNumber(value?.down, fallback),
+        up: toNumber(value?.up, fallback),
+    };
+}
+
+export function sumDownUpOrder(value, fallback = 0) {
+    const pair = normalizeDownUpOrder(value, fallback);
+    return pair.down + pair.up;
+}
+
 function toFixedDigits(value, fallback = 2, min = 0, max = 20) {
     let digits = Math.round(toNumber(value, fallback));
     if (!Number.isFinite(digits)) digits = fallback;

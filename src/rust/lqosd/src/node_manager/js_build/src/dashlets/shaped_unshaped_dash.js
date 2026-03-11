@@ -1,6 +1,7 @@
 import {ShapedUnshapedPie} from "../graphs/shaped_unshaped_pie";
 import {ShapedUnshapedTimescale} from "../graphs/shaped_unshaped_timescale";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {sumDownUpOrder} from "../lq_js_common/helpers/scaling";
 
 export class ShapedUnshapedDash extends DashletBaseInsight {
     title() {
@@ -43,8 +44,8 @@ export class ShapedUnshapedDash extends DashletBaseInsight {
 
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
-            let shaped = msg.data.shaped_bps.down + msg.data.shaped_bps.up;
-            let unshaped = msg.data.bps.down + msg.data.bps.up;
+            let shaped = sumDownUpOrder(msg.data.shaped_bps, 0);
+            let unshaped = sumDownUpOrder(msg.data.bps, 0);
             this.graph.update(shaped, unshaped);
             if (this.zoomGraph) {
                 this.zoomGraph.update(shaped, unshaped);
