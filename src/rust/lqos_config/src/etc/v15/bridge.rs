@@ -20,6 +20,7 @@ pub struct BridgeConfig {
     /// The sandwich mode, if any. Sandwich mode enables a veth bridge pair,
     /// both for compatibility (e.g. if one interface doesn't support XDP),
     /// and for attaching an absolute rate limiter to the bridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandwich: Option<SandwichMode>,
 }
 
@@ -68,6 +69,28 @@ impl Default for BridgeConfig {
             to_internet: "eth0".to_string(),
             to_network: "eth1".to_string(),
             sandwich: None,
+        }
+    }
+}
+
+impl BridgeConfig {
+    /// Returns the active sandwich mode, filtering out legacy explicit `None`.
+    pub fn sandwich_mode(&self) -> Option<&SandwichMode> {
+        self.sandwich.as_ref().and_then(SandwichMode::as_active)
+    }
+
+    /// Returns `true` when sandwich mode is actively enabled.
+    pub fn sandwich_enabled(&self) -> bool {
+        self.sandwich_mode().is_some()
+    }
+}
+
+impl SandwichMode {
+    /// Treats the legacy explicit `None` variant the same as an absent sandwich config.
+    pub fn as_active(&self) -> Option<&Self> {
+        match self {
+            Self::None => None,
+            Self::Full { .. } => Some(self),
         }
     }
 }

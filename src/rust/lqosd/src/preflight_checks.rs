@@ -191,14 +191,17 @@ pub fn preflight_checks() -> Result<()> {
                 "Interface ({}) does not exist.",
                 config.internet_interface()
             );
-            anyhow::anyhow!("Interface {} does not exist", config.internet_interface_physical())
+            anyhow::anyhow!(
+                "Interface {} does not exist",
+                config.internet_interface_physical()
+            )
         })?;
         // In on-a-stick mode, still validate queues on the single interface
         check_queues(&config.internet_interface())?;
     } else {
         // Skip queue checks when Sandwich Mode is enabled (bridged via veth)
         let skip_queue_checks = if let Some(bridge) = &config.bridge {
-            matches!(bridge.sandwich, Some(lqos_config::SandwichMode::Full { .. }))
+            bridge.sandwich_enabled()
         } else {
             false
         };
@@ -208,11 +211,20 @@ pub fn preflight_checks() -> Result<()> {
                 "Interface ({}) does not exist.",
                 config.internet_interface_physical()
             );
-            anyhow::anyhow!("Interface {} does not exist", config.internet_interface_physical())
+            anyhow::anyhow!(
+                "Interface {} does not exist",
+                config.internet_interface_physical()
+            )
         })?;
         interface_name_to_index(&config.isp_interface_physical()).map_err(|_| {
-            error!("Interface ({}) does not exist.", config.isp_interface_physical());
-            anyhow::anyhow!("Interface {} does not exist", config.isp_interface_physical())
+            error!(
+                "Interface ({}) does not exist.",
+                config.isp_interface_physical()
+            );
+            anyhow::anyhow!(
+                "Interface {} does not exist",
+                config.isp_interface_physical()
+            )
         })?;
         if !skip_queue_checks {
             check_queues(&config.internet_interface_physical())?;

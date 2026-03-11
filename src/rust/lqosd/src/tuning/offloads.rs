@@ -1,6 +1,8 @@
 use lqos_config::Tunables;
 use std::process::Command;
 
+const SANDWICH_CHECKSUM_OFFLOADS: [&str; 2] = ["rx", "tx"];
+
 pub fn bpf_sysctls() {
     let _ = Command::new("/sbin/sysctl")
         .arg("net.core.bpf_jit_enable=1")
@@ -30,8 +32,19 @@ fn disable_individual_offload(interface: &str, feature: &str) {
 }
 
 pub fn ethtool_tweaks(interface: &str, tuning: &Tunables) {
+    ethtool_tweaks_with_extra(interface, tuning, &[]);
+}
+
+pub fn sandwich_ethtool_tweaks(interface: &str, tuning: &Tunables) {
+    ethtool_tweaks_with_extra(interface, tuning, &SANDWICH_CHECKSUM_OFFLOADS);
+}
+
+fn ethtool_tweaks_with_extra(interface: &str, tuning: &Tunables, extra_offloads: &[&str]) {
     // Disabling individually to avoid complaints that a card doesn't support a feature anyway
     for feature in tuning.disable_offload.iter() {
+        disable_individual_offload(interface, feature);
+    }
+    for feature in extra_offloads {
         disable_individual_offload(interface, feature);
     }
 

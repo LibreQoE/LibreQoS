@@ -4,7 +4,6 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
-mod treeguard;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
@@ -16,6 +15,7 @@ mod program_control;
 mod reload_lock;
 mod remote_commands;
 mod rtt_exclusions;
+mod sandwich;
 mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
@@ -23,11 +23,11 @@ mod stick;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
+mod treeguard;
 mod tuning;
 mod urgent;
 mod validation;
 mod version_checks;
-mod sandwich;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -193,8 +193,15 @@ fn main() -> Result<()> {
         warn!("Failed to initialize Insight license storage: {e:?}");
     }
 
+    // Create sandwich devices before tuning so per-interface ethtool changes
+    // can reach the veth interfaces on first startup.
+    if !config.on_a_stick_mode() {
+        let is_sandwich = sandwich::make_me_a_sandwich(&config)?;
+        tracing::debug!("Sandwich mode: {is_sandwich}");
+    }
+
     // Apply Tunings
-    tuning::tune_lqosd_from_config_file()?;
+    tuning::tune_lqosd_from_config(&config)?;
 
     // Start the flow tracking actor. This has to happen
     // before the ringbuffer goes live.
@@ -211,8 +218,6 @@ fn main() -> Result<()> {
             Some(flowbee_handle_events),
         )?
     } else {
-        let is_sandwich = sandwich::make_me_a_sandwich(&config)?;
-        tracing::debug!("Sandwich mode: {is_sandwich}");
         LibreQoSKernels::new(
             &config.internet_interface(),
             &config.isp_interface(),

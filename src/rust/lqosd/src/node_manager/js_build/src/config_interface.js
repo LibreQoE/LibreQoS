@@ -1,5 +1,30 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
+function clearSandwichFields() {
+    const defaults = [
+        ['sandwichRateLimiter', 'None'],
+        ['sandwichDownOverride', ''],
+        ['sandwichUpOverride', ''],
+        ['sandwichQueueOverride', ''],
+    ];
+    defaults.forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    });
+    const fqEl = document.getElementById('sandwichUseFqCodel');
+    if (fqEl) fqEl.checked = false;
+}
+
+function normalizeSandwichConfig(sandwich) {
+    if (!sandwich || typeof sandwich !== 'object') {
+        return null;
+    }
+    if (sandwich.Full && typeof sandwich.Full === 'object') {
+        return sandwich.Full;
+    }
+    return null;
+}
+
 function validateConfig() {
     if (document.getElementById('bridgeMode').checked) {
         // Validate bridge mode fields
@@ -98,6 +123,7 @@ function updateConfig() {
             };
         } else {
             bridge.sandwich = null;
+            clearSandwichFields();
         }
         window.config.bridge = bridge;
     } else {
@@ -129,7 +155,7 @@ loadConfig(() => {
                 window.config.bridge.to_network ?? "eth1";
 
             // Sandwich mode
-            const sandwich = window.config.bridge.sandwich;
+            const sandwich = normalizeSandwichConfig(window.config.bridge.sandwich);
             const sandEnableEl = document.getElementById('sandwichEnable');
             const sandSectionEl = document.getElementById('sandwichSection');
             const rateEl = document.getElementById('sandwichRateLimiter');
@@ -140,8 +166,8 @@ loadConfig(() => {
             // Default UI state
             sandEnableEl.checked = false;
             if (sandSectionEl) sandSectionEl.style.display = 'none';
-            if (typeof sandwich === 'object' && sandwich !== null && sandwich.Full) {
-                const full = sandwich.Full;
+            if (sandwich) {
+                const full = sandwich;
                 sandEnableEl.checked = true;
                 if (sandSectionEl) sandSectionEl.style.display = 'block';
                 if (rateEl) rateEl.value = full.with_rate_limiter ?? 'None';
@@ -150,12 +176,7 @@ loadConfig(() => {
                 if (qEl) qEl.value = (full.queue_override ?? '').toString();
                 if (fqEl) fqEl.checked = !!full.use_fq_codel;
             } else {
-                // Handle explicit "None" variant or null/undefined by keeping disabled
-                if (rateEl) rateEl.value = 'None';
-                if (downEl) downEl.value = '';
-                if (upEl) upEl.value = '';
-                if (qEl) qEl.value = '';
-                if (fqEl) fqEl.checked = false;
+                clearSandwichFields();
             }
         } else if (window.config.single_interface) {
             // Single interface mode

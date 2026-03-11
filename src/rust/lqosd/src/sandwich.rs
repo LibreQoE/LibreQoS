@@ -1,65 +1,169 @@
-use lqos_config::{Config, SandwichMode, SandwichRateLimiter, BRIDGE_TO_INTERNET, BRIDGE_TO_NETWORK, SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2, SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2};
-use tracing::{info, warn};
-use std::process::Stdio;
+use anyhow::{Context, Result, anyhow, bail};
+use lqos_config::{
+    BRIDGE_TO_INTERNET, BRIDGE_TO_NETWORK, Config, SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2,
+    SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2, SandwichMode, SandwichRateLimiter,
+};
+use std::{
+    path::Path,
+    process::{Command, Stdio},
+};
+use tracing::info;
+
+#[derive(Clone, Debug)]
+pub struct SandwichTopology {
+    physical_to_internet: String,
+    physical_to_network: String,
+    with_rate_limiter: SandwichRateLimiter,
+    rate_override_mbps_down: Option<u64>,
+    rate_override_mbps_up: Option<u64>,
+    queue_override: Option<usize>,
+    use_fq_codel: bool,
+}
+
+pub fn topology_from_config(config: &Config) -> Option<SandwichTopology> {
+    let bridge = config.bridge.as_ref()?;
+    let SandwichMode::Full {
+        with_rate_limiter,
+        rate_override_mbps_down,
+        rate_override_mbps_up,
+        queue_override,
+        use_fq_codel,
+    } = bridge.sandwich_mode()?
+    else {
+        return None;
+    };
+
+    Some(SandwichTopology {
+        physical_to_internet: bridge.to_internet.clone(),
+        physical_to_network: bridge.to_network.clone(),
+        with_rate_limiter: with_rate_limiter.clone(),
+        rate_override_mbps_down: *rate_override_mbps_down,
+        rate_override_mbps_up: *rate_override_mbps_up,
+        queue_override: *queue_override,
+        use_fq_codel: *use_fq_codel,
+    })
+}
+
+impl SandwichTopology {
+    pub fn queue_count(&self) -> Result<usize> {
+        Ok(self
+            .queue_override
+            .unwrap_or(lqos_sys::num_possible_cpus()? as usize))
+    }
+
+    pub fn lq_interfaces(&self) -> [&'static str; 2] {
+        [SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK]
+    }
+
+    pub fn all_veth_interfaces(&self) -> [&'static str; 4] {
+        [
+            SANDWICH_TO_INTERNET,
+            SANDWICH_TO_INTERNET2,
+            SANDWICH_TO_NETWORK,
+            SANDWICH_TO_NETWORK2,
+        ]
+    }
+
+    pub fn bridges(&self) -> [&'static str; 2] {
+        [BRIDGE_TO_INTERNET, BRIDGE_TO_NETWORK]
+    }
+
+    pub fn tuning_interfaces(&self) -> Vec<&str> {
+        vec![
+            SANDWICH_TO_INTERNET,
+            SANDWICH_TO_INTERNET2,
+            SANDWICH_TO_NETWORK,
+            SANDWICH_TO_NETWORK2,
+            self.physical_to_internet.as_str(),
+            self.physical_to_network.as_str(),
+        ]
+    }
+
+    fn download_rate_mbps(&self, config: &Config) -> u64 {
+        self.rate_override_mbps_down
+            .unwrap_or(config.queues.downlink_bandwidth_mbps)
+    }
+
+    fn upload_rate_mbps(&self, config: &Config) -> u64 {
+        self.rate_override_mbps_up
+            .unwrap_or(config.queues.uplink_bandwidth_mbps)
+    }
+}
 
 /// Set up sandwich mode, if configured.
-pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<bool> {
-    // https://www.explainxkcd.com/wiki/index.php/149:_Sandwich
-    let Some(bridge_config) = &config.bridge else {
-        return Err(anyhow::anyhow!("Bridge mode required"));
+pub fn make_me_a_sandwich(config: &Config) -> Result<bool> {
+    let Some(topology) = topology_from_config(config) else {
+        return Ok(false);
     };
-    let Some(SandwichMode::Full { with_rate_limiter, rate_override_mbps_down, rate_override_mbps_up, queue_override, use_fq_codel }) = &bridge_config.sandwich else {
-        return Ok(false); // No sandwich mode, not an error
+    let Some(bridge_config) = &config.bridge else {
+        return Err(anyhow!("Bridge mode required"));
     };
     if !bridge_config.use_xdp_bridge {
-        warn!("Sandwich mode requires XDP bridge. Running without sandwich mode.");
-        return Ok(false);
+        bail!("Sandwich mode requires bridge.use_xdp_bridge = true");
     }
-    info!("Enabling sandwich mode.");
 
-    // Tear down all existing bridges and veth pairs
+    info!("Enabling sandwich mode.");
     cleanup_my_sandwich(config)?;
 
-    // Create the veth pair
-    let num_queues = queue_override.unwrap_or(lqos_sys::num_possible_cpus()? as usize);
+    let num_queues = topology.queue_count()?;
     create_veth(SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2, num_queues)?;
     create_veth(SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2, num_queues)?;
-    info!("Created veth pair {} <-> {}", SANDWICH_TO_INTERNET, SANDWICH_TO_INTERNET2);
-    info!("Created veth pair {} <-> {}", SANDWICH_TO_NETWORK, SANDWICH_TO_NETWORK2);
-    veth_up(SANDWICH_TO_INTERNET)?;
-    veth_up(SANDWICH_TO_INTERNET2)?;
-    veth_up(SANDWICH_TO_NETWORK)?;
-    veth_up(SANDWICH_TO_NETWORK2)?;
+    for interface in topology.all_veth_interfaces() {
+        set_link_up(interface)?;
+    }
 
-    // Create the bridges on each end
-    // Attach the veth ends to the bridges
-    // Attach the physical interfaces to the bridges
-    // Bring up all interfaces and bridges
-    let to_internet = vec![SANDWICH_TO_INTERNET2, &bridge_config.to_internet];
-    let to_network = vec![SANDWICH_TO_NETWORK2, &bridge_config.to_network];
-    create_bridge(BRIDGE_TO_INTERNET, &to_internet)?;
-    create_bridge(BRIDGE_TO_NETWORK, &to_network)?;
+    create_bridge(
+        BRIDGE_TO_INTERNET,
+        &[
+            SANDWICH_TO_INTERNET2,
+            topology.physical_to_internet.as_str(),
+        ],
+    )?;
+    create_bridge(
+        BRIDGE_TO_NETWORK,
+        &[SANDWICH_TO_NETWORK2, topology.physical_to_network.as_str()],
+    )?;
 
-    // Attach rate limiters if requested
-    match with_rate_limiter {
+    validate_veth_queue_counts(&topology, num_queues)?;
+
+    match topology.with_rate_limiter {
         SandwichRateLimiter::None => {}
         SandwichRateLimiter::Download => {
-            let rate_mbps = rate_override_mbps_down.unwrap_or(config.queues.downlink_bandwidth_mbps);
+            let rate_mbps = topology.download_rate_mbps(config);
             info!("Applying download rate limit of {} Mbps (HTB)", rate_mbps);
-            create_egress_htb_limit(&bridge_config.to_network, rate_mbps, *use_fq_codel)?;
+            create_egress_htb_limit(
+                topology.physical_to_network.as_str(),
+                rate_mbps,
+                topology.use_fq_codel,
+            )?;
         }
         SandwichRateLimiter::Upload => {
-            let rate_mbps = rate_override_mbps_up.unwrap_or(config.queues.uplink_bandwidth_mbps);
+            let rate_mbps = topology.upload_rate_mbps(config);
             info!("Applying upload rate limit of {} Mbps (HTB)", rate_mbps);
-            create_egress_htb_limit(&bridge_config.to_internet, rate_mbps, *use_fq_codel)?;
+            create_egress_htb_limit(
+                topology.physical_to_internet.as_str(),
+                rate_mbps,
+                topology.use_fq_codel,
+            )?;
         }
         SandwichRateLimiter::Both => {
-            let down_rate_mbps = rate_override_mbps_down.unwrap_or(config.queues.downlink_bandwidth_mbps);
-            let up_rate_mbps = rate_override_mbps_up.unwrap_or(config.queues.uplink_bandwidth_mbps);
-            info!("Applying download rate limit of {} Mbps (HTB)", down_rate_mbps);
+            let down_rate_mbps = topology.download_rate_mbps(config);
+            let up_rate_mbps = topology.upload_rate_mbps(config);
+            info!(
+                "Applying download rate limit of {} Mbps (HTB)",
+                down_rate_mbps
+            );
             info!("Applying upload rate limit of {} Mbps (HTB)", up_rate_mbps);
-            create_egress_htb_limit(&bridge_config.to_network, down_rate_mbps, *use_fq_codel)?;
-            create_egress_htb_limit(&bridge_config.to_internet, up_rate_mbps, *use_fq_codel)?;
+            create_egress_htb_limit(
+                topology.physical_to_network.as_str(),
+                down_rate_mbps,
+                topology.use_fq_codel,
+            )?;
+            create_egress_htb_limit(
+                topology.physical_to_internet.as_str(),
+                up_rate_mbps,
+                topology.use_fq_codel,
+            )?;
         }
     }
 
@@ -67,71 +171,67 @@ pub fn make_me_a_sandwich(config: &Config) -> anyhow::Result<bool> {
 }
 
 /// Tear down sandwich mode, if configured.
-pub fn cleanup_my_sandwich(config: &Config) -> anyhow::Result<()> {
-    let Some(bridge) = &config.bridge else {
-        return Err(anyhow::anyhow!("Bridge mode required"));
-    };
-    let Some(SandwichMode::Full { .. }) = &bridge.sandwich else {
-        return Ok(()); // No sandwich mode, not an error
+pub fn cleanup_my_sandwich(config: &Config) -> Result<()> {
+    let Some(topology) = topology_from_config(config) else {
+        return Ok(());
     };
 
-    // Tear down all existing bridges and veth pairs
-    // (ignore errors, they might not exist)
-    if let Err(e) = delete_bridge(BRIDGE_TO_INTERNET) {
-        info!("Ignoring error deleting existing bridge {}: {}", BRIDGE_TO_INTERNET, e);
+    for bridge in topology.bridges() {
+        ignore_command_failure("ip", &["link", "set", "dev", bridge, "down"]);
+        ignore_command_failure("ip", &["link", "delete", bridge, "type", "bridge"]);
     }
-    if let Err(e) = delete_bridge(BRIDGE_TO_NETWORK) {
-        info!("Ignoring error deleting existing bridge {}: {}", BRIDGE_TO_NETWORK, e);
-    }
-    if let Err(e) = delete_veth(SANDWICH_TO_INTERNET) {
-        info!("Ignoring error deleting existing veth {}: {}", SANDWICH_TO_INTERNET, e);
-    }
-    if let Err(e) = delete_veth(SANDWICH_TO_NETWORK) {
-        info!("Ignoring error deleting existing veth {}: {}", SANDWICH_TO_NETWORK, e);
+    ignore_command_failure(
+        "ip",
+        &["link", "delete", SANDWICH_TO_INTERNET, "type", "veth"],
+    );
+    ignore_command_failure(
+        "ip",
+        &["link", "delete", SANDWICH_TO_NETWORK, "type", "veth"],
+    );
+
+    Ok(())
+}
+
+fn validate_veth_queue_counts(topology: &SandwichTopology, expected: usize) -> Result<()> {
+    for interface in topology.lq_interfaces() {
+        let (rx, tx) = queue_counts(interface)?;
+        if rx != expected || tx != expected {
+            bail!("Sandwich interface {interface} has rx={rx} tx={tx}; expected {expected} queues");
+        }
     }
     Ok(())
 }
 
-fn delete_bridge(bridge_name: &str) -> anyhow::Result<()> {
-    // ip link set dev $bridge_name down
-    // ip link delete $bridge_name type bridge
-    std::process::Command::new("ip")
-        .args(&["link", "set", "dev", bridge_name, "down"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-    std::process::Command::new("ip")
-        .args(&["link", "delete", bridge_name, "type", "bridge"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-    Ok(())
+fn queue_counts(interface: &str) -> Result<(usize, usize)> {
+    let path = format!("/sys/class/net/{interface}/queues");
+    let sys_path = Path::new(&path);
+    if !sys_path.exists() {
+        bail!("Queue path {path} does not exist");
+    }
+
+    let mut counts = (0, 0);
+    for entry in std::fs::read_dir(sys_path)? {
+        let entry = entry?;
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if name.starts_with("rx-") {
+            counts.0 += 1;
+        } else if name.starts_with("tx-") {
+            counts.1 += 1;
+        }
+    }
+
+    Ok(counts)
 }
 
-fn delete_veth(veth_name: &str) -> anyhow::Result<()> {
-    // ip link set dev $veth_name down
-    // ip link delete $veth_name type veth
-    std::process::Command::new("ip")
-        .args(&["link", "set", "dev", veth_name, "down"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-    std::process::Command::new("ip")
-        .args(&["link", "delete", veth_name, "type", "veth"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-    Ok(())
-}
-
-fn create_veth(
-    veth_name: &str,
-    peer_name: &str,
-    num_queues: usize,
-) -> anyhow::Result<()> {
-    // ip link add $VETH_NAME numrxqueues $NUM_QUEUES numtxqueues $NUM_QUEUES index 123 type veth peer name veth_toexternal numrxqueues $NUM_QUEUES numtxqueues $NUM_QUEUES index $INDEX
-    let output = std::process::Command::new("ip")
-        .args(&[
+fn create_veth(veth_name: &str, peer_name: &str, num_queues: usize) -> Result<()> {
+    run_command(
+        "ip",
+        &[
             "link",
             "add",
             veth_name,
@@ -148,78 +248,90 @@ fn create_veth(
             &num_queues.to_string(),
             "numtxqueues",
             &num_queues.to_string(),
-        ])
-        .output()?;
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Failed to create veth {} <-> {} (exit={:?}): {}",
-            veth_name,
-            peer_name,
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    Ok(())
+        ],
+    )
 }
 
-fn veth_up(veth_name: &str) -> anyhow::Result<()> {
-    // ip link set dev $veth_name up
-    std::process::Command::new("ip")
-        .args(&["link", "set", "dev", veth_name, "up"])
-        .status()?;
-    Ok(())
+fn set_link_up(interface: &str) -> Result<()> {
+    run_command("ip", &["link", "set", "dev", interface, "up"])
 }
 
-fn create_bridge(name: &str, members: &[&str]) -> anyhow::Result<()> {
-    // ip link add name br0 type bridge
-    std::process::Command::new("ip")
-        .args(&["link", "add", "name", name, "type", "bridge"])
-        .status()?;
+fn create_bridge(name: &str, members: &[&str]) -> Result<()> {
+    run_command("ip", &["link", "add", "name", name, "type", "bridge"])?;
     for member in members {
-        std::process::Command::new("ip")
-            .args(&["link", "set", member, "master", name])
-            .status()?;
+        run_command("ip", &["link", "set", member, "master", name])?;
+        run_command("ip", &["link", "set", "dev", member, "up"])?;
     }
-    std::process::Command::new("ip")
-        .args(&["link", "set", name, "up"])
-        .status()?;
-    Ok(())
+    run_command("ip", &["link", "set", "dev", name, "up"])
 }
 
-fn create_egress_htb_limit(interface: &str, rate_mbps: u64, use_fq_codel: bool) -> anyhow::Result<()> {
-    // Clean slate: delete existing root (ignore errors/noise)
-    let _ = std::process::Command::new("tc")
-        .args(&["qdisc", "del", "dev", interface, "root"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+fn create_egress_htb_limit(interface: &str, rate_mbps: u64, use_fq_codel: bool) -> Result<()> {
+    ignore_command_failure("tc", &["qdisc", "del", "dev", interface, "root"]);
 
-    // Root HTB qdisc
-    std::process::Command::new("tc")
-        .args(&["qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "1"])
-        .status()?;
+    run_command(
+        "tc",
+        &[
+            "qdisc", "add", "dev", interface, "root", "handle", "1:", "htb", "default", "1",
+        ],
+    )?;
 
-    // Single HTB class at the target rate with an explicit quantum around MTU
-    let add_status = std::process::Command::new("tc")
-        .args(&["class", "add", "dev", interface, "parent", "1:", "classid", "1:1", "htb",
-                "rate", &format!("{}mbit", rate_mbps),
-                "ceil", &format!("{}mbit", rate_mbps)])
-        .status()?;
-    if !add_status.success() {
-        // Fallback to change if class already exists
-        std::process::Command::new("tc")
-            .args(&["class", "change", "dev", interface, "parent", "1:", "classid", "1:1", "htb",
-                    "rate", &format!("{}mbit", rate_mbps),
-                    "ceil", &format!("{}mbit", rate_mbps),
-                    "quantum", "1514"])
-            .status()?;
-    }
+    run_command(
+        "tc",
+        &[
+            "class",
+            "replace",
+            "dev",
+            interface,
+            "parent",
+            "1:",
+            "classid",
+            "1:1",
+            "htb",
+            "rate",
+            &format!("{rate_mbps}mbit"),
+            "ceil",
+            &format!("{rate_mbps}mbit"),
+            "quantum",
+            "1514",
+        ],
+    )?;
 
     if use_fq_codel {
-        // fq_codel as child of class 1:1
-        std::process::Command::new("tc")
-            .args(&["qdisc", "replace", "dev", interface, "parent", "1:1", "handle", "10:", "fq_codel"])
-            .status()?;
+        run_command(
+            "tc",
+            &[
+                "qdisc", "replace", "dev", interface, "parent", "1:1", "handle", "10:", "fq_codel",
+            ],
+        )?;
     }
     Ok(())
+}
+
+fn run_command(command: &str, args: &[&str]) -> Result<()> {
+    let output = Command::new(command)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("Failed to launch {command} {}", args.join(" ")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(anyhow!(
+            "{command} {} failed with exit {:?}: {}",
+            args.join(" "),
+            output.status.code(),
+            stderr
+        ))
+    }
+}
+
+fn ignore_command_failure(command: &str, args: &[&str]) {
+    if let Err(err) = run_command(command, args) {
+        info!(
+            "Ignoring cleanup error for {command} {}: {err}",
+            args.join(" ")
+        );
+    }
 }

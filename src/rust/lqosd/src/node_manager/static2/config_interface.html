@@ -43,14 +43,17 @@
                         </div>
 
                         <hr />
+                        <div class="alert alert-warning" role="alert">
+                            <strong>Experimental:</strong> Sandwich Bridge is an experimental feature intended for compatibility testing and hard throughput-cap use cases. It is not the normal bridge path.
+                        </div>
                         <div class="mb-2">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="sandwichEnable">
                                 <label class="form-check-label" for="sandwichEnable">
-                                    Enable Sandwich Bridge (veth pair)
+                                    Enable Optional Experimental Sandwich Bridge (veth pair)
                                 </label>
                             </div>
-                            <div class="form-text">Creates veth pairs and bridges to support compatibility and optional absolute rate limiting.</div>
+                            <div class="form-text">Experimental bridge-mode helper for compatibility and hard throughput caps. Leave disabled for the normal bridge path.</div>
                         </div>
 
                         <div id="sandwichSection" style="display: none;">
@@ -62,7 +65,7 @@
                                     <option value="Upload">Upload only</option>
                                     <option value="Both">Both directions</option>
                                 </select>
-                                <div class="form-text">Attach an absolute rate limiter to the sandwich bridge.</div>
+                                <div class="form-text">Attach an absolute rate limiter when sandwich mode is enabled.</div>
                             </div>
 
                             <div class="mb-3">
@@ -153,6 +156,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sandwichEnable && sandwichSection) {
         sandwichEnable.addEventListener('change', () => {
             sandwichSection.style.display = sandwichEnable.checked ? 'block' : 'none';
+            if (!sandwichEnable.checked) {
+                const rate = document.getElementById('sandwichRateLimiter');
+                const down = document.getElementById('sandwichDownOverride');
+                const up = document.getElementById('sandwichUpOverride');
+                const queues = document.getElementById('sandwichQueueOverride');
+                const fq = document.getElementById('sandwichUseFqCodel');
+                if (rate) rate.value = 'None';
+                if (down) down.value = '';
+                if (up) up.value = '';
+                if (queues) queues.value = '';
+                if (fq) fq.checked = false;
+            }
         });
     }
 });
