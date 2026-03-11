@@ -27,6 +27,8 @@ pub mod qoo;
 pub mod qoq_heatmap;
 /// RTT histograms and strongly-typed RTT units.
 pub mod rtt;
+/// Helpers for initializing the process-wide Rustls crypto provider.
+pub mod rustls;
 /// Helpers for units of measurement
 pub mod units;
 /// Utilities dealing with Unix Timestamps

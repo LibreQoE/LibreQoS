@@ -34,10 +34,7 @@ pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<boo
     let mut changed = false;
 
     for update in updates {
-        let desired = (
-            update.download_bandwidth_mbps,
-            update.upload_bandwidth_mbps,
-        );
+        let desired = (update.download_bandwidth_mbps, update.upload_bandwidth_mbps);
         if desired == (None, None) {
             let removed = overrides.remove_site_bandwidth_override_by_name_count(&update.site_name);
             if removed > 0 {
@@ -126,7 +123,11 @@ pub fn clear_circuit_fallback(
         });
     }
 
-    let device_ids: Vec<String> = fallback.devices.iter().map(|d| d.device_id.clone()).collect();
+    let device_ids: Vec<String> = fallback
+        .devices
+        .iter()
+        .map(|d| d.device_id.clone())
+        .collect();
     let persisted = clear_device_overrides(&device_ids)?;
     apply_circuit_sqm_override_live(circuit_id, &fallback.devices, None, bakery_sender)?;
     Ok(CircuitFallbackOutcome::Cleared { persisted })
@@ -141,14 +142,17 @@ fn current_site_override(
     overrides: &OverrideFile,
     site_name: &str,
 ) -> Option<(Option<u32>, Option<u32>)> {
-    overrides.network_adjustments().iter().find_map(|adj| match adj {
-        lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
-            site_name: current,
-            download_bandwidth_mbps,
-            upload_bandwidth_mbps,
-        } if current == site_name => Some((*download_bandwidth_mbps, *upload_bandwidth_mbps)),
-        _ => None,
-    })
+    overrides
+        .network_adjustments()
+        .iter()
+        .find_map(|adj| match adj {
+            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                site_name: current,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+            } if current == site_name => Some((*download_bandwidth_mbps, *upload_bandwidth_mbps)),
+            _ => None,
+        })
 }
 
 fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
@@ -272,7 +276,9 @@ fn apply_circuit_sqm_override_live(
     }
 
     let Some(node) = found else {
-        return Err(anyhow!("circuit not found in queue structure: {circuit_id}"));
+        return Err(anyhow!(
+            "circuit not found in queue structure: {circuit_id}"
+        ));
     };
 
     let class_minor = u16::try_from(node.class_minor)
@@ -325,12 +331,13 @@ fn group_circuit_fallbacks(devices: &[ShapedDevice]) -> HashMap<String, Persiste
             continue;
         }
 
-        let entry = grouped
-            .entry(device.circuit_id.clone())
-            .or_insert_with(|| PersistedCircuitFallback {
-                sqm_override: token.to_string(),
-                devices: Vec::new(),
-            });
+        let entry =
+            grouped
+                .entry(device.circuit_id.clone())
+                .or_insert_with(|| PersistedCircuitFallback {
+                    sqm_override: token.to_string(),
+                    devices: Vec::new(),
+                });
 
         if entry.sqm_override != token {
             continue;

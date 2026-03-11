@@ -210,7 +210,10 @@ impl SiteState {
     }
 
     fn moving_averages_rtt(&mut self) {
-        Self::push_moving_average(&self.round_trip_time, &mut self.round_trip_time_moving_average);
+        Self::push_moving_average(
+            &self.round_trip_time,
+            &mut self.round_trip_time_moving_average,
+        );
     }
 
     fn recommendation_matrix(
@@ -356,7 +359,8 @@ impl SiteState {
             };
 
         let saturation_max = SaturationLevel::from_throughput(throughput_mbps, max_mbps as f64);
-        let saturation_current = SaturationLevel::from_throughput(throughput_mbps, queue_mbps as f64);
+        let saturation_current =
+            SaturationLevel::from_throughput(throughput_mbps, queue_mbps as f64);
         let retransmit_state = RetransmitState::new(retransmits_ma, retransmits);
         let abs_retransmit = retransmits_ma.average();
         let rtt_state = RttState::new(&self.round_trip_time_moving_average, &self.round_trip_time);
@@ -454,8 +458,7 @@ impl SiteState {
             let Some(delay_ratio) = delay_ratio else {
                 return;
             };
-            let good_delay =
-                delay_ms <= good_threshold_ms && delay_ratio <= good_threshold_ratio;
+            let good_delay = delay_ms <= good_threshold_ms && delay_ratio <= good_threshold_ratio;
             let load_ratio = if queue_mbps > 0 {
                 throughput_mbps / queue_mbps as f64
             } else {
@@ -480,10 +483,7 @@ impl SiteState {
 
         let summary = format!(
             "{direction},{action:?},queue={queue_mbps},tp={throughput_mbps:.3},retx={retransmits_avg:?},rtt={:?},baseline={:?},delay_ms={:?},delay_ratio={:?},bloat={bloat},severe={severe_bloat}",
-            self.current_rtt_ms,
-            self.rtt_baseline_ms,
-            delay_ms,
-            delay_ratio,
+            self.current_rtt_ms, self.rtt_baseline_ms, delay_ms, delay_ratio,
         );
 
         recommendations.push((

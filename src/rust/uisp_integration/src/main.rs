@@ -13,6 +13,7 @@ use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 pub use blackboard::*;
 use lqos_config::Config;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use tokio::time::Instant;
 use tracing::{error, info};
 
@@ -39,6 +40,11 @@ fn check_enabled_status(config: &Config) -> Result<(), UispIntegrationError> {
 async fn main() -> Result<(), UispIntegrationError> {
     let now = Instant::now();
     init_tracing();
+    ensure_rustls_crypto_provider().map_err(|e| {
+        error!("Unable to initialize Rustls crypto provider");
+        error!("{e}");
+        UispIntegrationError::UispConnectError
+    })?;
     info!("UISP Integration 2.0-rust");
 
     // Load the configuration

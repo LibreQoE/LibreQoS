@@ -3,7 +3,7 @@
 //! Link virtualization changes require a scheduler reload to take effect. This module provides a
 //! simple cooldown + exponential backoff controller to avoid flapping reloads.
 
-use crate::reload_lock::{try_reload_libreqos_locked, ReloadExecOutcome};
+use crate::reload_lock::{ReloadExecOutcome, try_reload_libreqos_locked};
 
 const MIN_COOLDOWN_SECONDS: u64 = 60;
 const MAX_BACKOFF_SECONDS: u64 = 2 * 60 * 60; // 2 hours

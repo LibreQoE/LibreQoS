@@ -1,5 +1,7 @@
 use crate::STORMGUARD_STATS;
-use crate::queue_structure::{all_candidate_site_names, find_queue_bandwidth, find_queue_dependents};
+use crate::queue_structure::{
+    all_candidate_site_names, find_queue_bandwidth, find_queue_dependents,
+};
 use allocative::Allocative;
 use lqos_bus::TcHandle;
 use lqos_overrides::{NetworkAdjustment, OverrideLayer, OverrideStore};
@@ -188,11 +190,20 @@ fn get_sites_from_queueing_structure(
         };
         let min_down = (max_down as f32 * sg_config.minimum_download_percentage) as u64;
         let min_up = (max_up as f32 * sg_config.minimum_upload_percentage) as u64;
-        let persisted = persisted_site_overrides.get(&target).copied().unwrap_or((None, None));
-        let current_download_mbps =
-            persisted.0.map(u64::from).unwrap_or(max_down).clamp(min_down, max_down);
-        let current_upload_mbps =
-            persisted.1.map(u64::from).unwrap_or(max_up).clamp(min_up, max_up);
+        let persisted = persisted_site_overrides
+            .get(&target)
+            .copied()
+            .unwrap_or((None, None));
+        let current_download_mbps = persisted
+            .0
+            .map(u64::from)
+            .unwrap_or(max_down)
+            .clamp(min_down, max_down);
+        let current_upload_mbps = persisted
+            .1
+            .map(u64::from)
+            .unwrap_or(max_up)
+            .clamp(min_up, max_up);
 
         let site = WatchingSite {
             name: target.to_owned(),
@@ -207,7 +218,11 @@ fn get_sites_from_queueing_structure(
         sites.insert(target.to_owned(), site);
         {
             let mut lock = STORMGUARD_STATS.lock();
-            lock.push((target.to_owned(), current_download_mbps, current_upload_mbps));
+            lock.push((
+                target.to_owned(),
+                current_download_mbps,
+                current_upload_mbps,
+            ));
         }
     }
     sites
