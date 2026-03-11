@@ -6,6 +6,8 @@ use lqos_overrides::{NetworkAdjustment, OverrideLayer, OverrideStore};
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, info, warn};
 
+use lqos_config::StormguardStrategy;
+
 #[derive(Allocative, Clone)]
 pub struct WatchingSite {
     pub name: String,
@@ -32,6 +34,7 @@ pub struct StormguardConfig {
     pub upload_interface: String,
     pub dry_run: bool,
     pub log_filename: Option<String>,
+    pub strategy: StormguardStrategy,
     pub increase_fast_multiplier: f64,
     pub increase_multiplier: f64,
     pub decrease_multiplier: f64,
@@ -43,6 +46,16 @@ pub struct StormguardConfig {
     pub circuit_fallback_enabled: bool,
     pub circuit_fallback_persist: bool,
     pub circuit_fallback_sqm: String,
+    pub delay_threshold_ms: f32,
+    pub delay_threshold_ratio: f32,
+    pub baseline_alpha_up: f32,
+    pub baseline_alpha_down: f32,
+    pub probe_interval_seconds: f32,
+    pub min_throughput_mbps_for_rtt: f32,
+    pub active_ping_target: String,
+    pub active_ping_interval_seconds: f32,
+    pub active_ping_weight: f32,
+    pub active_ping_timeout_seconds: f32,
 }
 
 impl StormguardConfig {
@@ -88,6 +101,7 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
         upload_interface: config.internet_interface().clone(),
         dry_run: sg_config.dry_run,
         log_filename: sg_config.log_file.clone(),
+        strategy: sg_config.strategy,
         increase_fast_multiplier: sg_config.increase_fast_multiplier as f64,
         increase_multiplier: sg_config.increase_multiplier as f64,
         decrease_multiplier: sg_config.decrease_multiplier as f64,
@@ -99,6 +113,16 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
         circuit_fallback_enabled: sg_config.circuit_fallback_enabled,
         circuit_fallback_persist: sg_config.circuit_fallback_persist,
         circuit_fallback_sqm: sg_config.circuit_fallback_sqm.trim().to_ascii_lowercase(),
+        delay_threshold_ms: sg_config.delay_threshold_ms,
+        delay_threshold_ratio: sg_config.delay_threshold_ratio,
+        baseline_alpha_up: sg_config.baseline_alpha_up,
+        baseline_alpha_down: sg_config.baseline_alpha_down,
+        probe_interval_seconds: sg_config.probe_interval_seconds,
+        min_throughput_mbps_for_rtt: sg_config.min_throughput_mbps_for_rtt,
+        active_ping_target: sg_config.active_ping_target.clone(),
+        active_ping_interval_seconds: sg_config.active_ping_interval_seconds,
+        active_ping_weight: sg_config.active_ping_weight,
+        active_ping_timeout_seconds: sg_config.active_ping_timeout_seconds,
     };
 
     Ok(result)

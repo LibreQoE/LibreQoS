@@ -14,6 +14,7 @@ function defaultStormguardConfig() {
         enabled: false,
         dry_run: true,
         log_file: null,
+        strategy: "delay_probe",
         all_sites: false,
         targets: [],
         exclude_sites: [],
@@ -30,6 +31,16 @@ function defaultStormguardConfig() {
         circuit_fallback_enabled: false,
         circuit_fallback_persist: true,
         circuit_fallback_sqm: "fq_codel",
+        delay_threshold_ms: 40,
+        delay_threshold_ratio: 1.10,
+        baseline_alpha_up: 0.01,
+        baseline_alpha_down: 0.10,
+        probe_interval_seconds: 10,
+        min_throughput_mbps_for_rtt: 0.05,
+        active_ping_target: "1.1.1.1",
+        active_ping_interval_seconds: 10,
+        active_ping_weight: 0.70,
+        active_ping_timeout_seconds: 1.0,
     };
 }
 
@@ -49,6 +60,18 @@ function updateTargetsUi() {
     const section = document.getElementById("targetsSection");
     if (section) {
         section.style.display = allSites ? "none" : "";
+    }
+}
+
+function updateStrategyUi() {
+    const strategy = document.getElementById("strategy")?.value ?? "delay_probe";
+    const section = document.getElementById("delayProbeSection");
+    if (section) {
+        section.style.display = (strategy === "delay_probe" || strategy === "delay_probe_active") ? "" : "none";
+    }
+    const pingSection = document.getElementById("activePingSection");
+    if (pingSection) {
+        pingSection.style.display = strategy === "delay_probe_active" ? "" : "none";
     }
 }
 
@@ -268,6 +291,7 @@ function validateConfig() {
     const allSites = document.getElementById('allSites').checked;
     const minDownloadPct = parseNumber('minDownloadPct');
     const minUploadPct = parseNumber('minUploadPct');
+    const strategy = document.getElementById('strategy').value;
 
     if (!validatePercent('Minimum Download Percentage', minDownloadPct)) {
         return false;
@@ -332,17 +356,67 @@ function validateConfig() {
         return false;
     }
 
+    if (strategy === 'delay_probe' || strategy === 'delay_probe_active') {
+        if (!validatePositiveNumber('Delay Threshold (ms)', parseNumber('delayThresholdMs'), 0.01, 'greater than 0 ms')) {
+            return false;
+        }
+        const delayRatio = parseNumber('delayThresholdRatio');
+        if (Number.isNaN(delayRatio) || delayRatio <= 1.0) {
+            alert('Delay Threshold Ratio must be greater than 1.0');
+            return false;
+        }
+        const alphaUp = parseNumber('baselineAlphaUp');
+        if (Number.isNaN(alphaUp) || alphaUp <= 0 || alphaUp > 1) {
+            alert('Baseline Alpha Up must be > 0 and <= 1');
+            return false;
+        }
+        const alphaDown = parseNumber('baselineAlphaDown');
+        if (Number.isNaN(alphaDown) || alphaDown <= 0 || alphaDown > 1) {
+            alert('Baseline Alpha Down must be > 0 and <= 1');
+            return false;
+        }
+        if (!validatePositiveNumber('Probe Interval (seconds)', parseNumber('probeIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const minThroughput = parseNumber('minThroughputMbpsForRtt');
+        if (Number.isNaN(minThroughput) || minThroughput < 0) {
+            alert('Min Throughput (Mbps) must be >= 0');
+            return false;
+        }
+    }
+
+    if (strategy === 'delay_probe_active') {
+        const pingTarget = document.getElementById('activePingTarget').value.trim();
+        if (!pingTarget) {
+            alert('Ping Target must not be empty');
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Interval (seconds)', parseNumber('activePingIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Timeout (seconds)', parseNumber('activePingTimeoutSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const weightPct = parseNumber('activePingWeight');
+        if (Number.isNaN(weightPct) || weightPct < 0 || weightPct > 100) {
+            alert('Active Ping Weight must be between 0 and 100');
+            return false;
+        }
+    }
+
     return true;
 }
 
 // Update config object
 function updateConfig() {
     const logFilePath = document.getElementById('logFile').value.trim();
+    const weightPct = parseNumber('activePingWeight');
     
     window.config.stormguard = {
         enabled: document.getElementById('enabled').checked,
         dry_run: document.getElementById('dryRun').checked,
         log_file: logFilePath === '' ? null : logFilePath,
+        strategy: document.getElementById('strategy').value,
         all_sites: document.getElementById('allSites').checked,
         targets: [...selectedTargets],
         exclude_sites: [...excludedSites],
@@ -359,6 +433,16 @@ function updateConfig() {
         circuit_fallback_enabled: document.getElementById('circuitFallbackEnabled').checked,
         circuit_fallback_persist: document.getElementById('circuitFallbackPersist').checked,
         circuit_fallback_sqm: document.getElementById('circuitFallbackSqm').value.trim() || 'fq_codel',
+        delay_threshold_ms: parseNumber('delayThresholdMs'),
+        delay_threshold_ratio: parseNumber('delayThresholdRatio'),
+        baseline_alpha_up: parseNumber('baselineAlphaUp'),
+        baseline_alpha_down: parseNumber('baselineAlphaDown'),
+        probe_interval_seconds: parseNumber('probeIntervalSeconds'),
+        min_throughput_mbps_for_rtt: parseNumber('minThroughputMbpsForRtt'),
+        active_ping_target: document.getElementById('activePingTarget').value.trim() || '1.1.1.1',
+        active_ping_interval_seconds: parseNumber('activePingIntervalSeconds'),
+        active_ping_weight: Number.isNaN(weightPct) ? 0.70 : (weightPct / 100.0),
+        active_ping_timeout_seconds: parseNumber('activePingTimeoutSeconds'),
     };
 }
 
@@ -379,6 +463,7 @@ Promise.all([
     document.getElementById('enabled').checked = sg.enabled;
     document.getElementById('dryRun').checked = sg.dry_run;
     document.getElementById('logFile').value = sg.log_file || '';
+    document.getElementById('strategy').value = sg.strategy || 'delay_probe';
     document.getElementById('allSites').checked = sg.all_sites;
     document.getElementById('minDownloadPct').value = Math.round(sg.minimum_download_percentage * 100);
     document.getElementById('minUploadPct').value = Math.round(sg.minimum_upload_percentage * 100);
@@ -395,14 +480,36 @@ Promise.all([
     document.getElementById('circuitFallbackSqm').value = VALID_FALLBACK_SQMS.includes(sg.circuit_fallback_sqm)
         ? sg.circuit_fallback_sqm
         : 'fq_codel';
+    document.getElementById('delayThresholdMs').value = sg.delay_threshold_ms;
+    document.getElementById('delayThresholdRatio').value = sg.delay_threshold_ratio;
+    document.getElementById('baselineAlphaUp').value = sg.baseline_alpha_up;
+    document.getElementById('baselineAlphaDown').value = sg.baseline_alpha_down;
+    document.getElementById('probeIntervalSeconds').value = sg.probe_interval_seconds;
+    document.getElementById('minThroughputMbpsForRtt').value = sg.min_throughput_mbps_for_rtt;
+    document.getElementById('activePingTarget').value = sg.active_ping_target || '1.1.1.1';
+    document.getElementById('activePingIntervalSeconds').value = sg.active_ping_interval_seconds;
+    document.getElementById('activePingTimeoutSeconds').value = sg.active_ping_timeout_seconds;
+    document.getElementById('activePingWeight').value = Math.round((sg.active_ping_weight ?? 0.70) * 100);
+    const weightValue = document.getElementById('activePingWeightValue');
+    if (weightValue) {
+        weightValue.textContent = document.getElementById('activePingWeight').value;
+    }
 
     selectedTargets = [...sg.targets].sort((a, b) => a.localeCompare(b));
     excludedSites = [...sg.exclude_sites].sort((a, b) => a.localeCompare(b));
+    updateStrategyUi();
     updateTargetsUi();
     updateTargetsList();
     updateExcludedSitesList();
 
     document.getElementById('allSites').addEventListener('change', updateTargetsUi);
+    document.getElementById('strategy').addEventListener('change', updateStrategyUi);
+    document.getElementById('activePingWeight').addEventListener('input', () => {
+        const weightValue = document.getElementById('activePingWeightValue');
+        if (weightValue) {
+            weightValue.textContent = document.getElementById('activePingWeight').value;
+        }
+    });
     document.getElementById('addTargetBtn').addEventListener('click', addTargetFromSelector);
     document.getElementById('addTargetManualBtn').addEventListener('click', addTargetFromManual);
     document.getElementById('addExcludeBtn').addEventListener('click', addExcludeFromSelector);

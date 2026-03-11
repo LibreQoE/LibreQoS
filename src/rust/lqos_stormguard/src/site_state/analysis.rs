@@ -55,9 +55,17 @@ impl Display for RetransmitState {
 
 impl RetransmitState {
     pub fn new(moving_average: &RingBuffer, recent: &RingBuffer) -> Self {
-        let tcp_retransmits_ma = moving_average.average().unwrap_or(0.01);
-        let tcp_retransmits_avg = recent.average().unwrap_or(0.01);
-        let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
+        let tcp_retransmits_ma = moving_average.average().unwrap_or(0.0);
+        let tcp_retransmits_avg = recent.average().unwrap_or(0.0);
+        let tcp_retransmits_relative = if tcp_retransmits_ma <= 0.0 {
+            if tcp_retransmits_avg <= 0.0 {
+                1.0
+            } else {
+                f64::INFINITY
+            }
+        } else {
+            tcp_retransmits_avg / tcp_retransmits_ma
+        };
 
         // Determine State
         if tcp_retransmits_relative < 0.4 {
@@ -96,8 +104,11 @@ impl RttState {
         if recent.count() < 2 || moving_average.count() < 2 {
             return RttState::Flat;
         }
-        let rtt_ma = moving_average.average().unwrap_or(1.0);
-        let rtt_avg = recent.average().unwrap_or(1.0);
+        let rtt_ma = moving_average.average().unwrap_or(0.0);
+        let rtt_avg = recent.average().unwrap_or(0.0);
+        if rtt_ma <= 0.0 || rtt_avg <= 0.0 {
+            return RttState::Flat;
+        }
         let rtt_relative = rtt_avg / rtt_ma;
         let delta = (rtt_relative - 1.0).abs() as f32;
 

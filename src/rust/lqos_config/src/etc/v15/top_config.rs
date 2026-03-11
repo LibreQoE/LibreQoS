@@ -151,6 +151,7 @@ pub struct Config {
     pub webserver_listen: Option<String>,
 
     /// Support for Tornado/Auto-rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stormguard: Option<stormguard::StormguardConfig>,
 
     /// TreeGuard intelligent node management.
@@ -528,6 +529,14 @@ mod test {
     }
 
     #[test]
+    fn load_example_without_stormguard_section_deserializes() {
+        let stripped = remove_sections(include_str!("example.toml"), &["stormguard"]);
+        let config = Config::load_from_string(&stripped)
+            .expect("Config without stormguard should still deserialize");
+        assert!(config.stormguard.is_none());
+    }
+
+    #[test]
     fn treeguard_validation_rejects_invalid_thresholds() {
         let mut cfg = Config::default();
         cfg.treeguard.cpu.cpu_low_pct = 90;
@@ -541,13 +550,17 @@ mod test {
     }
 
     #[test]
-    fn stormguard_defaults_preserve_legacy_behavior() {
+    fn stormguard_defaults_are_safe_and_off_by_default() {
         let cfg = crate::etc::v15::stormguard::StormguardConfig::default();
         assert!(!cfg.enabled);
         assert!(!cfg.all_sites);
         assert!(cfg.targets.is_empty());
         assert!(cfg.exclude_sites.is_empty());
         assert!(cfg.dry_run);
+        assert_eq!(
+            cfg.strategy,
+            crate::etc::v15::stormguard::StormguardStrategy::DelayProbe
+        );
         assert_eq!(cfg.minimum_download_percentage, 0.5);
         assert_eq!(cfg.minimum_upload_percentage, 0.5);
         assert_eq!(cfg.increase_fast_multiplier, 1.30);
@@ -561,6 +574,16 @@ mod test {
         assert!(!cfg.circuit_fallback_enabled);
         assert!(cfg.circuit_fallback_persist);
         assert_eq!(cfg.circuit_fallback_sqm, "fq_codel");
+        assert_eq!(cfg.delay_threshold_ms, 40.0);
+        assert_eq!(cfg.delay_threshold_ratio, 1.10);
+        assert_eq!(cfg.baseline_alpha_up, 0.01);
+        assert_eq!(cfg.baseline_alpha_down, 0.10);
+        assert_eq!(cfg.probe_interval_seconds, 10.0);
+        assert_eq!(cfg.min_throughput_mbps_for_rtt, 0.05);
+        assert_eq!(cfg.active_ping_target, "1.1.1.1");
+        assert_eq!(cfg.active_ping_interval_seconds, 10.0);
+        assert_eq!(cfg.active_ping_weight, 0.70);
+        assert_eq!(cfg.active_ping_timeout_seconds, 1.0);
     }
 
     #[test]

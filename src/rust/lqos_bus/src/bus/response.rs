@@ -136,6 +136,20 @@ pub struct StormguardDebugDirection {
     pub rtt: Option<f64>,
     /// Moving-average RTT
     pub rtt_ma: Option<f64>,
+    /// Latest passive RTT sample (TCP-derived)
+    pub passive_rtt_ms: Option<f64>,
+    /// Latest active ping RTT sample
+    pub active_ping_rtt_ms: Option<f64>,
+    /// Learned RTT baseline (DelayProbe strategy)
+    pub baseline_rtt_ms: Option<f64>,
+    /// Standing delay over baseline (DelayProbe strategy)
+    pub delay_ms: Option<f64>,
+    /// Active strategy name
+    pub strategy: String,
+    /// Last applied action, if any
+    pub last_action: Option<String>,
+    /// Seconds since last action, if any
+    pub last_action_age_secs: Option<f32>,
     /// State (Warmup/Running/Cooldown)
     pub state: String,
     /// Seconds remaining in cooldown, if applicable

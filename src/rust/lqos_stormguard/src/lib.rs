@@ -21,6 +21,7 @@ mod datalog;
 mod queue_structure;
 mod site_state;
 mod adaptive_actions;
+mod active_ping;
 
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
@@ -44,6 +45,7 @@ pub async fn start_stormguard(
     let mut config: Option<config::StormguardConfig> = None;
     let mut log_sender: Option<std::sync::mpsc::Sender<datalog::LogCommand>> = None;
     let mut site_state_tracker: Option<site_state::SiteStateTracker> = None;
+    let mut active_ping = active_ping::ActivePingManager::new();
 
     // Main Cycle - use tokio interval instead of blocking TimerFd
     let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -83,19 +85,24 @@ pub async fn start_stormguard(
         }
 
         // Only process if we have a valid configuration
+        active_ping.reconfigure(config.as_ref());
+
         if let (Some(cfg), Some(tracker)) = (&config, &mut site_state_tracker) {
+            let (active_ping_sample, active_ping_updated) = active_ping.latest();
             // Update all the ring buffers
-            tracker.read_new_tick_data().await;
+            tracker
+                .read_new_tick_data(cfg, active_ping_sample, active_ping_updated)
+                .await;
 
             // Check for state changes
-            tracker.check_state();
+            tracker.check_state(cfg);
             // Update debug snapshot for UI/diagnostics
             let snapshot = tracker.debug_snapshot(cfg);
             {
                 let mut lock = STORMGUARD_DEBUG.lock();
                 *lock = snapshot;
             }
-            let recommendations = tracker.recommendations();
+            let recommendations = tracker.recommendations(cfg);
             if !recommendations.is_empty() {
                 if let Some(sender) = &log_sender {
                     tracker.apply_recommendations(
