@@ -56,6 +56,7 @@ Los nodos virtuales ayudan para organización y agregación visual.
 - Úselos para mejorar operabilidad y reportes.
 - No los use para ocultar una topología física confusa.
 - Valide colisiones de nombres tras promoción virtual.
+- Para el flujo lógico-a-físico y asignación CPU/binpacking, consulte [Referencia avanzada de configuración](configuration-advanced-es.md).
 
 ## Guardrails de colas/clasificadores
 

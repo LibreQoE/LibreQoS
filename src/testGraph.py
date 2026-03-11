@@ -278,6 +278,49 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(len(ipv6), 1)
         self.assertEqual(ipv6[0], "dead::beef/64")
 
+    def test_apply_client_bandwidth_multiplier_uses_higher_factor(self):
+        import integrationCommon
+
+        old_overhead = integrationCommon.bandwidth_overhead_factor
+        old_multiplier = integrationCommon.client_bandwidth_multiplier
+        try:
+            integrationCommon.bandwidth_overhead_factor = lambda: 1.1
+            integrationCommon.client_bandwidth_multiplier = lambda: 1.25
+            self.assertEqual(integrationCommon.apply_client_bandwidth_multiplier(100), 125.0)
+
+            integrationCommon.bandwidth_overhead_factor = lambda: 1.4
+            integrationCommon.client_bandwidth_multiplier = lambda: 1.25
+            self.assertEqual(integrationCommon.apply_client_bandwidth_multiplier(100), 140.0)
+        finally:
+            integrationCommon.bandwidth_overhead_factor = old_overhead
+            integrationCommon.client_bandwidth_multiplier = old_multiplier
+
+    def test_create_shaped_devices_preserves_effective_client_rate(self):
+        import csv
+        import os
+        import tempfile
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        net = NetworkGraph()
+        net.addRawNode(NetworkNode("client_1", "Client 1", "", NodeType.client, 150.0, 75.0))
+        net.addRawNode(NetworkNode("device_1", "Device 1", "client_1", NodeType.device, ipv4=["100.64.1.10"], mac="AA:BB:CC:DD:EE:FF"))
+        net.prepareTree()
+
+        old_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                os.chdir(tmpdir)
+                net.createShapedDevices()
+                with open("ShapedDevices.csv", newline="") as csvfile:
+                    rows = list(csv.reader(csvfile))
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(rows[1][8], "1")
+        self.assertEqual(rows[1][9], "1")
+        self.assertEqual(rows[1][10], "150.0")
+        self.assertEqual(rows[1][11], "75.0")
+
     def test_site_exclusion(self):
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
         net = NetworkGraph()

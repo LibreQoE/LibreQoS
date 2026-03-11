@@ -56,6 +56,7 @@ Virtual nodes are useful for logical organization and aggregation views.
 - Use virtual nodes to improve operability and reporting structure.
 - Do not use virtual nodes as a substitute for physical topology clarity.
 - Validate for name collisions after promotion behavior.
+- For logical-to-physical promotion and CPU/binpacking flow, see [Advanced Configuration Reference](configuration-advanced.md).
 
 ## Queue/Classifier Guardrails
 

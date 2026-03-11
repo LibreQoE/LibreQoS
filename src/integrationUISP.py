@@ -4,7 +4,7 @@ import requests
 import os
 import csv
 from datetime import datetime, timedelta
-from integrationCommon import isIpv4Permitted, fixSubnet
+from integrationCommon import apply_client_bandwidth_multiplier, isIpv4Permitted, fixSubnet
 from liblqos_python import uisp_site, uisp_strategy, overwrite_network_json_always, uisp_suspended_strategy, \
 	airmax_capacity, ltu_capacity, use_ptmp_as_parent, uisp_base_url, uisp_auth_token, \
 	generated_pn_download_mbps, generated_pn_upload_mbps
@@ -43,8 +43,8 @@ def buildFlatGraph():
 			download = generated_pn_download_mbps()
 			upload = generated_pn_upload_mbps()
 			if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
-				download = int(round(site['qos']['downloadSpeed']/1000000))
-				upload = int(round(site['qos']['uploadSpeed']/1000000))
+				download = apply_client_bandwidth_multiplier(site['qos']['downloadSpeed']/1000000)
+				upload = apply_client_bandwidth_multiplier(site['qos']['uploadSpeed']/1000000)
 			if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
 				if uisp_suspended_strategy() == "ignore":
 					print("WARNING: Site " + name + " is suspended")
@@ -465,8 +465,8 @@ def buildFullGraph():
 				except:
 					customerName = ""
 				if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
-					download = int(round(site['qos']['downloadSpeed']/1000000))
-					upload = int(round(site['qos']['uploadSpeed']/1000000))
+					download = apply_client_bandwidth_multiplier(site['qos']['downloadSpeed']/1000000)
+					upload = apply_client_bandwidth_multiplier(site['qos']['uploadSpeed']/1000000)
 				if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
 					if uisp_suspended_strategy() == "ignore":
 						print("WARNING: Site " + name + " is suspended")

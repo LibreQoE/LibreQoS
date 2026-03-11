@@ -57,6 +57,19 @@ def fixSubnet(inputIP):
 			return rawIp + "/32"
 	return inputIP
 
+
+def apply_client_bandwidth_multiplier(plan_rate_mbps):
+	# Convert a raw client/service plan rate into the effective shaped rate.
+	# The higher of bandwidth_overhead_factor and client_bandwidth_multiplier wins.
+	plan_rate_mbps = float(plan_rate_mbps or 0.0)
+	if plan_rate_mbps <= 0:
+		return 0.0
+	overhead = bandwidth_overhead_factor()
+	minimum = client_bandwidth_multiplier()
+	adjusted = plan_rate_mbps * overhead
+	floor_value = plan_rate_mbps * minimum
+	return max(adjusted, floor_value)
+
 class NodeType(enum.IntEnum):
 	# Enumeration to define what type of node
 	# a NetworkNode is.

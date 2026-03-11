@@ -7,8 +7,6 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 
 from liblqos_python import (
-	bandwidth_overhead_factor,
-	client_bandwidth_multiplier,
 	exclude_sites,
 	integration_common_use_mikrotik_ipv6,
 	netzur_api_key,
@@ -25,7 +23,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from integrationCommon import NetworkGraph, NetworkNode, NodeType
+from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger("netzur_integration")
@@ -63,18 +61,6 @@ def fetch_netzur_data() -> Tuple[List[dict], List[dict]]:
 
 def _build_exclusion_set() -> set:
     return {entry.lower().strip() for entry in exclude_sites() if entry}
-
-
-def _apply_rate(plan_rate: float) -> float:
-    plan_rate = float(plan_rate or 0.0)
-    if plan_rate <= 0:
-        return 0.0
-    overhead = bandwidth_overhead_factor()
-    minimum = client_bandwidth_multiplier()
-    adjusted = plan_rate * overhead
-    floor_value = plan_rate * minimum
-    return max(adjusted, floor_value)
-
 
 def createShaper() -> NetworkGraph:
     LOG.info("[Netzur] Starting sync")
@@ -119,17 +105,17 @@ def createShaper() -> NetworkGraph:
         circuit_id = f"netzur_{subscriber_id}"
 
         net.addRawNode(
-            NetworkNode(
-                id=circuit_id,
-                displayName=customer_name,
-                type=NodeType.client,
-                parentId=parent_id,
-                address=address,
-                customerName=customer_name,
-                download=_apply_rate(subscriber.get("download")),
-                upload=_apply_rate(subscriber.get("upload")),
+                NetworkNode(
+                    id=circuit_id,
+                    displayName=customer_name,
+                    type=NodeType.client,
+                    parentId=parent_id,
+                    address=address,
+                    customerName=customer_name,
+                    download=apply_client_bandwidth_multiplier(subscriber.get("download")),
+                    upload=apply_client_bandwidth_multiplier(subscriber.get("upload")),
+                )
             )
-        )
 
         ipv4 = [subscriber["ip"]] if subscriber.get("ip") else []
         ipv6 = [subscriber["ipv6"]] if subscriber.get("ipv6") else []

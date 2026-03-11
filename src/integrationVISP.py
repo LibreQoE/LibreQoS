@@ -13,8 +13,6 @@ from collections import Counter
 from liblqos_python import (
     get_libreqos_directory,
     overwrite_network_json_always,
-    bandwidth_overhead_factor,
-    client_bandwidth_multiplier,
     visp_client_id,
     visp_client_secret,
     visp_username,
@@ -24,22 +22,17 @@ from liblqos_python import (
     visp_timeout_secs,
 )
 
-from integrationCommon import NetworkGraph, NetworkNode, NodeType, isIpv4Permitted
+from integrationCommon import (
+    NetworkGraph,
+    NetworkNode,
+    NodeType,
+    apply_client_bandwidth_multiplier,
+    isIpv4Permitted,
+)
 
 
 TOKEN_URL = "https://data.visp.net/token"
 GRAPHQL_URL = "https://integrations.visp.net/graphql"
-
-
-def _apply_rate(plan_rate_mbps: float) -> float:
-    plan_rate_mbps = float(plan_rate_mbps or 0.0)
-    if plan_rate_mbps <= 0:
-        return 0.0
-    overhead = bandwidth_overhead_factor()
-    minimum = client_bandwidth_multiplier()
-    adjusted = plan_rate_mbps * overhead
-    floor_value = plan_rate_mbps * minimum
-    return max(adjusted, floor_value)
 
 
 def _unit_to_mbps(value: Any, unit: Any) -> Optional[float]:
@@ -316,8 +309,8 @@ def _add_circuit_and_device(
             parentId="",
             address=customer_name,
             customerName=customer_name,
-            download=_apply_rate(down_mbps),
-            upload=_apply_rate(up_mbps),
+            download=apply_client_bandwidth_multiplier(down_mbps),
+            upload=apply_client_bandwidth_multiplier(up_mbps),
         )
     )
     net.addRawNode(

@@ -175,6 +175,7 @@ Si sigue en blanco con tráfico normal, recolecte logs y abra issue.
 Si `LibreQoS.py` falla con `Virtual node promotion collision: 'AP_A' already exists at this level.`, hay un nodo con `"virtual": true` cuyos hijos colisionan por nombre al promoverse.
 
 Renombre nodos en conflicto o reestructure jerarquía para evitar colisiones.
+Para un visual del flujo lógico-a-físico y la asignación de CPU, consulte [Referencia avanzada de configuración](configuration-advanced-es.md).
 
 ### Se alcanzó el límite de circuitos mapeados
 

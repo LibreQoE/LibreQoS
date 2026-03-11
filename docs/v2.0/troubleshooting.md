@@ -199,6 +199,7 @@ If still blank under normal traffic, collect recent logs and open an issue.
 If LibreQoS.py fails with an error like `Virtual node promotion collision: 'AP_A' already exists at this level.`, you have a `"virtual": true` node whose children get promoted into a parent level where a node with the same name already exists.
 
 Rename one of the colliding nodes (names must be unique among siblings after virtual-node promotion), or restructure the hierarchy so promoted children won’t collide.
+For a visual of the logical-to-physical promotion flow and CPU placement, see [Advanced Configuration Reference](configuration-advanced.md).
 
 ### Mapped circuit limit reached
 

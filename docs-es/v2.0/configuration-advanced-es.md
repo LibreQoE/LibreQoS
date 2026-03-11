@@ -145,7 +145,52 @@ Notas:
 
 #### Consideraciones de CPU
 
-<img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
+La planificación de CPU debe seguir el **árbol físico de shaping** (después de promoción), no el árbol lógico crudo de `network.json`.
+
+```{mermaid}
+flowchart LR
+    A[Topología lógica en network.json<br/>puede incluir nodos virtuales] --> B[Promoción durante el armado<br/>remover virtuales y promover hijos]
+    B --> C[Árbol físico HTB<br/>solo nodos reales]
+    C --> D[Asignación CPU/binpacking<br/>distribuir nodos físicos de primer nivel]
+```
+
+```{mermaid}
+flowchart LR
+    subgraph Arbol Logico
+        L1[Region]
+        L2[Town virtual]
+        L3[AP_A]
+        L4[AP_B]
+        L1 --> L2
+        L2 --> L3
+        L2 --> L4
+    end
+    subgraph Arbol HTB Fisico
+        P1[Region]
+        P2[AP_A]
+        P3[AP_B]
+        P1 --> P2
+        P1 --> P3
+    end
+```
+
+```{mermaid}
+flowchart TD
+    WAN[Objetivo WAN modelado 20 Gbps ejemplo] --> C1[CPU 1 presupuesto seguro ~5 Gbps]
+    WAN --> C2[CPU 2 presupuesto seguro ~5 Gbps]
+    WAN --> C3[CPU 3 presupuesto seguro ~5 Gbps]
+    WAN --> C4[CPU 4 presupuesto seguro ~5 Gbps]
+    C1 --> N1[Nodos fisicos de primer nivel asignados aqui]
+    C2 --> N2[Nodos fisicos de primer nivel asignados aqui]
+    C3 --> N3[Nodos fisicos de primer nivel asignados aqui]
+    C4 --> N4[Nodos fisicos de primer nivel asignados aqui]
+```
+
+Notas:
+- Los nodos virtuales son solo lógicos y no crean clases HTB.
+- La asignación de CPU/binpacking trabaja sobre el árbol físico post-promoción.
+- Si la promoción produce colisiones de nombres entre hermanos, el build falla.
+- Los valores por núcleo de arriba son ejemplos de planificación, no límites codificados.
 
 #### Ayudante para convertir CSV a JSON
 
