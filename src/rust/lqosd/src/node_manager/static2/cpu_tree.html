@@ -1,0 +1,45 @@
+<div class="row">
+    <div class="col-12">
+        <div class="row align-items-end mb-3">
+            <div class="col-12 col-lg-8">
+                <h5 class="mb-1"><i class="fa fa-diagram-project"></i> CPU Site Tree</h5>
+                <p class="text-muted mb-0">Physical node placement per CPU/queue from the active TC plan (queuingStructure.json).</p>
+            </div>
+            <div class="col-12 col-lg-4">
+                <div class="d-flex flex-wrap justify-content-lg-end align-items-end gap-2 mt-2 mt-lg-0">
+                    <div>
+                        <label for="treeDepth" class="form-label mb-0">Depth</label>
+                        <select id="treeDepth" class="form-select form-select-sm">
+                            <option value="3" selected>3 (Top-level sites)</option>
+                            <option value="4">4</option>
+                            <option value="-1">All</option>
+                        </select>
+                    </div>
+                    <div>
+                        <a class="btn btn-sm btn-outline-secondary" href="cpu_weights.html">
+                            <i class="fa fa-table"></i> Table View
+                        </a>
+                    </div>
+                    <div class="ms-auto ms-lg-0">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnReset">
+                            <i class="fa fa-rotate-left"></i> Reset
+                        </button>
+                    </div>
+                    <div class="ms-auto ms-lg-0">
+                        <button class="btn btn-sm btn-outline-secondary" id="btnRefresh">
+                            <i class="fa fa-rotate"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="cpuTreeStatus" class="text-muted small mb-2">
+            <i class="fa fa-spinner fa-spin"></i> Loading...
+        </div>
+
+        <div id="cpuTreeChart" style="width: 100%; height: 720px;"></div>
+    </div>
+</div>
+
+<script src="cpu_tree.js%CACHEBUSTERS%"></script>

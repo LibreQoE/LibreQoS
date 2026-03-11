@@ -8,7 +8,7 @@ import base64
 from requests.auth import HTTPBasicAuth
 if find_ipv6_using_mikrotik() == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
-from integrationCommon import NetworkGraph, NetworkNode, NodeType
+from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 from urllib3.exceptions import InsecureRequestWarning
 
 def getCustomerInfo():
@@ -33,8 +33,8 @@ def getListServices():
 	for service in r.json():
 		if service['rate_down'] and service['rate_up']:
 			servicesDict[service['id']] = {}
-			servicesDict[service['id']]['downloadMbps'] = int(round(int(service['rate_down']) / 1000))
-			servicesDict[service['id']]['uploadMbps'] = int(round(int(service['rate_up']) / 1000))
+			servicesDict[service['id']]['downloadMbps'] = apply_client_bandwidth_multiplier(int(service['rate_down']) / 1000)
+			servicesDict[service['id']]['uploadMbps'] = apply_client_bandwidth_multiplier(int(service['rate_up']) / 1000)
 	return servicesDict
 
 def createShaper():

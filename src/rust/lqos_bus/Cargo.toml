@@ -11,7 +11,6 @@ equinix_tests = []
 
 [dependencies]
 serde = { workspace = true }
-bincode = { workspace = true }
 thiserror = { workspace = true }
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }

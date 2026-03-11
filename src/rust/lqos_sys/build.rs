@@ -52,7 +52,6 @@ fn main() {
             "-Wno-compare-distinct-pointer-types",
             "-Werror",
             "-emit-llvm",
-            "-c",
             "-g",
             "-O2",
             "-o",

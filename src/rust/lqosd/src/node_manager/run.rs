@@ -18,7 +18,7 @@ use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
 
 /// Launches the Axum webserver to take over node manager duties.
@@ -55,9 +55,23 @@ pub async fn spawn_webserver(
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
         .route("/health", get(health_check))
+        // Backwards compatible aliases for historical misspellings.
+        .route_service(
+            "/config_spylnx.js",
+            ServeFile::new(static_path.join("config_splynx.js")),
+        )
+        .route_service(
+            "/config_spylnx.js.map",
+            ServeFile::new(static_path.join("config_splynx.js.map")),
+        )
         .nest(
             "/websocket/",
-            websocket_router(bus_tx.clone(), system_usage_tx.clone(), control_tx.clone()),
+            websocket_router(
+                bus_tx.clone(),
+                system_usage_tx.clone(),
+                control_tx.clone(),
+                shaper_tx.clone(),
+            ),
         )
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)

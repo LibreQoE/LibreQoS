@@ -6,6 +6,28 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Source system for an urgent issue
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
+pub enum UrgentSource {
+    /// Raised by the scheduler process
+    Scheduler,
+    /// Raised by the LibreQoS Python orchestrator
+    LibreQoS,
+    /// Raised by the local API server
+    API,
+    /// Raised by lqosd or other components
+    System,
+}
+
+/// Severity of an urgent issue
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
+pub enum UrgentSeverity {
+    /// Error requires attention
+    Error,
+    /// Warning is informative/high-visibility
+    Warning,
+}
+
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
@@ -25,6 +47,29 @@ pub enum BusRequest {
         /// Last row to retrieve (10 for top-10 starting at 0)
         end: u32,
     },
+
+    /// Retrieve the top N uploads by bandwidth use.
+    GetTopNUploaders {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
+
+    /// Retrieve per-circuit TemporalHeatmap blocks.
+    GetCircuitHeatmaps,
+
+    /// Retrieve per-site TemporalHeatmap blocks.
+    GetSiteHeatmaps,
+
+    /// Retrieve per-ASN TemporalHeatmap blocks.
+    GetAsnHeatmaps,
+
+    /// Retrieve the global (roll-up) TemporalHeatmap.
+    GetGlobalHeatmap,
+
+    /// Retrieve headline metrics for the Executive Summary tab.
+    GetExecutiveSummaryHeader,
 
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
     GetWorstRtt {
@@ -68,6 +113,18 @@ pub enum BusRequest {
 
         /// The CPU on which the TC handle should be shaped.
         cpu: u32,
+
+        /// Hashed circuit identifier (from ShapedDevices.csv).
+        ///
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for circuit attribution.
+        circuit_id: u64,
+
+        /// Hashed device identifier (from ShapedDevices.csv).
+        ///
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for device attribution.
+        device_id: u64,
 
         /// If true, this is a *second* flow for the same IP range on
         /// the same NIC. Used for handling "on a stick" configurations.
@@ -149,6 +206,12 @@ pub enum BusRequest {
 
     /// Get all circuits and usage statistics
     GetAllCircuits,
+
+    /// Get circuit usage statistics for a single circuit ID
+    GetCircuitById {
+        /// Circuit ID to query
+        circuit_id: String,
+    },
 
     /// Retrieve stats for all queues above a named circuit id
     GetFunnel {
@@ -284,10 +347,15 @@ pub enum BusRequest {
         up_class_major: u16,
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
+        /// Optional per-circuit SQM override: "cake" or "fq_codel"
+        sqm_override: Option<String>,
     },
 
     /// Get current Stormguard statistics
     GetStormguardStats,
+
+    /// Get current Stormguard debug snapshot
+    GetStormguardDebug,
 
     /// Get current Bakery statistics
     GetBakeryStats,
@@ -304,8 +372,118 @@ pub enum BusRequest {
     /// Announce a scheduler error
     SchedulerError(String),
 
+    /// Write an informational message to the lqosd logs
+    LogInfo(String),
+
     /// Check the scheduler status
     CheckSchedulerStatus,
+
+    /// Bakery: Change Site Speed
+    BakeryChangeSiteSpeedLive {
+        /// The hash of the site to target
+        site_hash: i64,
+        /// Commit download bandwidth in Mbps
+        download_bandwidth_min: f32,
+        /// Commit upload bandwidth in Mbps
+        upload_bandwidth_min: f32,
+        /// Ceiling download bandwidth in Mbps
+        download_bandwidth_max: f32,
+        /// Ceiling upload bandwidth in Mbps
+        upload_bandwidth_max: f32,
+    },
+    /// Submit an urgent issue for high-priority operator visibility
+    SubmitUrgentIssue {
+        /// Source of the issue
+        source: UrgentSource,
+        /// Severity of the issue
+        severity: UrgentSeverity,
+        /// Machine-readable code for the issue (e.g. TC_U16_OVERFLOW)
+        code: String,
+        /// Human-readable message for display
+        message: String,
+        /// Optional JSON context payload
+        context: Option<String>,
+        /// Optional key to deduplicate repeated submissions
+        dedupe_key: Option<String>,
+    },
+
+    /// Retrieve current urgent issues
+    GetUrgentIssues,
+
+    /// Clear a specific urgent issue by ID
+    ClearUrgentIssue(u64),
+
+    /// Clear all urgent issues
+    ClearAllUrgentIssues,
+
+    /// Retrieve device counts (shaped + unknown)
+    GetDeviceCounts,
+
+    /// Retrieve circuit counts (active + configured)
+    GetCircuitCount,
+
+    /// Retrieve flow map points (lat/lon endpoints)
+    GetFlowMap,
+
+    /// Retrieve list of ASNs with recent flow data
+    GetAsnList,
+
+    /// Retrieve list of countries with recent flow data
+    GetCountryList,
+
+    /// Retrieve list of protocols with recent flow data
+    GetProtocolList,
+
+    /// Retrieve flow timeline entries for an ASN
+    GetAsnFlowTimeline {
+        /// ASN number to filter
+        asn: u32,
+    },
+
+    /// Retrieve flow timeline entries for a country
+    GetCountryFlowTimeline {
+        /// Country ISO code to filter
+        iso_code: String,
+    },
+
+    /// Retrieve flow timeline entries for a protocol
+    GetProtocolFlowTimeline {
+        /// Protocol name to filter
+        protocol: String,
+    },
+
+    /// Retrieve scheduler details (diagnostics)
+    GetSchedulerDetails,
+
+    /// Retrieve queue marks/drops totals
+    GetQueueStatsTotal,
+
+    /// Retrieve per-circuit capacity utilization
+    GetCircuitCapacity,
+
+    /// Retrieve per-node capacity utilization
+    GetTreeCapacity,
+
+    /// Retrieve aggregate TCP retransmit summary
+    GetRetransmitSummary,
+
+    /// Retrieve two-level tree summary
+    GetTreeSummaryL2,
+
+    /// Search circuits/devices/sites by term
+    Search {
+        /// Search term
+        term: String,
+    },
+
+    /// Retrieve current global warning list
+    GetGlobalWarnings,
+
+    /// Is Insight Enabled?
+    CheckInsight,
+
+    /// Retrieve current Insight license summary (licensed + optional max circuits).
+    GetInsightLicenseSummary,
 }
 
 /// Defines the parts of the blackboard

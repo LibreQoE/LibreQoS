@@ -1,6 +1,18 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class ShapedUnshapedTimescale extends DashboardGraph {
     constructor(id, period) {
@@ -9,12 +21,12 @@ export class ShapedUnshapedTimescale extends DashboardGraph {
         // Graph Options
         this.option = new GraphOptionsBuilder()
             .withTimeAxis()
-            .withScaledAbsYAxis("% Shaped", 40)
+            .withScaledAbsYAxis("% Mapped", 40)
             .withEmptySeries()
             .withEmptyLegend()
             .build();
         this.option.series.push({
-            name: "% Shaped",
+            name: "% Mapped",
             type: "line",
             data: []
         });
@@ -23,7 +35,8 @@ export class ShapedUnshapedTimescale extends DashboardGraph {
 
         // Request
         let seconds = periodNameToSeconds(period);
-        $.get("/local-api/ltsPercentShaped/" + seconds, (data) => {
+        listenOnceForSeconds("LtsPercentShaped", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             console.log(data);
 
             // Add data to graph
@@ -36,5 +49,6 @@ export class ShapedUnshapedTimescale extends DashboardGraph {
             this.chart.setOption(this.option);
             this.chart.hideLoading();
         });
+        wsClient.send({ LtsPercentShaped: { seconds } });
     }
 }

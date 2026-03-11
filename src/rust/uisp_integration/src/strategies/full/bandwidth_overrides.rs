@@ -33,6 +33,16 @@ pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 pub fn get_site_bandwidth_overrides(
     config: &Config,
 ) -> Result<BandwidthOverrides, UispIntegrationError> {
+    // Prefer overrides from lqos_overrides.json if present
+    if let Ok(of) = lqos_overrides::OverrideFile::load() {
+        if let Some(uisp) = of.uisp() {
+            if !uisp.bandwidth_overrides.is_empty() {
+                info!("Using UISP bandwidth overrides from lqos_overrides.json");
+                return Ok(uisp.bandwidth_overrides.clone());
+            }
+        }
+    }
+
     info!("Looking for integrationUISPbandwidths.csv");
     let file_path = Path::new(&config.lqos_directory).join("integrationUISPbandwidths.csv");
     if file_path.exists() {

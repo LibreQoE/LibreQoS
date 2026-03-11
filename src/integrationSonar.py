@@ -5,7 +5,7 @@ import subprocess
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
-from integrationCommon import NetworkGraph, NetworkNode, NodeType
+from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 from multiprocessing.pool import ThreadPool
 
 ### Requirements
@@ -235,8 +235,8 @@ def getAccounts(sonar_active_status_ids):
       for item in account['addresses']['entities'][0]['inventory_items']['entities']:
         devices.append({'id': item['id'], 'name': item['inventory_model']['name'], 'ips': findIPs(item), 'mac': item['inventory_model_field_data']['entities'][0]['value']})
       if account['account_services']['entities'] and devices: # Make sure there is a data plan and devices on the account.
-        download = float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000
-        upload = float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000
+        download = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000)
+        upload = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000)
         if download < 2:
            download = 2
         if upload < 2:

@@ -42,7 +42,12 @@ impl FileLock {
         let sys = System::new_all();
         let pid = sysinfo::Pid::from(pid as usize);
         if let Some(process) = sys.processes().get(&pid) {
-            if process.name().to_str().unwrap_or_default().contains("lqosd") {
+            if process
+                .name()
+                .to_str()
+                .unwrap_or_default()
+                .contains("lqosd")
+            {
                 return Ok(true);
             }
         }

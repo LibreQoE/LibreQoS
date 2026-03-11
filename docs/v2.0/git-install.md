@@ -53,7 +53,7 @@ This will take a while the first time, but it puts everything in the right place
 Now, to build rust crates, run:
 
 ```shell
-cd rust
+cd /opt/libreqos/src/rust
 cargo build --all
 ```
 

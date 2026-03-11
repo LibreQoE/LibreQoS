@@ -44,7 +44,7 @@ where
         + num_traits::SaturatingMul
         + num_traits::FromPrimitive
         + num_traits::SaturatingAdd
-        + Default
+        + Default,
 {
     /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
@@ -120,7 +120,9 @@ where
     /// that the previous value was bytes.
     pub fn to_bits_from_bytes(&self) -> DownUpOrder<T> {
         DownUpOrder {
-            down: self.down.saturating_mul(&T::from_u32(8).unwrap_or_default()),
+            down: self
+                .down
+                .saturating_mul(&T::from_u32(8).unwrap_or_default()),
             up: self.up.saturating_mul(&T::from_u32(8).unwrap_or_default()),
         }
     }

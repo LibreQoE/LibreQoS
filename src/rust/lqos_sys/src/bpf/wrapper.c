@@ -250,6 +250,7 @@ out:
 // Iterator code
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 struct bpf_link *setup_iterator_link(
 	struct bpf_program *prog, 
@@ -262,20 +263,25 @@ struct bpf_link *setup_iterator_link(
 		.link_info = &linfo,
 		.link_info_len = sizeof(linfo));
 
-	  map_fd = bpf_map__fd(map);
-	  if (map_fd < 0) {
-		fprintf(stderr, "bpf_map__fd() fails\n");
-		return NULL;
-	  }
-	  linfo.map.map_fd = map_fd;
+		  map_fd = bpf_map__fd(map);
+		  if (map_fd < 0) {
+			fprintf(stderr, "bpf_map__fd() fails\n");
+			return NULL;
+		  }
+		  linfo.map.map_fd = map_fd;
 
       link = bpf_program__attach_iter(prog, &iter_opts);
-      if (!link) {
-              fprintf(stderr, "bpf_program__attach_iter() fails\n");
-              return NULL;
-      }
-	  return link;
-}
+	  long err = libbpf_get_error(link);
+	  if (err) {
+		  const char *msg = "unknown";
+		  if (err < 0) {
+			  msg = strerror((int)-err);
+		  }
+		  fprintf(stderr, "bpf_program__attach_iter() fails (%ld: %s)\n", err, msg);
+		  return NULL;
+	  }
+		  return link;
+	}
 
 int read_tp_buffer(struct bpf_program *prog, struct bpf_map *map)
 {

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::node_manager::ws::messages::{EtherProtocolsData, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use serde_json::json;
 use tokio::sync::mpsc::Sender;
 
 pub async fn endpoints_by_country(
@@ -35,13 +35,7 @@ pub async fn endpoints_by_country(
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentEndpointsByCountry(countries) = reply {
-            let message = json!(
-                {
-                    "event": PublishedChannels::EndpointsByCountry.to_string(),
-                    "data": countries,
-                }
-            )
-            .to_string();
+            let message = WsResponse::EndpointsByCountry { data: countries };
             channels
                 .send(PublishedChannels::EndpointsByCountry, message)
                 .await;
@@ -86,20 +80,16 @@ pub async fn ether_protocols(
             v6_rtt,
         } = reply
         {
-            let message = json!(
-                {
-                    "event": PublishedChannels::EtherProtocols.to_string(),
-                    "data": {
-                        "v4_bytes": v4_bytes,
-                        "v6_bytes": v6_bytes,
-                        "v4_packets": v4_packets,
-                        "v6_packets": v6_packets,
-                        "v4_rtt": v4_rtt,
-                        "v6_rtt": v6_rtt,
-                    },
-                }
-            )
-            .to_string();
+            let message = WsResponse::EtherProtocols {
+                data: EtherProtocolsData {
+                    v4_bytes,
+                    v6_bytes,
+                    v4_packets,
+                    v6_packets,
+                    v4_rtt,
+                    v6_rtt,
+                },
+            };
             channels
                 .send(PublishedChannels::EtherProtocols, message)
                 .await;
@@ -127,19 +117,16 @@ pub async fn ip_protocols(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("IpProtocols: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "IpProtocols: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::IpProtocols(ip_data) = reply {
-            let message = json!(
-                {
-                    "event": PublishedChannels::IpProtocols.to_string(),
-                    "data": ip_data,
-                }
-            )
-            .to_string();
+            let message = WsResponse::IpProtocols { data: ip_data };
             channels.send(PublishedChannels::IpProtocols, message).await;
         }
     }
@@ -165,19 +152,16 @@ pub async fn flow_duration(
     let replies = match rx.await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("FlowDurations: failed to receive throughput from bus: {:?}", e);
+            tracing::warn!(
+                "FlowDurations: failed to receive throughput from bus: {:?}",
+                e
+            );
             return;
         }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::FlowDuration(flow_data) = reply {
-            let message = json!(
-            {
-                "event": PublishedChannels::FlowDurations.to_string(),
-                "data": flow_data,
-            }
-            )
-            .to_string();
+            let message = WsResponse::FlowDurations { data: flow_data };
             channels
                 .send(PublishedChannels::FlowDurations, message)
                 .await;

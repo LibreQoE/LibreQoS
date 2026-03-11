@@ -171,8 +171,9 @@ impl QueueNode {
                     "circuitId" | "circuitID" => {
                         grab_string_option!(result.circuit_id, key.as_str(), value);
                         if result.circuit_id.is_some() {
-                            result.circuit_hash =
-                                Some(hash_to_i64(result.circuit_id.as_ref().unwrap_or(&"".to_string())));
+                            result.circuit_hash = Some(hash_to_i64(
+                                result.circuit_id.as_ref().unwrap_or(&"".to_string()),
+                            ));
                         }
                     }
                     "circuitName" => {
@@ -181,8 +182,9 @@ impl QueueNode {
                     "parentNode" | "ParentNode" => {
                         grab_string_option!(result.parent_node, key.as_str(), value);
                         if result.parent_node.is_some() {
-                            result.parent_hash =
-                                Some(hash_to_i64(result.parent_node.as_ref().unwrap_or(&"".to_string())));
+                            result.parent_hash = Some(hash_to_i64(
+                                result.parent_node.as_ref().unwrap_or(&"".to_string()),
+                            ));
                         }
                     }
                     "comment" => {
@@ -191,8 +193,9 @@ impl QueueNode {
                     "deviceId" | "deviceID" => {
                         grab_string_option!(result.device_id, key.as_str(), value);
                         if result.device_id.is_some() {
-                            result.device_hash =
-                                Some(hash_to_i64(result.device_id.as_ref().unwrap_or(&"".to_string())));
+                            result.device_hash = Some(hash_to_i64(
+                                result.device_id.as_ref().unwrap_or(&"".to_string()),
+                            ));
                         }
                     }
                     "deviceName" => {
@@ -303,9 +306,7 @@ mod test {
                 if let Value::Object(map) = network {
                     for (key, value) in map.iter() {
                         if let Ok(node) = QueueNode::from_json(key, value) {
-                            result
-                                .cpu_node
-                                .push(node);
+                            result.cpu_node.push(node);
                         }
                     }
                 } else {

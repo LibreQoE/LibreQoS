@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 export class BitsPerSecondGauge extends DashboardGraph {
     constructor(id, thresholdLabel = 'Plan') {
@@ -198,6 +198,11 @@ export class BitsPerSecondGauge extends DashboardGraph {
 
     update(download, upload, max_down, max_up) {
         this.chart.hideLoading();
+        download = toNumber(download, 0);
+        upload = toNumber(upload, 0);
+        max_down = toNumber(max_down, 0);
+        max_up = toNumber(max_up, 0);
+
         this.option.series[0].data[0].value = download;
         this.option.series[1].data[0].value = upload;
         this.option.series[0].min = 0;

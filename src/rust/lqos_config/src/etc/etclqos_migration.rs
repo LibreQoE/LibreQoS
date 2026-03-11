@@ -37,6 +37,15 @@ pub struct EtcLqos {
 
     /// Long-term statistics retention settings.
     pub long_term_stats: Option<LongTermStats>,
+
+    /// Enable per-circuit TemporalHeatmap collection.
+    pub enable_circuit_heatmaps: Option<bool>,
+
+    /// Enable per-site TemporalHeatmap collection.
+    pub enable_site_heatmaps: Option<bool>,
+
+    /// Enable per-ASN TemporalHeatmap collection.
+    pub enable_asn_heatmaps: Option<bool>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
@@ -175,8 +184,7 @@ impl EtcLqos {
                     Err(e) => {
                         error!("Unable to parse TOML from /etc/lqos.conf");
                         error!("Full error: {:?}", e);
-                        panic!();
-                        //Err(EtcLqosError::CannotParseToml)
+                        Err(EtcLqosError::CannotParseToml)
                     }
                 }
             }
@@ -262,14 +270,18 @@ mod test {
 
     #[test]
     fn round_trip_toml() {
-        let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
+        let doc = EXAMPLE_LQOS_CONF
+            .parse::<toml_edit::DocumentMut>()
+            .expect("Unable to read example config file");
         let reserialized = doc.to_string();
         assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
     }
 
     #[test]
     fn add_node_id() {
-        let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::DocumentMut>().expect("Unable to read example config file");
+        let mut doc = EXAMPLE_LQOS_CONF
+            .parse::<toml_edit::DocumentMut>()
+            .expect("Unable to read example config file");
         doc["node_id"] = toml_edit::value("test");
         let reserialized = doc.to_string();
         assert!(reserialized.contains("node_id = \"test\""));

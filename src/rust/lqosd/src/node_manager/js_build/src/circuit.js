@@ -2,13 +2,17 @@
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
+import {colorByQoqScore, colorByRttMs} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
+import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
-import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
+import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
+import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey} from "./graphs/flow_sankey";
-import {subscribeWS} from "./pubsub/ws";
+import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
 import {CakeQueueLength} from "./graphs/cake_queue_length";
@@ -23,9 +27,12 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 let circuit_id = decodeURI(params.id);
 let plan = null;
 let channelLink = null;
+let cakeChannel = null;
 let pinger = null;
 let flowChannel = null;
+let funnelSubscription = null;
 let speedometer = null;
+let qooGauge = null;
 let totalThroughput = null;
 let totalRetransmits = null;
 let deviceGraphs = {};
@@ -33,6 +40,268 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let funnelInitialized = false;
+let excludeRttToggle = null;
+let excludeRttLastValue = false;
+let excludeRttBusy = false;
+let latestFlowMsg = null;
+let latestCakeMsg = null;
+let cakeGraphs = null;
+let cakeQueueUnavailable = false;
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
+
+function isElementVisible(el) {
+    return !!(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
+function resizeGraphIfVisible(graph) {
+    if (!graph || !graph.chart || typeof graph.chart.resize !== "function") {
+        return;
+    }
+    const dom = typeof graph.chart.getDom === "function" ? graph.chart.getDom() : graph.dom;
+    if (!isElementVisible(dom)) {
+        return;
+    }
+    graph.chart.resize();
+}
+
+function applyFlowSankeyMessage(msg) {
+    if (!flowSankey || !msg) {
+        return;
+    }
+    const activeFlows = flowSankey.update(msg);
+    resizeGraphIfVisible(flowSankey);
+    $("#activeFlowCount").text(activeFlows);
+}
+
+function ensureFlowSankey() {
+    const target = document.getElementById("flowSankey");
+    if (!target || flowSankey || !isElementVisible(target)) {
+        return;
+    }
+    flowSankey = new FlowsSankey("flowSankey");
+    applyFlowSankeyMessage(latestFlowMsg);
+}
+
+function resizeFunnelGraphs() {
+    Object.values(funnelGraphs).forEach((graphSet) => {
+        if (!graphSet) return;
+        Object.values(graphSet).forEach((graph) => resizeGraphIfVisible(graph));
+    });
+}
+
+function updateCakeTabAvailability(msg) {
+    try {
+        const kindDown = (msg?.kind_down || "").toLowerCase();
+        const kindUp = (msg?.kind_up || "").toLowerCase();
+        const tabBtn = document.getElementById("cake-tab");
+        const tabLi = tabBtn ? tabBtn.parentElement : null;
+        const tabContent = document.getElementById("cake");
+
+        if (kindDown === "none" && kindUp === "none") {
+            cakeQueueUnavailable = true;
+            if (tabLi) tabLi.style.display = "none";
+            if (tabContent) tabContent.style.display = "none";
+            return false;
+        }
+
+        cakeQueueUnavailable = false;
+        if (tabLi) tabLi.style.display = "";
+        if (tabContent) tabContent.style.display = "";
+
+        let displayKind = "Shaper Overview";
+        if (kindDown === "cake" || kindUp === "cake") {
+            displayKind = "CAKE Shaper Overview";
+        } else if (kindDown === "fq_codel" || kindUp === "fq_codel") {
+            displayKind = "fq_codel Shaper Overview";
+        }
+        if (tabBtn) {
+            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+        }
+    } catch (e) {
+        // Ignore label updates; data updates still continue.
+    }
+    return true;
+}
+
+function renderCakeGraphShell() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || document.getElementById("cakeBacklog")) {
+        return;
+    }
+    cakeTab.innerHTML = `
+        <div class="row">
+            <div class="col-4">
+                <div id="cakeBacklog" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDelays" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeQueueLength" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeTraffic" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeMarks" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDrops" style="height: 250px"></div>
+            </div>
+            <div class="col-3">
+                Queue Memory: <span id="cakeQueueMemory">?</span>
+            </div>
+        </div>
+    `;
+}
+
+function applyCakeMessage(msg) {
+    if (!cakeGraphs || !msg) {
+        return;
+    }
+    $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
+    cakeGraphs.backlog.update(msg);
+    resizeGraphIfVisible(cakeGraphs.backlog);
+    cakeGraphs.delays.update(msg);
+    resizeGraphIfVisible(cakeGraphs.delays);
+    cakeGraphs.queueLength.update(msg);
+    resizeGraphIfVisible(cakeGraphs.queueLength);
+    cakeGraphs.traffic.update(msg);
+    resizeGraphIfVisible(cakeGraphs.traffic);
+    cakeGraphs.marks.update(msg);
+    resizeGraphIfVisible(cakeGraphs.marks);
+    cakeGraphs.drops.update(msg);
+    resizeGraphIfVisible(cakeGraphs.drops);
+}
+
+function ensureCakeGraphs() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || cakeGraphs || cakeQueueUnavailable || !isElementVisible(cakeTab)) {
+        return;
+    }
+    renderCakeGraphShell();
+    cakeGraphs = {
+        backlog: new CakeBacklog("cakeBacklog"),
+        delays: new CakeDelays("cakeDelays"),
+        queueLength: new CakeQueueLength("cakeQueueLength"),
+        traffic: new CakeTraffic("cakeTraffic"),
+        marks: new CakeMarks("cakeMarks"),
+        drops: new CakeDrops("cakeDrops"),
+    };
+    applyCakeMessage(latestCakeMsg);
+}
+
+function initTabLifecycle(parentNode) {
+    const tabs = document.querySelectorAll('#myTab button[data-bs-toggle="tab"]');
+    tabs.forEach((tab) => {
+        tab.addEventListener("shown.bs.tab", () => {
+            window.requestAnimationFrame(() => {
+                const target = tab.getAttribute("data-bs-target");
+                if (target === "#sankey") {
+                    ensureFlowSankey();
+                    applyFlowSankeyMessage(latestFlowMsg);
+                    return;
+                }
+                if (target === "#funnel") {
+                    if (!funnelInitialized) {
+                        funnelInitialized = true;
+                        initialFunnel(parentNode);
+                    } else {
+                        resizeFunnelGraphs();
+                    }
+                    return;
+                }
+                if (target === "#cake") {
+                    ensureCakeGraphs();
+                    applyCakeMessage(latestCakeMsg);
+                }
+            });
+        });
+    });
+}
+
+function formatIpBytes(bytes) {
+    const list = Array.from(bytes);
+    if (list.length === 4) {
+        return list.join(".");
+    }
+    if (list.length === 16) {
+        const parts = [];
+        for (let i = 0; i < list.length; i += 2) {
+            const part = (list[i] << 8) | list[i + 1];
+            parts.push(part.toString(16).padStart(4, "0"));
+        }
+        return parts.join(":");
+    }
+    return list.join(".");
+}
+
+function ipToString(ip) {
+    if (typeof ip === "string") {
+        return ip;
+    }
+    if (ip instanceof Uint8Array || Array.isArray(ip)) {
+        return formatIpBytes(ip);
+    }
+    return String(ip);
+}
+
+function requestCircuitById(onSuccess, onError) {
+    listenOnce("CircuitByIdResult", (msg) => {
+        if (!msg || !msg.ok) {
+            if (onError) onError();
+            return;
+        }
+        if (msg.id && msg.id !== circuit_id) {
+            if (onError) onError();
+            return;
+        }
+        onSuccess(msg.devices || []);
+    });
+    wsClient.send({ CircuitById: { id: circuit_id } });
+}
+
+function initExcludeRttToggle() {
+    excludeRttToggle = document.getElementById("excludeRttToggle");
+    if (!excludeRttToggle) return;
+
+    const listenOnceMatch = (eventName, predicate, handler) => {
+        const wrapped = (msg) => {
+            if (!predicate(msg)) return;
+            wsClient.off(eventName, wrapped);
+            handler(msg);
+        };
+        wsClient.on(eventName, wrapped);
+    };
+
+    excludeRttToggle.addEventListener("change", () => {
+        if (excludeRttBusy) return;
+        const desired = !!excludeRttToggle.checked;
+        excludeRttBusy = true;
+        listenOnceMatch(
+            "SetCircuitRttExcludedResult",
+            (msg) => !msg?.circuit_id || msg.circuit_id === circuit_id,
+            (msg) => {
+                excludeRttBusy = false;
+                if (!msg || !msg.ok) {
+                    alert((msg && msg.message) ? msg.message : "Failed to update RTT exclusion");
+                    excludeRttToggle.checked = !!excludeRttLastValue;
+                    return;
+                }
+                excludeRttLastValue = desired;
+            },
+        );
+        wsClient.send({ SetCircuitRttExcluded: { circuit_id, excluded: desired } });
+    });
+}
 
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
@@ -44,6 +313,13 @@ function connectPrivateChannel() {
             //console.log(msg.devices);
             fillLiveDevices(msg.devices);
             updateSpeedometer(msg.devices);
+            if (qooGauge !== null) {
+                qooGauge.update(msg.qoo_score);
+            }
+            if (excludeRttToggle && msg.rtt_excluded !== undefined) {
+                excludeRttLastValue = !!msg.rtt_excluded;
+                excludeRttToggle.checked = excludeRttLastValue;
+            }
         }
     });
 }
@@ -52,10 +328,10 @@ function fullIpList(circuits) {
     let ipList = [];
     circuits.forEach((circuit) => {
         circuit.ipv4.forEach((ip) => {
-            ipList.push([ip[0], circuit.device_id]);
+            ipList.push([ipToString(ip[0]), circuit.device_id]);
         });
         circuit.ipv6.forEach((ip) => {
-            ipList.push([ip[0], circuit.device_id]);
+            ipList.push([ipToString(ip[0]), circuit.device_id]);
         });
     });
     return ipList;
@@ -81,21 +357,22 @@ function connectPingers(circuits) {
                 }
             }
 
-            devicePings[msg.ip].count++;
-            if (msg.result === "NoResponse") {
-                devicePings[msg.ip].timeout++;
-            } else {
-                devicePings[msg.ip].success++;
-                devicePings[msg.ip].times.push(msg.result.Ping.time_nanos);
-                if (devicePings[msg.ip].times.length > 300) {
-                    devicePings[msg.ip].times.shift();
+                devicePings[msg.ip].count++;
+                if (msg.result === "NoResponse") {
+                    devicePings[msg.ip].timeout++;
+                } else {
+                    devicePings[msg.ip].success++;
+                    const pingNanos = toNumber(msg.result.Ping.time_nanos, 0);
+                    devicePings[msg.ip].times.push(pingNanos);
+                    if (devicePings[msg.ip].times.length > 300) {
+                        devicePings[msg.ip].times.shift();
+                    }
+                    let graphId = "pingGraph_" + msg.result.Ping.label;
+                    let graph = deviceGraphs[graphId];
+                    if (graph !== undefined) {
+                        graph.update(pingNanos);
+                    }
                 }
-                let graphId = "pingGraph_" + msg.result.Ping.label;
-                let graph = deviceGraphs[graphId];
-                if (graph !== undefined) {
-                    graph.update(msg.result.Ping.time_nanos);
-                }
-            }
 
             // Visual Updates
             let target = document.getElementById("ip_" + msg.ip);
@@ -121,9 +398,6 @@ function connectPingers(circuits) {
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
                     target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
-                // Initialize Bootstrap tooltips
-                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
-                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -135,10 +409,9 @@ function connectFlowChannel() {
             circuit: circuit_id
         }
     }, (msg) => {
-        //console.log(msg);
-        let activeFlows = flowSankey.update(msg);
-        flowSankey.chart.resize();
-        $("#activeFlowCount").text(activeFlows);
+        latestFlowMsg = msg;
+        $("#activeFlowCount").text(Array.isArray(msg?.flows) ? msg.flows.length : 0);
+        applyFlowSankeyMessage(msg);
         updateTrafficTab(msg);
     });
 }
@@ -148,6 +421,46 @@ let prevFlowBytes = new Map();
 let tickCount = 0;
 let trafficSortColumn = 'rate'; // Default sort by rate
 let trafficSortDirection = 'desc'; // 'asc' or 'desc'
+
+function diffToNumber(current, previous, fallback = 0) {
+    if (typeof current === "bigint" && typeof previous === "bigint") {
+        return toNumber(current - previous, fallback);
+    }
+    return toNumber(current, fallback) - toNumber(previous, fallback);
+}
+
+function formatQooScore(score0to100, fallback = "-") {
+    if (score0to100 === null || score0to100 === undefined) {
+        return fallback;
+    }
+    const numeric = Number(score0to100);
+    // QoqScores uses 255 for unknown.
+    if (!Number.isFinite(numeric) || numeric === 255) {
+        return fallback;
+    }
+    const clamped = Math.min(100, Math.max(0, Math.round(numeric)));
+    const color = colorByQoqScore(clamped);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + clamped;
+}
+
+function formatRttNanos(rttNanos) {
+    const n = toNumber(rttNanos, 0);
+    if (n === 0) {
+        return "<span class='muted' style='color: var(--bs-border-color)'>■</span>-";
+    }
+    const rttInMs = n / 1000000;
+    const color = colorByRttMs(rttInMs);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + scaleNanos(n);
+}
+
+function formatRttPair(p50Nanos, p95Nanos) {
+    const p50 = toNumber(p50Nanos, 0);
+    const p95 = toNumber(p95Nanos, 0);
+    if (p50 === 0 && p95 === 0) {
+        return "-";
+    }
+    return formatRttNanos(p50) + " / " + scaleNanos(p95);
+}
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
@@ -180,11 +493,13 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
     thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
     thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
-    thead.appendChild(createSortableHeader("TCP Retransmits (d/u)", "retransmits", 2));
+    thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
+    thead.appendChild(theading("RTT Exclude"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
@@ -195,10 +510,12 @@ function updateTrafficTab(msg) {
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        let rate =
+            toNumber(flow[1].rate_estimate_bps.down, 0) +
+            toNumber(flow[1].rate_estimate_bps.up, 0);
         if (prevFlowBytes.has(flowKey)) {
-            let down = flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0];
-            let up = flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1];
+            let down = diffToNumber(flow[1].bytes_sent.down, prevFlowBytes.get(flowKey)[0], 0);
+            let up = diffToNumber(flow[1].bytes_sent.up, prevFlowBytes.get(flowKey)[1], 0);
             rate = down + up;
         }
         if (movingAverages.has(flowKey)) {
@@ -216,18 +533,19 @@ function updateTrafficTab(msg) {
     // Process flows and collect data
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let down = flow[1].rate_estimate_bps.down;
-        let up = flow[1].rate_estimate_bps.up;
+        let down = toNumber(flow[1].rate_estimate_bps.down, 0);
+        let up = toNumber(flow[1].rate_estimate_bps.up, 0);
 
         //console.log(flow);
         if (prevFlowBytes.has(flowKey)) {
-            let ticks = tickCount - prevFlowBytes.get(flowKey)[2];
+            let prev = prevFlowBytes.get(flowKey);
+            let ticks = tickCount - prev[2];
             if (ticks === 1) {
-                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
-                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
+                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
             } else if (ticks > 1) {
-                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
-                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
+                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
                 down = down / ticks;
                 up = up / ticks;
             }
@@ -236,9 +554,10 @@ function updateTrafficTab(msg) {
         if (up < 0) up = 0;
         prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
 
-        if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
+        const lastSeenNanos = toNumber(flow[0].last_seen_nanos, 0);
+        if (lastSeenNanos > thirty_seconds_in_nanos) return;
         
-        let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
+        let opacity = Math.min(1, lastSeenNanos / thirty_seconds_in_nanos);
         let visible = !hideSmallFlows || (down > 1024*1024 || up > 1024*1024);
         
         // Calculate retransmit percentages
@@ -247,49 +566,82 @@ function updateTrafficTab(msg) {
         let retransmitDownPct = 0;
         let retransmitUpPct = 0;
         
-        if (flow[1].tcp_retransmits.down > 0) {
-            retransmitDownPct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+        const tcpRetransmitsDown = toNumber(flow[1].tcp_retransmits.down, 0);
+        const tcpRetransmitsUp = toNumber(flow[1].tcp_retransmits.up, 0);
+        const packetsSentDown = toNumber(flow[1].packets_sent.down, 0);
+        const packetsSentUp = toNumber(flow[1].packets_sent.up, 0);
+
+        if (tcpRetransmitsDown > 0 && packetsSentDown > 0) {
+            retransmitDownPct = tcpRetransmitsDown / packetsSentDown;
             retransmitDown = formatRetransmit(retransmitDownPct);
         }
-        if (flow[1].tcp_retransmits.up > 0) {
-            retransmitUpPct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+        if (tcpRetransmitsUp > 0 && packetsSentUp > 0) {
+            retransmitUpPct = tcpRetransmitsUp / packetsSentUp;
             retransmitUp = formatRetransmit(retransmitUpPct);
         }
         
         // Get average rate for sorting
         let avgRate = down + up;
         if (movingAverages.has(flowKey)) {
-            avgRate = movingAverages.get(flowKey).reduce((a, b) => a + b, 0) / movingAverages.get(flowKey).length;
+            const avg = movingAverages.get(flowKey);
+            avgRate = avg.reduce((a, b) => a + b, 0) / avg.length;
         }
         
+        const bytesSentDown = toNumber(flow[1].bytes_sent.down, 0);
+        const bytesSentUp = toNumber(flow[1].bytes_sent.up, 0);
+        const rttDownNanos = toNumber(flow[1].rtt[0].nanoseconds, 0);
+        const rttUpNanos = toNumber(flow[1].rtt[1].nanoseconds, 0);
+
+        const qoq = flow[1].qoq || null;
+        const qooDown = qoq ? qoq.download_total : null;
+        const qooUp = qoq ? qoq.upload_total : null;
+        const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
+
+        const remoteIp = String(flow[0].remote_ip || "").trim();
+        const excludeBtn = document.createElement("button");
+        excludeBtn.type = "button";
+        excludeBtn.className = "btn btn-outline-secondary btn-sm";
+        excludeBtn.textContent = "Exclude RTT…";
+        excludeBtn.disabled = !remoteIp;
+        excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+        excludeBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+        });
+
         // Collect row data
         tableRows.push({
             sortKeys: {
                 protocol: flow[0].protocol_name,
                 rate: avgRate,
-                bytes: flow[1].bytes_sent.down + flow[1].bytes_sent.up,
-                packets: flow[1].packets_sent.down + flow[1].packets_sent.up,
+                bytes: bytesSentDown + bytesSentUp,
+                packets: packetsSentDown + packetsSentUp,
                 retransmits: retransmitDownPct + retransmitUpPct,
-                rtt: flow[1].rtt[0].nanoseconds + flow[1].rtt[1].nanoseconds,
+                rtt: rttDownNanos + rttUpNanos,
+                qoo: qooForSort,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
-                ip: flow[0].remote_ip
+                ip: remoteIp
             },
             columns: [
                 flow[0].protocol_name,
                 formatThroughput(down, plan.down),
                 formatThroughput(up, plan.up),
-                scaleNumber(flow[1].bytes_sent.down),
-                scaleNumber(flow[1].bytes_sent.up),
-                scaleNumber(flow[1].packets_sent.down),
-                scaleNumber(flow[1].packets_sent.up),
+                scaleNumber(bytesSentDown),
+                scaleNumber(bytesSentUp),
+                scaleNumber(packetsSentDown),
+                scaleNumber(packetsSentUp),
                 retransmitDown,
                 retransmitUp,
-                scaleNanos(flow[1].rtt[0].nanoseconds),
-                scaleNanos(flow[1].rtt[1].nanoseconds),
+                formatRttNanos(rttDownNanos),
+                formatRttNanos(rttUpNanos),
+                formatQooScore(qooDown),
+                formatQooScore(qooUp),
                 flow[0].asn_name,
                 flow[0].asn_country,
-                flow[0].remote_ip
+                remoteIp,
+                excludeBtn,
             ],
             opacity: 1.0 - opacity,
             visible: visible
@@ -324,7 +676,15 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
-            if (index === 1 || index === 2 || index === 7 || index === 8) {
+            const isNode = col && typeof col === "object" && typeof col.nodeType === "number";
+            if (isNode) {
+                const td = document.createElement("td");
+                td.classList.add("text-center");
+                td.appendChild(col);
+                row.appendChild(td);
+                return;
+            }
+            if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));
             } else {
@@ -349,21 +709,26 @@ function updateSpeedometer(devices) {
     let retransmitsDown = 0;
     let retransmitsUp = 0;
     devices.forEach((device) => {
-        totalDown += device.bytes_per_second.down;
-        totalUp += device.bytes_per_second.up;
-        planDown = Math.max(planDown, device.plan.down);
-        planUp = Math.max(planUp, device.plan.up);
-        retransmitsDown += device.tcp_retransmits.down;
-        retransmitsUp += device.tcp_retransmits.up;
+        const deviceDown = toNumber(device.bytes_per_second.down, 0);
+        const deviceUp = toNumber(device.bytes_per_second.up, 0);
+        totalDown += deviceDown;
+        totalUp += deviceUp;
+        planDown = Math.max(planDown, toNumber(device.plan.down, 0));
+        planUp = Math.max(planUp, toNumber(device.plan.up, 0));
+        retransmitsDown += toNumber(device.tcp_retransmits.down, 0);
+        retransmitsUp += toNumber(device.tcp_retransmits.up, 0);
 
         let throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
-            throughputGraph.update(device.bytes_per_second.down * 8, device.bytes_per_second.up * 8);
+            throughputGraph.update(deviceDown * 8, deviceUp * 8);
         }
 
         let retransmitGraph = deviceGraphs["tcpRetransmitsGraph_" + device.device_id];
         if (retransmitGraph !== undefined) {
-            retransmitGraph.update(device.tcp_retransmits.down, device.tcp_retransmits.up);
+            retransmitGraph.update(
+                toNumber(device.tcp_retransmits.down, 0),
+                toNumber(device.tcp_retransmits.up, 0)
+            );
         }
     });
     speedometer.update(totalDown * 8, totalUp * 8, planDown, planUp);
@@ -386,23 +751,43 @@ function fillLiveDevices(devices) {
         }
 
         if (throughputDown !== null) {
-            throughputDown.innerHTML = formatThroughput(device.bytes_per_second.down * 8, device.plan.down);
+            throughputDown.innerHTML = formatThroughput(
+                toNumber(device.bytes_per_second.down, 0) * 8,
+                toNumber(device.plan.down, 0)
+            );
         }
 
         if (throughputUp !== null) {
-            throughputUp.innerHTML = formatThroughput(device.bytes_per_second.up * 8, device.plan.up);
+            throughputUp.innerHTML = formatThroughput(
+                toNumber(device.bytes_per_second.up, 0) * 8,
+                toNumber(device.plan.up, 0)
+            );
         }
 
         if (rttDown !== null) {
-            if (device.median_latency !== null) {
-                rttDown.innerHTML = formatRtt(device.median_latency);
-            }
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const curP95 = device.rtt_current_p95_nanos || {};
+            const totP50 = device.rtt_total_p50_nanos || {};
+            const totP95 = device.rtt_total_p95_nanos || {};
+            rttDown.innerHTML =
+                "<div class='tiny'>C: " +
+                formatRttPair(curP50.down, curP95.down) +
+                "</div><div class='tiny text-secondary'>T: " +
+                formatRttPair(totP50.down, totP95.down) +
+                "</div>";
         }
 
         if (rttUp !== null) {
-            if (device.median_latency !== null && device.median_latency.up !== null) {
-                rttUp.innerHTML = formatRtt(device.median_latency.up);
-            }
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const curP95 = device.rtt_current_p95_nanos || {};
+            const totP50 = device.rtt_total_p50_nanos || {};
+            const totP95 = device.rtt_total_p95_nanos || {};
+            rttUp.innerHTML =
+                "<div class='tiny'>C: " +
+                formatRttPair(curP50.up, curP95.up) +
+                "</div><div class='tiny text-secondary'>T: " +
+                formatRttPair(totP50.up, totP95.up) +
+                "</div>";
         }
 
         if (tcp_retransmitsDown !== null) {
@@ -412,16 +797,37 @@ function fillLiveDevices(devices) {
         if (tcp_retransmitsUp !== null) {
             tcp_retransmitsUp.innerHTML = formatRetransmit(device.tcp_retransmits.up);
         }
+
+        // Local RTT histogram (5-minute window, p50 samples)
+        let rttHistogram = deviceGraphs["rttHistogramGraph_" + device.device_id];
+        if (rttHistogram !== undefined) {
+            const curP50 = device.rtt_current_p50_nanos || {};
+            const downNanos = toNumber(curP50.down, 0);
+            const upNanos = toNumber(curP50.up, 0);
+            const samples = [];
+            if (downNanos > 0) samples.push(downNanos / 1000000);
+            if (upNanos > 0) samples.push(upNanos / 1000000);
+            rttHistogram.updateManyMs(samples);
+        }
     });
 }
 
 function initialDevices(circuits) {
-    let target = document.getElementById("devices")
+    let target = document.getElementById("devices");
     clearDiv(target);
 
     circuits.forEach((circuit) => {
+        let outer = document.createElement("div");
+        outer.classList.add("col-12", "mb-3");
+        target.appendChild(outer);
+
+        let row = document.createElement("div");
+        row.classList.add("row", "g-2");
+        outer.appendChild(row);
+
         let d = document.createElement("div");
         d.classList.add("col-3");
+        row.appendChild(d);
 
         // Device Information Section
 
@@ -468,13 +874,15 @@ function initialDevices(circuits) {
         ipv4Table.classList.add("table", "table-sm");
         let ipv4Body = document.createElement("tbody");
         circuit.ipv4.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv4Body.appendChild(tr);
@@ -504,13 +912,15 @@ function initialDevices(circuits) {
         ipv6.classList.add("table", "table-sm");
         let ipv6Body = document.createElement("tbody");
         circuit.ipv6.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv6Body.appendChild(tr);
@@ -564,12 +974,15 @@ function initialDevices(circuits) {
         // Placeholder for RTT
         let tr6 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>RTT</b>";
+        td.innerHTML = "<b>RTT P50/P95</b>";
         tr6.appendChild(td);
         td = document.createElement("td");
-        td.colSpan = 2;
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = "Sampling...";
+        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        tr6.appendChild(td);
+        td = document.createElement("td");
+        td.id = "rttUp_" + circuit.device_id;
+        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
         tr6.appendChild(td);
         tbody.appendChild(tr6);
 
@@ -590,41 +1003,40 @@ function initialDevices(circuits) {
 
         infoTable.appendChild(tbody);
         d.appendChild(infoTable);
-        target.appendChild(d);
 
-        // Graph for Throughput
-        let throughputGraph = document.createElement("div");
-        throughputGraph.classList.add("col-3")
-        throughputGraph.id = "throughputGraph_" + circuit.device_id;
-        throughputGraph.style.height = "250px";
-        throughputGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(throughputGraph);
-        deviceGraphs[throughputGraph.id] = new CircuitTotalGraph(throughputGraph.id, "Throughput");
+        // Graph container (2x2)
+        let graphCol = document.createElement("div");
+        graphCol.classList.add("col-9");
+        row.appendChild(graphCol);
 
-        // Graph for TCP Retransmits
-        let tcpRetransmitsGraph = document.createElement("div");
-        tcpRetransmitsGraph.classList.add("col-3")
-        tcpRetransmitsGraph.id = "tcpRetransmitsGraph_" + circuit.device_id;
-        tcpRetransmitsGraph.style.height = "250px";
-        tcpRetransmitsGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(tcpRetransmitsGraph);
-        deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, "Retransmits");
+        let graphRow = document.createElement("div");
+        graphRow.classList.add("row", "g-2");
+        graphCol.appendChild(graphRow);
 
-        // Ping Graph Section
-        let pingGraph = document.createElement("div");
-        pingGraph.classList.add("col-3");
-        pingGraph.id = "pingGraph_" + circuit.device_id;
-        pingGraph.style.height = "250px";
-        pingGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
-        target.appendChild(pingGraph);
-        deviceGraphs[pingGraph.id] = new DevicePingHistogram(pingGraph.id);
+        function addGraph(divId, graphFactory) {
+            let col = document.createElement("div");
+            col.classList.add("col-6");
+            let div = document.createElement("div");
+            div.id = divId;
+            div.style.height = "250px";
+            div.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+            col.appendChild(div);
+            graphRow.appendChild(col);
+            deviceGraphs[divId] = graphFactory(divId);
+        }
+
+        addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, "Throughput"));
+        addGraph("tcpRetransmitsGraph_" + circuit.device_id, (id) => new CircuitRetransmitGraph(id, "Retransmits"));
+        addGraph("rttHistogramGraph_" + circuit.device_id, (id) => new WindowedLatencyHistogram(id, "RTT Histogram", 300000));
+        addGraph("pingGraph_" + circuit.device_id, (id) => new DevicePingHistogram(id));
 
     });
 }
 
 function initialFunnel(parentNode) {
     let target = document.getElementById("theFunnel");
-    $.get("/local-api/networkTree", (data) => {
+    listenOnce("NetworkTree", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         let immediateParent = null;
         data.forEach((node) => {
             if (node[1].name === parentNode) {
@@ -682,17 +1094,24 @@ function initialFunnel(parentNode) {
             immediateParent.parents.reverse().forEach((parent) => {
                 let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
                 let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
-                let rttGraph = new DevicePingHistogram("funnel_rtt_" + parent);
+                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
                 funnelGraphs[parent] = {
                     tp: tpGraph,
                     rxmit: rxmitGraph,
                     rtt: rttGraph,
                 };
+                resizeGraphIfVisible(tpGraph);
+                resizeGraphIfVisible(rxmitGraph);
+                resizeGraphIfVisible(rttGraph);
             });
             funnelParents = immediateParent.parents;
-            subscribeWS(["NetworkTree"], onTreeEvent);
+            if (funnelSubscription) {
+                funnelSubscription.dispose();
+            }
+            funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
         }, 0)});
     });
+    wsClient.send({ NetworkTree: {} });
 }
 
 function onTreeEvent(msg) {
@@ -705,31 +1124,27 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[1] *8);
+        tpGraph.update(
+            toNumber(myMessage.current_throughput[0], 0) * 8,
+            toNumber(myMessage.current_throughput[1], 0) * 8
+        );
         let rxmit = [0, 0];
-        if (myMessage.current_retransmits[0] > 0) {
-            rxmit[0] = (myMessage.current_retransmits[0] / myMessage.current_tcp_packets[0]) * 100.0;
+        const packetsDown = toNumber(myMessage.current_tcp_packets[0], 0);
+        const packetsUp = toNumber(myMessage.current_tcp_packets[1], 0);
+        const retransmitsDown = toNumber(myMessage.current_retransmits[0], 0);
+        const retransmitsUp = toNumber(myMessage.current_retransmits[1], 0);
+        if (retransmitsDown > 0 && packetsDown > 0) {
+            rxmit[0] = (retransmitsDown / packetsDown) * 100.0;
         }
-        if (myMessage.current_retransmits[1] > 0) {
-            rxmit[1] = (myMessage.current_retransmits[1] / myMessage.current_tcp_packets[1]) * 100.0;
+        if (retransmitsUp > 0 && packetsUp > 0) {
+            rxmit[1] = (retransmitsUp / packetsUp) * 100.0;
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
-        myMessage.rtts.forEach((rtt) => {
-            rttGraph.updateMs(rtt);
-        });
-        tpGraph.chart.resize();
-        rxmitGraph.chart.resize();
-        rttGraph.chart.resize();
+        rttGraph.updateManyMs(myMessage.rtts);
     });
 }
 
 function subscribeToCake() {
-    let backlogGraph = new CakeBacklog("cakeBacklog");
-    let delaysGraph = new CakeDelays("cakeDelays");
-    let queueLength = new CakeQueueLength("cakeQueueLength");
-    let traffic = new CakeTraffic("cakeTraffic");
-    let marks = new CakeMarks("cakeMarks");
-    let drops = new CakeDrops("cakeDrops");
     let noDataTimeout = null;
     let hasReceivedData = false;
     
@@ -737,19 +1152,20 @@ function subscribeToCake() {
     function showNoQueueMessage() {
         const cakeTab = document.getElementById("cake");
         if (cakeTab && !hasReceivedData) {
-            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The CAKE queue for this circuit has not been created yet.</p></div></div>';
+            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>';
         }
     }
     
     // Set a timeout to show the message if no data arrives within 3 seconds
     noDataTimeout = setTimeout(showNoQueueMessage, 3000);
     
-    channelLink = new DirectChannel({
+    cakeChannel = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
     }, (msg) => {
         //console.log(msg);
+        latestCakeMsg = msg;
         
         // Clear the timeout and set flag that we've received data
         if (noDataTimeout) {
@@ -760,57 +1176,13 @@ function subscribeToCake() {
         // If this is the first data received, restore the original HTML structure
         if (!hasReceivedData) {
             hasReceivedData = true;
-            const cakeTab = document.getElementById("cake");
-            if (cakeTab) {
-                cakeTab.innerHTML = `
-                    <div class="row">
-                        <div class="col-4">
-                            <div id="cakeBacklog" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDelays" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeQueueLength" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeTraffic" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeMarks" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDrops" style="height: 250px"></div>
-                        </div>
-                        <div class="col-3">
-                            Queue Memory: <span id="cakeQueueMemory">?</span>
-                        </div>
-                    </div>
-                `;
-                // Reinitialize the graphs
-                backlogGraph = new CakeBacklog("cakeBacklog");
-                delaysGraph = new CakeDelays("cakeDelays");
-                queueLength = new CakeQueueLength("cakeQueueLength");
-                traffic = new CakeTraffic("cakeTraffic");
-                marks = new CakeMarks("cakeMarks");
-                drops = new CakeDrops("cakeDrops");
+            if (!updateCakeTabAvailability(msg)) {
+                return;
             }
         }
 
-        // Cake Memory Usage
-        $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
-        backlogGraph.update(msg);
-        backlogGraph.chart.resize();
-        delaysGraph.update(msg);
-        delaysGraph.chart.resize();
-        queueLength.update(msg);
-        queueLength.chart.resize();
-        traffic.update(msg);
-        traffic.chart.resize();
-        marks.update(msg);
-        marks.chart.resize();
-        drops.update(msg);
-        drops.chart.resize();
+        ensureCakeGraphs();
+        applyCakeMessage(msg);
     });
 }
 
@@ -831,18 +1203,19 @@ function wireupAnalysis(circuits) {
         let entry = document.createElement("li");
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
-        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from " + ip[0];
+        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from <span class='redactable'>" + ip[0] + "</span>";
         let address = ip[0]; // For closure capture
         item.onclick = () => {
             //console.log("Clicky " + address);
-            $.get("/local-api/requestAnalysis/" + encodeURI(address), (data) => {
-                //console.log(data);
-                if (data === "Fail") {
+            listenOnce("RequestAnalysisResult", (msg) => {
+                const data = msg ? msg.data : null;
+                const okData = data && data.Ok ? data.Ok : null;
+                if (!okData) {
                     alert("Packet capture is already active for another IP. Please try again when it is finished.")
                     return;
                 }
-                let counter = parseInt(data.Ok.countdown)+1;
-                let sessionId = data.Ok.session_id;
+                let counter = parseInt(okData.countdown) + 1;
+                let sessionId = okData.session_id;
                 let btn = document.getElementById("CaptureTopBtn");
                 btn.disabled = true;
                 btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
@@ -851,7 +1224,7 @@ function wireupAnalysis(circuits) {
                     if (counter === -1) {
                         clearInterval(interval);
                         btn.disabled = false;
-                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for " + address;
+                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for <span class='redactable'>" + address + "</span>";
                         btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
@@ -860,14 +1233,8 @@ function wireupAnalysis(circuits) {
                             //console.log(url);
 
                             // Restore the buttons
-                            $.ajax({
-                                type: "POST",
-                                url: "/local-api/circuitById",
-                                data: JSON.stringify({id: circuit_id}),
-                                contentType: 'application/json',
-                                success: (circuits) => {
-                                    wireupAnalysis(circuits);
-                                }
+                            requestCircuitById((circuits) => {
+                                wireupAnalysis(circuits);
                             });
                         }
                         return;
@@ -875,6 +1242,7 @@ function wireupAnalysis(circuits) {
                     btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
                 }, 1000);
             });
+            wsClient.send({ RequestAnalysis: { ip: address } });
         }
         entry.appendChild(item);
         listUl.appendChild(entry);
@@ -893,39 +1261,56 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
-    $.ajax({
-        type: "POST",
-        url: "/local-api/circuitById",
-        data: JSON.stringify({ id: circuit_id }),
-        contentType: 'application/json',
-        success: (circuits) => {
-            //console.log(circuits);
-            let circuit = circuits[0];
-            $("#circuitName").text(circuit.circuit_name);
-            $("#parentNode").text(circuit.parent_node);
-            $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
-            $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
-            plan = {
-                down: circuit.download_max_mbps,
-                up: circuit.upload_max_mbps,
-            };
-            initialDevices(circuits);
-            speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
-            totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
-            totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-            flowSankey = new FlowsSankey("flowSankey");
+    initExcludeRttToggle();
+    requestCircuitById((circuits) => {
+        let circuit = circuits[0];
+        $("#circuitName").text(circuit.circuit_name);
+        $("#parentNode").text(circuit.parent_node);
+        $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
+        $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
+        plan = {
+            down: toNumber(circuit.download_max_mbps, 0),
+            up: toNumber(circuit.upload_max_mbps, 0),
+        };
+        initialDevices(circuits);
+        speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
+        qooGauge = new QooScoreGauge("qooGauge");
+        totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
+        totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
+        initTabLifecycle(circuit.parent_node);
 
-            connectPrivateChannel();
-            connectPingers(circuits);
-            connectFlowChannel();
-            initialFunnel(circuit.parent_node);
-            subscribeToCake();
-            wireupAnalysis(circuits);
-        },
-        error: () => {
-            alert("Circuit with id " + circuit_id + " not found");
-        }
-    })
+        connectPrivateChannel();
+        connectPingers(circuits);
+        connectFlowChannel();
+        subscribeToCake();
+        wireupAnalysis(circuits);
+    }, () => {
+        alert("Circuit with id " + circuit_id + " not found");
+    });
 }
 
+function cleanupCircuitPage() {
+    if (channelLink) {
+        channelLink.close();
+        channelLink = null;
+    }
+    if (cakeChannel) {
+        cakeChannel.close();
+        cakeChannel = null;
+    }
+    if (pinger) {
+        pinger.close();
+        pinger = null;
+    }
+    if (flowChannel) {
+        flowChannel.close();
+        flowChannel = null;
+    }
+    if (funnelSubscription) {
+        funnelSubscription.dispose();
+        funnelSubscription = null;
+    }
+}
+
+window.addEventListener("beforeunload", cleanupCircuitPage);
 loadInitial();

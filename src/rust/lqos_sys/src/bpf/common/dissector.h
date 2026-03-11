@@ -26,35 +26,35 @@ struct dissector_t
     void *start;
     // End of data
     void *end;
-    // Total length (end - start)
-    __u32 skb_len;
     // Ethernet header once found (NULL until then)
     struct ethhdr *ethernet_header;
-    // Ethernet packet type once found (0 until then)
-    __u16 eth_type;
-    // Layer-3 offset if found (0 until then)
-    __u32 l3offset;
     // IPv4/6 header once found
     union iph_ptr ip_header;
     // Source IP address, encoded by `ip_hash.h`
     struct in6_addr src_ip;
     // Destination IP address, encoded by `ip_hash.h`
     struct in6_addr dst_ip;
+    __u64 now;
+    // Total length (end - start)
+    __u32 skb_len;
+      // Layer-3 offset if found (0 until then)
+    __u16 l3offset;
+    // Ethernet packet type once found (0 until then)
+    __u16 eth_type;
     // Current VLAN tag. If there are multiple tags, it will be
     // the INNER tag.
     __be16 current_vlan;
-    // IP protocol from __UAPI_DEF_IN_IPPROTO
-    __u8 ip_protocol;
     __u16 src_port;
     __u16 dst_port;
-    __u8 tos;
-    __u8 tcp_flags;
     __u16 window;
     __u32 tsval;
     __u32 tsecr;
     __u32 sequence;
-    __u32 ack_seq;
-    __u64 now;
+      // IP protocol from __UAPI_DEF_IN_IPPROTO
+    __u8 ip_protocol;
+    __u8 tos;
+    __u8 tcp_flags;
+
 };
 
 // Representation of the VLAN header type.
@@ -118,7 +118,6 @@ static __always_inline bool dissector_new(
     dissector->dst_port = 0;
     dissector->tos = 0;
     dissector->sequence = 0;
-    dissector->ack_seq = 0;
     dissector->now = bpf_ktime_get_boot_ns();
 
     // Check that there's room for an ethernet header
@@ -360,7 +359,6 @@ static __always_inline void snoop(struct dissector_t *dissector)
             dissector->tcp_flags = flags;
             dissector->window = hdr->window;
             dissector->sequence = hdr->seq;
-            dissector->ack_seq = hdr->ack_seq;
 
             parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
         }

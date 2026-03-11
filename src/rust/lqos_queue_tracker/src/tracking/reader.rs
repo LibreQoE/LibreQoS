@@ -48,12 +48,12 @@ pub fn read_named_queue_from_interface(
         .output();
 
     let Ok(command_output) = command_output else {
-            error!(
-                "Failed to call process tc -s -j qdisc show dev {interface} parent {}",
-                &tc_handle.to_string()
-            );
-            error!("{:?}", command_output);
-            return Err(QueueReaderError::CommandError);
+        error!(
+            "Failed to call process tc -s -j qdisc show dev {interface} parent {}",
+            &tc_handle.to_string()
+        );
+        error!("{:?}", command_output);
+        return Err(QueueReaderError::CommandError);
     };
 
     let json = String::from_utf8(command_output.stdout);

@@ -14,34 +14,34 @@ use tracing::info;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcFqCodel {
-    handle: TcHandle,
+    pub(crate) handle: TcHandle,
     pub(crate) parent: TcHandle,
-    options: TcFqCodelOptions,
-    bytes: u64,
-    packets: u32, // FIXME - for long term data we have to worry about wrapping
-    drops: u32,
-    overlimits: u32,
-    requeues: u32,
-    backlog: u32,
-    qlen: u32,
-    maxpacket: u16,
-    drop_overlimit: u32,
-    new_flow_count: u32,
-    ecn_mark: u32,
-    new_flows_len: u16,
-    old_flows_len: u16,
+    pub(crate) options: TcFqCodelOptions,
+    pub(crate) bytes: u64,
+    pub(crate) packets: u32, // FIXME - for long term data we have to worry about wrapping
+    pub(crate) drops: u32,
+    pub(crate) overlimits: u32,
+    pub(crate) requeues: u32,
+    pub(crate) backlog: u32,
+    pub(crate) qlen: u32,
+    pub(crate) maxpacket: u16,
+    pub(crate) drop_overlimit: u32,
+    pub(crate) new_flow_count: u32,
+    pub(crate) ecn_mark: u32,
+    pub(crate) new_flows_len: u16,
+    pub(crate) old_flows_len: u16,
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
-struct TcFqCodelOptions {
-    limit: u32,
-    flows: u16,
-    quantum: u16,
-    target: u64,   // FIXME target and interval within fq_codel are scaled to ns >> 1024
-    interval: u64, // tc scales them back up to us. Ideally ns would make sense throughout.
-    memory_limit: u32,
-    ecn: bool,
-    drop_batch: u16, // FIXME CE_threshold is presently missing from the parser
+pub(crate) struct TcFqCodelOptions {
+    pub(crate) limit: u32,
+    pub(crate) flows: u16,
+    pub(crate) quantum: u16,
+    pub(crate) target: u64, // FIXME target and interval within fq_codel are scaled to ns >> 1024
+    pub(crate) interval: u64, // tc scales them back up to us. Ideally ns would make sense throughout.
+    pub(crate) memory_limit: u32,
+    pub(crate) ecn: bool,
+    pub(crate) drop_batch: u16, // FIXME CE_threshold is presently missing from the parser
 }
 
 impl TcFqCodel {

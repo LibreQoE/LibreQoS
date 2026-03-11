@@ -1,9 +1,11 @@
 import {clearDashDiv, theading} from "../helpers/builders";
 import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+
+const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
 
 export class Top10FlowsRate extends DashletBaseInsight {
     constructor(slot) {
@@ -74,6 +76,7 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 } else {
                     let localIp = document.createElement("td");
                     localIp.innerText = r.local_ip;
+                    localIp.classList.add("redactable");
                     row.appendChild(localIp);
                 }
 
@@ -93,10 +96,11 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
+                const cacheKey = flowCacheKey(r);
                 if (r.rtt_nanos['down'] !== undefined) {
-                    this.rttCache.set(r.remote_ip + r.analysis, r.rtt_nanos);
+                    this.rttCache.set(cacheKey, r.rtt_nanos);
                 }
-                let rtt = this.rttCache.get(r.remote_ip + r.analysis);
+                let rtt = this.rttCache.get(cacheKey);
                 if (rtt === 0) {
                     rtt = { down: 0, up: 0 };
                 }
@@ -110,11 +114,15 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 row.appendChild(rttU);
 
                 let tcp1 = document.createElement("td");
-                tcp1.innerHTML = formatRetransmit(r.tcp_retransmits.down / r.packets_sent.down);
+                const packetsDown = toNumber(r.packets_sent.down, 0);
+                const retransmitsDown = toNumber(r.tcp_retransmits.down, 0);
+                tcp1.innerHTML = formatRetransmit(packetsDown > 0 ? retransmitsDown / packetsDown : 0);
                 row.appendChild(tcp1);
 
                 let tcp2 = document.createElement("td");
-                tcp2.innerHTML = formatRetransmit(r.tcp_retransmits.up  / r.packets_sent.up);
+                const packetsUp = toNumber(r.packets_sent.up, 0);
+                const retransmitsUp = toNumber(r.tcp_retransmits.up, 0);
+                tcp2.innerHTML = formatRetransmit(packetsUp > 0 ? retransmitsUp / packetsUp : 0);
                 row.appendChild(tcp2);
 
                 let asn = document.createElement("td");

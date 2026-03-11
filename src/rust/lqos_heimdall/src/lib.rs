@@ -48,7 +48,9 @@ pub fn start_heimdall() -> Result<()> {
         .name("Heimdall Packet Watcher".to_string())
         .spawn(move || {
             let Ok(mut tfd) = TimerFd::new() else {
-                error!("Unable to created timer file descriptor. No Heimdall data will be available.");
+                error!(
+                    "Unable to created timer file descriptor. No Heimdall data will be available."
+                );
                 return;
             };
             assert_eq!(tfd.get_state(), TimerState::Disarmed);

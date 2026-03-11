@@ -1,22 +1,26 @@
-import {ws_proto} from './ws.js';
+import { get_ws_client } from "./ws";
 
 export class DirectChannel {
     constructor(subObject, handler) {
-        this.ws = null;
+        this.client = get_ws_client();
         this.handler = handler;
-        this.ws = new WebSocket(ws_proto() + window.location.host + '/websocket/private_ws');
-        this.ws.onopen = () => {
-            this.ws.send(JSON.stringify(subObject));
-        }
-        this.ws.onclose = () => {
-            this.ws = null;
-        }
-        this.ws.onerror = (error) => {
-            this.ws = null
-        }
-        this.ws.onmessage = function (event) {
-            let msg = JSON.parse(event.data);
+        this.event_name = Object.keys(subObject)[0];
+        this.bound_handler = (msg) => {
             handler(msg);
         };
+        this.dispose_handler = this.client.on(this.event_name, this.bound_handler);
+        this.client.send({ Private: subObject });
+    }
+
+    close() {
+        if (!this.client || !this.bound_handler) {
+            return;
+        }
+        if (this.dispose_handler) {
+            this.dispose_handler();
+            this.dispose_handler = null;
+        } else {
+            this.client.off(this.event_name, this.bound_handler);
+        }
     }
 }

@@ -4,6 +4,9 @@ node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
 queue_check_period_ms = 1000
+enable_circuit_heatmaps = true
+enable_site_heatmaps = true
+enable_asn_heatmaps = true
 
 [tuning]
 stop_irq_balance = true
@@ -28,6 +31,9 @@ to_network = "eth1"
 #network_vlan = 3
 
 [queues]
+# Global default SQM is a single token list applied to both directions.
+# Per-circuit overrides in ShapedDevices.csv may specify directional tokens
+# as "down_sqm/up_sqm" (see ShapedDevices.example.csv and INTEGRATION_HOWTO.md).
 default_sqm = "cake diffserv4"
 monitor_only = false
 uplink_bandwidth_mbps = 100000
@@ -66,11 +72,23 @@ always_overwrite_network_json = true
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
 
-[spylnx_integration]
-enable_spylnx = false
+[splynx_integration]
+enable_splynx = false
 api_key = ""
 api_secret = ""
 url = ""
+
+[visp_integration]
+enable_visp = false
+client_id = ""
+client_secret = ""
+username = ""
+password = ""
+# Leave blank to auto-select the first ISP ID returned by the token endpoint.
+#isp_id = 0
+timeout_secs = 20
+# Optional RADIUS domain for online session enrichment.
+#online_users_domain = ""
 
 [uisp_integration]
 enable_uisp = false
@@ -112,7 +130,31 @@ token = ""
 
 [stormguard]
 enabled = false
-targets = [ ]
-dry_run = false
-minimum_download_percentage = 0.25
-minimum_upload_percentage = 0.25
+dry_run = true
+strategy = "delay_probe" # "legacy_score", "delay_probe", or "delay_probe_active"
+all_sites = false
+targets = []
+exclude_sites = []
+minimum_download_percentage = 0.5
+minimum_upload_percentage = 0.5
+increase_fast_multiplier = 1.30
+increase_multiplier = 1.15
+decrease_multiplier = 0.95
+decrease_fast_multiplier = 0.88
+increase_fast_cooldown_seconds = 2.0
+increase_cooldown_seconds = 1.0
+decrease_cooldown_seconds = 3.75
+decrease_fast_cooldown_seconds = 7.5
+circuit_fallback_enabled = false
+circuit_fallback_persist = true
+circuit_fallback_sqm = "fq_codel"
+delay_threshold_ms = 40.0
+delay_threshold_ratio = 1.10
+baseline_alpha_up = 0.01
+baseline_alpha_down = 0.10
+probe_interval_seconds = 10.0
+min_throughput_mbps_for_rtt = 0.05
+active_ping_target = "1.1.1.1"
+active_ping_interval_seconds = 10.0
+active_ping_weight = 0.70
+active_ping_timeout_seconds = 1.0

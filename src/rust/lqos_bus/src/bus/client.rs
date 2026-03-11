@@ -8,6 +8,8 @@ use tokio::{
 };
 use tracing::error;
 
+use super::protocol::{decode_reply_cbor, encode_session_cbor, read_frame, write_frame};
+
 pub(crate) const MAGIC_NUMBER: [u8; 4] = [0x4C, 0x52, 0x45, 0x51]; // "LREQ"
 pub(crate) const MAGIC_RESPONSE: [u8; 4] = [0x4C, 0x52, 0x45, 0x50]; // "LREP"
 
@@ -63,65 +65,19 @@ impl LibreqosBusClient {
         // Mirror the code in unix_socket_server::listen
 
         let session = BusSession { requests };
-        let Ok(session_bytes) = bincode::serialize(&session) else {
-            error!("Unable to serialize session.");
-            return Err(BusClientError::EncodingError);
-        };
-        let size = session_bytes.len();
-        self.stream.write_u64_le(request_id).await.map_err(|_| {
-            error!("Unable to write request ID to {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamWriteError
-        })?;
-        self.stream.write_u64_le(size as u64).await.map_err(|_| {
-            error!("Unable to write session size to {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamWriteError
-        })?;
-        self.stream.write_all(&session_bytes).await.map_err(|_| {
-            error!("Unable to write session to {BUS_SOCKET_PATH} stream.");
-            BusClientError::StreamWriteError
-        })?;
+        let session_bytes = encode_session_cbor(&session)?;
+        write_frame(&mut self.stream, request_id, &session_bytes).await?;
 
         // Read the response
-        let mut response_id = [0u8; 8];
-        self.stream
-            .read_exact(&mut response_id)
-            .await
-            .map_err(|_| {
-                error!("Unable to read response ID from {BUS_SOCKET_PATH} stream.");
-                BusClientError::StreamReadError
-            })?;
-        let response_id = u64::from_le_bytes(response_id);
+        let (response_id, response_bytes) = read_frame(&mut self.stream).await?;
         if response_id != request_id {
             error!("Received response ID {response_id} does not match request ID {request_id}.");
             return Err(BusClientError::StreamReadError);
         }
-        let mut response_size = [0u8; 8];
-        self.stream
-            .read_exact(&mut response_size)
-            .await
-            .map_err(|_| {
-                error!("Unable to read response size from {BUS_SOCKET_PATH} stream.");
-                BusClientError::StreamReadError
-            })?;
-        let response_size = u64::from_le_bytes(response_size) as usize;
-        if response_size == 0 {
+        if response_bytes.is_empty() {
             return Ok(Vec::new());
         }
-        let mut response_bytes = vec![0u8; response_size];
-        self.stream
-            .read_exact(&mut response_bytes)
-            .await
-            .map_err(|_| {
-                error!("Unable to read response from {BUS_SOCKET_PATH} stream.");
-                BusClientError::StreamReadError
-            })?;
-        let response: BusReply = match bincode::deserialize(&response_bytes) {
-            Ok(response) => response,
-            Err(e) => {
-                error!("Unable to deserialize response: {:?}", e);
-                return Err(BusClientError::DecodingError);
-            }
-        };
+        let response: BusReply = decode_reply_cbor(&response_bytes)?;
         if response.responses.is_empty() {
             return Ok(Vec::new());
         }

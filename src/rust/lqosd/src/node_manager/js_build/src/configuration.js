@@ -1,9 +1,37 @@
 // Mostly ported from the original node manager
+import { get_ws_client } from "./pubsub/ws";
 
 let nics = null;
 let lqosd_config = null;
 let shaped_devices = null;
 let network_json = null;
+let qoo_profiles = null;
+const MIN_NODE_MBPS = 0.1;
+
+const wsClient = get_ws_client();
+
+function sendWsRequest(responseEvent, request, onComplete, onError) {
+    let done = false;
+    const responseHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        onComplete(msg);
+    };
+    const errorHandler = (msg) => {
+        if (done) return;
+        done = true;
+        wsClient.off(responseEvent, responseHandler);
+        wsClient.off("Error", errorHandler);
+        if (onError) {
+            onError(msg);
+        }
+    };
+    wsClient.on(responseEvent, responseHandler);
+    wsClient.on("Error", errorHandler);
+    wsClient.send(request);
+}
 
 const bindings = [
     // General
@@ -11,6 +39,7 @@ const bindings = [
     { field: "bindPath", path: ".lqos_directory", data: "string", editable: true, required: true },
     { field: "bindNodeId", path: ".node_id", data: "string", editable: true, required: true },
     { field: "bindNodeName", path: ".node_name", data: "string", editable: true, required: true },
+    { field: "bindQooProfile", path: ".qoo_profile_id", data: "select-nullable", editable: true },
     { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true, min: 1, max: 300 },
     { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true, min: 100, max: 100000 },
 
@@ -72,10 +101,10 @@ const bindings = [
     { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
 
     // Splynx
-    { field: "bindSplynxEnable", path: ".spylnx_integration.enable_spylnx", data: "bool", editable: true },
-    { field: "bindSplynxApiKey", path: ".spylnx_integration.api_key", data: "string", editable: true },
-    { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
-    { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
+    { field: "bindSplynxEnable", path: ".splynx_integration.enable_splynx", data: "bool", editable: true },
+    { field: "bindSplynxApiKey", path: ".splynx_integration.api_key", data: "string", editable: true },
+    { field: "bindSplynxApiSecret", path: ".splynx_integration.api_secret", data: "string", editable: true },
+    { field: "bindSplynxApiUrl", path: ".splynx_integration.url", data: "string", editable: true },
 
     // Netzur
     { field: "bindNetzurEnable", path: ".netzur_integration.enable_netzur", data: "bool", editable: true },
@@ -123,6 +152,47 @@ const bindings = [
 
 ];
 
+function getConfigPath(path) {
+    if (!path || lqosd_config == null) {
+        return { found: false, value: undefined };
+    }
+    let trimmed = path.startsWith(".") ? path.slice(1) : path;
+    if (trimmed.length === 0) {
+        return { found: true, value: lqosd_config };
+    }
+    let current = lqosd_config;
+    let parts = trimmed.split(".");
+    for (let i = 0; i < parts.length; i++) {
+        let part = parts[i];
+        if (current == null || !Object.prototype.hasOwnProperty.call(current, part)) {
+            return { found: false, value: undefined };
+        }
+        current = current[part];
+    }
+    return { found: true, value: current };
+}
+
+function ensureSplynxSection(config) {
+    if (!config || typeof config !== "object") {
+        return config;
+    }
+
+    if (!config.splynx_integration || typeof config.splynx_integration !== "object") {
+        config.splynx_integration = {};
+    }
+
+    const splynx = config.splynx_integration;
+    if (typeof splynx.enable_splynx !== "boolean") splynx.enable_splynx = false;
+    if (typeof splynx.api_key !== "string") splynx.api_key = "";
+    if (typeof splynx.api_secret !== "string") splynx.api_secret = "";
+    if (typeof splynx.url !== "string") splynx.url = "";
+    if (typeof splynx.strategy !== "string" || splynx.strategy.length === 0) {
+        splynx.strategy = "ap_only";
+    }
+
+    return config;
+}
+
 function doBindings() {
     let active = true;
 
@@ -132,8 +202,8 @@ function doBindings() {
         if (entry.conditional != null) {
             console.log("Conditional encountered");
             if (entry.condition === "if_exists") {
-                let val = "lqosd_config" + entry.path;
-                if (eval(val) != null) {
+                let result = getConfigPath(entry.path);
+                if (result.found && result.value != null) {
                     console.log("Conditional fired");
                     active = true;
                     if (entry.showDiv != null) {
@@ -155,28 +225,27 @@ function doBindings() {
                 console.log("Skipping " + entry.path);
                 continue;
             }
-            let value_location = "lqosd_config" + entry.path;
-            let value = eval(value_location);
+            let value = getConfigPath(entry.path).value;
             let controlId = "#" + entry.field;
             if (entry.data === "bool") {
                 $(controlId).prop('checked', value);
+            } else if (entry.data === "select-nullable") {
+                $(controlId).val(value === null || value === undefined ? "" : value);
             } else if (entry.data === "selector-premade") {
                 $(controlId + " select").val(value);
             } else if (entry.data === "array_of_strings") {
                 let expanded = "";
-                let length = eval("lqosd_config" + entry.path + ".length");
-                for (let j = 0; j < length; j++) {
-                    let v = eval("lqosd_config" + entry.path + "[" + j + "]");
-                    expanded += v + " ";
+                let values = Array.isArray(value) ? value : [];
+                for (let j = 0; j < values.length; j++) {
+                    expanded += values[j] + " ";
                 }
                 expanded = expanded.trimEnd();
                 $(controlId).val(expanded);
             } else if (entry.data === "ip_array") {
                 let expanded = "";
-                let length = eval("lqosd_config" + entry.path + ".length");
-                for (let j = 0; j < length; j++) {
-                    let v = eval("lqosd_config" + entry.path + "[" + j + "]");
-                    expanded += v + "\n";
+                let values = Array.isArray(value) ? value : [];
+                for (let j = 0; j < values.length; j++) {
+                    expanded += values[j] + "\n";
                 }
                 expanded = expanded.trimEnd();
                 $(controlId).val(expanded);
@@ -226,7 +295,6 @@ function detectChanges() {
         let controlId = entry.field;
         if (entry.path === ".bridge" || entry.path === ".single_interface") continue;
         if (entry.path != null) {
-            let path = "lqosd_config" + entry.path;
             let currentValue = $("#" + controlId).val();
             // TODO: Bridge/Stick special case
             if (entry.data === "bool") {
@@ -236,20 +304,23 @@ function detectChanges() {
             } else if (entry.data === "ip_array") {
                 currentValue = currentValue.split('\n');
             }
-            try {
-                let storedValue = eval(path);
-                if (entry.data === "string" || entry.data === "integer") {
-                    if (storedValue === null && currentValue === "")
-                        currentValue = null;
-                }
-                //console.log(path, currentValue, storedValue);
-                if (String(currentValue) !== String(storedValue)) {
-                    console.log("Change detected!");
-                    console.log(entry.path, " has changed. ", storedValue, '=>', currentValue);
-                    changes.push(i);
-                }
-            } catch {
-                //console.log(path + 'ignored');
+            let result = getConfigPath(entry.path);
+            if (!result.found) {
+                continue;
+            }
+            let storedValue = result.value;
+            if (entry.data === "string" || entry.data === "integer") {
+                if (storedValue === null && currentValue === "")
+                    currentValue = null;
+            } else if (entry.data === "select-nullable") {
+                if (storedValue === null && currentValue === "")
+                    currentValue = null;
+            }
+            //console.log(entry.path, currentValue, storedValue);
+            if (String(currentValue) !== String(storedValue)) {
+                console.log("Change detected!");
+                console.log(entry.path, " has changed. ", storedValue, '=>', currentValue);
+                changes.push(i);
             }
         }
     }
@@ -356,6 +427,10 @@ function getFinalValue(target) {
         case "array_of_strings": return $(selector).val().split(' ');
         case "interface": return $(selector).val();
         case "select-premade": return $(selector).val();
+        case "select-nullable": {
+            const v = $(selector).val();
+            return v === "" ? null : v;
+        }
         case "ip_array": return $(selector).val().split('\n');
         default: console.log("Not handled: " + target);
     }
@@ -391,24 +466,27 @@ function saveConfig() {
     if (!validationResult.valid) return;
 
     updateSavedConfig(validationResult.changes);
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateConfig",
-        contentType:"application/json",
-        data: JSON.stringify(lqosd_config),
-        success: (data) => {
-            if (data === "Ok") {
+    sendWsRequest(
+        "UpdateConfigResult",
+        { UpdateConfig: { config: lqosd_config } },
+        (msg) => {
+            if (msg && msg.ok) {
                 alert("Configuration saved");
             } else {
-                alert("Configuration not saved: " + data);
+                const message = msg && msg.message ? msg.message : "Error";
+                alert("Configuration not saved: " + message);
             }
-        }
-    })
+        },
+        () => {
+            alert("Configuration not saved: Error");
+        },
+    );
 }
 
 function iterateNetJson(level, depth) {
     let html = "<div style='margin-left: " + depth * 30 + "px; margin-top: 4px;'>";
     for (const [key, value] of Object.entries(level)) {
+        const isVirtual = value && value.virtual === true;
         html += "<div>";
         html += "<strong>" + key + "</strong>";
         if (depth > 0) {
@@ -419,6 +497,8 @@ function iterateNetJson(level, depth) {
         html += "<br />";
         html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
         html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
+        html += "Virtual: " + (isVirtual ? "<span class='badge bg-secondary'><i class='fa fa-ghost'></i> Yes</span>" : "<span class='badge bg-light text-dark'>No</span>") +
+            " <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.toggleVirtualNode(\"" + key + "\")'><i class='fa " + (isVirtual ? "fa-toggle-on" : "fa-toggle-off") + "'></i> Toggle</button><br />";
         let num_children = 0;
         for (let i=0; i<shaped_devices.length; i++) {
             if (shaped_devices[i].parent_node === key) {
@@ -456,12 +536,13 @@ function flattenNetwork() {
 
 function addNetworkNode() {
     let newName = $("#njsNewNodeName").val();
-    let newDown = parseInt($("#njsNewNodeDown").val());
-    let newUp = parseInt($("#njsNewNodeUp").val());
-    if (newName.length > 0 && newDown > 1 && newUp > 1) {
+    let newDown = parseFloat($("#njsNewNodeDown").val());
+    let newUp = parseFloat($("#njsNewNodeUp").val());
+    if (newName.length > 0 && !isNaN(newDown) && !isNaN(newUp) && newDown >= MIN_NODE_MBPS && newUp >= MIN_NODE_MBPS) {
         network_json[newName] = {
             downloadBandwidthMbps: newDown,
             uploadBandwidthMbps: newUp,
+            virtual: false,
             children: {}
         }
     }
@@ -494,14 +575,14 @@ function promoteNode(nodeId) {
 }
 
 function nodeSpeedChange(nodeId, direction) {
-    let newVal = prompt("New download value in Mbps");
-    newVal = parseInt(newVal);
+    let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
+    newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
-        alert("That's not an integer!");
+        alert("Please enter a valid number");
         return;
     }
-    if (newVal < 1) {
-        alert("New value must be greater than 1");
+    if (newVal < MIN_NODE_MBPS) {
+        alert(`New value must be at least ${MIN_NODE_MBPS} Mbps`);
         return;
     }
 
@@ -519,6 +600,22 @@ function nodeSpeedChange(nodeId, direction) {
 
             if (value.children != null) {
                 iterate(value.children, depth+1);
+            }
+        }
+    }
+
+    iterate(network_json);
+    RenderNetworkJson();
+}
+
+function toggleVirtualNode(nodeId) {
+    function iterate(tree) {
+        for (const [key, value] of Object.entries(tree)) {
+            if (key === nodeId) {
+                value.virtual = !(value && value.virtual === true);
+            }
+            if (value.children != null) {
+                iterate(value.children);
             }
         }
     }
@@ -640,7 +737,7 @@ function makeSheetBox(rowId, boxId, value, small=false) {
 }
 
 function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" step=\"any\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
     return html;
 }
 
@@ -724,82 +821,6 @@ function newSdRow() {
 function deleteSdRow(id) {
     shaped_devices.splice(id, 1);
     shapedDevices();
-}
-
-function checkIpv4(ip) {
-    const ipv4Pattern =
-        /^(\d{1,3}\.){3}\d{1,3}$/;
-
-    if (ip.indexOf('/') === -1) {
-        return ipv4Pattern.test(ip);
-    } else {
-        let parts = ip.split('/');
-        return ipv4Pattern.test(parts[0]);
-    }
-}
-
-function checkIpv6(ip) {
-    // Check if the input is a valid IPv6 address with prefix
-    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
-    return regex.test(ip);
-}
-
-function checkIpv4Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv4.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv4[j][0] + "/" + sd.ipv4[j][1];
-                } else {
-                    formatted = sd.ipv4[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-function checkIpv6Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv6.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv6[j][0] + "/" + sd.ipv6[j][1];
-                } else {
-                    formatted = sd.ipv6[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-function validNodeList() {
-    let nodes = [];
-
-    function iterate(data, level) {
-        for (const [key, value] of Object.entries(data)) {
-            nodes.push(key);
-            if (value.children != null)
-                iterate(value.children, level+1);
-        }
-    }
-
-    iterate(network_json, 0);
-
-    return nodes;
 }
 
 function checkIpv4(ip) {
@@ -1026,56 +1047,56 @@ function validateSd() {
         // Download Min
         controlId = "#" + rowPrefix(i, "download_min_mbps");
         let download_min = $(controlId).val();
-        download_min = parseInt(download_min);
+        download_min = parseFloat(download_min);
         if (isNaN(download_min)) {
             valid = false;
             errors.push("Download min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_min < 1) {
+        } else if (download_min < 0.1) {
             valid = false;
-            errors.push("Download min must be 1 or more");
+            errors.push("Download min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Min
         controlId = "#" + rowPrefix(i, "upload_min_mbps");
         let upload_min = $(controlId).val();
-        upload_min = parseInt(upload_min);
+        upload_min = parseFloat(upload_min);
         if (isNaN(upload_min)) {
             valid = false;
             errors.push("Upload min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_min < 1) {
+        } else if (upload_min < 0.1) {
             valid = false;
-            errors.push("Upload min must be 1 or more");
+            errors.push("Upload min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Download Max
         controlId = "#" + rowPrefix(i, "download_max_mbps");
         let download_max = $(controlId).val();
-        upload_min = parseInt(download_max);
+        download_max = parseFloat(download_max);
         if (isNaN(download_max)) {
             valid = false;
             errors.push("Download Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_max < 1) {
+        } else if (download_max < 0.2) {
             valid = false;
-            errors.push("Download Max must be 1 or more");
+            errors.push("Download Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Max
         controlId = "#" + rowPrefix(i, "upload_max_mbps");
         let upload_max = $(controlId).val();
-        upload_min = parseInt(upload_max);
+        upload_max = parseFloat(upload_max);
         if (isNaN(upload_max)) {
             valid = false;
             errors.push("Upload Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_max < 1) {
+        } else if (upload_max < 0.2) {
             valid = false;
-            errors.push("Upload Max must be 1 or more");
+            errors.push("Upload Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
     }
@@ -1123,10 +1144,10 @@ function saveNetAndDevices() {
         row.mac = $("#" + rowPrefix(i, "mac")).val();
         row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
         row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
-        row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
-        row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
-        row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
-        row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+        row.download_min_mbps = parseFloat($("#" + rowPrefix(i, "download_min_mbps")).val());
+        row.upload_min_mbps = parseFloat($("#" + rowPrefix(i, "upload_min_mbps")).val());
+        row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
+        row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
         row.comment = $("#" + rowPrefix(i, "comment")).val();
     }
 
@@ -1136,19 +1157,21 @@ function saveNetAndDevices() {
         shaped_devices: shaped_devices,
         network_json: network_json,
     }
-    $.ajax({
-        type: "POST",
-        url: "/local-api/updateNetworkAndDevices",
-        contentType:"application/json",
-        data: JSON.stringify(submission),
-        success: (data) => {
-            if (data === "Ok") {
+    sendWsRequest(
+        "UpdateNetworkAndDevicesResult",
+        { UpdateNetworkAndDevices: submission },
+        (msg) => {
+            if (msg && msg.ok) {
                 alert("Configuration saved");
             } else {
-                alert("Configuration not saved: " + data);
+                const message = msg && msg.message ? msg.message : "Error";
+                alert("Configuration not saved: " + message);
             }
-        }
-    })
+        },
+        () => {
+            alert("Configuration not saved: Error");
+        },
+    );
 }
 
 function shapedDevices() {
@@ -1197,6 +1220,34 @@ function fillNicList(id, selected) {
         html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
     }
     select.html(html);
+}
+
+function fillQooProfileList(selectedId) {
+    const select = $("#bindQooProfile");
+    if (!qoo_profiles || !qoo_profiles.profiles) {
+        select.html("<option value=''>Default</option>");
+        select.val(selectedId === null || selectedId === undefined ? "" : selectedId);
+        return;
+    }
+
+    const defaultId = qoo_profiles.default_profile_id || "";
+    const defaultProfile = qoo_profiles.profiles.find(p => p.id === defaultId);
+    const defaultLabel = defaultProfile ? defaultProfile.name : (defaultId || "Web browsing");
+
+    let html = `<option value=''> (default) ${defaultLabel} </option>`;
+    for (let i = 0; i < qoo_profiles.profiles.length; i++) {
+        const p = qoo_profiles.profiles[i];
+        html += "<option value='";
+        html += p.id;
+        html += "'>";
+        html += p.name;
+        html += " (";
+        html += p.id;
+        html += ")";
+        html += "</option>";
+    }
+    select.html(html);
+    select.val(selectedId === null || selectedId === undefined ? "" : selectedId);
 }
 
 function buildNICList(id, selected, disabled=false) {
@@ -1248,53 +1299,99 @@ function start() {
     window.renameNode = renameNode;
     window.deleteNode = deleteNode;
     window.nodeSpeedChange = nodeSpeedChange;
+    window.toggleVirtualNode = toggleVirtualNode;
     window.deleteSdRow = deleteSdRow;
 
     // Old
     display();
-    $.get("/local-api/adminCheck", (is_admin) => {
-        if (!is_admin) {
-            $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
-            $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
-        } else {
-            // Handle Saving ispConfig.py
-            $("#btnSaveIspConfig").on('click', (data) => {
-                saveConfig();
-            });
-            $("#btnSaveNetDevices").on('click', (data) => {
-                saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
-                    if (success) {
-                        alert("Network configuration saved successfully!");
-                    } else {
-                        alert("Failed to save network configuration: " + message);
-                    }
+    sendWsRequest(
+        "AdminCheck",
+        { AdminCheck: {} },
+        (msg) => {
+            const is_admin = msg && msg.ok;
+            if (!is_admin) {
+                $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
+                $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
+            } else {
+                // Handle Saving ispConfig.py
+                $("#btnSaveIspConfig").on('click', (data) => {
+                    saveConfig();
                 });
-            });
-        }
-        $.get("/local-api/getConfig", (data) => {
-            lqosd_config = data;
-            console.log("Bindings Done");
-            $.get("/local-api/listNics", (data) => {
-                nics = data;
-                console.log(lqosd_config);
-                doBindings();
-
-                // User management
-                if (is_admin) {
-                    userManager();
-                }
-
-                $.get("/local-api/networkJson", (njs) => {
-                    network_json = njs;
-                    $.get("/local-api/allShapedDevices", (data) => {
-                        shaped_devices = data;
-                        shapedDevices(data);
-                        RenderNetworkJson();
-                    });
+                $("#btnSaveNetDevices").on('click', (data) => {
+                    saveNetAndDevices();
                 });
-            });
-        });
-    });
+            }
+
+            sendWsRequest(
+                "GetConfig",
+                { GetConfig: {} },
+                (cfgMsg) => {
+                    lqosd_config = ensureSplynxSection(cfgMsg.data);
+                    console.log("Bindings Done");
+                    sendWsRequest(
+                        "ListNics",
+                        { ListNics: {} },
+                        (nicsMsg) => {
+                            nics = nicsMsg.data;
+                            sendWsRequest(
+                                "QooProfiles",
+                                { QooProfiles: {} },
+                                (profilesMsg) => {
+                                    qoo_profiles = profilesMsg.data;
+                                    fillQooProfileList(lqosd_config?.qoo_profile_id);
+                                    console.log(lqosd_config);
+                                    doBindings();
+
+                                    // User management
+                                    if (is_admin) {
+                                        userManager();
+                                    }
+
+                                    sendWsRequest(
+                                        "NetworkJson",
+                                        { NetworkJson: {} },
+                                        (netMsg) => {
+                                            network_json = netMsg.data;
+                                            sendWsRequest(
+                                                "AllShapedDevices",
+                                                { AllShapedDevices: {} },
+                                                (sdMsg) => {
+                                                    shaped_devices = sdMsg.data;
+                                                    shapedDevices();
+                                                    RenderNetworkJson();
+                                                },
+                                                () => {
+                                                    alert("Unable to load shaped devices");
+                                                },
+                                            );
+                                        },
+                                        () => {
+                                            alert("Unable to load network.json");
+                                        },
+                                    );
+                                },
+                                () => {
+                                    // Profiles are optional for now; still allow config to load.
+                                    fillQooProfileList(lqosd_config?.qoo_profile_id);
+                                    console.log(lqosd_config);
+                                    doBindings();
+                                },
+                            );
+                        },
+                        () => {
+                            alert("Unable to list NICs");
+                        },
+                    );
+                },
+                () => {
+                    alert("Unable to load configuration");
+                },
+            );
+        },
+        () => {
+            alert("Unable to confirm admin status");
+        },
+    );
 }
 
 $(document).ready(start);

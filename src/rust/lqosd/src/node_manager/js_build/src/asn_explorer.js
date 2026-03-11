@@ -1,14 +1,24 @@
 import {clearDiv} from "./helpers/builders";
 import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
+import {get_ws_client} from "./pubsub/ws";
 
-//const API_URL = "local-api/";
-const API_URL = "local-api/";
-const LIST_URL = API_URL + "asnList";
-const FLOW_URL = API_URL + "flowTimeline/";
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 let asnList = [];
 let countryList = [];
 let protocolList = [];
+let asnListLoaded = false;
+let countryListLoaded = false;
+let protocolListLoaded = false;
+let emptyBannerRendered = false;
 let asnData = [];
 let graphMinTime = Number.MAX_SAFE_INTEGER;
 let graphMaxTime = Number.MIN_SAFE_INTEGER;
@@ -28,54 +38,110 @@ function unixTimeToDate(unixTime) {
     return new Date(unixTime * 1000).toLocaleString();
 }
 
+function maybeRenderEmptyBanner() {
+    if (emptyBannerRendered) return;
+    if (!asnListLoaded || !countryListLoaded || !protocolListLoaded) return;
+    if (asnList.length > 0 || countryList.length > 0 || protocolList.length > 0) return;
+
+    let target = document.getElementById("asnDetails");
+    if (!target) return;
+
+    emptyBannerRendered = true;
+    clearDiv(target);
+
+    let alert = document.createElement("div");
+    alert.classList.add("alert", "alert-info", "mt-2");
+
+    let title = document.createElement("div");
+    title.classList.add("fw-semibold");
+    title.innerText = "No recent flow data to display.";
+    alert.appendChild(title);
+
+    let body = document.createElement("div");
+    body.classList.add("small");
+    body.innerText =
+        "ASN Explorer is populated from recently completed two-way flows (roughly the last 60 seconds). " +
+        "On very low traffic networks there may be nothing to show yet. Generate some traffic and refresh.";
+    alert.appendChild(body);
+
+    target.appendChild(alert);
+}
+
+function renderDropdown({ targetId, buttonText, data, emptyText, buildItem }) {
+    let parentDiv = document.createElement("div");
+    parentDiv.classList.add("dropdown");
+
+    let button = document.createElement("button");
+    button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
+    button.type = "button";
+    button.innerHTML = buttonText;
+    button.setAttribute("data-bs-toggle", "dropdown");
+    button.setAttribute("aria-expanded", "false");
+    parentDiv.appendChild(button);
+
+    let dropdownList = document.createElement("ul");
+    dropdownList.classList.add("dropdown-menu");
+
+    if (!data || data.length === 0) {
+        let li = document.createElement("li");
+        li.classList.add("dropdown-item", "disabled");
+        li.setAttribute("aria-disabled", "true");
+        li.tabIndex = -1;
+        li.innerText = emptyText || "No recent flow data";
+        dropdownList.appendChild(li);
+    } else {
+        data.forEach((row) => {
+            let li = buildItem(row);
+            if (li) dropdownList.appendChild(li);
+        });
+    }
+
+    parentDiv.appendChild(dropdownList);
+
+    let target = document.getElementById(targetId);
+    clearDiv(target);
+    target.appendChild(parentDiv);
+}
+
 function asnDropdown() {
-    $.get(LIST_URL, (data) => {
+    listenOnce("AsnList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         asnList = data;
+        asnListLoaded = true;
 
         // Sort data by row.count, descending
         data.sort((a, b) => {
             return b.count - a.count;
         });
 
-        // Build the dropdown
-        let parentDiv = document.createElement("div");
-        parentDiv.classList.add("dropdown");
-        let button = document.createElement("button");
-        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
-        button.type = "button";
-        button.innerHTML = "Select ASN";
-        button.setAttribute("data-bs-toggle", "dropdown");
-        button.setAttribute("aria-expanded", "false");
-        parentDiv.appendChild(button);
-        let dropdownList = document.createElement("ul");
-        dropdownList.classList.add("dropdown-menu");
-
-        if (data.length === 0) {
-            data.push({asn: 0, name: "No data", count: 0});
-        }
-
-        // Add items
-        data.forEach((row) => {
-            let li = document.createElement("li");
-            li.innerHTML = "#" + row.asn + " " + row.name + " (" + row.count + ")";
-            li.classList.add("dropdown-item");
-            li.onclick = () => {
-                selectAsn(row.asn);
-                renderMode = "asn";
-            };
-            dropdownList.appendChild(li);
+        renderDropdown({
+            targetId: "asnList",
+            buttonText: "Select ASN",
+            data,
+            emptyText: "No recent flow data",
+            buildItem: (row) => {
+                if (!row) return null;
+                let li = document.createElement("li");
+                li.innerText = `#${row.asn} ${row.name} (${row.count})`;
+                li.classList.add("dropdown-item");
+                li.onclick = () => {
+                    renderMode = "asn";
+                    selectAsn(row.asn);
+                };
+                return li;
+            },
         });
 
-        parentDiv.appendChild(dropdownList);
-        let target = document.getElementById("asnList");
-        clearDiv(target);
-        target.appendChild(parentDiv);
+        maybeRenderEmptyBanner();
     });
+    wsClient.send({ AsnList: {} });
 }
 
 function countryDropdown() {
-    $.get(API_URL + "countryList", (data) => {
+    listenOnce("CountryList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         countryList = data;
+        countryListLoaded = true;
 
         // Sort data by row.count, descending
         data.sort((a, b) => {
@@ -83,41 +149,41 @@ function countryDropdown() {
         });
         //console.log(data);
 
-        // Build the dropdown
-        let parentDiv = document.createElement("div");
-        parentDiv.classList.add("dropdown");
-        let button = document.createElement("button");
-        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
-        button.type = "button";
-        button.innerHTML = "Select Country";
-        button.setAttribute("data-bs-toggle", "dropdown");
-        button.setAttribute("aria-expanded", "false");
-        parentDiv.appendChild(button);
-        let dropdownList = document.createElement("ul");
-        dropdownList.classList.add("dropdown-menu");
+        renderDropdown({
+            targetId: "countryList",
+            buttonText: "Select Country",
+            data,
+            emptyText: "No recent flow data",
+            buildItem: (row) => {
+                if (!row) return null;
+                let li = document.createElement("li");
+                li.classList.add("dropdown-item");
+                li.onclick = () => {
+                    renderMode = "country";
+                    selectCountry(row.iso_code);
+                };
 
-        // Add items
-        data.forEach((row) => {
-            let li = document.createElement("li");
-            li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code.toLowerCase() + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
-            li.classList.add("dropdown-item");
-            li.onclick = () => {
-                selectCountry(row.iso_code);
-                renderMode = "country";
-            };
-            dropdownList.appendChild(li);
+                let img = document.createElement("img");
+                img.alt = row.iso_code;
+                img.src = `flags/${row.iso_code.toLowerCase()}.svg`;
+                img.height = 12;
+                img.width = 12;
+                li.appendChild(img);
+                li.appendChild(document.createTextNode(` ${row.name} (${row.count})`));
+                return li;
+            },
         });
 
-        parentDiv.appendChild(dropdownList);
-        let target = document.getElementById("countryList");
-        clearDiv(target);
-        target.appendChild(parentDiv);
+        maybeRenderEmptyBanner();
     });
+    wsClient.send({ CountryList: {} });
 }
 
 function protocolDropdown() {
-    $.get(API_URL + "protocolList", (data) => {
+    listenOnce("ProtocolList", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         protocolList = data;
+        protocolListLoaded = true;
 
         // Sort data by row.count, descending
         data.sort((a, b) => {
@@ -125,59 +191,54 @@ function protocolDropdown() {
         });
         //console.log(data);
 
-        // Build the dropdown
-        let parentDiv = document.createElement("div");
-        parentDiv.classList.add("dropdown");
-        let button = document.createElement("button");
-        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
-        button.type = "button";
-        button.innerHTML = "Select Protocol";
-        button.setAttribute("data-bs-toggle", "dropdown");
-        button.setAttribute("aria-expanded", "false");
-        parentDiv.appendChild(button);
-        let dropdownList = document.createElement("ul");
-        dropdownList.classList.add("dropdown-menu");
-
-        // Add items
-        data.forEach((row) => {
-            let li = document.createElement("li");
-            li.innerHTML = row.protocol + " (" + row.count + ")";
-            li.classList.add("dropdown-item");
-            li.onclick = () => {
-                selectProtocol(row.protocol);
-                renderMode = "protocol";
-            };
-            dropdownList.appendChild(li);
+        renderDropdown({
+            targetId: "protocolList",
+            buttonText: "Select Protocol",
+            data,
+            emptyText: "No recent flow data",
+            buildItem: (row) => {
+                if (!row) return null;
+                let li = document.createElement("li");
+                li.innerText = `${row.protocol} (${row.count})`;
+                li.classList.add("dropdown-item");
+                li.onclick = () => {
+                    renderMode = "protocol";
+                    selectProtocol(row.protocol);
+                };
+                return li;
+            },
         });
 
-        parentDiv.appendChild(dropdownList);
-        let target = document.getElementById("protocolList");
-        clearDiv(target);
-        target.appendChild(parentDiv);
+        maybeRenderEmptyBanner();
     });
+    wsClient.send({ ProtocolList: {} });
 }
 
 function selectAsn(asn) {
-    $.get(FLOW_URL + encodeURI(asn), (data) => {
+    listenOnce("AsnFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(asn, data);
     });
+    wsClient.send({ AsnFlowTimeline: { asn: asn } });
 }
 
 function selectCountry(country) {
-    let url = API_URL + "countryTimeline/" + encodeURI(country);
-    $.get(url, (data) => {
+    listenOnce("CountryFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(country, data);
     });
+    wsClient.send({ CountryFlowTimeline: { iso_code: country } });
 }
 
 function selectProtocol(protocol) {
-    let url = API_URL + "protocolTimeline/" + encodeURI(protocol.replace('/', '_'));
-    $.get(url, (data) => {
+    listenOnce("ProtocolFlowTimeline", (msg) => {
+        const data = msg && msg.data ? msg.data : [];
         page = 0;
         renderAsn(protocol, data);
     });
+    wsClient.send({ ProtocolFlowTimeline: { protocol: protocol } });
 }
 
 function renderAsn(asn, data) {
@@ -206,6 +267,18 @@ function renderAsn(asn, data) {
     }
 
     let target = document.getElementById("asnDetails");
+
+    if (!data || data.length === 0) {
+        asnData = [];
+        clearDiv(target);
+        target.appendChild(heading);
+
+        let alert = document.createElement("div");
+        alert.classList.add("alert", "alert-secondary", "mt-2");
+        alert.innerText = "No recent flows match this selection yet.";
+        target.appendChild(alert);
+        return;
+    }
 
     // Get the flow data
     asnData = data;
@@ -310,13 +383,28 @@ function renderAsn(asn, data) {
             clientLink.style.textOverflow = "ellipsis";
             clientCol.appendChild(clientLink);
         } else {
+            clientCol.classList.add("redactable");
             clientCol.innerText = row.circuit_name;
         }
         div.appendChild(clientCol);
 
         let remoteCol = document.createElement("div");
         remoteCol.classList.add("col-1", "text-secondary", "small");
-        remoteCol.innerText = row.remote_ip;
+        const remoteIp = String(row.remote_ip || "").trim();
+        remoteCol.appendChild(document.createTextNode(remoteIp));
+        if (remoteIp) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn btn-link btn-sm p-0 ms-1";
+            btn.title = "Exclude RTT for this remote endpoint (opens Flow Tracking config)";
+            btn.innerHTML = "<i class='fa fa-ban'></i>";
+            btn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openFlowRttExcludeWizard({ remoteIp, sourceLabel: "ASN Explorer" });
+            });
+            remoteCol.appendChild(btn);
+        }
         div.appendChild(remoteCol);
 
         let protocolCol = document.createElement("div");
@@ -352,7 +440,7 @@ function renderAsn(asn, data) {
 
 
     let prevButton = document.createElement("button");
-    nextButton.classList.add("btn", "btn-secondary", "btn-sm", "me-2");
+    prevButton.classList.add("btn", "btn-secondary", "btn-sm", "me-2");
     prevButton.innerHTML = "<i class='fa fa-arrow-left'></i> Prev";
     prevButton.onclick = () => {
         page--;
@@ -409,6 +497,7 @@ function renderAsn(asn, data) {
 
 function timeToX(time, width) {
     let range = graphMaxTime - graphMinTime;
+    if (range <= 0) return 0;
     let offset = time - graphMinTime;
     return (offset / range) * width;
 }

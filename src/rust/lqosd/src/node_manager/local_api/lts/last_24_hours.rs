@@ -1,7 +1,5 @@
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
-use axum::extract::Path;
 use axum::http::StatusCode;
-use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -16,7 +14,7 @@ pub struct ThroughputData {
     median_up: i64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FullPacketData {
     pub time: i64, // Unix timestamp
     pub max_down: i64,
@@ -45,7 +43,7 @@ pub struct FullPacketData {
     pub median_icmp_up: i64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CakeData {
     time: i64, // Unix timestamp
     max_marks_down: i64,
@@ -69,19 +67,19 @@ pub struct PercentShapedWeb {
     pub percent_shaped: f64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FlowCountViewWeb {
     time: i64,
     shaper_id: i64,
     flow_count: f64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ShaperRttHistogramEntry {
     pub value: i32,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Top10Circuit {
     pub shaper_id: i64,
     pub shaper_name: String,
@@ -92,7 +90,7 @@ pub struct Top10Circuit {
     pub rxmit: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Worst10RttCircuit {
     pub shaper_id: i64,
     pub shaper_name: String,
@@ -103,7 +101,7 @@ pub struct Worst10RttCircuit {
     pub rxmit: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Worst10RxmitCircuit {
     pub shaper_id: i64,
     pub shaper_name: String,
@@ -138,10 +136,11 @@ pub struct RecentMedians {
     pub last_week: (i64, i64),
 }
 
-pub async fn throughput_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<ThroughputData>>, StatusCode> {
+pub async fn throughput_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<ThroughputData>, StatusCode> {
+    super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx })
@@ -151,13 +150,14 @@ pub async fn throughput_period(
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn packets_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<FullPacketData>>, StatusCode> {
+pub async fn packets_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<FullPacketData>, StatusCode> {
+    super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx })
@@ -170,13 +170,14 @@ pub async fn packets_period(
         warn!("Error getting packets period: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn percent_shaped_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
+pub async fn percent_shaped_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<PercentShapedWeb>, StatusCode> {
+    super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx })
@@ -189,13 +190,14 @@ pub async fn percent_shaped_period(
         warn!("Error getting percent shaped: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn percent_flows_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
+pub async fn percent_flows_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<FlowCountViewWeb>, StatusCode> {
+    super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx })
@@ -208,13 +210,14 @@ pub async fn percent_flows_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn rtt_histo_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<ShaperRttHistogramEntry>>, StatusCode> {
+pub async fn rtt_histo_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<ShaperRttHistogramEntry>, StatusCode> {
+    super::insight_gate().await?;
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -228,13 +231,14 @@ pub async fn rtt_histo_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn top10_downloaders_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<Top10Circuit>>, StatusCode> {
+pub async fn top10_downloaders_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<Top10Circuit>, StatusCode> {
+    super::insight_gate().await?;
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -248,13 +252,14 @@ pub async fn top10_downloaders_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn worst10_rtt_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<Worst10RttCircuit>>, StatusCode> {
+pub async fn worst10_rtt_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<Worst10RttCircuit>, StatusCode> {
+    super::insight_gate().await?;
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -268,13 +273,14 @@ pub async fn worst10_rtt_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn worst10_rxmit_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<Worst10RxmitCircuit>>, StatusCode> {
+pub async fn worst10_rxmit_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<Worst10RxmitCircuit>, StatusCode> {
+    super::insight_gate().await?;
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -288,13 +294,14 @@ pub async fn worst10_rxmit_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn top10_flows_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<AsnFlowSizeWeb>>, StatusCode> {
+pub async fn top10_flows_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<AsnFlowSizeWeb>, StatusCode> {
+    super::insight_gate().await?;
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -308,12 +315,13 @@ pub async fn top10_flows_period(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn recent_medians(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-) -> Result<Json<Vec<RecentMedians>>, StatusCode> {
+pub async fn recent_medians_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+) -> Result<Vec<RecentMedians>, StatusCode> {
+    super::insight_gate().await?;
     tracing::debug!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
@@ -327,13 +335,14 @@ pub async fn recent_medians(
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(throughput))
+    Ok(throughput)
 }
 
-pub async fn cake_period(
-    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-    Path(seconds): Path<i32>,
-) -> Result<Json<Vec<CakeData>>, StatusCode> {
+pub async fn cake_period_data(
+    shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    seconds: i32,
+) -> Result<Vec<CakeData>, StatusCode> {
+    super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::CakeTotals { seconds, reply: tx })
@@ -346,5 +355,5 @@ pub async fn cake_period(
         warn!("Error getting cake stats: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Json(response))
+    Ok(response)
 }

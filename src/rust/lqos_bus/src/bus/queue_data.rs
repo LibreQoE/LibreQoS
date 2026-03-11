@@ -15,6 +15,10 @@ pub struct QueueStoreTransit {
     //pub prev_upload: Option<CakeTransit>,
     pub current_download: CakeTransit,
     pub current_upload: CakeTransit,
+    /// Queue kind for downlink (e.g., "cake" or "fq_codel")
+    pub kind_down: String,
+    /// Queue kind for uplink (e.g., "cake" or "fq_codel")
+    pub kind_up: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]

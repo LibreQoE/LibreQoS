@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import routeros_api
 import csv
+import sys
 
 def pullMikrotikIPv6(CsvPath):
 	import routeros_api
@@ -68,7 +69,7 @@ def pullMikrotikIPv6(CsvPath):
 				ipv4 = macToIPv4[mac]
 				ipv4ToIPv6[ipv4] = ipv6
 			except:
-				print('Failed to find associated IPv4 for ' + ipv6)
+				print('Failed to find associated IPv4 for ' + ipv6, file=sys.stderr)
 	
 	return json.dumps(ipv4ToIPv6)
 

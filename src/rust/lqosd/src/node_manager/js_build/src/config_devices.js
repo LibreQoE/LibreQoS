@@ -1,163 +1,794 @@
-import { renderConfigMenu, saveNetworkAndDevices, validNodeList } from "./config/config_helper";
+import {
+    loadAllShapedDevices,
+    loadNetworkJson,
+    renderConfigMenu,
+    saveNetworkAndDevices,
+    validNodeList,
+} from "./config/config_helper";
 
-let shaped_devices = null;
+let shaped_devices = [];
 let network_json = null;
+let filtered_indices = [];
+let page = 0;
+let page_size = 25;
+let search_term = "";
+let invalid_indices = new Set();
+let edit_index = null;
+let creating_new = false;
+let search_timer = null;
 
-function rowPrefix(rowId, boxId) {
-    return "sdr_" + rowId + "_" + boxId;
-}
-
-function makeSheetBox(rowId, boxId, value, small=false) {
-    let html = "";
-    if (!small) {
-        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\"></input></td>"
-    } else {
-        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'></input></td>"
-    }
-    return html;
-}
-
-function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;' step=\"0.1\"></input></td>"
-    return html;
-}
-
-function separatedIpArray(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'>";
-    let val = "";
-    for (let i = 0; i < value.length; i++) {
-        val += value[i][0];
-        val += "/";
-        val += value[i][1];
-        val += ", ";
-    }
-    if (val.length > 0) {
-        val = val.substring(0, val.length-2);
-    }
-    html += "<input id='" + rowPrefix(rowId, boxId) + "' type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'></input>";
-    html += "</td>";
-    return html;
-}
-
-function nodeDropDown(rowId, boxId, selectedNode) {
-    let html = "<td style='padding: 0px'>";
-    html += "<select id='" + rowPrefix(rowId, boxId) + "' style='font-size: 8pt; width: 150px;'>";
-
-    function iterate(data, level) {
-        let html = "";
-        for (const [key, value] of Object.entries(data)) {
-            html += "<option value='" + key + "'";
-            if (key === selectedNode) html += " selected";
-            html += ">";
-            for (let i=0; i<level; i++) html += "-";
-            html += key;
-            html += "</option>";
-
-            if (value.children != null)
-                html += iterate(value.children, level+1);
-        }
-        return html;
-    }
-    html += iterate(network_json, 0);
-
-    html += "</select>";
-    html += "</td>";
-    return html;
-}
-
-function newSdRow() {
-    shaped_devices.unshift({
+function defaultDevice() {
+    return {
         circuit_id: "new_circuit",
         circuit_name: "new circuit",
         device_id: "new_device",
         device_name: "new device",
+        parent_node: "",
         mac: "",
-        ipv4: "",
-        ipv6: "",
+        ipv4: [],
+        ipv6: [],
         download_min_mbps: 100,
         upload_min_mbps: 100,
         download_max_mbps: 100,
         upload_max_mbps: 100,
         comment: "",
+        sqm_override: "",
+    };
+}
+
+function escapeHtml(value) {
+    const text = value === null || value === undefined ? "" : String(value);
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function formatNumber(value) {
+    const numeric = parseFloat(value);
+    if (!Number.isFinite(numeric)) return "-";
+    let formatted = numeric.toFixed(3);
+    formatted = formatted.replace(/\.?0+$/, "");
+    return formatted;
+}
+
+function formatIdCell(value, maxLength = 5) {
+    const raw = value === null || value === undefined ? "" : String(value);
+    const full = escapeHtml(raw);
+    if (!raw) {
+        return "<span class='text-body-secondary'>-</span>";
+    }
+    let display = raw;
+    if (raw.length > maxLength) {
+        display = raw.slice(0, maxLength) + "...";
+    }
+    return (
+        "<span class='font-monospace' title='" +
+        full +
+        "'>" +
+        escapeHtml(display) +
+        "</span>"
+    );
+}
+
+function formatRateHtml(down, up) {
+    return (
+        "<div class='small'>" +
+        "<div><span class='text-body-secondary'><i class='fa fa-arrow-down' aria-hidden='true'></i></span> " +
+        escapeHtml(formatNumber(down)) +
+        "</div>" +
+        "<div><span class='text-body-secondary'><i class='fa fa-arrow-up' aria-hidden='true'></i></span> " +
+        escapeHtml(formatNumber(up)) +
+        "</div>" +
+        "</div>"
+    );
+}
+
+function formatIpAddr(address, family) {
+    if (address === null || address === undefined) return "";
+    if (Array.isArray(address)) {
+        if (family === 4 && address.length === 4) {
+            return address.map((part) => String(part)).join(".");
+        }
+        if (family === 6) {
+            if (address.length === 16) {
+                const groups = [];
+                for (let i = 0; i < 16; i += 2) {
+                    const high = Number(address[i]) || 0;
+                    const low = Number(address[i + 1]) || 0;
+                    const value = ((high << 8) | low) >>> 0;
+                    groups.push(value.toString(16));
+                }
+                return groups.join(":");
+            }
+            if (address.length === 8) {
+                return address.map((part) => Number(part).toString(16)).join(":");
+            }
+            return address.map((part) => String(part)).join(":");
+        }
+        return address.map((part) => String(part)).join(".");
+    }
+    return String(address);
+}
+
+function formatIpTuple(tuple, defaultPrefix) {
+    if (!tuple || tuple.length === 0) return "";
+    const addr = tuple[0] ? formatIpAddr(tuple[0], defaultPrefix === 128 ? 6 : 4) : "";
+    const prefix = Number.isFinite(tuple[1]) ? tuple[1] : defaultPrefix;
+    if (!addr) return "";
+    return addr + "/" + prefix;
+}
+
+function formatIpList(list, defaultPrefix) {
+    if (!Array.isArray(list) || list.length === 0) return "";
+    return list
+        .map((tuple) => formatIpTuple(tuple, defaultPrefix))
+        .filter((val) => val.length > 0)
+        .map((val) => escapeHtml(val))
+        .join("<br>");
+}
+
+function formatIpColumn(device) {
+    const v4 = formatIpList(device.ipv4, 32);
+    const v6 = formatIpList(device.ipv6, 128);
+    if (!v4 && !v6) {
+        return "<span class='text-body-secondary'>-</span>";
+    }
+
+    let html = "<div class='small redactable'>";
+    if (v4) {
+        html += "<div><span class='text-body-secondary'>v4</span><br>" + v4 + "</div>";
+    }
+    if (v6) {
+        html += "<div class='mt-1'><span class='text-body-secondary'>v6</span><br>" + v6 + "</div>";
+    }
+    html += "</div>";
+    return html;
+}
+
+function ipListToText(list, defaultPrefix) {
+    if (!Array.isArray(list) || list.length === 0) return "";
+    return list
+        .map((tuple) => formatIpTuple(tuple, defaultPrefix))
+        .filter((val) => val.length > 0)
+        .join("\n");
+}
+
+function parseIpInput(text, family) {
+    if (!text) return [];
+    const defaultPrefix = family === 6 ? 128 : 32;
+    const tokens = text.split(/[\n,]+/);
+    const result = [];
+    tokens.forEach((token) => {
+        const trimmed = token.trim();
+        if (!trimmed) return;
+        const parts = trimmed.split("/");
+        const addr = parts[0].trim();
+        if (!addr) return;
+        let prefix = defaultPrefix;
+        if (parts.length > 1 && parts[1].trim().length > 0) {
+            const parsed = parseInt(parts[1].trim(), 10);
+            if (!Number.isNaN(parsed)) prefix = parsed;
+        }
+        result.push([addr, prefix]);
     });
-    shapedDevices();
+    return result;
 }
 
-function deleteSdRow(id) {
-    shaped_devices.splice(id, 1);
-    shapedDevices();
+function parseSqmOverride(raw) {
+    const normalized = (raw || "").toLowerCase();
+    let down = "";
+    let up = "";
+    if (normalized.includes("/")) {
+        const parts = normalized.split("/");
+        down = (parts[0] || "").trim();
+        up = (parts[1] || "").trim();
+    } else if (normalized.length > 0) {
+        down = normalized.trim();
+        up = normalized.trim();
+    }
+    return { down, up };
 }
 
-function shapedDevices() {
-    console.log(shaped_devices);
-    let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
-    html += "<thead style='position: sticky; top: 0; height: 50px; background: navy; color: white;'>";
-    html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
-    html += "</thead>";
-    for (var i=0; i<shaped_devices.length; i++) {
-        let row = shaped_devices[i];
-        html += "<tr>";
-        html += makeSheetBox(i, "circuit_id", row.circuit_id, true);
-        html += makeSheetBox(i, "circuit_name", row.circuit_name, true);
-        html += makeSheetBox(i, "device_id", row.device_id, true);
-        html += makeSheetBox(i, "device_name", row.device_name, true);
-        html += nodeDropDown(i, "parent_node", row.parent_node, true);
-        html += makeSheetBox(i, "mac", row.mac, true);
-        html += separatedIpArray(i, "ipv4", row.ipv4);
-        html += separatedIpArray(i, "ipv6", row.ipv6);
-        html += makeSheetNumberBox(i, "download_min_mbps", row.download_min_mbps);
-        html += makeSheetNumberBox(i, "upload_min_mbps", row.upload_min_mbps);
-        html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
-        html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
-        html += makeSheetBox(i, "comment", row.comment, true);
-        html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
+function formatSqmDisplay(raw) {
+    const parsed = parseSqmOverride(raw);
+    const down = parsed.down || "default";
+    const up = parsed.up || "default";
+    return (
+        "<div class='small'>" +
+        "<div><span class='text-body-secondary'><i class='fa fa-arrow-down' aria-hidden='true'></i></span> " +
+        escapeHtml(down) +
+        "</div>" +
+        "<div><span class='text-body-secondary'><i class='fa fa-arrow-up' aria-hidden='true'></i></span> " +
+        escapeHtml(up) +
+        "</div>" +
+        "</div>"
+    );
+}
 
+function buildParentNodeOptions(selectedNode) {
+    let html = "<option value=''>-- none --</option>";
+    if (!network_json || typeof network_json !== "object") return html;
+
+    function iterate(data, level) {
+        let local = "";
+        for (const [key, value] of Object.entries(data)) {
+            const indent = "-".repeat(level);
+            local += "<option value='" + escapeHtml(key) + "'";
+            if (key === selectedNode) local += " selected";
+            local += ">" + indent + escapeHtml(key) + "</option>";
+            if (value && value.children != null) {
+                local += iterate(value.children, level + 1);
+            }
+        }
+        return local;
+    }
+
+    html += iterate(network_json, 0);
+    return html;
+}
+
+function totalPages() {
+    return Math.max(1, Math.ceil(filtered_indices.length / page_size));
+}
+
+function applySearch(resetPage = true) {
+    const term = (search_term || "").toLowerCase().trim();
+    filtered_indices = [];
+
+    if (!term) {
+        for (let i = 0; i < shaped_devices.length; i++) {
+            filtered_indices.push(i);
+        }
+    } else {
+        for (let i = 0; i < shaped_devices.length; i++) {
+            const device = shaped_devices[i] || {};
+            const parts = [
+                device.circuit_id,
+                device.circuit_name,
+                device.device_id,
+                device.device_name,
+                device.parent_node,
+                device.mac,
+            ];
+
+            if (Array.isArray(device.ipv4)) {
+                device.ipv4.forEach((tuple) => parts.push(formatIpTuple(tuple, 32)));
+            }
+            if (Array.isArray(device.ipv6)) {
+                device.ipv6.forEach((tuple) => parts.push(formatIpTuple(tuple, 128)));
+            }
+
+            const haystack = parts
+                .filter((val) => val !== undefined && val !== null)
+                .join(" ")
+                .toLowerCase();
+
+            if (haystack.includes(term)) {
+                filtered_indices.push(i);
+            }
+        }
+    }
+
+    if (resetPage) {
+        page = 0;
+    } else {
+        page = Math.min(page, totalPages() - 1);
+    }
+
+    render();
+}
+
+function setPage(newPage) {
+    const total = totalPages();
+    page = Math.min(Math.max(newPage, 0), total - 1);
+    render();
+}
+
+function setPageSize(newSize) {
+    page_size = newSize;
+    page = 0;
+    render();
+}
+
+function renderSummary() {
+    const total = shaped_devices.length;
+    const filtered = filtered_indices.length;
+    const start = filtered === 0 ? 0 : page * page_size + 1;
+    const end = filtered === 0 ? 0 : Math.min(page * page_size + page_size, filtered);
+    let text = "";
+    if (filtered === 0) {
+        text = "No devices to display";
+    } else if (filtered === total) {
+        text = `Showing ${start}-${end} of ${total} devices`;
+    } else {
+        text = `Showing ${start}-${end} of ${filtered} devices (filtered from ${total})`;
+    }
+    $("#sdSummary").text(text);
+}
+
+function renderTable() {
+    const container = $("#sdTableContainer");
+    if (filtered_indices.length === 0) {
+        container.html("<div class='alert alert-info mb-0'>No devices match the current search.</div>");
+        return;
+    }
+
+    const start = page * page_size;
+    const end = Math.min(start + page_size, filtered_indices.length);
+
+    let html =
+        "<table id='shapedDeviceTable' class='table table-striped table-hover table-sm align-middle small mb-0'>";
+    html += "<thead class='table-dark sticky-top' style='top: 0; z-index: 2;'>";
+    html += "<tr>";
+    html += "<th class='text-nowrap'>Actions</th>";
+    html += "<th class='text-nowrap'>Circuit ID</th>";
+    html += "<th>Circuit Name</th>";
+    html += "<th class='text-nowrap'>Device ID</th>";
+    html += "<th>Device Name</th>";
+    html += "<th>Parent Node</th>";
+    html += "<th class='text-nowrap'>MAC</th>";
+    html += "<th>IP Addresses</th>";
+    html += "<th class='text-nowrap'>Min Mbps</th>";
+    html += "<th class='text-nowrap'>Max Mbps</th>";
+    html += "<th class='text-nowrap'>SQM</th>";
+    html += "<th>Comment</th>";
+    html += "</tr>";
+    html += "</thead><tbody>";
+
+    for (let i = start; i < end; i++) {
+        const idx = filtered_indices[i];
+        const row = shaped_devices[idx] || {};
+        const invalidClass = invalid_indices.has(idx) ? " table-danger" : "";
+        const comment = row.comment ? String(row.comment) : "";
+
+        html += "<tr data-index='" + idx + "' class='" + invalidClass + "'>";
+        html +=
+            "<td class='text-nowrap'>" +
+            "<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-index='" +
+            idx +
+            "' title='Edit device' aria-label='Edit device'><i class='fa fa-edit' aria-hidden='true'></i></button>" +
+            "<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-index='" +
+            idx +
+            "' title='Delete device' aria-label='Delete device'><i class='fa fa-trash' aria-hidden='true'></i></button>" +
+            "</td>";
+        html += "<td class='text-nowrap'>" + formatIdCell(row.circuit_id, 5) + "</td>";
+        html +=
+            "<td><span class='redactable'>" +
+            escapeHtml(row.circuit_name || "") +
+            "</span></td>";
+        html += "<td class='text-nowrap'>" + formatIdCell(row.device_id, 5) + "</td>";
+        html +=
+            "<td><span class='redactable'>" +
+            escapeHtml(row.device_name || "") +
+            "</span></td>";
+        html += "<td>" + escapeHtml(row.parent_node || "") + "</td>";
+        html +=
+            "<td class='text-nowrap font-monospace'><span class='redactable'>" +
+            escapeHtml(row.mac || "") +
+            "</span></td>";
+        html += "<td>" + formatIpColumn(row) + "</td>";
+        html += "<td>" + formatRateHtml(row.download_min_mbps, row.upload_min_mbps) + "</td>";
+        html += "<td>" + formatRateHtml(row.download_max_mbps, row.upload_max_mbps) + "</td>";
+        html += "<td>" + formatSqmDisplay(row.sqm_override || "") + "</td>";
+        html += "<td style='max-width: 220px;'>";
+        if (comment.length > 0) {
+            html +=
+                "<span class='d-block text-truncate' style='max-width: 220px;' title='" +
+                escapeHtml(comment) +
+                "'>" +
+                escapeHtml(comment) +
+                "</span>";
+        } else {
+            html += "<span class='text-body-secondary'>-</span>";
+        }
+        html += "</td>";
         html += "</tr>";
     }
+
     html += "</tbody></table>";
-    $("#shapedDeviceTable").html(html);
+    container.html(html);
+}
+
+function buildPaginationModel(total, current) {
+    let pages = [];
+    const add = (value) => {
+        if (value < 0 || value >= total) return;
+        if (!pages.includes(value)) pages.push(value);
+    };
+    add(0);
+    add(total - 1);
+    add(current - 2);
+    add(current - 1);
+    add(current);
+    add(current + 1);
+    add(current + 2);
+    pages.sort((a, b) => a - b);
+
+    let result = [];
+    let last = null;
+    pages.forEach((p) => {
+        if (last !== null && p - last > 1) {
+            result.push(null);
+        }
+        result.push(p);
+        last = p;
+    });
+    return result;
+}
+
+function renderPagination() {
+    const total = totalPages();
+    const listBottom = $("#sdPagination");
+    const listTop = $("#sdPaginationTop");
+    if (filtered_indices.length === 0) {
+        listBottom.html("");
+        listTop.html("");
+        return;
+    }
+
+    const prevDisabled = page === 0 ? " disabled" : "";
+    const nextDisabled = page >= total - 1 ? " disabled" : "";
+    let html = "";
+
+    html +=
+        "<li class='page-item" +
+        prevDisabled +
+        "'><a class='page-link' href='#' data-page='" +
+        (page - 1) +
+        "'>Prev</a></li>";
+
+    const model = buildPaginationModel(total, page);
+    model.forEach((p) => {
+        if (p === null) {
+            html += "<li class='page-item disabled'><span class='page-link'>…</span></li>";
+        } else {
+            const active = p === page ? " active" : "";
+            html +=
+                "<li class='page-item" +
+                active +
+                "'><a class='page-link' href='#' data-page='" +
+                p +
+                "'>" +
+                (p + 1) +
+                "</a></li>";
+        }
+    });
+
+    html +=
+        "<li class='page-item" +
+        nextDisabled +
+        "'><a class='page-link' href='#' data-page='" +
+        (page + 1) +
+        "'>Next</a></li>";
+
+    listBottom.html(html);
+    listTop.html(html);
+}
+
+function render() {
+    renderSummary();
+    renderTable();
+    renderPagination();
+}
+
+function showModal() {
+    const modalEl = document.getElementById("sdEditModal");
+    if (!modalEl || typeof bootstrap === "undefined") return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
+
+function hideModal() {
+    const modalEl = document.getElementById("sdEditModal");
+    if (!modalEl || typeof bootstrap === "undefined") return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.hide();
+}
+
+function populateModal(device) {
+    $("#sdModalCircuitId").val(device.circuit_id || "");
+    $("#sdModalCircuitName").val(device.circuit_name || "");
+    $("#sdModalDeviceId").val(device.device_id || "");
+    $("#sdModalDeviceName").val(device.device_name || "");
+    $("#sdModalMac").val(device.mac || "");
+    $("#sdModalIpv4").val(ipListToText(device.ipv4, 32));
+    $("#sdModalIpv6").val(ipListToText(device.ipv6, 128));
+    $("#sdModalDownloadMin").val(device.download_min_mbps);
+    $("#sdModalUploadMin").val(device.upload_min_mbps);
+    $("#sdModalDownloadMax").val(device.download_max_mbps);
+    $("#sdModalUploadMax").val(device.upload_max_mbps);
+    $("#sdModalComment").val(device.comment || "");
+
+    const parentSelect = $("#sdModalParentNode");
+    parentSelect.html(buildParentNodeOptions(device.parent_node || ""));
+    const nodes = network_json ? validNodeList(network_json) : [];
+    parentSelect.prop("disabled", nodes.length === 0);
+
+    const sqm = parseSqmOverride(device.sqm_override || "");
+    $("#sdModalSqmDown").val(sqm.down);
+    $("#sdModalSqmUp").val(sqm.up);
+}
+
+function collectModalDevice() {
+    const device = {
+        circuit_id: $("#sdModalCircuitId").val().trim(),
+        circuit_name: $("#sdModalCircuitName").val().trim(),
+        device_id: $("#sdModalDeviceId").val().trim(),
+        device_name: $("#sdModalDeviceName").val().trim(),
+        parent_node: $("#sdModalParentNode").val() || "",
+        mac: $("#sdModalMac").val().trim(),
+        ipv4: parseIpInput($("#sdModalIpv4").val(), 4),
+        ipv6: parseIpInput($("#sdModalIpv6").val(), 6),
+        download_min_mbps: parseFloat($("#sdModalDownloadMin").val()),
+        upload_min_mbps: parseFloat($("#sdModalUploadMin").val()),
+        download_max_mbps: parseFloat($("#sdModalDownloadMax").val()),
+        upload_max_mbps: parseFloat($("#sdModalUploadMax").val()),
+        comment: $("#sdModalComment").val().trim(),
+    };
+
+    const sqmDown = $("#sdModalSqmDown").val().trim().toLowerCase();
+    const sqmUp = $("#sdModalSqmUp").val().trim().toLowerCase();
+    if (!sqmDown && !sqmUp) {
+        delete device.sqm_override;
+    } else {
+        device.sqm_override = `${sqmDown}/${sqmUp}`;
+    }
+
+    return device;
+}
+
+function openEditModal(index) {
+    const device = shaped_devices[index];
+    if (!device) return;
+    edit_index = index;
+    creating_new = false;
+    $("#sdEditModalLabel").text("Edit Device");
+    populateModal(device);
+    showModal();
+}
+
+function openNewModal() {
+    edit_index = null;
+    creating_new = true;
+    $("#sdEditModalLabel").text("Add Device");
+    populateModal(defaultDevice());
+    showModal();
+}
+
+function saveModalChanges() {
+    const device = collectModalDevice();
+    if (creating_new) {
+        shaped_devices.unshift(device);
+    } else if (edit_index !== null) {
+        shaped_devices[edit_index] = device;
+    }
+    invalid_indices = new Set();
+    hideModal();
+    applySearch(creating_new);
+}
+
+function deleteDevice(index) {
+    const device = shaped_devices[index];
+    if (!device) return;
+    const label = device.device_name || device.device_id || "this device";
+    if (!confirm(`Delete ${label}?`)) return;
+    shaped_devices.splice(index, 1);
+    invalid_indices = new Set();
+    applySearch(false);
+}
+
+function checkIpv4(ip) {
+    const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    const parts = ip.split("/");
+    if (!ipv4Pattern.test(parts[0])) return false;
+    if (parts.length > 1 && parts[1].length > 0) {
+        const prefix = parseInt(parts[1], 10);
+        if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return false;
+    }
+    return true;
+}
+
+function checkIpv6(ip) {
+    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/(\d{1,3}))?$/;
+    return regex.test(ip);
+}
+
+function normalizeIp(tuple, family) {
+    const defaultPrefix = family === 6 ? 128 : 32;
+    if (!tuple || tuple.length === 0) return "";
+    const addr = tuple[0] ? formatIpAddr(tuple[0], family).trim() : "";
+    if (!addr) return "";
+    const prefix = Number.isFinite(tuple[1]) ? tuple[1] : defaultPrefix;
+    const normalizedAddr = family === 6 ? addr.toLowerCase() : addr;
+    return normalizedAddr + "/" + prefix;
+}
+
+function validateDevices() {
+    let valid = true;
+    let errors = [];
+    invalid_indices = new Set();
+
+    const nodes = network_json ? validNodeList(network_json) : [];
+    const deviceIds = new Map();
+    const ipv4s = new Map();
+    const ipv6s = new Map();
+
+    const markInvalid = (index, message) => {
+        valid = false;
+        errors.push(message);
+        invalid_indices.add(index);
+    };
+
+    shaped_devices.forEach((device, index) => {
+        if (!device.circuit_id || device.circuit_id.trim().length === 0) {
+            markInvalid(index, "Circuits must have a Circuit ID");
+        }
+        if (!device.circuit_name || device.circuit_name.trim().length === 0) {
+            markInvalid(index, "Circuits must have a Circuit Name");
+        }
+        if (!device.device_id || device.device_id.trim().length === 0) {
+            markInvalid(index, "Circuits must have a Device ID");
+        }
+        if (!device.device_name || device.device_name.trim().length === 0) {
+            markInvalid(index, "Circuits must have a Device Name");
+        }
+
+        if (device.device_id) {
+            const existing = deviceIds.get(device.device_id);
+            if (existing !== undefined && existing !== index) {
+                markInvalid(index, `Devices with duplicate ID [${device.device_id}] detected`);
+                invalid_indices.add(existing);
+            } else {
+                deviceIds.set(device.device_id, index);
+            }
+        }
+
+        const parentNode = device.parent_node || "";
+        if (nodes.length === 0) {
+            if (parentNode.length > 0) {
+                markInvalid(index, "You have a flat network, so you can't specify a parent node.");
+            }
+        } else if (parentNode.length > 0 && nodes.indexOf(parentNode) === -1) {
+            markInvalid(index, "Parent node: " + parentNode + " does not exist");
+        }
+
+        const ipv4List = Array.isArray(device.ipv4) ? device.ipv4 : [];
+        const ipv6List = Array.isArray(device.ipv6) ? device.ipv6 : [];
+        if (ipv4List.length === 0 && ipv6List.length === 0) {
+            markInvalid(index, "You must specify either an IPv4 or IPv6 (or both) address");
+        }
+
+        ipv4List.forEach((tuple) => {
+            const formatted = normalizeIp(tuple, 4);
+            if (!formatted) return;
+            if (!checkIpv4(formatted)) {
+                markInvalid(index, formatted + " is not a valid IPv4 address");
+            }
+            const dupe = ipv4s.get(formatted);
+            if (dupe !== undefined && dupe !== index) {
+                markInvalid(index, formatted + " is a duplicate IP");
+                invalid_indices.add(dupe);
+            } else {
+                ipv4s.set(formatted, index);
+            }
+        });
+
+        ipv6List.forEach((tuple) => {
+            const formatted = normalizeIp(tuple, 6);
+            if (!formatted) return;
+            if (!checkIpv6(formatted)) {
+                markInvalid(index, formatted + " is not a valid IPv6 address");
+            }
+            const dupe = ipv6s.get(formatted);
+            if (dupe !== undefined && dupe !== index) {
+                markInvalid(index, formatted + " is a duplicate IP");
+                invalid_indices.add(dupe);
+            } else {
+                ipv6s.set(formatted, index);
+            }
+        });
+
+        const downloadMin = parseFloat(device.download_min_mbps);
+        const uploadMin = parseFloat(device.upload_min_mbps);
+        const downloadMax = parseFloat(device.download_max_mbps);
+        const uploadMax = parseFloat(device.upload_max_mbps);
+
+        if (Number.isNaN(downloadMin)) {
+            markInvalid(index, "Download min is not a valid number");
+        } else if (downloadMin < 0.1) {
+            markInvalid(index, "Download min must be 0.1 or more");
+        }
+
+        if (Number.isNaN(uploadMin)) {
+            markInvalid(index, "Upload min is not a valid number");
+        } else if (uploadMin < 0.1) {
+            markInvalid(index, "Upload min must be 0.1 or more");
+        }
+
+        if (Number.isNaN(downloadMax)) {
+            markInvalid(index, "Download max is not a valid number");
+        } else if (downloadMax < 0.2) {
+            markInvalid(index, "Download max must be 0.2 or more");
+        }
+
+        if (Number.isNaN(uploadMax)) {
+            markInvalid(index, "Upload max is not a valid number");
+        } else if (uploadMax < 0.2) {
+            markInvalid(index, "Upload max must be 0.2 or more");
+        }
+    });
+
+    if (!valid) {
+        let errorMessage = "Invalid ShapedDevices Entries:\n";
+        errors.forEach((message) => {
+            errorMessage += message + "\n";
+        });
+        alert(errorMessage);
+    }
+
+    render();
+    return { valid, errors };
 }
 
 function start() {
-    // Render the configuration menu
-    renderConfigMenu('devices');
-    // Load shaped devices data
-    $.get("/local-api/networkJson", (njs) => {
-        network_json = njs;
-        $.get("/local-api/allShapedDevices", (data) => {
-            shaped_devices = data;
-            shapedDevices();
-        });
+    renderConfigMenu("devices");
+
+    $("#btnSaveDevices").prop("disabled", true);
+    $("#btnAddDevice").prop("disabled", true);
+    const initialPageSize = parseInt($("#sdPageSize").val(), 10);
+    if (!Number.isNaN(initialPageSize)) {
+        page_size = initialPageSize;
+    }
+
+    $("#sdSearch").on("input", (event) => {
+        search_term = event.target.value;
+        if (search_timer) {
+            clearTimeout(search_timer);
+        }
+        search_timer = setTimeout(() => applySearch(true), 200);
     });
 
-    // Setup button handlers
-    $("#btnNewDevice").on('click', newSdRow);
-    $("#btnSaveDevices").on('click', () => {
-        // Validate before saving
-        const validation = validateSd();
+    $("#sdPageSize").on("change", (event) => {
+        const value = parseInt(event.target.value, 10);
+        if (!Number.isNaN(value)) setPageSize(value);
+    });
+
+    $("#sdPagination").on("click", "a.page-link", (event) => {
+        event.preventDefault();
+        const target = parseInt($(event.currentTarget).data("page"), 10);
+        if (!Number.isNaN(target)) setPage(target);
+    });
+
+    $("#sdTableContainer").on("click", ".sd-edit", (event) => {
+        event.preventDefault();
+        const idx = parseInt($(event.currentTarget).data("index"), 10);
+        if (!Number.isNaN(idx)) openEditModal(idx);
+    });
+
+    $("#sdTableContainer").on("click", ".sd-delete", (event) => {
+        event.preventDefault();
+        const idx = parseInt($(event.currentTarget).data("index"), 10);
+        if (!Number.isNaN(idx)) deleteDevice(idx);
+    });
+
+    $("#btnAddDevice").on("click", (event) => {
+        event.preventDefault();
+        openNewModal();
+    });
+
+    $("#sdModalSave").on("click", (event) => {
+        event.preventDefault();
+        saveModalChanges();
+    });
+
+    $("#btnSaveDevices").on("click", () => {
+        const validation = validateDevices();
         if (!validation.valid) {
-            alert("Cannot save - please fix validation errors first");
             return;
         }
-
-        // Update shaped devices from UI
-        for (let i=0; i<shaped_devices.length; i++) {
-            let row = shaped_devices[i];
-            row.circuit_id = $("#" + rowPrefix(i, "circuit_id")).val();
-            row.circuit_name = $("#" + rowPrefix(i, "circuit_name")).val();
-            row.device_id = $("#" + rowPrefix(i, "device_id")).val();
-            row.device_name = $("#" + rowPrefix(i, "device_name")).val();
-            row.parent_node = $("#" + rowPrefix(i, "parent_node")).val();
-            row.mac = $("#" + rowPrefix(i, "mac")).val();
-            row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
-            row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
-            row.download_min_mbps = parseFloat($("#" + rowPrefix(i, "download_min_mbps")).val());
-            row.upload_min_mbps = parseFloat($("#" + rowPrefix(i, "upload_min_mbps")).val());
-            row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
-            row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
-            row.comment = $("#" + rowPrefix(i, "comment")).val();
-        }
-
         saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
             if (success) {
                 alert("Configuration saved successfully!");
@@ -166,313 +797,31 @@ function start() {
             }
         });
     });
-    // Render the configuration menu and expose needed globals
-    renderConfigMenu('devices');
-    window.deleteSdRow = deleteSdRow;
-}
 
-function validateSd() {
-    let valid = true;
-    let errors = [];
-    $(".invalid").removeClass("invalid");
-    let validNodes = validNodeList(network_json);
-
-    for (let i=0; i<shaped_devices.length; i++) {
-        // Check that circuit ID is good
-        let controlId = "#" + rowPrefix(i, "circuit_id");
-        let circuit_id = $(controlId).val();
-        if (circuit_id.length === 0) {
-            valid = false;
-            errors.push("Circuits must have a Circuit ID");
-            $(controlId).addClass("invalid");
-        }
-
-        // Check that the Circuit Name is good
-        controlId = "#" + rowPrefix(i, "circuit_name");
-        let circuit_name = $(controlId).val();
-        if (circuit_name.length === 0) {
-            valid = false;
-            errors.push("Circuits must have a Circuit Name");
-            $(controlId).addClass("invalid");
-        }
-
-        // Check that the Device ID is good
-        controlId = "#" + rowPrefix(i, "device_id");
-        let device_id = $(controlId).val();
-        if (device_id.length === 0) {
-            valid = false;
-            errors.push("Circuits must have a Device ID");
-            $(controlId).addClass("invalid");
-        }
-        for (let j=0; j<shaped_devices.length; j++) {
-            if (i !== j) {
-                if (shaped_devices[j].device_id === device_id) {
-                    valid = false;
-                    errors.push("Devices with duplicate ID [" + device_id + "] detected");
-                    $(controlId).addClass("invalid");
-                    $("#" + rowPrefix(j, "device_id")).addClass("invalid");
-                }
-            }
-        }
-
-        // Check that the Device Name is good
-        controlId = "#" + rowPrefix(i, "device_name");
-        let device_name = $(controlId).val();
-        if (device_name.length === 0) {
-            valid = false;
-            errors.push("Circuits must have a Device Name");
-            $(controlId).addClass("invalid");
-        }
-
-        // Check the parent node
-        controlId = "#" + rowPrefix(i, "parent_node");
-        let parent_node = $(controlId).val();
-        if (parent_node == null) parent_node = "";
-        if (validNodes.length === 0) {
-            // Flat
-            if (parent_node.length > 0) {
-                valid = false;
-                errors.push("You have a flat network, so you can't specify a parent node.");
-                $(controlId).addClass("invalid");
-            }
-        } else {
-            // Hierarchy - so we need to know if it exists
-            if (validNodes.indexOf(parent_node) === -1) {
-                valid = false;
-                errors.push("Parent node: " + parent_node + " does not exist");
-                $(controlId).addClass("invalid");
-            }
-        }
-
-        // We can ignore the MAC address
-
-        // IPv4
-        controlId = "#" + rowPrefix(i, "ipv4");
-        let ipv4 = $(controlId).val();
-        if (ipv4.length > 0) {
-            // We have IP addresses
-            if (ipv4.indexOf(',') !== -1) {
-                // We have multiple addresses
-                let ips = ipv4.replace(' ', '').split(',');
-                for (let j=0; j<ips.length; j++) {
-                    if (!checkIpv4(ips[j].trim())) {
-                        valid = false;
-                        errors.push(ips[j] + "is not a valid IPv4 address");
-                        $(controlId).addClass("invalid");
-                    }
-                    let dupes = checkIpv4Duplicate(ips[j], i);
-                    if (dupes > 0 && dupes !== i) {
-                        valid = false;
-                        errors.push(ips[j] + " is a duplicate IP");
-                        $(controlId).addClass("invalid");
-                        $("#" + rowPrefix(dupes, "ipv4")).addClass("invalid");
-                    }
-                }
-            } else {
-                // Just the one
-                if (!checkIpv4(ipv4)) {
-                    valid = false;
-                    errors.push(ipv4 + "is not a valid IPv4 address");
-                    $(controlId).addClass("invalid");
-                }
-                let dupes = checkIpv4Duplicate(ipv4, i);
-                if (dupes > 0) {
-                    valid = false;
-                    errors.push(ipv4 + " is a duplicate IP");
-                    $(controlId).addClass("invalid");
-                    $("#" + rowPrefix(dupes, "ipv4")).addClass("invalid");
-                }
-            }
-        }
-
-        // IPv6
-        controlId = "#" + rowPrefix(i, "ipv6");
-        let ipv6 = $(controlId).val();
-        if (ipv6.length > 0) {
-            // We have IP addresses
-            if (ipv6.indexOf(',') !== -1) {
-                // We have multiple addresses
-                let ips = ipv6.replace(' ', '').split(',');
-                for (let j=0; j<ips.length; j++) {
-                    if (!checkIpv6(ips[j].trim())) {
-                        valid = false;
-                        errors.push(ips[j] + "is not a valid IPv6 address");
-                        $(controlId).addClass("invalid");
-                    }
-                    let dupes = checkIpv6Duplicate(ips[j], i);
-                    if (dupes > 0 && dupes !== i) {
-                        valid = false;
-                        errors.push(ips[j] + " is a duplicate IP");
-                        $(controlId).addClass("invalid");
-                        $("#" + rowPrefix(dupes, "ipv6")).addClass("invalid");
-                    }
-                }
-            } else {
-                // Just the one
-                if (!checkIpv6(ipv6)) {
-                    valid = false;
-                    errors.push(ipv6 + "is not a valid IPv6 address");
-                    $(controlId).addClass("invalid");
-                }
-                let dupes = checkIpv6Duplicate(ipv6, i);
-                if (dupes > 0 && dupes !== i) {
-                    valid = false;
-                    errors.push(ipv6 + " is a duplicate IP");
-                    $(controlId).addClass("invalid");
-                    $("#" + rowPrefix(dupes, "ipv6")).addClass("invalid");
-                }
-            }
-        }
-
-        // Combined - must be an address between them
-        if (ipv4.length === 0 && ipv6.length === 0) {
-            valid = false;
-            errors.push("You must specify either an IPv4 or IPv6 (or both) address");
-            $(controlId).addClass("invalid");
-            $("#" + rowPrefix(i, "ipv4")).addClass("invalid");
-        }
-
-        // Download Min
-        controlId = "#" + rowPrefix(i, "download_min_mbps");
-        let download_min = $(controlId).val();
-        download_min = parseFloat(download_min);
-        if (isNaN(download_min)) {
-            valid = false;
-            errors.push("Download min is not a valid number");
-            $(controlId).addClass("invalid");
-        } else if (download_min < 0.1) {
-            valid = false;
-            errors.push("Download min must be 0.1 or more");
-            $(controlId).addClass("invalid");
-        }
-
-        // Upload Min
-        controlId = "#" + rowPrefix(i, "upload_min_mbps");
-        let upload_min = $(controlId).val();
-        upload_min = parseFloat(upload_min);
-        if (isNaN(upload_min)) {
-            valid = false;
-            errors.push("Upload min is not a valid number");
-            $(controlId).addClass("invalid");
-        } else if (upload_min < 0.1) {
-            valid = false;
-            errors.push("Upload min must be 0.1 or more");
-            $(controlId).addClass("invalid");
-        }
-
-        // Download Max
-        controlId = "#" + rowPrefix(i, "download_max_mbps");
-        let download_max = $(controlId).val();
-        download_max = parseFloat(download_max);
-        if (isNaN(download_max)) {
-            valid = false;
-            errors.push("Download Max is not a valid number");
-            $(controlId).addClass("invalid");
-        } else if (download_max < 0.2) {
-            valid = false;
-            errors.push("Download Max must be 0.2 or more");
-            $(controlId).addClass("invalid");
-        }
-
-        // Upload Max
-        controlId = "#" + rowPrefix(i, "upload_max_mbps");
-        let upload_max = $(controlId).val();
-        upload_max = parseFloat(upload_max);
-        if (isNaN(upload_max)) {
-            valid = false;
-            errors.push("Upload Max is not a valid number");
-            $(controlId).addClass("invalid");
-        } else if (upload_max < 0.2) {
-            valid = false;
-            errors.push("Upload Max must be 0.2 or more");
-            $(controlId).addClass("invalid");
-        }
-    }
-
-    if (!valid) {
-        let errorMessage = "Invalid ShapedDevices Entries:\n";
-        for (let i=0; i<errors.length; i++) {
-            errorMessage += errors[i] + "\n";
-        }
-        alert(errorMessage);
-    }
-
-    return {
-        valid: valid,
-        errors: errors
-    };
-}
-
-function checkIpv4(ip) {
-    const ipv4Pattern =
-        /^(\d{1,3}\.){3}\d{1,3}$/;
-
-    if (ip.indexOf('/') === -1) {
-        return ipv4Pattern.test(ip);
-    } else {
-        let parts = ip.split('/');
-        return ipv4Pattern.test(parts[0]);
-    }
-}
-
-function checkIpv6(ip) {
-    // Check if the input is a valid IPv6 address with prefix
-    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
-    return regex.test(ip);
-}
-
-function checkIpv4Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv4.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv4[j][0] + "/" + sd.ipv4[j][1];
-                } else {
-                    formatted = sd.ipv4[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-function checkIpv6Duplicate(ip, index) {
-    ip = ip.trim();
-    for (let i=0; i < shaped_devices.length; i++) {
-        if (i !== index) {
-            let sd = shaped_devices[i];
-            for (let j=0; j<sd.ipv6.length; j++) {
-                let formatted = "";
-                if (ip.indexOf('/') > 0) {
-                    formatted = sd.ipv6[j][0] + "/" + sd.ipv6[j][1];
-                } else {
-                    formatted = sd.ipv6[j][0];
-                }
-                if (formatted === ip) {
-                    return index;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-// Local helper copied from configuration.js to avoid cross-bundle dependency
-function ipAddressesToTuple(ip) {
-    if (!ip || ip.length === 0) return [];
-    let ips = ip.replace(' ', '').split(',');
-    for (let i = 0; i < ips.length; i++) {
-        let this_ip = ips[i].trim();
-        let parts = this_ip.split('/');
-        ips[i] = [ parts[0], parseInt(parts[1]) ];
-    }
-    return ips;
+    loadNetworkJson(
+        (njs) => {
+            network_json = njs;
+            loadAllShapedDevices(
+                (data) => {
+                    shaped_devices = Array.isArray(data) ? data : [];
+                    invalid_indices = new Set();
+                    applySearch(true);
+                    $("#btnSaveDevices").prop("disabled", false);
+                    $("#btnAddDevice").prop("disabled", false);
+                },
+                () => {
+                    $("#sdTableContainer").html(
+                        "<div class='alert alert-danger mb-0'>Failed to load shaped devices.</div>",
+                    );
+                },
+            );
+        },
+        () => {
+            $("#sdTableContainer").html(
+                "<div class='alert alert-danger mb-0'>Failed to load network configuration.</div>",
+            );
+        },
+    );
 }
 
 $(document).ready(start);

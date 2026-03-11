@@ -18,11 +18,13 @@
 </head>
 <body>
 %%%LTS_SCRIPT%%%
-<div id="wrapper"> <!-- Whole Page Wrapper -->
+<script>window.LQOS_UI_VERSION = "%%VERSION%%";</script>
+<script>window.sm = %%MODAL%%; window.smn = "%%MODAL_NUM%%"</script>
+<div id="wrapper" class="lqos-shell"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
     <!-- Sidebar -->
-    <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar">
+    <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar lqos-sidebar">
         <div class="container-fluid">            
             <button class="navbar-toggler navbar-dark" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -39,10 +41,10 @@
                     <li class="text-center">
                         <form class="d-none d-sm-inline-block form-inline navbar-search">
                             <div class="input-group">
-                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" id="txtSearch">
+                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" autocomplete="off" id="txtSearch">
                                 <div class="input-group-append">
-                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch">
-                                        <i class="fas fa-search fa-sm"></i>
+                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch" aria-label="Search" title="Search">
+                                        <i class="fas fa-search fa-sm" aria-hidden="true"></i>
                                     </button>
                                 </div>
                             </div>
@@ -87,6 +89,12 @@
                             <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Explorer
                         </a>
                     </li>
+                    <!-- CPU Affinity -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="cpu_weights.html">
+                            <i class="fa fa-fw fa-centerline fa-microchip nav-icon"></i> CPU Affinity
+                        </a>
+                    </li>
                     <!-- Statistics -->
                     %%LTS_LINK%%
                     %%API_LINK%%
@@ -106,36 +114,39 @@
                     </li>
                     <!-- Reload Button -->
                     <li class="nav-item">
-                        <a class="nav-link" id="lnkReloadLqos">
-                            <i class="fa fa-fw fa-centerline fa-recycle"></i> Reload LibreQoS
-                        </a>
+                        <button class="nav-link btn btn-link text-start w-100 p-0 border-0" type="button" id="lnkReloadLqos" aria-label="Reload LibreQoS">
+                            <i class="fa fa-fw fa-centerline fa-recycle" aria-hidden="true"></i> Reload LibreQoS
+                        </button>
                     </li>
+                    %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
                     <hr />
                     <!-- Dark mode switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light">
-                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon"></i></label>
+                            <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" aria-label="Toggle day or night mode">
+                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span class="visually-hidden">Toggle day or night mode</span></label>
                         </div>
                     </li>
                     <!-- Redact switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact">
-                            <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret"></i></label>
+                            <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" aria-label="Toggle redaction mode">
+                            <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span class="visually-hidden">Toggle redaction mode</span></label>
                         </div>
                     </li>
                     <!-- Color blind switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode">
-                            <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye"></i></label>
+                            <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" aria-label="Toggle color blind mode">
+                            <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span class="visually-hidden">Toggle color blind mode</span></label>
+                        </div>
+                    </li>
                     <!-- Klingon switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon">
-                            <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock"></i></label>
+                            <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" aria-label="Toggle Klingon mode">
+                            <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span class="visually-hidden">Toggle Klingon mode</span></label>
                         </div>
                         <hr />
                     </li>
@@ -146,7 +157,7 @@
                                 <i class="fa fa-fw fa-centerline fa-user-circle"></i> <span id="username">%%USERNAME%%</span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" id="btnLogout"><i class="fa fa-sign-out"></i> Logout</a></li>
+                                <li><button class="dropdown-item" type="button" id="btnLogout"><i class="fa fa-sign-out" aria-hidden="true"></i> Logout</button></li>
                             </ul>
 
                         </div>
@@ -157,10 +168,10 @@
     </nav>
 
     <!-- Content Wrapper -->
-    <div id="content-wrapper" class="d-flex flex-column flex-fill mt-2">
+    <div id="content-wrapper" class="d-flex flex-column flex-fill lqos-content-wrapper">
         <!-- Main Content -->
 
-        <div id="content" class="container-fluid flex-fill">
+        <div id="content" class="container-fluid flex-fill lqos-content">
             %%BODY%%
         </div> <!-- End Main Content -->
     </div> <!-- End Content Wrapper -->
@@ -204,8 +215,29 @@
     </div>
     </div>
 
+<!-- Urgent Issues Modal -->
+<div class='modal fade' id='urgentModal' tabindex='-1' aria-labelledby='urgentModalLabel' aria-hidden='true'>
+    <div class='modal-dialog modal-xl modal-dialog-scrollable'>
+        <div class='modal-content'>
+            <div class='modal-header'>
+                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Urgent Issues</h1>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all urgent issues' aria-label='Acknowledge all urgent issues'><i class='fa fa-times' aria-hidden='true'></i></button>
+                <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
+            </div>
+            <div class='modal-body'>
+                <div id='urgentListContainer'>
+                    <div class="text-center text-muted"><i class='fa fa-spinner fa-spin'></i> Loading...</div>
+                </div>
+            </div>
+            <div class='modal-footer'>
+                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <footer class="justify-content-center text-body-tertiary text-center mt-2">
-    LibreQoS %%VERSION%%. &copy; Copyright 2022-2024, LibreQoE LLC. All Rights Reserved.
+    LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
 </footer>
 
     <script src="template.js"></script>
@@ -225,6 +257,13 @@
         });
         obs.observe(container, { childList: true, subtree: true });
     })();
+    
+    document.getElementById('year').textContent = new Date().getFullYear();
+        
+
+    if (window.lqosInitUrgentIssues) {
+        window.lqosInitUrgentIssues();
+    }
     </script>
 
 </body>

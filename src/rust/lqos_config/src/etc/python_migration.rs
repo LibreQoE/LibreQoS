@@ -16,7 +16,7 @@ pub enum PythonMigrationError {
     #[error("String not readable UTF-8")]
     BadString,
     #[error("Serialization Error: {e:?}")]
-    Serialize{ e: Box<dyn std::error::Error> }
+    Serialize { e: Box<dyn std::error::Error> },
 }
 
 fn isp_config_py_path(cfg: &EtcLqos) -> PathBuf {
@@ -163,8 +163,10 @@ impl PythonMigration {
                 error!("Error running Python migrator: {:?}", output);
                 return Err(PythonMigrationError::ConfigFileNotFound);
             }
-            let json = String::from_utf8(output.stdout).map_err(|_| PythonMigrationError::BadString)?;
-            let json: Self = serde_json::from_str(&json).map_err(|e| PythonMigrationError::Serialize { e: Box::new(e) })?;
+            let json =
+                String::from_utf8(output.stdout).map_err(|_| PythonMigrationError::BadString)?;
+            let json: Self = serde_json::from_str(&json)
+                .map_err(|e| PythonMigrationError::Serialize { e: Box::new(e) })?;
             Ok(json)
         } else {
             Err(PythonMigrationError::ConfigFileNotFound)

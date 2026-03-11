@@ -5,6 +5,7 @@
 mod publisher_channel;
 mod subscriber;
 
+use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
 use crate::node_manager::ws::publish_subscribe::publisher_channel::PublisherChannel;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use arc_swap::ArcSwap;
@@ -45,7 +46,7 @@ impl PubSub {
     /// Adds a subscriber to a channel set. Once added, they are
     /// self-managing and will be deleted when they become inactive
     /// automatically.
-    pub(super) async fn subscribe(&self, channel: PublishedChannels, sender: Sender<Arc<String>>) {
+    pub(super) async fn subscribe(&self, channel: PublishedChannels, sender: Sender<Arc<Vec<u8>>>) {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
             channel.subscribe(sender).await;
@@ -54,6 +55,17 @@ impl PubSub {
                 "Tried to subscribe to channel {:?}, which doesn't exist",
                 channel
             );
+        }
+    }
+
+    pub(super) async fn unsubscribe(
+        &self,
+        channel: PublishedChannels,
+        sender: Sender<Arc<Vec<u8>>>,
+    ) {
+        let mut channels = self.channels.lock().await;
+        if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
+            channel.unsubscribe(&sender);
         }
     }
 
@@ -76,10 +88,17 @@ impl PubSub {
 
     /// Sends a message to everyone subscribed to a topic. If senders' channels
     /// are dead, they are removed from the list.
-    pub(super) async fn send(&self, channel: PublishedChannels, message: String) {
+    pub(super) async fn send(&self, channel: PublishedChannels, message: WsResponse) {
+        let payload = match encode_ws_message(&message) {
+            Ok(payload) => payload,
+            Err(err) => {
+                warn!("Failed to encode ws message for {:?}: {:?}", channel, err);
+                return;
+            }
+        };
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
-            channel.send(Arc::new(message)).await;
+            channel.send(payload).await;
         }
     }
 

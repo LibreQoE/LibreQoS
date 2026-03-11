@@ -5,8 +5,8 @@
 //! dummy interface. FIXME.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
 use lqos_queue_tracker::*;
+use std::hint::black_box;
 use std::process::{Command, id};
 
 const EXAMPLE_JSON: &str = include_str!("./example.json");

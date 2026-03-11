@@ -54,7 +54,7 @@ LibreQos is divided into several sections:
 * **Python: system operation and integration**
    * `LibreQoS.py` maps all circuits to TC handles and gets the shaper system running.
    * `ispConfig.py` provides a system-wide configuration.
-   * `integrationX.py` provide integrations with UISP, Spylnx and other CRM tools.
+   * `integrationX.py` provide integrations with UISP, Splynx and other CRM tools.
    * `lqTools.py` provides an interface for gathering statistics.
 
 ## What We're Building
@@ -152,4 +152,3 @@ This is very much a work in progress.
 * Use `thiserror` to emit readable error messages from your functions.
 * It's fine to use `?` and `anyhow` inside function chains; prefer `result.map_err` to transform your errors into your own errors whenever it's possible that an error can be returned from a function accessible beyond the immediate crate.
 * Issue a `log::error!` or `log::warn!` messaage when an error occurs. Don't trust the callee to do it for you. It's better to have duplicate error messages than none at all.
-

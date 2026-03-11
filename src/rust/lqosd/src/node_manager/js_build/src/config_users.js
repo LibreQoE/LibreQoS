@@ -1,4 +1,10 @@
-import {renderConfigMenu} from "./config/config_helper";
+import {
+    addUser,
+    deleteUser,
+    getUsers,
+    renderConfigMenu,
+    updateUser,
+} from "./config/config_helper";
 
 $(document).ready(() => {
     // Render the configuration menu
@@ -12,32 +18,32 @@ $(document).ready(() => {
         const username = $('#add-username').val().trim();
         const password = $('#password').val();
         const role = $('#role').val();
-        console.log(username, password, role);
         
         if (!username) {
             alert('Username cannot be empty');
             return;
         }
         
-        $.ajax({
-            type: "POST",
-            url: "/local-api/addUser",
-            data: JSON.stringify({ 
+        addUser(
+            {
                 username: username,
                 password: password,
-                role: role 
-            }),
-            contentType: 'application/json',
-            success: () => {
-                $('#username').val('');
-                $('#password').val('');
-                loadUsers();
+                role: role,
             },
-            error: (e) => {
+            (msg) => {
+                if (msg && msg.ok) {
+                    $('#add-username').val('');
+                    $('#password').val('');
+                    loadUsers();
+                } else {
+                    alert(msg && msg.message ? msg.message : 'Failed to add user');
+                }
+            },
+            (e) => {
                 alert('Failed to add user');
                 console.log(e);
-            }
-        });
+            },
+        );
     });
 
     // Handle edit user form submission
@@ -45,29 +51,38 @@ $(document).ready(() => {
         const username = $('#edit-username').val();
         const password = $('#edit-password').val();
         const role = $('#edit-role').val();
-        
-        $.ajax({
-            type: "POST",
-            url: "/local-api/updateUser",
-            data: JSON.stringify({ 
-                username: username,
-                password: password,
-                role: role 
-            }),
-            contentType: 'application/json',
-            success: () => {
-                $('#editUserModal').modal('hide');
-                loadUsers();
+
+        const payload = {
+            username: username,
+            role: role
+        };
+
+        // Only send password if the field is non-empty; leaving it blank
+        // preserves the existing password on the server.
+        if (password && password.trim().length > 0) {
+            payload.password = password;
+        }
+
+        updateUser(
+            payload,
+            (msg) => {
+                if (msg && msg.ok) {
+                    $('#edit-password').val('');
+                    $('#editUserModal').modal('hide');
+                    loadUsers();
+                } else {
+                    alert(msg && msg.message ? msg.message : 'Failed to update user');
+                }
             },
-            error: () => {
+            () => {
                 alert('Failed to update user');
-            }
-        });
+            },
+        );
     });
 });
 
 function loadUsers() {
-    $.get('/local-api/getUsers', (users) => {
+    getUsers((users) => {
         const userList = $('#users-list');
         userList.empty();
         
@@ -103,6 +118,7 @@ function loadUsers() {
         $('.edit-user').on('click', function() {
             const username = $(this).data('username');
             const user = users.find(u => u.username === username);
+            $('#edit-password').val('');
             $('#edit-username').val(user.username);
             $('#edit-role').val(user.role);
             $('#editUserModal').modal('show');
@@ -112,22 +128,23 @@ function loadUsers() {
         $('.delete-user').on('click', function() {
             if (confirm('Are you sure you want to delete this user?')) {
                 const username = $(this).data('username');
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/deleteUser",
-                    data: JSON.stringify({ username: username }),
-                    contentType: 'application/json',
-                    success: () => {
-                        loadUsers();
+                deleteUser(
+                    { username: username },
+                    (msg) => {
+                        if (msg && msg.ok) {
+                            loadUsers();
+                        } else {
+                            alert(msg && msg.message ? msg.message : 'Failed to delete user');
+                        }
                     },
-                    error: (e) => {
+                    (e) => {
                         console.error(e);
                         alert('Failed to delete user');
-                    }
-                });
+                    },
+                );
             }
         });
-    }).fail(() => {
+    }, () => {
         $('#users-list').html('<div class="alert alert-danger">Failed to load users</div>');
     });
 }

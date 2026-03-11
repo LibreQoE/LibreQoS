@@ -1,27 +1,14 @@
+use crate::node_manager::ws::messages::{PingState, WsResponse, encode_ws_message};
 use rand::random;
-use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
 use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
 use tokio::time::MissedTickBehavior;
 use tracing::{debug, error, info};
 
-#[derive(Serialize)]
-enum PingState {
-    ChannelTest,
-    NoResponse,
-    Ping { time_nanos: u64, label: String },
-}
-
-#[derive(Serialize)]
-struct PingResult {
-    ip: String,
-    result: PingState,
-}
-
 pub(super) async fn ping_monitor(
     ip_addresses: Vec<(String, String)>,
-    tx: tokio::sync::mpsc::Sender<String>,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
 ) {
     {
         let Ok(cfg) = lqos_config::load_config() else {
@@ -71,52 +58,59 @@ pub(super) async fn ping_monitor(
 
         // Notify the channel that we're still here - this is really
         // just a test to see if the channel is still alive
-        let channel_test = PingResult {
+        let channel_test = WsResponse::PingMonitor {
             ip: "test".to_string(),
             result: PingState::ChannelTest,
         };
-        if let Ok(message) = serde_json::to_string(&channel_test) {
-            if let Err(_) = tx.send(message.to_string()).await {
+        if let Ok(payload) = encode_ws_message(&channel_test) {
+            if let Err(_) = tx.send(payload).await {
                 debug!("Channel is gone");
                 break;
             }
+        } else {
+            break;
         }
     }
 }
 
-async fn send_timeout(tx: tokio::sync::mpsc::Sender<String>, ip: String) {
-    let result = PingResult {
+async fn send_timeout(tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>, ip: String) {
+    let result = WsResponse::PingMonitor {
         ip,
         result: PingState::NoResponse,
     };
-    if let Ok(message) = serde_json::to_string(&result) {
-        if let Err(_) = tx.send(message.to_string()).await {
+    if let Ok(payload) = encode_ws_message(&result) {
+        if let Err(_) = tx.send(payload).await {
             info!("Channel is gone");
         }
     }
 }
 
 async fn send_alive(
-    tx: tokio::sync::mpsc::Sender<String>,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
     ip: String,
     ping_time: Duration,
     label: String,
 ) {
-    let result = PingResult {
+    let result = WsResponse::PingMonitor {
         ip,
         result: PingState::Ping {
             time_nanos: ping_time.as_nanos() as u64,
             label,
         },
     };
-    if let Ok(message) = serde_json::to_string(&result) {
-        if let Err(_) = tx.send(message.to_string()).await {
+    if let Ok(payload) = encode_ws_message(&result) {
+        if let Err(_) = tx.send(payload).await {
             info!("Channel is gone");
         }
     }
 }
 
-async fn ping(client: Client, addr: IpAddr, tx: tokio::sync::mpsc::Sender<String>, label: String) {
+async fn ping(
+    client: Client,
+    addr: IpAddr,
+    tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>,
+    label: String,
+) {
     let payload = [0; 56];
     let mut pinger = client.pinger(addr, PingIdentifier(random())).await;
     pinger.timeout(Duration::from_secs(1));

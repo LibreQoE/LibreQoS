@@ -1,12 +1,12 @@
-use crate::{linux::map_txq_config_base_setup, num_possible_cpus};
+use crate::{linux::map_txq_config_shaping, num_possible_cpus};
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get};
 use std::{ffi::CString, os::raw::c_void};
 use tracing::debug;
 
 //* Provides an interface for querying the number of CPUs eBPF can
-//* see, and marking CPUs as available. Currently marks ALL eBPF
-//* usable CPUs as available.
+//* see, and marking CPUs as available. Callers may provide a shaping
+//* CPU allowlist (e.g. exclude E-cores on hybrid CPUs).
 
 pub(crate) struct CpuMapping {
     fd_cpu_map: i32,
@@ -33,15 +33,32 @@ impl CpuMapping {
         })
     }
 
-    pub(crate) fn mark_cpus_available(&self) -> Result<()> {
+    pub(crate) fn mark_cpus_available(&self, shaping_physical_cpus: &[u32]) -> Result<()> {
         let cpu_count = num_possible_cpus()?;
 
         let queue_size = 2048u32;
         let val_ptr: *const u32 = &queue_size;
-        for cpu in 0..cpu_count {
-            debug!("Mapping core #{cpu}");
-            // Insert into the cpu map
-            let cpu_ptr: *const u32 = &cpu;
+
+        // Determine which physical CPUs we will redirect to.
+        let mut shaping: Vec<u32> = if shaping_physical_cpus.is_empty() {
+            (0..cpu_count).collect()
+        } else {
+            shaping_physical_cpus
+                .iter()
+                .copied()
+                .filter(|c| *c < cpu_count)
+                .collect()
+        };
+        shaping.sort_unstable();
+        shaping.dedup();
+        if shaping.is_empty() {
+            shaping = (0..cpu_count).collect();
+        }
+
+        // Populate CPU map entries for each destination CPU (physical CPU IDs).
+        for cpu_dest in shaping.iter().copied() {
+            debug!("Mapping destination CPU #{cpu_dest} into cpumap");
+            let cpu_ptr: *const u32 = &cpu_dest;
             let error = unsafe {
                 bpf_map_update_elem(
                     self.fd_cpu_map,
@@ -51,27 +68,39 @@ impl CpuMapping {
                 )
             };
             if error != 0 {
-                return Err(Error::msg("Unable to map CPU"));
+                return Err(Error::msg("Unable to map CPU in cpumap"));
             }
+        }
 
-            // Insert into the available list
+        // Populate logical->physical mapping table for ALL possible CPU indices.
+        // This prevents stale mappings from implicitly redirecting to CPU0 due to
+        // uninitialized array values.
+        let shaping_len = shaping.len() as u32;
+        for logical_cpu in 0..cpu_count {
+            let cpu_dest = shaping[(logical_cpu % shaping_len) as usize];
+            debug!("Mapping logical CPU #{logical_cpu} -> physical CPU #{cpu_dest}");
+            let key_ptr: *const u32 = &logical_cpu;
+            let val_ptr: *const u32 = &cpu_dest;
             let error = unsafe {
                 bpf_map_update_elem(
                     self.fd_cpu_available,
-                    cpu_ptr as *const c_void,
-                    cpu_ptr as *const c_void,
+                    key_ptr as *const c_void,
+                    val_ptr as *const c_void,
                     0,
                 )
             };
             if error != 0 {
                 return Err(Error::msg("Unable to add to available CPUs list"));
             }
-        } // CPU loop
+        }
         Ok(())
     }
 
-    pub(crate) fn setup_base_txq_config(&self) -> Result<()> {
-        Ok(map_txq_config_base_setup(self.fd_txq_config)?)
+    pub(crate) fn setup_base_txq_config(&self, shaping_physical_cpus: &[u32]) -> Result<()> {
+        Ok(map_txq_config_shaping(
+            self.fd_txq_config,
+            shaping_physical_cpus,
+        )?)
     }
 }
 

@@ -1,20 +1,8 @@
+use crate::node_manager::ws::messages::{NodeCapacity, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::NETWORK_JSON;
-use serde::Serialize;
-use serde_json::json;
 use std::sync::Arc;
-
-#[derive(Serialize)]
-struct NodeCapacity {
-    id: usize,
-    name: String,
-    down: f64,
-    up: f64,
-    max_down: f64,
-    max_up: f64,
-    median_rtt: f32,
-}
 
 pub async fn tree_capacity(channels: Arc<PubSub>) {
     if !channels
@@ -33,8 +21,8 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
                 let node = node.clone_to_transit();
                 let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                 let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
-                let max_down = node.max_throughput.0 as f64;
-                let max_up = node.max_throughput.1 as f64;
+                let max_down = node.max_throughput.0;
+                let max_up = node.max_throughput.1;
                 let median_rtt = if node.rtts.is_empty() {
                     0.0
                 } else {
@@ -59,13 +47,7 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
             .collect()
     };
 
-    let message = json!(
-        {
-            "event": PublishedChannels::TreeCapacity.to_string(),
-            "data": capacities,
-        }
-    )
-    .to_string();
+    let message = WsResponse::TreeCapacity { data: capacities };
     channels
         .send(PublishedChannels::TreeCapacity, message)
         .await;

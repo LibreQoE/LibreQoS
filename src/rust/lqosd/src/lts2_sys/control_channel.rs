@@ -1,19 +1,24 @@
 use anyhow::{Result, bail};
 use futures_util::{StreamExt, sink::SinkExt};
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tokio::sync::mpsc::error::TrySendError;
-use serde::{Serialize, Deserialize};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
+use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 
 mod messages;
-pub use messages::{RemoteInsightRequest, WsMessage};
+use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+pub use messages::{
+    RemoteInsightRequest, SupportTicket, SupportTicketComment, SupportTicketStatus,
+    SupportTicketSummary, WsMessage,
+};
 
 #[derive(Debug)]
 pub struct HistoryQueryResultPayload {
@@ -37,8 +42,34 @@ pub enum ControlChannelCommand {
         browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
-    ChatSend { request_id: u64, text: String },
-    ChatStop { request_id: u64 },
+    ChatSend {
+        request_id: u64,
+        text: String,
+    },
+    ChatStop {
+        request_id: u64,
+    },
+    SupportTicketList {
+        responder: oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>,
+    },
+    SupportTicketGet {
+        ticket_id: i64,
+        responder: oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>,
+    },
+    SupportTicketCreate {
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+        responder: oneshot::Sender<Result<messages::SupportTicket, ()>>,
+    },
+    SupportTicketAddComment {
+        ticket_id: i64,
+        commentor: String,
+        body: String,
+        date: i64,
+        responder: oneshot::Sender<Result<(), ()>>,
+    },
 }
 
 pub enum ConnectionCommand {
@@ -56,8 +87,34 @@ pub enum ConnectionCommand {
         browser_language: Option<String>,
         stream: tokio::sync::mpsc::Sender<Vec<u8>>,
     },
-    ChatSend { request_id: u64, text: String },
-    ChatStop { request_id: u64 },
+    ChatSend {
+        request_id: u64,
+        text: String,
+    },
+    ChatStop {
+        request_id: u64,
+    },
+    SupportTicketList {
+        responder: oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>,
+    },
+    SupportTicketGet {
+        ticket_id: i64,
+        responder: oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>,
+    },
+    SupportTicketCreate {
+        subject: String,
+        priority: u8,
+        body: String,
+        commentor: String,
+        responder: oneshot::Sender<Result<messages::SupportTicket, ()>>,
+    },
+    SupportTicketAddComment {
+        ticket_id: i64,
+        commentor: String,
+        body: String,
+        date: i64,
+        responder: oneshot::Sender<Result<(), ()>>,
+    },
 }
 
 pub struct ControlChannelBuilder {
@@ -105,8 +162,18 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     }
                 }
             }
-            ControlChannelCommand::StartChat { request_id, browser_ts_ms, browser_language, stream } => {
-                let _ = tx.try_send(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream });
+            ControlChannelCommand::StartChat {
+                request_id,
+                browser_ts_ms,
+                browser_language,
+                stream,
+            } => {
+                let _ = tx.try_send(ConnectionCommand::StartChat {
+                    request_id,
+                    browser_ts_ms,
+                    browser_language,
+                    stream,
+                });
             }
             ControlChannelCommand::ChatSend { request_id, text } => {
                 let _ = tx.try_send(ConnectionCommand::ChatSend { request_id, text });
@@ -114,13 +181,95 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
             ControlChannelCommand::ChatStop { request_id } => {
                 let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
             }
+            ControlChannelCommand::SupportTicketList { responder } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketList { responder },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketList { responder },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketGet {
+                ticket_id,
+                responder,
+            } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketGet {
+                    ticket_id,
+                    responder,
+                }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketGet { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketGet { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketCreate {
+                subject,
+                priority,
+                body,
+                commentor,
+                responder,
+            } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketCreate {
+                    subject,
+                    priority,
+                    body,
+                    commentor,
+                    responder,
+                }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketCreate { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketCreate { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
+            ControlChannelCommand::SupportTicketAddComment {
+                ticket_id,
+                commentor,
+                body,
+                date,
+                responder,
+            } => {
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketAddComment {
+                    ticket_id,
+                    commentor,
+                    body,
+                    date,
+                    responder,
+                }) {
+                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                        ConnectionCommand::SupportTicketAddComment { responder, .. },
+                    )
+                    | tokio::sync::mpsc::error::TrySendError::Closed(
+                        ConnectionCommand::SupportTicketAddComment { responder, .. },
+                    ) = err
+                    {
+                        let _ = responder.send(Err(()));
+                    }
+                }
+            }
         }
     }
     warn!("Control channel loop exiting");
     Ok(())
 }
 
-const TCP_TIMEOUT: Duration = Duration::from_secs(10);
+const TCP_TIMEOUT: Duration = Duration::from_secs(30);
 // Prevent unbounded growth while waiting for Welcome
 const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
@@ -153,10 +302,46 @@ async fn persistent_connection(
                 u64,
                 oneshot::Sender<Result<HistoryQueryResultPayload, ()>>,
             > = HashMap::new();
-            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> = HashMap::new();
+            enum PendingSupportTicket {
+                List(oneshot::Sender<Result<Vec<messages::SupportTicketSummary>, ()>>),
+                Get(oneshot::Sender<Result<Option<messages::SupportTicket>, ()>>),
+                Create(oneshot::Sender<Result<messages::SupportTicket, ()>>),
+                AddComment(oneshot::Sender<Result<(), ()>>),
+            }
+            let mut pending_support: HashMap<u64, PendingSupportTicket> = HashMap::new();
+            let mut chatbot_streams: HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>> =
+                HashMap::new();
             // Queue chatbot control messages until the connection is permitted (Welcome received)
             let mut pending_chatbot_messages: Vec<Vec<u8>> = Vec::new();
             let mut next_history_request_id: u64 = 1;
+            let mut next_support_request_id: u64 = 1;
+            let queue_license_grant_request = |socket_sender_tx: &tokio::sync::mpsc::Sender<
+                Message,
+            >| {
+                let Some(public_key) = license_grant::local_public_key_bytes() else {
+                    warn!("No local Insight keypair available for license grant request");
+                    return;
+                };
+                let message = messages::WsMessage::LicenseGrantRequest { public_key };
+                let Ok((_, _, bytes)) = message.to_bytes() else {
+                    error!("Failed to serialize LicenseGrantRequest");
+                    return;
+                };
+                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                    match e {
+                        TrySendError::Full(_) => {
+                            warn!(
+                                "Send unavailable: license grant request queue full; dropping message"
+                            );
+                        }
+                        TrySendError::Closed(_) => {
+                            error!("Failed to send license grant request: channel closed");
+                        }
+                    }
+                }
+            };
+            // Request the current grant as soon as the connection is established.
+            queue_license_grant_request(&socket_sender_tx);
 
             // Message pump
             'message_pump: loop {
@@ -276,6 +461,261 @@ async fn persistent_connection(
                                     }
                                 }
                             }
+                            Some(ConnectionCommand::SupportTicketList { responder }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::List(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketList { request_id };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketList");
+                                    if let Some(PendingSupportTicket::List(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket list queue full; dropping request");
+                                            if let Some(PendingSupportTicket::List(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket list: channel closed");
+                                            if let Some(PendingSupportTicket::List(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketGet { ticket_id, responder }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::Get(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketGet {
+                                    request_id,
+                                    ticket_id,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketGet");
+                                    if let Some(PendingSupportTicket::Get(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket get queue full; dropping request");
+                                            if let Some(PendingSupportTicket::Get(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket get: channel closed");
+                                            if let Some(PendingSupportTicket::Get(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketCreate {
+                                subject,
+                                priority,
+                                body,
+                                commentor,
+                                responder,
+                            }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::Create(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketCreate {
+                                    request_id,
+                                    subject,
+                                    priority,
+                                    body,
+                                    commentor,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketCreate");
+                                    if let Some(PendingSupportTicket::Create(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket create queue full; dropping request");
+                                            if let Some(PendingSupportTicket::Create(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket create: channel closed");
+                                            if let Some(PendingSupportTicket::Create(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
+                            Some(ConnectionCommand::SupportTicketAddComment {
+                                ticket_id,
+                                commentor,
+                                body,
+                                date,
+                                responder,
+                            }) => {
+                                if !permitted {
+                                    warn!("Not permitted to request support tickets yet");
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                const MAX_PENDING_SUPPORT: usize = 256;
+                                if pending_support.len() >= MAX_PENDING_SUPPORT {
+                                    warn!(
+                                        "Too many pending support ticket requests ({}); dropping newest",
+                                        MAX_PENDING_SUPPORT
+                                    );
+                                    let _ = responder.send(Err(()));
+                                    continue 'message_pump;
+                                }
+                                let request_id = next_support_request_id;
+                                next_support_request_id = next_support_request_id.wrapping_add(1);
+                                if pending_support
+                                    .insert(request_id, PendingSupportTicket::AddComment(responder))
+                                    .is_some()
+                                {
+                                    warn!("Duplicate pending support ticket request id {request_id}");
+                                }
+                                let message = messages::WsMessage::SupportTicketAddComment {
+                                    request_id,
+                                    ticket_id,
+                                    commentor,
+                                    date,
+                                    body,
+                                };
+                                let Ok((_, _, bytes)) = message.to_bytes() else {
+                                    error!("Failed to serialize SupportTicketAddComment");
+                                    if let Some(PendingSupportTicket::AddComment(responder)) =
+                                        pending_support.remove(&request_id)
+                                    {
+                                        let _ = responder.send(Err(()));
+                                    }
+                                    continue 'message_pump;
+                                };
+                                if let Err(e) =
+                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                {
+                                    match e {
+                                        TrySendError::Full(_) => {
+                                            warn!("Send unavailable: support ticket add comment queue full; dropping request");
+                                            if let Some(PendingSupportTicket::AddComment(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                        }
+                                        TrySendError::Closed(_) => {
+                                            error!("Failed to queue support ticket add comment: channel closed");
+                                            if let Some(PendingSupportTicket::AddComment(responder)) =
+                                                pending_support.remove(&request_id)
+                                            {
+                                                let _ = responder.send(Err(()));
+                                            }
+                                            break 'message_pump;
+                                        }
+                                    }
+                                }
+                            }
                             Some(ConnectionCommand::StartChat { request_id, browser_ts_ms, browser_language, stream }) => {
                                 chatbot_streams.insert(request_id, stream);
                                 let message = messages::WsMessage::ChatbotStart { request_id, browser_ts_ms, browser_language };
@@ -349,25 +789,63 @@ async fn persistent_connection(
                                 match msg {
                                     messages::WsMessage::Welcome { valid, license_state, expiration_date } => {
                                         info!("Control channel connected. License valid={valid}, state={license_state}, expires_unix={expiration_date}");
-                                        set_license_status(LicenseStatus {
-                                            license_type: license_state,
-                                            trial_expires: expiration_date as i32,
-                                        });
-                                        permitted = true;
-                                        sleep_seconds = 60;
-                                        // Flush any pending chatbot messages now that we're permitted
-                                        if !pending_chatbot_messages.is_empty() {
-                                            debug!("Flushing {} queued chatbot message(s)", pending_chatbot_messages.len());
-                                            for bytes in pending_chatbot_messages.drain(..) {
-                                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
-                                                    match e {
-                                                        TrySendError::Full(_) => warn!("Send unavailable: chatbot queue full; dropping queued message"),
-                                                        TrySendError::Closed(_) => {
-                                                            error!("Failed to send queued chatbot message: channel closed");
-                                                            break 'message_pump;
+                                        if valid {
+                                            set_license_status(LicenseStatus {
+                                                license_type: license_state,
+                                                trial_expires: expiration_date as i32,
+                                            });
+                                            permitted = true;
+                                            sleep_seconds = 60;
+                                            // Flush any pending chatbot messages now that we're permitted
+                                            if !pending_chatbot_messages.is_empty() {
+                                                debug!(
+                                                    "Flushing {} queued chatbot message(s)",
+                                                    pending_chatbot_messages.len()
+                                                );
+                                                for bytes in pending_chatbot_messages.drain(..) {
+                                                    if let Err(e) = socket_sender_tx
+                                                        .try_send(Message::Binary(bytes.into()))
+                                                    {
+                                                        match e {
+                                                            TrySendError::Full(_) => warn!(
+                                                                "Send unavailable: chatbot queue full; dropping queued message"
+                                                            ),
+                                                            TrySendError::Closed(_) => {
+                                                                error!(
+                                                                    "Failed to send queued chatbot message: channel closed"
+                                                                );
+                                                                break 'message_pump;
+                                                            }
                                                         }
                                                     }
                                                 }
+                                            }
+                                            queue_license_grant_request(&socket_sender_tx);
+                                        } else {
+                                            set_license_status(LicenseStatus {
+                                                license_type: 0,
+                                                trial_expires: -1,
+                                            });
+                                            permitted = false;
+                                            if let Err(e) = license_grant::invalidate_license_grant() {
+                                                warn!("Failed to invalidate stored license grant: {e:?}");
+                                            }
+                                        }
+                                    }
+                                    messages::WsMessage::InsightPublicKey { public_key } => {
+                                        if let Err(e) =
+                                            license_grant::update_insight_public_key_bytes(public_key)
+                                        {
+                                            warn!("Failed to store Insight public key: {e:?}");
+                                        }
+                                    }
+                                    messages::WsMessage::LicenseGrant { payload, signature } => {
+                                        if let Err(e) =
+                                            license_grant::handle_license_grant(payload, signature)
+                                        {
+                                            warn!("Failed to handle license grant: {e:?}");
+                                            if let Err(err) = license_grant::purge_license_grant_file() {
+                                                warn!("Failed to delete license grant file: {err:?}");
                                             }
                                         }
                                     }
@@ -410,6 +888,80 @@ async fn persistent_connection(
                                             let _ = responder.send(Ok(payload));
                                         } else {
                                             warn!("History query result for unknown request id {request_id}");
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketListResult {
+                                        request_id,
+                                        tickets,
+                                    } => {
+                                        if let Some(PendingSupportTicket::List(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(tickets));
+                                        } else {
+                                            warn!(
+                                                "Support ticket list result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketGetResult {
+                                        request_id,
+                                        ticket,
+                                    } => {
+                                        if let Some(PendingSupportTicket::Get(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(ticket));
+                                        } else {
+                                            warn!(
+                                                "Support ticket get result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketCreateResult {
+                                        request_id,
+                                        ticket,
+                                    } => {
+                                        if let Some(PendingSupportTicket::Create(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(ticket));
+                                        } else {
+                                            warn!(
+                                                "Support ticket create result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketAddCommentResult {
+                                        request_id,
+                                    } => {
+                                        if let Some(PendingSupportTicket::AddComment(responder)) =
+                                            pending_support.remove(&request_id)
+                                        {
+                                            let _ = responder.send(Ok(()));
+                                        } else {
+                                            warn!(
+                                                "Support ticket add comment result for unknown request id {request_id}"
+                                            );
+                                        }
+                                    }
+                                    messages::WsMessage::SupportTicketError { request_id, message } => {
+                                        warn!("Support ticket request {request_id} failed: {message}");
+                                        if let Some(pending) = pending_support.remove(&request_id) {
+                                            match pending {
+                                                PendingSupportTicket::List(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::Get(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::Create(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                                PendingSupportTicket::AddComment(responder) => {
+                                                    let _ = responder.send(Err(()));
+                                                }
+                                            }
                                         }
                                     }
                                     messages::WsMessage::MakeApiRequest { request_id, method, url_suffix, body } => {
@@ -537,11 +1089,28 @@ async fn persistent_connection(
                                 }
                             }
                         }
+                        queue_license_grant_request(&socket_sender_tx);
                     }
                 }
             } // End of message pump
             for (_, responder) in pending_history.drain() {
                 let _ = responder.send(Err(()));
+            }
+            for (_, pending) in pending_support.drain() {
+                match pending {
+                    PendingSupportTicket::List(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::Get(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::Create(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                    PendingSupportTicket::AddComment(responder) => {
+                        let _ = responder.send(Err(()));
+                    }
+                }
             }
         }
         debug!("Sleeping before reconnecting the persistent channel");
@@ -591,7 +1160,12 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     debug!("Connecting tungstenite client to shaper gateway server: {target}");
     let result = timeout(
         TCP_TIMEOUT,
-        tokio_tungstenite::client_async_tls_with_config(target.clone(), stream, None, Some(t_connector)),
+        tokio_tungstenite::client_async_tls_with_config(
+            target.clone(),
+            stream,
+            None,
+            Some(t_connector),
+        ),
     )
     .await;
     if result.is_err() {
@@ -726,7 +1300,12 @@ async fn api_request(
         }
     };
 
-    let message = messages::WsMessage::ApiReply { request_id, status, headers, data: bytes };
+    let message = messages::WsMessage::ApiReply {
+        request_id,
+        status,
+        headers,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize ApiReply");
         return Ok(());
@@ -777,7 +1356,9 @@ async fn shaper_snapshot_streaming(
         };
         if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
             match e {
-                TrySendError::Full(_) => warn!("Send unavailable: StreamingShaper queue full; dropping reply"),
+                TrySendError::Full(_) => {
+                    warn!("Send unavailable: StreamingShaper queue full; dropping reply")
+                }
                 TrySendError::Closed(_) => error!("Failed to send StreamingShaper: channel closed"),
             }
         }
@@ -841,29 +1422,36 @@ async fn circuit_snapshot_streaming(
 
     // Helper: run one ping with 1s timeout; respects disable_icmp_ping
     async fn one_ping(ip: std::net::IpAddr) -> Option<f32> {
-        let Ok(cfg) = lqos_config::load_config() else { return None; };
+        let Ok(cfg) = lqos_config::load_config() else {
+            return None;
+        };
         if cfg.disable_icmp_ping.unwrap_or(false) {
             return None;
         }
-        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
         use rand::random;
+        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
         let client = match ip {
             std::net::IpAddr::V4(_) => Client::new(&Config::default()),
             std::net::IpAddr::V6(_) => Client::new(&Config::builder().kind(ICMP::V6).build()),
         };
-        if client.is_err() { return None; }
+        if client.is_err() {
+            return None;
+        }
         let client = client.ok()?;
         let payload = [0; 56];
         let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
         pinger.timeout(Duration::from_secs(1));
         match pinger.ping(PingSequence(0), &payload).await {
-            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => Some(dur.as_secs_f32() * 1000.0),
+            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => {
+                Some(dur.as_secs_f32() * 1000.0)
+            }
             _ => None,
         }
     }
 
     // Load "shaped devices" snapshot and pick devices in the target circuit
     let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
+    let shaped_cache = crate::shaped_devices_tracker::SHAPED_DEVICE_HASH_CACHE.load();
     let mut device_indexes: Vec<usize> = Vec::new();
     for (idx, dev) in shaped.devices.iter().enumerate() {
         if dev.circuit_hash == circuit_hash {
@@ -881,22 +1469,32 @@ async fn circuit_snapshot_streaming(
     }
     let mut aggregates: std::collections::HashMap<usize, Agg> = std::collections::HashMap::new();
     for idx in &device_indexes {
-        aggregates.insert(*idx, Agg { bps_bytes: DownUpOrder::zeroed(), tcp_packets: DownUpOrder::zeroed(), tcp_retries: DownUpOrder::zeroed(), rtts: Vec::new() });
+        aggregates.insert(
+            *idx,
+            Agg {
+                bps_bytes: DownUpOrder::zeroed(),
+                tcp_packets: DownUpOrder::zeroed(),
+                tcp_retries: DownUpOrder::zeroed(),
+                rtts: Vec::new(),
+            },
+        );
     }
 
     // Walk raw throughput data and fold into devices of this circuit
     {
-        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER.raw_data.lock();
-        for (xdp_ip, te) in raw.iter() {
+        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .raw_data
+            .lock();
+        for (_xdp_ip, te) in raw.iter() {
             // Only consider entries known to belong to this circuit and are fresh enough
-            if te.circuit_hash != Some(circuit_hash) { continue; }
+            if te.circuit_hash != Some(circuit_hash) {
+                continue;
+            }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            // Map IP to a device via trie
-            let lookup = xdp_ip.as_ipv6();
-            if let Some((_, id)) = shaped.trie.longest_match(lookup) {
-                if aggregates.contains_key(id) {
-                    if let Some(agg) = aggregates.get_mut(id) {
+            if let Some(device_hash) = te.device_hash {
+                if let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash) {
+                    if let Some(agg) = aggregates.get_mut(&id) {
                         // bytes_per_second -> later convert to bits
                         agg.bps_bytes += te.bytes_per_second;
                         agg.tcp_packets += te.tcp_packets;
@@ -915,7 +1513,12 @@ async fn circuit_snapshot_streaming(
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
     for idx in device_indexes {
         let dev = &shaped.devices[idx];
-        let agg = aggregates.remove(&idx).unwrap_or(Agg { bps_bytes: DownUpOrder::zeroed(), tcp_packets: DownUpOrder::zeroed(), tcp_retries: DownUpOrder::zeroed(), rtts: Vec::new() });
+        let agg = aggregates.remove(&idx).unwrap_or(Agg {
+            bps_bytes: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            tcp_retries: DownUpOrder::zeroed(),
+            rtts: Vec::new(),
+        });
         // Compact addresses into a single list
         let mut addresses: Vec<(std::net::IpAddr, u8)> = Vec::new();
         addresses.extend(
@@ -933,7 +1536,11 @@ async fn circuit_snapshot_streaming(
         let device_name = dev.device_name.clone();
         // Ping selection
         let ping_ip = choose_host_ip(&dev.ipv4, &dev.ipv6);
-        let last_ping_ms = if let Some(ip) = ping_ip { one_ping(ip).await } else { None };
+        let last_ping_ms = if let Some(ip) = ping_ip {
+            one_ping(ip).await
+        } else {
+            None
+        };
         // Compute RTT median across collected medians
         let median_tcp_rtt_ms = if agg.rtts.is_empty() {
             None
@@ -972,35 +1579,19 @@ async fn circuit_snapshot_streaming(
         let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
         let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
         for (key, (local, ..)) in all_flows.flow_data.iter() {
-            if local.last_seen < five_minutes_ago { continue; }
-            // Identify if this flow belongs to our circuit via local or remote mapping
-            use std::net::IpAddr;
-            let local_ip_v6 = match key.local_ip.as_ip() { IpAddr::V4(ip) => ip.to_ipv6_mapped(), IpAddr::V6(ip) => ip };
-            let remote_ip_v6 = match key.remote_ip.as_ip() { IpAddr::V4(ip) => ip.to_ipv6_mapped(), IpAddr::V6(ip) => ip };
-            let mut include = false;
-            let (mut local_ip_addr, mut remote_ip_addr) = (key.local_ip.as_ip(), key.remote_ip.as_ip());
-            if let Some((_, id)) = shaped.trie.longest_match(local_ip_v6) {
-                if shaped.devices[*id].circuit_hash == circuit_hash {
-                    include = true;
-                    local_ip_addr = key.local_ip.as_ip();
-                    remote_ip_addr = key.remote_ip.as_ip();
-                }
+            if local.last_seen < five_minutes_ago {
+                continue;
             }
-            if !include {
-                if let Some((_, id)) = shaped.trie.longest_match(remote_ip_v6) {
-                    if shaped.devices[*id].circuit_hash == circuit_hash {
-                        include = true;
-                        // swap orientation so local is on-circuit side
-                        local_ip_addr = key.remote_ip.as_ip();
-                        remote_ip_addr = key.local_ip.as_ip();
-                    }
-                }
+            if local.circuit_hash != Some(circuit_hash) {
+                continue;
             }
-            if !include { continue; }
+
+            let local_ip_addr = key.local_ip.as_ip();
+            let remote_ip_addr = key.remote_ip.as_ip();
 
             let rtt_ms = (
-                local.rtt[0].as_millis() as f32,
-                local.rtt[1].as_millis() as f32,
+                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,
+                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Upload) as f32,
             );
             flows_out.push(FlowSnapshot {
                 remote_ip: remote_ip_addr,
@@ -1018,20 +1609,29 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    let payload = StreamingCircuitPayload { devices: devices_out, flows: flows_out };
+    let payload = StreamingCircuitPayload {
+        devices: devices_out,
+        flows: flows_out,
+    };
     let Ok(bytes) = serde_cbor::to_vec(&payload) else {
         error!("Failed to serialize StreamingCircuitPayload");
         return Ok(());
     };
 
-    let message = messages::WsMessage::StreamingCircuit { request_id, circuit_hash, data: bytes };
+    let message = messages::WsMessage::StreamingCircuit {
+        request_id,
+        circuit_hash,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize StreamingCircuit message");
         return Ok(());
     };
     if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
         match e {
-            TrySendError::Full(_) => warn!("Send unavailable: StreamingCircuit queue full; dropping reply"),
+            TrySendError::Full(_) => {
+                warn!("Send unavailable: StreamingCircuit queue full; dropping reply")
+            }
             TrySendError::Closed(_) => error!("Failed to send StreamingCircuit: channel closed"),
         }
     }
@@ -1045,7 +1645,7 @@ async fn tree_snapshot_streaming(
     #[derive(Serialize, Deserialize)]
     struct LiveNetworkTransport {
         name: String,
-        max_throughput: (u32, u32),
+        max_throughput: (f64, f64),
         current_throughput: (u64, u64),
         current_packets: (u64, u64),
         current_tcp_packets: (u64, u64),
@@ -1094,14 +1694,19 @@ async fn tree_snapshot_streaming(
         return Ok(());
     };
 
-    let message = messages::WsMessage::StreamingShaperTree { request_id, data: bytes };
+    let message = messages::WsMessage::StreamingShaperTree {
+        request_id,
+        data: bytes,
+    };
     let Ok((_, _, ws_bytes)) = message.to_bytes() else {
         error!("Failed to serialize StreamingShaperTree message");
         return Ok(());
     };
     if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
         match e {
-            TrySendError::Full(_) => warn!("Send unavailable: StreamingShaperTree queue full; dropping reply"),
+            TrySendError::Full(_) => {
+                warn!("Send unavailable: StreamingShaperTree queue full; dropping reply")
+            }
             TrySendError::Closed(_) => error!("Failed to send StreamingShaperTree: channel closed"),
         }
     }

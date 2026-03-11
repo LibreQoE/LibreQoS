@@ -1,5 +1,16 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {LtsLast24Hours_graph} from "../graphs/ltsLast24Hours_graph";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class LtsLast24Hours extends BaseDashlet {
     constructor(slot) {
@@ -37,10 +48,12 @@ export class LtsLast24Hours extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "Cadence") {
             if (this.count === 0) {
-                // Test
-                $.get("/local-api/lts24", (data) => {
+                const seconds = 24 * 60 * 60;
+                listenOnceForSeconds("LtsThroughput", seconds, (msg) => {
+                    const data = msg && msg.data ? msg.data : [];
                     this.graph.update(data);
                 });
+                wsClient.send({ LtsThroughput: { seconds } });
             }
             this.count++;
             this.count %= 120;

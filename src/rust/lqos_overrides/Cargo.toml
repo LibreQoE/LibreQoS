@@ -1,0 +1,12 @@
+[package]
+name = "lqos_overrides"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+nix.workspace = true
+lqos_config = { path = "../lqos_config" }
+clap = { workspace = true, features = ["derive"] }

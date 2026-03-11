@@ -158,6 +158,10 @@ export class PacketsPerSecondBar extends DashboardGraph {
         if (this.option.series[4].data.length > 300) {
             this.option.series[4].data.shift();
         }
+        this.option.series[5].data.push({ value: -icmp.up, timestamp: now });
+        if (this.option.series[5].data.length > 300) {
+            this.option.series[5].data.shift();
+        }
 
         this.chart.setOption(this.option);
     }

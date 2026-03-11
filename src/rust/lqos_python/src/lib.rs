@@ -1,10 +1,11 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSeverity, UrgentSource};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -15,6 +16,551 @@ use anyhow::{Error, Result};
 use blocking::run_query;
 use sysinfo::System;
 mod device_weights;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+// ===== Planner CBOR I/O =====
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerSiteEntry {
+    cpu: i64,
+    major: i64,
+    minor: i64,
+    #[serde(default)]
+    insertion_order: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerCircuitEntry {
+    cpu: i64,
+    major: i64,
+    minor: i64,
+    #[serde(default)]
+    parent_site: String,
+    #[serde(default)]
+    sqm: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+struct PlannerStateSerde {
+    #[serde(default = "default_algo_version")]
+    algo_version: String,
+    #[serde(default)]
+    updated_at: f64,
+    #[serde(default)]
+    queuesAvailable: i64,
+    #[serde(default)]
+    on_a_stick: bool,
+    #[serde(default)]
+    site_count: i64,
+    #[serde(default)]
+    site_names: Vec<i64>,
+    #[serde(default)]
+    site_map: BTreeMap<i64, PlannerSiteEntry>,
+    #[serde(default)]
+    circuit_map: BTreeMap<i64, PlannerCircuitEntry>,
+}
+
+fn default_algo_version() -> String {
+    "v1".to_string()
+}
+
+fn to_i64_any(v: &pyo3::Bound<'_, pyo3::types::PyAny>) -> Option<i64> {
+    if let Ok(n) = v.extract::<i64>() {
+        return Some(n);
+    }
+    if let Ok(s) = v.extract::<String>() {
+        return s.parse::<i64>().ok();
+    }
+    None
+}
+
+fn get_string(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: String) -> String {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<String>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_f64(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: f64) -> f64 {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<f64>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_i64(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: i64) -> i64 {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<i64>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+fn get_bool(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: bool) -> bool {
+    match d.get_item(key) {
+        Ok(Some(v)) => v.extract::<bool>().unwrap_or(default),
+        _ => default,
+    }
+}
+
+#[pyfunction]
+fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<bool> {
+    use std::fs;
+    use std::io::Write;
+    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    // Build strongly typed struct, preserving integer keys
+    let algo_version = get_string(&dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(&dict, "updated_at", 0.0);
+    let queues_available = get_i64(&dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(&dict, "on_a_stick", false);
+    let site_count = get_i64(&dict, "site_count", 0);
+    let mut site_names: Vec<i64> = Vec::new();
+    if let Ok(Some(sn)) = dict.get_item("site_names") {
+        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
+            for item in list.iter() {
+                if let Some(n) = to_i64_any(&item) {
+                    site_names.push(n);
+                }
+            }
+        }
+    }
+    // site_map
+    let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
+    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
+        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in sm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let insertion_order = match entry.get_item("insertion_order") {
+                            Ok(Some(x)) => x.extract::<i64>().ok(),
+                            _ => None,
+                        };
+                        site_map.insert(
+                            key,
+                            PlannerSiteEntry {
+                                cpu,
+                                major,
+                                minor,
+                                insertion_order,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // circuit_map
+    let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
+        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in cm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let parent_site = get_string(&entry, "parent_site", String::new());
+                        let sqm = get_string(&entry, "sqm", String::new());
+                        circuit_map.insert(
+                            key,
+                            PlannerCircuitEntry {
+                                cpu,
+                                major,
+                                minor,
+                                parent_site,
+                                sqm,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    let to_save = PlannerStateSerde {
+        algo_version,
+        updated_at,
+        queuesAvailable: queues_available,
+        on_a_stick,
+        site_count,
+        site_names,
+        site_map,
+        circuit_map,
+    };
+
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}"))
+    })?;
+    // Compress using the standard deflate scheme used elsewhere in the project
+    let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
+    let path_tmp = format!("{}.tmp", &path);
+    {
+        let mut f = fs::File::create(&path_tmp).map_err(|e| {
+            pyo3::exceptions::PyOSError::new_err(format!("Open {path_tmp} failed: {e:?}"))
+        })?;
+        f.write_all(&bytes).map_err(|e| {
+            pyo3::exceptions::PyOSError::new_err(format!("Write {path_tmp} failed: {e:?}"))
+        })?;
+        f.flush().ok();
+    }
+    // Atomic replace
+    fs::rename(&path_tmp, &path).map_err(|e| {
+        pyo3::exceptions::PyOSError::new_err(format!("Rename {path_tmp} -> {path} failed: {e:?}"))
+    })?;
+    // Optionally, remove legacy JSON file – leave for migration
+    Ok(true)
+}
+
+#[pyfunction]
+fn read_planner_cbor(py: Python, path: String) -> PyResult<Option<PyObject>> {
+    use std::fs;
+    use std::path::Path;
+    if !Path::new(&path).exists() {
+        return Ok(None);
+    }
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return Ok(None),
+    };
+    // Attempt decompress-then-decode; fall back to raw CBOR for backward compatibility
+    let decoded: PlannerStateSerde =
+        if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+            match serde_cbor::from_slice(&decompressed) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            }
+        } else {
+            match serde_cbor::from_slice(&bytes) {
+                Ok(v) => v,
+                Err(_) => return Ok(None),
+            }
+        };
+    // Convert to Python dict structure
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("algo_version", decoded.algo_version).ok();
+    out.set_item("updated_at", decoded.updated_at).ok();
+    out.set_item("queuesAvailable", decoded.queuesAvailable)
+        .ok();
+    out.set_item("on_a_stick", decoded.on_a_stick).ok();
+    out.set_item("site_count", decoded.site_count).ok();
+    // site_names list
+    let list = pyo3::types::PyList::new(py, decoded.site_names).unwrap();
+    out.set_item("site_names", list).ok();
+    // site_map
+    let sm = pyo3::types::PyDict::new(py);
+    for (k, v) in decoded.site_map.into_iter() {
+        let entry = pyo3::types::PyDict::new(py);
+        entry.set_item("cpu", v.cpu).ok();
+        entry.set_item("major", v.major).ok();
+        entry.set_item("minor", v.minor).ok();
+        if let Some(ins) = v.insertion_order {
+            entry.set_item("insertion_order", ins).ok();
+        }
+        sm.set_item(k, entry).ok();
+    }
+    out.set_item("site_map", sm).ok();
+    // circuit_map
+    let cm = pyo3::types::PyDict::new(py);
+    for (k, v) in decoded.circuit_map.into_iter() {
+        let entry = pyo3::types::PyDict::new(py);
+        entry.set_item("cpu", v.cpu).ok();
+        entry.set_item("major", v.major).ok();
+        entry.set_item("minor", v.minor).ok();
+        entry.set_item("parent_site", v.parent_site).ok();
+        entry.set_item("sqm", v.sqm).ok();
+        cm.set_item(k, entry).ok();
+    }
+    out.set_item("circuit_map", cm).ok();
+    Ok(Some(out.into_any().unbind()))
+}
+
+// ===== Remote planner fetch/store over Insight web API =====
+
+#[derive(Serialize, Deserialize)]
+struct FetchPlannerRequest {
+    org_key: String,
+    node_id: String,
+    queues_available: u32,
+    on_a_stick: bool,
+    site_count: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", content = "content")] // allow robust parsing if needed
+enum FetchPlannerResponse {
+    NoPlan,
+    PlanBase64(String),
+}
+
+#[derive(Serialize, Deserialize)]
+struct PersistPlannerRequest {
+    org_key: String,
+    node_id: String,
+    queues_available: u32,
+    on_a_stick: bool,
+    site_count: u32,
+    body_base64: String,
+}
+
+fn base_url_from_config() -> anyhow::Result<String> {
+    let config = lqos_config::load_config()?;
+    let base = config
+        .long_term_stats
+        .lts_url
+        .clone()
+        .unwrap_or_else(|| "insight.libreqos.com".to_string());
+    Ok(format!("https://{}/shaper_api", base))
+}
+
+fn license_and_node_from_config() -> anyhow::Result<(String, String)> {
+    let config = lqos_config::load_config()?;
+    let org_key = config
+        .long_term_stats
+        .license_key
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("No Insight license key configured"))?;
+    let node_id = config.node_id.clone();
+    Ok((org_key, node_id))
+}
+
+#[pyfunction]
+fn fetch_planner_remote(
+    py: Python,
+    queues_available: i64,
+    on_a_stick: bool,
+    site_count: i64,
+) -> PyResult<Option<PyObject>> {
+    // Build request
+    let (org_key, node_id) = match license_and_node_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let base_url = match base_url_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let req = FetchPlannerRequest {
+        org_key,
+        node_id,
+        queues_available: queues_available.max(0) as u32,
+        on_a_stick,
+        site_count: site_count.max(0) as u32,
+    };
+    let url = format!("{}/fetchPlanner", base_url);
+    // Send
+    // Allow invalid certs for self-hosted Insight instances (non-default URL)
+    let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
+    let client = match reqwest::blocking::Client::builder()
+        // Use a generous timeout similar to deviceWeights to tolerate
+        // slow or distant Insight instances when fetching planner state.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
+        .danger_accept_invalid_certs(allow_insecure)
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(None),
+    };
+    let resp = match client.post(&url).json(&req).send() {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+    let parsed: FetchPlannerResponse = match resp.json() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    // Handle response
+    match parsed {
+        FetchPlannerResponse::NoPlan => Ok(None),
+        FetchPlannerResponse::PlanBase64(b64) => {
+            let Ok(bytes) = BASE64_STANDARD.decode(b64.as_bytes()) else {
+                return Ok(None);
+            };
+            // Attempt decompress-then-decode; fall back to raw CBOR
+            let decoded: PlannerStateSerde =
+                if let Ok(decompressed) = miniz_oxide::inflate::decompress_to_vec(&bytes) {
+                    match serde_cbor::from_slice(&decompressed) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    }
+                } else {
+                    match serde_cbor::from_slice(&bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(None),
+                    }
+                };
+            // Convert to Python dict
+            let out = pyo3::types::PyDict::new(py);
+            out.set_item("algo_version", decoded.algo_version).ok();
+            out.set_item("updated_at", decoded.updated_at).ok();
+            out.set_item("queuesAvailable", decoded.queuesAvailable)
+                .ok();
+            out.set_item("on_a_stick", decoded.on_a_stick).ok();
+            out.set_item("site_count", decoded.site_count).ok();
+            let list = pyo3::types::PyList::new(py, decoded.site_names).unwrap();
+            out.set_item("site_names", list).ok();
+            let sm = pyo3::types::PyDict::new(py);
+            for (k, v) in decoded.site_map.into_iter() {
+                let entry = pyo3::types::PyDict::new(py);
+                entry.set_item("cpu", v.cpu).ok();
+                entry.set_item("major", v.major).ok();
+                entry.set_item("minor", v.minor).ok();
+                if let Some(ins) = v.insertion_order {
+                    entry.set_item("insertion_order", ins).ok();
+                }
+                sm.set_item(k, entry).ok();
+            }
+            out.set_item("site_map", sm).ok();
+            let cm = pyo3::types::PyDict::new(py);
+            for (k, v) in decoded.circuit_map.into_iter() {
+                let entry = pyo3::types::PyDict::new(py);
+                entry.set_item("cpu", v.cpu).ok();
+                entry.set_item("major", v.major).ok();
+                entry.set_item("minor", v.minor).ok();
+                entry.set_item("parent_site", v.parent_site).ok();
+                entry.set_item("sqm", v.sqm).ok();
+                cm.set_item(k, entry).ok();
+            }
+            out.set_item("circuit_map", cm).ok();
+            Ok(Some(out.into_any().unbind()))
+        }
+    }
+}
+
+#[pyfunction]
+fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
+    // Extract needed values and serialize as compressed CBOR
+    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    let algo_version = get_string(&dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(&dict, "updated_at", 0.0);
+    let queues_available = get_i64(&dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(&dict, "on_a_stick", false);
+    let site_count = get_i64(&dict, "site_count", 0);
+    // site_names
+    let mut site_names: Vec<i64> = Vec::new();
+    if let Ok(Some(sn)) = dict.get_item("site_names") {
+        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
+            for item in list.iter() {
+                if let Some(n) = to_i64_any(&item) {
+                    site_names.push(n);
+                }
+            }
+        }
+    }
+    // site_map
+    let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
+    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
+        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in sm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let insertion_order = match entry.get_item("insertion_order") {
+                            Ok(Some(x)) => x.extract::<i64>().ok(),
+                            _ => None,
+                        };
+                        site_map.insert(
+                            key,
+                            PlannerSiteEntry {
+                                cpu,
+                                major,
+                                minor,
+                                insertion_order,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // circuit_map
+    let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
+        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
+            for (k, v) in cm_dict.iter() {
+                if let Some(key) = to_i64_any(&k) {
+                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
+                        let cpu = get_i64(&entry, "cpu", 0);
+                        let major = get_i64(&entry, "major", 0);
+                        let minor = get_i64(&entry, "minor", 0);
+                        let parent_site = get_string(&entry, "parent_site", String::new());
+                        let sqm = get_string(&entry, "sqm", String::new());
+                        circuit_map.insert(
+                            key,
+                            PlannerCircuitEntry {
+                                cpu,
+                                major,
+                                minor,
+                                parent_site,
+                                sqm,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let to_save = PlannerStateSerde {
+        algo_version,
+        updated_at,
+        queuesAvailable: queues_available,
+        on_a_stick,
+        site_count,
+        site_names,
+        site_map,
+        circuit_map,
+    };
+    let cbor_bytes = serde_cbor::to_vec(&to_save).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("CBOR encode failed: {e:?}"))
+    })?;
+    let bytes = miniz_oxide::deflate::compress_to_vec(&cbor_bytes, 10);
+    let body_base64 = BASE64_STANDARD.encode(&bytes);
+
+    let (org_key, node_id) = match license_and_node_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(false),
+    };
+    let base_url = match base_url_from_config() {
+        Ok(v) => v,
+        Err(_) => return Ok(false),
+    };
+    let url = format!("{}/storePlanner", base_url);
+    let req = PersistPlannerRequest {
+        org_key,
+        node_id,
+        queues_available: queues_available.max(0) as u32,
+        on_a_stick,
+        site_count: site_count.max(0) as u32,
+        body_base64,
+    };
+    // Allow invalid certs for self-hosted Insight instances (non-default URL)
+    let allow_insecure = !base_url.starts_with("https://insight.libreqos.com");
+    let client = match reqwest::blocking::Client::builder()
+        // Match the extended planner fetch timeout for symmetry.
+        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
+        .danger_accept_invalid_certs(allow_insecure)
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Ok(false),
+    };
+    match client.put(&url).json(&req).send() {
+        Ok(resp) if resp.status().is_success() => Ok(true),
+        _ => Ok(false),
+    }
+}
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
@@ -38,6 +584,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
+    m.add_function(wrap_pyfunction!(fast_queues_fq_codel, m)?)?;
     m.add_function(wrap_pyfunction!(
         upstream_bandwidth_capacity_download_mbps,
         m
@@ -51,6 +598,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(enable_actual_shell_commands, m)?)?;
     m.add_function(wrap_pyfunction!(use_bin_packing_to_balance_cpu, m)?)?;
     m.add_function(wrap_pyfunction!(monitor_mode_only, m)?)?;
+    m.add_function(wrap_pyfunction!(shaping_cpu_count, m)?)?;
+    m.add_function(wrap_pyfunction!(efficiency_core_ids, m)?)?;
     m.add_function(wrap_pyfunction!(run_shell_commands_as_sudo, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_download_mbps, m)?)?;
     m.add_function(wrap_pyfunction!(generated_pn_upload_mbps, m)?)?;
@@ -81,9 +630,17 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_client_id, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_client_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_username, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_password, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_isp_id, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_online_users_domain, m)?)?;
+    m.add_function(wrap_pyfunction!(visp_timeout_secs, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_visp, m)?)?;
     m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
     m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
@@ -103,6 +660,11 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_network_adjustments, m)?)?;
+    m.add_function(wrap_pyfunction!(overrides_network_adjustments_effective, m)?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -116,6 +678,15 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
+    m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
+    m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
+    m.add_function(wrap_pyfunction!(log_info, m)?)?;
+    m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
+    // Planner remote fetch/store for Insight integration
+    m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;
+    m.add_function(wrap_pyfunction!(store_planner_remote, m)?)?;
+    m.add_function(wrap_pyfunction!(write_planner_cbor, m)?)?;
+    m.add_function(wrap_pyfunction!(read_planner_cbor, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -202,29 +773,48 @@ fn delete_ip_mapping(_py: Python, ip_address: String) -> PyResult<()> {
 
 /// Internal function
 /// Converts IP address arguments into an IP mapping request.
-fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: bool) -> Result<BusRequest> {
+fn parse_add_ip(
+    ip: &str,
+    classid: &str,
+    cpu: &str,
+    upload: bool,
+    circuit_id: &str,
+    device_id: &str,
+) -> Result<BusRequest> {
     if !classid.contains(':') {
         return Err(Error::msg(format!(
             "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
         )));
     }
+    let circuit_id = circuit_id.trim();
+    if circuit_id.is_empty() {
+        return Err(Error::msg("circuit_id is required"));
+    }
+    let device_id = device_id.trim();
+    if device_id.is_empty() {
+        return Err(Error::msg("device_id is required"));
+    }
     Ok(BusRequest::MapIpToFlow {
         ip_address: ip.to_string(),
         tc_handle: TcHandle::from_string(classid)?,
         cpu: read_hex_string(cpu)?, // Force HEX representation
+        circuit_id: lqos_utils::hash_to_i64(circuit_id) as u64,
+        device_id: lqos_utils::hash_to_i64(device_id) as u64,
         upload,
     })
 }
 
 /// Adds an IP address mapping
-#[pyfunction]
+#[pyfunction(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
 fn add_ip_mapping(
     ip: String,
     classid: String,
     cpu: String, // In HEX
     upload: bool,
+    circuit_id: String,
+    device_id: String,
 ) -> PyResult<()> {
-    let request = parse_add_ip(&ip, &classid, &cpu, upload);
+    let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
     if let Ok(request) = request {
         run_query(vec![request]).unwrap();
         Ok(())
@@ -245,14 +835,17 @@ impl BatchedCommands {
         Ok(Self { batch: Vec::new() })
     }
 
+    #[pyo3(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
     pub fn add_ip_mapping(
         &mut self,
         ip: String,
         classid: String,
         cpu: String,
         upload: bool,
+        circuit_id: String,
+        device_id: String,
     ) -> PyResult<()> {
-        let request = parse_add_ip(&ip, &classid, &cpu, upload);
+        let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
         if let Ok(request) = request {
             self.batch.push(request);
             Ok(())
@@ -302,6 +895,294 @@ fn validate_shaped_devices() -> PyResult<String> {
         }
     }
     Ok("".to_string())
+}
+
+/// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
+/// The dictionary keys mirror the normalized loader used in LibreQoS.py:
+/// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
+/// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload,
+/// maxUpload, comment, sqm.
+#[pyfunction]
+fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for dev in overrides.persistent_devices().iter() {
+        let ipv4s: Vec<String> = dev
+            .ipv4
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+        let ipv6s: Vec<String> = dev
+            .ipv6
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+
+        let d = PyDict::new(py);
+        d.set_item("circuitID", dev.circuit_id.clone())?;
+        d.set_item("circuitName", dev.circuit_name.clone())?;
+        d.set_item("deviceID", dev.device_id.clone())?;
+        d.set_item("deviceName", dev.device_name.clone())?;
+        d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item("mac", dev.mac.clone())?;
+        d.set_item("ipv4s", ipv4s)?;
+        d.set_item("ipv6s", ipv6s)?;
+        d.set_item("minDownload", dev.download_min_mbps)?;
+        d.set_item("minUpload", dev.upload_min_mbps)?;
+        d.set_item("maxDownload", dev.download_max_mbps)?;
+        d.set_item("maxUpload", dev.upload_max_mbps)?;
+        d.set_item("comment", dev.comment.clone())?;
+        d.set_item(
+            "sqm",
+            dev.sqm_override
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        )?;
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv,
+/// using the effective overrides view (operator + adaptive layers when enabled).
+#[pyfunction]
+fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|sg| sg.enabled && !sg.dry_run);
+    let apply_treeguard = config.treeguard.enabled;
+
+    let overrides = match lqos_overrides::OverrideStore::load_effective(
+        apply_stormguard,
+        apply_treeguard,
+    ) {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for dev in overrides.persistent_devices().iter() {
+        let ipv4s: Vec<String> = dev
+            .ipv4
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+        let ipv6s: Vec<String> = dev
+            .ipv6
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+
+        let d = PyDict::new(py);
+        d.set_item("circuitID", dev.circuit_id.clone())?;
+        d.set_item("circuitName", dev.circuit_name.clone())?;
+        d.set_item("deviceID", dev.device_id.clone())?;
+        d.set_item("deviceName", dev.device_name.clone())?;
+        d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item("mac", dev.mac.clone())?;
+        d.set_item("ipv4s", ipv4s)?;
+        d.set_item("ipv6s", ipv6s)?;
+        d.set_item("minDownload", dev.download_min_mbps)?;
+        d.set_item("minUpload", dev.upload_min_mbps)?;
+        d.set_item("maxDownload", dev.download_max_mbps)?;
+        d.set_item("maxUpload", dev.upload_max_mbps)?;
+        d.set_item("comment", dev.comment.clone())?;
+        d.set_item(
+            "sqm",
+            dev.sqm_override
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        )?;
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of circuit adjustments as Python dicts.
+#[pyfunction]
+fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.circuit_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::CircuitAdjustment::CircuitAdjustSpeed {
+                circuit_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                d.set_item("type", "circuit_adjust_speed")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSpeed {
+                device_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                d.set_item("type", "device_adjust_speed")?;
+                d.set_item("device_id", device_id.clone())?;
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
+                d.set_item("type", "remove_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::RemoveDevice { device_id } => {
+                d.set_item("type", "remove_device")?;
+                d.set_item("device_id", device_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::ReparentCircuit {
+                circuit_id,
+                parent_node,
+            } => {
+                d.set_item("type", "reparent_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("parent_node", parent_node.clone())?;
+            }
+        }
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of network adjustments as Python dicts.
+#[pyfunction]
+fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideFile::load() {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.network_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+            } => {
+                d.set_item("type", "adjust_site_speed")?;
+                d.set_item("site_name", site_name.clone())?;
+                if let Some(v) = download_bandwidth_mbps {
+                    d.set_item("download_bandwidth_mbps", *v)?;
+                }
+                if let Some(v) = upload_bandwidth_mbps {
+                    d.set_item("upload_bandwidth_mbps", *v)?;
+                }
+            }
+            lqos_overrides::NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            } => {
+                d.set_item("type", "set_node_virtual")?;
+                d.set_item("node_name", node_name.clone())?;
+                d.set_item("virtual", *virtual_node)?;
+            }
+        }
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of network adjustments as Python dicts, using the effective overrides view
+/// (operator + adaptive layers when enabled).
+#[pyfunction]
+fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|sg| sg.enabled && !sg.dry_run);
+    let apply_treeguard = config.treeguard.enabled;
+
+    let overrides = match lqos_overrides::OverrideStore::load_effective(
+        apply_stormguard,
+        apply_treeguard,
+    ) {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.network_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+            } => {
+                d.set_item("type", "adjust_site_speed")?;
+                d.set_item("site_name", site_name.clone())?;
+                if let Some(v) = download_bandwidth_mbps {
+                    d.set_item("download_bandwidth_mbps", *v)?;
+                }
+                if let Some(v) = upload_bandwidth_mbps {
+                    d.set_item("upload_bandwidth_mbps", *v)?;
+                }
+            }
+            lqos_overrides::NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            } => {
+                d.set_item("type", "set_node_virtual")?;
+                d.set_item("node_name", node_name.clone())?;
+                d.set_item("virtual", *virtual_node)?;
+            }
+        }
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
 }
 
 #[pyfunction]
@@ -364,6 +1245,15 @@ fn sqm() -> PyResult<String> {
     Ok(config.queues.default_sqm.clone())
 }
 
+/// Returns the Mbps threshold at or above which (if no per-circuit override is set)
+/// fq_codel should be preferred to reduce overhead on very fast circuits.
+/// Defaults to 1000.0 Mbps if not configured.
+#[pyfunction]
+fn fast_queues_fq_codel() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.queues.fast_queues_fq_codel.unwrap_or(1000.0) as f32)
+}
+
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
@@ -404,6 +1294,29 @@ fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
 fn monitor_mode_only() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.queues.monitor_only)
+}
+
+/// Returns the number of CPUs that should be used for shaping / binning.
+///
+/// On hybrid CPUs, this may exclude efficiency cores (E-cores) when configured.
+#[pyfunction]
+fn shaping_cpu_count() -> PyResult<u32> {
+    let config = lqos_config::load_config().unwrap();
+    let det = lqos_config::detect_shaping_cpus(config.as_ref());
+    Ok(det.shaping.len() as u32)
+}
+
+/// Returns detected efficiency-core CPU IDs for scheduler affinity decisions.
+#[pyfunction]
+fn efficiency_core_ids() -> PyResult<Vec<u32>> {
+    let config = lqos_config::load_config().unwrap();
+    let det = lqos_config::detect_shaping_cpus(config.as_ref());
+    let efficiency = match det.source {
+        lqos_config::ShapingCpuSource::CpuCoreSysfs
+        | lqos_config::ShapingCpuSource::PossibleMinusAtomSysfs => det.efficiency,
+        _ => Vec::new(),
+    };
+    Ok(efficiency)
 }
 
 #[pyfunction]
@@ -565,21 +1478,21 @@ fn uisp_auth_token() -> PyResult<String> {
 #[pyfunction]
 fn splynx_api_key() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let key = config.spylnx_integration.api_key.clone();
+    let key = config.splynx_integration.api_key.clone();
     Ok(key)
 }
 
 #[pyfunction]
 fn splynx_api_secret() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let secret = config.spylnx_integration.api_secret.clone();
+    let secret = config.splynx_integration.api_secret.clone();
     Ok(secret)
 }
 
 #[pyfunction]
 fn splynx_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    let url = config.spylnx_integration.url.clone();
+    let url = config.splynx_integration.url.clone();
     Ok(url)
 }
 
@@ -587,7 +1500,7 @@ fn splynx_api_url() -> PyResult<String> {
 fn splynx_strategy() -> PyResult<String> {
     let config = lqos_config::load_config();
     match config {
-        Ok(config) => Ok(config.spylnx_integration.strategy.clone()),
+        Ok(config) => Ok(config.splynx_integration.strategy.clone()),
         Err(_) => Ok("ap_only".to_string()), // Default value when config can't be loaded
     }
 }
@@ -595,37 +1508,101 @@ fn splynx_strategy() -> PyResult<String> {
 #[pyfunction]
 fn netzur_api_key() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.api_key.clone())
-            .unwrap_or_default(),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.api_key.clone())
+        .unwrap_or_default())
 }
 
 #[pyfunction]
 fn netzur_api_url() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.api_url.clone())
-            .unwrap_or_default(),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.api_url.clone())
+        .unwrap_or_default())
 }
 
 #[pyfunction]
 fn netzur_api_timeout() -> PyResult<u64> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.timeout_secs)
-            .unwrap_or(60),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.timeout_secs)
+        .unwrap_or(60))
+}
+
+#[pyfunction]
+fn visp_client_id() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.client_id.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_client_secret() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.client_secret.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_username() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.username.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_password() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.password.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_isp_id() -> PyResult<i64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .and_then(|cfg| cfg.isp_id)
+        .unwrap_or(0))
+}
+
+#[pyfunction]
+fn visp_online_users_domain() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .and_then(|cfg| cfg.online_users_domain.clone())
+        .unwrap_or_default())
+}
+
+#[pyfunction]
+fn visp_timeout_secs() -> PyResult<u64> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.timeout_secs)
+        .unwrap_or(20))
 }
 
 #[pyfunction]
@@ -637,19 +1614,27 @@ fn automatic_import_uisp() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.spylnx_integration.enable_spylnx)
+    Ok(config.splynx_integration.enable_splynx)
 }
 
 #[pyfunction]
 fn automatic_import_netzur() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(
-        config
-            .netzur_integration
-            .as_ref()
-            .map(|cfg| cfg.enable_netzur)
-            .unwrap_or(false),
-    )
+    Ok(config
+        .netzur_integration
+        .as_ref()
+        .map(|cfg| cfg.enable_netzur)
+        .unwrap_or(false))
+}
+
+#[pyfunction]
+fn automatic_import_visp() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .visp_integration
+        .as_ref()
+        .map(|cfg| cfg.enable_visp)
+        .unwrap_or(false))
 }
 
 #[pyfunction]
@@ -944,6 +1929,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     },
 }
 
@@ -1028,6 +2014,7 @@ impl Bakery {
                                     class_major,
                                     up_class_major,
                                     ip_addresses,
+                                    sqm_override,
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
@@ -1041,6 +2028,7 @@ impl Bakery {
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
                                         ip_addresses: ip_addresses.clone(),
+                                        sqm_override: sqm_override.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -1107,6 +2095,7 @@ impl Bakery {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
+        sqm_override: Option<String>,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1122,6 +2111,7 @@ impl Bakery {
             class_major,
             up_class_major,
             ip_addresses,
+            sqm_override,
         };
         self.queue.push(command);
         Ok(())
@@ -1151,4 +2141,81 @@ fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
         }
     }
     Ok(false)
+}
+
+/// Submit an urgent issue for prominent display in the Node Manager UI.
+///
+/// Parameters:
+/// - source: one of "Scheduler", "LibreQoS", "API", "System"
+/// - severity: "Error" or "Warning"
+/// - code: short machine-readable code (e.g., "TC_U16_OVERFLOW")
+/// - message: human-readable description
+/// - context: optional JSON string with extra details
+/// - dedupe_key: optional key to deduplicate repeats (e.g., code+cpu)
+#[pyfunction]
+fn submit_urgent_issue(
+    _py: Python,
+    source: String,
+    severity: String,
+    code: String,
+    message: String,
+    context: Option<String>,
+    dedupe_key: Option<String>,
+) -> PyResult<bool> {
+    let src = match source.to_ascii_lowercase().as_str() {
+        "scheduler" => UrgentSource::Scheduler,
+        "libreqos" => UrgentSource::LibreQoS,
+        "api" => UrgentSource::API,
+        _ => UrgentSource::System,
+    };
+    let sev = match severity.to_ascii_lowercase().as_str() {
+        "warning" => UrgentSeverity::Warning,
+        _ => UrgentSeverity::Error,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SubmitUrgentIssue {
+        source: src,
+        severity: sev,
+        code,
+        message,
+        context,
+        dedupe_key,
+    }]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Log an informational message via the lqosd bus (appears in lqosd logs).
+#[pyfunction]
+fn log_info(_py: Python, message: String) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::LogInfo(message)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+pub fn is_insight_enabled() -> PyResult<bool> {
+    let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
+        return Ok(false);
+    };
+    for resp in responses {
+        if let BusResponse::InsightStatus(enabled) = resp {
+            return Ok(enabled);
+        }
+    }
+    Ok(false)
+}
+
+#[pyfunction]
+pub fn hash_to_i64(text: String) -> PyResult<i64> {
+    Ok(lqos_utils::hash_to_i64(&text))
 }

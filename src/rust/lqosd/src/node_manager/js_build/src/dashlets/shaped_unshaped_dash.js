@@ -4,11 +4,11 @@ import {DashletBaseInsight} from "./insight_dashlet_base";
 
 export class ShapedUnshapedDash extends DashletBaseInsight {
     title() {
-        return "Shaped/Unshaped Traffic";
+        return "Mapped/Unmapped Traffic";
     }
 
     tooltip() {
-        return "<h5>Shaped/Unshaped Traffic</h5><p>Shows the amount of traffic that is shaped and unshaped. Shaped traffic is limited by the configured bandwidth limits, while unshaped traffic is not.</p>";
+        return "<h5>Mapped/Unmapped Traffic</h5><p>Shows the amount of traffic that is mapped (shaped) and unmapped. Mapped traffic follows configured bandwidth limits; unmapped traffic is not.</p>";
     }
 
     subscribeTo() {
@@ -27,11 +27,28 @@ export class ShapedUnshapedDash extends DashletBaseInsight {
         window.timeGraphs.push(this);
     }
 
+    setupZoomed() {
+        const period = window.timePeriods && window.timePeriods.activePeriod ? window.timePeriods.activePeriod : "Live";
+        if (period === "Live") {
+            this.zoomGraph = new ShapedUnshapedPie(this.zoomGraphDivId());
+        } else {
+            this.zoomGraph = new ShapedUnshapedTimescale(this.zoomGraphDivId(), period);
+        }
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             let shaped = msg.data.shaped_bps.down + msg.data.shaped_bps.up;
             let unshaped = msg.data.bps.down + msg.data.bps.up;
             this.graph.update(shaped, unshaped);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(shaped, unshaped);
+            }
         }
     }
 
@@ -47,6 +64,10 @@ export class ShapedUnshapedDash extends DashletBaseInsight {
             this.graph = new ShapedUnshapedPie(this.graphDivId());
         } else {
             this.graph = new ShapedUnshapedTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
+        if (this.zoomed) {
+            this.teardownZoomed();
+            this.setupZoomed();
         }
     }
 }

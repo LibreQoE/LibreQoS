@@ -1,7 +1,3 @@
-use axum::Json;
-use axum::http::StatusCode;
-use axum::http::header::CONTENT_TYPE;
-use axum::response::IntoResponse;
 use serde::Serialize;
 
 use crate::tool_status::{is_scheduler_available, scheduler_error_message};
@@ -62,56 +58,55 @@ fn strip_ansi(input: &str) -> String {
     out
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Clone)]
 pub struct SchedulerStatus {
     pub available: bool,
     pub error: Option<String>,
 }
 
-/// Lightweight status for navbar rendering
-pub async fn scheduler_status() -> (StatusCode, Json<SchedulerStatus>) {
-    let available = is_scheduler_available();
-    let error = scheduler_error_message().and_then(|s| {
-        let t = s.trim().to_string();
-        if t.is_empty() {
-            None
-        } else {
-            Some(strip_ansi(&t))
-        }
-    });
-    (StatusCode::OK, Json(SchedulerStatus { available, error }))
+#[derive(Serialize, Debug, Clone)]
+pub struct SchedulerDetails {
+    pub available: bool,
+    pub error: Option<String>,
+    pub details: String,
 }
 
-/// Potentially large details payload suitable for a modal
-pub async fn scheduler_details() -> impl IntoResponse {
-    let available = is_scheduler_available();
-    let error = scheduler_error_message().and_then(|s| {
+fn scheduler_error() -> Option<String> {
+    scheduler_error_message().and_then(|s| {
         let t = s.trim().to_string();
         if t.is_empty() {
             None
         } else {
             Some(strip_ansi(&t))
         }
-    });
+    })
+}
 
+pub fn scheduler_status_data() -> SchedulerStatus {
+    let available = is_scheduler_available();
+    let error = scheduler_error();
+    SchedulerStatus { available, error }
+}
+
+pub fn scheduler_details_data() -> SchedulerDetails {
+    let status = scheduler_status_data();
     let mut body = String::new();
-    body.push_str(&format!("Scheduler available: {}\n\n", available));
-    match error {
+    body.push_str(&format!("Scheduler available: {}\n\n", status.available));
+    match status.error.as_ref() {
         Some(err) => {
             body.push_str("Reported error:\n");
-            body.push_str(&err);
+            body.push_str(err);
             body.push('\n');
         }
         None => {
             body.push_str("No scheduler error reported.\n");
         }
     }
-    // Placeholder for future expansion (e.g., log tail, diagnostics)
     body.push_str("\n(Additional scheduler diagnostics not available.)\n");
 
-    (
-        StatusCode::OK,
-        [(CONTENT_TYPE, "text/plain; charset=utf-8")],
-        body,
-    )
+    SchedulerDetails {
+        available: status.available,
+        error: status.error,
+        details: body,
+    }
 }

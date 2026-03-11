@@ -57,6 +57,19 @@ def fixSubnet(inputIP):
 			return rawIp + "/32"
 	return inputIP
 
+
+def apply_client_bandwidth_multiplier(plan_rate_mbps):
+	# Convert a raw client/service plan rate into the effective shaped rate.
+	# The higher of bandwidth_overhead_factor and client_bandwidth_multiplier wins.
+	plan_rate_mbps = float(plan_rate_mbps or 0.0)
+	if plan_rate_mbps <= 0:
+		return 0.0
+	overhead = bandwidth_overhead_factor()
+	minimum = client_bandwidth_multiplier()
+	adjusted = plan_rate_mbps * overhead
+	floor_value = plan_rate_mbps * minimum
+	return max(adjusted, floor_value)
+
 class NodeType(enum.IntEnum):
 	# Enumeration to define what type of node
 	# a NetworkNode is.
@@ -301,26 +314,25 @@ class NetworkGraph:
 		if not self._cache_valid:
 			self._buildChildrenCache()
 		
-		for i, node in enumerate(self.nodes):
-			if node.type == NodeType.clientWithChildren:
-				siteNode = NetworkNode(
-					id=node.id + "_gen",
-					displayName="(Generated Site) " + node.displayName,
-					type=NodeType.site
-				)
-				siteNode.parentIndex = node.parentIndex
-				node.parentId = siteNode.id
+			for i, node in enumerate(self.nodes):
 				if node.type == NodeType.clientWithChildren:
+					siteNode = NetworkNode(
+						id=str(node.id) + "_gen",
+						displayName="(Generated Site) " + node.displayName,
+						type=NodeType.site
+					)
+					siteNode.parentIndex = node.parentIndex
+					node.parentId = siteNode.id
 					node.type = NodeType.client
-				
-				# Store reparenting operations for batch processing
-				children = self._children_cache.get(i, [])
-				for child_idx in children:
-					child = self.nodes[child_idx]
-					if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
-						reparent_map[child_idx] = siteNode.id
-				
-				toAdd.append(siteNode)
+					
+					# Store reparenting operations for batch processing
+					children = self._children_cache.get(i, [])
+					for child_idx in children:
+						child = self.nodes[child_idx]
+						if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
+							reparent_map[child_idx] = siteNode.id
+					
+					toAdd.append(siteNode)
 		
 		# Batch add new nodes
 		for n in toAdd:
@@ -542,8 +554,8 @@ class NetworkGraph:
 						device["ipv6"],
 						int(1),
 						int(1),
-						int(float(circuit["download"]) * client_bandwidth_multiplier()),
-						int(float(circuit["upload"]) * client_bandwidth_multiplier()),
+						max(1.0, round(float(circuit["download"]), 2)),
+						max(1.0, round(float(circuit["upload"]), 2)),
 						""
 					]
 					wr.writerow(row)

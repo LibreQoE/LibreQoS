@@ -8,18 +8,30 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
+mod cpu_topology;
 mod etc;
 mod network_json;
 mod program_control;
+mod qoo_profiles;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUser, WebUsers};
+pub use cpu_topology::{
+    CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
+};
 pub use etc::{
-    BridgeConfig, Config, Tunables, disable_xdp_bridge, enable_long_term_stats, load_config,
-    update_config, LazyQueueMode, SingleInterfaceConfig, StormguardConfig, SandwichMode, SandwichRateLimiter,
+    BridgeConfig, Config, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig,
+    TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables, SandwichMode,
+    SandwichRateLimiter, disable_xdp_bridge, enable_long_term_stats, load_config,
+    update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;
+pub use qoo_profiles::{
+    DEFAULT_QOO_PROFILE_ID, QooProfileInfo, QooProfilesError, active_qoo_profile,
+    list_qoo_profiles, load_qoo_profiles_file,
+};
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 
 /// Used as a constant in determining buffer preallocation

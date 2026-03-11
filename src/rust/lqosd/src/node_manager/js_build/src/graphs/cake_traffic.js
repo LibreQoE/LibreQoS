@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 export class CakeTraffic extends DashboardGraph {
     constructor(id) {
@@ -187,15 +187,19 @@ export class CakeTraffic extends DashboardGraph {
         for (let i=msg.history_head; i<600; i++) {
             for (let j=0; j<4; j++) {
                 if (msg.history[i][0].tins[0] === undefined) continue;
-                this.option.series[j].data.push(msg.history[i][0].tins[j].sent_bytes * 8);
-                this.option.series[j+4].data.push(0 - msg.history[i][1].tins[j].sent_bytes * 8);
+                const downBits = toNumber(msg.history[i][0].tins[j].sent_bytes, 0) * 8;
+                const upBits = toNumber(msg.history[i][1].tins[j].sent_bytes, 0) * 8;
+                this.option.series[j].data.push(downBits);
+                this.option.series[j+4].data.push(0 - upBits);
             }
         }
         for (let i=0; i<msg.history_head; i++) {
             for (let j=0; j<4; j++) {
                 if (msg.history[i][0].tins[0] === undefined) continue;
-                this.option.series[j].data.push(msg.history[i][0].tins[j].sent_bytes * 8);
-                this.option.series[j+4].data.push(0 - msg.history[i][1].tins[j].sent_bytes * 8);
+                const downBits = toNumber(msg.history[i][0].tins[j].sent_bytes, 0) * 8;
+                const upBits = toNumber(msg.history[i][1].tins[j].sent_bytes, 0) * 8;
+                this.option.series[j].data.push(downBits);
+                this.option.series[j+4].data.push(0 - upBits);
             }
         }
 

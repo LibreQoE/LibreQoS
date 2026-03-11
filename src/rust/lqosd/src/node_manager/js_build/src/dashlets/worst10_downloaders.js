@@ -2,8 +2,19 @@ import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} 
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnceForSeconds = (eventName, seconds, handler) => {
+    const wrapped = (msg) => {
+        if (!msg || msg.seconds !== seconds) return;
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class Worst10Downloaders extends DashletBaseInsight {
     constructor(slot) {
@@ -66,7 +77,8 @@ export class Worst10Downloaders extends DashletBaseInsight {
         let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
         target.appendChild(spinnerDiv);
-        $.get("/local-api/ltsWorst10Rtt/" + seconds, (data) => {
+        listenOnceForSeconds("LtsWorst10Rtt", seconds, (msg) => {
+            const data = msg && msg.data ? msg.data : [];
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
@@ -79,16 +91,16 @@ export class Worst10Downloaders extends DashletBaseInsight {
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
 
-            data.forEach((row) => {
-                //console.log(row);
-                let tr = document.createElement("tr");
-                tr.classList.add("small");
-                tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
-                tr.appendChild(simpleRow(scaleNumber(row.bytes_down * 1000000, 0)));
-                if (row.rtt !== null) {
-                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
-                } else {
-                    tr.appendChild(simpleRow("-"));
+                data.forEach((row) => {
+                    //console.log(row);
+                    let tr = document.createElement("tr");
+                    tr.classList.add("small");
+                    tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
+                    tr.appendChild(simpleRow(scaleNumber(toNumber(row.bytes_down, 0) * 1000000, 0)));
+                    if (row.rtt !== null) {
+                        tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
+                    } else {
+                        tr.appendChild(simpleRow("-"));
                 }
                 if (row.rxmit !== null) {
                     tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit)));
@@ -101,5 +113,6 @@ export class Worst10Downloaders extends DashletBaseInsight {
             clearDashDiv(this.id, target);
             target.appendChild(table);
         });
+        wsClient.send({ LtsWorst10Rtt: { seconds } });
     }
 }

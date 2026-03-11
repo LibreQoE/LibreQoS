@@ -1,70 +1,93 @@
-# Componentes de Software de LibreQoS
+# Componentes de software de LibreQoS
 
-## Servicios de Systemd
+## Servicios systemd
+
+```{mermaid}
+flowchart LR
+    A[Integraciones CRM/NMS] --> B[lqos_scheduler]
+    C[network.json + ShapedDevices.csv] --> B
+    D[lqos_overrides.json] --> B
+    B --> E[Refresco del plan de colas/shaping]
+    E --> F[lqosd]
+    F --> G[Shaping runtime XDP/TC]
+    F --> H[WebUI :9123]
+    B --> I[Estado del scheduler / problemas urgentes]
+    F --> I
+```
+
 ### lqosd
 
-- Administra el código XDP actual.
-- Desarrollado en Rust.
-- Ejecuta la interfaz gráfica (GUI) disponible en http://a.b.c.d:9123
+- Administra la lógica de shaping/XDP.
+- Implementado en Rust.
+- Ejecuta la UI local disponible en `http://a.b.c.d:9123`.
+- Hospeda páginas de WebUI (Node Manager) como:
+  - Mapa de flujos
+  - Árbol de red
+  - Explorador ASN
+  - Árbol/Pesos de CPU
+  - Editores de configuración para integraciones (UISP, Splynx, Netzur, VISP, etc.)
 
 ### lqos_scheduler
 
-- lqos_scheduler realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx, Netzur).
-- Acciones realizadas:
-  - Al iniciar: Realiza una configuración completa de las filas.
-  - Cada X minutos: Actualiza las colas, obteniendo nueva configuración desde la integración CRM, si está habilitada.
-    - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
-    - El intervalo de minutos por defecto es de 30, por lo tanto, la actualización se realiza cada 30 minutos.
-    - El intervalo de minutos puede ajustarse mediante el parámetro `queue_refresh_interval_mins` ubicado en `/etc/lqos.conf`.
+- Realiza refrescos continuos de shaping, incluyendo lectura de integraciones CRM habilitadas.
+- Acciones:
+  - Al iniciar: ejecución de setup completo de colas.
+  - Cada X minutos: actualización de colas y datos de integración.
+- El intervalo por defecto es 30 minutos (`queue_refresh_interval_mins` en `/etc/lqos.conf`).
 
-### Verificar el estado de los servicios
+### Verificación de estado
 
-```
+```bash
 sudo systemctl status lqosd lqos_scheduler
 ```
-Si el estado de alguno de los dos servicios aparece como 'failed', debe examinarse la causa utilizando journalctl, el cual muestra el historial completo del servicio. Por ejemplo, si lqosd ha fallado, ejecute:
-```
-sudo journalctl -u lqosd -b
-```
-Presione la tecla End en su teclado para ir al final del registro y ver las actualizaciones más recientes.
 
-Lqosd indicará las razones específicas por las cuales falló, como una interfaz que no está activa, falta de soporte para múltiples filas en la interfaz, entre otros problemas.
+Si algún servicio aparece como `failed`, revise logs:
+
+```bash
+sudo journalctl -u lqosd -b
+sudo journalctl -u lqos_scheduler -b
+```
 
 ### Depuración de lqos_scheduler
 
-En segundo plano, lqos_scheduler ejecuta el script de Python scheduler.py, el cual a su vez ejecuta el script de Python LibreQoS.py
+`lqos_scheduler` ejecuta `scheduler.py`, que a su vez invoca `LibreQoS.py`.
 
-- scheduler.py: realiza actualizaciones continuas de los reguladores de tráfico (shapers) de LibreQoS, incluyendo la obtención de datos desde cualquier integración CRM habilitada (UISP, Splynx, Netzur).
-- LibreQoS.py: se encarga de crear y actualizar las filas y el regulamiento de tráfico de los dispositivos.
+Flujo de depuración recomendado:
 
-Ejecuciones puntuales de estos componentes individuales pueden ser de gran ayuda para depurar y asegurar que todo esté correctamente configurado.
-
-Primero, detenga el servicio lqos_scheduler:
-
-```shell
+```bash
 sudo systemctl stop lqos_scheduler
-```
-
-Para realizar una ejecución única de LibreQoS.py, utilice:
-
-```shell
-sudo ./LibreQoS.py
-```
-
-- Para ejecutar en modo depuración con respuestas mas detalladas, use:
-
-```shell
+cd /opt/libreqos/src
 sudo ./LibreQoS.py --debug
-```
-
-Para confirmar que lqos_scheduler (scheduler.py) funciona correctamente, ejecute:
-
-```shell
 sudo python3 scheduler.py
-```
-
-Una vez que se hayan corregido los errores, reinicie el servicio lqos_scheduler con:
-
-```shell
 sudo systemctl start lqos_scheduler
 ```
+
+## Modo privacidad en WebUI
+
+WebUI (Node Manager) incluye redacción del lado cliente para demos/capturas:
+
+- Se activa con el ícono de máscara en la barra superior.
+- La preferencia se guarda en `localStorage`.
+- Oculta datos visibles en la UI; no modifica archivos fuente.
+
+## Canal de problemas urgentes
+
+WebUI (Node Manager) incluye un canal de problemas urgentes para eventos de alta prioridad (por ejemplo, límite de circuitos mapeados).
+
+- Los eventos aparecen en el indicador de navegación superior.
+- Pueden revisarse y reconocerse desde el modal de problemas urgentes.
+- Úselo como señal rápida; confirme detalle con `journalctl -u lqosd`.
+
+## Indicador de estado del scheduler
+
+WebUI (Node Manager) incluye visibilidad del estado del scheduler.
+
+- Úselo como señal rápida de salud para jobs periódicos.
+- Si el scheduler no está saludable, valide primero estado de `lqosd` y `lqos_scheduler`.
+- Revise detalle con:
+  - `journalctl -u lqos_scheduler --since "30 minutes ago"`
+  - `journalctl -u lqosd --since "30 minutes ago"`
+
+## Solución de problemas de componentes
+
+Consulte [Solución de Problemas](troubleshooting-es.md).

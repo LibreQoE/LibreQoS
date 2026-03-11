@@ -39,6 +39,13 @@ function validateConfig() {
         return false;
     }
 
+    // Validate fast fq_codel threshold (optional)
+    const fastFq = document.getElementById("fastQueuesFqCodel").value;
+    if (fastFq && (isNaN(fastFq) || parseFloat(fastFq) < 1)) {
+        alert("Fast fq_codel threshold must be a number greater than 0");
+        return false;
+    }
+
     return true;
 }
 
@@ -58,7 +65,9 @@ function updateConfig() {
         use_binpacking: document.getElementById("useBinpacking").checked,
         lazy_queues: document.getElementById("lazyQueues").value === "No" ? null : document.getElementById("lazyQueues").value,
         lazy_expire_seconds: document.getElementById("lazyExpireSeconds").value ? 
-            parseInt(document.getElementById("lazyExpireSeconds").value) : null
+            parseInt(document.getElementById("lazyExpireSeconds").value) : null,
+        fast_queues_fq_codel: document.getElementById("fastQueuesFqCodel").value ?
+            parseFloat(document.getElementById("fastQueuesFqCodel").value) : null
     };
 }
 
@@ -90,6 +99,7 @@ loadConfig(() => {
         // Optional numeric fields
         document.getElementById("overrideQueues").value = queues.override_available_queues ?? "";
         document.getElementById("lazyExpireSeconds").value = queues.lazy_expire_seconds ?? "";
+        document.getElementById("fastQueuesFqCodel").value = queues.fast_queues_fq_codel ?? "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

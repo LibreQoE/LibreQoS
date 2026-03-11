@@ -2,7 +2,8 @@
 //! files.
 
 use crate::lts2_sys::shared_types::LtsStatus;
-use crate::node_manager::auth::get_username;
+use crate::node_manager::auth::{FIRST_LOAD, get_username};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -10,8 +11,11 @@ use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
-use lqos_config::load_config;
+use itertools::Itertools;
+use lqos_config::{RttThresholds, load_config};
+use lqos_utils::unix_time::unix_now;
 use std::path::Path;
+use std::sync::atomic::Ordering::Relaxed;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -78,7 +82,12 @@ pub async fn apply_templates(
         let path = &req.uri().path().to_string();
         path.ends_with(".html")
     };
-    let config = load_config().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::from("Cannot load configuration")))?;
+    let config = load_config().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Cannot load configuration"),
+        )
+    })?;
 
     // TODO: Cache this once we're not continually making changes
     let template_text = {
@@ -106,6 +115,10 @@ pub async fn apply_templates(
         // Change the LTS part of the template
         let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
         trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
+        let script_has_support_tickets = matches!(
+            lts_status,
+            LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full
+        );
         match lts_status {
             LtsStatus::Invalid | LtsStatus::NotChecked => {}
             _ => {
@@ -117,31 +130,58 @@ pub async fn apply_templates(
         }
 
         // Title and node_id
-        let mut title = "LibreQoS Node Manager".to_string();
-        let mut node_id_js = String::new();
-        if let Ok(config) = load_config() {
-            title = config.node_name.clone();
-            node_id_js = escape_html_attr(&config.node_id);
-        }
+        let title = config.node_name.clone();
+        let node_id_js = escape_html_attr(&config.node_id);
+        let rtt_thresholds: RttThresholds = config.rtt_thresholds.clone().unwrap_or_default();
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
+            js_tf(script_has_support_tickets),
             js_tf(new_version),
-            node_id_js
+            node_id_js,
+            rtt_thresholds.green_ms,
+            rtt_thresholds.yellow_ms,
+            rtt_thresholds.red_ms,
         );
 
+        // First Login
+        let mut show_modal = "false";
+        let mut show_modal_number = "0".to_string();
+        if let Ok(now) = unix_now() {
+            let week_ago = now - (7 * 24 * 60 * 60);
+            let fl = FIRST_LOAD.load(Relaxed);
+            if fl != 0 && fl < week_ago {
+                let sd = SHAPED_DEVICES.load();
+                let num_circuits = sd
+                    .devices
+                    .iter()
+                    .sorted_by(|a, b| a.circuit_hash.cmp(&b.circuit_hash))
+                    .dedup()
+                    .count();
+                if num_circuits > 1_000 && !script_has_insight {
+                    show_modal = "true";
+                    show_modal_number = num_circuits.to_string();
+                }
+            }
+        }
+
         let (mut res_parts, res_body) = res.into_parts();
-        let bytes = to_bytes(res_body, 1_000_000).await.expect("Cannot read template bytes");
+        let bytes = to_bytes(res_body, 1_000_000)
+            .await
+            .expect("Cannot read template bytes");
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
+        let version_string = VERSION_STRING.trim();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)
-            .replace("%%VERSION%%", VERSION_STRING)
+            .replace("%%VERSION%%", version_string)
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
-            .replace("%%%LTS_SCRIPT%%%", &lts_script);
+            .replace("%%%LTS_SCRIPT%%%", &lts_script)
+            .replace("%%MODAL%%", &show_modal)
+            .replace("%%MODAL_NUM%%", &show_modal_number);
         // Handle API_LINK placeholder (require service + valid Insight)
         let api_link = if is_api_available() && script_has_insight {
             API_LINK_ACTIVE
@@ -166,6 +206,17 @@ pub async fn apply_templates(
 </li>
 "##;
         let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
+
+        // Placeholder for urgent issues indicator
+        let urgent_placeholder = r##"
+<li class="nav-item" id="urgentStatus">
+    <a class="nav-link text-secondary" href="#" id="urgentStatusLink">
+        <i class="fa fa-fw fa-centerline fa-bell-slash"></i> Urgent Issues
+        <span id="urgentBadge" class="badge bg-danger d-none">0</span>
+    </a>
+</li>
+"##;
+        let byte_string = byte_string.replace("%%URGENT_STATUS%%", urgent_placeholder);
 
         let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {

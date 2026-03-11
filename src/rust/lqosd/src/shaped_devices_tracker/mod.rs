@@ -1,12 +1,14 @@
 use anyhow::Result;
 use arc_swap::ArcSwap;
+use fxhash::FxHashMap;
 use lqos_bus::{BusResponse, Circuit};
-use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
+use lqos_config::{ConfigShapedDevices, NetworkJsonTransport, ShapedDevice};
 use lqos_utils::file_watcher::FileWatcher;
+use lqos_utils::hash_to_i64;
+use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -20,12 +22,80 @@ pub use netjson::*;
 pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
 
+#[derive(Debug, Default)]
+pub struct ShapedDeviceHashCache {
+    by_device_hash: FxHashMap<i64, usize>,
+    by_circuit_hash: FxHashMap<i64, usize>,
+}
+
+impl ShapedDeviceHashCache {
+    fn from_devices(devices: &[ShapedDevice]) -> Self {
+        let mut by_device_hash = FxHashMap::default();
+        by_device_hash.reserve(devices.len());
+        let mut by_circuit_hash = FxHashMap::default();
+        by_circuit_hash.reserve(devices.len());
+        for (idx, dev) in devices.iter().enumerate() {
+            by_device_hash.insert(dev.device_hash, idx);
+            by_circuit_hash.entry(dev.circuit_hash).or_insert(idx);
+        }
+        Self {
+            by_device_hash,
+            by_circuit_hash,
+        }
+    }
+
+    pub fn index_by_device_hash(
+        &self,
+        shaped: &ConfigShapedDevices,
+        device_hash: i64,
+    ) -> Option<usize> {
+        if let Some(idx) = self.by_device_hash.get(&device_hash).copied() {
+            if shaped
+                .devices
+                .get(idx)
+                .is_some_and(|d| d.device_hash == device_hash)
+            {
+                return Some(idx);
+            }
+        }
+        shaped
+            .devices
+            .iter()
+            .position(|d| d.device_hash == device_hash)
+    }
+
+    pub fn index_by_circuit_hash(
+        &self,
+        shaped: &ConfigShapedDevices,
+        circuit_hash: i64,
+    ) -> Option<usize> {
+        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied() {
+            if shaped
+                .devices
+                .get(idx)
+                .is_some_and(|d| d.circuit_hash == circuit_hash)
+            {
+                return Some(idx);
+            }
+        }
+        shaped
+            .devices
+            .iter()
+            .position(|d| d.circuit_hash == circuit_hash)
+    }
+}
+
+pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
+
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
     let shaped_devices = ConfigShapedDevices::load();
     if let Ok(new_file) = shaped_devices {
         debug!("ShapedDevices.csv loaded");
+        let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
         SHAPED_DEVICES.store(Arc::new(new_file));
+        SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
         let nj = NETWORK_JSON.read();
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
     } else {
@@ -33,6 +103,7 @@ fn load_shaped_devices() {
             "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."
         );
         SHAPED_DEVICES.store(Arc::new(ConfigShapedDevices::default()));
+        SHAPED_DEVICE_HASH_CACHE.store(Arc::new(ShapedDeviceHashCache::default()));
     }
 }
 
@@ -84,8 +155,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn get_full_network_map() -> BusResponse {
     let nj = NETWORK_JSON.read();
     let data = {
-        nj
-            .get_nodes_when_ready()
+        nj.get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(i, n)| (i, n.clone_to_transit()))
@@ -141,7 +211,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 0,
                 NetworkJsonTransport {
                     name: "Others".into(),
-                    max_throughput: (0, 0),
+                    is_virtual: false,
+                    max_throughput: (0.0, 0.0),
                     current_throughput: other_bw,
                     current_packets: other_packets,
                     current_tcp_packets: other_tcp_packets,
@@ -151,6 +222,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     current_marks: other_marks,
                     current_drops: other_drops,
                     rtts: Vec::new(),
+                    qoo: (None, None),
                     parents: Vec::new(),
                     immediate_parent: None,
                     node_type: None,
@@ -196,12 +268,12 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let devices = SHAPED_DEVICES.load();
+        let cache = SHAPED_DEVICE_HASH_CACHE.load();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
             .iter()
             .map(|(k, v)| {
-                let ip = k.as_ip();
                 let last_seen_nanos = if v.last_seen > 0 {
                     let last_seen_nanos = v.last_seen as u128;
                     let since_boot = Duration::from(kernel_now).as_nanos();
@@ -217,25 +289,75 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut device_id = None;
                 let mut device_name = None;
                 let mut parent_node = None;
-                let mut plan = DownUpOrder { down: 0.0, up: 0.0 };
-                let lookup = match ip {
-                    IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                    IpAddr::V6(ip) => ip,
-                };
-                if let Some(c) = devices.trie.longest_match(lookup) {
-                    circuit_id = Some(devices.devices[*c.1].circuit_id.clone());
-                    circuit_name = Some(devices.devices[*c.1].circuit_name.clone());
-                    device_id = Some(devices.devices[*c.1].device_id.clone());
-                    device_name = Some(devices.devices[*c.1].device_name.clone());
-                    parent_node = Some(devices.devices[*c.1].parent_node.clone());
-                    plan.down = devices.devices[*c.1].download_max_mbps;
-                    plan.up = devices.devices[*c.1].upload_max_mbps;
+                // Plan is expressed in Mbps as f32
+                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
+                let device = v
+                    .device_hash
+                    .and_then(|device_hash| cache.index_by_device_hash(&devices, device_hash))
+                    .or_else(|| {
+                        v.circuit_hash.and_then(|circuit_hash| {
+                            cache.index_by_circuit_hash(&devices, circuit_hash)
+                        })
+                    })
+                    .and_then(|idx| devices.devices.get(idx));
+                if let Some(device) = device {
+                    circuit_id = Some(device.circuit_id.clone());
+                    circuit_name = Some(device.circuit_name.clone());
+                    device_id = Some(device.device_id.clone());
+                    device_name = Some(device.device_name.clone());
+                    parent_node = Some(device.parent_node.clone());
+                    plan.down = device.download_max_mbps.round();
+                    plan.up = device.upload_max_mbps.round();
                 }
 
                 Circuit {
                     ip: k.as_ip(),
                     bytes_per_second: v.bytes_per_second,
                     median_latency: v.median_latency(),
+                    rtt_current_p50_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_current_p95_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p50_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p95_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
+                    },
                     tcp_retransmits: v.tcp_retransmits,
                     tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
                     circuit_id,
@@ -254,4 +376,118 @@ pub fn get_all_circuits() -> BusResponse {
     }
 }
 
-// Tests removed - rate_for_plan() function no longer needed with f32 plan structures
+pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
+    if let Ok(kernel_now) = time_since_boot() {
+        let desired_hash = hash_to_i64(&desired_circuit_id);
+        let devices = SHAPED_DEVICES.load();
+        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let data = THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .iter()
+            .filter_map(|(k, v)| {
+                if v.circuit_hash != Some(desired_hash) {
+                    return None;
+                }
+                let last_seen_nanos = if v.last_seen > 0 {
+                    let last_seen_nanos = v.last_seen as u128;
+                    let since_boot = Duration::from(kernel_now).as_nanos();
+                    //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
+                    since_boot.saturating_sub(last_seen_nanos) as u64
+                } else {
+                    u64::MAX
+                };
+
+                // Map to circuit et al
+                let mut circuit_id = None;
+                let mut circuit_name = None;
+                let mut device_id = None;
+                let mut device_name = None;
+                let mut parent_node = None;
+                // Plan is expressed in Mbps as f32
+                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
+                let device = v
+                    .device_hash
+                    .and_then(|device_hash| cache.index_by_device_hash(&devices, device_hash))
+                    .or_else(|| {
+                        v.circuit_hash.and_then(|circuit_hash| {
+                            cache.index_by_circuit_hash(&devices, circuit_hash)
+                        })
+                    })
+                    .and_then(|idx| devices.devices.get(idx));
+                if let Some(device) = device {
+                    circuit_id = Some(device.circuit_id.clone());
+                    circuit_name = Some(device.circuit_name.clone());
+                    device_id = Some(device.device_id.clone());
+                    device_name = Some(device.device_name.clone());
+                    parent_node = Some(device.parent_node.clone());
+                    plan.down = device.download_max_mbps.round();
+                    plan.up = device.upload_max_mbps.round();
+                }
+
+                let circuit_id = Some(circuit_id.unwrap_or_else(|| desired_circuit_id.clone()));
+                Some(Circuit {
+                    ip: k.as_ip(),
+                    bytes_per_second: v.bytes_per_second,
+                    median_latency: v.median_latency(),
+                    rtt_current_p50_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_current_p95_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p50_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    rtt_total_p95_nanos: DownUpOrder {
+                        down: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                        up: v
+                            .rtt_buffer
+                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
+                            .map(|rtt| rtt.as_nanos()),
+                    },
+                    qoo: DownUpOrder {
+                        down: v.qoq.download_total_f32(),
+                        up: v.qoq.upload_total_f32(),
+                    },
+                    tcp_retransmits: v.tcp_retransmits,
+                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
+                    circuit_id,
+                    device_id,
+                    circuit_name,
+                    device_name,
+                    parent_node,
+                    plan,
+                    last_seen_nanos,
+                })
+            })
+            .collect();
+        BusResponse::CircuitData(data)
+    } else {
+        BusResponse::CircuitData(Vec::new())
+    }
+}

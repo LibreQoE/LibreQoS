@@ -5,8 +5,8 @@ The bus acts as an intermediary through which `lqosd` and various clients commun
 The bus is intentionally not stable between releases. So if you integrate with it, you will need to update your integration *every time* you update `lqosd`. This:
 
 * Allows for rapid iteration on the back-end.
-* Avoids the need for version negotiation.
-* Permits the use of `bincode` for serialization, which is very fast.
+* Avoids the need for version negotiation (CBOR tolerates unknown enum variants).
+* Uses CBOR serialization with length-prefixed chunked framing for large payloads.
 
 > If you'd like a stable API, please consider the HTTP API provided with Insight.
 

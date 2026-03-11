@@ -1,5 +1,15 @@
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {get_ws_client} from "../pubsub/ws";
+
+const wsClient = get_ws_client();
+const listenOnce = (eventName, handler) => {
+    const wrapped = (msg) => {
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    wsClient.on(eventName, wrapped);
+};
 
 export class ThroughputBpsDash extends DashletBaseInsight{
     title() {
@@ -16,8 +26,12 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "270px";
-        base.style.overflow = "hidden";
+        this._bodyId = `${this.id}_body`;
+        const body = document.createElement("div");
+        body.id = this._bodyId;
+        body.style.height = "250px";
+        body.style.overflow = "hidden";
+        base.appendChild(body);
         return base;
     }
 
@@ -29,12 +43,12 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         this.upRing = [];
         this.dlRing = [];
 
-        let target = document.getElementById(this.id);
+        let target = document.getElementById(this._bodyId);
+        if (!target) return;
 
         // Create row
         const row = document.createElement("div");
         row.classList.add("row");
-        row.style.height = "100%";
 
         // ---------------------
         // LEFT COLUMN
@@ -228,21 +242,23 @@ export class ThroughputBpsDash extends DashletBaseInsight{
             if (window.hasLts && this.busy === false && (this.medians === null || this.tickCount > 300)) {
                 this.tickCount = 0;
                 this.busy = true;
-                $.get("/local-api/ltsRecentMedian", (m) => {
+                listenOnce("LtsRecentMedian", (msg) => {
+                    const m = msg && msg.data ? msg.data : [];
                     if (m === null || m.length === 0) {
                         this.busy = false;
                         return;
                     }
                     this.medians = m[0];
-                    this.medians.yesterday[0] = this.medians.yesterday[0] * 8;
-                    this.medians.yesterday[1] = this.medians.yesterday[1] * 8;
-                    this.medians.last_week[0] = this.medians.last_week[0] * 8;
-                    this.medians.last_week[1] = this.medians.last_week[1] * 8;
+                    this.medians.yesterday[0] = toNumber(this.medians.yesterday[0], 0) * 8;
+                    this.medians.yesterday[1] = toNumber(this.medians.yesterday[1], 0) * 8;
+                    this.medians.last_week[0] = toNumber(this.medians.last_week[0], 0) * 8;
+                    this.medians.last_week[1] = toNumber(this.medians.last_week[1], 0) * 8;
                 });
+                wsClient.send({ LtsRecentMedian: {} });
             }
 
-            this.upRing.push(msg.data.bps.up);
-            this.dlRing.push(msg.data.bps.down);
+            this.upRing.push(toNumber(msg.data.bps.up, 0));
+            this.dlRing.push(toNumber(msg.data.bps.down, 0));
             if (this.upRing.length > RingSize) {
                 this.upRing.shift();
             }
@@ -253,13 +269,13 @@ export class ThroughputBpsDash extends DashletBaseInsight{
             // Get the mean from upRing
             let upMedian = 0;
             if (this.upRing.length > 0) {
-                upMedian = this.upRing.reduce((a, b) => a + b) / this.upRing.length;
+                upMedian = this.upRing.reduce((a, b) => a + b, 0) / this.upRing.length;
             }
 
             // Get the median from dlRing
             let dlMedian = 0;
             if (this.dlRing.length > 0) {
-                dlMedian = this.dlRing.reduce((a, b) => a + b) / this.dlRing.length;
+                dlMedian = this.dlRing.reduce((a, b) => a + b, 0) / this.dlRing.length;
             }
 
             // Big numbers are smoothed medians

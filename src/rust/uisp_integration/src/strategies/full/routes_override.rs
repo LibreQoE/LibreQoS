@@ -40,6 +40,25 @@ pub struct RouteOverride {
 /// * An `Ok(Vec)` of `RouteOverride` objects
 /// * An `Err` if the file is found but cannot be read
 pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIntegrationError> {
+    // Prefer overrides from lqos_overrides.json if present
+    if let Ok(of) = lqos_overrides::OverrideFile::load() {
+        if let Some(uisp) = of.uisp() {
+            if !uisp.route_overrides.is_empty() {
+                info!("Using UISP route overrides from lqos_overrides.json");
+                let converted: Vec<RouteOverride> = uisp
+                    .route_overrides
+                    .iter()
+                    .map(|r| RouteOverride {
+                        from_site: r.from_site.clone(),
+                        to_site: r.to_site.clone(),
+                        cost: r.cost,
+                    })
+                    .collect();
+                return Ok(converted);
+            }
+        }
+    }
+
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.csv");
     if file_path.exists() {
         let reader = ReaderBuilder::new()

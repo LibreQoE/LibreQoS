@@ -6,7 +6,6 @@ pub use queing_structure_json_monitor::{QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED
 use queue_network::QueueNetwork;
 pub(crate) use queue_node::QueueNode;
 use thiserror::Error;
-use tracing::error;
 
 pub(crate) fn read_queueing_structure() -> Result<Vec<QueueNode>, QueueStructureError> {
     // Note: the ? is allowed because the sub-types return a QueueStructureError and handle logging.

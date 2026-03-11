@@ -91,6 +91,7 @@ impl LibreQoSKernels {
         stick_interface: S,
         internet_vlan: u16,
         isp_vlan: u16,
+        stick_offset: u32,
         heimdall_event_handler: ring_buffer_sample_fn,
         flowbee_event_handler: ring_buffer_sample_fn,
     ) -> anyhow::Result<Self> {
@@ -101,7 +102,7 @@ impl LibreQoSKernels {
         };
         let skeleton = attach_xdp_and_tc_to_interface(
             &kernel.to_internet,
-            InterfaceDirection::OnAStick(internet_vlan, isp_vlan),
+            InterfaceDirection::OnAStick(internet_vlan, isp_vlan, stick_offset),
             heimdall_event_handler,
             flowbee_event_handler,
         )?;

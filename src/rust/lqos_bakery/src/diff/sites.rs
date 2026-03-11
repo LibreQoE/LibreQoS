@@ -1,7 +1,7 @@
 use crate::BakeryCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 pub(crate) enum SiteDiffResult {
     RebuildRequired,
@@ -27,11 +27,15 @@ pub(crate) fn diff_sites(
     if old_sites.len() != new_sites.len() {
         // There is a difference in the number of sites.
         // Therefore, we must rebuild the entire site configuration.
+        let old_keys: Vec<i64> = old_sites.keys().cloned().collect();
+        let new_keys: Vec<i64> = new_sites.keys().copied().collect();
         warn!(
             "Site count mismatch: old {} vs new {}",
             old_sites.len(),
             new_sites.len()
         );
+        debug!("Old site hashes: {:?}", old_keys);
+        debug!("New site hashes: {:?}", new_keys);
         return SiteDiffResult::RebuildRequired;
     }
 
@@ -41,20 +45,54 @@ pub(crate) fn diff_sites(
         if let Some(new_cmd) = new_sites.get(site_hash) {
             // If the commands are structurally different, we need to rebuild.
             if is_structurally_different(old_cmd.as_ref(), new_cmd.as_ref()) {
-                warn!(
+                debug!(
                     "Structural difference detected for site hash: {}",
                     site_hash
+                );
+                // Log a concise before/after for diagnostics at warn! level so operators
+                // can see why the site is considered structurally different.
+                let (_ocpu, opar, oup, omin) = match old_cmd.as_ref() {
+                    crate::BakeryCommands::AddSite {
+                        parent_class_id,
+                        up_parent_class_id,
+                        class_minor,
+                        ..
+                    } => (
+                        0i32,
+                        parent_class_id.as_tc_string(),
+                        up_parent_class_id.as_tc_string(),
+                        *class_minor,
+                    ),
+                    _ => (0, String::new(), String::new(), 0),
+                };
+                let (_ncpu, npar, nup, nmin) = match new_cmd.as_ref() {
+                    crate::BakeryCommands::AddSite {
+                        parent_class_id,
+                        up_parent_class_id,
+                        class_minor,
+                        ..
+                    } => (
+                        0i32,
+                        parent_class_id.as_tc_string(),
+                        up_parent_class_id.as_tc_string(),
+                        *class_minor,
+                    ),
+                    _ => (0, String::new(), String::new(), 0),
+                };
+                warn!(
+                    "Site hash {} change detail: parent={}→{}, up_parent={}→{}, minor=0x{:x}→0x{:x}",
+                    site_hash, opar, npar, oup, nup, omin, nmin
                 );
                 return SiteDiffResult::RebuildRequired;
             }
             // If the speeds have changed, we need to store the change.
             if let Some(speed_change) = site_speeds_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
-                warn!("Speed change detected for site hash: {}", site_hash);
+                debug!("Speed change detected for site hash: {}", site_hash);
                 speed_changes.push(speed_change);
             }
         } else {
             // If a site is missing in the new batch, we need to rebuild.
-            warn!("Site hash {} is missing in the new batch", site_hash);
+            debug!("Site hash {} is missing in the new batch", site_hash);
             return SiteDiffResult::RebuildRequired;
         }
     }
@@ -78,7 +116,7 @@ fn is_structurally_different(a: &BakeryCommands, b: &BakeryCommands) -> bool {
         ..
     } = a
     else {
-        warn!(
+        debug!(
             "is_structurally_different called with non-site command: {:?}",
             a
         );
@@ -93,7 +131,7 @@ fn is_structurally_different(a: &BakeryCommands, b: &BakeryCommands) -> bool {
         ..
     } = b
     else {
-        warn!(
+        debug!(
             "is_structurally_different called with non-site command: {:?}",
             b
         );
@@ -102,7 +140,7 @@ fn is_structurally_different(a: &BakeryCommands, b: &BakeryCommands) -> bool {
 
     if site_hash != b_site_hash {
         // This should never happen.
-        warn!(
+        debug!(
             "is_structurally_different called for different site hashes: {} != {}",
             site_hash, b_site_hash
         );
@@ -127,7 +165,7 @@ fn site_speeds_changed(a: &BakeryCommands, b: &BakeryCommands) -> Option<BakeryC
         upload_bandwidth_max,
     } = a
     else {
-        warn!("site_speeds_changed called with non-site command: {:?}", a);
+        debug!("site_speeds_changed called with non-site command: {:?}", a);
         return None; // Not a site command
     };
 
@@ -140,13 +178,13 @@ fn site_speeds_changed(a: &BakeryCommands, b: &BakeryCommands) -> Option<BakeryC
         ..
     } = b
     else {
-        warn!("site_speeds_changed called with non-site command: {:?}", b);
+        debug!("site_speeds_changed called with non-site command: {:?}", b);
         return None; // Not a site command
     };
 
     if site_hash != b_site_hash {
         // This should never happen.
-        warn!(
+        debug!(
             "site_speeds_changed called for different site hashes: {} != {}",
             site_hash, b_site_hash
         );
