@@ -1226,6 +1226,7 @@ pub fn current_endpoints_by_country() -> BusResponse {
 /// Current endpoint lat/lon
 pub fn current_lat_lon() -> BusResponse {
     let summary = flow_data::RECENT_FLOWS.lat_lon_endpoints();
+    debug!("CurrentLatLon payload: {:?}", summary);
     BusResponse::CurrentLatLon(summary)
 }
 
