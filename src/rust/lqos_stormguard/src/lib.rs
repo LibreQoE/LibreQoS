@@ -88,14 +88,14 @@ pub async fn start_stormguard(
             tracker.read_new_tick_data().await;
 
             // Check for state changes
-            tracker.check_state();
+            tracker.check_state(cfg);
             // Update debug snapshot for UI/diagnostics
             let snapshot = tracker.debug_snapshot(cfg);
             {
                 let mut lock = STORMGUARD_DEBUG.lock();
                 *lock = snapshot;
             }
-            let recommendations = tracker.recommendations();
+            let recommendations = tracker.recommendations(cfg);
             if !recommendations.is_empty() {
                 if let Some(sender) = &log_sender {
                     tracker.apply_recommendations(

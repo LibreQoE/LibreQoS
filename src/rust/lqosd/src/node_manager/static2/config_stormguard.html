@@ -31,6 +31,54 @@
                 <div class="form-text">Path to CSV file for logging site rates (leave empty to disable)</div>
             </div>
 
+            <!-- Strategy -->
+            <div class="mb-3">
+                <label for="strategy" class="form-label">StormGuard Strategy</label>
+                <select class="form-select" id="strategy">
+                    <option value="legacy_score">legacy_score (score matrix)</option>
+                    <option value="delay_probe">delay_probe (RTT baseline + probing)</option>
+                </select>
+                <div class="form-text">Use <code>delay_probe</code> for low-speed, unstable links (ships). Keep <code>legacy_score</code> for existing rain-fade tuning.</div>
+            </div>
+
+            <div id="delayProbeSection" style="display:none;">
+                <hr class="my-4" />
+                <h5>Delay + Probing Tuning</h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="delayThresholdMs" class="form-label">Delay Threshold (ms)</label>
+                        <input type="number" class="form-control" id="delayThresholdMs" min="1" step="1" value="40">
+                        <div class="form-text">Standing delay above baseline that triggers a decrease</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="delayThresholdRatio" class="form-label">Delay Threshold Ratio</label>
+                        <input type="number" class="form-control" id="delayThresholdRatio" min="1.01" step="0.01" value="1.10">
+                        <div class="form-text">RTT ratio over baseline that triggers a decrease (e.g., 1.10 = 10%)</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="baselineAlphaUp" class="form-label">Baseline Alpha Up</label>
+                        <input type="number" class="form-control" id="baselineAlphaUp" min="0.001" max="1" step="0.001" value="0.01">
+                        <div class="form-text">How fast the baseline drifts upward when RTT rises (smaller = slower)</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="baselineAlphaDown" class="form-label">Baseline Alpha Down</label>
+                        <input type="number" class="form-control" id="baselineAlphaDown" min="0.001" max="1" step="0.001" value="0.10">
+                        <div class="form-text">How fast the baseline tracks downward when RTT falls (larger = faster)</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="probeIntervalSeconds" class="form-label">Probe Interval (seconds)</label>
+                        <input type="number" class="form-control" id="probeIntervalSeconds" min="1" step="1" value="10">
+                        <div class="form-text">Minimum time between increase attempts when conditions look good</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="minThroughputMbpsForRtt" class="form-label">Min Throughput for RTT (Mbps)</label>
+                        <input type="number" class="form-control" id="minThroughputMbpsForRtt" min="0" step="0.01" value="0.05">
+                        <div class="form-text">Ignore RTT-driven adjustments below this throughput to reduce noise</div>
+                    </div>
+                </div>
+            </div>
+
             <hr class="my-4" />
             <h5>Site Enrollment</h5>
 

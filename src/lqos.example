@@ -131,6 +131,7 @@ token = ""
 [stormguard]
 enabled = false
 dry_run = true
+strategy = "legacy_score" # or "delay_probe"
 all_sites = false
 targets = []
 exclude_sites = []
@@ -147,3 +148,9 @@ decrease_fast_cooldown_seconds = 7.5
 circuit_fallback_enabled = false
 circuit_fallback_persist = true
 circuit_fallback_sqm = "fq_codel"
+delay_threshold_ms = 40.0
+delay_threshold_ratio = 1.10
+baseline_alpha_up = 0.01
+baseline_alpha_down = 0.10
+probe_interval_seconds = 10.0
+min_throughput_mbps_for_rtt = 0.05

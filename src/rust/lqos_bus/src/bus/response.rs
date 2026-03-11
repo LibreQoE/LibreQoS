@@ -136,6 +136,12 @@ pub struct StormguardDebugDirection {
     pub rtt: Option<f64>,
     /// Moving-average RTT
     pub rtt_ma: Option<f64>,
+    /// Learned RTT baseline (DelayProbe strategy)
+    pub baseline_rtt_ms: Option<f64>,
+    /// Standing delay over baseline (DelayProbe strategy)
+    pub delay_ms: Option<f64>,
+    /// Active strategy name
+    pub strategy: String,
     /// State (Warmup/Running/Cooldown)
     pub state: String,
     /// Seconds remaining in cooldown, if applicable

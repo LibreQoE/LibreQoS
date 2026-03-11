@@ -14,6 +14,7 @@ function defaultStormguardConfig() {
         enabled: false,
         dry_run: true,
         log_file: null,
+        strategy: "legacy_score",
         all_sites: false,
         targets: [],
         exclude_sites: [],
@@ -30,6 +31,12 @@ function defaultStormguardConfig() {
         circuit_fallback_enabled: false,
         circuit_fallback_persist: true,
         circuit_fallback_sqm: "fq_codel",
+        delay_threshold_ms: 40,
+        delay_threshold_ratio: 1.10,
+        baseline_alpha_up: 0.01,
+        baseline_alpha_down: 0.10,
+        probe_interval_seconds: 10,
+        min_throughput_mbps_for_rtt: 0.05,
     };
 }
 
@@ -49,6 +56,14 @@ function updateTargetsUi() {
     const section = document.getElementById("targetsSection");
     if (section) {
         section.style.display = allSites ? "none" : "";
+    }
+}
+
+function updateStrategyUi() {
+    const strategy = document.getElementById("strategy")?.value ?? "legacy_score";
+    const section = document.getElementById("delayProbeSection");
+    if (section) {
+        section.style.display = strategy === "delay_probe" ? "" : "none";
     }
 }
 
@@ -268,6 +283,7 @@ function validateConfig() {
     const allSites = document.getElementById('allSites').checked;
     const minDownloadPct = parseNumber('minDownloadPct');
     const minUploadPct = parseNumber('minUploadPct');
+    const strategy = document.getElementById('strategy').value;
 
     if (!validatePercent('Minimum Download Percentage', minDownloadPct)) {
         return false;
@@ -332,6 +348,35 @@ function validateConfig() {
         return false;
     }
 
+    if (strategy === 'delay_probe') {
+        if (!validatePositiveNumber('Delay Threshold (ms)', parseNumber('delayThresholdMs'), 0.01, 'greater than 0 ms')) {
+            return false;
+        }
+        const delayRatio = parseNumber('delayThresholdRatio');
+        if (Number.isNaN(delayRatio) || delayRatio <= 1.0) {
+            alert('Delay Threshold Ratio must be greater than 1.0');
+            return false;
+        }
+        const alphaUp = parseNumber('baselineAlphaUp');
+        if (Number.isNaN(alphaUp) || alphaUp <= 0 || alphaUp > 1) {
+            alert('Baseline Alpha Up must be > 0 and <= 1');
+            return false;
+        }
+        const alphaDown = parseNumber('baselineAlphaDown');
+        if (Number.isNaN(alphaDown) || alphaDown <= 0 || alphaDown > 1) {
+            alert('Baseline Alpha Down must be > 0 and <= 1');
+            return false;
+        }
+        if (!validatePositiveNumber('Probe Interval (seconds)', parseNumber('probeIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const minThroughput = parseNumber('minThroughputMbpsForRtt');
+        if (Number.isNaN(minThroughput) || minThroughput < 0) {
+            alert('Min Throughput (Mbps) must be >= 0');
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -343,6 +388,7 @@ function updateConfig() {
         enabled: document.getElementById('enabled').checked,
         dry_run: document.getElementById('dryRun').checked,
         log_file: logFilePath === '' ? null : logFilePath,
+        strategy: document.getElementById('strategy').value,
         all_sites: document.getElementById('allSites').checked,
         targets: [...selectedTargets],
         exclude_sites: [...excludedSites],
@@ -359,6 +405,12 @@ function updateConfig() {
         circuit_fallback_enabled: document.getElementById('circuitFallbackEnabled').checked,
         circuit_fallback_persist: document.getElementById('circuitFallbackPersist').checked,
         circuit_fallback_sqm: document.getElementById('circuitFallbackSqm').value.trim() || 'fq_codel',
+        delay_threshold_ms: parseNumber('delayThresholdMs'),
+        delay_threshold_ratio: parseNumber('delayThresholdRatio'),
+        baseline_alpha_up: parseNumber('baselineAlphaUp'),
+        baseline_alpha_down: parseNumber('baselineAlphaDown'),
+        probe_interval_seconds: parseNumber('probeIntervalSeconds'),
+        min_throughput_mbps_for_rtt: parseNumber('minThroughputMbpsForRtt'),
     };
 }
 
@@ -379,6 +431,7 @@ Promise.all([
     document.getElementById('enabled').checked = sg.enabled;
     document.getElementById('dryRun').checked = sg.dry_run;
     document.getElementById('logFile').value = sg.log_file || '';
+    document.getElementById('strategy').value = sg.strategy || 'legacy_score';
     document.getElementById('allSites').checked = sg.all_sites;
     document.getElementById('minDownloadPct').value = Math.round(sg.minimum_download_percentage * 100);
     document.getElementById('minUploadPct').value = Math.round(sg.minimum_upload_percentage * 100);
@@ -395,14 +448,22 @@ Promise.all([
     document.getElementById('circuitFallbackSqm').value = VALID_FALLBACK_SQMS.includes(sg.circuit_fallback_sqm)
         ? sg.circuit_fallback_sqm
         : 'fq_codel';
+    document.getElementById('delayThresholdMs').value = sg.delay_threshold_ms;
+    document.getElementById('delayThresholdRatio').value = sg.delay_threshold_ratio;
+    document.getElementById('baselineAlphaUp').value = sg.baseline_alpha_up;
+    document.getElementById('baselineAlphaDown').value = sg.baseline_alpha_down;
+    document.getElementById('probeIntervalSeconds').value = sg.probe_interval_seconds;
+    document.getElementById('minThroughputMbpsForRtt').value = sg.min_throughput_mbps_for_rtt;
 
     selectedTargets = [...sg.targets].sort((a, b) => a.localeCompare(b));
     excludedSites = [...sg.exclude_sites].sort((a, b) => a.localeCompare(b));
+    updateStrategyUi();
     updateTargetsUi();
     updateTargetsList();
     updateExcludedSitesList();
 
     document.getElementById('allSites').addEventListener('change', updateTargetsUi);
+    document.getElementById('strategy').addEventListener('change', updateStrategyUi);
     document.getElementById('addTargetBtn').addEventListener('click', addTargetFromSelector);
     document.getElementById('addTargetManualBtn').addEventListener('click', addTargetFromManual);
     document.getElementById('addExcludeBtn').addEventListener('click', addExcludeFromSelector);

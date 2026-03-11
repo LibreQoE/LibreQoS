@@ -9,7 +9,7 @@ pub struct Recommendation {
     pub action: RecommendationAction,
 }
 
-#[derive(Debug, Copy, Clone, Allocative)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Allocative)]
 pub enum RecommendationDirection {
     Download,
     Upload,

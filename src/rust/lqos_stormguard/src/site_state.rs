@@ -34,12 +34,21 @@ impl SiteStateTracker {
     pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
+            let delay_probe = matches!(config.strategy, lqos_config::StormguardStrategy::DelayProbe);
             sites.insert(
                 name.clone(),
                 SiteState {
                     config: site.clone(),
-                    download_state: StormguardState::Warmup,
-                    upload_state: StormguardState::Warmup,
+                    download_state: if delay_probe {
+                        StormguardState::Running
+                    } else {
+                        StormguardState::Warmup
+                    },
+                    upload_state: if delay_probe {
+                        StormguardState::Running
+                    } else {
+                        StormguardState::Warmup
+                    },
                     throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     throughput_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     retransmits_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
@@ -53,6 +62,8 @@ impl SiteStateTracker {
                     queue_download_mbps: site.current_download_mbps,
                     queue_upload_mbps: site.current_upload_mbps,
                     current_throughput: (0.0, 0.0),
+                    current_rtt_ms: None,
+                    rtt_baseline_ms: None,
                     ticks_since_last_probe_download: 0,
                     ticks_since_last_probe_upload: 0,
                 },
@@ -149,6 +160,11 @@ impl SiteStateTracker {
             return;
         };
 
+        for site in self.sites.values_mut() {
+            site.current_throughput = (0.0, 0.0);
+            site.current_rtt_ms = None;
+        }
+
         for response in responses {
             let BusResponse::NetworkMap(all_nodes) = response else {
                 continue;
@@ -158,51 +174,51 @@ impl SiteStateTracker {
                     continue;
                 };
 
-                // Record throughput if there is any
-                if node_info.current_throughput.0 > 0 {
-                    let n = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
-                    target.throughput_down.add(n);
-                    target.current_throughput.0 = n;
-                }
-                if node_info.current_throughput.1 > 0 {
-                    let n = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
-                    target.throughput_up.add(n);
-                    target.current_throughput.1 = n;
-                }
+                // Record throughput (Mbps)
+                let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
+                let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
+                target.throughput_down.add(down_mbps);
+                target.throughput_up.add(up_mbps);
+                target.current_throughput = (down_mbps, up_mbps);
 
                 // Retransmits (as a percentage of TCP packets)
-                if node_info.current_tcp_packets.0 > 0 {
-                    let retransmits_down = node_info.current_retransmits.0 as f64
-                        / node_info.current_tcp_packets.0 as f64;
-                    target.retransmits_down.add(retransmits_down);
-                }
-                if node_info.current_tcp_packets.1 > 0 {
-                    let retransmits_up = node_info.current_retransmits.1 as f64
-                        / node_info.current_tcp_packets.1 as f64;
-                    target.retransmits_up.add(retransmits_up);
-                }
+                let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
+                    node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
+                } else {
+                    0.0
+                };
+                let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
+                    node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
+                } else {
+                    0.0
+                };
+                target.retransmits_down.add(retransmits_down);
+                target.retransmits_up.add(retransmits_up);
 
                 // Round-Trip Time
                 if !node_info.rtts.is_empty() {
                     let mut my_round_trip_times = node_info.rtts.clone();
                     my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
                     let samples = my_round_trip_times.len();
-                    let p90 = my_round_trip_times[(samples as f32 * 0.9) as usize];
-                    target.round_trip_time.add(p90 as f64);
+                    let mut idx = ((samples as f32) * 0.9).floor() as usize;
+                    idx = idx.min(samples.saturating_sub(1));
+                    let p90 = my_round_trip_times[idx] as f64;
+                    target.round_trip_time.add(p90);
+                    target.current_rtt_ms = Some(p90);
                 }
             }
         }
     }
 
-    pub fn check_state(&mut self) {
-        self.sites.iter_mut().for_each(|(_, s)| s.check_state());
+    pub fn check_state(&mut self, config: &StormguardConfig) {
+        self.sites.iter_mut().for_each(|(_, s)| s.check_state(config));
     }
 
-    pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
+    pub fn recommendations(&mut self, config: &StormguardConfig) -> Vec<(Recommendation, String)> {
         let mut recommendations = Vec::new();
         self.sites
             .iter_mut()
-            .for_each(|(_, s)| s.recommendations(&mut recommendations));
+            .for_each(|(_, s)| s.recommendations(&mut recommendations, config));
         recommendations
     }
 
@@ -213,6 +229,34 @@ impl SiteStateTracker {
                 let Some(site_config) = config.sites.get(name) else {
                     return None;
                 };
+
+                let state_string = |state: &StormguardState| -> (String, Option<f32>) {
+                    match state {
+                        StormguardState::Warmup => ("Warmup".to_string(), None),
+                        StormguardState::Running => ("Running".to_string(), None),
+                        StormguardState::Cooldown {
+                            start,
+                            duration_secs,
+                        } => {
+                            let elapsed = start.elapsed().as_secs_f32();
+                            let remaining = (duration_secs - elapsed).max(0.0);
+                            ("Cooldown".to_string(), Some(remaining))
+                        }
+                    }
+                };
+
+                let baseline_rtt_ms = site.rtt_baseline_ms;
+                let rtt_now = site.current_rtt_ms.or_else(|| site.round_trip_time.average());
+                let delay_ms = match (rtt_now, baseline_rtt_ms) {
+                    (Some(rtt), Some(baseline)) => Some((rtt - baseline).max(0.0)),
+                    _ => None,
+                };
+                let strategy = match config.strategy {
+                    lqos_config::StormguardStrategy::LegacyScore => "legacy_score",
+                    lqos_config::StormguardStrategy::DelayProbe => "delay_probe",
+                };
+                let rtt = site.round_trip_time.average();
+                let rtt_ma = site.round_trip_time_moving_average.average();
 
                 let make_direction =
                     |direction: RecommendationDirection| -> StormguardDebugDirection {
@@ -246,42 +290,12 @@ impl SiteStateTracker {
                         };
 
                         let (state, cooldown_remaining_secs) = match direction {
-                            RecommendationDirection::Download => match &site.download_state {
-                                StormguardState::Warmup => ("Warmup".to_string(), None),
-                                StormguardState::Running => ("Running".to_string(), None),
-                                StormguardState::Cooldown {
-                                    start,
-                                    duration_secs,
-                                } => {
-                                    let elapsed = start.elapsed().as_secs_f32();
-                                    let remaining = (duration_secs - elapsed).max(0.0);
-                                    ("Cooldown".to_string(), Some(remaining))
-                                }
-                            },
-                            RecommendationDirection::Upload => match &site.upload_state {
-                                StormguardState::Warmup => ("Warmup".to_string(), None),
-                                StormguardState::Running => ("Running".to_string(), None),
-                                StormguardState::Cooldown {
-                                    start,
-                                    duration_secs,
-                                } => {
-                                    let elapsed = start.elapsed().as_secs_f32();
-                                    let remaining = (duration_secs - elapsed).max(0.0);
-                                    ("Cooldown".to_string(), Some(remaining))
-                                }
-                            },
+                            RecommendationDirection::Download => state_string(&site.download_state),
+                            RecommendationDirection::Upload => state_string(&site.upload_state),
                         };
 
                         let saturation_max = SaturationLevel::from_throughput(
-                            throughput_mbps,
-                            match direction {
-                                RecommendationDirection::Download => {
-                                    site_config.max_download_mbps as f64
-                                }
-                                RecommendationDirection::Upload => {
-                                    site_config.max_upload_mbps as f64
-                                }
-                            },
+                            throughput_mbps, max_mbps as f64,
                         );
                         let saturation_current =
                             SaturationLevel::from_throughput(throughput_mbps, queue_mbps as f64);
@@ -297,8 +311,11 @@ impl SiteStateTracker {
                             throughput_ma_mbps,
                             retrans,
                             retrans_ma,
-                            rtt: site.round_trip_time.average(),
-                            rtt_ma: site.round_trip_time_moving_average.average(),
+                            rtt,
+                            rtt_ma,
+                            baseline_rtt_ms,
+                            delay_ms,
+                            strategy: strategy.to_string(),
                             state,
                             cooldown_remaining_secs,
                             saturation_current: saturation_current.to_string(),
@@ -712,12 +729,14 @@ impl SiteStateTracker {
                     start: std::time::Instant::now(),
                     duration_secs: cooldown_secs,
                 };
+                site.ticks_since_last_probe_download = 0;
             }
             RecommendationDirection::Upload => {
                 site.upload_state = StormguardState::Cooldown {
                     start: std::time::Instant::now(),
                     duration_secs: cooldown_secs,
                 };
+                site.ticks_since_last_probe_upload = 0;
             }
         }
     }
@@ -779,6 +798,9 @@ impl SiteStateTracker {
 mod tests {
     use super::*;
     use crate::config::WatchingSite;
+    use crate::config::StormguardConfig as RuntimeStormguardConfig;
+    use lqos_config::StormguardStrategy;
+    use std::collections::HashMap;
 
     fn site_state(download: u64, upload: u64, max_down: u64, max_up: u64) -> SiteState {
         SiteState {
@@ -807,8 +829,38 @@ mod tests {
             queue_download_mbps: download,
             queue_upload_mbps: upload,
             current_throughput: (0.0, 0.0),
+            current_rtt_ms: None,
+            rtt_baseline_ms: None,
             ticks_since_last_probe_download: 0,
             ticks_since_last_probe_upload: 0,
+        }
+    }
+
+    fn test_config(strategy: StormguardStrategy) -> RuntimeStormguardConfig {
+        RuntimeStormguardConfig {
+            sites: HashMap::new(),
+            download_interface: "eth0".to_string(),
+            upload_interface: "eth1".to_string(),
+            dry_run: true,
+            log_filename: None,
+            strategy,
+            increase_fast_multiplier: 1.30,
+            increase_multiplier: 1.15,
+            decrease_multiplier: 0.95,
+            decrease_fast_multiplier: 0.88,
+            increase_fast_cooldown_seconds: 2.0,
+            increase_cooldown_seconds: 1.0,
+            decrease_cooldown_seconds: 3.75,
+            decrease_fast_cooldown_seconds: 7.5,
+            circuit_fallback_enabled: false,
+            circuit_fallback_persist: true,
+            circuit_fallback_sqm: "fq_codel".to_string(),
+            delay_threshold_ms: 40.0,
+            delay_threshold_ratio: 1.10,
+            baseline_alpha_up: 0.01,
+            baseline_alpha_down: 0.10,
+            probe_interval_seconds: 10.0,
+            min_throughput_mbps_for_rtt: 0.05,
         }
     }
 
@@ -832,5 +884,73 @@ mod tests {
     fn skipped_circuit_outcomes_do_not_enter_cooldown() {
         assert!(!SiteStateTracker::circuit_outcome_enters_cooldown(&false));
         assert!(SiteStateTracker::circuit_outcome_enters_cooldown(&true));
+    }
+
+    #[test]
+    fn warmup_progresses_with_zero_samples() {
+        let cfg = test_config(StormguardStrategy::LegacyScore);
+        let mut site = site_state(50, 50, 100, 100);
+        site.download_state = StormguardState::Warmup;
+        site.upload_state = StormguardState::Warmup;
+
+        for _ in 0..11 {
+            site.throughput_down.add(0.0);
+            site.throughput_up.add(0.0);
+            site.retransmits_down.add(0.0);
+            site.retransmits_up.add(0.0);
+        }
+
+        site.check_state(&cfg);
+        assert_eq!(site.download_state, StormguardState::Running);
+        assert_eq!(site.upload_state, StormguardState::Running);
+    }
+
+    #[test]
+    fn delay_probe_decreases_on_bufferbloat() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(20, 20, 50, 50);
+        site.current_throughput = (10.0, 0.0);
+        site.current_rtt_ms = Some(800.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Download
+                && matches!(r.action, RecommendationAction::DecreaseFast | RecommendationAction::Decrease)
+        }));
+    }
+
+    #[test]
+    fn delay_probe_increases_when_good_and_loaded() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(10, 10, 50, 50);
+        site.current_throughput = (9.0, 0.0);
+        site.current_rtt_ms = Some(610.0);
+        site.rtt_baseline_ms = Some(600.0);
+        site.ticks_since_last_probe_download = 10;
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Download
+                && matches!(r.action, RecommendationAction::Increase | RecommendationAction::IncreaseFast)
+        }));
+    }
+
+    #[test]
+    fn delay_probe_applies_rtt_logic_to_upload() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(20, 20, 50, 50);
+        site.current_throughput = (0.0, 18.0);
+        site.current_rtt_ms = Some(900.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(recs.iter().any(|(r, _)| {
+            r.direction == RecommendationDirection::Upload
+                && matches!(r.action, RecommendationAction::DecreaseFast | RecommendationAction::Decrease)
+        }));
     }
 }

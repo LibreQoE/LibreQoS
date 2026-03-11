@@ -21,8 +21,8 @@ pub use cpu_topology::{
 };
 pub use etc::{
     BridgeConfig, Config, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables, disable_xdp_bridge,
+    StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig,
+    TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables, disable_xdp_bridge,
     enable_long_term_stats, load_config, update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};

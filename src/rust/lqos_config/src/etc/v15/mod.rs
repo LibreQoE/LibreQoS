@@ -24,7 +24,7 @@ mod wispgate;
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;
 pub use queues::LazyQueueMode;
-pub use stormguard::StormguardConfig;
+pub use stormguard::{StormguardConfig, StormguardStrategy};
 pub use treeguard::{
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig,

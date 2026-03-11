@@ -548,6 +548,10 @@ mod test {
         assert!(cfg.targets.is_empty());
         assert!(cfg.exclude_sites.is_empty());
         assert!(cfg.dry_run);
+        assert_eq!(
+            cfg.strategy,
+            crate::etc::v15::stormguard::StormguardStrategy::LegacyScore
+        );
         assert_eq!(cfg.minimum_download_percentage, 0.5);
         assert_eq!(cfg.minimum_upload_percentage, 0.5);
         assert_eq!(cfg.increase_fast_multiplier, 1.30);
@@ -561,6 +565,12 @@ mod test {
         assert!(!cfg.circuit_fallback_enabled);
         assert!(cfg.circuit_fallback_persist);
         assert_eq!(cfg.circuit_fallback_sqm, "fq_codel");
+        assert_eq!(cfg.delay_threshold_ms, 40.0);
+        assert_eq!(cfg.delay_threshold_ratio, 1.10);
+        assert_eq!(cfg.baseline_alpha_up, 0.01);
+        assert_eq!(cfg.baseline_alpha_down, 0.10);
+        assert_eq!(cfg.probe_interval_seconds, 10.0);
+        assert_eq!(cfg.min_throughput_mbps_for_rtt, 0.05);
     }
 
     #[test]

@@ -148,7 +148,12 @@
                         <td>${d.saturation_current || "?"} / ${d.saturation_max || "?"}</td>
                         <td>${formatMbps(d.throughput_mbps)} / ${formatMbps(d.throughput_ma_mbps)}</td>
                         <td>${formatPct(d.retrans)} / ${formatPct(d.retrans_ma)}</td>
-                        <td>${formatRtt(d.rtt)} / ${formatRtt(d.rtt_ma)}</td>
+                        <td>
+                            ${formatRtt(d.rtt)} / ${formatRtt(d.rtt_ma)}
+                            <div class="text-muted small">
+                                base ${formatRtt(d.baseline_rtt_ms)} &nbsp; Δ ${formatRtt(d.delay_ms)} &nbsp; (${d.strategy || "?"})
+                            </div>
+                        </td>
                         <td>${formatCooldown(d.cooldown_remaining_secs)}</td>
                         <td>
                             <span class="badge ${d.can_increase ? "bg-success-subtle text-success" : "bg-light text-muted"}">+</span>
