@@ -349,10 +349,10 @@ function renderTable() {
             "<td class='text-nowrap'>" +
             "<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-index='" +
             idx +
-            "'><i class='fa fa-edit'></i></button>" +
+            "' title='Edit device' aria-label='Edit device'><i class='fa fa-edit' aria-hidden='true'></i></button>" +
             "<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-index='" +
             idx +
-            "'><i class='fa fa-trash'></i></button>" +
+            "' title='Delete device' aria-label='Delete device'><i class='fa fa-trash' aria-hidden='true'></i></button>" +
             "</td>";
         html += "<td class='text-nowrap'>" + formatIdCell(row.circuit_id, 5) + "</td>";
         html +=

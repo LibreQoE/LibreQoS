@@ -40,9 +40,14 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let funnelInitialized = false;
 let excludeRttToggle = null;
 let excludeRttLastValue = false;
 let excludeRttBusy = false;
+let latestFlowMsg = null;
+let latestCakeMsg = null;
+let cakeGraphs = null;
+let cakeQueueUnavailable = false;
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -51,6 +56,177 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function isElementVisible(el) {
+    return !!(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
+function resizeGraphIfVisible(graph) {
+    if (!graph || !graph.chart || typeof graph.chart.resize !== "function") {
+        return;
+    }
+    const dom = typeof graph.chart.getDom === "function" ? graph.chart.getDom() : graph.dom;
+    if (!isElementVisible(dom)) {
+        return;
+    }
+    graph.chart.resize();
+}
+
+function applyFlowSankeyMessage(msg) {
+    if (!flowSankey || !msg) {
+        return;
+    }
+    const activeFlows = flowSankey.update(msg);
+    resizeGraphIfVisible(flowSankey);
+    $("#activeFlowCount").text(activeFlows);
+}
+
+function ensureFlowSankey() {
+    const target = document.getElementById("flowSankey");
+    if (!target || flowSankey || !isElementVisible(target)) {
+        return;
+    }
+    flowSankey = new FlowsSankey("flowSankey");
+    applyFlowSankeyMessage(latestFlowMsg);
+}
+
+function resizeFunnelGraphs() {
+    Object.values(funnelGraphs).forEach((graphSet) => {
+        if (!graphSet) return;
+        Object.values(graphSet).forEach((graph) => resizeGraphIfVisible(graph));
+    });
+}
+
+function updateCakeTabAvailability(msg) {
+    try {
+        const kindDown = (msg?.kind_down || "").toLowerCase();
+        const kindUp = (msg?.kind_up || "").toLowerCase();
+        const tabBtn = document.getElementById("cake-tab");
+        const tabLi = tabBtn ? tabBtn.parentElement : null;
+        const tabContent = document.getElementById("cake");
+
+        if (kindDown === "none" && kindUp === "none") {
+            cakeQueueUnavailable = true;
+            if (tabLi) tabLi.style.display = "none";
+            if (tabContent) tabContent.style.display = "none";
+            return false;
+        }
+
+        cakeQueueUnavailable = false;
+        if (tabLi) tabLi.style.display = "";
+        if (tabContent) tabContent.style.display = "";
+
+        let displayKind = "Shaper Overview";
+        if (kindDown === "cake" || kindUp === "cake") {
+            displayKind = "CAKE Shaper Overview";
+        } else if (kindDown === "fq_codel" || kindUp === "fq_codel") {
+            displayKind = "fq_codel Shaper Overview";
+        }
+        if (tabBtn) {
+            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+        }
+    } catch (e) {
+        // Ignore label updates; data updates still continue.
+    }
+    return true;
+}
+
+function renderCakeGraphShell() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || document.getElementById("cakeBacklog")) {
+        return;
+    }
+    cakeTab.innerHTML = `
+        <div class="row">
+            <div class="col-4">
+                <div id="cakeBacklog" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDelays" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeQueueLength" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeTraffic" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeMarks" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDrops" style="height: 250px"></div>
+            </div>
+            <div class="col-3">
+                Queue Memory: <span id="cakeQueueMemory">?</span>
+            </div>
+        </div>
+    `;
+}
+
+function applyCakeMessage(msg) {
+    if (!cakeGraphs || !msg) {
+        return;
+    }
+    $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
+    cakeGraphs.backlog.update(msg);
+    resizeGraphIfVisible(cakeGraphs.backlog);
+    cakeGraphs.delays.update(msg);
+    resizeGraphIfVisible(cakeGraphs.delays);
+    cakeGraphs.queueLength.update(msg);
+    resizeGraphIfVisible(cakeGraphs.queueLength);
+    cakeGraphs.traffic.update(msg);
+    resizeGraphIfVisible(cakeGraphs.traffic);
+    cakeGraphs.marks.update(msg);
+    resizeGraphIfVisible(cakeGraphs.marks);
+    cakeGraphs.drops.update(msg);
+    resizeGraphIfVisible(cakeGraphs.drops);
+}
+
+function ensureCakeGraphs() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || cakeGraphs || cakeQueueUnavailable || !isElementVisible(cakeTab)) {
+        return;
+    }
+    renderCakeGraphShell();
+    cakeGraphs = {
+        backlog: new CakeBacklog("cakeBacklog"),
+        delays: new CakeDelays("cakeDelays"),
+        queueLength: new CakeQueueLength("cakeQueueLength"),
+        traffic: new CakeTraffic("cakeTraffic"),
+        marks: new CakeMarks("cakeMarks"),
+        drops: new CakeDrops("cakeDrops"),
+    };
+    applyCakeMessage(latestCakeMsg);
+}
+
+function initTabLifecycle(parentNode) {
+    const tabs = document.querySelectorAll('#myTab button[data-bs-toggle="tab"]');
+    tabs.forEach((tab) => {
+        tab.addEventListener("shown.bs.tab", () => {
+            window.requestAnimationFrame(() => {
+                const target = tab.getAttribute("data-bs-target");
+                if (target === "#sankey") {
+                    ensureFlowSankey();
+                    applyFlowSankeyMessage(latestFlowMsg);
+                    return;
+                }
+                if (target === "#funnel") {
+                    if (!funnelInitialized) {
+                        funnelInitialized = true;
+                        initialFunnel(parentNode);
+                    } else {
+                        resizeFunnelGraphs();
+                    }
+                    return;
+                }
+                if (target === "#cake") {
+                    ensureCakeGraphs();
+                    applyCakeMessage(latestCakeMsg);
+                }
+            });
+        });
+    });
+}
 
 function formatIpBytes(bytes) {
     const list = Array.from(bytes);
@@ -233,10 +409,9 @@ function connectFlowChannel() {
             circuit: circuit_id
         }
     }, (msg) => {
-        //console.log(msg);
-        let activeFlows = flowSankey.update(msg);
-        flowSankey.chart.resize();
-        $("#activeFlowCount").text(activeFlows);
+        latestFlowMsg = msg;
+        $("#activeFlowCount").text(Array.isArray(msg?.flows) ? msg.flows.length : 0);
+        applyFlowSankeyMessage(msg);
         updateTrafficTab(msg);
     });
 }
@@ -925,6 +1100,9 @@ function initialFunnel(parentNode) {
                     rxmit: rxmitGraph,
                     rtt: rttGraph,
                 };
+                resizeGraphIfVisible(tpGraph);
+                resizeGraphIfVisible(rxmitGraph);
+                resizeGraphIfVisible(rttGraph);
             });
             funnelParents = immediateParent.parents;
             if (funnelSubscription) {
@@ -967,12 +1145,6 @@ function onTreeEvent(msg) {
 }
 
 function subscribeToCake() {
-    let backlogGraph = new CakeBacklog("cakeBacklog");
-    let delaysGraph = new CakeDelays("cakeDelays");
-    let queueLength = new CakeQueueLength("cakeQueueLength");
-    let traffic = new CakeTraffic("cakeTraffic");
-    let marks = new CakeMarks("cakeMarks");
-    let drops = new CakeDrops("cakeDrops");
     let noDataTimeout = null;
     let hasReceivedData = false;
     
@@ -993,6 +1165,7 @@ function subscribeToCake() {
         }
     }, (msg) => {
         //console.log(msg);
+        latestCakeMsg = msg;
         
         // Clear the timeout and set flag that we've received data
         if (noDataTimeout) {
@@ -1003,81 +1176,13 @@ function subscribeToCake() {
         // If this is the first data received, restore the original HTML structure
         if (!hasReceivedData) {
             hasReceivedData = true;
-            // Update the tab heading based on queue kind
-            try {
-                const kindDown = (msg.kind_down || '').toLowerCase();
-                const kindUp = (msg.kind_up || '').toLowerCase();
-                const tabBtn = document.getElementById('cake-tab');
-                const tabLi = tabBtn ? tabBtn.parentElement : null;
-                if (kindDown === 'none' && kindUp === 'none') {
-                    // Hide the shaper overview tab entirely for SQM=none
-                    if (tabLi) tabLi.style.display = 'none';
-                    const tabContent = document.getElementById('cake');
-                    if (tabContent) tabContent.style.display = 'none';
-                    return; // Skip building graphs
-                } else {
-                    let displayKind = 'Shaper Overview';
-                    if (kindDown === 'cake' || kindUp === 'cake') {
-                        displayKind = 'CAKE Shaper Overview';
-                    } else if (kindDown === 'fq_codel' || kindUp === 'fq_codel') {
-                        displayKind = 'fq_codel Shaper Overview';
-                    }
-                    if (tabBtn) {
-                        tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
-                    }
-                }
-            } catch (e) { /* ignore */ }
-            const cakeTab = document.getElementById("cake");
-            if (cakeTab) {
-                cakeTab.innerHTML = `
-                    <div class="row">
-                        <div class="col-4">
-                            <div id="cakeBacklog" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDelays" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeQueueLength" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeTraffic" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeMarks" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDrops" style="height: 250px"></div>
-                        </div>
-                        <div class="col-3">
-                            Queue Memory: <span id="cakeQueueMemory">?</span>
-                        </div>
-                    </div>
-                `;
-                // Reinitialize the graphs
-                backlogGraph = new CakeBacklog("cakeBacklog");
-                delaysGraph = new CakeDelays("cakeDelays");
-                queueLength = new CakeQueueLength("cakeQueueLength");
-                traffic = new CakeTraffic("cakeTraffic");
-                marks = new CakeMarks("cakeMarks");
-                drops = new CakeDrops("cakeDrops");
+            if (!updateCakeTabAvailability(msg)) {
+                return;
             }
         }
 
-        // Cake Memory Usage
-        $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
-        backlogGraph.update(msg);
-        backlogGraph.chart.resize();
-        delaysGraph.update(msg);
-        delaysGraph.chart.resize();
-        queueLength.update(msg);
-        queueLength.chart.resize();
-        traffic.update(msg);
-        traffic.chart.resize();
-        marks.update(msg);
-        marks.chart.resize();
-        drops.update(msg);
-        drops.chart.resize();
+        ensureCakeGraphs();
+        applyCakeMessage(msg);
     });
 }
 
@@ -1172,12 +1277,11 @@ function loadInitial() {
         qooGauge = new QooScoreGauge("qooGauge");
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-        flowSankey = new FlowsSankey("flowSankey");
+        initTabLifecycle(circuit.parent_node);
 
         connectPrivateChannel();
         connectPingers(circuits);
         connectFlowChannel();
-        initialFunnel(circuit.parent_node);
         subscribeToCake();
         wireupAnalysis(circuits);
     }, () => {
