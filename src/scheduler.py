@@ -23,6 +23,11 @@ ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 network_hash = 0
 
 
+def clear_scheduler_error():
+    """Clear the scheduler error status shown in the Web UI."""
+    scheduler_error("")
+
+
 def get_integration_affinity_cpus():
     """Return efficiency-core CPU IDs to prefer for integration subprocesses."""
     try:
@@ -108,7 +113,6 @@ def capture_output_and_run(func):
         output = captured_output.getvalue()
         if output:
             print(output)
-            scheduler_error(output)
 
 
 def run_python_integration(module_name: str, func_name: str, label: str = ""):
@@ -129,7 +133,6 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         output = (result.stdout or "") + (result.stderr or "")
         if output:
             print(output)
-            scheduler_error(output)
         if result.returncode != 0:
             # Non-zero exit shouldn't stop scheduling; log and continue
             msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
@@ -141,6 +144,7 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         scheduler_error(err)
 
 def importFromCRM():
+    clear_scheduler_error()
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -155,8 +159,6 @@ def importFromCRM():
             output = (result.stdout or "") + (result.stderr or "")
             if output:
                 print(output)
-                # Report UISP output to error channel regardless of return code.
-                scheduler_error(output)
             if result.returncode != 0:
                 msg = f"UISP integration exited with code {result.returncode}. Continuing."
                 print(msg)
