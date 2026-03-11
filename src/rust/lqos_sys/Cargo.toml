@@ -23,3 +23,6 @@ allocative_derive.workspace = true
 
 [build-dependencies]
 bindgen = "0.71.1"
+
+[package.metadata.cargo-machete]
+ignored = ["allocative"]

@@ -10,8 +10,6 @@ lqos_sys = { path = "../lqos_sys" }
 anyhow.workspace = true
 tracing.workspace = true
 crossbeam-channel.workspace = true
-once_cell.workspace = true
 allocative.workspace = true
-allocative_derive.workspace = true
 parking_lot.workspace = true
 tokio.workspace = true
