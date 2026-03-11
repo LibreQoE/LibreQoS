@@ -37,8 +37,9 @@
                 <select class="form-select" id="strategy">
                     <option value="legacy_score">legacy_score (score matrix)</option>
                     <option value="delay_probe">delay_probe (RTT baseline + probing)</option>
+                    <option value="delay_probe_active">delay_probe_active (add active ICMP ping RTT)</option>
                 </select>
-                <div class="form-text">Use <code>delay_probe</code> for low-speed, unstable links (ships). Keep <code>legacy_score</code> for existing rain-fade tuning.</div>
+                <div class="form-text">Use <code>delay_probe</code> (default) for low-speed, unstable links (ships). Use <code>delay_probe_active</code> to supplement with infrequent ICMP pings. Keep <code>legacy_score</code> for existing rain-fade tuning.</div>
             </div>
 
             <div id="delayProbeSection" style="display:none;">
@@ -75,6 +76,34 @@
                         <label for="minThroughputMbpsForRtt" class="form-label">Min Throughput for RTT (Mbps)</label>
                         <input type="number" class="form-control" id="minThroughputMbpsForRtt" min="0" step="0.01" value="0.05">
                         <div class="form-text">Ignore RTT-driven adjustments below this throughput to reduce noise</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="activePingSection" style="display:none;">
+                <hr class="my-4" />
+                <h5>Active Ping (delay_probe_active)</h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="activePingTarget" class="form-label">Ping Target</label>
+                        <input type="text" class="form-control" id="activePingTarget" placeholder="1.1.1.1">
+                        <div class="form-text">Hostname or IP used for RTT sampling (default: 1.1.1.1)</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="activePingIntervalSeconds" class="form-label">Ping Interval (seconds)</label>
+                        <input type="number" class="form-control" id="activePingIntervalSeconds" min="1" step="1" value="10">
+                        <div class="form-text">Infrequent pings to keep overhead low</div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label for="activePingTimeoutSeconds" class="form-label">Ping Timeout (seconds)</label>
+                        <input type="number" class="form-control" id="activePingTimeoutSeconds" min="0.1" step="0.1" value="1.0">
+                        <div class="form-text">Timeout per ping attempt</div>
+                    </div>
+                    <div class="col-md-12 mb-3">
+                        <label for="activePingWeight" class="form-label">Active Ping Weight (<span id="activePingWeightValue">70</span>%)</label>
+                        <input type="range" class="form-range" id="activePingWeight" min="0" max="100" step="1" value="70">
+                        <div class="form-text">Blend active ping RTT (weight) with passive TCP RTT (remaining %)</div>
                     </div>
                 </div>
             </div>

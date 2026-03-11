@@ -12,7 +12,7 @@ fn default_true() -> bool {
 }
 
 fn default_stormguard_strategy() -> StormguardStrategy {
-    StormguardStrategy::LegacyScore
+    StormguardStrategy::DelayProbe
 }
 
 fn default_minimum_pct() -> f32 {
@@ -79,6 +79,22 @@ fn default_min_throughput_mbps_for_rtt() -> f32 {
     0.05
 }
 
+fn default_active_ping_target() -> String {
+    "1.1.1.1".to_string()
+}
+
+fn default_active_ping_interval_seconds() -> f32 {
+    10.0
+}
+
+fn default_active_ping_weight() -> f32 {
+    0.70
+}
+
+fn default_active_ping_timeout_seconds() -> f32 {
+    1.0
+}
+
 /// StormGuard evaluation strategy.
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Allocative)]
 #[serde(rename_all = "snake_case")]
@@ -87,6 +103,8 @@ pub enum StormguardStrategy {
     LegacyScore,
     /// CAKE-autorate-inspired delay baseline + probing strategy.
     DelayProbe,
+    /// DelayProbe + infrequent active ICMP ping RTT sampling.
+    DelayProbeActive,
 }
 
 /// Configuration for the StormGuard module (auto-rate).
@@ -170,6 +188,20 @@ pub struct StormguardConfig {
     /// Minimum throughput (Mbps) required before RTT-based decisions are trusted (DelayProbe).
     #[serde(default = "default_min_throughput_mbps_for_rtt")]
     pub min_throughput_mbps_for_rtt: f32,
+
+    // --- DelayProbeActive knobs (safe to keep set even in other modes) ---
+    /// Target hostname or IP for active RTT sampling (DelayProbeActive).
+    #[serde(default = "default_active_ping_target")]
+    pub active_ping_target: String,
+    /// Interval between active pings (DelayProbeActive).
+    #[serde(default = "default_active_ping_interval_seconds")]
+    pub active_ping_interval_seconds: f32,
+    /// Weight for active ping RTT when blending with passive RTT (0..=1, DelayProbeActive).
+    #[serde(default = "default_active_ping_weight")]
+    pub active_ping_weight: f32,
+    /// Timeout for active pings (seconds, DelayProbeActive).
+    #[serde(default = "default_active_ping_timeout_seconds")]
+    pub active_ping_timeout_seconds: f32,
 }
 
 impl Default for StormguardConfig {
@@ -201,6 +233,10 @@ impl Default for StormguardConfig {
             baseline_alpha_down: default_baseline_alpha_down(),
             probe_interval_seconds: default_probe_interval_seconds(),
             min_throughput_mbps_for_rtt: default_min_throughput_mbps_for_rtt(),
+            active_ping_target: default_active_ping_target(),
+            active_ping_interval_seconds: default_active_ping_interval_seconds(),
+            active_ping_weight: default_active_ping_weight(),
+            active_ping_timeout_seconds: default_active_ping_timeout_seconds(),
         }
     }
 }
@@ -278,6 +314,28 @@ impl StormguardConfig {
             "stormguard.min_throughput_mbps_for_rtt",
             self.min_throughput_mbps_for_rtt,
         )?;
+
+        validate_nonnegative("stormguard.active_ping_weight", self.active_ping_weight)?;
+        if self.active_ping_weight > 1.0 {
+            return Err("stormguard.active_ping_weight must be <= 1.0".to_string());
+        }
+
+        validate_positive_seconds(
+            "stormguard.active_ping_interval_seconds",
+            self.active_ping_interval_seconds,
+        )?;
+        validate_positive_seconds(
+            "stormguard.active_ping_timeout_seconds",
+            self.active_ping_timeout_seconds,
+        )?;
+        if matches!(self.strategy, StormguardStrategy::DelayProbeActive)
+            && self.active_ping_target.trim().is_empty()
+        {
+            return Err(
+                "stormguard.active_ping_target must not be empty when strategy = delay_probe_active"
+                    .to_string(),
+            );
+        }
 
         Ok(())
     }

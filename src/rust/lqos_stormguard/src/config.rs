@@ -52,6 +52,10 @@ pub struct StormguardConfig {
     pub baseline_alpha_down: f32,
     pub probe_interval_seconds: f32,
     pub min_throughput_mbps_for_rtt: f32,
+    pub active_ping_target: String,
+    pub active_ping_interval_seconds: f32,
+    pub active_ping_weight: f32,
+    pub active_ping_timeout_seconds: f32,
 }
 
 impl StormguardConfig {
@@ -115,6 +119,10 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
         baseline_alpha_down: sg_config.baseline_alpha_down,
         probe_interval_seconds: sg_config.probe_interval_seconds,
         min_throughput_mbps_for_rtt: sg_config.min_throughput_mbps_for_rtt,
+        active_ping_target: sg_config.active_ping_target.clone(),
+        active_ping_interval_seconds: sg_config.active_ping_interval_seconds,
+        active_ping_weight: sg_config.active_ping_weight,
+        active_ping_timeout_seconds: sg_config.active_ping_timeout_seconds,
     };
 
     Ok(result)

@@ -24,7 +24,7 @@ impl Display for RecommendationDirection {
     }
 }
 
-#[derive(Debug, Allocative)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Allocative)]
 pub enum RecommendationAction {
     IncreaseFast,
     Increase,

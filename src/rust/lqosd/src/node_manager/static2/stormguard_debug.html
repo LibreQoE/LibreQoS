@@ -50,6 +50,7 @@
                                 <th scope="col">Site</th>
                                 <th scope="col">Dir</th>
                                 <th scope="col">State</th>
+                                <th scope="col">Action</th>
                                 <th scope="col">Queue (min/max)</th>
                                 <th scope="col">Sat (cur/max)</th>
                                 <th scope="col">Throughput</th>
@@ -61,7 +62,7 @@
                         </thead>
                         <tbody id="sg-debug">
                             <tr>
-                                <td colspan="10" class="text-muted">Waiting for StormGuardDebug feed…</td>
+                                <td colspan="11" class="text-muted">Waiting for StormGuardDebug feed…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -107,6 +108,11 @@
         return v.toFixed(1) + "s";
     }
 
+    function formatAge(v) {
+        if (v === null || v === undefined) return "—";
+        return v.toFixed(0) + "s";
+    }
+
     function renderStatusRows(rows) {
         if (!Array.isArray(rows) || rows.length === 0) {
             table.innerHTML = '<tr><td colspan="3" class="text-muted">No StormGuard data available.</td></tr>';
@@ -131,7 +137,7 @@
 
     function renderDebugRows(data) {
         if (!Array.isArray(data) || data.length === 0) {
-            debugTable.innerHTML = '<tr><td colspan="10" class="text-muted">No debug data available.</td></tr>';
+            debugTable.innerHTML = '<tr><td colspan="11" class="text-muted">No debug data available.</td></tr>';
             return;
         }
 
@@ -144,12 +150,19 @@
                         <td class="fw-semibold">${entry.site || "?"}</td>
                         <td>${dir === "download" ? "<i class='fa fa-arrow-down text-primary'></i> Down" : "<i class='fa fa-arrow-up text-success'></i> Up"}</td>
                         <td>${d.state || "?"}</td>
+                        <td>
+                            ${d.last_action ? `<span class="badge bg-primary-subtle text-primary">${d.last_action}</span>` : "—"}
+                            <div class="text-muted small">${formatAge(d.last_action_age_secs)}</div>
+                        </td>
                         <td>${formatMbps(d.queue_mbps)} (${formatMbps(d.min_mbps)} / ${formatMbps(d.max_mbps)})</td>
                         <td>${d.saturation_current || "?"} / ${d.saturation_max || "?"}</td>
                         <td>${formatMbps(d.throughput_mbps)} / ${formatMbps(d.throughput_ma_mbps)}</td>
                         <td>${formatPct(d.retrans)} / ${formatPct(d.retrans_ma)}</td>
                         <td>
                             ${formatRtt(d.rtt)} / ${formatRtt(d.rtt_ma)}
+                            <div class="text-muted small">
+                                tcp ${formatRtt(d.passive_rtt_ms)} &nbsp; ping ${formatRtt(d.active_ping_rtt_ms)}
+                            </div>
                             <div class="text-muted small">
                                 base ${formatRtt(d.baseline_rtt_ms)} &nbsp; Δ ${formatRtt(d.delay_ms)} &nbsp; (${d.strategy || "?"})
                             </div>

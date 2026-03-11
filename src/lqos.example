@@ -131,7 +131,7 @@ token = ""
 [stormguard]
 enabled = false
 dry_run = true
-strategy = "legacy_score" # or "delay_probe"
+strategy = "delay_probe" # "legacy_score", "delay_probe", or "delay_probe_active"
 all_sites = false
 targets = []
 exclude_sites = []
@@ -154,3 +154,7 @@ baseline_alpha_up = 0.01
 baseline_alpha_down = 0.10
 probe_interval_seconds = 10.0
 min_throughput_mbps_for_rtt = 0.05
+active_ping_target = "1.1.1.1"
+active_ping_interval_seconds = 10.0
+active_ping_weight = 0.70
+active_ping_timeout_seconds = 1.0

@@ -5,6 +5,7 @@ mod site;
 mod stormguard_state;
 
 use crate::config::StormguardConfig;
+use crate::active_ping::TimedRtt;
 use crate::datalog::LogCommand;
 use crate::adaptive_actions::{
     CircuitFallbackOutcome, SiteOverrideUpdate, apply_circuit_fallback,
@@ -23,6 +24,7 @@ use lqos_bakery::BakeryCommands;
 use lqos_bus::{BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 pub struct SiteStateTracker {
@@ -34,7 +36,11 @@ impl SiteStateTracker {
     pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
-            let delay_probe = matches!(config.strategy, lqos_config::StormguardStrategy::DelayProbe);
+            let delay_probe = matches!(
+                config.strategy,
+                lqos_config::StormguardStrategy::DelayProbe
+                    | lqos_config::StormguardStrategy::DelayProbeActive
+            );
             sites.insert(
                 name.clone(),
                 SiteState {
@@ -63,7 +69,15 @@ impl SiteStateTracker {
                     queue_upload_mbps: site.current_upload_mbps,
                     current_throughput: (0.0, 0.0),
                     current_rtt_ms: None,
+                    passive_rtt_ms: None,
+                    active_ping_rtt_ms: None,
+                    rtt_sample_for_baseline_ms: None,
                     rtt_baseline_ms: None,
+                    last_passive_rtt_ms: None,
+                    last_passive_rtt_at: None,
+                    passive_rtt_updated_this_tick: false,
+                    last_action_download: None,
+                    last_action_upload: None,
                     ticks_since_last_probe_download: 0,
                     ticks_since_last_probe_upload: 0,
                 },
@@ -153,7 +167,12 @@ impl SiteStateTracker {
         }
     }
 
-    pub async fn read_new_tick_data(&mut self) {
+    pub async fn read_new_tick_data(
+        &mut self,
+        config: &StormguardConfig,
+        active_ping_sample: Option<TimedRtt>,
+        active_ping_updated: bool,
+    ) {
         let requests = vec![BusRequest::GetFullNetworkMap];
         let Ok(responses) = lqos_bus::bus_request(requests).await else {
             info!("Failed to get lqosd stats");
@@ -162,7 +181,7 @@ impl SiteStateTracker {
 
         for site in self.sites.values_mut() {
             site.current_throughput = (0.0, 0.0);
-            site.current_rtt_ms = None;
+            site.clear_tick_rtt_state();
         }
 
         for response in responses {
@@ -203,8 +222,65 @@ impl SiteStateTracker {
                     let mut idx = ((samples as f32) * 0.9).floor() as usize;
                     idx = idx.min(samples.saturating_sub(1));
                     let p90 = my_round_trip_times[idx] as f64;
-                    target.round_trip_time.add(p90);
-                    target.current_rtt_ms = Some(p90);
+                    target.record_passive_rtt_sample(p90);
+                }
+            }
+        }
+
+        let now = Instant::now();
+        let passive_max_age = Duration::from_secs(15);
+        let active_max_age = Duration::from_secs_f32(
+            (config.active_ping_interval_seconds.max(1.0) * 3.0).clamp(5.0, 300.0),
+        );
+        let active_weight = config.active_ping_weight.clamp(0.0, 1.0) as f64;
+
+        for site in self.sites.values_mut() {
+            let passive = site.last_passive_rtt().and_then(|(ms, at)| {
+                if now.duration_since(at) <= passive_max_age {
+                    Some(ms)
+                } else {
+                    None
+                }
+            });
+            let active = active_ping_sample.and_then(|s| {
+                if now.duration_since(s.at) <= active_max_age {
+                    Some(s.rtt_ms)
+                } else {
+                    None
+                }
+            });
+
+            site.passive_rtt_ms = passive;
+            site.active_ping_rtt_ms = active;
+
+            let effective = if matches!(
+                config.strategy,
+                lqos_config::StormguardStrategy::DelayProbeActive
+            ) {
+                match (active, passive) {
+                    (Some(active_ms), Some(passive_ms)) => {
+                        Some(active_weight * active_ms + (1.0 - active_weight) * passive_ms)
+                    }
+                    (Some(active_ms), None) => Some(active_ms),
+                    (None, Some(passive_ms)) => Some(passive_ms),
+                    (None, None) => None,
+                }
+            } else {
+                passive
+            };
+
+            site.current_rtt_ms = effective;
+
+            let active_updated = matches!(
+                config.strategy,
+                lqos_config::StormguardStrategy::DelayProbeActive
+            ) && active_ping_updated
+                && active.is_some();
+            let updated = site.passive_rtt_updated_this_tick() || active_updated;
+            if updated {
+                if let Some(effective) = effective {
+                    site.round_trip_time.add(effective);
+                    site.rtt_sample_for_baseline_ms = Some(effective);
                 }
             }
         }
@@ -254,9 +330,18 @@ impl SiteStateTracker {
                 let strategy = match config.strategy {
                     lqos_config::StormguardStrategy::LegacyScore => "legacy_score",
                     lqos_config::StormguardStrategy::DelayProbe => "delay_probe",
+                    lqos_config::StormguardStrategy::DelayProbeActive => "delay_probe_active",
                 };
                 let rtt = site.round_trip_time.average();
                 let rtt_ma = site.round_trip_time_moving_average.average();
+                let action_string = |action: RecommendationAction| -> &'static str {
+                    match action {
+                        RecommendationAction::IncreaseFast => "increase_fast",
+                        RecommendationAction::Increase => "increase",
+                        RecommendationAction::Decrease => "decrease",
+                        RecommendationAction::DecreaseFast => "decrease_fast",
+                    }
+                };
 
                 let make_direction =
                     |direction: RecommendationDirection| -> StormguardDebugDirection {
@@ -294,6 +379,13 @@ impl SiteStateTracker {
                             RecommendationDirection::Upload => state_string(&site.upload_state),
                         };
 
+                        let (last_action, last_action_age_secs) = match direction {
+                            RecommendationDirection::Download => site.last_action_download,
+                            RecommendationDirection::Upload => site.last_action_upload,
+                        }
+                        .map(|(action, at)| (Some(action_string(action).to_string()), Some(at.elapsed().as_secs_f32())))
+                        .unwrap_or((None, None));
+
                         let saturation_max = SaturationLevel::from_throughput(
                             throughput_mbps, max_mbps as f64,
                         );
@@ -313,9 +405,13 @@ impl SiteStateTracker {
                             retrans_ma,
                             rtt,
                             rtt_ma,
+                            passive_rtt_ms: site.passive_rtt_ms,
+                            active_ping_rtt_ms: site.active_ping_rtt_ms,
                             baseline_rtt_ms,
                             delay_ms,
                             strategy: strategy.to_string(),
+                            last_action,
+                            last_action_age_secs,
                             state,
                             cooldown_remaining_secs,
                             saturation_current: saturation_current.to_string(),
@@ -436,7 +532,12 @@ impl SiteStateTracker {
                     new_rate,
                     bakery_sender.clone(),
                 );
-                Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
+                Self::enter_cooldown(
+                    site,
+                    recommendation.direction,
+                    cooldown_secs,
+                    recommendation.action,
+                );
                 let _ = log_sender.send(LogCommand::SpeedChange {
                     site: recommendation.site.clone(),
                     download: site.queue_download_mbps,
@@ -469,7 +570,12 @@ impl SiteStateTracker {
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
-            Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
+            Self::enter_cooldown(
+                site,
+                recommendation.direction,
+                cooldown_secs,
+                recommendation.action,
+            );
 
             // Report
             let _ = log_sender.send(LogCommand::SpeedChange {
@@ -597,7 +703,7 @@ impl SiteStateTracker {
         };
 
         if Self::circuit_outcome_enters_cooldown(&enters_cooldown) {
-            Self::enter_cooldown(site, recommendation.direction, cooldown_secs);
+            Self::enter_cooldown(site, recommendation.direction, cooldown_secs, recommendation.action);
         }
         let _ = log_sender.send(LogCommand::SpeedChange {
             site: recommendation.site.clone(),
@@ -722,21 +828,29 @@ impl SiteStateTracker {
         *enters_cooldown
     }
 
-    fn enter_cooldown(site: &mut SiteState, direction: RecommendationDirection, cooldown_secs: f32) {
+    fn enter_cooldown(
+        site: &mut SiteState,
+        direction: RecommendationDirection,
+        cooldown_secs: f32,
+        action: RecommendationAction,
+    ) {
+        let now = Instant::now();
         match direction {
             RecommendationDirection::Download => {
                 site.download_state = StormguardState::Cooldown {
-                    start: std::time::Instant::now(),
+                    start: now,
                     duration_secs: cooldown_secs,
                 };
                 site.ticks_since_last_probe_download = 0;
+                site.last_action_download = Some((action, now));
             }
             RecommendationDirection::Upload => {
                 site.upload_state = StormguardState::Cooldown {
-                    start: std::time::Instant::now(),
+                    start: now,
                     duration_secs: cooldown_secs,
                 };
                 site.ticks_since_last_probe_upload = 0;
+                site.last_action_upload = Some((action, now));
             }
         }
     }
@@ -830,7 +944,15 @@ mod tests {
             queue_upload_mbps: upload,
             current_throughput: (0.0, 0.0),
             current_rtt_ms: None,
+            passive_rtt_ms: None,
+            active_ping_rtt_ms: None,
+            rtt_sample_for_baseline_ms: None,
             rtt_baseline_ms: None,
+            last_passive_rtt_ms: None,
+            last_passive_rtt_at: None,
+            passive_rtt_updated_this_tick: false,
+            last_action_download: None,
+            last_action_upload: None,
             ticks_since_last_probe_download: 0,
             ticks_since_last_probe_upload: 0,
         }
@@ -861,6 +983,10 @@ mod tests {
             baseline_alpha_down: 0.10,
             probe_interval_seconds: 10.0,
             min_throughput_mbps_for_rtt: 0.05,
+            active_ping_target: "1.1.1.1".to_string(),
+            active_ping_interval_seconds: 10.0,
+            active_ping_weight: 0.70,
+            active_ping_timeout_seconds: 1.0,
         }
     }
 

@@ -14,7 +14,7 @@ function defaultStormguardConfig() {
         enabled: false,
         dry_run: true,
         log_file: null,
-        strategy: "legacy_score",
+        strategy: "delay_probe",
         all_sites: false,
         targets: [],
         exclude_sites: [],
@@ -37,6 +37,10 @@ function defaultStormguardConfig() {
         baseline_alpha_down: 0.10,
         probe_interval_seconds: 10,
         min_throughput_mbps_for_rtt: 0.05,
+        active_ping_target: "1.1.1.1",
+        active_ping_interval_seconds: 10,
+        active_ping_weight: 0.70,
+        active_ping_timeout_seconds: 1.0,
     };
 }
 
@@ -60,10 +64,14 @@ function updateTargetsUi() {
 }
 
 function updateStrategyUi() {
-    const strategy = document.getElementById("strategy")?.value ?? "legacy_score";
+    const strategy = document.getElementById("strategy")?.value ?? "delay_probe";
     const section = document.getElementById("delayProbeSection");
     if (section) {
-        section.style.display = strategy === "delay_probe" ? "" : "none";
+        section.style.display = (strategy === "delay_probe" || strategy === "delay_probe_active") ? "" : "none";
+    }
+    const pingSection = document.getElementById("activePingSection");
+    if (pingSection) {
+        pingSection.style.display = strategy === "delay_probe_active" ? "" : "none";
     }
 }
 
@@ -348,7 +356,7 @@ function validateConfig() {
         return false;
     }
 
-    if (strategy === 'delay_probe') {
+    if (strategy === 'delay_probe' || strategy === 'delay_probe_active') {
         if (!validatePositiveNumber('Delay Threshold (ms)', parseNumber('delayThresholdMs'), 0.01, 'greater than 0 ms')) {
             return false;
         }
@@ -377,12 +385,32 @@ function validateConfig() {
         }
     }
 
+    if (strategy === 'delay_probe_active') {
+        const pingTarget = document.getElementById('activePingTarget').value.trim();
+        if (!pingTarget) {
+            alert('Ping Target must not be empty');
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Interval (seconds)', parseNumber('activePingIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Timeout (seconds)', parseNumber('activePingTimeoutSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const weightPct = parseNumber('activePingWeight');
+        if (Number.isNaN(weightPct) || weightPct < 0 || weightPct > 100) {
+            alert('Active Ping Weight must be between 0 and 100');
+            return false;
+        }
+    }
+
     return true;
 }
 
 // Update config object
 function updateConfig() {
     const logFilePath = document.getElementById('logFile').value.trim();
+    const weightPct = parseNumber('activePingWeight');
     
     window.config.stormguard = {
         enabled: document.getElementById('enabled').checked,
@@ -411,6 +439,10 @@ function updateConfig() {
         baseline_alpha_down: parseNumber('baselineAlphaDown'),
         probe_interval_seconds: parseNumber('probeIntervalSeconds'),
         min_throughput_mbps_for_rtt: parseNumber('minThroughputMbpsForRtt'),
+        active_ping_target: document.getElementById('activePingTarget').value.trim() || '1.1.1.1',
+        active_ping_interval_seconds: parseNumber('activePingIntervalSeconds'),
+        active_ping_weight: Number.isNaN(weightPct) ? 0.70 : (weightPct / 100.0),
+        active_ping_timeout_seconds: parseNumber('activePingTimeoutSeconds'),
     };
 }
 
@@ -431,7 +463,7 @@ Promise.all([
     document.getElementById('enabled').checked = sg.enabled;
     document.getElementById('dryRun').checked = sg.dry_run;
     document.getElementById('logFile').value = sg.log_file || '';
-    document.getElementById('strategy').value = sg.strategy || 'legacy_score';
+    document.getElementById('strategy').value = sg.strategy || 'delay_probe';
     document.getElementById('allSites').checked = sg.all_sites;
     document.getElementById('minDownloadPct').value = Math.round(sg.minimum_download_percentage * 100);
     document.getElementById('minUploadPct').value = Math.round(sg.minimum_upload_percentage * 100);
@@ -454,6 +486,14 @@ Promise.all([
     document.getElementById('baselineAlphaDown').value = sg.baseline_alpha_down;
     document.getElementById('probeIntervalSeconds').value = sg.probe_interval_seconds;
     document.getElementById('minThroughputMbpsForRtt').value = sg.min_throughput_mbps_for_rtt;
+    document.getElementById('activePingTarget').value = sg.active_ping_target || '1.1.1.1';
+    document.getElementById('activePingIntervalSeconds').value = sg.active_ping_interval_seconds;
+    document.getElementById('activePingTimeoutSeconds').value = sg.active_ping_timeout_seconds;
+    document.getElementById('activePingWeight').value = Math.round((sg.active_ping_weight ?? 0.70) * 100);
+    const weightValue = document.getElementById('activePingWeightValue');
+    if (weightValue) {
+        weightValue.textContent = document.getElementById('activePingWeight').value;
+    }
 
     selectedTargets = [...sg.targets].sort((a, b) => a.localeCompare(b));
     excludedSites = [...sg.exclude_sites].sort((a, b) => a.localeCompare(b));
@@ -464,6 +504,12 @@ Promise.all([
 
     document.getElementById('allSites').addEventListener('change', updateTargetsUi);
     document.getElementById('strategy').addEventListener('change', updateStrategyUi);
+    document.getElementById('activePingWeight').addEventListener('input', () => {
+        const weightValue = document.getElementById('activePingWeightValue');
+        if (weightValue) {
+            weightValue.textContent = document.getElementById('activePingWeight').value;
+        }
+    });
     document.getElementById('addTargetBtn').addEventListener('click', addTargetFromSelector);
     document.getElementById('addTargetManualBtn').addEventListener('click', addTargetFromManual);
     document.getElementById('addExcludeBtn').addEventListener('click', addExcludeFromSelector);

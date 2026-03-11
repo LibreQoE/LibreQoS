@@ -7,6 +7,7 @@ use crate::site_state::recommendation::{
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::stormguard_state::StormguardState;
 use allocative::Allocative;
+use std::time::Instant;
 use tracing::{debug, info};
 
 pub struct SiteState {
@@ -18,8 +19,20 @@ pub struct SiteState {
     pub queue_download_mbps: u64,
     pub queue_upload_mbps: u64,
     pub current_throughput: (f64, f64),
+    /// Effective RTT used for DelayProbe/DelayProbeActive evaluation (may be blended).
     pub current_rtt_ms: Option<f64>,
+    /// Most recent passive RTT sample (TCP-derived), if available.
+    pub passive_rtt_ms: Option<f64>,
+    /// Most recent active ping RTT sample, if available.
+    pub active_ping_rtt_ms: Option<f64>,
+    /// When set, represents a newly-arrived effective RTT sample (used for baseline learning).
+    pub rtt_sample_for_baseline_ms: Option<f64>,
     pub rtt_baseline_ms: Option<f64>,
+    pub(crate) last_passive_rtt_ms: Option<f64>,
+    pub(crate) last_passive_rtt_at: Option<Instant>,
+    pub(crate) passive_rtt_updated_this_tick: bool,
+    pub(crate) last_action_download: Option<(RecommendationAction, Instant)>,
+    pub(crate) last_action_upload: Option<(RecommendationAction, Instant)>,
 
     // Current Data Buffers
     pub throughput_down: RingBuffer,
@@ -146,10 +159,14 @@ impl SiteState {
     }
 
     fn update_rtt_baseline(&mut self, config: &StormguardConfig) {
-        if config.strategy != lqos_config::StormguardStrategy::DelayProbe {
+        if !matches!(
+            config.strategy,
+            lqos_config::StormguardStrategy::DelayProbe
+                | lqos_config::StormguardStrategy::DelayProbeActive
+        ) {
             return;
         }
-        let Some(rtt_ms) = self.current_rtt_ms else {
+        let Some(rtt_ms) = self.rtt_sample_for_baseline_ms else {
             return;
         };
 
@@ -165,6 +182,31 @@ impl SiteState {
                 baseline_ms + alpha * (rtt_ms - baseline_ms)
             }
         });
+    }
+
+    pub(crate) fn record_passive_rtt_sample(&mut self, rtt_ms: f64) {
+        self.last_passive_rtt_ms = Some(rtt_ms);
+        self.last_passive_rtt_at = Some(Instant::now());
+        self.passive_rtt_updated_this_tick = true;
+    }
+
+    pub(crate) fn clear_tick_rtt_state(&mut self) {
+        self.current_rtt_ms = None;
+        self.passive_rtt_ms = None;
+        self.active_ping_rtt_ms = None;
+        self.rtt_sample_for_baseline_ms = None;
+        self.passive_rtt_updated_this_tick = false;
+    }
+
+    pub(crate) fn last_passive_rtt(&self) -> Option<(f64, Instant)> {
+        match (self.last_passive_rtt_ms, self.last_passive_rtt_at) {
+            (Some(ms), Some(at)) => Some((ms, at)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn passive_rtt_updated_this_tick(&self) -> bool {
+        self.passive_rtt_updated_this_tick
     }
 
     fn moving_averages_rtt(&mut self) {
@@ -375,7 +417,17 @@ impl SiteState {
         let mut bloat = false;
         let mut severe_bloat = false;
 
-        if throughput_mbps >= config.min_throughput_mbps_for_rtt as f64 {
+        let rtt_allowed = if matches!(
+            config.strategy,
+            lqos_config::StormguardStrategy::DelayProbeActive
+        ) && self.active_ping_rtt_ms.is_some()
+        {
+            true
+        } else {
+            throughput_mbps >= config.min_throughput_mbps_for_rtt as f64
+        };
+
+        if rtt_allowed {
             if let (Some(rtt_ms), Some(baseline_ms)) = (self.current_rtt_ms, self.rtt_baseline_ms) {
                 let baseline_ms = baseline_ms.max(1.0);
                 let delay = (rtt_ms - baseline_ms).max(0.0);
@@ -450,7 +502,8 @@ impl SiteState {
         config: &StormguardConfig,
     ) {
         match config.strategy {
-            lqos_config::StormguardStrategy::DelayProbe => {
+            lqos_config::StormguardStrategy::DelayProbe
+            | lqos_config::StormguardStrategy::DelayProbeActive => {
                 self.ticks_since_last_probe_download =
                     self.ticks_since_last_probe_download.saturating_add(1);
                 self.ticks_since_last_probe_upload =

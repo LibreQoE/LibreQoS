@@ -16,6 +16,8 @@ lqos_bakery = { path = "../lqos_bakery" }
 lqos_overrides = { path = "../lqos_overrides" }
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
+surge-ping = "0.8.1"
+rand = "0.8.5"
 
 # For memory debugging
 allocative.workspace = true

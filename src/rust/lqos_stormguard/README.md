@@ -15,7 +15,7 @@ Add the following to your `lqos.conf`:
 enabled = true
 dry_run = true
 log_file = "/tmp/stormguard.csv" # Optional
-strategy = "legacy_score" # or "delay_probe"
+strategy = "delay_probe" # "legacy_score", "delay_probe", or "delay_probe_active"
 all_sites = false
 targets = [ "CALVIN 1" ]
 exclude_sites = []
@@ -38,6 +38,10 @@ baseline_alpha_up = 0.01
 baseline_alpha_down = 0.10
 probe_interval_seconds = 10.0
 min_throughput_mbps_for_rtt = 0.05
+active_ping_target = "1.1.1.1"
+active_ping_interval_seconds = 10.0
+active_ping_weight = 0.70
+active_ping_timeout_seconds = 1.0
 ```
 
 | **Entry Name** | **Description**                                                                                           |
@@ -45,7 +49,7 @@ min_throughput_mbps_for_rtt = 0.05
 | `enabled`      | Enable or disable StormGuard. Default: `false`                                                            |
 | `dry_run`      | If true, StormGuard will not change or persist the rate. It only logs what it would have done. Default: `true` |
 | `log_file`     | If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent |
-| `strategy`     | `legacy_score` (original decision matrix) or `delay_probe` (baseline RTT + probing). Default: `legacy_score` |
+| `strategy`     | `delay_probe` (baseline RTT + probing), `delay_probe_active` (add active ICMP ping RTT), or `legacy_score` (original decision matrix). Default: `delay_probe` |
 | `all_sites`    | Monitor all eligible top-level sites. If `false`, only the `targets` allowlist is monitored.            |
 | `targets`      | Site allowlist used when `all_sites = false`.                                                             |
 | `exclude_sites`| Sites to skip when `all_sites = true`.                                                                    |
@@ -57,6 +61,10 @@ min_throughput_mbps_for_rtt = 0.05
 | `baseline_alpha_*` | Baseline RTT EWMA tuning (`delay_probe`). |
 | `probe_interval_seconds` | Minimum time between increase probes (`delay_probe`). |
 | `min_throughput_mbps_for_rtt` | Ignore RTT-driven adjustments below this throughput (`delay_probe`). |
+| `active_ping_target` | Hostname/IP to ping for RTT sampling (`delay_probe_active`). Default: `1.1.1.1`. |
+| `active_ping_interval_seconds` | Time between pings (`delay_probe_active`). Default: `10.0`. |
+| `active_ping_weight` | Blend weight (0..=1) of active ping RTT vs passive TCP RTT (`delay_probe_active`). Default: `0.70`. |
+| `active_ping_timeout_seconds` | Ping timeout seconds (`delay_probe_active`). Default: `1.0`. |
 
 You can list as many sites as you want in `targets`, or turn on `all_sites` and carve out exceptions with `exclude_sites`.
 `dry_run` is the recommended starting point while tuning the thresholds for a network.
@@ -83,6 +91,10 @@ These are fed through a decision matrix to determine if the queue bandwidth shou
 
 When `strategy = "delay_probe"`, StormGuard instead learns an RTT baseline and treats standing delay (RTT above baseline)
 as the primary signal for decreasing rates, with periodic probe-style increases when conditions look good.
+
+When `strategy = "delay_probe_active"`, StormGuard also measures RTT via infrequent ICMP pings to `active_ping_target`
+and blends that RTT with passive TCP RTT using `active_ping_weight`. This helps keep the delay signal available on
+quiet or low-speed links where passive RTT samples are sparse.
 
 Changes have a "cool-down" following their application, during which monitoring will continue but no changes will be made.
 This is to prevent oscillation between two states.
