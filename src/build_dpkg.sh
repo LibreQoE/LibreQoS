@@ -18,6 +18,7 @@ ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
   csvToNetworkJSON.py
+  configMigrator.py
   integrationCommon.py
   integrationPowercode.py
   integrationNetzur.py
@@ -33,9 +34,11 @@ LQOS_FILES=(
   mikrotikFindIPv6.py
   network.example.json
   pythonCheck.py
+  qoo_profiles.json
   README.md
   scheduler.py
   ShapedDevices.example.csv
+  shaping_skip_report.py
   virtual_tree_nodes.py
   mikrotikDHCPRouterList.template.csv
   integrationUISPbandwidths.template.csv
@@ -61,7 +64,6 @@ RUSTPROGS=(
   lqos_setup
   lqos_map_perf
   uisp_integration
-  lqos_support_tool
   lqos_overrides
 )
 
