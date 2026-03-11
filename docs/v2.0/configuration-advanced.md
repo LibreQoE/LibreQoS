@@ -189,7 +189,52 @@ Notes:
 
 #### CPU Considerations
 
-<img width="3276" height="1944" alt="cpu" src="https://github.com/user-attachments/assets/e4eeed5e-eeeb-4251-9258-d301c3814237" />
+CPU planning should follow the **physical shaping tree** (post-promotion), not the raw logical tree from `network.json`.
+
+```{mermaid}
+flowchart LR
+    A[Logical topology in network.json<br/>may include virtual nodes] --> B[Promotion for shaping build<br/>remove virtual nodes and promote children]
+    B --> C[Physical HTB shaping tree<br/>real nodes only]
+    C --> D[CPU/binpacking placement<br/>distribute physical top-level shaped nodes]
+```
+
+```{mermaid}
+flowchart LR
+    subgraph Logical Tree
+        L1[Region]
+        L2[Town virtual]
+        L3[AP_A]
+        L4[AP_B]
+        L1 --> L2
+        L2 --> L3
+        L2 --> L4
+    end
+    subgraph Physical HTB Tree
+        P1[Region]
+        P2[AP_A]
+        P3[AP_B]
+        P1 --> P2
+        P1 --> P3
+    end
+```
+
+```{mermaid}
+flowchart TD
+    WAN[Shaped WAN target 20 Gbps example] --> C1[CPU 1 safe budget ~5 Gbps]
+    WAN --> C2[CPU 2 safe budget ~5 Gbps]
+    WAN --> C3[CPU 3 safe budget ~5 Gbps]
+    WAN --> C4[CPU 4 safe budget ~5 Gbps]
+    C1 --> N1[Physical top-level nodes assigned here]
+    C2 --> N2[Physical top-level nodes assigned here]
+    C3 --> N3[Physical top-level nodes assigned here]
+    C4 --> N4[Physical top-level nodes assigned here]
+```
+
+Notes:
+- Virtual nodes are logical-only and do not create HTB classes.
+- CPU placement/binpacking acts on the physical post-promotion tree.
+- If promotion creates sibling name collisions, shaping build fails.
+- The per-core bandwidth numbers above are planning examples, not hard coded limits.
 
 ##### CSV to JSON conversion helper
 

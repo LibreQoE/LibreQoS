@@ -40,6 +40,14 @@ Cuando hay integraciones habilitadas:
 - `network.json` también puede sobrescribirse según configuración (por ejemplo `always_overwrite_network_json`).
 - Las ediciones manuales pueden sobrescribirse en el siguiente ciclo de refresco.
 
+## Manejo común de velocidades de cliente
+
+Para las integraciones incluidas que importan velocidades brutas de plan de suscriptor, LibreQoS aplica la misma regla compartida antes de escribir `ShapedDevices.csv`:
+
+- velocidad máxima efectiva del cliente = `max(plan_rate * bandwidth_overhead_factor, plan_rate * client_bandwidth_multiplier)`
+
+Las integraciones que ya consumen velocidades efectivas de shaping conservan esos valores tal como llegan, sin volver a aplicar el multiplicador.
+
 ## Páginas relacionadas
 
 - [Quickstart](quickstart-es.md)

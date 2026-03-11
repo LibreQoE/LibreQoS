@@ -6,10 +6,10 @@ import requests
 import warnings
 import os
 import csv
-from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, splynx_api_key, \
+from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, splynx_api_key, \
 	splynx_api_secret, splynx_api_url, splynx_strategy, overwrite_network_json_always
 
-from integrationCommon import isIpv4Permitted
+from integrationCommon import apply_client_bandwidth_multiplier, isIpv4Permitted
 import base64
 from requests.auth import HTTPBasicAuth
 if find_ipv6_using_mikrotik() == True:
@@ -425,8 +425,8 @@ def getTariffs(headers):
 					speed_download = burstable_down
 				if burstable_up > speed_upload:
 					speed_upload = burstable_up
-			downloadForTariffID[tariffID] = speed_download
-			uploadForTariffID[tariffID] = speed_upload
+			downloadForTariffID[tariffID] = apply_client_bandwidth_multiplier(speed_download)
+			uploadForTariffID[tariffID] = apply_client_bandwidth_multiplier(speed_upload)
 	except:
 		print("Error, bad data returned from Splynx:")
 		print(data)

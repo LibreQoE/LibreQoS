@@ -51,6 +51,14 @@ When integrations are enabled:
 - `network.json` may also be overwritten depending on integration settings (for example `always_overwrite_network_json`).
 - Manual edits may be overwritten on the next refresh cycle.
 
+## Common Client Rate Handling
+
+For built-in integrations that import raw subscriber plan speeds, LibreQoS applies the same shared client-rate rule before writing `ShapedDevices.csv`:
+
+- effective client max rate = `max(plan_rate * bandwidth_overhead_factor, plan_rate * client_bandwidth_multiplier)`
+
+Integrations that already ingest effective shaped rates keep those values as-is rather than applying the multiplier a second time.
+
 ## Related Pages
 
 - [Quickstart](quickstart.md)
