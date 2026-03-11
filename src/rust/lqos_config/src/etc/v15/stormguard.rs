@@ -264,14 +264,8 @@ impl StormguardConfig {
             "stormguard.increase_fast_multiplier",
             self.increase_fast_multiplier,
         )?;
-        validate_multiplier_gt_one(
-            "stormguard.increase_multiplier",
-            self.increase_multiplier,
-        )?;
-        validate_multiplier_lt_one(
-            "stormguard.decrease_multiplier",
-            self.decrease_multiplier,
-        )?;
+        validate_multiplier_gt_one("stormguard.increase_multiplier", self.increase_multiplier)?;
+        validate_multiplier_lt_one("stormguard.decrease_multiplier", self.decrease_multiplier)?;
         validate_multiplier_lt_one(
             "stormguard.decrease_fast_multiplier",
             self.decrease_fast_multiplier,
@@ -297,12 +291,14 @@ impl StormguardConfig {
         let sqm = self.circuit_fallback_sqm.trim().to_ascii_lowercase();
         if self.circuit_fallback_enabled && !matches!(sqm.as_str(), "fq_codel" | "cake") {
             return Err(
-                "stormguard.circuit_fallback_sqm must be either 'fq_codel' or 'cake'"
-                    .to_string(),
+                "stormguard.circuit_fallback_sqm must be either 'fq_codel' or 'cake'".to_string(),
             );
         }
 
-        validate_positive_seconds("stormguard.probe_interval_seconds", self.probe_interval_seconds)?;
+        validate_positive_seconds(
+            "stormguard.probe_interval_seconds",
+            self.probe_interval_seconds,
+        )?;
         validate_positive("stormguard.delay_threshold_ms", self.delay_threshold_ms)?;
         validate_ratio_gt_one(
             "stormguard.delay_threshold_ratio",
