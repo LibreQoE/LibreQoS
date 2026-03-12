@@ -28,7 +28,7 @@ pub fn num_possible_cpus() -> Result<u32, PossibleCpuError> {
 }
 
 fn parse_cpu_string(possible_cpus: &str) -> Result<u32, PossibleCpuError> {
-    if let Some(last_digit) = possible_cpus.trim().split('-').last() {
+    if let Some(last_digit) = possible_cpus.trim().split('-').next_back() {
         if let Ok(n) = last_digit.parse::<u32>() {
             Ok(n + 1)
         } else {
@@ -60,7 +60,7 @@ mod test {
     #[test]
     fn test_unable_to_parse() {
         assert_eq!(
-            parse_cpu_string("blah").err().expect("Parse error"),
+            parse_cpu_string("blah").expect_err("Parse error"),
             PossibleCpuError::ParseError
         );
     }
