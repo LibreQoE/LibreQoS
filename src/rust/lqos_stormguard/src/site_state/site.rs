@@ -244,7 +244,7 @@ impl SiteState {
             RetransmitState::RisingFast => 1.5 * retransmit_weight,
             RetransmitState::Rising => 1.0 * retransmit_weight,
             RetransmitState::Stable => 0.0, // No change
-            RetransmitState::Falling => -1.0 * retransmit_weight,
+            RetransmitState::Falling => -retransmit_weight,
             RetransmitState::FallingFast => -1.5 * retransmit_weight,
         };
 
