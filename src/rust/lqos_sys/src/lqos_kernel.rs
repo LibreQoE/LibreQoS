@@ -27,6 +27,7 @@ use self::bpf::{libbpf_num_possible_cpus, lqos_kern};
 
 pub(crate) mod bpf {
     #![allow(warnings, unused)]
+    #![allow(clippy::upper_case_acronyms)]
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 

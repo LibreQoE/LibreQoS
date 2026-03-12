@@ -39,6 +39,7 @@ enum Commands {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum PersistentDevicesCommand {
     /// Add a persistent shaped device
     Add(AddArgs),
