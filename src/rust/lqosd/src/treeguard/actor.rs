@@ -572,7 +572,11 @@ fn run_tick(
                     continue;
                 }
 
-                if node.virtual_node {
+                let treeguard_virtual_override = treeguard_overrides_snapshot
+                    .as_ref()
+                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
+
+                if node.virtual_node && treeguard_virtual_override.is_none() {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
@@ -903,7 +907,11 @@ fn run_tick(
                     continue;
                 };
 
-                if node.virtual_node {
+                let treeguard_virtual_override = treeguard_overrides_snapshot
+                    .as_ref()
+                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
+
+                if node.virtual_node && treeguard_virtual_override.is_none() {
                     status.warnings.push(format!(
                     "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                 ));
@@ -1125,7 +1133,6 @@ fn run_tick(
                             format!("Node '{}' virtualization changed", node_name.clone()),
                         );
                     }
-
                     state.desired = target;
                     state.last_change_unix = Some(now_unix);
                     state.recent_changes_unix.push_back(now_unix);

@@ -47,6 +47,7 @@ use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -187,6 +188,8 @@ fn main() -> Result<()> {
     // Load config
     let config = lqos_config::load_config()?;
     let stick_offset = stick::recompute_stick_offset(&config)?;
+
+    ensure_rustls_crypto_provider()?;
 
     if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
         warn!("Failed to initialize Insight license storage: {e:?}");
@@ -742,6 +745,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::SchedulerError(error) => {
                 tool_status::scheduler_error(Some(error.clone()));
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerOutput(output) => {
+                tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
             BusRequest::LogInfo(msg) => {

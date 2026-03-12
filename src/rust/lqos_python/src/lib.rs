@@ -2,6 +2,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSeverity, UrgentSource};
 use lqos_utils::hex_string::read_hex_string;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
@@ -568,6 +569,7 @@ const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 /// All exported functions have to be listed here.
 #[pymodule]
 fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    ensure_rustls_crypto_provider().map_err(|e| PyOSError::new_err(e.to_string()))?;
     m.add_class::<PyIpMapping>()?;
     m.add_class::<BatchedCommands>()?;
     m.add_class::<PyExceptionCpe>()?;
@@ -681,6 +683,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
     m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
     m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
@@ -2133,6 +2136,19 @@ fn scheduler_alive(_py: Python) -> PyResult<bool> {
 #[pyfunction]
 fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerError(error)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Report informational scheduler output for display in the Web UI.
+#[pyfunction]
+fn scheduler_output(_py: Python, output: String) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerOutput(output)]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);
