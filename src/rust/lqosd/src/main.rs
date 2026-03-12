@@ -748,6 +748,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
+            BusRequest::SchedulerOutput(output) => {
+                tool_status::scheduler_output(Some(output.clone()));
+                BusResponse::Ack
+            }
             BusRequest::LogInfo(msg) => {
                 info!("BUS LOG: {}", msg);
                 BusResponse::Ack

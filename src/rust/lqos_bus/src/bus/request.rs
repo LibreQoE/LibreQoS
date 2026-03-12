@@ -372,6 +372,9 @@ pub enum BusRequest {
     /// Announce a scheduler error
     SchedulerError(String),
 
+    /// Announce informational scheduler output
+    SchedulerOutput(String),
+
     /// Write an informational message to the lqosd logs
     LogInfo(String),
 

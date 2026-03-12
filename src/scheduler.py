@@ -12,7 +12,8 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_effective, overrides_circuit_adjustments, overrides_network_adjustments_effective
+    overrides_persistent_devices_effective, overrides_circuit_adjustments, overrides_network_adjustments_effective, \
+    scheduler_output
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -26,6 +27,11 @@ network_hash = 0
 def clear_scheduler_error():
     """Clear the scheduler error status shown in the Web UI."""
     scheduler_error("")
+
+
+def clear_scheduler_output():
+    """Clear the scheduler output shown in the Web UI."""
+    scheduler_output("")
 
 
 def get_integration_affinity_cpus():
@@ -113,6 +119,7 @@ def capture_output_and_run(func):
         output = captured_output.getvalue()
         if output:
             print(output)
+            scheduler_output(output)
 
 
 def run_python_integration(module_name: str, func_name: str, label: str = ""):
@@ -133,6 +140,7 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         output = (result.stdout or "") + (result.stderr or "")
         if output:
             print(output)
+            scheduler_output(output)
         if result.returncode != 0:
             # Non-zero exit shouldn't stop scheduling; log and continue
             msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
@@ -145,6 +153,7 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
 
 def importFromCRM():
     clear_scheduler_error()
+    clear_scheduler_output()
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -159,6 +168,7 @@ def importFromCRM():
             output = (result.stdout or "") + (result.stderr or "")
             if output:
                 print(output)
+                scheduler_output(output)
             if result.returncode != 0:
                 msg = f"UISP integration exited with code {result.returncode}. Continuing."
                 print(msg)
