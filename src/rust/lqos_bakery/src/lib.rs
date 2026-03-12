@@ -1418,12 +1418,10 @@ fn handle_commit_batch(
                                 {
                                     immediate_commands.extend(add_qdisc);
                                 }
-                            } else {
-                                if let Some(add_htb) =
-                                    cmd.to_commands(&config, ExecutionMode::Builder)
-                                {
-                                    immediate_commands.extend(add_htb);
-                                }
+                            } else if let Some(add_htb) =
+                                cmd.to_commands(&config, ExecutionMode::Builder)
+                            {
+                                immediate_commands.extend(add_htb);
                             }
                         }
                         Some(LazyQueueMode::Full) => {
