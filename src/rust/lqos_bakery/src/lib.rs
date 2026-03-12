@@ -703,7 +703,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             .build();
                         if let Ok(rt) = rt {
                             let stale_to_delete = stale.clone();
-                            let _ = rt.block_on(async move {
+                            rt.block_on(async move {
                                 if let Ok(mut bus) = LibreqosBusClient::new().await {
                                     // chunk operations to keep request sizes reasonable
                                     const CHUNK: usize = 512;

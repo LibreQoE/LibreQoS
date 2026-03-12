@@ -239,7 +239,7 @@ fn main() -> Result<()> {
     } else {
         info!("Insight client started successfully");
     }
-    let _blackboard_tx = blackboard::start_blackboard();
+    blackboard::start_blackboard();
     start_remote_commands();
     let flow_tx = setup_netflow_tracker()?;
     let _ = throughput_tracker::flow_data::setup_flow_analysis();
