@@ -81,7 +81,7 @@ pub fn walk_tree_for_routing(
 
         // Plot it
         for (i, (idx, weight)) in site.route_weights.iter().enumerate() {
-            let from = site_index.get(&idx).unwrap().clone();
+            let from = site_index.get(idx).unwrap().clone();
             let to = site.name.clone();
             if i == 0 {
                 dot_graph.push_str(&format!(

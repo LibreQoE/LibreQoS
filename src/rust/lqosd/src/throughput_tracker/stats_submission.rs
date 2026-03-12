@@ -120,7 +120,7 @@ pub(crate) fn submit_throughput_stats(
                         }
                         Ok(json) => {
                             let lts2_format: Vec<_> =
-                                json.iter().map(|(k, v)| v.to_lts2(&k)).collect();
+                                json.iter().map(|(k, v)| v.to_lts2(k)).collect();
                             if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
                                 if let Err(e) = crate::lts2_sys::network_tree(now, &bytes) {
                                     warn!("Error sending message to Insight. {e:?}");

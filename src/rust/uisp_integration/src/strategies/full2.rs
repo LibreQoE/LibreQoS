@@ -211,7 +211,7 @@ pub async fn build_full_network_v2(
                     |n| n == node,
                     |e| {
                         (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            &e.weight(),
+                            e.weight(),
                             &uisp_data.devices,
                             &routing_overrides,
                         ))
@@ -226,7 +226,7 @@ pub async fn build_full_network_v2(
                     |n| n == root_idx,
                     |e| {
                         (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            &e.weight(),
+                            e.weight(),
                             &uisp_data.devices,
                             &routing_overrides,
                         ))
@@ -352,7 +352,7 @@ pub async fn build_full_network_v2(
     }) {
         network_json.insert(
             name.into(),
-            walk_parents(&parents, name, &node_info, &config, &graph, &mut visited).into(),
+            walk_parents(&parents, name, node_info, &config, &graph, &mut visited).into(),
         );
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");

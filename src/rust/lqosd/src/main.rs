@@ -202,7 +202,7 @@ fn main() -> Result<()> {
     // Start the XDP/TC kernels
     let kernels = if config.on_a_stick_mode() {
         LibreQoSKernels::on_a_stick_mode(
-            &config.internet_interface(),
+            config.internet_interface(),
             config.stick_vlans().1 as u16,
             config.stick_vlans().0 as u16,
             stick_offset,

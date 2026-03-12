@@ -110,9 +110,9 @@ pub fn write_routing_overrides_template(
 ) -> anyhow::Result<()> {
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
     let mut writer = csv::Writer::from_path(file_path)?;
-    writer.write_record(&["From Site", "To Site", "Cost"])?;
+    writer.write_record(["From Site", "To Site", "Cost"])?;
     for route in natural_routes {
-        writer.write_record(&[&route.from_site, &route.to_site, &route.cost.to_string()])?;
+        writer.write_record([&route.from_site, &route.to_site, &route.cost.to_string()])?;
     }
     writer.flush()?;
     Ok(())

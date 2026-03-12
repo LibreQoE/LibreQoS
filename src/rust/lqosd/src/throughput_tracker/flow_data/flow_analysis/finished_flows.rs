@@ -414,7 +414,7 @@ impl TimeBuffer {
             .collect();
 
         // Sort the buffer
-        buffer.sort_unstable_by(|a, b| a.cmp(&b));
+        buffer.sort_unstable_by(|a, b| a.cmp(b));
 
         // Deduplicate and count, decorate with name
         buffer

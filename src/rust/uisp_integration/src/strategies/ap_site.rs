@@ -233,7 +233,7 @@ impl Layer {
                                     uisp_data.sites.iter().find(|s| s.id == *client_id)
                                 {
                                     if let Some((dl_min, dl_max, ul_min, ul_max)) =
-                                        site.burst_rates(&config)
+                                        site.burst_rates(config)
                                     {
                                         (
                                             f32::max(0.1, dl_min),

@@ -161,8 +161,8 @@ fn all_queue_reader() {
             let (download, upload, queue_counts) = if config.on_a_stick_mode() {
                 let all_queues = read_all_queues_from_interface(&config.internet_interface());
                 let (download, upload, counts) = if let Ok(q) = all_queues {
-                    let download = connect_queues_to_circuit(&structure, &q);
-                    let upload = connect_queues_to_circuit_up(&structure, &q);
+                    let download = connect_queues_to_circuit(structure, &q);
+                    let upload = connect_queues_to_circuit_up(structure, &q);
                     (download, upload, count_queue_types(&q))
                 } else {
                     (Vec::new(), Vec::new(), QueueCounts::default())
@@ -173,12 +173,12 @@ fn all_queue_reader() {
                 let all_queues_up = read_all_queues_from_interface(&config.isp_interface());
 
                 let download = if let Ok(q) = &all_queues_down {
-                    connect_queues_to_circuit(&structure, q)
+                    connect_queues_to_circuit(structure, q)
                 } else {
                     Vec::new()
                 };
                 let upload = if let Ok(q) = &all_queues_up {
-                    connect_queues_to_circuit(&structure, q)
+                    connect_queues_to_circuit(structure, q)
                 } else {
                     Vec::new()
                 };

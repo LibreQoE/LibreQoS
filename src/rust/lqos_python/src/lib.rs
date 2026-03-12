@@ -112,11 +112,11 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     use std::io::Write;
     let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
     // Build strongly typed struct, preserving integer keys
-    let algo_version = get_string(&dict, "algo_version", default_algo_version());
-    let updated_at = get_f64(&dict, "updated_at", 0.0);
-    let queues_available = get_i64(&dict, "queuesAvailable", 0);
-    let on_a_stick = get_bool(&dict, "on_a_stick", false);
-    let site_count = get_i64(&dict, "site_count", 0);
+    let algo_version = get_string(dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(dict, "updated_at", 0.0);
+    let queues_available = get_i64(dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(dict, "on_a_stick", false);
+    let site_count = get_i64(dict, "site_count", 0);
     let mut site_names: Vec<i64> = Vec::new();
     if let Ok(Some(sn)) = dict.get_item("site_names") {
         if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
@@ -134,9 +134,9 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
             for (k, v) in sm_dict.iter() {
                 if let Some(key) = to_i64_any(&k) {
                     if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(&entry, "cpu", 0);
-                        let major = get_i64(&entry, "major", 0);
-                        let minor = get_i64(&entry, "minor", 0);
+                        let cpu = get_i64(entry, "cpu", 0);
+                        let major = get_i64(entry, "major", 0);
+                        let minor = get_i64(entry, "minor", 0);
                         let insertion_order = match entry.get_item("insertion_order") {
                             Ok(Some(x)) => x.extract::<i64>().ok(),
                             _ => None,
@@ -162,11 +162,11 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
             for (k, v) in cm_dict.iter() {
                 if let Some(key) = to_i64_any(&k) {
                     if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(&entry, "cpu", 0);
-                        let major = get_i64(&entry, "major", 0);
-                        let minor = get_i64(&entry, "minor", 0);
-                        let parent_site = get_string(&entry, "parent_site", String::new());
-                        let sqm = get_string(&entry, "sqm", String::new());
+                        let cpu = get_i64(entry, "cpu", 0);
+                        let major = get_i64(entry, "major", 0);
+                        let minor = get_i64(entry, "minor", 0);
+                        let parent_site = get_string(entry, "parent_site", String::new());
+                        let sqm = get_string(entry, "sqm", String::new());
                         circuit_map.insert(
                             key,
                             PlannerCircuitEntry {
@@ -440,11 +440,11 @@ fn fetch_planner_remote(
 fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // Extract needed values and serialize as compressed CBOR
     let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
-    let algo_version = get_string(&dict, "algo_version", default_algo_version());
-    let updated_at = get_f64(&dict, "updated_at", 0.0);
-    let queues_available = get_i64(&dict, "queuesAvailable", 0);
-    let on_a_stick = get_bool(&dict, "on_a_stick", false);
-    let site_count = get_i64(&dict, "site_count", 0);
+    let algo_version = get_string(dict, "algo_version", default_algo_version());
+    let updated_at = get_f64(dict, "updated_at", 0.0);
+    let queues_available = get_i64(dict, "queuesAvailable", 0);
+    let on_a_stick = get_bool(dict, "on_a_stick", false);
+    let site_count = get_i64(dict, "site_count", 0);
     // site_names
     let mut site_names: Vec<i64> = Vec::new();
     if let Ok(Some(sn)) = dict.get_item("site_names") {
@@ -463,9 +463,9 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
             for (k, v) in sm_dict.iter() {
                 if let Some(key) = to_i64_any(&k) {
                     if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(&entry, "cpu", 0);
-                        let major = get_i64(&entry, "major", 0);
-                        let minor = get_i64(&entry, "minor", 0);
+                        let cpu = get_i64(entry, "cpu", 0);
+                        let major = get_i64(entry, "major", 0);
+                        let minor = get_i64(entry, "minor", 0);
                         let insertion_order = match entry.get_item("insertion_order") {
                             Ok(Some(x)) => x.extract::<i64>().ok(),
                             _ => None,
@@ -491,11 +491,11 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
             for (k, v) in cm_dict.iter() {
                 if let Some(key) = to_i64_any(&k) {
                     if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(&entry, "cpu", 0);
-                        let major = get_i64(&entry, "major", 0);
-                        let minor = get_i64(&entry, "minor", 0);
-                        let parent_site = get_string(&entry, "parent_site", String::new());
-                        let sqm = get_string(&entry, "sqm", String::new());
+                        let cpu = get_i64(entry, "cpu", 0);
+                        let major = get_i64(entry, "major", 0);
+                        let minor = get_i64(entry, "minor", 0);
+                        let parent_site = get_string(entry, "parent_site", String::new());
+                        let sqm = get_string(entry, "sqm", String::new());
                         circuit_map.insert(
                             key,
                             PlannerCircuitEntry {

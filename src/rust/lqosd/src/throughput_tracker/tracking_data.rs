@@ -689,7 +689,7 @@ impl ThroughputTracker {
                     expired_keys.push(*key);
                 } else {
                     // We have a valid flow, so it needs to be tracked
-                    if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
+                    if let Some(this_flow) = all_flows_lock.flow_data.get_mut(key) {
                         let delta_bytes =
                             data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
                         let delta_packets = data
@@ -817,8 +817,8 @@ impl ThroughputTracker {
                             }
                         } else {
                             // Insert it into the map
-                            let flow_analysis = FlowAnalysis::new(&key);
-                            let mut flow_summary = FlowbeeLocalData::from_flow(&data, &key);
+                            let flow_analysis = FlowAnalysis::new(key);
+                            let mut flow_summary = FlowbeeLocalData::from_flow(data, key);
                             if let Some(rtt_buffer) = rtt_buffer.take() {
                                 if key.ip_protocol == 6
                                     && data.end_status == 0
@@ -943,7 +943,7 @@ impl ThroughputTracker {
                 };
 
                 if let Some(rtt_median) = rtt_median {
-                    if let Some(tracker) = raw_data.get_mut(&local_ip) {
+                    if let Some(tracker) = raw_data.get_mut(local_ip) {
                         // Shift left
                         for i in 1..60 {
                             tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
@@ -976,7 +976,7 @@ impl ThroughputTracker {
             }
             // Apply the new ones
             for (local_ip, retries) in tcp_retries {
-                if let Some(tracker) = raw_data.get_mut(&local_ip) {
+                if let Some(tracker) = raw_data.get_mut(local_ip) {
                     tracker.tcp_retransmits.down = retries
                         .down
                         .saturating_sub(tracker.prev_tcp_retransmits.down);
@@ -1035,7 +1035,7 @@ impl ThroughputTracker {
             if !expired_keys.is_empty() {
                 for key in expired_keys.iter() {
                     // Send it off to netperf for analysis if we are supporting doing so.
-                    if let Some(d) = all_flows_lock.flow_data.remove(&key) {
+                    if let Some(d) = all_flows_lock.flow_data.remove(key) {
                         let _ = sender.send((*key, (d.0.clone(), d.1)));
                     }
                 }

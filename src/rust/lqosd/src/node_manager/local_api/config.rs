@@ -149,7 +149,7 @@ pub fn add_user_data(login: LoginResult, data: UserRequest) -> Result<String, St
     };
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     users
-        .add_or_update_user(&data.username.trim(), password, data.role.into())
+        .add_or_update_user(data.username.trim(), password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(format!("User '{}' added", data.username))
 }

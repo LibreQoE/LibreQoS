@@ -55,7 +55,7 @@ pub fn walk_parents(
             continue;
         }
         visited.insert(name.to_string());
-        let child = walk_parents(parents, name, &node_info, config, graph, visited);
+        let child = walk_parents(parents, name, node_info, config, graph, visited);
         children.insert(name.into(), child.into());
     }
 

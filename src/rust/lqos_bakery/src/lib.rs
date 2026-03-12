@@ -1165,7 +1165,7 @@ fn handle_commit_batch(
             live_circuits,
             &config,
             new_batch,
-            &stormguard_overrides,
+            stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -1196,7 +1196,7 @@ fn handle_commit_batch(
             live_circuits,
             &config,
             new_batch,
-            &stormguard_overrides,
+            stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -1241,7 +1241,7 @@ fn handle_commit_batch(
                 live_circuits,
                 &config,
                 new_batch,
-                &stormguard_overrides,
+                stormguard_overrides,
             );
             MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
             return;
@@ -1285,7 +1285,7 @@ fn handle_commit_batch(
                     live_circuits,
                     &config,
                     new_batch.clone(),
-                    &stormguard_overrides,
+                    stormguard_overrides,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
