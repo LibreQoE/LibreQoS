@@ -352,7 +352,7 @@ pub async fn build_full_network_v2(
     }) {
         network_json.insert(
             name.into(),
-            walk_parents(&parents, name, node_info, &config, &graph, &mut visited).into(),
+            walk_parents(&parents, name, node_info, &mut visited).into(),
         );
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");
