@@ -1101,8 +1101,8 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
         let (forward_capacity, reverse_capacity) = calculate_chain_capacity(graph, &chain_nodes);
 
         // Check if endpoints still exist (previous squashing might have removed them)
-        if !graph.node_weight(candidate.endpoint_a).is_some()
-            || !graph.node_weight(candidate.endpoint_b).is_some()
+        if graph.node_weight(candidate.endpoint_a).is_none()
+            || graph.node_weight(candidate.endpoint_b).is_none()
         {
             info!("  Skipping - endpoints no longer exist");
             continue;
