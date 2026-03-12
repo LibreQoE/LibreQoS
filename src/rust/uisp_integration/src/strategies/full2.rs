@@ -428,7 +428,7 @@ pub async fn build_full_network_v2(
                 }
 
                 let parent_node = {
-                    if parents.get(&ap_device.name).is_some() {
+                    if parents.contains_key(&ap_device.name) {
                         ap_device.name.clone()
                     } else {
                         warn!(

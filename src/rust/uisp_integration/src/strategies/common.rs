@@ -205,16 +205,12 @@ impl UispData {
 
             if !found {
                 //println!("Client {} has no obvious parent AP", client.name);
-                let entry = mappings
-                    .entry("Orphans".to_string())
-                    .or_insert_with(HashSet::new);
+                let entry = mappings.entry("Orphans".to_string()).or_default();
                 entry.insert(client.id.clone());
             } else {
                 //info!("Client {} is connected to {:?}", client.name, parent);
                 if let Some((_, parent)) = &parent {
-                    let entry = mappings
-                        .entry(parent.to_string())
-                        .or_insert_with(HashSet::new);
+                    let entry = mappings.entry(parent.to_string()).or_default();
                     entry.insert(client.id.clone());
                 }
             }
