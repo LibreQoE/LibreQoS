@@ -177,7 +177,7 @@ impl TimeBuffer {
             return 0;
         }
         let mut slice = slice.to_vec();
-        slice.sort_by(|a, b| a.cmp(b));
+        slice.sort();
         let mid = slice.len() / 2;
         if slice.len() % 2 == 0 {
             (slice[mid] + slice[mid - 1]) / 2
@@ -414,7 +414,7 @@ impl TimeBuffer {
             .collect();
 
         // Sort the buffer
-        buffer.sort_unstable_by(|a, b| a.cmp(b));
+        buffer.sort_unstable();
 
         // Deduplicate and count, decorate with name
         buffer

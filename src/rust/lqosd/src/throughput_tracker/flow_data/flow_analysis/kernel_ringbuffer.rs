@@ -250,7 +250,7 @@ impl FlowActor {
                         }
                         // A flow event arrives
                         recv(rx) -> msg => {
-                            if let Ok(_) = msg {
+                            if msg.is_ok() {
                                 drain_events(&mut flows, &cmd_rx);
                             }
                         }
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
         let Ok(event) = FlowbeeEvent::read_from_bytes(data_slice) else {
             return 0;
         };
-        if let Ok(_) = FLOW_BYTES.push(event) {
+        if FLOW_BYTES.push(event).is_ok() {
             // Wake FlowActor, but coalesce wakeups under load.
             let _ = tx.try_send(());
         }

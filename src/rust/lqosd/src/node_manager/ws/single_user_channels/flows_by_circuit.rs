@@ -94,7 +94,7 @@ pub(super) async fn flows_by_circuit(
                 flows,
             };
             if let Ok(payload) = encode_ws_message(&result) {
-                if let Err(_) = tx.send(payload).await {
+                if tx.send(payload).await.is_err() {
                     debug!("Channel is gone");
                     break;
                 }
