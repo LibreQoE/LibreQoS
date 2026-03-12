@@ -98,6 +98,7 @@ impl TemporalHeatmap {
     }
 
     /// Add a single sample to the rolling buffer.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_sample(
         &mut self,
         download: f32,
@@ -250,11 +251,9 @@ impl TemporalHeatmap {
 
         let mut values = [0.0f32; RAW_SAMPLES];
         let mut len = 0usize;
-        for value in raw.iter().take(filled) {
-            if let Some(sample) = value {
-                values[len] = *sample;
-                len += 1;
-            }
+        for sample in raw.iter().take(filled).flatten() {
+            values[len] = *sample;
+            len += 1;
         }
 
         if len == 0 {

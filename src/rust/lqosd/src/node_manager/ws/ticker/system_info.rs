@@ -13,13 +13,13 @@ pub async fn cpu_info(
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    if let Ok(_) = system_usage_tx.send(tx) {
-        if let Ok(usage) = rx.await {
-            let message = WsResponse::Cpu {
-                data: usage.cpu_usage,
-            };
-            channels.send(PublishedChannels::Cpu, message).await;
-        }
+    if let Ok(_) = system_usage_tx.send(tx)
+        && let Ok(usage) = rx.await
+    {
+        let message = WsResponse::Cpu {
+            data: usage.cpu_usage,
+        };
+        channels.send(PublishedChannels::Cpu, message).await;
     }
 }
 
@@ -32,15 +32,15 @@ pub async fn ram_info(
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    if let Ok(_) = system_usage_tx.send(tx) {
-        if let Ok(usage) = rx.await {
-            let message = WsResponse::Ram {
-                data: RamData {
-                    total: usage.total_ram,
-                    used: usage.ram_used,
-                },
-            };
-            channels.send(PublishedChannels::Ram, message).await;
-        }
+    if let Ok(_) = system_usage_tx.send(tx)
+        && let Ok(usage) = rx.await
+    {
+        let message = WsResponse::Ram {
+            data: RamData {
+                total: usage.total_ram,
+                used: usage.ram_used,
+            },
+        };
+        channels.send(PublishedChannels::Ram, message).await;
     }
 }

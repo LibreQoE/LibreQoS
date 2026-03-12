@@ -25,7 +25,7 @@ pub async fn promote_access_points(
 ) {
     let mut all_links = Vec::new();
     sites.iter().for_each(|s| {
-        let links = s.find_aps(&devices_raw, &data_links_raw, &sites_raw);
+        let links = s.find_aps(devices_raw, data_links_raw, sites_raw);
         if !links.is_empty() {
             all_links.extend(links);
         }
@@ -46,11 +46,11 @@ pub async fn promote_access_points(
 
         let mut max_up_mbps = config.queues.generated_pn_upload_mbps;
         let mut max_down_mbps = config.queues.generated_pn_download_mbps;
-        if !config.uisp_integration.ignore_calculated_capacity {
-            if let Some(ap) = devices.iter().find(|d| d.id == link.device_id) {
-                max_up_mbps = ap.upload;
-                max_down_mbps = ap.download;
-            }
+        if !config.uisp_integration.ignore_calculated_capacity
+            && let Some(ap) = devices.iter().find(|d| d.id == link.device_id)
+        {
+            max_up_mbps = ap.upload;
+            max_down_mbps = ap.download;
         }
         // If the parent is a client, use the client's speeds
         if sites[parent_site_id].site_type == UispSiteType::Client {

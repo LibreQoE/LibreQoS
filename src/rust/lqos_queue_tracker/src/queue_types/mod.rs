@@ -43,13 +43,12 @@ pub fn deserialize_tc_tree(json: &str) -> Result<Vec<QueueType>, QDiscError> {
     let json: Value = serde_json::from_str(json).map_err(|_| QDiscError::Json(json.to_string()))?;
     if let Value::Array(array) = &json {
         for entry in array.iter() {
-            if let Value::Object(map) = entry {
-                if let Some(kind) = map.get("kind") {
-                    if let Some(kind) = kind.as_str() {
-                        let qdisc = QueueType::parse(kind, map)?;
-                        result.push(qdisc);
-                    }
-                }
+            if let Value::Object(map) = entry
+                && let Some(kind) = map.get("kind")
+                && let Some(kind) = kind.as_str()
+            {
+                let qdisc = QueueType::parse(kind, map)?;
+                result.push(qdisc);
             }
         }
     } else {

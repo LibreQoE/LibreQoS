@@ -103,15 +103,10 @@ pub async fn start_stormguard(
                 *lock = snapshot;
             }
             let recommendations = tracker.recommendations(cfg);
-            if !recommendations.is_empty() {
-                if let Some(sender) = &log_sender {
-                    tracker.apply_recommendations(
-                        recommendations,
-                        cfg,
-                        sender.clone(),
-                        bakery.clone(),
-                    );
-                }
+            if !recommendations.is_empty()
+                && let Some(sender) = &log_sender
+            {
+                tracker.apply_recommendations(recommendations, cfg, sender.clone(), bakery.clone());
             }
         }
     }

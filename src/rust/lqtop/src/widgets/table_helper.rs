@@ -18,7 +18,6 @@ impl<const N: usize> TableHelper<N> {
             headers[i] = raw_headers[i].to_string();
         }
 
-        let headers = headers.try_into().unwrap();
         Self {
             headers,
             rows: Vec::new(),
@@ -29,7 +28,7 @@ impl<const N: usize> TableHelper<N> {
         self.rows.push(row);
     }
 
-    pub fn to_table(&self) -> Table {
+    pub fn to_table(&self) -> Table<'_> {
         let header_cells: Vec<_> = self
             .headers
             .iter()
@@ -64,7 +63,7 @@ impl<const N: usize> TableHelper<N> {
             .header(Row::new(header_cells).style(Style::default().fg(Color::White).bg(Color::Blue)))
     }
 
-    pub fn to_block(&self) -> Table {
+    pub fn to_block(&self) -> Table<'_> {
         let block = Block::default()
             //.title("Top Downloaders")
             .borders(Borders::NONE)

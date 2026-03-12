@@ -372,9 +372,28 @@ mod tests {
 
         let grouped = group_circuit_fallbacks(&[d1, d2, d3]);
         assert_eq!(grouped.len(), 2);
-        assert_eq!(grouped.get("c1").unwrap().sqm_override, "fq_codel");
-        assert_eq!(grouped.get("c1").unwrap().devices.len(), 2);
-        assert_eq!(grouped.get("c2").unwrap().sqm_override, "cake");
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 circuit fallback should be grouped")
+                .sqm_override,
+            "fq_codel"
+        );
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 circuit fallback should be grouped")
+                .devices
+                .len(),
+            2
+        );
+        assert_eq!(
+            grouped
+                .get("c2")
+                .expect("c2 circuit fallback should be grouped")
+                .sqm_override,
+            "cake"
+        );
     }
 
     #[test]
@@ -387,7 +406,14 @@ mod tests {
         d3.sqm_override = Some(" ".to_string());
 
         let grouped = group_circuit_fallbacks(&[d1, d2, d3]);
-        assert_eq!(grouped.get("c1").unwrap().devices.len(), 1);
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 should remain grouped when one token differs")
+                .devices
+                .len(),
+            1
+        );
         assert!(!grouped.contains_key("c2"));
     }
 }

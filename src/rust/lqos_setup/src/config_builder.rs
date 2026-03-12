@@ -6,6 +6,7 @@ pub static CURRENT_CONFIG: Lazy<Mutex<ConfigBuilder>> =
     Lazy::new(|| Mutex::new(ConfigBuilder::new()));
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum BridgeMode {
     Linux,
     XDP,

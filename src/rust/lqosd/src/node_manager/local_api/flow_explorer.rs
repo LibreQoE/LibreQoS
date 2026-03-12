@@ -50,9 +50,7 @@ pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }
 
 fn all_flows_to_transport(
@@ -113,12 +111,12 @@ fn all_flows_to_transport(
                 start: boot_time + Duration::from_nanos(flow.1.start_time).as_secs(),
                 end: boot_time + Duration::from_nanos(flow.1.last_seen).as_secs(),
                 duration_nanos: flow.1.last_seen - flow.1.start_time,
-                tcp_retransmits: flow.1.tcp_retransmits.clone(),
+                tcp_retransmits: flow.1.tcp_retransmits,
                 throughput: vec![],
                 rtt: flow.1.get_rtt_array(),
                 retransmit_times_down,
                 retransmit_times_up,
-                total_bytes: flow.1.bytes_sent.clone(),
+                total_bytes: flow.1.bytes_sent,
                 protocol: flow.2.protocol_analysis.to_string(),
                 circuit_id,
                 circuit_name,
@@ -137,9 +135,7 @@ pub fn country_timeline_data(iso_code: &str) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(iso_code);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }
 
 pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
@@ -152,7 +148,5 @@ pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }

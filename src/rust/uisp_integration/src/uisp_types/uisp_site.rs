@@ -54,15 +54,15 @@ impl UispSite {
         let mut uisp_parent_id = None;
 
         if let Some(id) = &value.identification {
-            if let Some(parent) = &id.parent {
-                if let Some(pid) = &parent.id {
-                    uisp_parent_id = Some(pid.clone());
-                }
+            if let Some(parent) = &id.parent
+                && let Some(pid) = &parent.id
+            {
+                uisp_parent_id = Some(pid.clone());
             }
-            if let Some(status) = &id.status {
-                if status == "disconnected" {
-                    warn!("Site {:?} is disconnected.", id.name);
-                }
+            if let Some(status) = &id.status
+                && status == "disconnected"
+            {
+                warn!("Site {:?} is disconnected.", id.name);
             }
         }
 
@@ -159,57 +159,52 @@ impl UispSite {
         let mut links = Vec::new();
 
         for device in devices.iter() {
-            if let Some(device_site) = device.get_site_id() {
-                if device_site == self.id {
-                    // We're in the correct site, now look for anything that
-                    // links to/from this device
-                    let potential_ap_id = device.get_id();
-                    let mut potential_ap = DetectedAccessPoint {
-                        site_id: self.id.clone(),
-                        device_id: potential_ap_id.clone(),
-                        device_name: device.get_name().unwrap_or(String::new()),
-                        child_sites: vec![],
-                    };
+            if let Some(device_site) = device.get_site_id()
+                && device_site == self.id
+            {
+                // We're in the correct site, now look for anything that
+                // links to/from this device
+                let potential_ap_id = device.get_id();
+                let mut potential_ap = DetectedAccessPoint {
+                    site_id: self.id.clone(),
+                    device_id: potential_ap_id.clone(),
+                    device_name: device.get_name().unwrap_or(String::new()),
+                    child_sites: vec![],
+                };
 
-                    for dl in data_links.iter() {
-                        // The "I'm the FROM device case"
-                        if let Some(from_device) = &dl.from.device {
-                            if from_device.identification.id == potential_ap_id {
-                                if let Some(to_site) = &dl.to.site {
-                                    if to_site.identification.id != self.id {
-                                        // We have a data link from this device that goes to
-                                        // another site.
-                                        if let Some(remote_site) =
-                                            sites.iter().find(|s| s.id == to_site.identification.id)
-                                        {
-                                            potential_ap.child_sites.push(remote_site.id.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // The "I'm the TO the device case"
-                        if let Some(to_device) = &dl.to.device {
-                            if to_device.identification.id == potential_ap_id {
-                                if let Some(from_site) = &dl.from.site {
-                                    if from_site.identification.id != self.id {
-                                        // We have a data link from this device that goes to
-                                        // another site.
-                                        if let Some(remote_site) = sites
-                                            .iter()
-                                            .find(|s| s.id == from_site.identification.id)
-                                        {
-                                            potential_ap.child_sites.push(remote_site.id.clone());
-                                        }
-                                    }
-                                }
-                            }
+                for dl in data_links.iter() {
+                    // The "I'm the FROM device case"
+                    if let Some(from_device) = &dl.from.device
+                        && from_device.identification.id == potential_ap_id
+                        && let Some(to_site) = &dl.to.site
+                        && to_site.identification.id != self.id
+                    {
+                        // We have a data link from this device that goes to
+                        // another site.
+                        if let Some(remote_site) =
+                            sites.iter().find(|s| s.id == to_site.identification.id)
+                        {
+                            potential_ap.child_sites.push(remote_site.id.clone());
                         }
                     }
-                    if !potential_ap.child_sites.is_empty() {
-                        links.push(potential_ap);
+
+                    // The "I'm the TO the device case"
+                    if let Some(to_device) = &dl.to.device
+                        && to_device.identification.id == potential_ap_id
+                        && let Some(from_site) = &dl.from.site
+                        && from_site.identification.id != self.id
+                    {
+                        // We have a data link from this device that goes to
+                        // another site.
+                        if let Some(remote_site) =
+                            sites.iter().find(|s| s.id == from_site.identification.id)
+                        {
+                            potential_ap.child_sites.push(remote_site.id.clone());
+                        }
                     }
+                }
+                if !potential_ap.child_sites.is_empty() {
+                    links.push(potential_ap);
                 }
             }
         }

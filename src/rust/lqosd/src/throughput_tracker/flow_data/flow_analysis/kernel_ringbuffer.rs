@@ -34,80 +34,80 @@ impl FlowTracker {
             anyhow::bail!("Unable to build flow tracker");
         };
         let mut ignore_subnets = ip_network_table::IpNetworkTable::new();
-        if let Some(flows) = &config.flows {
-            if let Some(subnets) = &flows.do_not_track_subnets {
-                // Subnets are in CIDR notation
-                for subnet in subnets.iter() {
-                    let subnet = subnet.trim();
-                    if subnet.is_empty() {
-                        continue;
-                    }
+        if let Some(flows) = &config.flows
+            && let Some(subnets) = &flows.do_not_track_subnets
+        {
+            // Subnets are in CIDR notation
+            for subnet in subnets.iter() {
+                let subnet = subnet.trim();
+                if subnet.is_empty() {
+                    continue;
+                }
 
-                    // Allow host-only entries by defaulting to /32 (v4) or /128 (v6).
-                    let (ip_part, mask_part) = match subnet.split_once('/') {
-                        Some((ip, mask)) => (ip.trim(), Some(mask.trim())),
-                        None => (subnet, None),
+                // Allow host-only entries by defaulting to /32 (v4) or /128 (v6).
+                let (ip_part, mask_part) = match subnet.split_once('/') {
+                    Some((ip, mask)) => (ip.trim(), Some(mask.trim())),
+                    None => (subnet, None),
+                };
+
+                if ip_part.contains(':') {
+                    let mask = match mask_part {
+                        Some(mask) => match mask.parse::<u8>() {
+                            Ok(mask) if mask <= 128 => mask,
+                            _ => {
+                                error!(
+                                    "Invalid IPv6 subnet mask in do_not_track_subnets: {subnet}"
+                                );
+                                continue;
+                            }
+                        },
+                        None => 128,
                     };
 
-                    if ip_part.contains(':') {
-                        let mask = match mask_part {
-                            Some(mask) => match mask.parse::<u8>() {
-                                Ok(mask) if mask <= 128 => mask,
-                                _ => {
-                                    error!(
-                                        "Invalid IPv6 subnet mask in do_not_track_subnets: {subnet}"
-                                    );
-                                    continue;
-                                }
-                            },
-                            None => 128,
-                        };
-
-                        let ip: Ipv6Addr = match ip_part.parse() {
-                            Ok(ip) => ip,
-                            Err(_) => {
-                                error!("Invalid IPv6 subnet in do_not_track_subnets: {subnet}");
-                                continue;
-                            }
-                        };
-
-                        match ip_network::IpNetwork::new(ip, mask) {
-                            Ok(addr) => {
-                                ignore_subnets.insert(addr, true);
-                            }
-                            Err(_) => {
-                                error!("Invalid IPv6 subnet in do_not_track_subnets: {subnet}");
-                            }
+                    let ip: Ipv6Addr = match ip_part.parse() {
+                        Ok(ip) => ip,
+                        Err(_) => {
+                            error!("Invalid IPv6 subnet in do_not_track_subnets: {subnet}");
+                            continue;
                         }
-                    } else {
-                        let mask = match mask_part {
-                            Some(mask) => match mask.parse::<u8>() {
-                                Ok(mask) if mask <= 32 => mask,
-                                _ => {
-                                    error!(
-                                        "Invalid IPv4 subnet mask in do_not_track_subnets: {subnet}"
-                                    );
-                                    continue;
-                                }
-                            },
-                            None => 32,
-                        };
+                    };
 
-                        let ip: Ipv4Addr = match ip_part.parse() {
-                            Ok(ip) => ip,
-                            Err(_) => {
-                                error!("Invalid IPv4 subnet in do_not_track_subnets: {subnet}");
+                    match ip_network::IpNetwork::new(ip, mask) {
+                        Ok(addr) => {
+                            ignore_subnets.insert(addr, true);
+                        }
+                        Err(_) => {
+                            error!("Invalid IPv6 subnet in do_not_track_subnets: {subnet}");
+                        }
+                    }
+                } else {
+                    let mask = match mask_part {
+                        Some(mask) => match mask.parse::<u8>() {
+                            Ok(mask) if mask <= 32 => mask,
+                            _ => {
+                                error!(
+                                    "Invalid IPv4 subnet mask in do_not_track_subnets: {subnet}"
+                                );
                                 continue;
                             }
-                        };
+                        },
+                        None => 32,
+                    };
 
-                        match ip_network::IpNetwork::new(ip.to_ipv6_mapped(), mask + 96) {
-                            Ok(addr) => {
-                                ignore_subnets.insert(addr, true);
-                            }
-                            Err(_) => {
-                                error!("Invalid IPv4 subnet in do_not_track_subnets: {subnet}");
-                            }
+                    let ip: Ipv4Addr = match ip_part.parse() {
+                        Ok(ip) => ip,
+                        Err(_) => {
+                            error!("Invalid IPv4 subnet in do_not_track_subnets: {subnet}");
+                            continue;
+                        }
+                    };
+
+                    match ip_network::IpNetwork::new(ip.to_ipv6_mapped(), mask + 96) {
+                        Ok(addr) => {
+                            ignore_subnets.insert(addr, true);
+                        }
+                        Err(_) => {
+                            error!("Invalid IPv4 subnet in do_not_track_subnets: {subnet}");
                         }
                     }
                 }
@@ -179,8 +179,8 @@ impl FlowActor {
                                 .iter()
                                 .filter_map(|(k, v)| {
                                     let snapshot = v.snapshot_if_new_data()?;
-                                    keys_to_clear.push(k.clone());
-                                    Some((k.clone(), snapshot))
+                                    keys_to_clear.push(*k);
+                                    Some((*k, snapshot))
                                 })
                                 .collect();
 
@@ -250,7 +250,7 @@ impl FlowActor {
                         }
                         // A flow event arrives
                         recv(rx) -> msg => {
-                            if let Ok(_) = msg {
+                            if msg.is_ok() {
                                 drain_events(&mut flows, &cmd_rx);
                             }
                         }
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
         let Ok(event) = FlowbeeEvent::read_from_bytes(data_slice) else {
             return 0;
         };
-        if let Ok(_) = FLOW_BYTES.push(event) {
+        if FLOW_BYTES.push(event).is_ok() {
             // Wake FlowActor, but coalesce wakeups under load.
             let _ = tx.try_send(());
         }

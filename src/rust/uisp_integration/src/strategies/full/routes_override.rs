@@ -41,22 +41,21 @@ pub struct RouteOverride {
 /// * An `Err` if the file is found but cannot be read
 pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIntegrationError> {
     // Prefer overrides from lqos_overrides.json if present
-    if let Ok(of) = lqos_overrides::OverrideFile::load() {
-        if let Some(uisp) = of.uisp() {
-            if !uisp.route_overrides.is_empty() {
-                info!("Using UISP route overrides from lqos_overrides.json");
-                let converted: Vec<RouteOverride> = uisp
-                    .route_overrides
-                    .iter()
-                    .map(|r| RouteOverride {
-                        from_site: r.from_site.clone(),
-                        to_site: r.to_site.clone(),
-                        cost: r.cost,
-                    })
-                    .collect();
-                return Ok(converted);
-            }
-        }
+    if let Ok(of) = lqos_overrides::OverrideFile::load()
+        && let Some(uisp) = of.uisp()
+        && !uisp.route_overrides.is_empty()
+    {
+        info!("Using UISP route overrides from lqos_overrides.json");
+        let converted: Vec<RouteOverride> = uisp
+            .route_overrides
+            .iter()
+            .map(|r| RouteOverride {
+                from_site: r.from_site.clone(),
+                to_site: r.to_site.clone(),
+                cost: r.cost,
+            })
+            .collect();
+        return Ok(converted);
     }
 
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.csv");
@@ -110,9 +109,9 @@ pub fn write_routing_overrides_template(
 ) -> anyhow::Result<()> {
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
     let mut writer = csv::Writer::from_path(file_path)?;
-    writer.write_record(&["From Site", "To Site", "Cost"])?;
+    writer.write_record(["From Site", "To Site", "Cost"])?;
     for route in natural_routes {
-        writer.write_record(&[&route.from_site, &route.to_site, &route.cost.to_string()])?;
+        writer.write_record([&route.from_site, &route.to_site, &route.cost.to_string()])?;
     }
     writer.flush()?;
     Ok(())

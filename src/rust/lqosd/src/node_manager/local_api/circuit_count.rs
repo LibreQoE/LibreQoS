@@ -44,7 +44,7 @@ pub fn circuit_count_data() -> CircuitCount {
         .collect();
 
     // Use active count if > 0, otherwise fall back to configured count
-    let count = if active_circuits.len() > 0 {
+    let count = if !active_circuits.is_empty() {
         active_circuits.len()
     } else {
         configured_circuits.len()

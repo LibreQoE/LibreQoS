@@ -9,12 +9,11 @@ pub fn count_devices_in_site(site_id: &str, devices: &[Device]) -> usize {
     devices
         .iter()
         .filter(|d| {
-            if let Some(site) = &d.identification.site {
-                if let Some(parent) = &site.parent {
-                    if parent.id == site_id {
-                        return true;
-                    }
-                }
+            if let Some(site) = &d.identification.site
+                && let Some(parent) = &site.parent
+                && parent.id == site_id
+            {
+                return true;
             }
             false
         })

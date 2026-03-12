@@ -133,7 +133,7 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     Some((retransmits as f32 / packets as f32) * 100.0)
 }
 
-fn p50_p90(values: &mut Vec<f32>) -> (Option<f32>, Option<f32>) {
+fn p50_p90(values: &mut [f32]) -> (Option<f32>, Option<f32>) {
     if values.is_empty() {
         return (None, None);
     }

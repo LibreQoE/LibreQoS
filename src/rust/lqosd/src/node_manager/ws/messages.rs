@@ -65,6 +65,7 @@ pub enum PrivateRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum WsRequest {
     Subscribe {
         channel: PublishedChannels,
@@ -367,6 +368,7 @@ pub enum PingState {
 
 #[derive(Serialize)]
 #[serde(tag = "event")]
+#[allow(clippy::large_enum_variant)]
 pub enum WsResponse {
     #[serde(rename = "join")]
     Join {

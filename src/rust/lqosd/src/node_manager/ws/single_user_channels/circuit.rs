@@ -65,7 +65,7 @@ pub(super) async fn circuit_watcher(
         };
 
         if let Ok(payload) = encode_ws_message(&result) {
-            if let Err(_) = tx.send(payload).await {
+            if tx.send(payload).await.is_err() {
                 info!("Channel is gone");
                 break;
             }

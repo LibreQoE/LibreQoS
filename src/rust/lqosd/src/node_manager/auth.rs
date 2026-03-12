@@ -62,13 +62,13 @@ fn record_first_login_timestamp_if_needed() {
 
 pub async fn get_username(jar: &CookieJar) -> String {
     let lock = WEB_USERS.lock().await;
-    if let Some(users) = &*lock {
-        if let Some(token) = jar.get(COOKIE_PATH) {
-            return users.get_username(token.value());
-        }
+    if let Some(users) = &*lock
+        && let Some(token) = jar.get(COOKIE_PATH)
+    {
+        return users.get_username(token.value());
     }
 
-    return "Anonymous".to_string();
+    "Anonymous".to_string()
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]

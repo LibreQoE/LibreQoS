@@ -77,7 +77,7 @@ pub(crate) fn map_single_interface_mode(
     debug!("Mapped bifrost interface {}->{}", from, redirect_to);
 
     // VLANs - Internet
-    let mut key: u32 = (interface_name_to_index(&interface)? << 16) | internet_vlan;
+    let mut key: u32 = (interface_name_to_index(interface)? << 16) | internet_vlan;
     let mut val = BifrostVlan {
         redirect_to: lan_vlan,
     };
@@ -89,7 +89,7 @@ pub(crate) fn map_single_interface_mode(
     debug!("{key}");
 
     // VLANs - LAN
-    let mut key: u32 = (interface_name_to_index(&interface)? << 16) | lan_vlan;
+    let mut key: u32 = (interface_name_to_index(interface)? << 16) | lan_vlan;
     let mut val = BifrostVlan {
         redirect_to: internet_vlan,
     };

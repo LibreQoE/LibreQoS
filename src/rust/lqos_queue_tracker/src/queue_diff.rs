@@ -61,27 +61,27 @@ pub struct CakeDiffTin {
 
 fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
     // TODO: Wrapping Handler
-    if let QueueType::Cake(prev) = previous {
-        if let QueueType::Cake(new) = current {
-            let tins = new
-                .tins
-                .iter()
-                .zip(prev.tins.iter())
-                .map(|(new, prev)| CakeDiffTin {
-                    sent_bytes: new.sent_bytes.saturating_sub(prev.sent_bytes),
-                    backlog_bytes: new.backlog_bytes,
-                    drops: new.drops.saturating_sub(prev.drops),
-                    marks: new.ecn_marks.saturating_sub(prev.ecn_marks),
-                    base_delay_us: new.base_delay_us,
-                })
-                .collect();
-            return Ok(QueueDiff::Cake(CakeDiff {
-                bytes: new.bytes.saturating_sub(prev.bytes),
-                packets: new.packets.saturating_sub(prev.packets),
-                qlen: new.qlen,
-                tins,
-            }));
-        }
+    if let QueueType::Cake(prev) = previous
+        && let QueueType::Cake(new) = current
+    {
+        let tins = new
+            .tins
+            .iter()
+            .zip(prev.tins.iter())
+            .map(|(new, prev)| CakeDiffTin {
+                sent_bytes: new.sent_bytes.saturating_sub(prev.sent_bytes),
+                backlog_bytes: new.backlog_bytes,
+                drops: new.drops.saturating_sub(prev.drops),
+                marks: new.ecn_marks.saturating_sub(prev.ecn_marks),
+                base_delay_us: new.base_delay_us,
+            })
+            .collect();
+        return Ok(QueueDiff::Cake(CakeDiff {
+            bytes: new.bytes.saturating_sub(prev.bytes),
+            packets: new.packets.saturating_sub(prev.packets),
+            qlen: new.qlen,
+            tins,
+        }));
     }
     Err(QueueDiffError::NotImplemented)
 }
@@ -101,18 +101,18 @@ pub struct FqCodelDiff {
 }
 
 fn fq_codel_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
-    if let QueueType::FqCodel(prev) = previous {
-        if let QueueType::FqCodel(new) = current {
-            // Delta counters; backlog and flows are instantaneous
-            let diff = FqCodelDiff {
-                bytes: new.bytes.saturating_sub(prev.bytes),
-                packets: new.packets.saturating_sub(prev.packets),
-                backlog: new.backlog,
-                flows: new.options.flows,
-                ddrops: new.drop_overlimit.saturating_sub(prev.drop_overlimit),
-            };
-            return Ok(QueueDiff::FqCodel(diff));
-        }
+    if let QueueType::FqCodel(prev) = previous
+        && let QueueType::FqCodel(new) = current
+    {
+        // Delta counters; backlog and flows are instantaneous
+        let diff = FqCodelDiff {
+            bytes: new.bytes.saturating_sub(prev.bytes),
+            packets: new.packets.saturating_sub(prev.packets),
+            backlog: new.backlog,
+            flows: new.options.flows,
+            ddrops: new.drop_overlimit.saturating_sub(prev.drop_overlimit),
+        };
+        return Ok(QueueDiff::FqCodel(diff));
     }
     Err(QueueDiffError::NotImplemented)
 }

@@ -56,9 +56,9 @@ impl CpuMapping {
         }
 
         // Populate CPU map entries for each destination CPU (physical CPU IDs).
-        for cpu_dest in shaping.iter().copied() {
+        for cpu_dest in shaping.iter() {
             debug!("Mapping destination CPU #{cpu_dest} into cpumap");
-            let cpu_ptr: *const u32 = &cpu_dest;
+            let cpu_ptr: *const u32 = cpu_dest;
             let error = unsafe {
                 bpf_map_update_elem(
                     self.fd_cpu_map,
@@ -131,20 +131,19 @@ pub(crate) fn xps_setup_default_disable(interface: &str) -> Result<()> {
 fn sorted_txq_xps_cpus(interface: &str) -> Result<Vec<String>> {
     let mut result = Vec::new();
     let paths =
-    std::fs::read_dir(&format!("/sys/class/net/{interface}/queues/"))
+    std::fs::read_dir(format!("/sys/class/net/{interface}/queues/"))
       .map_err(|_| anyhow::anyhow!("/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"))?;
     for path in paths {
-        if let Ok(path) = &path {
-            if path.path().is_dir() {
-                if let Some(filename) = path.path().file_name() {
-                    let base_fn = format!(
-                        "/sys/class/net/{interface}/queues/{}/xps_cpus",
-                        filename.to_str().unwrap_or_default()
-                    );
-                    if std::path::Path::new(&base_fn).exists() {
-                        result.push(base_fn);
-                    }
-                }
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name()
+        {
+            let base_fn = format!(
+                "/sys/class/net/{interface}/queues/{}/xps_cpus",
+                filename.to_str().unwrap_or_default()
+            );
+            if std::path::Path::new(&base_fn).exists() {
+                result.push(base_fn);
             }
         }
     }

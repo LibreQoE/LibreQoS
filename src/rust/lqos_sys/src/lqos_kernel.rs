@@ -27,6 +27,7 @@ use self::bpf::{libbpf_num_possible_cpus, lqos_kern};
 
 pub(crate) mod bpf {
     #![allow(warnings, unused)]
+    #![allow(clippy::upper_case_acronyms)]
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
@@ -383,31 +384,27 @@ pub fn attach_xdp_and_tc_to_interface(
 
     // Attach to the ingress IF it is configured
     if let Ok(etc) = lqos_config::load_config() {
-        if let Some(bridge) = &etc.bridge {
-            if bridge.use_xdp_bridge {
-                // Enable "promiscuous" mode on interfaces
-                debug!("Enabling promiscuous mode on {}", &bridge.to_internet);
-                std::process::Command::new("/bin/ip")
-                    .args(["link", "set", &bridge.to_internet, "promisc", "on"])
-                    .output()?;
-                debug!("Enabling promiscuous mode on {}", &bridge.to_network);
-                std::process::Command::new("/bin/ip")
-                    .args(["link", "set", &bridge.to_network, "promisc", "on"])
-                    .output()?;
+        if let Some(bridge) = &etc.bridge
+            && bridge.use_xdp_bridge
+        {
+            // Enable "promiscuous" mode on interfaces
+            debug!("Enabling promiscuous mode on {}", &bridge.to_internet);
+            std::process::Command::new("/bin/ip")
+                .args(["link", "set", &bridge.to_internet, "promisc", "on"])
+                .output()?;
+            debug!("Enabling promiscuous mode on {}", &bridge.to_network);
+            std::process::Command::new("/bin/ip")
+                .args(["link", "set", &bridge.to_network, "promisc", "on"])
+                .output()?;
 
-                // Build the interface and vlan map entries
-                crate::bifrost_maps::clear_bifrost()?;
-                crate::bifrost_maps::map_multi_interface_mode(
-                    &bridge.to_internet,
-                    &bridge.to_network,
-                )?;
+            // Build the interface and vlan map entries
+            crate::bifrost_maps::clear_bifrost()?;
+            crate::bifrost_maps::map_multi_interface_mode(&bridge.to_internet, &bridge.to_network)?;
 
-                // Actually attach the TC ingress program
-                let error =
-                    unsafe { bpf::tc_attach_ingress(interface_index as i32, false, skeleton) };
-                if error != 0 {
-                    return Err(Error::msg("Unable to attach TC Ingress to interface"));
-                }
+            // Actually attach the TC ingress program
+            let error = unsafe { bpf::tc_attach_ingress(interface_index as i32, false, skeleton) };
+            if error != 0 {
+                return Err(Error::msg("Unable to attach TC Ingress to interface"));
             }
         }
 
@@ -422,8 +419,8 @@ pub fn attach_xdp_and_tc_to_interface(
             crate::bifrost_maps::clear_bifrost()?;
             crate::bifrost_maps::map_single_interface_mode(
                 &stick.interface,
-                stick.internet_vlan as u32,
-                stick.network_vlan as u32,
+                stick.internet_vlan,
+                stick.network_vlan,
             )?;
 
             // Actually attach the TC ingress program
@@ -564,13 +561,13 @@ unsafe fn attach_xdp_best_available(
 
     // Try no flags
     match unsafe { try_mode_with_retries(interface_index, prog_fd, None, iface_name, 3) } {
-        Ok(()) => return Ok(()),
+        Ok(()) => Ok(()),
         Err(error) => {
             error!(
                 "XDP attach failed on '{}' in all modes (errno: {}). Suggestion: check for existing XDP programs (ip link show, bpftool net), detach with 'ip link set dev {} xdp off', and clear pinned maps if needed.",
                 iface_name, error, iface_name
             );
-            return Err(Error::msg("Unable to attach to interface"));
+            Err(Error::msg("Unable to attach to interface"))
         }
     }
 }

@@ -89,7 +89,6 @@ pub fn request_free_trial(trial: FreeTrialDetails, sender: oneshot::Sender<Strin
             sender
                 .send("FAIL".to_string())
                 .expect("failed to send free-trial failure to requester");
-            return;
         }
     }
 }
