@@ -164,15 +164,18 @@ async fn handle_socket(
                 match inbound {
                     Some(Ok(msg)) => {
                         let should_close = receive_channel_message(
-                        msg,
-                        channels.clone(),
-                        tx.clone(),
-                        &mut subscribed_channels,
-                        &mut handshake_complete,
-                        &mut private_state,
-                        &mut login,
-                        shaper_query.clone(),
-                    ).await;
+                            msg,
+                            channels.clone(),
+                            tx.clone(),
+                            &mut subscribed_channels,
+                            &mut handshake_complete,
+                            &mut WsRequestState {
+                                private_state: &mut private_state,
+                                login: &mut login,
+                                shaper_query: shaper_query.clone(),
+                            },
+                        )
+                        .await;
                         if should_close {
                             break;
                         }
@@ -191,15 +194,19 @@ async fn handle_socket(
     info!("Websocket disconnected");
 }
 
+struct WsRequestState<'a> {
+    private_state: &'a mut single_user_channels::PrivateState,
+    login: &'a mut LoginResult,
+    shaper_query: Sender<ShaperQueryCommand>,
+}
+
 async fn receive_channel_message(
     msg: Message,
     channels: Arc<PubSub>,
     tx: Sender<Arc<Vec<u8>>>,
     subscribed_channels: &mut HashSet<PublishedChannels>,
     handshake_complete: &mut bool,
-    private_state: &mut single_user_channels::PrivateState,
-    login: &mut LoginResult,
-    shaper_query: Sender<ShaperQueryCommand>,
+    request_state: &mut WsRequestState<'_>,
 ) -> bool {
     let payload = match msg {
         Message::Binary(data) => data,
@@ -245,7 +252,7 @@ async fn receive_channel_message(
                 warn!("Websocket handshake token rejected");
                 return true;
             }
-            *login = login_result;
+            *request_state.login = login_result;
             *handshake_complete = true;
             info!("Websocket handshake completed");
             return false;
@@ -266,7 +273,7 @@ async fn receive_channel_message(
             channels.unsubscribe(channel, tx.clone()).await;
         }
         WsRequest::Private(command) => {
-            private_state.handle_request(command).await;
+            request_state.private_state.handle_request(command).await;
         }
         WsRequest::DashletThemes => {
             let response = WsResponse::DashletThemes {
@@ -378,7 +385,7 @@ async fn receive_channel_message(
             circuit_id,
             excluded,
         } => {
-            if *login != crate::node_manager::auth::LoginResult::Admin {
+            if *request_state.login != crate::node_manager::auth::LoginResult::Admin {
                 let response = WsResponse::SetCircuitRttExcludedResult {
                     ok: false,
                     message: "Unauthorized".to_string(),
@@ -603,7 +610,7 @@ async fn receive_channel_message(
                 }
             } else {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-                let control_tx = private_state.control_tx();
+                let control_tx = request_state.private_state.control_tx();
                 if control_tx
                     .send(
                         crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketList {
@@ -664,7 +671,7 @@ async fn receive_channel_message(
                 }
             } else {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-                let control_tx = private_state.control_tx();
+                let control_tx = request_state.private_state.control_tx();
                 if control_tx
                     .send(
                         crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketGet {
@@ -718,7 +725,7 @@ async fn receive_channel_message(
             body,
             commentor,
         } => {
-            if *login != LoginResult::Admin {
+            if *request_state.login != LoginResult::Admin {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
@@ -742,7 +749,7 @@ async fn receive_channel_message(
                 }
             } else {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-                let control_tx = private_state.control_tx();
+                let control_tx = request_state.private_state.control_tx();
                 if control_tx
                     .send(
                         crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketCreate {
@@ -798,7 +805,7 @@ async fn receive_channel_message(
             commentor,
             body,
         } => {
-            if *login != LoginResult::Admin {
+            if *request_state.login != LoginResult::Admin {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
@@ -826,7 +833,7 @@ async fn receive_channel_message(
                     .map(|t| t as i64)
                     .unwrap_or(0);
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-                let control_tx = private_state.control_tx();
+                let control_tx = request_state.private_state.control_tx();
                 if control_tx
                     .send(
                         crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketAddComment {
@@ -886,13 +893,13 @@ async fn receive_channel_message(
             }
         }
         WsRequest::ReloadLibreQoS => {
-            let message = reload_libreqos::reload_libreqos_with_login(*login).await;
+            let message = reload_libreqos::reload_libreqos_with_login(*request_state.login).await;
             let response = WsResponse::ReloadResult { message };
             if send_ws_response(&tx, response).await {
                 return true;
             }
         }
-        WsRequest::LtsTrialConfig => match lts::lts_trial_config_data(*login) {
+        WsRequest::LtsTrialConfig => match lts::lts_trial_config_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::LtsTrialConfigResult { data };
                 if send_ws_response(&tx, response).await {
@@ -970,7 +977,7 @@ async fn receive_channel_message(
             }
         },
         WsRequest::LtsThroughput { seconds } => {
-            match lts::throughput_period_data(shaper_query.clone(), seconds).await {
+            match lts::throughput_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsThroughput { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -996,7 +1003,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsPackets { seconds } => {
-            match lts::packets_period_data(shaper_query.clone(), seconds).await {
+            match lts::packets_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsPackets { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1022,7 +1029,8 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsPercentShaped { seconds } => {
-            match lts::percent_shaped_period_data(shaper_query.clone(), seconds).await {
+            match lts::percent_shaped_period_data(request_state.shaper_query.clone(), seconds).await
+            {
                 Ok(data) => {
                     let response = WsResponse::LtsPercentShaped { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1048,7 +1056,8 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsFlows { seconds } => {
-            match lts::percent_flows_period_data(shaper_query.clone(), seconds).await {
+            match lts::percent_flows_period_data(request_state.shaper_query.clone(), seconds).await
+            {
                 Ok(data) => {
                     let response = WsResponse::LtsFlows { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1074,7 +1083,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsCake { seconds } => {
-            match lts::cake_period_data(shaper_query.clone(), seconds).await {
+            match lts::cake_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsCake { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1100,7 +1109,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsRttHisto { seconds } => {
-            match lts::rtt_histo_period_data(shaper_query.clone(), seconds).await {
+            match lts::rtt_histo_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsRttHisto { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1126,7 +1135,9 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsTop10Downloaders { seconds } => {
-            match lts::top10_downloaders_period_data(shaper_query.clone(), seconds).await {
+            match lts::top10_downloaders_period_data(request_state.shaper_query.clone(), seconds)
+                .await
+            {
                 Ok(data) => {
                     let response = WsResponse::LtsTop10Downloaders { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1152,7 +1163,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsWorst10Rtt { seconds } => {
-            match lts::worst10_rtt_period_data(shaper_query.clone(), seconds).await {
+            match lts::worst10_rtt_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsWorst10Rtt { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1178,7 +1189,8 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsWorst10Rxmit { seconds } => {
-            match lts::worst10_rxmit_period_data(shaper_query.clone(), seconds).await {
+            match lts::worst10_rxmit_period_data(request_state.shaper_query.clone(), seconds).await
+            {
                 Ok(data) => {
                     let response = WsResponse::LtsWorst10Rxmit { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1204,7 +1216,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::LtsTopFlows { seconds } => {
-            match lts::top10_flows_period_data(shaper_query.clone(), seconds).await {
+            match lts::top10_flows_period_data(request_state.shaper_query.clone(), seconds).await {
                 Ok(data) => {
                     let response = WsResponse::LtsTopFlows { seconds, data };
                     if send_ws_response(&tx, response).await {
@@ -1229,39 +1241,41 @@ async fn receive_channel_message(
                 }
             }
         }
-        WsRequest::LtsRecentMedian => match lts::recent_medians_data(shaper_query.clone()).await {
-            Ok(data) => {
-                let response = WsResponse::LtsRecentMedian { data };
-                if send_ws_response(&tx, response).await {
-                    return true;
+        WsRequest::LtsRecentMedian => {
+            match lts::recent_medians_data(request_state.shaper_query.clone()).await {
+                Ok(data) => {
+                    let response = WsResponse::LtsRecentMedian { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Insight not enabled".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load medians".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
                 }
             }
-            Err(StatusCode::FORBIDDEN) => {
-                let response = WsResponse::Error {
-                    message: "Insight not enabled".to_string(),
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
-                }
-            }
-            Err(_) => {
-                let response = WsResponse::Error {
-                    message: "Unable to load medians".to_string(),
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
-                }
-            }
-        },
+        }
         WsRequest::AdminCheck => {
             let response = WsResponse::AdminCheck {
-                ok: config::admin_check_data(*login),
+                ok: config::admin_check_data(*request_state.login),
             };
             if send_ws_response(&tx, response).await {
                 return true;
             }
         }
-        WsRequest::GetConfig => match config::get_config_data(*login) {
+        WsRequest::GetConfig => match config::get_config_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::GetConfig { data };
                 if send_ws_response(&tx, response).await {
@@ -1286,7 +1300,7 @@ async fn receive_channel_message(
             }
         },
         WsRequest::QooProfiles => {
-            if *login != crate::node_manager::auth::LoginResult::Admin {
+            if *request_state.login != crate::node_manager::auth::LoginResult::Admin {
                 let response = WsResponse::Error {
                     message: "Unauthorized".to_string(),
                 };
@@ -1326,7 +1340,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::UpdateConfig { config: cfg } => {
-            let result = config::update_lqosd_config_data(*login, cfg).await;
+            let result = config::update_lqosd_config_data(*request_state.login, cfg).await;
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
                 Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
@@ -1341,8 +1355,11 @@ async fn receive_channel_message(
             network_json,
             shaped_devices,
         } => {
-            let result =
-                config::update_network_and_devices_data(*login, network_json, shaped_devices);
+            let result = config::update_network_and_devices_data(
+                *request_state.login,
+                network_json,
+                shaped_devices,
+            );
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
                 Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
@@ -1353,7 +1370,7 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::ListNics => match config::list_nics_data(*login) {
+        WsRequest::ListNics => match config::list_nics_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::ListNics { data };
                 if send_ws_response(&tx, response).await {
@@ -1393,7 +1410,7 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::GetUsers => match config::get_users_data(*login) {
+        WsRequest::GetUsers => match config::get_users_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::GetUsers { data };
                 if send_ws_response(&tx, response).await {
@@ -1423,7 +1440,7 @@ async fn receive_channel_message(
             role,
         } => {
             let result = config::add_user_data(
-                *login,
+                *request_state.login,
                 config::UserRequest {
                     username,
                     password,
@@ -1450,7 +1467,7 @@ async fn receive_channel_message(
             role,
         } => {
             let result = config::update_user_data(
-                *login,
+                *request_state.login,
                 config::UserRequest {
                     username,
                     password,
@@ -1472,7 +1489,7 @@ async fn receive_channel_message(
             }
         }
         WsRequest::DeleteUser { username } => {
-            let result = config::delete_user_data(*login, username);
+            let result = config::delete_user_data(*request_state.login, username);
             let (ok, message) = match result {
                 Ok(message) => (true, message),
                 Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),

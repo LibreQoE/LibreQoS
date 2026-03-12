@@ -123,12 +123,7 @@ fn treeguard_actor_loop(
     };
     let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
 
-    let mut link_states: FxHashMap<String, LinkState> = FxHashMap::default();
-    let mut circuit_states: FxHashMap<String, CircuitState> = FxHashMap::default();
-    let mut managed_nodes: FxHashSet<String> = FxHashSet::default();
-    let mut managed_device_ids: FxHashSet<String> = FxHashSet::default();
-    let mut last_dry_run: Option<bool> = None;
-    let mut reload_controller = ReloadController::default();
+    let mut runtime_state = TreeguardRuntimeState::default();
 
     let mut tick_seconds: u64 = 1;
     let mut last_tick = Instant::now();
@@ -146,12 +141,7 @@ fn treeguard_actor_loop(
                     &mut activity,
                     &system_usage_tx,
                     &mut tick_seconds,
-                    &mut link_states,
-                    &mut circuit_states,
-                    &mut managed_nodes,
-                    &mut managed_device_ids,
-                    &mut last_dry_run,
-                    &mut reload_controller,
+                    &mut runtime_state,
                 );
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
@@ -181,6 +171,16 @@ fn handle_command(
     }
 }
 
+#[derive(Default)]
+struct TreeguardRuntimeState {
+    link_states: FxHashMap<String, LinkState>,
+    circuit_states: FxHashMap<String, CircuitState>,
+    managed_nodes: FxHashSet<String>,
+    managed_device_ids: FxHashSet<String>,
+    last_dry_run: Option<bool>,
+    reload_controller: ReloadController,
+}
+
 /// Executes a single TreeGuard tick.
 ///
 /// This function has side effects: it samples telemetry, may read/write `lqos_overrides.treeguard.json`,
@@ -190,13 +190,15 @@ fn run_tick(
     activity: &mut VecDeque<TreeguardActivityEntry>,
     system_usage_tx: &Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     tick_seconds: &mut u64,
-    link_states: &mut FxHashMap<String, LinkState>,
-    circuit_states: &mut FxHashMap<String, CircuitState>,
-    managed_nodes: &mut FxHashSet<String>,
-    managed_device_ids: &mut FxHashSet<String>,
-    last_dry_run: &mut Option<bool>,
-    reload_controller: &mut ReloadController,
+    runtime_state: &mut TreeguardRuntimeState,
 ) {
+    let link_states = &mut runtime_state.link_states;
+    let circuit_states = &mut runtime_state.circuit_states;
+    let managed_nodes = &mut runtime_state.managed_nodes;
+    let managed_device_ids = &mut runtime_state.managed_device_ids;
+    let last_dry_run = &mut runtime_state.last_dry_run;
+    let reload_controller = &mut runtime_state.reload_controller;
+
     let now_unix = unix_now().unwrap_or(0);
     let now_nanos_since_boot = time_since_boot()
         .ok()
@@ -735,19 +737,19 @@ fn run_tick(
                         }
                     }
                 } else {
-                    decisions::decide_link_virtualization(
+                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
                         now_unix,
-                        true,
+                        allowlisted: true,
                         cpu_max_pct,
-                        &tg.cpu,
-                        &tg.links,
-                        &tg.qoo,
+                        cpu_cfg: &tg.cpu,
+                        links_cfg: &tg.links,
+                        qoo_cfg: &tg.qoo,
                         rtt_missing,
                         qoo,
                         util_ewma_pct,
                         sustained_idle,
                         state,
-                    )
+                    })
                 };
 
                 if let decisions::LinkVirtualDecision::Set(target) = decision {
@@ -1070,19 +1072,19 @@ fn run_tick(
                         }
                     }
                 } else {
-                    decisions::decide_link_virtualization(
+                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
                         now_unix,
-                        allowlisted_nodes.contains(node_name),
+                        allowlisted: allowlisted_nodes.contains(node_name),
                         cpu_max_pct,
-                        &tg.cpu,
-                        &tg.links,
-                        &tg.qoo,
+                        cpu_cfg: &tg.cpu,
+                        links_cfg: &tg.links,
+                        qoo_cfg: &tg.qoo,
                         rtt_missing,
                         qoo,
                         util_ewma_pct,
                         sustained_idle,
                         state,
-                    )
+                    })
                 };
 
                 if let decisions::LinkVirtualDecision::Set(target) = decision {
@@ -1594,17 +1596,17 @@ fn run_tick(
                 continue;
             }
 
-            let decision = decisions::decide_circuit_sqm(
+            let decision = decisions::decide_circuit_sqm(decisions::CircuitSqmInput {
                 now_unix,
-                allowlisted_circuits.contains(circuit_id) && capacity_known,
+                allowlisted: allowlisted_circuits.contains(circuit_id) && capacity_known,
                 cpu_max_pct,
-                &tg.cpu,
-                &tg.circuits,
-                &tg.qoo,
+                cpu_cfg: &tg.cpu,
+                circuits_cfg: &tg.circuits,
+                qoo_cfg: &tg.qoo,
                 rtt_missing,
                 qoo,
                 state,
-            );
+            });
 
             let mut proposed_down = state.down.desired;
             let mut proposed_up = state.up.desired;

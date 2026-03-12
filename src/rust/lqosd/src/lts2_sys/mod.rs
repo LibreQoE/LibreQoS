@@ -1,12 +1,13 @@
 //! Provides an interface with Insight/LTS2
 
 use parking_lot::Mutex;
-use std::net::IpAddr;
 pub mod license_grant;
 pub(crate) mod lts2_client;
 pub mod shared_types;
 
-use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};
+use crate::lts2_sys::shared_types::{
+    FreeTrialDetails, LtsStatus, OneWayFlow, ShaperThroughput, TwoWayFlow,
+};
 use anyhow::Result;
 use once_cell::sync::Lazy;
 pub use shared_types::RemoteCommand;
@@ -33,57 +34,8 @@ pub fn shaped_devices(timestamp: u64, devices: &[u8]) -> Result<()> {
     lts2_client::submit_shaped_devices(timestamp, devices)
 }
 
-pub fn total_throughput(
-    timestamp: u64,
-    download_bytes: u64,
-    upload_bytes: u64,
-    shaped_download_bytes: u64,
-    shaped_upload_bytes: u64,
-    packets_down: u64,
-    packets_up: u64,
-    packets_tcp_down: u64,
-    packets_tcp_up: u64,
-    packets_udp_down: u64,
-    packets_udp_up: u64,
-    packets_icmp_down: u64,
-    packets_icmp_up: u64,
-    max_rtt: Option<f32>,
-    min_rtt: Option<f32>,
-    median_rtt: Option<f32>,
-    tcp_retransmits_down: i32,
-    tcp_retransmits_up: i32,
-    cake_marks_down: i32,
-    cake_marks_up: i32,
-    cake_drops_down: i32,
-    cake_drops_up: i32,
-) -> Result<()> {
-    lts2_client::submit_total_throughput(
-        timestamp,
-        download_bytes,
-        upload_bytes,
-        shaped_download_bytes,
-        shaped_upload_bytes,
-        packets_down,
-        packets_up,
-        packets_tcp_down,
-        packets_tcp_up,
-        packets_udp_down,
-        packets_udp_up,
-        packets_icmp_down,
-        packets_icmp_up,
-        max_rtt.is_some(),
-        max_rtt.unwrap_or(0.0),
-        min_rtt.is_some(),
-        min_rtt.unwrap_or(0.0),
-        median_rtt.is_some(),
-        median_rtt.unwrap_or(0.0),
-        tcp_retransmits_down,
-        tcp_retransmits_up,
-        cake_marks_down,
-        cake_marks_up,
-        cake_drops_down,
-        cake_drops_up,
-    )
+pub fn total_throughput(throughput: ShaperThroughput) -> Result<()> {
+    lts2_client::submit_total_throughput(throughput)
 }
 
 pub fn shaper_utilization(
@@ -186,66 +138,12 @@ pub fn ingest_batch_complete() -> Result<()> {
     lts2_client::ingest_batch_complete()
 }
 
-pub fn one_way_flow(
-    start_time: u64,
-    end_time: u64,
-    local_ip: IpAddr,
-    remote_ip: IpAddr,
-    protocol: u8,
-    dst_port: u16,
-    src_port: u16,
-    bytes: u64,
-    circuit_hash: Option<i64>,
-) -> Result<()> {
-    lts2_client::one_way_flow(
-        start_time,
-        end_time,
-        local_ip,
-        remote_ip,
-        protocol,
-        dst_port,
-        src_port,
-        bytes,
-        circuit_hash.unwrap_or(0),
-    )
+pub fn one_way_flow(flow: OneWayFlow) -> Result<()> {
+    lts2_client::one_way_flow(flow)
 }
 
-pub fn two_way_flow(
-    start_time: u64,
-    end_time: u64,
-    local_ip: IpAddr,
-    remote_ip: IpAddr,
-    protocol: u8,
-    dst_port: u16,
-    src_port: u16,
-    bytes_down: u64,
-    bytes_up: u64,
-    packets_down: i64,
-    packets_up: i64,
-    retransmit_times_down: Vec<i64>,
-    retransmit_times_up: Vec<i64>,
-    rtt1: f32,
-    rtt2: f32,
-    circuit_hash: Option<i64>,
-) -> Result<()> {
-    lts2_client::two_way_flow(
-        start_time,
-        end_time,
-        local_ip,
-        remote_ip,
-        protocol,
-        dst_port,
-        src_port,
-        bytes_down,
-        bytes_up,
-        packets_down,
-        packets_up,
-        retransmit_times_down,
-        retransmit_times_up,
-        rtt1,
-        rtt2,
-        circuit_hash.unwrap_or(0),
-    )
+pub fn two_way_flow(flow: TwoWayFlow) -> Result<()> {
+    lts2_client::two_way_flow(flow)
 }
 
 pub fn ip_policies(allow_subnets: &Vec<String>, ignore_subnets: &Vec<String>) -> Result<()> {

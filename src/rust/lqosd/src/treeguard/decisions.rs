@@ -28,6 +28,36 @@ pub struct CircuitSqmDecision {
     pub up: Option<CircuitSqmState>,
 }
 
+/// Input to link virtualization decisions.
+#[derive(Clone, Copy, Debug)]
+pub struct LinkVirtualizationInput<'a> {
+    pub now_unix: u64,
+    pub allowlisted: bool,
+    pub cpu_max_pct: Option<u8>,
+    pub cpu_cfg: &'a TreeguardCpuConfig,
+    pub links_cfg: &'a TreeguardLinksConfig,
+    pub qoo_cfg: &'a TreeguardQooConfig,
+    pub rtt_missing: bool,
+    pub qoo: DownUpOrder<Option<f32>>,
+    pub util_ewma_pct: DownUpOrder<f64>,
+    pub sustained_idle: bool,
+    pub state: &'a LinkState,
+}
+
+/// Input to per-circuit SQM decisions.
+#[derive(Clone, Copy, Debug)]
+pub struct CircuitSqmInput<'a> {
+    pub now_unix: u64,
+    pub allowlisted: bool,
+    pub cpu_max_pct: Option<u8>,
+    pub cpu_cfg: &'a TreeguardCpuConfig,
+    pub circuits_cfg: &'a TreeguardCircuitsConfig,
+    pub qoo_cfg: &'a TreeguardQooConfig,
+    pub rtt_missing: bool,
+    pub qoo: DownUpOrder<Option<f32>>,
+    pub state: &'a CircuitState,
+}
+
 /// Returns true if CPU pressure permits taking CPU-saving actions.
 ///
 /// This function is pure: it has no side effects.
@@ -84,19 +114,21 @@ fn rate_limited(recent_changes: usize, max_changes_per_hour: u32) -> bool {
 /// Decide whether to virtualize/unvirtualize a managed node.
 ///
 /// This function is pure: it has no side effects.
-pub fn decide_link_virtualization(
-    now_unix: u64,
-    allowlisted: bool,
-    cpu_max_pct: Option<u8>,
-    cpu_cfg: &TreeguardCpuConfig,
-    links_cfg: &TreeguardLinksConfig,
-    qoo_cfg: &TreeguardQooConfig,
-    rtt_missing: bool,
-    qoo: DownUpOrder<Option<f32>>,
-    util_ewma_pct: DownUpOrder<f64>,
-    sustained_idle: bool,
-    state: &LinkState,
-) -> LinkVirtualDecision {
+pub fn decide_link_virtualization(input: LinkVirtualizationInput<'_>) -> LinkVirtualDecision {
+    let LinkVirtualizationInput {
+        now_unix,
+        allowlisted,
+        cpu_max_pct,
+        cpu_cfg,
+        links_cfg,
+        qoo_cfg,
+        rtt_missing,
+        qoo,
+        util_ewma_pct,
+        sustained_idle,
+        state,
+    } = input;
+
     if !allowlisted {
         return LinkVirtualDecision::NoChange;
     }
@@ -144,17 +176,19 @@ pub fn decide_link_virtualization(
 /// Decide whether to switch a managed circuit's SQM profile per direction.
 ///
 /// This function is pure: it has no side effects.
-pub fn decide_circuit_sqm(
-    now_unix: u64,
-    allowlisted: bool,
-    cpu_max_pct: Option<u8>,
-    cpu_cfg: &TreeguardCpuConfig,
-    circuits_cfg: &TreeguardCircuitsConfig,
-    qoo_cfg: &TreeguardQooConfig,
-    rtt_missing: bool,
-    qoo: DownUpOrder<Option<f32>>,
-    state: &CircuitState,
-) -> CircuitSqmDecision {
+pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
+    let CircuitSqmInput {
+        now_unix,
+        allowlisted,
+        cpu_max_pct,
+        cpu_cfg,
+        circuits_cfg,
+        qoo_cfg,
+        rtt_missing,
+        qoo,
+        state,
+    } = input;
+
     if !allowlisted {
         return CircuitSqmDecision::default();
     }
@@ -354,22 +388,22 @@ mod tests {
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
-        let decision = decide_link_virtualization(
-            1000,
-            false,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: false,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 0.5, up: 0.5 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 0.5, up: 0.5 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
@@ -379,22 +413,22 @@ mod tests {
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Virtual)
@@ -407,22 +441,22 @@ mod tests {
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(10),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
@@ -434,25 +468,25 @@ mod tests {
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder {
+            util_ewma_pct: DownUpOrder {
                 down: 10.0,
                 up: 1.0,
             },
-            false,
-            &state,
-        );
+            sustained_idle: false,
+            state: &state,
+        });
         assert_eq!(
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Physical)
@@ -467,22 +501,22 @@ mod tests {
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            true,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: true,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            false,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: false,
+            state: &state,
+        });
         assert_eq!(
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Physical)
@@ -497,22 +531,22 @@ mod tests {
         let mut state = LinkState::default();
         state.desired = LinkVirtualState::Virtual;
 
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            true,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: true,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
@@ -524,22 +558,22 @@ mod tests {
         let mut state = LinkState::default();
         state.last_change_unix = Some(1000 - 60);
 
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
@@ -551,22 +585,22 @@ mod tests {
         let mut state = LinkState::default();
         state.recent_changes_unix = VecDeque::from(vec![1, 2, 3, 4]);
 
-        let decision = decide_link_virtualization(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &links,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 1.0, up: 1.0 },
-            true,
-            &state,
-        );
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
@@ -576,20 +610,20 @@ mod tests {
         let circuits = TreeguardCircuitsConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = CircuitState::default();
-        let decision = decide_circuit_sqm(
-            1000,
-            false,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: false,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision, CircuitSqmDecision::default());
     }
 
@@ -603,20 +637,20 @@ mod tests {
         state.up.idle_since_unix = Some(1000 - 900);
         state.down.util_ewma_pct.update(1.0, 0.1);
         state.up.util_ewma_pct.update(1.0, 0.1);
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
         assert_eq!(decision.up, Some(CircuitSqmState::FqCodel));
     }
@@ -631,20 +665,20 @@ mod tests {
         state.up.idle_since_unix = Some(1000 - 900);
         state.down.util_ewma_pct.update(1.0, 0.1);
         state.up.util_ewma_pct.update(1.0, 0.1);
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(50.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
         assert_eq!(decision.up, None);
     }
@@ -664,20 +698,20 @@ mod tests {
             ..Default::default()
         };
 
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(10),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision.down, Some(CircuitSqmState::Cake));
         assert_eq!(decision.up, Some(CircuitSqmState::Cake));
     }
@@ -693,20 +727,20 @@ mod tests {
         state.down.util_ewma_pct.update(1.0, 0.1);
         state.up.util_ewma_pct.update(1.0, 0.1);
 
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            true,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: true,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision.down, Some(CircuitSqmState::FqCodel));
         assert_eq!(decision.up, Some(CircuitSqmState::FqCodel));
     }
@@ -722,20 +756,20 @@ mod tests {
         state.down.util_ewma_pct.update(10.0, 0.1);
         state.up.util_ewma_pct.update(10.0, 0.1);
 
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision.down, Some(CircuitSqmState::Cake));
         assert_eq!(decision.up, Some(CircuitSqmState::Cake));
     }
@@ -749,20 +783,20 @@ mod tests {
         state.down.last_change_unix = Some(1000 - 60);
         state.up.last_change_unix = Some(1000 - 60);
 
-        let decision = decide_circuit_sqm(
-            1000,
-            true,
-            Some(90),
-            &cpu,
-            &circuits,
-            &qoo_cfg,
-            false,
-            DownUpOrder {
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
                 down: Some(90.0),
                 up: Some(90.0),
             },
-            &state,
-        );
+            state: &state,
+        });
         assert_eq!(decision, CircuitSqmDecision::default());
     }
 

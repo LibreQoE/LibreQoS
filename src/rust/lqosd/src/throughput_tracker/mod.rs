@@ -13,7 +13,7 @@ use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
-    throughput_tracker::tracking_data::ThroughputTracker,
+    throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
 };
 use arc_swap::ArcSwap;
 pub(crate) use flow_data::RttBuffer;
@@ -129,17 +129,6 @@ fn throughput_task(
         30
     };
 
-    // Obtain the netflow_enabled from the config, default to false
-    let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = &config.flows {
-            flow_config.netflow_enabled
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
     let mut last_submitted_to_lts: Option<Instant> = None;
     let mut tfd = match TimerFd::new() {
         Ok(t) => t,
@@ -183,16 +172,15 @@ fn throughput_task(
                 .apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
             timer_metrics.apply_new_throughput_counters =
                 timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_flow_data(
+            THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
                 timeout_seconds,
-                netflow_enabled,
-                netflow_sender.clone(),
-                &mut net_json_calc,
-                &mut rtt_circuit_tracker,
-                &mut rtt_by_circuit,
-                &mut tcp_retries,
-                &mut expired_flows,
-            );
+                sender: netflow_sender.clone(),
+                net_json_calc: &mut net_json_calc,
+                rtt_circuit_tracker: &mut rtt_circuit_tracker,
+                rtt_by_circuit: &mut rtt_by_circuit,
+                tcp_retries: &mut tcp_retries,
+                expired_keys: &mut expired_flows,
+            });
             CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
             let enable_site_heatmaps = lqos_config::load_config()

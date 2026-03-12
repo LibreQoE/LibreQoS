@@ -18,7 +18,6 @@ use client_commands::LtsClientCommand;
 pub(crate) use license_check::{LicenseStatus, get_license_status, set_license_status};
 use lqos_config::load_config;
 pub(crate) use remote_commands::enqueue;
-use std::net::IpAddr;
 use std::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::{error, warn};
@@ -127,66 +126,33 @@ pub fn submit_shaped_devices(timestamp: u64, devices: &[u8]) -> anyhow::Result<(
     Ok(()) // SUCCESS
 }
 
-pub fn submit_total_throughput(
-    timestamp: u64,
-    download_bytes: u64,
-    upload_bytes: u64,
-    shaped_download_bytes: u64,
-    shaped_upload_bytes: u64,
-    packets_down: u64,
-    packets_up: u64,
-    tcp_packets_down: u64,
-    tcp_packets_up: u64,
-    udp_packets_down: u64,
-    udp_packets_up: u64,
-    icmp_packets_down: u64,
-    icmp_packets_up: u64,
-    has_max_rtt: bool,
-    max_rtt: f32,
-    has_min_rtt: bool,
-    min_rtt: f32,
-    has_median_rtt: bool,
-    median_rtt: f32,
-    tcp_retransmits_down: i32,
-    tcp_retransmits_up: i32,
-    cake_marks_down: i32,
-    cake_marks_up: i32,
-    cake_drops_down: i32,
-    cake_drops_up: i32,
-) -> anyhow::Result<()> {
+pub fn submit_total_throughput(throughput: shared_types::ShaperThroughput) -> anyhow::Result<()> {
     if let Ok(tx) = client_commands::get_command_channel() {
-        let max_rtt = if has_max_rtt { Some(max_rtt) } else { None };
-        let min_rtt = if has_min_rtt { Some(min_rtt) } else { None };
-        let median_rtt = if has_median_rtt {
-            Some(median_rtt)
-        } else {
-            None
-        };
         if tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::TotalThroughput {
-                    timestamp,
-                    download_bytes,
-                    upload_bytes,
-                    shaped_download_bytes,
-                    shaped_upload_bytes,
-                    packets_down,
-                    packets_up,
-                    tcp_packets_down,
-                    tcp_packets_up,
-                    udp_packets_down,
-                    udp_packets_up,
-                    icmp_packets_down,
-                    icmp_packets_up,
-                    max_rtt,
-                    min_rtt,
-                    median_rtt,
-                    tcp_retransmits_down,
-                    tcp_retransmits_up,
-                    cake_marks_down,
-                    cake_marks_up,
-                    cake_drops_down,
-                    cake_drops_up,
+                    timestamp: throughput.tick,
+                    download_bytes: throughput.bytes_per_second_down as u64,
+                    upload_bytes: throughput.bytes_per_second_up as u64,
+                    shaped_download_bytes: throughput.shaped_bytes_per_second_down as u64,
+                    shaped_upload_bytes: throughput.shaped_bytes_per_second_up as u64,
+                    packets_down: throughput.packets_down as u64,
+                    packets_up: throughput.packets_up as u64,
+                    tcp_packets_down: throughput.tcp_packets_down as u64,
+                    tcp_packets_up: throughput.tcp_packets_up as u64,
+                    udp_packets_down: throughput.udp_packets_down as u64,
+                    udp_packets_up: throughput.udp_packets_up as u64,
+                    icmp_packets_down: throughput.icmp_packets_down as u64,
+                    icmp_packets_up: throughput.icmp_packets_up as u64,
+                    max_rtt: throughput.max_rtt,
+                    min_rtt: throughput.min_rtt,
+                    median_rtt: throughput.median_rtt,
+                    tcp_retransmits_down: throughput.tcp_retransmits_down,
+                    tcp_retransmits_up: throughput.tcp_retransmits_up,
+                    cake_marks_down: throughput.cake_marks_down,
+                    cake_marks_up: throughput.cake_marks_up,
+                    cake_drops_down: throughput.cake_drops_down,
+                    cake_drops_up: throughput.cake_drops_up,
                 },
             ))
             .is_err()
@@ -495,30 +461,20 @@ pub fn ingest_batch_complete() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn one_way_flow(
-    start_time: u64,
-    end_time: u64,
-    local_ip: IpAddr,
-    remote_ip: IpAddr,
-    protocol: u8,
-    dst_port: u16,
-    src_port: u16,
-    bytes: u64,
-    circuit_hash: i64,
-) -> anyhow::Result<()> {
+pub fn one_way_flow(flow: shared_types::OneWayFlow) -> anyhow::Result<()> {
     if let Ok(tx) = client_commands::get_command_channel()
         && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::OneWayFlow {
-                    start_time,
-                    end_time,
-                    local_ip,
-                    remote_ip,
-                    protocol,
-                    dst_port,
-                    src_port,
-                    bytes,
-                    circuit_hash,
+                    start_time: flow.start_time,
+                    end_time: flow.end_time,
+                    local_ip: flow.local_ip,
+                    remote_ip: flow.remote_ip,
+                    protocol: flow.protocol,
+                    dst_port: flow.dst_port,
+                    src_port: flow.src_port,
+                    bytes: flow.bytes,
+                    circuit_hash: flow.circuit_hash,
                 },
             ))
             .is_err()
@@ -531,44 +487,27 @@ pub fn one_way_flow(
     Ok(())
 }
 
-pub fn two_way_flow(
-    start_time: u64,
-    end_time: u64,
-    local_ip: IpAddr,
-    remote_ip: IpAddr,
-    protocol: u8,
-    dst_port: u16,
-    src_port: u16,
-    bytes_down: u64,
-    bytes_up: u64,
-    packets_down: i64,
-    packets_up: i64,
-    retransmit_times_down: Vec<i64>,
-    retransmit_times_up: Vec<i64>,
-    rtt1: f32,
-    rtt2: f32,
-    circuit_hash: i64,
-) -> anyhow::Result<()> {
+pub fn two_way_flow(flow: shared_types::TwoWayFlow) -> anyhow::Result<()> {
     if let Ok(tx) = client_commands::get_command_channel()
         && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::TwoWayFlow {
-                    start_time,
-                    end_time,
-                    local_ip,
-                    remote_ip,
-                    protocol,
-                    dst_port,
-                    src_port,
-                    bytes_down,
-                    bytes_up,
-                    retransmit_times_down,
-                    retransmit_times_up,
-                    rtt1,
-                    rtt2,
-                    circuit_hash,
-                    packets_down,
-                    packets_up,
+                    start_time: flow.start_time,
+                    end_time: flow.end_time,
+                    local_ip: flow.local_ip,
+                    remote_ip: flow.remote_ip,
+                    protocol: flow.protocol,
+                    dst_port: flow.dst_port,
+                    src_port: flow.src_port,
+                    bytes_down: flow.bytes_down,
+                    bytes_up: flow.bytes_up,
+                    retransmit_times_down: flow.retransmit_times_down,
+                    retransmit_times_up: flow.retransmit_times_up,
+                    rtt1: flow.rtt[0],
+                    rtt2: flow.rtt[1],
+                    circuit_hash: flow.circuit_hash,
+                    packets_down: flow.packets_down.unwrap_or_default(),
+                    packets_up: flow.packets_up.unwrap_or_default(),
                 },
             ))
             .is_err()

@@ -500,24 +500,26 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
             .collect();
 
-        if let Err(e) = crate::lts2_sys::two_way_flow(
+        if let Err(e) = crate::lts2_sys::two_way_flow(crate::lts2_sys::shared_types::TwoWayFlow {
             start_time,
-            last_seen,
-            key.local_ip.as_ip(),
-            key.remote_ip.as_ip(),
-            key.ip_protocol,
-            key.dst_port,
-            key.src_port,
-            data.bytes_sent.down,
-            data.bytes_sent.up,
-            data.packets_sent.down as i64,
-            data.packets_sent.up as i64,
+            end_time: last_seen,
+            local_ip: key.local_ip.as_ip(),
+            remote_ip: key.remote_ip.as_ip(),
+            protocol: key.ip_protocol,
+            dst_port: key.dst_port,
+            src_port: key.src_port,
+            bytes_down: data.bytes_sent.down,
+            bytes_up: data.bytes_sent.up,
             retransmit_times_down,
             retransmit_times_up,
-            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
-            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
-            circuit_hash,
-        ) {
+            rtt: [
+                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
+                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
+            ],
+            circuit_hash: circuit_hash.unwrap_or(0),
+            packets_down: Some(data.packets_sent.down as i64),
+            packets_up: Some(data.packets_sent.up as i64),
+        }) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");
         }
         if let Ok(time) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -534,17 +536,17 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         if !config.long_term_stats.gather_stats {
             return;
         }
-        if let Err(e) = crate::lts2_sys::one_way_flow(
+        if let Err(e) = crate::lts2_sys::one_way_flow(crate::lts2_sys::shared_types::OneWayFlow {
             start_time,
-            last_seen,
-            key.local_ip.as_ip(),
-            key.remote_ip.as_ip(),
-            key.ip_protocol,
-            key.dst_port,
-            key.src_port,
-            data.bytes_sent.sum(),
-            circuit_hash,
-        ) {
+            end_time: last_seen,
+            local_ip: key.local_ip.as_ip(),
+            remote_ip: key.remote_ip.as_ip(),
+            protocol: key.ip_protocol,
+            dst_port: key.dst_port,
+            src_port: key.src_port,
+            bytes: data.bytes_sent.sum(),
+            circuit_hash: circuit_hash.unwrap_or(0),
+        }) {
             debug!("Failed to send one-way flow to LTS2: {e:?}");
         }
     }

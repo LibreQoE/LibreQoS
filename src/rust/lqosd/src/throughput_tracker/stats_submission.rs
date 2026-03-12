@@ -210,30 +210,30 @@ pub(crate) fn submit_throughput_stats(
             median_rtt = Some(rtt_data.median);
         }
         let tcp_retransmits = min_max_median_tcp_retransmits();
-        if crate::lts2_sys::total_throughput(
-            now,
-            scale_u64_by_f64(bytes.down, scale),
-            scale_u64_by_f64(bytes.up, scale),
-            scale_u64_by_f64(shaped_bytes.down, scale),
-            scale_u64_by_f64(shaped_bytes.up, scale),
-            scale_u64_by_f64(packets_per_second.0, scale),
-            scale_u64_by_f64(packets_per_second.1, scale),
-            scale_u64_by_f64(tcp_packets_per_second.0, scale),
-            scale_u64_by_f64(tcp_packets_per_second.1, scale),
-            scale_u64_by_f64(udp_packets_per_second.0, scale),
-            scale_u64_by_f64(udp_packets_per_second.1, scale),
-            scale_u64_by_f64(icmp_packets_per_second.0, scale),
-            scale_u64_by_f64(icmp_packets_per_second.1, scale),
-            min_rtt,
+        if crate::lts2_sys::total_throughput(crate::lts2_sys::shared_types::ShaperThroughput {
+            tick: now,
+            bytes_per_second_down: scale_u64_by_f64(bytes.down, scale) as i64,
+            bytes_per_second_up: scale_u64_by_f64(bytes.up, scale) as i64,
+            shaped_bytes_per_second_down: scale_u64_by_f64(shaped_bytes.down, scale) as i64,
+            shaped_bytes_per_second_up: scale_u64_by_f64(shaped_bytes.up, scale) as i64,
+            packets_down: scale_u64_by_f64(packets_per_second.0, scale) as i64,
+            packets_up: scale_u64_by_f64(packets_per_second.1, scale) as i64,
+            tcp_packets_down: scale_u64_by_f64(tcp_packets_per_second.0, scale) as i64,
+            tcp_packets_up: scale_u64_by_f64(tcp_packets_per_second.1, scale) as i64,
+            udp_packets_down: scale_u64_by_f64(udp_packets_per_second.0, scale) as i64,
+            udp_packets_up: scale_u64_by_f64(udp_packets_per_second.1, scale) as i64,
+            icmp_packets_down: scale_u64_by_f64(icmp_packets_per_second.0, scale) as i64,
+            icmp_packets_up: scale_u64_by_f64(icmp_packets_per_second.1, scale) as i64,
             max_rtt,
+            min_rtt,
             median_rtt,
-            tcp_retransmits.down,
-            tcp_retransmits.up,
-            TOTAL_QUEUE_STATS.marks.get_down() as i32,
-            TOTAL_QUEUE_STATS.marks.get_up() as i32,
-            TOTAL_QUEUE_STATS.drops.get_down() as i32,
-            TOTAL_QUEUE_STATS.drops.get_up() as i32,
-        )
+            tcp_retransmits_down: tcp_retransmits.down,
+            tcp_retransmits_up: tcp_retransmits.up,
+            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
+            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
+            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
+            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
+        })
         .is_err()
         {
             warn!("Error sending message to LTS2.");

@@ -2057,6 +2057,7 @@ impl Bakery {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_site(
         &mut self,
         site_name: String,
@@ -2084,6 +2085,7 @@ impl Bakery {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_circuit(
         &mut self,
         circuit_name: String,

@@ -38,6 +38,16 @@ const MAX_FLOWS: usize = 1_000_000;
 pub const MAX_RETRY_TIMES: usize = 128;
 const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
 
+pub(crate) struct FlowApplyContext<'a> {
+    pub(crate) timeout_seconds: u64,
+    pub(crate) sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    pub(crate) net_json_calc: &'a mut NetworkJson,
+    pub(crate) rtt_circuit_tracker: &'a mut FxHashMap<XdpIpAddress, RttBuffer>,
+    pub(crate) rtt_by_circuit: &'a mut FxHashMap<i64, RttBuffer>,
+    pub(crate) tcp_retries: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
+    pub(crate) expired_keys: &'a mut Vec<FlowbeeKey>,
+}
+
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
     pub(crate) raw_data: Mutex<HashMap<XdpIpAddress, ThroughputEntry>>,
@@ -628,17 +638,16 @@ impl ThroughputTracker {
         });
     }
 
-    pub(crate) fn apply_flow_data(
-        &self,
-        timeout_seconds: u64,
-        _netflow_enabled: bool,
-        sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-        net_json_calc: &mut NetworkJson,
-        rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
-        rtt_by_circuit: &mut FxHashMap<i64, RttBuffer>,
-        tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
-        expired_keys: &mut Vec<FlowbeeKey>,
-    ) {
+    pub(crate) fn apply_flow_data(&self, ctx: FlowApplyContext<'_>) {
+        let FlowApplyContext {
+            timeout_seconds,
+            sender,
+            net_json_calc,
+            rtt_circuit_tracker,
+            rtt_by_circuit,
+            tcp_retries,
+            expired_keys,
+        } = ctx;
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let enable_asn_heatmaps = lqos_config::load_config()

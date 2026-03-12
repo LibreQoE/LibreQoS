@@ -32,6 +32,18 @@ pub struct SiteStateTracker {
     active_circuit_fallbacks: HashSet<String>,
 }
 
+struct CircuitQueueRecommendationContext<'a> {
+    active_circuit_fallbacks: &'a mut HashSet<String>,
+    site: &'a mut SiteState,
+    config: &'a StormguardConfig,
+    recommendation: &'a Recommendation,
+    summary: &'a str,
+    circuit_id: &'a str,
+    cooldown_secs: f32,
+    log_sender: &'a std::sync::mpsc::Sender<LogCommand>,
+    bakery_sender: Sender<BakeryCommands>,
+}
+
 impl SiteStateTracker {
     pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
@@ -483,17 +495,17 @@ impl SiteStateTracker {
 
             // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
             if let Some(circuit_id) = queue.circuit_id.as_deref() {
-                Self::handle_circuit_queue_recommendation(
-                    &mut self.active_circuit_fallbacks,
+                Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
+                    active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
                     site,
                     config,
-                    &recommendation,
-                    &summary,
+                    recommendation: &recommendation,
+                    summary: &summary,
                     circuit_id,
                     cooldown_secs,
-                    &log_sender,
-                    bakery_sender.clone(),
-                );
+                    log_sender: &log_sender,
+                    bakery_sender: bakery_sender.clone(),
+                });
                 continue;
             }
 
@@ -611,17 +623,18 @@ impl SiteStateTracker {
         }
     }
 
-    fn handle_circuit_queue_recommendation(
-        active_circuit_fallbacks: &mut HashSet<String>,
-        site: &mut SiteState,
-        config: &StormguardConfig,
-        recommendation: &Recommendation,
-        summary: &str,
-        circuit_id: &str,
-        cooldown_secs: f32,
-        log_sender: &std::sync::mpsc::Sender<LogCommand>,
-        bakery_sender: Sender<BakeryCommands>,
-    ) {
+    fn handle_circuit_queue_recommendation(ctx: CircuitQueueRecommendationContext<'_>) {
+        let CircuitQueueRecommendationContext {
+            active_circuit_fallbacks,
+            site,
+            config,
+            recommendation,
+            summary,
+            circuit_id,
+            cooldown_secs,
+            log_sender,
+            bakery_sender,
+        } = ctx;
         let outcome = if !config.circuit_fallback_enabled {
             CircuitFallbackOutcome::Skipped {
                 reason: "Circuit fallback disabled in config.".to_string(),
