@@ -7,6 +7,7 @@ static API_LAST_SEEN: AtomicU64 = AtomicU64::new(0);
 static CHATBOT_LAST_SEEN: AtomicU64 = AtomicU64::new(0);
 static SCHEDULER_LAST_SEEN: AtomicU64 = AtomicU64::new(0);
 static SCHEDULER_ERROR: Mutex<Option<String>> = Mutex::new(None);
+static SCHEDULER_OUTPUT: Mutex<Option<String>> = Mutex::new(None);
 
 /// Updates the last seen timestamp for the API.
 pub fn api_seen() {
@@ -41,6 +42,15 @@ pub fn scheduler_error(err: Option<String>) {
     *guard = err;
 }
 
+/// Sets the latest scheduler output message.
+///
+/// # Arguments
+/// * `output` - An optional string containing informational scheduler output
+pub fn scheduler_output(output: Option<String>) {
+    let mut guard = SCHEDULER_OUTPUT.lock();
+    *guard = output;
+}
+
 /// Checks if the API is available.
 ///
 /// Returns `true` if the API has been seen within the last 5 minutes.
@@ -69,5 +79,12 @@ pub fn is_scheduler_available() -> bool {
 pub fn scheduler_error_message() -> Option<String> {
     let guard: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Option<String>> =
         SCHEDULER_ERROR.lock();
+    guard.clone()
+}
+
+/// Returns the current scheduler output message, if any.
+pub fn scheduler_output_message() -> Option<String> {
+    let guard: parking_lot::lock_api::MutexGuard<'_, parking_lot::RawMutex, Option<String>> =
+        SCHEDULER_OUTPUT.lock();
     guard.clone()
 }

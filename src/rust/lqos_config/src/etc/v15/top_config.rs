@@ -377,9 +377,7 @@ mod test {
                 let section_name = &trimmed[1..trimmed.len() - 1];
                 skip_section = sections.iter().any(|section| {
                     section_name == *section
-                        || section_name
-                            .strip_prefix(&format!("{section}."))
-                            .is_some()
+                        || section_name.strip_prefix(&format!("{section}.")).is_some()
                 });
             }
 
@@ -619,8 +617,8 @@ minimum_download_percentage = 0.5
 minimum_upload_percentage = 0.5
 "#,
         );
-        let cfg = Config::load_from_string(&raw)
-            .expect("legacy stormguard config should deserialize");
+        let cfg =
+            Config::load_from_string(&raw).expect("legacy stormguard config should deserialize");
 
         let stormguard = cfg.stormguard.expect("stormguard section missing");
         assert!(!stormguard.all_sites);

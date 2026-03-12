@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 lqos_config = { path = "../lqos_config" }
+lqos_utils = { path = "../lqos_utils" }
 serde = { workspace = true }
 serde_json.workspace = true
 reqwest = { workspace = true }

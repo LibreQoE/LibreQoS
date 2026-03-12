@@ -22,7 +22,6 @@ mod queue_stats_total;
 mod retransmits;
 mod rtt_histogram;
 mod stormguard;
-mod treeguard;
 pub mod system_info;
 mod throughput;
 mod top_10;
@@ -30,6 +29,7 @@ mod top_flows;
 mod tree_capacity;
 mod tree_summary;
 mod tree_summary_l2;
+mod treeguard;
 
 use crate::system_stats::SystemStats;
 pub use network_tree::all_circuits;

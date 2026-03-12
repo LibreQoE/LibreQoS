@@ -30,9 +30,10 @@ def install_scheduler_stubs():
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
-    lqlib.overrides_persistent_devices = lambda: []
+    lqlib.scheduler_output = Mock()
+    lqlib.overrides_persistent_devices_effective = lambda: []
     lqlib.overrides_circuit_adjustments = lambda: []
-    lqlib.overrides_network_adjustments = lambda: []
+    lqlib.overrides_network_adjustments_effective = lambda: []
     sys.modules["liblqos_python"] = lqlib
 
     apscheduler_pkg = types.ModuleType("apscheduler")
@@ -147,6 +148,83 @@ class TestSchedulerAffinity(unittest.TestCase):
         mock_popen.assert_called_once_with(
             "/tmp/libreqos/bin/post_integration_hook.sh",
             cwd="/tmp/libreqos/bin",
+        )
+
+
+class TestSchedulerErrorReporting(unittest.TestCase):
+    def test_python_integration_output_does_not_set_scheduler_error(self):
+        result = types.SimpleNamespace(returncode=0, stdout="normal info\n", stderr="")
+
+        with patch.object(scheduler, "run_integration_subprocess", return_value=result):
+            with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                    with patch("builtins.print"):
+                        scheduler.run_python_integration(
+                            "integrationExample",
+                            "importExample",
+                            label="Example",
+                        )
+
+        mock_scheduler_error.assert_not_called()
+        mock_scheduler_output.assert_called_once_with("normal info\n")
+
+    def test_python_integration_nonzero_exit_sets_scheduler_error(self):
+        result = types.SimpleNamespace(returncode=2, stdout="normal info\n", stderr="")
+
+        with patch.object(scheduler, "run_integration_subprocess", return_value=result):
+            with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                    with patch("builtins.print"):
+                        scheduler.run_python_integration(
+                            "integrationExample",
+                            "importExample",
+                            label="Example",
+                        )
+
+        mock_scheduler_error.assert_called_once_with(
+            "Integration Example exited with code 2. Continuing."
+        )
+        mock_scheduler_output.assert_called_once_with("normal info\n")
+
+    def test_import_from_crm_clears_error_and_keeps_success_output_non_error(self):
+        result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
+
+        with patch.object(scheduler, "automatic_import_uisp", return_value=True):
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+                with patch.object(scheduler, "run_integration_subprocess", return_value=result):
+                    with patch.object(scheduler, "apply_lqos_overrides"):
+                        with patch.object(scheduler.os.path, "isfile", return_value=False):
+                            with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                                with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                                    with patch("builtins.print"):
+                                        scheduler.importFromCRM()
+
+        self.assertEqual(mock_scheduler_error.call_args_list, [(( "",),)])
+        self.assertEqual(
+            mock_scheduler_output.call_args_list,
+            [(( "",),), (("uisp info\n",),)],
+        )
+
+    def test_import_from_crm_reports_nonzero_exit(self):
+        result = types.SimpleNamespace(returncode=1, stdout="uisp info\n", stderr="")
+
+        with patch.object(scheduler, "automatic_import_uisp", return_value=True):
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+                with patch.object(scheduler, "run_integration_subprocess", return_value=result):
+                    with patch.object(scheduler, "apply_lqos_overrides"):
+                        with patch.object(scheduler.os.path, "isfile", return_value=False):
+                            with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                                with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                                    with patch("builtins.print"):
+                                        scheduler.importFromCRM()
+
+        self.assertEqual(
+            mock_scheduler_error.call_args_list,
+            [(( "",),), (("UISP integration exited with code 1. Continuing.",),)],
+        )
+        self.assertEqual(
+            mock_scheduler_output.call_args_list,
+            [(( "",),), (("uisp info\n",),)],
         )
 
 

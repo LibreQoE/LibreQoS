@@ -1,4 +1,5 @@
 use anyhow::Result;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use serde::de::DeserializeOwned;
 
 fn url_fixup(base: &str) -> String {
@@ -71,13 +72,14 @@ mod tests {
     }
 }
 
-async fn get_client() -> Result<reqwest::Client, reqwest::Error> {
+async fn get_client() -> Result<reqwest::Client> {
     let mut ignore_ssl_errors = false;
     if let Ok(cfg) = lqos_config::load_config() {
         if let Some(ssl) = cfg.uisp_integration.insecure_ssl {
             ignore_ssl_errors = ssl;
         }
     }
+    ensure_rustls_crypto_provider()?;
     Ok(reqwest::Client::builder()
         .danger_accept_invalid_certs(ignore_ssl_errors)
         .danger_accept_invalid_hostnames(ignore_ssl_errors)
@@ -87,11 +89,7 @@ async fn get_client() -> Result<reqwest::Client, reqwest::Error> {
 /// Submits a request to the UNMS API and returns the result as unprocessed text.
 /// This is a debug function: it doesn't do any parsing
 #[allow(dead_code)]
-pub async fn nms_request_get_text(
-    url: &str,
-    key: &str,
-    api: &str,
-) -> Result<String, reqwest::Error> {
+pub async fn nms_request_get_text(url: &str, key: &str, api: &str) -> Result<String> {
     let full_url = format!("{}/{}", url_fixup(api), url);
     //println!("{full_url}");
     let client = get_client().await?;
@@ -101,19 +99,14 @@ pub async fn nms_request_get_text(
         .header("'Content-Type", "application/json")
         .header("X-Auth-Token", key)
         .send()
-        .await
-        .unwrap();
+        .await?;
 
-    res.text().await
+    Ok(res.text().await?)
 }
 
 /// Submits a request to the UNMS API, returning a deserialized vector of type T.
 #[allow(dead_code)]
-pub async fn nms_request_get_vec<T>(
-    url: &str,
-    key: &str,
-    api: &str,
-) -> Result<Vec<T>, reqwest::Error>
+pub async fn nms_request_get_vec<T>(url: &str, key: &str, api: &str) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
 {
@@ -128,11 +121,11 @@ where
         .send()
         .await?;
 
-    res.json::<Vec<T>>().await
+    Ok(res.json::<Vec<T>>().await?)
 }
 
 #[allow(dead_code)]
-pub async fn nms_request_get_one<T>(url: &str, key: &str, api: &str) -> Result<T, reqwest::Error>
+pub async fn nms_request_get_one<T>(url: &str, key: &str, api: &str) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -147,16 +140,12 @@ where
         .send()
         .await?;
 
-    res.json::<T>().await
+    Ok(res.json::<T>().await?)
 }
 
 /// This is a debug function: it doesn't do any parsing
 #[allow(dead_code)]
-pub async fn crm_request_get_text(
-    api: &str,
-    key: &str,
-    url: &str,
-) -> Result<String, reqwest::Error> {
+pub async fn crm_request_get_text(api: &str, key: &str, url: &str) -> Result<String> {
     let full_url = format!("{}/{}", url_fixup(api), url);
     let client = get_client().await?;
 
@@ -167,15 +156,11 @@ pub async fn crm_request_get_text(
         .send()
         .await?;
 
-    res.text().await
+    Ok(res.text().await?)
 }
 
 #[allow(dead_code)]
-pub async fn crm_request_get_vec<T>(
-    api: &str,
-    key: &str,
-    url: &str,
-) -> Result<Vec<T>, reqwest::Error>
+pub async fn crm_request_get_vec<T>(api: &str, key: &str, url: &str) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
 {
@@ -189,11 +174,11 @@ where
         .send()
         .await?;
 
-    res.json::<Vec<T>>().await
+    Ok(res.json::<Vec<T>>().await?)
 }
 
 #[allow(dead_code)]
-pub async fn crm_request_get_one<T>(api: &str, key: &str, url: &str) -> Result<T, reqwest::Error>
+pub async fn crm_request_get_one<T>(api: &str, key: &str, url: &str) -> Result<T>
 where
     T: DeserializeOwned,
 {
@@ -207,5 +192,5 @@ where
         .send()
         .await?;
 
-    res.json::<T>().await
+    Ok(res.json::<T>().await?)
 }
