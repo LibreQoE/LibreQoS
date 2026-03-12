@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::node_manager::local_api::flow_map;
 use crate::node_manager::ws::messages::{EtherProtocolsData, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -8,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 
 pub async fn endpoints_by_country(
     channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    _bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
 ) {
     if !channels
         .is_channel_alive(PublishedChannels::EndpointsByCountry)
@@ -17,30 +18,12 @@ pub async fn endpoints_by_country(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    let request = BusRequest::CurrentEndpointsByCountry;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("EndpointsByCountry: failed to send request to bus: {:?}", e);
-        return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "EndpointsByCountry: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
+    let message = WsResponse::EndpointsByCountry {
+        data: flow_map::endpoints_by_country_data(),
     };
-    for reply in replies.responses.into_iter() {
-        if let BusResponse::CurrentEndpointsByCountry(countries) = reply {
-            let message = WsResponse::EndpointsByCountry { data: countries };
-            channels
-                .send(PublishedChannels::EndpointsByCountry, message)
-                .await;
-        }
-    }
+    channels
+        .send(PublishedChannels::EndpointsByCountry, message)
+        .await;
 }
 
 pub async fn ether_protocols(

@@ -336,7 +336,12 @@ fn main() -> Result<()> {
                         Err(e) => error!("Insight control channel failed to start: {:#}", e),
                     }
 
-                    match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                    match lqos_stormguard::start_stormguard(
+                        bakery_sender_for_async,
+                        shaped_devices_tracker::full_network_map_snapshot,
+                    )
+                    .await
+                    {
                         Ok(_) => info!("StormGuard started successfully"),
                         Err(e) => error!("StormGuard failed to start: {:#}", e),
                     }

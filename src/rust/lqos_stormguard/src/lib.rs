@@ -11,6 +11,7 @@
 
 use lqos_bakery::BakeryCommands;
 use lqos_bus::StormguardDebugEntry;
+use lqos_config::NetworkJsonTransport;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
@@ -36,6 +37,7 @@ pub static STORMGUARD_DEBUG: Mutex<Vec<StormguardDebugEntry>> = Mutex::new(Vec::
 /// nothing to do.
 pub async fn start_stormguard(
     bakery: crossbeam_channel::Sender<BakeryCommands>,
+    network_map_provider: fn() -> Vec<(usize, NetworkJsonTransport)>,
 ) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -90,9 +92,12 @@ pub async fn start_stormguard(
         if let (Some(cfg), Some(tracker)) = (&config, &mut site_state_tracker) {
             let (active_ping_sample, active_ping_updated) = active_ping.latest();
             // Update all the ring buffers
-            tracker
-                .read_new_tick_data(cfg, active_ping_sample, active_ping_updated)
-                .await;
+            tracker.read_new_tick_data(
+                cfg,
+                active_ping_sample,
+                active_ping_updated,
+                network_map_provider(),
+            );
 
             // Check for state changes
             tracker.check_state(cfg);
