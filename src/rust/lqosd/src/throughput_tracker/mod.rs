@@ -768,9 +768,9 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     samples.sort_by(|a, b| a.total_cmp(b));
 
     let result = MinMaxMedianRtt {
-        min: samples[0] as f32,
-        max: samples[samples.len() - 1] as f32,
-        median: samples[samples.len() / 2] as f32,
+        min: samples[0],
+        max: samples[samples.len() - 1],
+        median: samples[samples.len() / 2],
     };
 
     Some(result)

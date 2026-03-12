@@ -260,7 +260,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
                 let missed_ticks = tfd.read();
                 if missed_ticks > 1 {
                     warn!("All Queue Reader: Missed {} ticks", missed_ticks - 1);
-                    interval_seconds = 2 + (missed_ticks - 1) as u64;
+                    interval_seconds = 2 + (missed_ticks - 1);
                     tfd.set_state(
                         TimerState::Periodic {
                             current: Duration::new(interval_seconds, 0),

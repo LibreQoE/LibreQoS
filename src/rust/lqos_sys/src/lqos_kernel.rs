@@ -419,8 +419,8 @@ pub fn attach_xdp_and_tc_to_interface(
             crate::bifrost_maps::clear_bifrost()?;
             crate::bifrost_maps::map_single_interface_mode(
                 &stick.interface,
-                stick.internet_vlan as u32,
-                stick.network_vlan as u32,
+                stick.internet_vlan,
+                stick.network_vlan,
             )?;
 
             // Actually attach the TC ingress program
