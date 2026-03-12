@@ -85,7 +85,7 @@ pub(super) async fn flows_by_circuit(
         let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> =
             recent_flows_by_circuit(&circuit)
                 .into_iter()
-                .map(|(key, local, analysis)| (key.into(), local, analysis))
+                .map(|(key, local, analysis)| (key, local, analysis))
                 .collect();
 
         if !flows.is_empty() {

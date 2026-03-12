@@ -1,5 +1,4 @@
 use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
-use lqos_bus::QueueStoreTransit;
 use lqos_queue_tracker::{add_watched_queue, get_raw_circuit_data, still_watching};
 
 pub(super) async fn cake_watcher(
@@ -17,9 +16,7 @@ pub(super) async fn cake_watcher(
 
         match get_raw_circuit_data(&circuit_id) {
             lqos_bus::BusResponse::RawQueueData(Some(msg)) => {
-                let response = WsResponse::CakeWatcher {
-                    data: QueueStoreTransit::from(*msg),
-                };
+                let response = WsResponse::CakeWatcher { data: *msg };
                 if let Ok(payload) = encode_ws_message(&response) {
                     let send_result = tx.send(payload).await;
                     if send_result.is_err() {
