@@ -561,13 +561,13 @@ unsafe fn attach_xdp_best_available(
 
     // Try no flags
     match unsafe { try_mode_with_retries(interface_index, prog_fd, None, iface_name, 3) } {
-        Ok(()) => return Ok(()),
+        Ok(()) => Ok(()),
         Err(error) => {
             error!(
                 "XDP attach failed on '{}' in all modes (errno: {}). Suggestion: check for existing XDP programs (ip link show, bpftool net), detach with 'ip link set dev {} xdp off', and clear pinned maps if needed.",
                 iface_name, error, iface_name
             );
-            return Err(Error::msg("Unable to attach to interface"));
+            Err(Error::msg("Unable to attach to interface"))
         }
     }
 }

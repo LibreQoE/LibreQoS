@@ -68,7 +68,7 @@ pub async fn get_username(jar: &CookieJar) -> String {
         return users.get_username(token.value());
     }
 
-    return "Anonymous".to_string();
+    "Anonymous".to_string()
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]

@@ -123,7 +123,6 @@ async fn ping(
         }
         _ => {
             send_timeout(tx, addr.to_string()).await;
-            return;
         }
     }
 }

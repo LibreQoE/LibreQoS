@@ -883,7 +883,6 @@ impl SiteStateTracker {
             new_rate,
         }) {
             warn!("Failed to send StormGuard adjustment command: {}", e);
-            return;
         }
 
         // // Build the HTB command
