@@ -56,9 +56,9 @@ impl CpuMapping {
         }
 
         // Populate CPU map entries for each destination CPU (physical CPU IDs).
-        for cpu_dest in shaping.iter().copied() {
+        for cpu_dest in shaping.iter() {
             debug!("Mapping destination CPU #{cpu_dest} into cpumap");
-            let cpu_ptr: *const u32 = &cpu_dest;
+            let cpu_ptr: *const u32 = cpu_dest;
             let error = unsafe {
                 bpf_map_update_elem(
                     self.fd_cpu_map,
