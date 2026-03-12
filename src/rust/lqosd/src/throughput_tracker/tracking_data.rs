@@ -686,7 +686,7 @@ impl ThroughputTracker {
                     // DO NOT process it again.
                 } else if data.last_seen < expire {
                     // This flow has expired but not been handled yet. Add it to the list to be cleaned.
-                    expired_keys.push(key.clone());
+                    expired_keys.push(*key);
                 } else {
                     // We have a valid flow, so it needs to be tracked
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
@@ -899,7 +899,7 @@ impl ThroughputTracker {
                             }
                             all_flows_lock
                                 .flow_data
-                                .insert(key.clone(), (flow_summary, flow_analysis));
+                                .insert(*key, (flow_summary, flow_analysis));
                         }
                     }
 
@@ -924,7 +924,7 @@ impl ThroughputTracker {
                     }
                     if data.end_status != 0 {
                         // The flow has ended. We need to remove it from the map.
-                        expired_keys.push(key.clone());
+                        expired_keys.push(*key);
                     }
                 }
             }); // End flow iterator
@@ -1036,7 +1036,7 @@ impl ThroughputTracker {
                 for key in expired_keys.iter() {
                     // Send it off to netperf for analysis if we are supporting doing so.
                     if let Some(d) = all_flows_lock.flow_data.remove(&key) {
-                        let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
+                        let _ = sender.send((*key, (d.0.clone(), d.1)));
                     }
                 }
 
@@ -1148,7 +1148,7 @@ impl ThroughputTracker {
                 let keep_it = v.last_seen >= expire && v.last_seen > 0;
                 if !keep_it {
                     debug!("Removing {:?} from tracking", k);
-                    keys_to_expire.push(k.clone());
+                    keys_to_expire.push(*k);
                 }
                 keep_it
             });

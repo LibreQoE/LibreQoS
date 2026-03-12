@@ -65,7 +65,7 @@ fn recent_flows_by_circuit(
                             last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
                         },
                         local.clone(),
-                        analysis.clone(),
+                        *analysis,
                     ))
                 })
                 .collect();

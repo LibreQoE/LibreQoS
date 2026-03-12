@@ -575,7 +575,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             } => {
                 if let Some(sender) = BLACKBOARD_SENDER.get() {
                     let _ = sender.send(BlackboardCommand::BlackboardData {
-                        subsystem: subsystem.clone(),
+                        subsystem: *subsystem,
                         key: key.to_string(),
                         value: value.to_string(),
                     });
@@ -653,9 +653,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
                         site_hash: *site_hash,
-                        parent_class_id: parent_class_id.clone(),
-                        up_parent_class_id: up_parent_class_id.clone(),
-                        class_minor: class_minor.clone(),
+                        parent_class_id: *parent_class_id,
+                        up_parent_class_id: *up_parent_class_id,
+                        class_minor: *class_minor,
                         download_bandwidth_min: *download_bandwidth_min,
                         upload_bandwidth_min: *upload_bandwidth_min,
                         download_bandwidth_max: *download_bandwidth_max,
@@ -698,12 +698,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         parent_class_id: *parent_class_id,
                         up_parent_class_id: *up_parent_class_id,
                         class_minor: *class_minor,
-                        download_bandwidth_min: download_bandwidth_min.clone(),
-                        upload_bandwidth_min: upload_bandwidth_min.clone(),
-                        download_bandwidth_max: download_bandwidth_max.clone(),
-                        upload_bandwidth_max: upload_bandwidth_max.clone(),
-                        class_major: class_major.clone(),
-                        up_class_major: up_class_major.clone(),
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                        class_major: *class_major,
+                        up_class_major: *up_class_major,
                         ip_addresses: ip_addresses.clone(),
                         sqm_override: sqm_override.clone(),
                     });

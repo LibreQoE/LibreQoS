@@ -1034,7 +1034,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .flow_data
         .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
+        .map(|(key, value)| (*key, value.clone()))
         .collect();
     std::mem::drop(lock); // Early lock release
 

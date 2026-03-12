@@ -179,8 +179,8 @@ impl FlowActor {
                                 .iter()
                                 .filter_map(|(k, v)| {
                                     let snapshot = v.snapshot_if_new_data()?;
-                                    keys_to_clear.push(k.clone());
-                                    Some((k.clone(), snapshot))
+                                    keys_to_clear.push(*k);
+                                    Some((*k, snapshot))
                                 })
                                 .collect();
 

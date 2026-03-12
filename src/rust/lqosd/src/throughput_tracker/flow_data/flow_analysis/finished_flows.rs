@@ -135,7 +135,7 @@ impl TimeBuffer {
                 if !last_country.is_empty() {
                     country_summary.push((
                         last_country.to_string(),
-                        total_bytes.clone(),
+                        total_bytes,
                         [
                             Self::median_f32(&rtt_buffer[0]),
                             Self::median_f32(&rtt_buffer[1]),
