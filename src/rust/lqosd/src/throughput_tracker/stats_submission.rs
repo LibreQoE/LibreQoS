@@ -279,14 +279,11 @@ pub(crate) fn submit_throughput_stats(
             .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
-                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
-                    if h.bytes_per_second.down > *dl {
-                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
-                        crazy = true;
-                    } else if h.bytes_per_second.up > *ul {
-                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
-                        crazy = true;
-                    }
+                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
+                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                {
+                    crazy_values.insert(h.circuit_hash.unwrap_or(0));
+                    crazy = true;
                 }
 
                 if crazy {
@@ -522,7 +519,7 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Shaper utilization
-        if counter % 60 == 0 {
+        if counter.is_multiple_of(60) {
             let (tx, rx) = tokio::sync::oneshot::channel();
             if system_usage_actor.send(tx).is_ok()
                 && let Ok(reply) = rx.blocking_recv()

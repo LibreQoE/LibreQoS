@@ -217,41 +217,39 @@ fn throughput_task(
                 stats_counter,
                 system_usage_actor.clone(),
             );
-        } else {
-            if let Some(last) = last_submitted_to_lts {
-                let elapsed_f64 = last.elapsed().as_secs_f64();
-                // Temporary: place this in a thread to not block the timer
-                let my_system_usage_actor = system_usage_actor.clone();
-                // Submit if a reasonable amount of time has passed - drop if there was a long hitch
-                if elapsed_f64 < 2.0 {
-                    match std::thread::Builder::new()
-                        .name("Throughput Stats Submit".to_string())
-                        .spawn(move || {
-                            stats_submission::submit_throughput_stats(
-                                elapsed_f64,
-                                stats_counter,
-                                my_system_usage_actor,
-                            );
-                        }) {
-                        Ok(handle) => {
-                            if let Err(e) = handle.join() {
-                                info!(
-                                    "Throughput stats submit thread join error (ignored): {:?}",
-                                    e
-                                );
-                            }
-                        }
-                        Err(e) => {
+        } else if let Some(last) = last_submitted_to_lts {
+            let elapsed_f64 = last.elapsed().as_secs_f64();
+            // Temporary: place this in a thread to not block the timer
+            let my_system_usage_actor = system_usage_actor.clone();
+            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
+            if elapsed_f64 < 2.0 {
+                match std::thread::Builder::new()
+                    .name("Throughput Stats Submit".to_string())
+                    .spawn(move || {
+                        stats_submission::submit_throughput_stats(
+                            elapsed_f64,
+                            stats_counter,
+                            my_system_usage_actor,
+                        );
+                    }) {
+                    Ok(handle) => {
+                        if let Err(e) = handle.join() {
                             info!(
-                                "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                                "Throughput stats submit thread join error (ignored): {:?}",
                                 e
                             );
                         }
                     }
+                    Err(e) => {
+                        info!(
+                            "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                            e
+                        );
+                    }
                 }
-            } else {
-                info!("No last submission timestamp; skipping stats submission this cycle");
             }
+        } else {
+            info!("No last submission timestamp; skipping stats submission this cycle");
         }
         // Notify of completion, which triggers processing
         if let Err(e) = crate::lts2_sys::ingest_batch_complete() {

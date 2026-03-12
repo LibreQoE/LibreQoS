@@ -217,9 +217,11 @@ fn compute_oversubscribed_sites() -> Vec<OversubscribedSite> {
             continue;
         }
 
-        let mut tally = OversubTally::default();
-        tally.cap_down = node.max_throughput.0 as f32;
-        tally.cap_up = node.max_throughput.1 as f32;
+        let mut tally = OversubTally {
+            cap_down: node.max_throughput.0 as f32,
+            cap_up: node.max_throughput.1 as f32,
+            ..Default::default()
+        };
 
         let descendants = collect_descendants(idx, &children, nodes);
         for (_circuit_id, (parent_name, down, up)) in circuit_map.iter() {

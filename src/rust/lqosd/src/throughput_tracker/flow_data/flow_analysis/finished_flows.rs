@@ -179,7 +179,7 @@ impl TimeBuffer {
         let mut slice = slice.to_vec();
         slice.sort();
         let mid = slice.len() / 2;
-        if slice.len() % 2 == 0 {
+        if slice.len().is_multiple_of(2) {
             (slice[mid] + slice[mid - 1]) / 2
         } else {
             slice[mid]
@@ -193,7 +193,7 @@ impl TimeBuffer {
         let mut slice = slice.to_vec();
         slice.sort_by(|a, b| a.total_cmp(b));
         let mid = slice.len() / 2;
-        if slice.len() % 2 == 0 {
+        if slice.len().is_multiple_of(2) {
             (slice[mid] + slice[mid - 1]) / 2.0
         } else {
             slice[mid]
@@ -432,7 +432,7 @@ impl TimeBuffer {
     }
 }
 
-pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
+pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(TimeBuffer::new);
 
 pub struct FinishedFlowAnalysis {}
 

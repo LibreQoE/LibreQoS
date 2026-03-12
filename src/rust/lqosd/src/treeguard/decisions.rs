@@ -465,8 +465,10 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = LinkState::default();
-        state.desired = LinkVirtualState::Virtual;
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
 
         let decision = decide_link_virtualization(LinkVirtualizationInput {
             now_unix: 1000,
@@ -498,8 +500,10 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = LinkState::default();
-        state.desired = LinkVirtualState::Virtual;
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
 
         let decision = decide_link_virtualization(LinkVirtualizationInput {
             now_unix: 1000,
@@ -528,8 +532,10 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = LinkState::default();
-        state.desired = LinkVirtualState::Virtual;
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
 
         let decision = decide_link_virtualization(LinkVirtualizationInput {
             now_unix: 1000,
@@ -555,8 +561,10 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = LinkState::default();
-        state.last_change_unix = Some(1000 - 60);
+        let state = LinkState {
+            last_change_unix: Some(1000 - 60),
+            ..Default::default()
+        };
 
         let decision = decide_link_virtualization(LinkVirtualizationInput {
             now_unix: 1000,
@@ -582,8 +590,10 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = LinkState::default();
-        state.recent_changes_unix = VecDeque::from(vec![1, 2, 3, 4]);
+        let state = LinkState {
+            recent_changes_unix: VecDeque::from(vec![1, 2, 3, 4]),
+            ..Default::default()
+        };
 
         let decision = decide_link_virtualization(LinkVirtualizationInput {
             now_unix: 1000,
@@ -688,14 +698,15 @@ mod tests {
         let cpu = TreeguardCpuConfig::default();
         let circuits = TreeguardCircuitsConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
-        let mut state = CircuitState::default();
-        state.down = CircuitDirectionState {
-            desired: CircuitSqmState::FqCodel,
-            ..Default::default()
-        };
-        state.up = CircuitDirectionState {
-            desired: CircuitSqmState::FqCodel,
-            ..Default::default()
+        let state = CircuitState {
+            down: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
+            up: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
         };
 
         let decision = decide_circuit_sqm(CircuitSqmInput {

@@ -216,9 +216,7 @@ impl ThroughputTracker {
                     .up
                     .saturating_add(entry.tcp_retransmits.up);
 
-                let agg = aggregates
-                    .entry(circuit_hash)
-                    .or_insert_with(CircuitHeatmapAggregate::default);
+                let agg = aggregates.entry(circuit_hash).or_default();
                 agg.download_bytes = agg.download_bytes.saturating_add(download_delta);
                 agg.upload_bytes = agg.upload_bytes.saturating_add(upload_delta);
                 agg.tcp_packets.down = agg.tcp_packets.down.saturating_add(
@@ -289,9 +287,7 @@ impl ThroughputTracker {
             let retransmit_up =
                 retransmit_percent(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
 
-            let heatmap = heatmaps
-                .entry(circuit_hash)
-                .or_insert_with(TemporalHeatmap::new);
+            let heatmap = heatmaps.entry(circuit_hash).or_default();
             heatmap.add_sample(
                 download_util,
                 upload_util,
@@ -317,9 +313,7 @@ impl ThroughputTracker {
             } else {
                 QoqScores::default()
             };
-            let qoq_heatmap = qoq_heatmaps
-                .entry(circuit_hash)
-                .or_insert_with(TemporalQoqHeatmap::new);
+            let qoq_heatmap = qoq_heatmaps.entry(circuit_hash).or_default();
             qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
         }
 
@@ -663,9 +657,7 @@ impl ThroughputTracker {
             if asn == 0 {
                 return;
             }
-            let agg = asn_aggregates
-                .entry(asn)
-                .or_insert_with(AsnAggregate::default);
+            let agg = asn_aggregates.entry(asn).or_default();
             agg.bytes.checked_add(bytes);
             agg.packets.checked_add(packets);
             agg.retransmits.checked_add(retransmits);

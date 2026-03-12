@@ -19,7 +19,7 @@ pub use finished_flows::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry
 pub use kernel_ringbuffer::*;
 pub use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData};
 
-static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
+static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(FlowAnalysisSystem::new);
 
 pub struct FlowAnalysisSystem {
     asn_table: Mutex<Option<asn::GeoTable>>,

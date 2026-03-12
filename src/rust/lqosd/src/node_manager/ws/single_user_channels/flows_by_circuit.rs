@@ -83,10 +83,7 @@ pub(super) async fn flows_by_circuit(
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> =
-            recent_flows_by_circuit(&circuit)
-                .into_iter()
-                .map(|(key, local, analysis)| (key, local, analysis))
-                .collect();
+            recent_flows_by_circuit(&circuit).into_iter().collect();
 
         if !flows.is_empty() {
             let result = WsResponse::FlowsByCircuit {
