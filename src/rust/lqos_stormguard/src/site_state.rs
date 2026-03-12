@@ -308,9 +308,7 @@ impl SiteStateTracker {
         self.sites
             .iter()
             .filter_map(|(name, site)| {
-                let Some(site_config) = config.sites.get(name) else {
-                    return None;
-                };
+                let site_config = config.sites.get(name)?;
 
                 let state_string = |state: &StormguardState| -> (String, Option<f32>) {
                     match state {

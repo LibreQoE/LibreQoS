@@ -22,15 +22,15 @@ pub fn start_lts2(
 }
 
 pub fn request_free_trial(details: FreeTrialDetails) -> Result<String> {
-    Ok(lts2_client::request_free_trial(details)?)
+    lts2_client::request_free_trial(details)
 }
 
 pub fn network_tree(timestamp: u64, tree: &[u8]) -> Result<()> {
-    Ok(lts2_client::submit_network_tree(timestamp, tree)?)
+    lts2_client::submit_network_tree(timestamp, tree)
 }
 
 pub fn shaped_devices(timestamp: u64, devices: &[u8]) -> Result<()> {
-    Ok(lts2_client::submit_shaped_devices(timestamp, devices)?)
+    lts2_client::submit_shaped_devices(timestamp, devices)
 }
 
 pub fn total_throughput(
@@ -57,7 +57,7 @@ pub fn total_throughput(
     cake_drops_down: i32,
     cake_drops_up: i32,
 ) -> Result<()> {
-    Ok(lts2_client::submit_total_throughput(
+    lts2_client::submit_total_throughput(
         timestamp,
         download_bytes,
         upload_bytes,
@@ -83,7 +83,7 @@ pub fn total_throughput(
         cake_marks_up,
         cake_drops_down,
         cake_drops_up,
-    )?)
+    )
 }
 
 pub fn shaper_utilization(
@@ -92,52 +92,47 @@ pub fn shaper_utilization(
     peak_cpu: f32,
     memory_percent: f32,
 ) -> Result<()> {
-    Ok(lts2_client::submit_shaper_utilization(
-        tick,
-        average_cpu,
-        peak_cpu,
-        memory_percent,
-    )?)
+    lts2_client::submit_shaper_utilization(tick, average_cpu, peak_cpu, memory_percent)
 }
 
 pub fn circuit_throughput(data: &[shared_types::CircuitThroughput]) -> Result<()> {
-    Ok(lts2_client::submit_circuit_throughput_batch(data)?)
+    lts2_client::submit_circuit_throughput_batch(data)
 }
 
 pub fn circuit_retransmits(data: &[shared_types::CircuitRetransmits]) -> Result<()> {
-    Ok(lts2_client::submit_circuit_retransmits_batch(data)?)
+    lts2_client::submit_circuit_retransmits_batch(data)
 }
 
 pub fn circuit_rtt(data: &[shared_types::CircuitRtt]) -> Result<()> {
-    Ok(lts2_client::submit_circuit_rtt_batch(data)?)
+    lts2_client::submit_circuit_rtt_batch(data)
 }
 
 pub fn circuit_cake_drops(data: &[shared_types::CircuitCakeDrops]) -> Result<()> {
-    Ok(lts2_client::submit_circuit_cake_drops_batch(data)?)
+    lts2_client::submit_circuit_cake_drops_batch(data)
 }
 
 pub fn circuit_cake_marks(data: &[shared_types::CircuitCakeMarks]) -> Result<()> {
-    Ok(lts2_client::submit_circuit_cake_marks_batch(data)?)
+    lts2_client::submit_circuit_cake_marks_batch(data)
 }
 
 pub fn site_throughput(data: &[shared_types::SiteThroughput]) -> Result<()> {
-    Ok(lts2_client::submit_site_throughput_batch(data)?)
+    lts2_client::submit_site_throughput_batch(data)
 }
 
 pub fn site_retransmits(data: &[shared_types::SiteRetransmits]) -> Result<()> {
-    Ok(lts2_client::submit_site_retransmits_batch(data)?)
+    lts2_client::submit_site_retransmits_batch(data)
 }
 
 pub fn site_rtt(data: &[shared_types::SiteRtt]) -> Result<()> {
-    Ok(lts2_client::submit_site_rtt_batch(data)?)
+    lts2_client::submit_site_rtt_batch(data)
 }
 
 pub fn site_cake_drops(data: &[shared_types::SiteCakeDrops]) -> Result<()> {
-    Ok(lts2_client::submit_site_cake_drops_batch(data)?)
+    lts2_client::submit_site_cake_drops_batch(data)
 }
 
 pub fn site_cake_marks(data: &[shared_types::SiteCakeMarks]) -> Result<()> {
-    Ok(lts2_client::submit_site_cake_marks_batch(data)?)
+    lts2_client::submit_site_cake_marks_batch(data)
 }
 
 pub fn get_lts_license_status() -> (LtsStatus, i32) {
@@ -188,7 +183,7 @@ pub async fn get_lts_license_status_async() -> (LtsStatus, i32) {
 }
 
 pub fn ingest_batch_complete() -> Result<()> {
-    Ok(lts2_client::ingest_batch_complete()?)
+    lts2_client::ingest_batch_complete()
 }
 
 pub fn one_way_flow(
@@ -202,7 +197,7 @@ pub fn one_way_flow(
     bytes: u64,
     circuit_hash: Option<i64>,
 ) -> Result<()> {
-    Ok(lts2_client::one_way_flow(
+    lts2_client::one_way_flow(
         start_time,
         end_time,
         local_ip,
@@ -212,7 +207,7 @@ pub fn one_way_flow(
         src_port,
         bytes,
         circuit_hash.unwrap_or(0),
-    )?)
+    )
 }
 
 pub fn two_way_flow(
@@ -233,7 +228,7 @@ pub fn two_way_flow(
     rtt2: f32,
     circuit_hash: Option<i64>,
 ) -> Result<()> {
-    Ok(lts2_client::two_way_flow(
+    lts2_client::two_way_flow(
         start_time,
         end_time,
         local_ip,
@@ -250,7 +245,7 @@ pub fn two_way_flow(
         rtt1,
         rtt2,
         circuit_hash.unwrap_or(0),
-    )?)
+    )
 }
 
 pub fn ip_policies(allow_subnets: &Vec<String>, ignore_subnets: &Vec<String>) -> Result<()> {
@@ -269,7 +264,7 @@ pub fn blackboard(json: &[u8]) -> Result<()> {
 }
 
 pub fn flow_count(timestamp: u64, count: u64) -> Result<()> {
-    Ok(lts2_client::flow_count(timestamp, count)?)
+    lts2_client::flow_count(timestamp, count)
 }
 
 pub fn remote_command_count() -> u64 {
