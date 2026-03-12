@@ -20,7 +20,7 @@ pub(crate) struct UispData {
 }
 
 /// Ensure site names are unique by appending the site ID to duplicates.
-pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
+pub(crate) fn dedup_site_names(sites: &mut [Site]) {
     let mut name_counts: HashMap<String, usize> = HashMap::new();
     for site in sites.iter() {
         let base_name = site.name_or_blank();

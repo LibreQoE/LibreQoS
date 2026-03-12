@@ -1215,7 +1215,7 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     if value > 50.0 { None } else { Some(value) }
 }
 
-fn median(values: &mut Vec<f32>) -> Option<f32> {
+fn median(values: &mut [f32]) -> Option<f32> {
     if values.is_empty() {
         return None;
     }
