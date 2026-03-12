@@ -1,3 +1,11 @@
+//! Typed UISP API models and convenience loaders used by LibreQoS.
+//!
+//! The crate maps selected UISP REST responses into Rust data structures and
+//! provides helpers for loading sites, devices, and data links from a UISP
+//! instance configured in `lqos_config`.
+
+#![warn(missing_docs)]
+
 mod data_link;
 mod device; // UISP data definition for a device, including interfaces
 /// UISP Data Structures

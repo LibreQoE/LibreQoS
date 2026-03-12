@@ -1,5 +1,8 @@
+//! Python bindings for LibreQoS configuration, queue orchestration, and daemon queries.
+
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
+#![warn(missing_docs)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSeverity, UrgentSource};
 use lqos_utils::hex_string::read_hex_string;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
@@ -717,12 +720,16 @@ fn is_lqosd_alive(_py: Python) -> PyResult<bool> {
 /// Available through python by field name.
 #[pyclass]
 pub struct PyIpMapping {
+    /// IP address or CIDR prefix string assigned to the flow mapping.
     #[pyo3(get)]
     pub ip_address: String,
+    /// Prefix length associated with `ip_address`.
     #[pyo3(get)]
     pub prefix_length: u32,
+    /// Linux traffic-control handle as `(major, minor)`.
     #[pyo3(get)]
     pub tc_handle: (u16, u16),
+    /// CPU index assigned to process traffic for this mapping.
     #[pyo3(get)]
     pub cpu: u32,
 }
@@ -830,6 +837,7 @@ fn add_ip_mapping(
 }
 
 #[pyclass]
+/// Collects IP mapping commands so they can be submitted to `lqosd` in batches.
 pub struct BatchedCommands {
     batch: Vec<BusRequest>,
 }
@@ -837,11 +845,13 @@ pub struct BatchedCommands {
 #[pymethods]
 impl BatchedCommands {
     #[new]
+    /// Creates an empty command batch.
     pub fn new() -> PyResult<Self> {
         Ok(Self { batch: Vec::new() })
     }
 
     #[pyo3(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
+    /// Queues an IP-to-flow mapping request for later submission.
     pub fn add_ip_mapping(
         &mut self,
         ip: String,
@@ -860,21 +870,25 @@ impl BatchedCommands {
         }
     }
 
+    /// Queues a cache clear after the batch has finished applying mappings.
     pub fn finish_ip_mappings(&mut self) -> PyResult<()> {
         let request = BusRequest::ClearHotCache;
         self.batch.push(request);
         Ok(())
     }
 
+    /// Returns the number of queued requests.
     pub fn length(&self) -> PyResult<usize> {
         Ok(self.batch.len())
     }
 
+    /// Prints queued requests to stdout for debugging.
     pub fn log(&self) -> PyResult<()> {
         self.batch.iter().for_each(|c| println!("{c:?}"));
         Ok(())
     }
 
+    /// Sends queued requests to `lqosd` in chunks and returns how many were submitted.
     pub fn submit(&mut self) -> PyResult<usize> {
         const MAX_BATH_SIZE: usize = 512;
         // We're draining the request list out, which is a move that
@@ -1406,8 +1420,11 @@ fn committed_bandwidth_multiplier() -> PyResult<f32> {
 }
 
 #[pyclass]
+/// A UISP exception CPE entry paired with its forced parent.
 pub struct PyExceptionCpe {
+    /// Child CPE site or device identifier.
     pub cpe: String,
+    /// Parent identifier assigned to the exception CPE.
     pub parent: String,
 }
 
@@ -1763,6 +1780,7 @@ fn influx_db_url() -> PyResult<String> {
 }
 
 #[pyfunction]
+/// Returns the per-device weighting inputs used by the planner.
 pub fn get_weights() -> PyResult<Vec<device_weights::DeviceWeightResponse>> {
     match device_weights::get_weights_rust() {
         Ok(weights) => Ok(weights),
@@ -1771,6 +1789,7 @@ pub fn get_weights() -> PyResult<Vec<device_weights::DeviceWeightResponse>> {
 }
 
 #[pyfunction]
+/// Returns calculated tree node weights for the current network graph.
 pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
     match device_weights::calculate_tree_weights() {
         Ok(w) => Ok(w),
@@ -1779,6 +1798,7 @@ pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
 }
 
 #[pyfunction]
+/// Returns the configured LibreQoS installation directory.
 pub fn get_libreqos_directory() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
     let dir = config.lqos_directory.clone();
@@ -1786,6 +1806,7 @@ pub fn get_libreqos_directory() -> PyResult<String> {
 }
 
 #[pyfunction]
+/// Returns `true` when the loaded network graph contains only a single root node.
 pub fn is_network_flat() -> PyResult<bool> {
     Ok(lqos_config::NetworkJson::load()
         .unwrap()
@@ -1795,12 +1816,14 @@ pub fn is_network_flat() -> PyResult<bool> {
 }
 
 #[pyfunction]
+/// Signals that the current blackboard update batch is complete.
 pub fn blackboard_finish() -> PyResult<()> {
     let _ = run_query(vec![BusRequest::BlackboardFinish]);
     Ok(())
 }
 
 #[pyfunction]
+/// Submits a string value to the selected blackboard namespace.
 pub fn blackboard_submit(subsystem: String, key: String, value: String) -> PyResult<()> {
     let subsystem = match subsystem.as_str() {
         "system" => BlackboardSystem::System,
@@ -1936,6 +1959,7 @@ enum BakeryCommands {
 }
 
 #[pyclass]
+/// Queues Bakery operations for batched submission to the LibreQoS daemon.
 pub struct Bakery {
     queue: Vec<BakeryCommands>,
 }
@@ -1943,15 +1967,18 @@ pub struct Bakery {
 #[pymethods]
 impl Bakery {
     #[new]
+    /// Creates an empty Bakery command queue.
     pub fn new() -> PyResult<Self> {
         Ok(Self { queue: Vec::new() })
     }
 
+    /// Adds a batch-start marker to the queued Bakery commands.
     pub fn start_batch(&mut self) -> PyResult<()> {
         self.queue.push(BakeryCommands::StartBatch);
         Ok(())
     }
 
+    /// Sends the queued Bakery commands to `lqosd`.
     pub fn commit(&mut self) -> PyResult<()> {
         self.queue.push(BakeryCommands::Commit);
 
@@ -2049,6 +2076,7 @@ impl Bakery {
         Ok(())
     }
 
+    /// Queues multi-queue setup for the target shaper.
     pub fn setup_mq(&mut self, queues_available: usize, stick_offset: usize) -> PyResult<()> {
         self.queue.push(BakeryCommands::MqSetup {
             queues_available,
@@ -2058,6 +2086,7 @@ impl Bakery {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Queues a site creation or update command for the Bakery pipeline.
     pub fn add_site(
         &mut self,
         site_name: String,
@@ -2086,6 +2115,7 @@ impl Bakery {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Queues a circuit creation or update command for the Bakery pipeline.
     pub fn add_circuit(
         &mut self,
         circuit_name: String,
@@ -2220,6 +2250,7 @@ fn log_info(_py: Python, message: String) -> PyResult<bool> {
 }
 
 #[pyfunction]
+/// Returns whether Insight features are currently enabled in `lqosd`.
 pub fn is_insight_enabled() -> PyResult<bool> {
     let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
         return Ok(false);
@@ -2233,6 +2264,7 @@ pub fn is_insight_enabled() -> PyResult<bool> {
 }
 
 #[pyfunction]
+/// Hashes an arbitrary string into the signed 64-bit identifier format used by LibreQoS.
 pub fn hash_to_i64(text: String) -> PyResult<i64> {
     Ok(lqos_utils::hash_to_i64(&text))
 }

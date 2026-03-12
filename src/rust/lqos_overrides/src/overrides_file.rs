@@ -30,65 +30,101 @@ pub enum OverrideLayer {
 /// Helper for working with layered override files.
 pub struct OverrideStore;
 
+/// A circuit- or device-level override applied while generating shaped-device output.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CircuitAdjustment {
+    /// Replaces some or all circuit bandwidth values for a specific circuit.
     CircuitAdjustSpeed {
+        /// Circuit identifier to update.
         circuit_id: String,
+        /// Replacement minimum download bandwidth in Mbps.
         min_download_bandwidth: Option<f32>,
+        /// Replacement maximum download bandwidth in Mbps.
         max_download_bandwidth: Option<f32>,
+        /// Replacement minimum upload bandwidth in Mbps.
         min_upload_bandwidth: Option<f32>,
+        /// Replacement maximum upload bandwidth in Mbps.
         max_upload_bandwidth: Option<f32>,
     },
+    /// Replaces some or all bandwidth values for a specific device.
     DeviceAdjustSpeed {
+        /// Device identifier to update.
         device_id: String,
+        /// Replacement minimum download bandwidth in Mbps.
         min_download_bandwidth: Option<f32>,
+        /// Replacement maximum download bandwidth in Mbps.
         max_download_bandwidth: Option<f32>,
+        /// Replacement minimum upload bandwidth in Mbps.
         min_upload_bandwidth: Option<f32>,
+        /// Replacement maximum upload bandwidth in Mbps.
         max_upload_bandwidth: Option<f32>,
     },
+    /// Removes a circuit from generated output by circuit ID.
     RemoveCircuit {
+        /// Circuit identifier to remove.
         circuit_id: String,
     },
+    /// Removes a device from generated output by device ID.
     RemoveDevice {
+        /// Device identifier to remove.
         device_id: String,
     },
+    /// Assigns a circuit to a different parent node.
     ReparentCircuit {
+        /// Circuit identifier to move.
         circuit_id: String,
+        /// Target parent node name.
         parent_node: String,
     },
 }
 
+/// A network-level override applied while generating `network.json`.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NetworkAdjustment {
+    /// Replaces site bandwidth values for a named site.
     AdjustSiteSpeed {
+        /// Site name to update.
         site_name: String,
+        /// Replacement download bandwidth in Mbps.
         download_bandwidth_mbps: Option<u32>,
+        /// Replacement upload bandwidth in Mbps.
         upload_bandwidth_mbps: Option<u32>,
     },
+    /// Marks a named node as virtual or non-virtual.
     SetNodeVirtual {
+        /// Node name to update.
         node_name: String,
         #[serde(rename = "virtual")]
+        /// Whether the node should be treated as virtual.
         virtual_node: bool,
     },
 }
 
+/// Consolidated UISP-specific overrides stored in an override file.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct UispOverrides {
     #[serde(default)]
+    /// Per-site UISP bandwidth overrides keyed by site name as `(download_mbps, upload_mbps)`.
     pub bandwidth_overrides: std::collections::HashMap<String, (f32, f32)>,
     #[serde(default)]
+    /// Route overrides applied between UISP sites.
     pub route_overrides: Vec<UispRouteOverride>,
 }
 
+/// A UISP route cost override between two sites.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UispRouteOverride {
+    /// Source site name.
     pub from_site: String,
+    /// Destination site name.
     pub to_site: String,
+    /// Replacement routing cost between the two sites.
     pub cost: u32,
 }
 
+/// The serialized contents of a single LibreQoS overrides file.
 #[derive(Serialize, Deserialize, Default)]
 pub struct OverrideFile {
     /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
@@ -358,6 +394,7 @@ fn merge_owned_sections(
 }
 
 impl OverrideFile {
+    /// Loads the operator-owned overrides file, creating an empty file if it does not exist.
     pub fn load() -> Result<Self> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
@@ -368,6 +405,7 @@ impl OverrideFile {
         Ok(as_json)
     }
 
+    /// Saves this value to the operator-owned overrides file.
     pub fn save(&self) -> Result<()> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
@@ -563,16 +601,19 @@ impl OverrideFile {
         self.uisp.as_mut().unwrap()
     }
 
+    /// Adds or replaces the UISP bandwidth override for `site_name`.
     pub fn set_uisp_bandwidth_override(&mut self, site_name: String, down: f32, up: f32) {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.insert(site_name, (down, up));
     }
 
+    /// Removes the UISP bandwidth override for `site_name`. Returns `true` when one existed.
     pub fn remove_uisp_bandwidth_override(&mut self, site_name: &str) -> bool {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.remove(site_name).is_some()
     }
 
+    /// Appends a UISP route cost override.
     pub fn add_uisp_route_override(&mut self, from_site: String, to_site: String, cost: u32) {
         let uisp = self.ensure_uisp_mut();
         uisp.route_overrides.push(UispRouteOverride {
@@ -582,6 +623,7 @@ impl OverrideFile {
         });
     }
 
+    /// Removes a UISP route override by index. Returns `true` when the index was valid.
     pub fn remove_uisp_route_by_index(&mut self, index: usize) -> bool {
         let uisp = self.ensure_uisp_mut();
         if index < uisp.route_overrides.len() {
