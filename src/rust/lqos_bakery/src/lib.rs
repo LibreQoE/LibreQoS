@@ -145,12 +145,7 @@ fn find_free_minor(
             }
         }
     }
-    for m in 1..=0xFFFEu16 {
-        if !used_down.contains(&m) && !used_up.contains(&m) {
-            return Some(m);
-        }
-    }
-    None
+    (1..=0xFFFEu16).find(|&m| !used_down.contains(&m) && !used_up.contains(&m))
 }
 
 fn add_commands_for_circuit(
