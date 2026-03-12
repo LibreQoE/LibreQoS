@@ -61,10 +61,10 @@ pub async fn load_all_devices_with_interfaces(
 
 /// Loads all data links from UISP (including links in client sites)
 pub async fn load_all_data_links(config: Arc<Config>) -> Result<Vec<DataLink>> {
-    Ok(nms_request_get_vec(
+    nms_request_get_vec(
         "data-links",
         &config.uisp_integration.token,
         &config.uisp_integration.url,
     )
-    .await?)
+    .await
 }
