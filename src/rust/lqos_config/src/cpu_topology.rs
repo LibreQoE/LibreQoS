@@ -165,11 +165,12 @@ pub fn detect_shaping_cpus(cfg: &Config) -> ShapingCpuDetection {
     // Prefer cpu_core list if present.
     if let Some(mut perf) = perf_opt.clone() {
         // If both are present, remove overlaps just in case.
-        if let Some(eff) = eff_opt.clone() {
-            if !eff.is_empty() && !perf.is_empty() {
-                let eff_set: HashSet<u32> = eff.iter().copied().collect();
-                perf.retain(|c| !eff_set.contains(c));
-            }
+        if let Some(eff) = eff_opt.clone()
+            && !eff.is_empty()
+            && !perf.is_empty()
+        {
+            let eff_set: HashSet<u32> = eff.iter().copied().collect();
+            perf.retain(|c| !eff_set.contains(c));
         }
 
         // Ensure it is a subset of possible CPUs, if that list exists.
@@ -191,24 +192,25 @@ pub fn detect_shaping_cpus(cfg: &Config) -> ShapingCpuDetection {
     }
 
     // Next-best: if we know efficiency CPUs, compute possible - efficiency.
-    if let Some(eff) = eff_opt.clone() {
-        if !eff.is_empty() && !possible.is_empty() {
-            let eff_set: HashSet<u32> = eff.iter().copied().collect();
-            let perf: Vec<u32> = possible
-                .iter()
-                .copied()
-                .filter(|c| !eff_set.contains(c))
-                .collect();
-            if !perf.is_empty() {
-                return ShapingCpuDetection {
-                    exclude_efficiency_cores: exclude,
-                    source: ShapingCpuSource::PossibleMinusAtomSysfs,
-                    possible,
-                    performance: perf.clone(),
-                    efficiency: eff,
-                    shaping: perf,
-                };
-            }
+    if let Some(eff) = eff_opt.clone()
+        && !eff.is_empty()
+        && !possible.is_empty()
+    {
+        let eff_set: HashSet<u32> = eff.iter().copied().collect();
+        let perf: Vec<u32> = possible
+            .iter()
+            .copied()
+            .filter(|c| !eff_set.contains(c))
+            .collect();
+        if !perf.is_empty() {
+            return ShapingCpuDetection {
+                exclude_efficiency_cores: exclude,
+                source: ShapingCpuSource::PossibleMinusAtomSysfs,
+                possible,
+                performance: perf.clone(),
+                efficiency: eff,
+                shaping: perf,
+            };
         }
     }
 
@@ -229,37 +231,49 @@ mod tests {
 
     #[test]
     fn parse_cpu_list_single() {
-        assert_eq!(parse_cpu_list("0").unwrap(), vec![0]);
+        assert_eq!(
+            parse_cpu_list("0").expect("single CPU list should parse"),
+            vec![0]
+        );
     }
 
     #[test]
     fn parse_cpu_list_range() {
-        assert_eq!(parse_cpu_list("0-3").unwrap(), vec![0, 1, 2, 3]);
+        assert_eq!(
+            parse_cpu_list("0-3").expect("CPU range should parse"),
+            vec![0, 1, 2, 3]
+        );
     }
 
     #[test]
     fn parse_cpu_list_mixed() {
         assert_eq!(
-            parse_cpu_list("0-3,8,10-12").unwrap(),
+            parse_cpu_list("0-3,8,10-12").expect("mixed CPU list should parse"),
             vec![0, 1, 2, 3, 8, 10, 11, 12]
         );
     }
 
     #[test]
     fn parse_cpu_list_whitespace_and_dedup() {
-        assert_eq!(parse_cpu_list(" 0-1, 1 , 2 \n").unwrap(), vec![0, 1, 2]);
+        assert_eq!(
+            parse_cpu_list(" 0-1, 1 , 2 \n").expect("whitespace-delimited CPU list should parse"),
+            vec![0, 1, 2]
+        );
     }
 
     #[test]
     fn parse_cpu_list_invalid_range() {
         assert_eq!(
-            parse_cpu_list("3-1").unwrap_err(),
+            parse_cpu_list("3-1").expect_err("reversed CPU range should fail"),
             CpuListParseError::InvalidRange
         );
     }
 
     #[test]
     fn parse_cpu_list_empty() {
-        assert_eq!(parse_cpu_list(" \n").unwrap_err(), CpuListParseError::Empty);
+        assert_eq!(
+            parse_cpu_list(" \n").expect_err("empty CPU list should fail"),
+            CpuListParseError::Empty
+        );
     }
 }

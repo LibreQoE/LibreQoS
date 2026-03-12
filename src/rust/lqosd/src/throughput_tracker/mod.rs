@@ -13,7 +13,7 @@ use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
-    throughput_tracker::tracking_data::ThroughputTracker,
+    throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
 };
 use arc_swap::ArcSwap;
 pub(crate) use flow_data::RttBuffer;
@@ -129,17 +129,6 @@ fn throughput_task(
         30
     };
 
-    // Obtain the netflow_enabled from the config, default to false
-    let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = &config.flows {
-            flow_config.netflow_enabled
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
     let mut last_submitted_to_lts: Option<Instant> = None;
     let mut tfd = match TimerFd::new() {
         Ok(t) => t,
@@ -183,16 +172,15 @@ fn throughput_task(
                 .apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
             timer_metrics.apply_new_throughput_counters =
                 timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_flow_data(
+            THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
                 timeout_seconds,
-                netflow_enabled,
-                netflow_sender.clone(),
-                &mut net_json_calc,
-                &mut rtt_circuit_tracker,
-                &mut rtt_by_circuit,
-                &mut tcp_retries,
-                &mut expired_flows,
-            );
+                sender: netflow_sender.clone(),
+                net_json_calc: &mut net_json_calc,
+                rtt_circuit_tracker: &mut rtt_circuit_tracker,
+                rtt_by_circuit: &mut rtt_by_circuit,
+                tcp_retries: &mut tcp_retries,
+                expired_keys: &mut expired_flows,
+            });
             CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
             let enable_site_heatmaps = lqos_config::load_config()
@@ -229,41 +217,39 @@ fn throughput_task(
                 stats_counter,
                 system_usage_actor.clone(),
             );
-        } else {
-            if let Some(last) = last_submitted_to_lts {
-                let elapsed_f64 = last.elapsed().as_secs_f64();
-                // Temporary: place this in a thread to not block the timer
-                let my_system_usage_actor = system_usage_actor.clone();
-                // Submit if a reasonable amount of time has passed - drop if there was a long hitch
-                if elapsed_f64 < 2.0 {
-                    match std::thread::Builder::new()
-                        .name("Throughput Stats Submit".to_string())
-                        .spawn(move || {
-                            stats_submission::submit_throughput_stats(
-                                elapsed_f64,
-                                stats_counter,
-                                my_system_usage_actor,
-                            );
-                        }) {
-                        Ok(handle) => {
-                            if let Err(e) = handle.join() {
-                                info!(
-                                    "Throughput stats submit thread join error (ignored): {:?}",
-                                    e
-                                );
-                            }
-                        }
-                        Err(e) => {
+        } else if let Some(last) = last_submitted_to_lts {
+            let elapsed_f64 = last.elapsed().as_secs_f64();
+            // Temporary: place this in a thread to not block the timer
+            let my_system_usage_actor = system_usage_actor.clone();
+            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
+            if elapsed_f64 < 2.0 {
+                match std::thread::Builder::new()
+                    .name("Throughput Stats Submit".to_string())
+                    .spawn(move || {
+                        stats_submission::submit_throughput_stats(
+                            elapsed_f64,
+                            stats_counter,
+                            my_system_usage_actor,
+                        );
+                    }) {
+                    Ok(handle) => {
+                        if let Err(e) = handle.join() {
                             info!(
-                                "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                                "Throughput stats submit thread join error (ignored): {:?}",
                                 e
                             );
                         }
                     }
+                    Err(e) => {
+                        info!(
+                            "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                            e
+                        );
+                    }
                 }
-            } else {
-                info!("No last submission timestamp; skipping stats submission this cycle");
             }
+        } else {
+            info!("No last submission timestamp; skipping stats submission this cycle");
         }
         // Notify of completion, which triggers processing
         if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
@@ -768,9 +754,9 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     samples.sort_by(|a, b| a.total_cmp(b));
 
     let result = MinMaxMedianRtt {
-        min: samples[0] as f32,
-        max: samples[samples.len() - 1] as f32,
-        median: samples[samples.len() / 2] as f32,
+        min: samples[0],
+        max: samples[samples.len() - 1],
+        median: samples[samples.len() / 2],
     };
 
     Some(result)
@@ -1034,7 +1020,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .flow_data
         .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
+        .map(|(key, value)| (*key, value.clone()))
         .collect();
     std::mem::drop(lock); // Early lock release
 

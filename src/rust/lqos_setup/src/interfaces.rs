@@ -28,17 +28,15 @@ fn check_queues(interface: &str) -> anyhow::Result<()> {
     let mut counts = (0, 0);
     let paths = std::fs::read_dir(sys_path)?;
     for path in paths {
-        if let Ok(path) = &path {
-            if path.path().is_dir() {
-                if let Some(filename) = path.path().file_name() {
-                    if let Some(filename) = filename.to_str() {
-                        if filename.starts_with("rx-") {
-                            counts.0 += 1;
-                        } else if filename.starts_with("tx-") {
-                            counts.1 += 1;
-                        }
-                    }
-                }
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name()
+            && let Some(filename) = filename.to_str()
+        {
+            if filename.starts_with("rx-") {
+                counts.0 += 1;
+            } else if filename.starts_with("tx-") {
+                counts.1 += 1;
             }
         }
     }

@@ -38,6 +38,16 @@ const MAX_FLOWS: usize = 1_000_000;
 pub const MAX_RETRY_TIMES: usize = 128;
 const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
 
+pub(crate) struct FlowApplyContext<'a> {
+    pub(crate) timeout_seconds: u64,
+    pub(crate) sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    pub(crate) net_json_calc: &'a mut NetworkJson,
+    pub(crate) rtt_circuit_tracker: &'a mut FxHashMap<XdpIpAddress, RttBuffer>,
+    pub(crate) rtt_by_circuit: &'a mut FxHashMap<i64, RttBuffer>,
+    pub(crate) tcp_retries: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
+    pub(crate) expired_keys: &'a mut Vec<FlowbeeKey>,
+}
+
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
     pub(crate) raw_data: Mutex<HashMap<XdpIpAddress, ThroughputEntry>>,
@@ -206,9 +216,7 @@ impl ThroughputTracker {
                     .up
                     .saturating_add(entry.tcp_retransmits.up);
 
-                let agg = aggregates
-                    .entry(circuit_hash)
-                    .or_insert_with(CircuitHeatmapAggregate::default);
+                let agg = aggregates.entry(circuit_hash).or_default();
                 agg.download_bytes = agg.download_bytes.saturating_add(download_delta);
                 agg.upload_bytes = agg.upload_bytes.saturating_add(upload_delta);
                 agg.tcp_packets.down = agg.tcp_packets.down.saturating_add(
@@ -279,9 +287,7 @@ impl ThroughputTracker {
             let retransmit_up =
                 retransmit_percent(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
 
-            let heatmap = heatmaps
-                .entry(circuit_hash)
-                .or_insert_with(TemporalHeatmap::new);
+            let heatmap = heatmaps.entry(circuit_hash).or_default();
             heatmap.add_sample(
                 download_util,
                 upload_util,
@@ -307,9 +313,7 @@ impl ThroughputTracker {
             } else {
                 QoqScores::default()
             };
-            let qoq_heatmap = qoq_heatmaps
-                .entry(circuit_hash)
-                .or_insert_with(TemporalQoqHeatmap::new);
+            let qoq_heatmap = qoq_heatmaps.entry(circuit_hash).or_default();
             qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
         }
 
@@ -398,15 +402,15 @@ impl ThroughputTracker {
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
     ) -> Option<&'a lqos_config::ShapedDevice> {
-        if let Some(device_hash) = device_hash {
-            if let Some(idx) = cache.index_by_device_hash(shaped, device_hash) {
-                return shaped.devices.get(idx);
-            }
+        if let Some(device_hash) = device_hash
+            && let Some(idx) = cache.index_by_device_hash(shaped, device_hash)
+        {
+            return shaped.devices.get(idx);
         }
-        if let Some(circuit_hash) = circuit_hash {
-            if let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash) {
-                return shaped.devices.get(idx);
-            }
+        if let Some(circuit_hash) = circuit_hash
+            && let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash)
+        {
+            return shaped.devices.get(idx);
         }
         None
     }
@@ -433,10 +437,10 @@ impl ThroughputTracker {
                 data.device_hash,
                 data.circuit_hash,
             );
-            if data.circuit_hash.is_none() {
-                if let Some(device) = shaped_device {
-                    data.circuit_hash = Some(device.circuit_hash);
-                }
+            if data.circuit_hash.is_none()
+                && let Some(device) = shaped_device
+            {
+                data.circuit_hash = Some(device.circuit_hash);
             }
             data.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
             data.network_json_parents = shaped_device
@@ -541,22 +545,21 @@ impl ThroughputTracker {
                     Self::shaped_device_for_hashes(&shaped, &cache, device_hash, circuit_hash);
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
                 // Call the Bakery Queue Creation for new circuits
-                if let Some(circuit_hash) = circuit_hash {
-                    if let Ok(config) = lqos_config::load_config() {
-                        if config.queues.lazy_queues.is_some() {
-                            let mut add = true;
+                if let Some(circuit_hash) = circuit_hash
+                    && let Ok(config) = lqos_config::load_config()
+                    && config.queues.lazy_queues.is_some()
+                {
+                    let mut add = true;
 
-                            if config.queues.lazy_threshold_bytes.is_some() {
-                                let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
-                                if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
-                                    add = false;
-                                }
-                            }
-
-                            if add {
-                                changed_circuits.insert(circuit_hash);
-                            }
+                    if config.queues.lazy_threshold_bytes.is_some() {
+                        let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
+                        if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
+                            add = false;
                         }
+                    }
+
+                    if add {
+                        changed_circuits.insert(circuit_hash);
                     }
                 }
                 let entry = ThroughputEntry {
@@ -597,12 +600,12 @@ impl ThroughputTracker {
             }
         });
 
-        if !changed_circuits.is_empty() {
-            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
+        if !changed_circuits.is_empty()
+            && let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
                 circuit_ids: changed_circuits,
-            }) {
-                warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
-            }
+            })
+        {
+            warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
         }
         if let Err(e) = bakery_sender.send(BakeryCommands::Tick) {
             warn!("Failed to send BakeryCommands::Tick: {:?}", e);
@@ -629,17 +632,16 @@ impl ThroughputTracker {
         });
     }
 
-    pub(crate) fn apply_flow_data(
-        &self,
-        timeout_seconds: u64,
-        _netflow_enabled: bool,
-        sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-        net_json_calc: &mut NetworkJson,
-        rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
-        rtt_by_circuit: &mut FxHashMap<i64, RttBuffer>,
-        tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
-        expired_keys: &mut Vec<FlowbeeKey>,
-    ) {
+    pub(crate) fn apply_flow_data(&self, ctx: FlowApplyContext<'_>) {
+        let FlowApplyContext {
+            timeout_seconds,
+            sender,
+            net_json_calc,
+            rtt_circuit_tracker,
+            rtt_by_circuit,
+            tcp_retries,
+            expired_keys,
+        } = ctx;
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let enable_asn_heatmaps = lqos_config::load_config()
@@ -655,9 +657,7 @@ impl ThroughputTracker {
             if asn == 0 {
                 return;
             }
-            let agg = asn_aggregates
-                .entry(asn)
-                .or_insert_with(AsnAggregate::default);
+            let agg = asn_aggregates.entry(asn).or_default();
             agg.bytes.checked_add(bytes);
             agg.packets.checked_add(packets);
             agg.retransmits.checked_add(retransmits);
@@ -686,10 +686,10 @@ impl ThroughputTracker {
                     // DO NOT process it again.
                 } else if data.last_seen < expire {
                     // This flow has expired but not been handled yet. Add it to the list to be cleaned.
-                    expired_keys.push(key.clone());
+                    expired_keys.push(*key);
                 } else {
                     // We have a valid flow, so it needs to be tracked
-                    if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
+                    if let Some(this_flow) = all_flows_lock.flow_data.get_mut(key) {
                         let delta_bytes =
                             data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
                         let delta_packets = data
@@ -754,33 +754,32 @@ impl ThroughputTracker {
                         }
 
                         // Per-flow QoO (stored for UI display).
-                        if key.ip_protocol == 6 {
-                            if let (Some(profile), Some(tcp_info)) =
+                        if key.ip_protocol == 6
+                            && let (Some(profile), Some(tcp_info)) =
                                 (qoo_profile.as_ref(), this_flow.0.tcp_info.as_ref())
-                            {
-                                let loss_download = tcp_retransmit_loss_proxy(
-                                    this_flow.0.tcp_retransmits.down as u64,
-                                    this_flow.0.packets_sent.down,
-                                );
-                                let loss_upload = tcp_retransmit_loss_proxy(
-                                    this_flow.0.tcp_retransmits.up as u64,
-                                    this_flow.0.packets_sent.up,
-                                );
-                                let scores = compute_qoq_scores(
-                                    profile.as_ref(),
-                                    &tcp_info.rtt,
-                                    loss_download,
-                                    loss_upload,
-                                );
-                                let mut scores = scores;
-                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                    scores.download_total = QOQ_UNKNOWN;
-                                }
-                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                    scores.upload_total = QOQ_UNKNOWN;
-                                }
-                                this_flow.0.set_qoq_scores(scores);
+                        {
+                            let loss_download = tcp_retransmit_loss_proxy(
+                                this_flow.0.tcp_retransmits.down as u64,
+                                this_flow.0.packets_sent.down,
+                            );
+                            let loss_upload = tcp_retransmit_loss_proxy(
+                                this_flow.0.tcp_retransmits.up as u64,
+                                this_flow.0.packets_sent.up,
+                            );
+                            let scores = compute_qoq_scores(
+                                profile.as_ref(),
+                                &tcp_info.rtt,
+                                loss_download,
+                                loss_upload,
+                            );
+                            let mut scores = scores;
+                            if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                scores.download_total = QOQ_UNKNOWN;
                             }
+                            if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                scores.upload_total = QOQ_UNKNOWN;
+                            }
+                            this_flow.0.set_qoq_scores(scores);
                         }
                         if enable_asn_heatmaps {
                             let excluded = raw_data
@@ -817,8 +816,8 @@ impl ThroughputTracker {
                             }
                         } else {
                             // Insert it into the map
-                            let flow_analysis = FlowAnalysis::new(&key);
-                            let mut flow_summary = FlowbeeLocalData::from_flow(&data, &key);
+                            let flow_analysis = FlowAnalysis::new(key);
+                            let mut flow_summary = FlowbeeLocalData::from_flow(data, key);
                             if let Some(rtt_buffer) = rtt_buffer.take() {
                                 if key.ip_protocol == 6
                                     && data.end_status == 0
@@ -847,33 +846,32 @@ impl ThroughputTracker {
                             }
 
                             // Per-flow QoO (stored for UI display).
-                            if key.ip_protocol == 6 {
-                                if let (Some(profile), Some(tcp_info)) =
+                            if key.ip_protocol == 6
+                                && let (Some(profile), Some(tcp_info)) =
                                     (qoo_profile.as_ref(), flow_summary.tcp_info.as_ref())
-                                {
-                                    let loss_download = tcp_retransmit_loss_proxy(
-                                        flow_summary.tcp_retransmits.down as u64,
-                                        flow_summary.packets_sent.down,
-                                    );
-                                    let loss_upload = tcp_retransmit_loss_proxy(
-                                        flow_summary.tcp_retransmits.up as u64,
-                                        flow_summary.packets_sent.up,
-                                    );
-                                    let scores = compute_qoq_scores(
-                                        profile.as_ref(),
-                                        &tcp_info.rtt,
-                                        loss_download,
-                                        loss_upload,
-                                    );
-                                    let mut scores = scores;
-                                    if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                        scores.download_total = QOQ_UNKNOWN;
-                                    }
-                                    if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                        scores.upload_total = QOQ_UNKNOWN;
-                                    }
-                                    flow_summary.set_qoq_scores(scores);
+                            {
+                                let loss_download = tcp_retransmit_loss_proxy(
+                                    flow_summary.tcp_retransmits.down as u64,
+                                    flow_summary.packets_sent.down,
+                                );
+                                let loss_upload = tcp_retransmit_loss_proxy(
+                                    flow_summary.tcp_retransmits.up as u64,
+                                    flow_summary.packets_sent.up,
+                                );
+                                let scores = compute_qoq_scores(
+                                    profile.as_ref(),
+                                    &tcp_info.rtt,
+                                    loss_download,
+                                    loss_upload,
+                                );
+                                let mut scores = scores;
+                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                    scores.download_total = QOQ_UNKNOWN;
                                 }
+                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                    scores.upload_total = QOQ_UNKNOWN;
+                                }
+                                flow_summary.set_qoq_scores(scores);
                             }
                             if enable_asn_heatmaps {
                                 let excluded = raw_data
@@ -899,7 +897,7 @@ impl ThroughputTracker {
                             }
                             all_flows_lock
                                 .flow_data
-                                .insert(key.clone(), (flow_summary, flow_analysis));
+                                .insert(*key, (flow_summary, flow_analysis));
                         }
                     }
 
@@ -924,7 +922,7 @@ impl ThroughputTracker {
                     }
                     if data.end_status != 0 {
                         // The flow has ended. We need to remove it from the map.
-                        expired_keys.push(key.clone());
+                        expired_keys.push(*key);
                     }
                 }
             }); // End flow iterator
@@ -942,28 +940,28 @@ impl ThroughputTracker {
                     (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
                 };
 
-                if let Some(rtt_median) = rtt_median {
-                    if let Some(tracker) = raw_data.get_mut(&local_ip) {
-                        // Shift left
-                        for i in 1..60 {
-                            tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                if let Some(rtt_median) = rtt_median
+                    && let Some(tracker) = raw_data.get_mut(local_ip)
+                {
+                    // Shift left
+                    for i in 1..60 {
+                        tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                    }
+                    tracker.recent_rtt_data[0] = rtt_median;
+                    tracker.last_fresh_rtt_data_cycle = self_cycle;
+                    tracker.rtt_buffer = rtt_buffer;
+                    let excluded = tracker
+                        .circuit_hash
+                        .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                    if !excluded {
+                        if let Some(circuit_hash) = tracker.circuit_hash {
+                            rtt_by_circuit
+                                .entry(circuit_hash)
+                                .or_default()
+                                .accumulate(&tracker.rtt_buffer);
                         }
-                        tracker.recent_rtt_data[0] = rtt_median;
-                        tracker.last_fresh_rtt_data_cycle = self_cycle;
-                        tracker.rtt_buffer = rtt_buffer;
-                        let excluded = tracker
-                            .circuit_hash
-                            .is_some_and(crate::rtt_exclusions::is_excluded_hash);
-                        if !excluded {
-                            if let Some(circuit_hash) = tracker.circuit_hash {
-                                rtt_by_circuit
-                                    .entry(circuit_hash)
-                                    .or_default()
-                                    .accumulate(&tracker.rtt_buffer);
-                            }
-                            if let Some(parents) = &tracker.network_json_parents {
-                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
-                            }
+                        if let Some(parents) = &tracker.network_json_parents {
+                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
                         }
                     }
                 }
@@ -976,7 +974,7 @@ impl ThroughputTracker {
             }
             // Apply the new ones
             for (local_ip, retries) in tcp_retries {
-                if let Some(tracker) = raw_data.get_mut(&local_ip) {
+                if let Some(tracker) = raw_data.get_mut(local_ip) {
                     tracker.tcp_retransmits.down = retries
                         .down
                         .saturating_sub(tracker.prev_tcp_retransmits.down);
@@ -1035,8 +1033,8 @@ impl ThroughputTracker {
             if !expired_keys.is_empty() {
                 for key in expired_keys.iter() {
                     // Send it off to netperf for analysis if we are supporting doing so.
-                    if let Some(d) = all_flows_lock.flow_data.remove(&key) {
-                        let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
+                    if let Some(d) = all_flows_lock.flow_data.remove(key) {
+                        let _ = sender.send((*key, (d.0.clone(), d.1)));
                     }
                 }
 
@@ -1148,7 +1146,7 @@ impl ThroughputTracker {
                 let keep_it = v.last_seen >= expire && v.last_seen > 0;
                 if !keep_it {
                     debug!("Removing {:?} from tracking", k);
-                    keys_to_expire.push(k.clone());
+                    keys_to_expire.push(*k);
                 }
                 keep_it
             });
@@ -1218,7 +1216,7 @@ fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
     if value > 50.0 { None } else { Some(value) }
 }
 
-fn median(values: &mut Vec<f32>) -> Option<f32> {
+fn median(values: &mut [f32]) -> Option<f32> {
     if values.is_empty() {
         return None;
     }

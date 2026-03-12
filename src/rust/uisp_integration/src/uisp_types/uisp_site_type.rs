@@ -30,17 +30,17 @@ impl Display for UispSiteType {
 impl UispSiteType {
     /// Converts a UISP site record into a UispSiteType
     pub fn from_uisp_record(site: &Site) -> Result<Self, UispIntegrationError> {
-        if let Some(id) = &site.identification {
-            if let Some(t) = &id.site_type {
-                return match t.as_str() {
-                    "site" => Ok(Self::Site),
-                    "endpoint" => Ok(Self::Client),
-                    _ => {
-                        error!("Unknown site type: {t}");
-                        Err(UispIntegrationError::UnknownSiteType)
-                    }
-                };
-            }
+        if let Some(id) = &site.identification
+            && let Some(t) = &id.site_type
+        {
+            return match t.as_str() {
+                "site" => Ok(Self::Site),
+                "endpoint" => Ok(Self::Client),
+                _ => {
+                    error!("Unknown site type: {t}");
+                    Err(UispIntegrationError::UnknownSiteType)
+                }
+            };
         }
         Err(UispIntegrationError::UnknownSiteType)
     }

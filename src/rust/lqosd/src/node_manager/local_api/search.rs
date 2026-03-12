@@ -108,20 +108,20 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
         };
-        if let Some((net, &idx)) = sd_reader.trie.longest_match(query_v6) {
-            if let Some(dev) = sd_reader.devices.get(idx) {
-                let name = format!("{} ({})", dev.device_name, pretty_net(&net));
-                push_result(
-                    &mut results,
-                    &mut seen,
-                    SearchResult::Device {
-                        circuit_id: dev.circuit_id.clone(),
-                        name,
-                        circuit_name: dev.circuit_name.clone(),
-                    },
-                    MAX_RESULTS,
-                );
-            }
+        if let Some((net, &idx)) = sd_reader.trie.longest_match(query_v6)
+            && let Some(dev) = sd_reader.devices.get(idx)
+        {
+            let name = format!("{} ({})", dev.device_name, pretty_net(&net));
+            push_result(
+                &mut results,
+                &mut seen,
+                SearchResult::Device {
+                    circuit_id: dev.circuit_id.clone(),
+                    name,
+                    circuit_name: dev.circuit_name.clone(),
+                },
+                MAX_RESULTS,
+            );
         }
     }
 
@@ -148,20 +148,20 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                         if results.len() >= MAX_RESULTS {
                             break;
                         }
-                        if ipv6_overlap(&n, query_v6) {
-                            if let Some(dev) = sd_reader.devices.get(idx) {
-                                let name = format!("{} ({})", dev.device_name, pretty_net(&n));
-                                push_result(
-                                    &mut results,
-                                    &mut seen,
-                                    SearchResult::Device {
-                                        circuit_id: dev.circuit_id.clone(),
-                                        name,
-                                        circuit_name: dev.circuit_name.clone(),
-                                    },
-                                    MAX_RESULTS,
-                                );
-                            }
+                        if ipv6_overlap(&n, query_v6)
+                            && let Some(dev) = sd_reader.devices.get(idx)
+                        {
+                            let name = format!("{} ({})", dev.device_name, pretty_net(&n));
+                            push_result(
+                                &mut results,
+                                &mut seen,
+                                SearchResult::Device {
+                                    circuit_id: dev.circuit_id.clone(),
+                                    name,
+                                    circuit_name: dev.circuit_name.clone(),
+                                },
+                                MAX_RESULTS,
+                            );
                         }
                     }
                 }
@@ -174,20 +174,20 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                     break;
                 }
                 let s = pretty_net(&n);
-                if s.starts_with(raw_term) {
-                    if let Some(dev) = sd_reader.devices.get(idx) {
-                        let name = format!("{} ({})", dev.device_name, s);
-                        push_result(
-                            &mut results,
-                            &mut seen,
-                            SearchResult::Device {
-                                circuit_id: dev.circuit_id.clone(),
-                                name,
-                                circuit_name: dev.circuit_name.clone(),
-                            },
-                            MAX_RESULTS,
-                        );
-                    }
+                if s.starts_with(raw_term)
+                    && let Some(dev) = sd_reader.devices.get(idx)
+                {
+                    let name = format!("{} ({})", dev.device_name, s);
+                    push_result(
+                        &mut results,
+                        &mut seen,
+                        SearchResult::Device {
+                            circuit_id: dev.circuit_id.clone(),
+                            name,
+                            circuit_name: dev.circuit_name.clone(),
+                        },
+                        MAX_RESULTS,
+                    );
                 }
             }
         }

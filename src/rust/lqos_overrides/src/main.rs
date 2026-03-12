@@ -39,6 +39,7 @@ enum Commands {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum PersistentDevicesCommand {
     /// Add a persistent shaped device
     Add(AddArgs),
@@ -485,7 +486,7 @@ fn main() -> Result<()> {
                         serde_json::to_string_pretty(&uisp.bandwidth_overrides)?
                     );
                 } else {
-                    println!("{}", "{}");
+                    println!("{{}}");
                 }
             }
             UispCommand::RouteAdd {

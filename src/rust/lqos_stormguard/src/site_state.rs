@@ -32,6 +32,18 @@ pub struct SiteStateTracker {
     active_circuit_fallbacks: HashSet<String>,
 }
 
+struct CircuitQueueRecommendationContext<'a> {
+    active_circuit_fallbacks: &'a mut HashSet<String>,
+    site: &'a mut SiteState,
+    config: &'a StormguardConfig,
+    recommendation: &'a Recommendation,
+    summary: &'a str,
+    circuit_id: &'a str,
+    cooldown_secs: f32,
+    log_sender: &'a std::sync::mpsc::Sender<LogCommand>,
+    bakery_sender: Sender<BakeryCommands>,
+}
+
 impl SiteStateTracker {
     pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
@@ -283,11 +295,9 @@ impl SiteStateTracker {
             ) && active_ping_updated
                 && active.is_some();
             let updated = site.passive_rtt_updated_this_tick() || active_updated;
-            if updated {
-                if let Some(effective) = effective {
-                    site.round_trip_time.add(effective);
-                    site.rtt_sample_for_baseline_ms = Some(effective);
-                }
+            if updated && let Some(effective) = effective {
+                site.round_trip_time.add(effective);
+                site.rtt_sample_for_baseline_ms = Some(effective);
             }
         }
     }
@@ -310,9 +320,7 @@ impl SiteStateTracker {
         self.sites
             .iter()
             .filter_map(|(name, site)| {
-                let Some(site_config) = config.sites.get(name) else {
-                    return None;
-                };
+                let site_config = config.sites.get(name)?;
 
                 let state_string = |state: &StormguardState| -> (String, Option<f32>) {
                     match state {
@@ -487,17 +495,17 @@ impl SiteStateTracker {
 
             // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
             if let Some(circuit_id) = queue.circuit_id.as_deref() {
-                Self::handle_circuit_queue_recommendation(
-                    &mut self.active_circuit_fallbacks,
+                Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
+                    active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
                     site,
                     config,
-                    &recommendation,
-                    &summary,
+                    recommendation: &recommendation,
+                    summary: &summary,
                     circuit_id,
                     cooldown_secs,
-                    &log_sender,
-                    bakery_sender.clone(),
-                );
+                    log_sender: &log_sender,
+                    bakery_sender: bakery_sender.clone(),
+                });
                 continue;
             }
 
@@ -615,17 +623,18 @@ impl SiteStateTracker {
         }
     }
 
-    fn handle_circuit_queue_recommendation(
-        active_circuit_fallbacks: &mut HashSet<String>,
-        site: &mut SiteState,
-        config: &StormguardConfig,
-        recommendation: &Recommendation,
-        summary: &str,
-        circuit_id: &str,
-        cooldown_secs: f32,
-        log_sender: &std::sync::mpsc::Sender<LogCommand>,
-        bakery_sender: Sender<BakeryCommands>,
-    ) {
+    fn handle_circuit_queue_recommendation(ctx: CircuitQueueRecommendationContext<'_>) {
+        let CircuitQueueRecommendationContext {
+            active_circuit_fallbacks,
+            site,
+            config,
+            recommendation,
+            summary,
+            circuit_id,
+            cooldown_secs,
+            log_sender,
+            bakery_sender,
+        } = ctx;
         let outcome = if !config.circuit_fallback_enabled {
             CircuitFallbackOutcome::Skipped {
                 reason: "Circuit fallback disabled in config.".to_string(),
@@ -887,7 +896,6 @@ impl SiteStateTracker {
             new_rate,
         }) {
             warn!("Failed to send StormGuard adjustment command: {}", e);
-            return;
         }
 
         // // Build the HTB command

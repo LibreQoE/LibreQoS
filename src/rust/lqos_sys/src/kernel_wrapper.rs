@@ -46,7 +46,7 @@ impl LibreQoSKernels {
     /// * `to_internet` - the name of the Internet-facing interface (e.g. `eth1`).
     /// * `to_isp` - the name of the ISP-network facing interface (e.g. `eth2`).
     /// * `heimdall_event_handler` - C function pointer to the ringbuffer
-    ///    event handler exported by Heimdall.
+    ///   event handler exported by Heimdall.
     pub fn new<S: ToString>(
         to_internet: S,
         to_isp: S,

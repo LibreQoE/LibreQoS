@@ -337,8 +337,10 @@ mod tests {
             lqosd_public_key: lqosd.public_key.as_slice().to_vec(),
         };
         let envelope = {
-            let payload = serde_cbor::to_vec(&grant).unwrap();
-            let signed = signer.sign_with_defaults(payload.clone()).unwrap();
+            let payload = serde_cbor::to_vec(&grant).expect("grant should serialize");
+            let signed = signer
+                .sign_with_defaults(payload.clone())
+                .expect("grant should sign");
             let (signature, _message) = signed.into_parts();
             LicenseGrantEnvelope {
                 payload,
@@ -351,7 +353,7 @@ mod tests {
             &signer.public_key,
             lqosd.public_key.as_slice(),
         )
-        .unwrap();
+        .expect("signed grant should verify");
         assert_eq!(verified.license_state, grant.license_state);
     }
 
@@ -370,8 +372,10 @@ mod tests {
             max_circuits: None,
             lqosd_public_key: lqosd.public_key.as_slice().to_vec(),
         };
-        let payload = serde_cbor::to_vec(&grant).unwrap();
-        let signed = signer.sign_with_defaults(payload.clone()).unwrap();
+        let payload = serde_cbor::to_vec(&grant).expect("grant should serialize");
+        let signed = signer
+            .sign_with_defaults(payload.clone())
+            .expect("grant should sign");
         let (signature, _message) = signed.into_parts();
         let mut tampered = payload.clone();
         tampered[0] ^= 0x01;
@@ -406,8 +410,10 @@ mod tests {
             max_circuits: None,
             lqosd_public_key: lqosd.public_key.as_slice().to_vec(),
         };
-        let payload = serde_cbor::to_vec(&grant).unwrap();
-        let signed = signer.sign_with_defaults(payload.clone()).unwrap();
+        let payload = serde_cbor::to_vec(&grant).expect("grant should serialize");
+        let signed = signer
+            .sign_with_defaults(payload.clone())
+            .expect("grant should sign");
         let (signature, _message) = signed.into_parts();
         let envelope = LicenseGrantEnvelope {
             payload,

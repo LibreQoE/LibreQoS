@@ -141,10 +141,10 @@ fn add_circuit_records(
             }
         } else if let Some(Value::String(s)) = cm.get("classid") {
             // Fallback: parse major from TC handle like "0x1:0x51"
-            if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) {
-                    rec.cpu_down = Some(v.saturating_sub(1));
-                }
+            if let Some((maj, _)) = s.split_once(':')
+                && let Some(v) = parse_hex_u32(maj)
+            {
+                rec.cpu_down = Some(v.saturating_sub(1));
             }
         }
         if let Some(Value::String(s)) = cm.get("up_cpuNum") {
@@ -153,12 +153,11 @@ fn add_circuit_records(
             if let Some(v) = parse_hex_u32(s) {
                 rec.cpu_up = Some(v.saturating_sub(1));
             }
-        } else if let Some(Value::String(s)) = cm.get("up_classid") {
-            if let Some((maj, _)) = s.split_once(':') {
-                if let Some(v) = parse_hex_u32(maj) {
-                    rec.cpu_up = Some(v.saturating_sub(1));
-                }
-            }
+        } else if let Some(Value::String(s)) = cm.get("up_classid")
+            && let Some((maj, _)) = s.split_once(':')
+            && let Some(v) = parse_hex_u32(maj)
+        {
+            rec.cpu_up = Some(v.saturating_sub(1));
         }
         // classids
         if let Some(Value::String(s)) = cm.get("classid") {
@@ -186,15 +185,15 @@ fn add_circuit_records(
             rec.has_planner_weight = true;
         }
         // identity
-        if let Some(Value::String(s)) = cm.get("circuitID") {
-            if !s.is_empty() {
-                rec.circuit_id = Some(s.clone());
-            }
+        if let Some(Value::String(s)) = cm.get("circuitID")
+            && !s.is_empty()
+        {
+            rec.circuit_id = Some(s.clone());
         }
-        if let Some(Value::String(s)) = cm.get("circuitName") {
-            if !s.is_empty() {
-                rec.circuit_name = Some(s.clone());
-            }
+        if let Some(Value::String(s)) = cm.get("circuitName")
+            && !s.is_empty()
+        {
+            rec.circuit_name = Some(s.clone());
         }
         if rec.circuit_name.is_none() {
             // Fallback to the JSON key is not available here; leave empty
@@ -243,12 +242,12 @@ fn load_all_circuits() -> Vec<CircuitRecord> {
         Err(_) => return Vec::new(),
     };
     let mut circuits = Vec::new();
-    if let Value::Object(map) = json {
-        if let Some(Value::Object(net)) = map.get("Network") {
-            for (_k, v) in net.iter() {
-                if let Value::Object(node) = v {
-                    add_circuit_records(None, node, &mut circuits);
-                }
+    if let Value::Object(map) = json
+        && let Some(Value::Object(net)) = map.get("Network")
+    {
+        for (_k, v) in net.iter() {
+            if let Value::Object(node) = v {
+                add_circuit_records(None, node, &mut circuits);
             }
         }
     }
@@ -292,10 +291,10 @@ fn build_site_tree(name: &str, node: &serde_json::Map<String, Value>) -> CpuAffi
     let mut children = Vec::new();
     if let Some(Value::Object(child_map)) = node.get("children") {
         for (child_name, child_value) in child_map.iter() {
-            if let Value::Object(child_node) = child_value {
-                if is_network_node(child_node) {
-                    children.push(build_site_tree(child_name, child_node));
-                }
+            if let Value::Object(child_node) = child_value
+                && is_network_node(child_node)
+            {
+                children.push(build_site_tree(child_name, child_node));
             }
         }
     }
@@ -324,10 +323,10 @@ pub fn cpu_affinity_site_tree_data() -> Option<CpuAffinitySiteTreeNode> {
             let mut site_children: Vec<CpuAffinitySiteTreeNode> = Vec::new();
             if let Some(Value::Object(child_map)) = cpu_node.get("children") {
                 for (child_name, child_value) in child_map.iter() {
-                    if let Value::Object(child_node) = child_value {
-                        if is_network_node(child_node) {
-                            site_children.push(build_site_tree(child_name, child_node));
-                        }
+                    if let Value::Object(child_node) = child_value
+                        && is_network_node(child_node)
+                    {
+                        site_children.push(build_site_tree(child_name, child_node));
                     }
                 }
             }
@@ -410,23 +409,23 @@ pub fn cpu_affinity_summary_data() -> Vec<CpuAffinitySummaryEntry> {
 
     for c in circuits.iter() {
         let ignored = c.has_planner_weight && c.planner_weight <= 0.0;
-        if let Some(cpu) = c.cpu_down {
-            if !ignored {
-                let entry = down.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
-                entry.0 += 1;
-                entry.1 += c.min_down;
-                entry.2 += c.max_down;
-                entry.3 += c.planner_weight;
-            }
+        if let Some(cpu) = c.cpu_down
+            && !ignored
+        {
+            let entry = down.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
+            entry.0 += 1;
+            entry.1 += c.min_down;
+            entry.2 += c.max_down;
+            entry.3 += c.planner_weight;
         }
-        if let Some(cpu) = c.cpu_up {
-            if !ignored {
-                let entry = up.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
-                entry.0 += 1;
-                entry.1 += c.min_up;
-                entry.2 += c.max_up;
-                entry.3 += c.planner_weight;
-            }
+        if let Some(cpu) = c.cpu_up
+            && !ignored
+        {
+            let entry = up.entry(cpu).or_insert((0, 0.0, 0.0, 0.0));
+            entry.0 += 1;
+            entry.1 += c.min_up;
+            entry.2 += c.max_up;
+            entry.3 += c.planner_weight;
         }
     }
 

@@ -111,28 +111,28 @@ impl ReloadController {
             .saturating_mul(60)
             .max(MIN_COOLDOWN_SECONDS);
 
-        if let Some(until) = self.backoff_until_unix {
-            if now_unix < until {
-                return self.maybe_report_skip(
-                    SkipKind::Backoff,
-                    Some(until),
-                    "Reload backoff active".to_string(),
-                    Some(until),
-                );
-            }
+        if let Some(until) = self.backoff_until_unix
+            && now_unix < until
+        {
+            return self.maybe_report_skip(
+                SkipKind::Backoff,
+                Some(until),
+                "Reload backoff active".to_string(),
+                Some(until),
+            );
         }
 
-        if self.pending_priority == ReloadPriority::Normal {
-            if let Some(last) = self.last_attempt_unix {
-                let next = last.saturating_add(cooldown_seconds);
-                if now_unix < next {
-                    return self.maybe_report_skip(
-                        SkipKind::Cooldown,
-                        Some(next),
-                        "Reload cooldown active".to_string(),
-                        Some(next),
-                    );
-                }
+        if self.pending_priority == ReloadPriority::Normal
+            && let Some(last) = self.last_attempt_unix
+        {
+            let next = last.saturating_add(cooldown_seconds);
+            if now_unix < next {
+                return self.maybe_report_skip(
+                    SkipKind::Cooldown,
+                    Some(next),
+                    "Reload cooldown active".to_string(),
+                    Some(next),
+                );
             }
         }
 

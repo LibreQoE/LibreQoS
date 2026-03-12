@@ -44,10 +44,10 @@ impl From<&IpStats> for IpStatsWithPlan {
                 } else {
                     circuit.circuit_name.clone()
                 };
-                result.ip_address = format!("{}", name);
+                result.ip_address = name.to_string();
                 result.plan = DownUpOrder {
-                    down: circuit.download_max_mbps as f32,
-                    up: circuit.upload_max_mbps as f32,
+                    down: circuit.download_max_mbps,
+                    up: circuit.upload_max_mbps,
                 };
             }
         }

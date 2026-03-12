@@ -10,7 +10,7 @@ use std::{net::UdpSocket, sync::atomic::AtomicU32};
 pub(crate) struct Netflow5 {}
 
 impl Netflow5 {
-    pub(crate) fn new(
+    pub(crate) fn start(
         target: String,
     ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
         let (tx, rx) =
