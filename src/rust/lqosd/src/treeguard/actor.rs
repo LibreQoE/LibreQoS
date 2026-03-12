@@ -23,12 +23,15 @@ use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideSto
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
+use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
+static TREEGUARD_STATUS_CACHE: OnceLock<RwLock<TreeguardStatusData>> = OnceLock::new();
+static TREEGUARD_ACTIVITY_CACHE: OnceLock<RwLock<Vec<TreeguardActivityEntry>>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
@@ -60,6 +63,9 @@ pub(crate) fn start_treeguard_actor(
         return Ok(());
     }
 
+    let _ = TREEGUARD_STATUS_CACHE.set(RwLock::new(empty_status_snapshot()));
+    let _ = TREEGUARD_ACTIVITY_CACHE.set(RwLock::new(Vec::new()));
+
     let (tx, rx) = crossbeam_channel::bounded::<TreeguardCommand>(64);
     let _ = TREEGUARD_SENDER.set(tx);
 
@@ -68,6 +74,14 @@ pub(crate) fn start_treeguard_actor(
         .spawn(move || treeguard_actor_loop(rx, system_usage_tx))?;
 
     Ok(())
+}
+
+pub(crate) fn cached_status_snapshot() -> Option<TreeguardStatusData> {
+    Some(TREEGUARD_STATUS_CACHE.get()?.read().clone())
+}
+
+pub(crate) fn cached_activity_snapshot() -> Option<Vec<TreeguardActivityEntry>> {
+    Some(TREEGUARD_ACTIVITY_CACHE.get()?.read().clone())
 }
 
 /// Requests a status snapshot from the TreeGuard actor.
@@ -110,18 +124,9 @@ fn treeguard_actor_loop(
 ) {
     debug!("TreeGuard actor started");
 
-    let mut status = TreeguardStatusData {
-        enabled: false,
-        dry_run: true,
-        cpu_max_pct: None,
-        managed_nodes: 0,
-        managed_circuits: 0,
-        virtualized_nodes: 0,
-        fq_codel_circuits: 0,
-        last_action_summary: None,
-        warnings: Vec::new(),
-    };
+    let mut status = empty_status_snapshot();
     let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+    update_cached_snapshots(&status, &activity);
 
     let mut runtime_state = TreeguardRuntimeState::default();
 
@@ -143,6 +148,7 @@ fn treeguard_actor_loop(
                     &mut tick_seconds,
                     &mut runtime_state,
                 );
+                update_cached_snapshots(&status, &activity);
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 warn!("TreeGuard actor command channel disconnected; exiting actor");
@@ -168,6 +174,32 @@ fn handle_command(
             let data: Vec<TreeguardActivityEntry> = activity.iter().cloned().rev().collect();
             let _ = reply.send(data);
         }
+    }
+}
+
+fn empty_status_snapshot() -> TreeguardStatusData {
+    TreeguardStatusData {
+        enabled: false,
+        dry_run: true,
+        cpu_max_pct: None,
+        managed_nodes: 0,
+        managed_circuits: 0,
+        virtualized_nodes: 0,
+        fq_codel_circuits: 0,
+        last_action_summary: None,
+        warnings: Vec::new(),
+    }
+}
+
+fn update_cached_snapshots(
+    status: &TreeguardStatusData,
+    activity: &VecDeque<TreeguardActivityEntry>,
+) {
+    if let Some(cache) = TREEGUARD_STATUS_CACHE.get() {
+        *cache.write() = status.clone();
+    }
+    if let Some(cache) = TREEGUARD_ACTIVITY_CACHE.get() {
+        *cache.write() = activity.iter().cloned().rev().collect();
     }
 }
 
