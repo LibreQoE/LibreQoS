@@ -437,7 +437,7 @@ pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(TimeBuffer::new);
 pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
-    pub fn new() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
+    pub fn start() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
         debug!("Created Flow Analysis Endpoint");
         let (tx, rx) =
             crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
