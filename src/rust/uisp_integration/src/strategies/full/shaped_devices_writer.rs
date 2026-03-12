@@ -87,7 +87,7 @@ fn traverse(
                 let device = &devices[*device];
                 if device.has_address() {
                     // Prefer UISP QoS + burst if available; else fallback to capacity-based
-                    let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                    let (download_min, mut download_max, upload_min, mut upload_max) =
                         if let Some((dl_min, dl_max, ul_min, ul_max)) =
                             sites[idx].burst_rates(config)
                         {
@@ -130,10 +130,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: download_min,
-                        download_max: download_max,
-                        upload_min: upload_min,
-                        upload_max: upload_max,
+                        download_min,
+                        download_max,
+                        upload_min,
+                        upload_max,
                         comment: "".to_string(),
                     };
                     shaped_devices.push(sd);
@@ -172,10 +172,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: download_min,
-                        download_max: download_max,
-                        upload_min: upload_min,
-                        upload_max: upload_max,
+                        download_min,
+                        download_max,
+                        upload_min,
+                        upload_max,
                         comment: "Infrastructure Entry".to_string(),
                     };
                     shaped_devices.push(sd);

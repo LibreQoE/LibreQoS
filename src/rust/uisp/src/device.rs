@@ -54,19 +54,19 @@ impl Device {
     }
 
     pub fn get_status(&self) -> Option<String> {
-        if let Some(overview) = &self.overview {
-            if let Some(status) = &overview.status {
-                return Some(status.clone());
-            }
+        if let Some(overview) = &self.overview
+            && let Some(status) = &overview.status
+        {
+            return Some(status.clone());
         }
         None
     }
 
     pub fn get_frequency(&self) -> Option<f64> {
-        if let Some(overview) = &self.overview {
-            if let Some(frequency) = &overview.frequency {
-                return Some(*frequency);
-            }
+        if let Some(overview) = &self.overview
+            && let Some(frequency) = &overview.frequency
+        {
+            return Some(*frequency);
         }
         None
     }
@@ -101,10 +101,10 @@ impl Device {
     pub fn get_noise_floor(&self) -> Option<i64> {
         if let Some(interfaces) = &self.interfaces {
             for intf in interfaces.iter() {
-                if let Some(w) = &intf.wireless {
-                    if let Some(nf) = &w.noiseFloor {
-                        return Some(*nf);
-                    }
+                if let Some(w) = &intf.wireless
+                    && let Some(nf) = &w.noiseFloor
+                {
+                    return Some(*nf);
                 }
             }
         }

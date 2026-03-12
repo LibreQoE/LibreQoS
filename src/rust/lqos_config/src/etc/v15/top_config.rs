@@ -377,9 +377,7 @@ mod test {
                 let section_name = &trimmed[1..trimmed.len() - 1];
                 skip_section = sections.iter().any(|section| {
                     section_name == *section
-                        || section_name
-                            .strip_prefix(&format!("{section}."))
-                            .is_some()
+                        || section_name.strip_prefix(&format!("{section}.")).is_some()
                 });
             }
 
@@ -481,23 +479,27 @@ mod test {
 
     #[test]
     fn rtt_thresholds_validation_requires_ordered() {
-        let mut cfg = Config::default();
-        cfg.rtt_thresholds = Some(RttThresholds {
-            green_ms: 0,
-            yellow_ms: 200,
-            red_ms: 100,
-        });
+        let cfg = Config {
+            rtt_thresholds: Some(RttThresholds {
+                green_ms: 0,
+                yellow_ms: 200,
+                red_ms: 100,
+            }),
+            ..Config::default()
+        };
         assert!(cfg.validate().is_err());
     }
 
     #[test]
     fn rtt_thresholds_validation_rejects_zero_red() {
-        let mut cfg = Config::default();
-        cfg.rtt_thresholds = Some(RttThresholds {
-            green_ms: 0,
-            yellow_ms: 0,
-            red_ms: 0,
-        });
+        let cfg = Config {
+            rtt_thresholds: Some(RttThresholds {
+                green_ms: 0,
+                yellow_ms: 0,
+                red_ms: 0,
+            }),
+            ..Config::default()
+        };
         assert!(cfg.validate().is_err());
     }
 
@@ -588,18 +590,26 @@ mod test {
 
     #[test]
     fn stormguard_validation_rejects_invalid_ranges() {
-        let mut cfg = Config::default();
-        cfg.stormguard = Some(crate::etc::v15::stormguard::StormguardConfig {
-            enabled: true,
-            targets: vec!["Site A".to_string()],
-            ..Default::default()
-        });
+        let mut cfg = Config {
+            stormguard: Some(crate::etc::v15::stormguard::StormguardConfig {
+                enabled: true,
+                targets: vec!["Site A".to_string()],
+                ..Default::default()
+            }),
+            ..Config::default()
+        };
 
-        let stormguard = cfg.stormguard.as_mut().unwrap();
+        let stormguard = cfg
+            .stormguard
+            .as_mut()
+            .expect("stormguard config should be present");
         stormguard.minimum_download_percentage = 0.0;
         assert!(cfg.validate().is_err());
 
-        let stormguard = cfg.stormguard.as_mut().unwrap();
+        let stormguard = cfg
+            .stormguard
+            .as_mut()
+            .expect("stormguard config should be present");
         stormguard.minimum_download_percentage = 0.5;
         stormguard.decrease_multiplier = 1.1;
         assert!(cfg.validate().is_err());
@@ -619,8 +629,8 @@ minimum_download_percentage = 0.5
 minimum_upload_percentage = 0.5
 "#,
         );
-        let cfg = Config::load_from_string(&raw)
-            .expect("legacy stormguard config should deserialize");
+        let cfg =
+            Config::load_from_string(&raw).expect("legacy stormguard config should deserialize");
 
         let stormguard = cfg.stormguard.expect("stormguard section missing");
         assert!(!stormguard.all_sites);

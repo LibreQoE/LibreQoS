@@ -31,8 +31,7 @@ pub async fn load_uisp_data(
         error!("{:?}", devices);
         return Err(UispIntegrationError::UispConnectError);
     }
-    let mut devices = devices.unwrap();
-    let (mut devices, raw_json_devices_data) = devices;
+    let (mut devices, raw_json_devices_data) = devices.unwrap();
 
     if sites.is_err() {
         error!("Error downloading sites list from UISP");

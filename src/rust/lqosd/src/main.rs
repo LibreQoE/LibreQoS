@@ -4,7 +4,6 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
-mod treeguard;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
@@ -23,6 +22,7 @@ mod stick;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
+mod treeguard;
 mod tuning;
 mod urgent;
 mod validation;

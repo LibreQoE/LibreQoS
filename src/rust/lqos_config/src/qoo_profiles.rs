@@ -84,10 +84,11 @@ pub fn load_qoo_profiles_file() -> Result<Arc<QooProfilesFile>, QooProfilesError
     let path = profiles_path_from_config()?;
     let modified = metadata_modified(&path);
 
-    if let Some(cached) = PROFILES.load().as_ref() {
-        if cached.path == path && cached.modified == modified {
-            return Ok(cached.file.clone());
-        }
+    if let Some(cached) = PROFILES.load().as_ref()
+        && cached.path == path
+        && cached.modified == modified
+    {
+        return Ok(cached.file.clone());
     }
 
     let file = load_profiles_from_disk(&path)?;

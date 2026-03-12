@@ -50,8 +50,8 @@ struct PlannerStateSerde {
     algo_version: String,
     #[serde(default)]
     updated_at: f64,
-    #[serde(default)]
-    queuesAvailable: i64,
+    #[serde(default, rename = "queuesAvailable")]
+    queues_available: i64,
     #[serde(default)]
     on_a_stick: bool,
     #[serde(default)]
@@ -186,7 +186,7 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     let to_save = PlannerStateSerde {
         algo_version,
         updated_at,
-        queuesAvailable: queues_available,
+        queues_available,
         on_a_stick,
         site_count,
         site_names,
@@ -245,7 +245,7 @@ fn read_planner_cbor(py: Python, path: String) -> PyResult<Option<PyObject>> {
     let out = pyo3::types::PyDict::new(py);
     out.set_item("algo_version", decoded.algo_version).ok();
     out.set_item("updated_at", decoded.updated_at).ok();
-    out.set_item("queuesAvailable", decoded.queuesAvailable)
+    out.set_item("queuesAvailable", decoded.queues_available)
         .ok();
     out.set_item("on_a_stick", decoded.on_a_stick).ok();
     out.set_item("site_count", decoded.site_count).ok();
@@ -402,7 +402,7 @@ fn fetch_planner_remote(
             let out = pyo3::types::PyDict::new(py);
             out.set_item("algo_version", decoded.algo_version).ok();
             out.set_item("updated_at", decoded.updated_at).ok();
-            out.set_item("queuesAvailable", decoded.queuesAvailable)
+            out.set_item("queuesAvailable", decoded.queues_available)
                 .ok();
             out.set_item("on_a_stick", decoded.on_a_stick).ok();
             out.set_item("site_count", decoded.site_count).ok();
@@ -514,7 +514,7 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     let to_save = PlannerStateSerde {
         algo_version,
         updated_at,
-        queuesAvailable: queues_available,
+        queues_available,
         on_a_stick,
         site_count,
         site_names,
@@ -664,7 +664,10 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_network_adjustments, m)?)?;
-    m.add_function(wrap_pyfunction!(overrides_network_adjustments_effective, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        overrides_network_adjustments_effective,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -961,13 +964,11 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(
-        apply_stormguard,
-        apply_treeguard,
-    ) {
-        Ok(o) => o,
-        Err(e) => return Err(PyOSError::new_err(e.to_string())),
-    };
+    let overrides =
+        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+            Ok(o) => o,
+            Err(e) => return Err(PyOSError::new_err(e.to_string())),
+        };
 
     let mut out: Vec<PyObject> = Vec::new();
     for dev in overrides.persistent_devices().iter() {
@@ -1143,13 +1144,11 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(
-        apply_stormguard,
-        apply_treeguard,
-    ) {
-        Ok(o) => o,
-        Err(e) => return Err(PyOSError::new_err(e.to_string())),
-    };
+    let overrides =
+        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+            Ok(o) => o,
+            Err(e) => return Err(PyOSError::new_err(e.to_string())),
+        };
 
     let mut out: Vec<PyObject> = Vec::new();
     for adj in overrides.network_adjustments().iter() {

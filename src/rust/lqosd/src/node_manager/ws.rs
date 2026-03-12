@@ -1514,8 +1514,9 @@ fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
         Ok(request) => Ok(request),
         Err(err) => {
             if let Ok(CborValue::Map(map)) = serde_cbor::from_slice::<CborValue>(payload) {
-                if map.len() == 1 {
-                    let (key, value) = map.into_iter().next().unwrap();
+                if map.len() == 1
+                    && let Some((key, value)) = map.into_iter().next()
+                {
                     if matches!(value, CborValue::Map(ref inner) if inner.is_empty()) {
                         let mut normalized_map = BTreeMap::new();
                         normalized_map.insert(key, CborValue::Null);

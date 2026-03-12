@@ -76,13 +76,13 @@ impl QooProfilesFile {
         }
 
         // Default profile must exist (if set).
-        if let Some(default_id) = &self.default_profile_id {
-            if !self.profiles.iter().any(|p| &p.id == default_id) {
-                errs.push(format!(
-                    "default_profile_id '{}' does not match any profile id",
-                    default_id
-                ));
-            }
+        if let Some(default_id) = &self.default_profile_id
+            && !self.profiles.iter().any(|p| &p.id == default_id)
+        {
+            errs.push(format!(
+                "default_profile_id '{}' does not match any profile id",
+                default_id
+            ));
         }
 
         for p in &self.profiles {
@@ -98,10 +98,10 @@ impl QooProfilesFile {
 
     /// Find the default profile (if configured), otherwise first profile.
     pub fn pick_default(&self) -> Option<&QooProfileSpec> {
-        if let Some(id) = &self.default_profile_id {
-            if let Some(p) = self.profiles.iter().find(|p| &p.id == id) {
-                return Some(p);
-            }
+        if let Some(id) = &self.default_profile_id
+            && let Some(p) = self.profiles.iter().find(|p| &p.id == id)
+        {
+            return Some(p);
         }
         self.profiles.first()
     }
@@ -317,21 +317,16 @@ pub struct LatencySpec {
 ///
 /// - `threshold_offset_ms`: Subtract a fixed `ms` before scoring (equivalent to shifting thresholds upward).
 /// - `excess_over_baseline`: Subtract a baseline derived from the same RTT distribution (or fixed).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum LatencyNormalizationSpec {
     /// Score absolute RTT directly against thresholds.
+    #[default]
     None,
     /// Subtract a fixed offset before scoring.
     ThresholdOffsetMs { ms: f64 },
     /// Subtract a baseline (fixed or derived from an RTT percentile) before scoring.
     ExcessOverBaseline { baseline: BaselineSpec },
-}
-
-impl Default for LatencyNormalizationSpec {
-    fn default() -> Self {
-        LatencyNormalizationSpec::None
-    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -343,17 +338,12 @@ pub enum BaselineSpec {
     Percentile { percentile: u8 },
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LossHandlingSpec {
     /// Use loss score directly in the final `min()`.
     Strict,
     /// Blend loss score toward 100 based on confidence.
+    #[default]
     ConfidenceWeighted,
-}
-
-impl Default for LossHandlingSpec {
-    fn default() -> Self {
-        LossHandlingSpec::ConfidenceWeighted
-    }
 }

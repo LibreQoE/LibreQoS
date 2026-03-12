@@ -3,9 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use lqos_config::ShapedDevice;
+use serde::{Deserialize, Serialize};
 
 use crate::overrides_file::file_lock::FileLock;
 
@@ -47,9 +47,16 @@ pub enum CircuitAdjustment {
         min_upload_bandwidth: Option<f32>,
         max_upload_bandwidth: Option<f32>,
     },
-    RemoveCircuit { circuit_id: String },
-    RemoveDevice { device_id: String },
-    ReparentCircuit { circuit_id: String, parent_node: String },
+    RemoveCircuit {
+        circuit_id: String,
+    },
+    RemoveDevice {
+        device_id: String,
+    },
+    ReparentCircuit {
+        circuit_id: String,
+        parent_node: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -118,11 +125,7 @@ fn treeguard_read_path(config: &lqos_config::Config) -> PathBuf {
         return canonical;
     }
     let legacy = Path::new(&config.lqos_directory).join(LEGACY_AUTOPILOT_OVERRIDES_FILE);
-    if legacy.exists() {
-        legacy
-    } else {
-        canonical
-    }
+    if legacy.exists() { legacy } else { canonical }
 }
 
 fn load_from_path(path: &Path) -> Result<OverrideFile> {
@@ -303,7 +306,8 @@ fn merge_network_adjustments_owned(
         if operator_site_speed_seen.contains(name) {
             continue;
         }
-        let Some((download_bandwidth_mbps, upload_bandwidth_mbps)) = stormguard_site_speeds.get(name)
+        let Some((download_bandwidth_mbps, upload_bandwidth_mbps)) =
+            stormguard_site_speeds.get(name)
         else {
             continue;
         };
@@ -442,11 +446,10 @@ impl OverrideFile {
             .persistent_devices
             .iter()
             .find(|d| d.device_id == device.device_id)
+            && existing == &device
         {
-            if existing == &device {
-                // No change needed
-                return false;
-            }
+            // No change needed
+            return false;
         }
         self.persistent_devices
             .retain(|d| d.device_id != device.device_id);
@@ -465,8 +468,7 @@ impl OverrideFile {
     /// Remove all devices matching `device_id`. Returns number removed.
     pub fn remove_persistent_shaped_device_by_device_count(&mut self, device_id: &str) -> usize {
         let before = self.persistent_devices.len();
-        self.persistent_devices
-            .retain(|d| d.device_id != device_id);
+        self.persistent_devices.retain(|d| d.device_id != device_id);
         before.saturating_sub(self.persistent_devices.len())
     }
 
@@ -497,21 +499,26 @@ impl OverrideFile {
         upload_bandwidth_mbps: Option<u32>,
     ) {
         self.network_adjustments.retain(|adj| match adj {
-            NetworkAdjustment::AdjustSiteSpeed { site_name: current, .. } => current != &site_name,
+            NetworkAdjustment::AdjustSiteSpeed {
+                site_name: current, ..
+            } => current != &site_name,
             _ => true,
         });
-        self.network_adjustments.push(NetworkAdjustment::AdjustSiteSpeed {
-            site_name,
-            download_bandwidth_mbps,
-            upload_bandwidth_mbps,
-        });
+        self.network_adjustments
+            .push(NetworkAdjustment::AdjustSiteSpeed {
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+            });
     }
 
     /// Remove any site bandwidth overrides for `site_name`. Returns number removed.
     pub fn remove_site_bandwidth_override_by_name_count(&mut self, site_name: &str) -> usize {
         let before = self.network_adjustments.len();
         self.network_adjustments.retain(|adj| match adj {
-            NetworkAdjustment::AdjustSiteSpeed { site_name: current, .. } => current != site_name,
+            NetworkAdjustment::AdjustSiteSpeed {
+                site_name: current, ..
+            } => current != site_name,
             _ => true,
         });
         before.saturating_sub(self.network_adjustments.len())
@@ -523,10 +530,11 @@ impl OverrideFile {
             NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != &node_name,
             _ => true,
         });
-        self.network_adjustments.push(NetworkAdjustment::SetNodeVirtual {
-            node_name,
-            virtual_node,
-        });
+        self.network_adjustments
+            .push(NetworkAdjustment::SetNodeVirtual {
+                node_name,
+                virtual_node,
+            });
     }
 
     /// Remove any virtual-node overrides for `node_name`. Returns number removed.
@@ -567,7 +575,11 @@ impl OverrideFile {
 
     pub fn add_uisp_route_override(&mut self, from_site: String, to_site: String, cost: u32) {
         let uisp = self.ensure_uisp_mut();
-        uisp.route_overrides.push(UispRouteOverride { from_site, to_site, cost });
+        uisp.route_overrides.push(UispRouteOverride {
+            from_site,
+            to_site,
+            cost,
+        });
     }
 
     pub fn remove_uisp_route_by_index(&mut self, index: usize) -> bool {
@@ -664,23 +676,28 @@ mod tests {
     use super::*;
 
     fn shaped_device_with_sqm(device_id: &str, sqm: &str) -> ShapedDevice {
-        let mut dev = ShapedDevice::default();
-        dev.device_id = device_id.to_string();
-        dev.sqm_override = Some(sqm.to_string());
-        dev
+        ShapedDevice {
+            device_id: device_id.to_string(),
+            sqm_override: Some(sqm.to_string()),
+            ..ShapedDevice::default()
+        }
     }
 
     #[test]
     fn effective_merge_treeguard_wins_for_persistent_devices() {
         let mut operator = OverrideFile::default();
-        operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
-        operator.add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev2", "cake"));
+        operator
+            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
+        operator
+            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev2", "cake"));
 
         let mut stormguard = OverrideFile::default();
-        stormguard
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "fq_codel"));
-        stormguard
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev3", "fq_codel"));
+        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_sqm(
+            "dev1", "fq_codel",
+        ));
+        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_sqm(
+            "dev3", "fq_codel",
+        ));
 
         let mut treeguard = OverrideFile::default();
         treeguard
@@ -692,7 +709,11 @@ mod tests {
         let sqm_by_id: std::collections::HashMap<&str, &str> = merged
             .persistent_devices
             .iter()
-            .filter_map(|d| d.sqm_override.as_deref().map(|sqm| (d.device_id.as_str(), sqm)))
+            .filter_map(|d| {
+                d.sqm_override
+                    .as_deref()
+                    .map(|sqm| (d.device_id.as_str(), sqm))
+            })
             .collect();
 
         assert_eq!(sqm_by_id.get("dev1"), Some(&"cake"));
@@ -725,20 +746,27 @@ mod tests {
 
         let merged = merge_owned_sections(operator, stormguard, treeguard);
 
-        let node_a_virtual = merged.network_adjustments().iter().find_map(|adj| match adj {
-            NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            } if node_name == "NodeA" => Some(*virtual_node),
-            _ => None,
-        });
+        let node_a_virtual = merged
+            .network_adjustments()
+            .iter()
+            .find_map(|adj| match adj {
+                NetworkAdjustment::SetNodeVirtual {
+                    node_name,
+                    virtual_node,
+                } if node_name == "NodeA" => Some(*virtual_node),
+                _ => None,
+            });
         assert_eq!(node_a_virtual, Some(true));
 
         // Operator site speed should beat StormGuard; TreeGuard site speed should be ignored.
-        let site_speed_names: Vec<&str> = merged.network_adjustments().iter().filter_map(|adj| match adj {
-            NetworkAdjustment::AdjustSiteSpeed { site_name, .. } => Some(site_name.as_str()),
-            _ => None,
-        }).collect();
+        let site_speed_names: Vec<&str> = merged
+            .network_adjustments()
+            .iter()
+            .filter_map(|adj| match adj {
+                NetworkAdjustment::AdjustSiteSpeed { site_name, .. } => Some(site_name.as_str()),
+                _ => None,
+            })
+            .collect();
         assert_eq!(site_speed_names, vec!["Site1", "Site2"]);
     }
 

@@ -485,7 +485,7 @@ fn main() -> Result<()> {
                         serde_json::to_string_pretty(&uisp.bandwidth_overrides)?
                     );
                 } else {
-                    println!("{}", "{}");
+                    println!("{{}}");
                 }
             }
             UispCommand::RouteAdd {

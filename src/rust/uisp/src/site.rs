@@ -13,10 +13,10 @@ pub struct Site {
 
 impl Site {
     pub fn name(&self) -> Option<String> {
-        if let Some(id) = &self.identification {
-            if let Some(name) = &id.name {
-                return Some(name.clone());
-            }
+        if let Some(id) = &self.identification
+            && let Some(name) = &id.name
+        {
+            return Some(name.clone());
         }
         None
     }
@@ -30,45 +30,41 @@ impl Site {
     }
 
     pub fn address(&self) -> Option<String> {
-        if let Some(desc) = &self.description {
-            if let Some(address) = &desc.address {
-                return Some(address.to_string());
-            }
+        if let Some(desc) = &self.description
+            && let Some(address) = &desc.address
+        {
+            return Some(address.to_string());
         }
         None
     }
 
     pub fn is_tower(&self) -> bool {
-        if let Some(id) = &self.identification {
-            if let Some(site_type) = &id.site_type {
-                if site_type == "site" {
-                    return true;
-                }
-            }
+        if let Some(id) = &self.identification
+            && let Some(site_type) = &id.site_type
+            && site_type == "site"
+        {
+            return true;
         }
         false
     }
 
     pub fn is_client_site(&self) -> bool {
-        if let Some(id) = &self.identification {
-            if let Some(site_type) = &id.site_type {
-                if site_type == "endpoint" {
-                    return true;
-                }
-            }
+        if let Some(id) = &self.identification
+            && let Some(site_type) = &id.site_type
+            && site_type == "endpoint"
+        {
+            return true;
         }
         false
     }
 
     pub fn is_child_of(&self, parent_id: &str) -> bool {
-        if let Some(id) = &self.identification {
-            if let Some(parent) = &id.parent {
-                if let Some(pid) = &parent.id {
-                    if pid == parent_id {
-                        return true;
-                    }
-                }
-            }
+        if let Some(id) = &self.identification
+            && let Some(parent) = &id.parent
+            && let Some(pid) = &parent.id
+            && pid == parent_id
+        {
+            return true;
         }
         false
     }

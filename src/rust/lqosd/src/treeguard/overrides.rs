@@ -31,9 +31,10 @@ pub(crate) fn set_node_virtual(
     node_name: &str,
     virtual_node: bool,
 ) -> Result<bool, TreeguardError> {
-    let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
-        details: e.to_string(),
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
+        TreeguardError::OverridesLoad {
+            details: e.to_string(),
+        }
     })?;
 
     if current_node_virtual_override(&overrides, node_name) == Some(virtual_node) {
@@ -55,9 +56,10 @@ pub(crate) fn set_node_virtual(
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, TreeguardError> {
-    let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
-        details: e.to_string(),
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
+        TreeguardError::OverridesLoad {
+            details: e.to_string(),
+        }
     })?;
 
     let removed = overrides.remove_network_node_virtual_by_name_count(node_name);
@@ -83,9 +85,10 @@ pub(crate) fn set_devices_sqm_override(
     base_devices: &[ShapedDevice],
     sqm_override: &str,
 ) -> Result<bool, TreeguardError> {
-    let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
-        details: e.to_string(),
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
+        TreeguardError::OverridesLoad {
+            details: e.to_string(),
+        }
     })?;
 
     let mut changed = false;
@@ -115,9 +118,10 @@ pub(crate) fn set_devices_sqm_override(
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, TreeguardError> {
-    let mut overrides =
-        OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| TreeguardError::OverridesLoad {
-        details: e.to_string(),
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
+        TreeguardError::OverridesLoad {
+            details: e.to_string(),
+        }
     })?;
 
     let mut removed_any = false;

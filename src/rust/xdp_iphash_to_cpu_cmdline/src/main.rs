@@ -83,11 +83,7 @@ fn print_ips(ips: &[IpMapping]) {
         };
         println!(
             "{:<45} CPU: {:<4} TC: {} CIRCUIT: {} DEVICE: {}",
-            ip_formatted,
-            ip.cpu,
-            ip.tc_handle.to_string(),
-            ip.circuit_id as i64,
-            ip.device_id as i64
+            ip_formatted, ip.cpu, ip.tc_handle, ip.circuit_id as i64, ip.device_id as i64
         );
     }
     println!();

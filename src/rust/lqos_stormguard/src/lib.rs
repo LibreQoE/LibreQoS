@@ -16,12 +16,12 @@ use parking_lot::Mutex;
 use std::time::Duration;
 use tracing::{debug, info};
 
+mod active_ping;
+mod adaptive_actions;
 mod config;
 mod datalog;
 mod queue_structure;
 mod site_state;
-mod adaptive_actions;
-mod active_ping;
 
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;

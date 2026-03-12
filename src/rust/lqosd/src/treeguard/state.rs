@@ -156,7 +156,12 @@ mod tests {
     fn sustained_idle_requires_full_duration() {
         let now = 1_000_000u64;
         // 14:59 is not enough for 15 minutes
-        assert!(!is_sustained_idle(now, Some(now - 899), Some(now - 899), 15));
+        assert!(!is_sustained_idle(
+            now,
+            Some(now - 899),
+            Some(now - 899),
+            15
+        ));
         // Exactly 15 minutes is enough
         assert!(is_sustained_idle(now, Some(now - 900), Some(now - 900), 15));
     }

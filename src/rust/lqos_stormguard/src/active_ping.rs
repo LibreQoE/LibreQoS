@@ -69,7 +69,7 @@ impl ActivePingManager {
             return (None, false);
         };
 
-        let sample = rx.borrow().clone();
+        let sample = *rx.borrow();
         let updated = sample
             .as_ref()
             .map(|s| s.at)
@@ -141,4 +141,3 @@ async fn ping_once(ip: IpAddr, timeout: Duration) -> Option<f64> {
         _ => None,
     }
 }
-

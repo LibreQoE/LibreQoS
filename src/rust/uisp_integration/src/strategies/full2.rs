@@ -392,7 +392,7 @@ pub async fn build_full_network_v2(
                 }
 
                 // Compute subscriber rates: prefer UISP QoS + burst; fallback to capacity-based
-                let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                let (download_min, mut download_max, upload_min, mut upload_max) =
                     if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
                         (
                             f32::max(0.1, dl_min),

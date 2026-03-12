@@ -89,59 +89,78 @@ pub async fn build_flat_network(
             if let Some(site_type) = &site_id.site_type {
                 if site_type == "endpoint" {
                     // Prefer UISP QoS + burst for client sites
-                    let mut download_min: f32 = 0.1;
-                    let mut upload_min: f32 = 0.1;
-                    let mut download_max: f32 = 0.1;
-                    let mut upload_max: f32 = 0.1;
                     let suspended_slow = site
                         .identification
                         .as_ref()
                         .map(|id| id.suspended)
                         .unwrap_or(false)
                         && config.uisp_integration.suspended_strategy == "slow";
-                    if suspended_slow {
-                        download_min = 0.1;
-                        upload_min = 0.1;
-                        download_max = 0.1;
-                        upload_max = 0.1;
-                    } else if let Some(qos) = &site.qos {
-                        let base_down = qos
-                            .downloadSpeed
-                            .map(|v| (v as f32) / 1_000_000.0)
-                            .unwrap_or(0.0);
-                        let base_up = qos
-                            .uploadSpeed
-                            .map(|v| (v as f32) / 1_000_000.0)
-                            .unwrap_or(0.0);
-                        let burst_down = qos
-                            .downloadBurstSize
-                            .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
-                            .unwrap_or(0.0);
-                        let burst_up = qos
-                            .uploadBurstSize
-                            .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
-                            .unwrap_or(0.0);
-                        if base_down > 0.0 || base_up > 0.0 {
-                            download_min = f32::max(
-                                0.1,
-                                base_down * config.uisp_integration.commit_bandwidth_multiplier,
-                            );
-                            upload_min = f32::max(
-                                0.1,
-                                base_up * config.uisp_integration.commit_bandwidth_multiplier,
-                            );
-                            download_max = f32::max(
-                                0.1,
-                                (base_down + burst_down)
-                                    * config.uisp_integration.bandwidth_overhead_factor,
-                            );
-                            upload_max = f32::max(
-                                0.1,
-                                (base_up + burst_up)
-                                    * config.uisp_integration.bandwidth_overhead_factor,
-                            );
+                    let (download_min, upload_min, mut download_max, mut upload_max) =
+                        if suspended_slow {
+                            (0.1, 0.1, 0.1, 0.1)
+                        } else if let Some(qos) = &site.qos {
+                            let base_down = qos
+                                .downloadSpeed
+                                .map(|v| (v as f32) / 1_000_000.0)
+                                .unwrap_or(0.0);
+                            let base_up = qos
+                                .uploadSpeed
+                                .map(|v| (v as f32) / 1_000_000.0)
+                                .unwrap_or(0.0);
+                            let burst_down = qos
+                                .downloadBurstSize
+                                .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
+                                .unwrap_or(0.0);
+                            let burst_up = qos
+                                .uploadBurstSize
+                                .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
+                                .unwrap_or(0.0);
+                            if base_down > 0.0 || base_up > 0.0 {
+                                (
+                                    f32::max(
+                                        0.1,
+                                        base_down
+                                            * config.uisp_integration.commit_bandwidth_multiplier,
+                                    ),
+                                    f32::max(
+                                        0.1,
+                                        base_up
+                                            * config.uisp_integration.commit_bandwidth_multiplier,
+                                    ),
+                                    f32::max(
+                                        0.1,
+                                        (base_down + burst_down)
+                                            * config.uisp_integration.bandwidth_overhead_factor,
+                                    ),
+                                    f32::max(
+                                        0.1,
+                                        (base_up + burst_up)
+                                            * config.uisp_integration.bandwidth_overhead_factor,
+                                    ),
+                                )
+                            } else {
+                                // Fallback to legacy capacity-based min/max
+                                let (dl_cap, ul_cap) = site.qos(
+                                    config.queues.generated_pn_download_mbps,
+                                    config.queues.generated_pn_upload_mbps,
+                                );
+                                let dl_max_f = (dl_cap as f32)
+                                    * config.uisp_integration.bandwidth_overhead_factor;
+                                let ul_max_f = (ul_cap as f32)
+                                    * config.uisp_integration.bandwidth_overhead_factor;
+                                let dl_min_f =
+                                    dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                                let ul_min_f =
+                                    ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                                (
+                                    f32::max(0.1, dl_min_f),
+                                    f32::max(0.1, ul_min_f),
+                                    f32::max(0.1, dl_max_f),
+                                    f32::max(0.1, ul_max_f),
+                                )
+                            }
                         } else {
-                            // Fallback to legacy capacity-based min/max
+                            // Fallback if qos entirely missing
                             let (dl_cap, ul_cap) = site.qos(
                                 config.queues.generated_pn_download_mbps,
                                 config.queues.generated_pn_upload_mbps,
@@ -154,30 +173,13 @@ pub async fn build_flat_network(
                                 dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
                             let ul_min_f =
                                 ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                            download_min = f32::max(0.1, dl_min_f);
-                            upload_min = f32::max(0.1, ul_min_f);
-                            download_max = f32::max(0.1, dl_max_f);
-                            upload_max = f32::max(0.1, ul_max_f);
-                        }
-                    } else {
-                        // Fallback if qos entirely missing
-                        let (dl_cap, ul_cap) = site.qos(
-                            config.queues.generated_pn_download_mbps,
-                            config.queues.generated_pn_upload_mbps,
-                        );
-                        let dl_max_f =
-                            (dl_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                        let ul_max_f =
-                            (ul_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                        let dl_min_f =
-                            dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                        let ul_min_f =
-                            ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                        download_min = f32::max(0.1, dl_min_f);
-                        upload_min = f32::max(0.1, ul_min_f);
-                        download_max = f32::max(0.1, dl_max_f);
-                        upload_max = f32::max(0.1, ul_max_f);
-                    }
+                            (
+                                f32::max(0.1, dl_min_f),
+                                f32::max(0.1, ul_min_f),
+                                f32::max(0.1, dl_max_f),
+                                f32::max(0.1, ul_max_f),
+                            )
+                        };
                     // Ensure max >= min
                     if download_max < download_min {
                         download_max = download_min;
