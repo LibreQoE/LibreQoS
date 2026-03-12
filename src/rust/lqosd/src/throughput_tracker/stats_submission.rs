@@ -48,7 +48,7 @@ pub(crate) fn submit_throughput_stats(
     };
 
     // Bail out if we don't have gather stats or a license key
-    if config.long_term_stats.gather_stats == false {
+    if !config.long_term_stats.gather_stats {
         return;
     }
     if let Some(license_key) = &config.long_term_stats.license_key {
@@ -65,10 +65,10 @@ pub(crate) fn submit_throughput_stats(
 
     // Bail out if the license doesn't indicate that we're allowed to submit stats
     let (license_status, _days_remaining) = get_lts_license_status();
-    let can_submit = match license_status {
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid => false,
-        _ => true,
-    };
+    let can_submit = !matches!(
+        license_status,
+        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
+    );
     if !can_submit {
         return;
     }
@@ -177,8 +177,7 @@ pub(crate) fn submit_throughput_stats(
                         );
                     }
                 }
-                let devices_as_vec: Vec<Lts2Circuit> =
-                    circuit_map.into_iter().map(|(_, v)| v).collect();
+                let devices_as_vec: Vec<Lts2Circuit> = circuit_map.into_values().collect();
                 // Serialize via cbor
                 if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec)
                     && crate::lts2_sys::shaped_devices(now, &bytes).is_err()

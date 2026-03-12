@@ -50,9 +50,7 @@ pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }
 
 fn all_flows_to_transport(
@@ -137,9 +135,7 @@ pub fn country_timeline_data(iso_code: &str) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(iso_code);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }
 
 pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
@@ -152,7 +148,5 @@ pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 
-    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
-
-    flows
+    all_flows_to_transport(boot_time, all_flows_for_asn)
 }

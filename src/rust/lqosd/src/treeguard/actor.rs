@@ -797,7 +797,7 @@ fn run_tick(
                         };
                         reload_controller.request_reload(
                             priority,
-                            format!("Node '{}' virtualization changed", node_name.to_string()),
+                            format!("Node '{node_name}' virtualization changed"),
                         );
                     }
 

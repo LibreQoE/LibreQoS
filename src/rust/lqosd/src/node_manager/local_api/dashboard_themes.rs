@@ -33,7 +33,7 @@ fn dashboards_dir() -> Option<std::path::PathBuf> {
 }
 
 fn normalize_theme_filename(name: &str) -> String {
-    let safe = name.replace('/', "_").replace('\\', "_");
+    let safe = name.replace(['/', '\\'], "_");
     if safe.ends_with(".json") {
         safe
     } else {

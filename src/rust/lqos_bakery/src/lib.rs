@@ -43,8 +43,6 @@ use lqos_bus::{
     UrgentSource,
 };
 use lqos_config::{Config, LazyQueueMode};
-use lqos_sys; // direct mapping control for live-move to avoid bus full-sync side-effects
-
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
