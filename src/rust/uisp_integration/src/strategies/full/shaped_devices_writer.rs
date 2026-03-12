@@ -186,18 +186,18 @@ fn traverse(
 
     if depth < 10 {
         for (child_idx, child) in sites.iter().enumerate() {
-            if let Some(parent_idx) = child.selected_parent {
-                if parent_idx == idx {
-                    traverse(
-                        sites,
-                        child_idx,
-                        depth + 1,
-                        devices,
-                        shaped_devices,
-                        config,
-                        root_idx,
-                    );
-                }
+            if let Some(parent_idx) = child.selected_parent
+                && parent_idx == idx
+            {
+                traverse(
+                    sites,
+                    child_idx,
+                    depth + 1,
+                    devices,
+                    shaped_devices,
+                    config,
+                    root_idx,
+                );
             }
         }
     }

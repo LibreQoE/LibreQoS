@@ -67,10 +67,10 @@ pub async fn executive_heatmaps(
 fn should_publish() -> bool {
     let now = Instant::now();
     let mut lock = LAST_PUBLISH.lock();
-    if let Some(last) = *lock {
-        if now.duration_since(last) < MIN_INTERVAL {
-            return false;
-        }
+    if let Some(last) = *lock
+        && now.duration_since(last) < MIN_INTERVAL
+    {
+        return false;
     }
     *lock = Some(now);
     true
@@ -178,10 +178,10 @@ fn compute_oversubscribed_sites() -> Vec<OversubscribedSite> {
     // Build children adjacency from immediate_parent.
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
     for (idx, node) in nodes.iter().enumerate() {
-        if let Some(parent) = node.immediate_parent {
-            if parent < children.len() {
-                children[parent].push(idx);
-            }
+        if let Some(parent) = node.immediate_parent
+            && parent < children.len()
+        {
+            children[parent].push(idx);
         }
     }
 

@@ -49,14 +49,13 @@ impl ShapedDeviceHashCache {
         shaped: &ConfigShapedDevices,
         device_hash: i64,
     ) -> Option<usize> {
-        if let Some(idx) = self.by_device_hash.get(&device_hash).copied() {
-            if shaped
+        if let Some(idx) = self.by_device_hash.get(&device_hash).copied()
+            && shaped
                 .devices
                 .get(idx)
                 .is_some_and(|d| d.device_hash == device_hash)
-            {
-                return Some(idx);
-            }
+        {
+            return Some(idx);
         }
         shaped
             .devices
@@ -69,14 +68,13 @@ impl ShapedDeviceHashCache {
         shaped: &ConfigShapedDevices,
         circuit_hash: i64,
     ) -> Option<usize> {
-        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied() {
-            if shaped
+        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied()
+            && shaped
                 .devices
                 .get(idx)
                 .is_some_and(|d| d.circuit_hash == circuit_hash)
-            {
-                return Some(idx);
-            }
+        {
+            return Some(idx);
         }
         shaped
             .devices

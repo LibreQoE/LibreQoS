@@ -107,18 +107,17 @@ pub(crate) fn map_sites_above_aps(
     let mut sites = HashMap::new();
     for (ap_name, client_ids) in ap_mappings.iter() {
         if let Some(device) = uisp_data.find_device_by_name(ap_name) {
-            if let Some(device_site_id) = device.get_site_id() {
-                if let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id) {
-                    let site_entry =
-                        sites
-                            .entry(device_site.name.clone())
-                            .or_insert_with(|| Layer {
-                                id: GraphMapping::SiteByName(device_site.name.clone()),
-                                children: Vec::new(),
-                            });
-                    let ap_map = access_points.get(ap_name).unwrap().clone();
-                    site_entry.children.push(ap_map);
-                }
+            if let Some(device_site_id) = device.get_site_id()
+                && let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id)
+            {
+                let site_entry = sites
+                    .entry(device_site.name.clone())
+                    .or_insert_with(|| Layer {
+                        id: GraphMapping::SiteByName(device_site.name.clone()),
+                        children: Vec::new(),
+                    });
+                let ap_map = access_points.get(ap_name).unwrap().clone();
+                site_entry.children.push(ap_map);
             }
         } else {
             let mut detached = Layer {

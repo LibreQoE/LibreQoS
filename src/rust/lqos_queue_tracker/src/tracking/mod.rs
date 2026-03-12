@@ -41,28 +41,28 @@ fn track_queues() {
             )
         };
 
-        if let Ok(download) = download {
-            if let Ok(upload) = upload {
-                if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
-                    if !download.is_empty() && !upload.is_empty() {
-                        circuit.update(&download[0], &upload[0]);
-                    }
+        if let Ok(download) = download
+            && let Ok(upload) = upload
+        {
+            if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
+                if !download.is_empty() && !upload.is_empty() {
+                    circuit.update(&download[0], &upload[0]);
+                }
+            } else {
+                // It's new: insert it
+                if !download.is_empty() && !upload.is_empty() {
+                    CIRCUIT_TO_QUEUE.insert(
+                        circuit_id.to_string(),
+                        QueueStore::new(download[0].clone(), upload[0].clone()),
+                    );
                 } else {
-                    // It's new: insert it
-                    if !download.is_empty() && !upload.is_empty() {
-                        CIRCUIT_TO_QUEUE.insert(
-                            circuit_id.to_string(),
-                            QueueStore::new(download[0].clone(), upload[0].clone()),
-                        );
-                    } else {
-                        debug!(
-                            "No queue data returned for {}, {}/{} found.",
-                            circuit_id.to_string(),
-                            download.len(),
-                            upload.len()
-                        );
-                        debug!("You probably want to run LibreQoS.py");
-                    }
+                    debug!(
+                        "No queue data returned for {}, {}/{} found.",
+                        circuit_id.to_string(),
+                        download.len(),
+                        upload.len()
+                    );
+                    debug!("You probably want to run LibreQoS.py");
                 }
             }
         }
@@ -134,16 +134,15 @@ fn connect_queues_to_circuit_up(
                 if let Some(s) = structure
                     .iter()
                     .find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32)
+                    && let Some(circuit_hash) = &s.circuit_hash
                 {
-                    if let Some(circuit_hash) = &s.circuit_hash {
-                        let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
-                        if cake.drops > 0 || marks > 0 {
-                            return Some(TrackedQueue {
-                                circuit_hash: *circuit_hash,
-                                drops: cake.drops as u64,
-                                marks: marks as u64,
-                            });
-                        }
+                    let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
+                    if cake.drops > 0 || marks > 0 {
+                        return Some(TrackedQueue {
+                            circuit_hash: *circuit_hash,
+                            drops: cake.drops as u64,
+                            marks: marks as u64,
+                        });
                     }
                 }
             }

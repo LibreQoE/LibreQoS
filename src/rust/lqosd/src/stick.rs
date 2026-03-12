@@ -66,14 +66,12 @@ fn count_tx_queues(interface: &str) -> Result<u32> {
 
     let mut tx_queues = 0u32;
     for path in std::fs::read_dir(sys_path)? {
-        if let Ok(path) = &path {
-            if path.path().is_dir() {
-                if let Some(filename) = path.path().file_name().and_then(|s| s.to_str()) {
-                    if filename.starts_with("tx-") {
-                        tx_queues += 1;
-                    }
-                }
-            }
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name().and_then(|s| s.to_str())
+            && filename.starts_with("tx-")
+        {
+            tx_queues += 1;
         }
     }
 

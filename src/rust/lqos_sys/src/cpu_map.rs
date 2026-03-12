@@ -134,17 +134,16 @@ fn sorted_txq_xps_cpus(interface: &str) -> Result<Vec<String>> {
     std::fs::read_dir(format!("/sys/class/net/{interface}/queues/"))
       .map_err(|_| anyhow::anyhow!("/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"))?;
     for path in paths {
-        if let Ok(path) = &path {
-            if path.path().is_dir() {
-                if let Some(filename) = path.path().file_name() {
-                    let base_fn = format!(
-                        "/sys/class/net/{interface}/queues/{}/xps_cpus",
-                        filename.to_str().unwrap_or_default()
-                    );
-                    if std::path::Path::new(&base_fn).exists() {
-                        result.push(base_fn);
-                    }
-                }
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name()
+        {
+            let base_fn = format!(
+                "/sys/class/net/{interface}/queues/{}/xps_cpus",
+                filename.to_str().unwrap_or_default()
+            );
+            if std::path::Path::new(&base_fn).exists() {
+                result.push(base_fn);
             }
         }
     }

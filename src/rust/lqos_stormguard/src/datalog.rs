@@ -37,10 +37,10 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
     };
 
     // If the log file exists, delete it
-    if std::path::Path::new(path).exists() {
-        if let Err(e) = std::fs::remove_file(path) {
-            eprintln!("Failed to delete existing log file: {}", e);
-        }
+    if std::path::Path::new(path).exists()
+        && let Err(e) = std::fs::remove_file(path)
+    {
+        eprintln!("Failed to delete existing log file: {}", e);
     }
 
     // Create the log file if it doesn't exist with the header

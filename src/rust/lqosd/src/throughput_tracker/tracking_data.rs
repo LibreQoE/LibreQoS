@@ -398,15 +398,15 @@ impl ThroughputTracker {
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
     ) -> Option<&'a lqos_config::ShapedDevice> {
-        if let Some(device_hash) = device_hash {
-            if let Some(idx) = cache.index_by_device_hash(shaped, device_hash) {
-                return shaped.devices.get(idx);
-            }
+        if let Some(device_hash) = device_hash
+            && let Some(idx) = cache.index_by_device_hash(shaped, device_hash)
+        {
+            return shaped.devices.get(idx);
         }
-        if let Some(circuit_hash) = circuit_hash {
-            if let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash) {
-                return shaped.devices.get(idx);
-            }
+        if let Some(circuit_hash) = circuit_hash
+            && let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash)
+        {
+            return shaped.devices.get(idx);
         }
         None
     }
@@ -433,10 +433,10 @@ impl ThroughputTracker {
                 data.device_hash,
                 data.circuit_hash,
             );
-            if data.circuit_hash.is_none() {
-                if let Some(device) = shaped_device {
-                    data.circuit_hash = Some(device.circuit_hash);
-                }
+            if data.circuit_hash.is_none()
+                && let Some(device) = shaped_device
+            {
+                data.circuit_hash = Some(device.circuit_hash);
             }
             data.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
             data.network_json_parents = shaped_device
@@ -541,22 +541,21 @@ impl ThroughputTracker {
                     Self::shaped_device_for_hashes(&shaped, &cache, device_hash, circuit_hash);
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
                 // Call the Bakery Queue Creation for new circuits
-                if let Some(circuit_hash) = circuit_hash {
-                    if let Ok(config) = lqos_config::load_config() {
-                        if config.queues.lazy_queues.is_some() {
-                            let mut add = true;
+                if let Some(circuit_hash) = circuit_hash
+                    && let Ok(config) = lqos_config::load_config()
+                    && config.queues.lazy_queues.is_some()
+                {
+                    let mut add = true;
 
-                            if config.queues.lazy_threshold_bytes.is_some() {
-                                let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
-                                if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
-                                    add = false;
-                                }
-                            }
-
-                            if add {
-                                changed_circuits.insert(circuit_hash);
-                            }
+                    if config.queues.lazy_threshold_bytes.is_some() {
+                        let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
+                        if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
+                            add = false;
                         }
+                    }
+
+                    if add {
+                        changed_circuits.insert(circuit_hash);
                     }
                 }
                 let entry = ThroughputEntry {
@@ -597,12 +596,12 @@ impl ThroughputTracker {
             }
         });
 
-        if !changed_circuits.is_empty() {
-            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
+        if !changed_circuits.is_empty()
+            && let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
                 circuit_ids: changed_circuits,
-            }) {
-                warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
-            }
+            })
+        {
+            warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
         }
         if let Err(e) = bakery_sender.send(BakeryCommands::Tick) {
             warn!("Failed to send BakeryCommands::Tick: {:?}", e);
@@ -754,33 +753,32 @@ impl ThroughputTracker {
                         }
 
                         // Per-flow QoO (stored for UI display).
-                        if key.ip_protocol == 6 {
-                            if let (Some(profile), Some(tcp_info)) =
+                        if key.ip_protocol == 6
+                            && let (Some(profile), Some(tcp_info)) =
                                 (qoo_profile.as_ref(), this_flow.0.tcp_info.as_ref())
-                            {
-                                let loss_download = tcp_retransmit_loss_proxy(
-                                    this_flow.0.tcp_retransmits.down as u64,
-                                    this_flow.0.packets_sent.down,
-                                );
-                                let loss_upload = tcp_retransmit_loss_proxy(
-                                    this_flow.0.tcp_retransmits.up as u64,
-                                    this_flow.0.packets_sent.up,
-                                );
-                                let scores = compute_qoq_scores(
-                                    profile.as_ref(),
-                                    &tcp_info.rtt,
-                                    loss_download,
-                                    loss_upload,
-                                );
-                                let mut scores = scores;
-                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                    scores.download_total = QOQ_UNKNOWN;
-                                }
-                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                    scores.upload_total = QOQ_UNKNOWN;
-                                }
-                                this_flow.0.set_qoq_scores(scores);
+                        {
+                            let loss_download = tcp_retransmit_loss_proxy(
+                                this_flow.0.tcp_retransmits.down as u64,
+                                this_flow.0.packets_sent.down,
+                            );
+                            let loss_upload = tcp_retransmit_loss_proxy(
+                                this_flow.0.tcp_retransmits.up as u64,
+                                this_flow.0.packets_sent.up,
+                            );
+                            let scores = compute_qoq_scores(
+                                profile.as_ref(),
+                                &tcp_info.rtt,
+                                loss_download,
+                                loss_upload,
+                            );
+                            let mut scores = scores;
+                            if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                scores.download_total = QOQ_UNKNOWN;
                             }
+                            if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                scores.upload_total = QOQ_UNKNOWN;
+                            }
+                            this_flow.0.set_qoq_scores(scores);
                         }
                         if enable_asn_heatmaps {
                             let excluded = raw_data
@@ -847,33 +845,32 @@ impl ThroughputTracker {
                             }
 
                             // Per-flow QoO (stored for UI display).
-                            if key.ip_protocol == 6 {
-                                if let (Some(profile), Some(tcp_info)) =
+                            if key.ip_protocol == 6
+                                && let (Some(profile), Some(tcp_info)) =
                                     (qoo_profile.as_ref(), flow_summary.tcp_info.as_ref())
-                                {
-                                    let loss_download = tcp_retransmit_loss_proxy(
-                                        flow_summary.tcp_retransmits.down as u64,
-                                        flow_summary.packets_sent.down,
-                                    );
-                                    let loss_upload = tcp_retransmit_loss_proxy(
-                                        flow_summary.tcp_retransmits.up as u64,
-                                        flow_summary.packets_sent.up,
-                                    );
-                                    let scores = compute_qoq_scores(
-                                        profile.as_ref(),
-                                        &tcp_info.rtt,
-                                        loss_download,
-                                        loss_upload,
-                                    );
-                                    let mut scores = scores;
-                                    if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                        scores.download_total = QOQ_UNKNOWN;
-                                    }
-                                    if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                        scores.upload_total = QOQ_UNKNOWN;
-                                    }
-                                    flow_summary.set_qoq_scores(scores);
+                            {
+                                let loss_download = tcp_retransmit_loss_proxy(
+                                    flow_summary.tcp_retransmits.down as u64,
+                                    flow_summary.packets_sent.down,
+                                );
+                                let loss_upload = tcp_retransmit_loss_proxy(
+                                    flow_summary.tcp_retransmits.up as u64,
+                                    flow_summary.packets_sent.up,
+                                );
+                                let scores = compute_qoq_scores(
+                                    profile.as_ref(),
+                                    &tcp_info.rtt,
+                                    loss_download,
+                                    loss_upload,
+                                );
+                                let mut scores = scores;
+                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                    scores.download_total = QOQ_UNKNOWN;
                                 }
+                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                    scores.upload_total = QOQ_UNKNOWN;
+                                }
+                                flow_summary.set_qoq_scores(scores);
                             }
                             if enable_asn_heatmaps {
                                 let excluded = raw_data
@@ -942,28 +939,28 @@ impl ThroughputTracker {
                     (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
                 };
 
-                if let Some(rtt_median) = rtt_median {
-                    if let Some(tracker) = raw_data.get_mut(local_ip) {
-                        // Shift left
-                        for i in 1..60 {
-                            tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                if let Some(rtt_median) = rtt_median
+                    && let Some(tracker) = raw_data.get_mut(local_ip)
+                {
+                    // Shift left
+                    for i in 1..60 {
+                        tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                    }
+                    tracker.recent_rtt_data[0] = rtt_median;
+                    tracker.last_fresh_rtt_data_cycle = self_cycle;
+                    tracker.rtt_buffer = rtt_buffer;
+                    let excluded = tracker
+                        .circuit_hash
+                        .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                    if !excluded {
+                        if let Some(circuit_hash) = tracker.circuit_hash {
+                            rtt_by_circuit
+                                .entry(circuit_hash)
+                                .or_default()
+                                .accumulate(&tracker.rtt_buffer);
                         }
-                        tracker.recent_rtt_data[0] = rtt_median;
-                        tracker.last_fresh_rtt_data_cycle = self_cycle;
-                        tracker.rtt_buffer = rtt_buffer;
-                        let excluded = tracker
-                            .circuit_hash
-                            .is_some_and(crate::rtt_exclusions::is_excluded_hash);
-                        if !excluded {
-                            if let Some(circuit_hash) = tracker.circuit_hash {
-                                rtt_by_circuit
-                                    .entry(circuit_hash)
-                                    .or_default()
-                                    .accumulate(&tracker.rtt_buffer);
-                            }
-                            if let Some(parents) = &tracker.network_json_parents {
-                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
-                            }
+                        if let Some(parents) = &tracker.network_json_parents {
+                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
                         }
                     }
                 }

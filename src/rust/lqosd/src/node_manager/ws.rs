@@ -1513,19 +1513,16 @@ fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
     match serde_cbor::from_slice::<WsRequest>(payload) {
         Ok(request) => Ok(request),
         Err(err) => {
-            if let Ok(CborValue::Map(map)) = serde_cbor::from_slice::<CborValue>(payload) {
-                if map.len() == 1
-                    && let Some((key, value)) = map.into_iter().next()
-                {
-                    if matches!(value, CborValue::Map(ref inner) if inner.is_empty()) {
-                        let mut normalized_map = BTreeMap::new();
-                        normalized_map.insert(key, CborValue::Null);
-                        let normalized = CborValue::Map(normalized_map);
-                        if let Ok(request) = serde_cbor::value::from_value::<WsRequest>(normalized)
-                        {
-                            return Ok(request);
-                        }
-                    }
+            if let Ok(CborValue::Map(map)) = serde_cbor::from_slice::<CborValue>(payload)
+                && map.len() == 1
+                && let Some((key, value)) = map.into_iter().next()
+                && matches!(value, CborValue::Map(ref inner) if inner.is_empty())
+            {
+                let mut normalized_map = BTreeMap::new();
+                normalized_map.insert(key, CborValue::Null);
+                let normalized = CborValue::Map(normalized_map);
+                if let Ok(request) = serde_cbor::value::from_value::<WsRequest>(normalized) {
+                    return Ok(request);
                 }
             }
             Err(format!(

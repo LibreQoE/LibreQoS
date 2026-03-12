@@ -78,10 +78,10 @@ async fn send_timeout(tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>, ip
         ip,
         result: PingState::NoResponse,
     };
-    if let Ok(payload) = encode_ws_message(&result) {
-        if let Err(_) = tx.send(payload).await {
-            info!("Channel is gone");
-        }
+    if let Ok(payload) = encode_ws_message(&result)
+        && let Err(_) = tx.send(payload).await
+    {
+        info!("Channel is gone");
     }
 }
 
@@ -98,10 +98,10 @@ async fn send_alive(
             label,
         },
     };
-    if let Ok(payload) = encode_ws_message(&result) {
-        if let Err(_) = tx.send(payload).await {
-            info!("Channel is gone");
-        }
+    if let Ok(payload) = encode_ws_message(&result)
+        && let Err(_) = tx.send(payload).await
+    {
+        info!("Channel is gone");
     }
 }
 

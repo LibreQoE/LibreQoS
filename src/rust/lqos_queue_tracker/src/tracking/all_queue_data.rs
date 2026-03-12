@@ -136,14 +136,13 @@ impl AllQueueData {
     pub fn iterate_queues(&self, mut f: impl FnMut(i64, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
         let lock = self.data.lock();
         for (circuit_id, q) in lock.iter() {
-            if let Some(prev_drops) = q.prev_drops {
-                if let Some(prev_marks) = q.prev_marks {
-                    if q.drops > prev_drops || q.marks > prev_marks {
-                        let drops = q.drops.checked_sub_or_zero(prev_drops);
-                        let marks = q.marks.checked_sub_or_zero(prev_marks);
-                        f(*circuit_id, &drops, &marks);
-                    }
-                }
+            if let Some(prev_drops) = q.prev_drops
+                && let Some(prev_marks) = q.prev_marks
+                && (q.drops > prev_drops || q.marks > prev_marks)
+            {
+                let drops = q.drops.checked_sub_or_zero(prev_drops);
+                let marks = q.marks.checked_sub_or_zero(prev_marks);
+                f(*circuit_id, &drops, &marks);
             }
         }
     }

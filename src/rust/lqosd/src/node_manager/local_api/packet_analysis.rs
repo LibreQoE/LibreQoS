@@ -14,13 +14,13 @@ pub enum RequestAnalysisResult {
 }
 
 pub fn request_analysis_data(ip: &str) -> RequestAnalysisResult {
-    if let Ok(ip) = ip.parse::<IpAddr>() {
-        if let Some((session_id, countdown)) = lqos_heimdall::hyperfocus_on_target(ip.into()) {
-            return RequestAnalysisResult::Ok {
-                session_id,
-                countdown,
-            };
-        }
+    if let Ok(ip) = ip.parse::<IpAddr>()
+        && let Some((session_id, countdown)) = lqos_heimdall::hyperfocus_on_target(ip.into())
+    {
+        return RequestAnalysisResult::Ok {
+            session_id,
+            countdown,
+        };
     }
     RequestAnalysisResult::Fail
 }

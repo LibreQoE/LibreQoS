@@ -431,17 +431,17 @@ impl SiteState {
             throughput_mbps >= config.min_throughput_mbps_for_rtt as f64
         };
 
-        if rtt_allowed {
-            if let (Some(rtt_ms), Some(baseline_ms)) = (self.current_rtt_ms, self.rtt_baseline_ms) {
-                let baseline_ms = baseline_ms.max(1.0);
-                let delay = (rtt_ms - baseline_ms).max(0.0);
-                let ratio = rtt_ms / baseline_ms;
-                delay_ms = Some(delay);
-                delay_ratio = Some(ratio);
+        if rtt_allowed
+            && let (Some(rtt_ms), Some(baseline_ms)) = (self.current_rtt_ms, self.rtt_baseline_ms)
+        {
+            let baseline_ms = baseline_ms.max(1.0);
+            let delay = (rtt_ms - baseline_ms).max(0.0);
+            let ratio = rtt_ms / baseline_ms;
+            delay_ms = Some(delay);
+            delay_ratio = Some(ratio);
 
-                bloat = delay >= threshold_ms || ratio >= threshold_ratio;
-                severe_bloat = delay >= fast_threshold_ms || ratio >= fast_threshold_ratio;
-            }
+            bloat = delay >= threshold_ms || ratio >= threshold_ratio;
+            severe_bloat = delay >= fast_threshold_ms || ratio >= fast_threshold_ratio;
         }
 
         let high_loss = retransmits_avg.is_some_and(|p| p >= 0.10);

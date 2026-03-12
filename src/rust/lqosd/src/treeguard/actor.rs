@@ -597,14 +597,14 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.to_string()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
-                        if let Some(v) = overrides_node_virtual(overrides, node_name) {
-                            state.desired = if v {
-                                LinkVirtualState::Virtual
-                            } else {
-                                LinkVirtualState::Physical
-                            };
-                        }
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
+                        && let Some(v) = overrides_node_virtual(overrides, node_name)
+                    {
+                        state.desired = if v {
+                            LinkVirtualState::Virtual
+                        } else {
+                            LinkVirtualState::Physical
+                        };
                     }
                     state
                 });
@@ -928,14 +928,14 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.clone()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
-                        if let Some(v) = overrides_node_virtual(overrides, node_name) {
-                            state.desired = if v {
-                                LinkVirtualState::Virtual
-                            } else {
-                                LinkVirtualState::Physical
-                            };
-                        }
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
+                        && let Some(v) = overrides_node_virtual(overrides, node_name)
+                    {
+                        state.desired = if v {
+                            LinkVirtualState::Virtual
+                        } else {
+                            LinkVirtualState::Physical
+                        };
                     }
                     state
                 });

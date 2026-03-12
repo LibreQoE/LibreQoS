@@ -65,13 +65,14 @@ fn traverse_sites(
     if depth < 10 {
         let mut children = serde_json::Map::new();
         for (child_id, child) in sites.iter().enumerate() {
-            if let Some(parent) = child.selected_parent {
-                if parent == idx && should_traverse(&sites[child_id].site_type) {
-                    children.insert(
-                        child.name.clone(),
-                        serde_json::Value::Object(traverse_sites(sites, child_id, depth + 1)?),
-                    );
-                }
+            if let Some(parent) = child.selected_parent
+                && parent == idx
+                && should_traverse(&sites[child_id].site_type)
+            {
+                children.insert(
+                    child.name.clone(),
+                    serde_json::Value::Object(traverse_sites(sites, child_id, depth + 1)?),
+                );
             }
         }
         if !children.is_empty() {

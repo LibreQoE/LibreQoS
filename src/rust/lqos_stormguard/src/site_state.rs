@@ -283,11 +283,9 @@ impl SiteStateTracker {
             ) && active_ping_updated
                 && active.is_some();
             let updated = site.passive_rtt_updated_this_tick() || active_updated;
-            if updated {
-                if let Some(effective) = effective {
-                    site.round_trip_time.add(effective);
-                    site.rtt_sample_for_baseline_ms = Some(effective);
-                }
+            if updated && let Some(effective) = effective {
+                site.round_trip_time.add(effective);
+                site.rtt_sample_for_baseline_ms = Some(effective);
             }
         }
     }

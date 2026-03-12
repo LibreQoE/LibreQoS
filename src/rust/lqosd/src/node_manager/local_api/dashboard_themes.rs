@@ -26,10 +26,8 @@ fn dashboards_dir() -> Option<std::path::PathBuf> {
     let base_path = std::path::Path::new(&config.lqos_directory)
         .join("bin")
         .join("dashboards");
-    if !base_path.exists() {
-        if std::fs::create_dir(&base_path).is_err() {
-            return None;
-        }
+    if !base_path.exists() && std::fs::create_dir(&base_path).is_err() {
+        return None;
     }
     Some(base_path)
 }
@@ -60,12 +58,11 @@ pub(crate) fn list_theme_entries() -> Vec<ThemeEntry> {
             continue;
         }
         let mut display_name = fs.trim_end_matches(".json").to_string();
-        if let Ok(raw) = std::fs::read_to_string(f.path()) {
-            if let Ok(parsed) = serde_json::from_str::<DashletSave>(&raw) {
-                if !parsed.name.is_empty() {
-                    display_name = parsed.name;
-                }
-            }
+        if let Ok(raw) = std::fs::read_to_string(f.path())
+            && let Ok(parsed) = serde_json::from_str::<DashletSave>(&raw)
+            && !parsed.name.is_empty()
+        {
+            display_name = parsed.name;
         }
         result.push(ThemeEntry {
             name: display_name,

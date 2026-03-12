@@ -112,18 +112,17 @@ pub fn submit_network_tree(timestamp: u64, tree: &[u8]) -> anyhow::Result<()> {
 
 pub fn submit_shaped_devices(timestamp: u64, devices: &[u8]) -> anyhow::Result<()> {
     let devices = devices.to_vec();
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::ShapedDevices { timestamp, devices },
             ))
             .is_err()
-        {
-            println!("Failed to send shaped devices to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send shaped devices to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send shaped devices to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send shaped devices to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -210,20 +209,20 @@ pub fn submit_shaper_utilization(
     peak_cpu: f32,
     memory_percent: f32,
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if let Err(e) = tx.send(LtsClientCommand::IngestData(
+    if let Ok(tx) = client_commands::get_command_channel()
+        && let Err(e) = tx.send(LtsClientCommand::IngestData(
             ingestor::commands::IngestorCommand::ShaperUtilization {
                 tick: timestamp,
                 average_cpu,
                 peak_cpu,
                 memory_percent,
             },
-        )) {
-            println!("Failed to send shaper utilization to LTS2 client: {e:?}");
-            return Err(anyhow::anyhow!(
-                "Failed to send shaper utilization to LTS2 client"
-            ));
-        }
+        ))
+    {
+        println!("Failed to send shaper utilization to LTS2 client: {e:?}");
+        return Err(anyhow::anyhow!(
+            "Failed to send shaper utilization to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -231,35 +230,33 @@ pub fn submit_shaper_utilization(
 pub fn submit_circuit_throughput_batch(
     batch: &[crate::lts2_sys::shared_types::CircuitThroughput],
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::CircuitThroughputBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            error!("Failed to send circuit throughput batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send circuit throughput batch to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send circuit throughput batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send circuit throughput batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
 
 pub fn submit_circuit_retransmits_batch(batch: &[CircuitRetransmits]) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::CircuitRetransmitsBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send circuit retransmits batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send circuit retransmits batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send circuit retransmits batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send circuit retransmits batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -267,18 +264,17 @@ pub fn submit_circuit_retransmits_batch(batch: &[CircuitRetransmits]) -> anyhow:
 pub fn submit_circuit_rtt_batch(
     batch: &[crate::lts2_sys::shared_types::CircuitRtt],
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::CircuitRttBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            error!("Failed to send circuit RTT batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send circuit RTT batch to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send circuit RTT batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send circuit RTT batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -286,18 +282,17 @@ pub fn submit_circuit_rtt_batch(
 pub fn submit_circuit_cake_drops_batch(
     batch: &[crate::lts2_sys::shared_types::CircuitCakeDrops],
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::CircuitCakeDropsBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send circuit cake drops batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send circuit cake drops batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send circuit cake drops batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send circuit cake drops batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -305,35 +300,33 @@ pub fn submit_circuit_cake_drops_batch(
 pub fn submit_circuit_cake_marks_batch(
     batch: &[crate::lts2_sys::shared_types::CircuitCakeMarks],
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::CircuitCakeMarksBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send circuit cake marks batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send circuit cake marks batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send circuit cake marks batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send circuit cake marks batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
 
 pub fn submit_site_throughput_batch(batch: &[shared_types::SiteThroughput]) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::SiteThroughputBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            error!("Failed to send site throughput batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send site throughput batch to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send site throughput batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send site throughput batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -341,69 +334,65 @@ pub fn submit_site_throughput_batch(batch: &[shared_types::SiteThroughput]) -> a
 pub fn submit_site_retransmits_batch(
     batch: &[shared_types::SiteRetransmits],
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::SiteRetransmitsBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            error!("Failed to send site retransmits batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send site retransmits batch to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send site retransmits batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send site retransmits batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
 
 pub fn submit_site_cake_drops_batch(batch: &[shared_types::SiteCakeDrops]) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::SiteCakeDropsBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send site cake drops batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send site cake drops batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send site cake drops batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send site cake drops batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
 
 pub fn submit_site_cake_marks_batch(batch: &[shared_types::SiteCakeMarks]) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::SiteCakeMarksBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send site cake marks batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send site cake marks batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send site cake marks batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send site cake marks batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
 
 pub fn submit_site_rtt_batch(batch: &[shared_types::SiteRtt]) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::SiteRttBatch(batch.to_vec()),
             ))
             .is_err()
-        {
-            println!("Failed to send site RTT batch to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send site RTT batch to LTS2 client"
-            ));
-        }
+    {
+        println!("Failed to send site RTT batch to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send site RTT batch to LTS2 client"
+        ));
     }
     Ok(()) // SUCCESS
 }
@@ -495,13 +484,13 @@ pub async fn get_lts_license_trial_remaining_async() -> anyhow::Result<i32> {
 }
 
 pub fn ingest_batch_complete() -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx.send(LtsClientCommand::IngestBatchComplete).is_err() {
-            error!("Failed to send ingest batch complete message to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send ingest batch complete message to LTS2 client"
-            ));
-        }
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx.send(LtsClientCommand::IngestBatchComplete).is_err()
+    {
+        error!("Failed to send ingest batch complete message to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send ingest batch complete message to LTS2 client"
+        ));
     }
     Ok(())
 }
@@ -517,8 +506,8 @@ pub fn one_way_flow(
     bytes: u64,
     circuit_hash: i64,
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::OneWayFlow {
                     start_time,
@@ -533,12 +522,11 @@ pub fn one_way_flow(
                 },
             ))
             .is_err()
-        {
-            error!("Failed to send one-way flow to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send one-way flow to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send one-way flow to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send one-way flow to LTS2 client"
+        ));
     }
     Ok(())
 }
@@ -561,8 +549,8 @@ pub fn two_way_flow(
     rtt2: f32,
     circuit_hash: i64,
 ) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::TwoWayFlow {
                     start_time,
@@ -584,71 +572,67 @@ pub fn two_way_flow(
                 },
             ))
             .is_err()
-        {
-            error!("Failed to send two-way flow to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send two-way flow to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send two-way flow to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send two-way flow to LTS2 client"
+        ));
     }
     Ok(())
 }
 
 pub fn allow_subnet(ip_string: String) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::AllowSubnet(ip_string),
             ))
             .is_err()
-        {
-            error!("Failed to send allow subnet to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send allow subnet to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send allow subnet to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send allow subnet to LTS2 client"
+        ));
     }
     Ok(())
 }
 
 pub fn ignore_subnet(ip_string: String) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::IgnoreSubnet(ip_string),
             ))
             .is_err()
-        {
-            error!("Failed to send ignore subnet to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send ignore subnet to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send ignore subnet to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send ignore subnet to LTS2 client"
+        ));
     }
     Ok(())
 }
 
 pub fn submit_blackboard(bytes: &[u8]) -> anyhow::Result<()> {
     let bytes = bytes.to_vec();
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::BlackboardJson(bytes),
             ))
             .is_err()
-        {
-            error!("Failed to send blackboard JSON to LTS2 client");
-            return Err(anyhow::anyhow!(
-                "Failed to send blackboard JSON to LTS2 client"
-            ));
-        }
+    {
+        error!("Failed to send blackboard JSON to LTS2 client");
+        return Err(anyhow::anyhow!(
+            "Failed to send blackboard JSON to LTS2 client"
+        ));
     }
     Ok(())
 }
 
 pub fn flow_count(timestamp: u64, flow_count: u64) -> anyhow::Result<()> {
-    if let Ok(tx) = client_commands::get_command_channel() {
-        if tx
+    if let Ok(tx) = client_commands::get_command_channel()
+        && tx
             .send(LtsClientCommand::IngestData(
                 ingestor::commands::IngestorCommand::FlowCount {
                     timestamp,
@@ -656,10 +640,9 @@ pub fn flow_count(timestamp: u64, flow_count: u64) -> anyhow::Result<()> {
                 },
             ))
             .is_err()
-        {
-            error!("Failed to send flow count to LTS2 client");
-            return Err(anyhow::anyhow!("Failed to send flow count to LTS2 client"));
-        }
+    {
+        error!("Failed to send flow count to LTS2 client");
+        return Err(anyhow::anyhow!("Failed to send flow count to LTS2 client"));
     }
     Ok(())
 }

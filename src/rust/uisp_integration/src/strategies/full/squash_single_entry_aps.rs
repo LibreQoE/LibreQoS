@@ -84,12 +84,12 @@ pub fn squash_squashed_sites(
         println!("Squashing site {}", sites[squash_idx].name);
         let parent = root_index;
         sites.iter_mut().for_each(|s| {
-            if let Some(their_parent) = s.selected_parent {
-                if their_parent == squash_idx {
-                    info!("Re-parenting site {} to {} ({})", s.name, root_name, parent);
-                    s.selected_parent = Some(parent);
-                    squashed.push(s.id.clone());
-                }
+            if let Some(their_parent) = s.selected_parent
+                && their_parent == squash_idx
+            {
+                info!("Re-parenting site {} to {} ({})", s.name, root_name, parent);
+                s.selected_parent = Some(parent);
+                squashed.push(s.id.clone());
             }
         });
         sites[squash_idx].parent_indices.clear();

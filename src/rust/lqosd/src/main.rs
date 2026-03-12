@@ -680,8 +680,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 ip_addresses,
                 sqm_override,
             } => {
-                if let Some(s) = sqm_override.as_ref() {
-                    if s.eq_ignore_ascii_case("fq_codel") {
+                if let Some(s) = sqm_override.as_ref()
+                    && s.eq_ignore_ascii_case("fq_codel") {
                         tracing::info!(
                             "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
                             circuit_hash,
@@ -690,7 +690,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                             class_minor
                         );
                     }
-                }
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {

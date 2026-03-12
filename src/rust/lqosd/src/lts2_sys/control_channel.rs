@@ -150,16 +150,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
             ControlChannelCommand::FetchHistory { request, responder } => {
                 if let Err(err) =
                     tx.try_send(ConnectionCommand::FetchHistory { request, responder })
-                {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                    && let tokio::sync::mpsc::error::TrySendError::Full(
                         ConnectionCommand::FetchHistory { responder, .. },
                     )
                     | tokio::sync::mpsc::error::TrySendError::Closed(
                         ConnectionCommand::FetchHistory { responder, .. },
                     ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::StartChat {
@@ -182,16 +180,15 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                 let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
             }
             ControlChannelCommand::SupportTicketList { responder } => {
-                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder })
+                    && let tokio::sync::mpsc::error::TrySendError::Full(
                         ConnectionCommand::SupportTicketList { responder },
                     )
                     | tokio::sync::mpsc::error::TrySendError::Closed(
                         ConnectionCommand::SupportTicketList { responder },
                     ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketGet {
@@ -201,16 +198,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                 if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketGet {
                     ticket_id,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketGet { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketGet { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketGet { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketGet { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketCreate {
@@ -226,16 +221,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     body,
                     commentor,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketCreate { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketCreate { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketCreate { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketCreate { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketAddComment {
@@ -251,16 +244,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     body,
                     date,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketAddComment { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketAddComment { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketAddComment { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketAddComment { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
         }
@@ -1492,17 +1483,16 @@ async fn circuit_snapshot_streaming(
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(device_hash) = te.device_hash {
-                if let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash) {
-                    if let Some(agg) = aggregates.get_mut(&id) {
-                        // bytes_per_second -> later convert to bits
-                        agg.bps_bytes += te.bytes_per_second;
-                        agg.tcp_packets += te.tcp_packets;
-                        agg.tcp_retries += te.tcp_retransmits;
-                        if let Some(rtt) = te.median_latency() {
-                            agg.rtts.push(rtt);
-                        }
-                    }
+            if let Some(device_hash) = te.device_hash
+                && let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash)
+                && let Some(agg) = aggregates.get_mut(&id)
+            {
+                // bytes_per_second -> later convert to bits
+                agg.bps_bytes += te.bytes_per_second;
+                agg.tcp_packets += te.tcp_packets;
+                agg.tcp_retries += te.tcp_retransmits;
+                if let Some(rtt) = te.median_latency() {
+                    agg.rtts.push(rtt);
                 }
             }
         }

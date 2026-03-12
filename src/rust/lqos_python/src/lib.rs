@@ -118,67 +118,67 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     let on_a_stick = get_bool(dict, "on_a_stick", false);
     let site_count = get_i64(dict, "site_count", 0);
     let mut site_names: Vec<i64> = Vec::new();
-    if let Ok(Some(sn)) = dict.get_item("site_names") {
-        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
-            for item in list.iter() {
-                if let Some(n) = to_i64_any(&item) {
-                    site_names.push(n);
-                }
+    if let Ok(Some(sn)) = dict.get_item("site_names")
+        && let Ok(list) = sn.downcast::<pyo3::types::PyList>()
+    {
+        for item in list.iter() {
+            if let Some(n) = to_i64_any(&item) {
+                site_names.push(n);
             }
         }
     }
     // site_map
     let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
-    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
-        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
-            for (k, v) in sm_dict.iter() {
-                if let Some(key) = to_i64_any(&k) {
-                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(entry, "cpu", 0);
-                        let major = get_i64(entry, "major", 0);
-                        let minor = get_i64(entry, "minor", 0);
-                        let insertion_order = match entry.get_item("insertion_order") {
-                            Ok(Some(x)) => x.extract::<i64>().ok(),
-                            _ => None,
-                        };
-                        site_map.insert(
-                            key,
-                            PlannerSiteEntry {
-                                cpu,
-                                major,
-                                minor,
-                                insertion_order,
-                            },
-                        );
-                    }
-                }
+    if let Ok(Some(sm_any)) = dict.get_item("site_map")
+        && let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>()
+    {
+        for (k, v) in sm_dict.iter() {
+            if let Some(key) = to_i64_any(&k)
+                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+            {
+                let cpu = get_i64(entry, "cpu", 0);
+                let major = get_i64(entry, "major", 0);
+                let minor = get_i64(entry, "minor", 0);
+                let insertion_order = match entry.get_item("insertion_order") {
+                    Ok(Some(x)) => x.extract::<i64>().ok(),
+                    _ => None,
+                };
+                site_map.insert(
+                    key,
+                    PlannerSiteEntry {
+                        cpu,
+                        major,
+                        minor,
+                        insertion_order,
+                    },
+                );
             }
         }
     }
     // circuit_map
     let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
-    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
-        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
-            for (k, v) in cm_dict.iter() {
-                if let Some(key) = to_i64_any(&k) {
-                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(entry, "cpu", 0);
-                        let major = get_i64(entry, "major", 0);
-                        let minor = get_i64(entry, "minor", 0);
-                        let parent_site = get_string(entry, "parent_site", String::new());
-                        let sqm = get_string(entry, "sqm", String::new());
-                        circuit_map.insert(
-                            key,
-                            PlannerCircuitEntry {
-                                cpu,
-                                major,
-                                minor,
-                                parent_site,
-                                sqm,
-                            },
-                        );
-                    }
-                }
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map")
+        && let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>()
+    {
+        for (k, v) in cm_dict.iter() {
+            if let Some(key) = to_i64_any(&k)
+                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+            {
+                let cpu = get_i64(entry, "cpu", 0);
+                let major = get_i64(entry, "major", 0);
+                let minor = get_i64(entry, "minor", 0);
+                let parent_site = get_string(entry, "parent_site", String::new());
+                let sqm = get_string(entry, "sqm", String::new());
+                circuit_map.insert(
+                    key,
+                    PlannerCircuitEntry {
+                        cpu,
+                        major,
+                        minor,
+                        parent_site,
+                        sqm,
+                    },
+                );
             }
         }
     }
@@ -447,67 +447,67 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     let site_count = get_i64(dict, "site_count", 0);
     // site_names
     let mut site_names: Vec<i64> = Vec::new();
-    if let Ok(Some(sn)) = dict.get_item("site_names") {
-        if let Ok(list) = sn.downcast::<pyo3::types::PyList>() {
-            for item in list.iter() {
-                if let Some(n) = to_i64_any(&item) {
-                    site_names.push(n);
-                }
+    if let Ok(Some(sn)) = dict.get_item("site_names")
+        && let Ok(list) = sn.downcast::<pyo3::types::PyList>()
+    {
+        for item in list.iter() {
+            if let Some(n) = to_i64_any(&item) {
+                site_names.push(n);
             }
         }
     }
     // site_map
     let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
-    if let Ok(Some(sm_any)) = dict.get_item("site_map") {
-        if let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>() {
-            for (k, v) in sm_dict.iter() {
-                if let Some(key) = to_i64_any(&k) {
-                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(entry, "cpu", 0);
-                        let major = get_i64(entry, "major", 0);
-                        let minor = get_i64(entry, "minor", 0);
-                        let insertion_order = match entry.get_item("insertion_order") {
-                            Ok(Some(x)) => x.extract::<i64>().ok(),
-                            _ => None,
-                        };
-                        site_map.insert(
-                            key,
-                            PlannerSiteEntry {
-                                cpu,
-                                major,
-                                minor,
-                                insertion_order,
-                            },
-                        );
-                    }
-                }
+    if let Ok(Some(sm_any)) = dict.get_item("site_map")
+        && let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>()
+    {
+        for (k, v) in sm_dict.iter() {
+            if let Some(key) = to_i64_any(&k)
+                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+            {
+                let cpu = get_i64(entry, "cpu", 0);
+                let major = get_i64(entry, "major", 0);
+                let minor = get_i64(entry, "minor", 0);
+                let insertion_order = match entry.get_item("insertion_order") {
+                    Ok(Some(x)) => x.extract::<i64>().ok(),
+                    _ => None,
+                };
+                site_map.insert(
+                    key,
+                    PlannerSiteEntry {
+                        cpu,
+                        major,
+                        minor,
+                        insertion_order,
+                    },
+                );
             }
         }
     }
     // circuit_map
     let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
-    if let Ok(Some(cm_any)) = dict.get_item("circuit_map") {
-        if let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>() {
-            for (k, v) in cm_dict.iter() {
-                if let Some(key) = to_i64_any(&k) {
-                    if let Ok(entry) = v.downcast::<pyo3::types::PyDict>() {
-                        let cpu = get_i64(entry, "cpu", 0);
-                        let major = get_i64(entry, "major", 0);
-                        let minor = get_i64(entry, "minor", 0);
-                        let parent_site = get_string(entry, "parent_site", String::new());
-                        let sqm = get_string(entry, "sqm", String::new());
-                        circuit_map.insert(
-                            key,
-                            PlannerCircuitEntry {
-                                cpu,
-                                major,
-                                minor,
-                                parent_site,
-                                sqm,
-                            },
-                        );
-                    }
-                }
+    if let Ok(Some(cm_any)) = dict.get_item("circuit_map")
+        && let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>()
+    {
+        for (k, v) in cm_dict.iter() {
+            if let Some(key) = to_i64_any(&k)
+                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+            {
+                let cpu = get_i64(entry, "cpu", 0);
+                let major = get_i64(entry, "major", 0);
+                let minor = get_i64(entry, "minor", 0);
+                let parent_site = get_string(entry, "parent_site", String::new());
+                let sqm = get_string(entry, "sqm", String::new());
+                circuit_map.insert(
+                    key,
+                    PlannerCircuitEntry {
+                        cpu,
+                        major,
+                        minor,
+                        parent_site,
+                        sqm,
+                    },
+                );
             }
         }
     }
@@ -1193,10 +1193,10 @@ fn is_libre_already_running() -> PyResult<bool> {
             if let Ok(pid) = contents.parse::<i32>() {
                 let sys = System::new_all();
                 let pid = sysinfo::Pid::from(pid as usize);
-                if let Some(process) = sys.processes().get(&pid) {
-                    if process.name().to_string_lossy().contains("python") {
-                        return Ok(true);
-                    }
+                if let Some(process) = sys.processes().get(&pid)
+                    && process.name().to_string_lossy().contains("python")
+                {
+                    return Ok(true);
                 }
             } else {
                 println!("{LOCK_FILE} did not contain a valid PID");

@@ -85,135 +85,125 @@ pub async fn build_flat_network(
     let mut seen_pairs = HashSet::new();
     let ipv4_to_v6 = Vec::new();
     for site in sites.iter() {
-        if let Some(site_id) = &site.identification {
-            if let Some(site_type) = &site_id.site_type {
-                if site_type == "endpoint" {
-                    // Prefer UISP QoS + burst for client sites
-                    let suspended_slow = site
-                        .identification
-                        .as_ref()
-                        .map(|id| id.suspended)
-                        .unwrap_or(false)
-                        && config.uisp_integration.suspended_strategy == "slow";
-                    let (download_min, upload_min, mut download_max, mut upload_max) =
-                        if suspended_slow {
-                            (0.1, 0.1, 0.1, 0.1)
-                        } else if let Some(qos) = &site.qos {
-                            let base_down = qos
-                                .downloadSpeed
-                                .map(|v| (v as f32) / 1_000_000.0)
-                                .unwrap_or(0.0);
-                            let base_up = qos
-                                .uploadSpeed
-                                .map(|v| (v as f32) / 1_000_000.0)
-                                .unwrap_or(0.0);
-                            let burst_down = qos
-                                .downloadBurstSize
-                                .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
-                                .unwrap_or(0.0);
-                            let burst_up = qos
-                                .uploadBurstSize
-                                .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
-                                .unwrap_or(0.0);
-                            if base_down > 0.0 || base_up > 0.0 {
-                                (
-                                    f32::max(
-                                        0.1,
-                                        base_down
-                                            * config.uisp_integration.commit_bandwidth_multiplier,
-                                    ),
-                                    f32::max(
-                                        0.1,
-                                        base_up
-                                            * config.uisp_integration.commit_bandwidth_multiplier,
-                                    ),
-                                    f32::max(
-                                        0.1,
-                                        (base_down + burst_down)
-                                            * config.uisp_integration.bandwidth_overhead_factor,
-                                    ),
-                                    f32::max(
-                                        0.1,
-                                        (base_up + burst_up)
-                                            * config.uisp_integration.bandwidth_overhead_factor,
-                                    ),
-                                )
-                            } else {
-                                // Fallback to legacy capacity-based min/max
-                                let (dl_cap, ul_cap) = site.qos(
-                                    config.queues.generated_pn_download_mbps,
-                                    config.queues.generated_pn_upload_mbps,
-                                );
-                                let dl_max_f = (dl_cap as f32)
-                                    * config.uisp_integration.bandwidth_overhead_factor;
-                                let ul_max_f = (ul_cap as f32)
-                                    * config.uisp_integration.bandwidth_overhead_factor;
-                                let dl_min_f =
-                                    dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                                let ul_min_f =
-                                    ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                                (
-                                    f32::max(0.1, dl_min_f),
-                                    f32::max(0.1, ul_min_f),
-                                    f32::max(0.1, dl_max_f),
-                                    f32::max(0.1, ul_max_f),
-                                )
-                            }
-                        } else {
-                            // Fallback if qos entirely missing
-                            let (dl_cap, ul_cap) = site.qos(
-                                config.queues.generated_pn_download_mbps,
-                                config.queues.generated_pn_upload_mbps,
-                            );
-                            let dl_max_f =
-                                (dl_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                            let ul_max_f =
-                                (ul_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                            let dl_min_f =
-                                dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                            let ul_min_f =
-                                ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
-                            (
-                                f32::max(0.1, dl_min_f),
-                                f32::max(0.1, ul_min_f),
-                                f32::max(0.1, dl_max_f),
-                                f32::max(0.1, ul_max_f),
-                            )
-                        };
-                    // Ensure max >= min
-                    if download_max < download_min {
-                        download_max = download_min;
+        if let Some(site_id) = &site.identification
+            && let Some(site_type) = &site_id.site_type
+            && site_type == "endpoint"
+        {
+            // Prefer UISP QoS + burst for client sites
+            let suspended_slow = site
+                .identification
+                .as_ref()
+                .map(|id| id.suspended)
+                .unwrap_or(false)
+                && config.uisp_integration.suspended_strategy == "slow";
+            let (download_min, upload_min, mut download_max, mut upload_max) = if suspended_slow {
+                (0.1, 0.1, 0.1, 0.1)
+            } else if let Some(qos) = &site.qos {
+                let base_down = qos
+                    .downloadSpeed
+                    .map(|v| (v as f32) / 1_000_000.0)
+                    .unwrap_or(0.0);
+                let base_up = qos
+                    .uploadSpeed
+                    .map(|v| (v as f32) / 1_000_000.0)
+                    .unwrap_or(0.0);
+                let burst_down = qos
+                    .downloadBurstSize
+                    .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
+                    .unwrap_or(0.0);
+                let burst_up = qos
+                    .uploadBurstSize
+                    .map(|v| (v as f32) * 8.0 / 1000.0 / 1024.0)
+                    .unwrap_or(0.0);
+                if base_down > 0.0 || base_up > 0.0 {
+                    (
+                        f32::max(
+                            0.1,
+                            base_down * config.uisp_integration.commit_bandwidth_multiplier,
+                        ),
+                        f32::max(
+                            0.1,
+                            base_up * config.uisp_integration.commit_bandwidth_multiplier,
+                        ),
+                        f32::max(
+                            0.1,
+                            (base_down + burst_down)
+                                * config.uisp_integration.bandwidth_overhead_factor,
+                        ),
+                        f32::max(
+                            0.1,
+                            (base_up + burst_up)
+                                * config.uisp_integration.bandwidth_overhead_factor,
+                        ),
+                    )
+                } else {
+                    // Fallback to legacy capacity-based min/max
+                    let (dl_cap, ul_cap) = site.qos(
+                        config.queues.generated_pn_download_mbps,
+                        config.queues.generated_pn_upload_mbps,
+                    );
+                    let dl_max_f =
+                        (dl_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                    let ul_max_f =
+                        (ul_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                    let dl_min_f = dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                    let ul_min_f = ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                    (
+                        f32::max(0.1, dl_min_f),
+                        f32::max(0.1, ul_min_f),
+                        f32::max(0.1, dl_max_f),
+                        f32::max(0.1, ul_max_f),
+                    )
+                }
+            } else {
+                // Fallback if qos entirely missing
+                let (dl_cap, ul_cap) = site.qos(
+                    config.queues.generated_pn_download_mbps,
+                    config.queues.generated_pn_upload_mbps,
+                );
+                let dl_max_f = (dl_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let ul_max_f = (ul_cap as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let dl_min_f = dl_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                let ul_min_f = ul_max_f * config.uisp_integration.commit_bandwidth_multiplier;
+                (
+                    f32::max(0.1, dl_min_f),
+                    f32::max(0.1, ul_min_f),
+                    f32::max(0.1, dl_max_f),
+                    f32::max(0.1, ul_max_f),
+                )
+            };
+            // Ensure max >= min
+            if download_max < download_min {
+                download_max = download_min;
+            }
+            if upload_max < upload_min {
+                upload_max = upload_min;
+            }
+            for device in devices.iter() {
+                let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
+                if dev.site_id == site.id {
+                    // We're an endpoint in the right sight. We're getting there
+                    let key = (site.id.clone(), device.get_id());
+                    if !seen_pairs.insert(key) {
+                        continue;
                     }
-                    if upload_max < upload_min {
-                        upload_max = upload_min;
-                    }
-                    for device in devices.iter() {
-                        let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
-                        if dev.site_id == site.id {
-                            // We're an endpoint in the right sight. We're getting there
-                            let key = (site.id.clone(), device.get_id());
-                            if !seen_pairs.insert(key) {
-                                continue;
-                            }
 
-                            let sd = ShapedDevice {
-                                circuit_id: site.id.clone(),
-                                circuit_name: site.name_or_blank(),
-                                device_id: device.get_id(),
-                                device_name: device.get_name().unwrap_or("".to_string()),
-                                parent_node: "".to_string(),
-                                mac: device.identification.mac.clone().unwrap_or("".to_string()),
-                                ipv4: dev.ipv4_list(),
-                                ipv6: dev.ipv6_list(),
-                                download_min,
-                                download_max,
-                                upload_min,
-                                upload_max,
-                                comment: "".to_string(),
-                            };
-                            shaped_devices.push(sd);
-                        }
-                    }
+                    let sd = ShapedDevice {
+                        circuit_id: site.id.clone(),
+                        circuit_name: site.name_or_blank(),
+                        device_id: device.get_id(),
+                        device_name: device.get_name().unwrap_or("".to_string()),
+                        parent_node: "".to_string(),
+                        mac: device.identification.mac.clone().unwrap_or("".to_string()),
+                        ipv4: dev.ipv4_list(),
+                        ipv6: dev.ipv6_list(),
+                        download_min,
+                        download_max,
+                        upload_min,
+                        upload_max,
+                        comment: "".to_string(),
+                    };
+                    shaped_devices.push(sd);
                 }
             }
         }

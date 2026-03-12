@@ -154,10 +154,10 @@ pub fn clear_unknown_ips_data() -> ClearUnknownIpsResponse {
         }
     }
 
-    if cleared > 0 {
-        if let Err(e) = lqos_sys::expire_throughput(to_remove) {
-            warn!("Failed to expire throughput entries during clear: {:?}", e);
-        }
+    if cleared > 0
+        && let Err(e) = lqos_sys::expire_throughput(to_remove)
+    {
+        warn!("Failed to expire throughput entries during clear: {:?}", e);
     }
 
     ClearUnknownIpsResponse { cleared }
