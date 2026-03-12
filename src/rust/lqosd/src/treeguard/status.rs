@@ -23,7 +23,9 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
             virtualized_nodes: 0,
             fq_codel_circuits: 0,
             last_action_summary: None,
-            warnings: vec!["Unable to load configuration; TreeGuard status unavailable.".to_string()],
+            warnings: vec![
+                "Unable to load configuration; TreeGuard status unavailable.".to_string(),
+            ],
         };
     };
 
@@ -47,7 +49,11 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
         enabled: tg.enabled,
         dry_run: tg.dry_run,
         cpu_max_pct: None,
-        managed_nodes: if tg.links.all_nodes { 0 } else { tg.links.nodes.len() },
+        managed_nodes: if tg.links.all_nodes {
+            0
+        } else {
+            tg.links.nodes.len()
+        },
         managed_circuits: if tg.circuits.all_circuits {
             0
         } else {
@@ -65,7 +71,5 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
 /// This function is not pure: it sends a request to the TreeGuard actor.
 /// If the actor isn't available, it returns an empty list.
 pub async fn treeguard_activity_snapshot() -> Vec<TreeguardActivityEntry> {
-    actor::request_activity_snapshot()
-        .await
-        .unwrap_or_default()
+    actor::request_activity_snapshot().await.unwrap_or_default()
 }

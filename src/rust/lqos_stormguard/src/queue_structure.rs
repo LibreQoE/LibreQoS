@@ -40,10 +40,9 @@ pub fn find_queue_dependents(parent_name: &str) -> Result<Vec<WatchingSiteDepend
     for candidate in queues.iter() {
         if queue.class_id == candidate.parent_class_id && candidate.parent_node.is_none() {
             // If they don't have any CAKE descendents, they are good.
-            if !queues
-                .iter()
-                .any(|child| child.parent_class_id == candidate.class_id && child.parent_node.is_some())
-            {
+            if !queues.iter().any(|child| {
+                child.parent_class_id == candidate.class_id && child.parent_node.is_some()
+            }) {
                 dependents.push(WatchingSiteDependency {
                     name: candidate.clone().name.unwrap_or_default(),
                     class_id: candidate.class_id,

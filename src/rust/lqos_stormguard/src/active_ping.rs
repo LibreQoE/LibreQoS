@@ -141,4 +141,3 @@ async fn ping_once(ip: IpAddr, timeout: Duration) -> Option<f64> {
         _ => None,
     }
 }
-

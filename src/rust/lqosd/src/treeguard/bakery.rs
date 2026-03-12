@@ -58,21 +58,18 @@ pub(crate) fn apply_circuit_sqm_override_live(
         });
     };
 
-    let class_minor = u16::try_from(node.class_minor).map_err(|_| {
-        TreeguardError::InvalidClassId {
+    let class_minor =
+        u16::try_from(node.class_minor).map_err(|_| TreeguardError::InvalidClassId {
             details: format!("class_minor too large: {}", node.class_minor),
-        }
-    })?;
-    let class_major = u16::try_from(node.class_major).map_err(|_| {
-        TreeguardError::InvalidClassId {
+        })?;
+    let class_major =
+        u16::try_from(node.class_major).map_err(|_| TreeguardError::InvalidClassId {
             details: format!("class_major too large: {}", node.class_major),
-        }
-    })?;
-    let up_class_major = u16::try_from(node.up_class_major).map_err(|_| {
-        TreeguardError::InvalidClassId {
+        })?;
+    let up_class_major =
+        u16::try_from(node.up_class_major).map_err(|_| TreeguardError::InvalidClassId {
             details: format!("up_class_major too large: {}", node.up_class_major),
-        }
-    })?;
+        })?;
 
     let circuit_hash = hash_to_i64(circuit_id);
     let ip_addresses = ip_list(devices);

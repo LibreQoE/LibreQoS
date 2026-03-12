@@ -4,13 +4,13 @@ mod ring_buffer;
 mod site;
 mod stormguard_state;
 
-use crate::config::StormguardConfig;
 use crate::active_ping::TimedRtt;
-use crate::datalog::LogCommand;
 use crate::adaptive_actions::{
     CircuitFallbackOutcome, SiteOverrideUpdate, apply_circuit_fallback,
     apply_site_override_updates, clear_circuit_fallback, load_persisted_circuit_fallbacks,
 };
+use crate::config::StormguardConfig;
+use crate::datalog::LogCommand;
 use crate::site_state::analysis::SaturationLevel;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
@@ -121,11 +121,17 @@ impl SiteStateTracker {
                     }
                 }
             }
-            Err(e) => warn!("Failed to load persisted StormGuard circuit fallbacks: {}", e),
+            Err(e) => warn!(
+                "Failed to load persisted StormGuard circuit fallbacks: {}",
+                e
+            ),
         }
 
         for (name, site) in &self.sites {
-            let Some(queue) = queues.iter().find(|n| n.name.as_deref() == Some(name.as_str())) else {
+            let Some(queue) = queues
+                .iter()
+                .find(|n| n.name.as_deref() == Some(name.as_str()))
+            else {
                 continue;
             };
 
@@ -287,7 +293,9 @@ impl SiteStateTracker {
     }
 
     pub fn check_state(&mut self, config: &StormguardConfig) {
-        self.sites.iter_mut().for_each(|(_, s)| s.check_state(config));
+        self.sites
+            .iter_mut()
+            .for_each(|(_, s)| s.check_state(config));
     }
 
     pub fn recommendations(&mut self, config: &StormguardConfig) -> Vec<(Recommendation, String)> {
@@ -322,7 +330,9 @@ impl SiteStateTracker {
                 };
 
                 let baseline_rtt_ms = site.rtt_baseline_ms;
-                let rtt_now = site.current_rtt_ms.or_else(|| site.round_trip_time.average());
+                let rtt_now = site
+                    .current_rtt_ms
+                    .or_else(|| site.round_trip_time.average());
                 let delay_ms = match (rtt_now, baseline_rtt_ms) {
                     (Some(rtt), Some(baseline)) => Some((rtt - baseline).max(0.0)),
                     _ => None,
@@ -383,12 +393,16 @@ impl SiteStateTracker {
                             RecommendationDirection::Download => site.last_action_download,
                             RecommendationDirection::Upload => site.last_action_upload,
                         }
-                        .map(|(action, at)| (Some(action_string(action).to_string()), Some(at.elapsed().as_secs_f32())))
+                        .map(|(action, at)| {
+                            (
+                                Some(action_string(action).to_string()),
+                                Some(at.elapsed().as_secs_f32()),
+                            )
+                        })
                         .unwrap_or((None, None));
 
-                        let saturation_max = SaturationLevel::from_throughput(
-                            throughput_mbps, max_mbps as f64,
-                        );
+                        let saturation_max =
+                            SaturationLevel::from_throughput(throughput_mbps, max_mbps as f64);
                         let saturation_current =
                             SaturationLevel::from_throughput(throughput_mbps, queue_mbps as f64);
 
@@ -684,7 +698,10 @@ impl SiteStateTracker {
                     "StormGuard cleared circuit fallback for {} ({})",
                     recommendation.site, circuit_id
                 );
-                (format!("circuit_fallback=cleared persisted={persisted}"), true)
+                (
+                    format!("circuit_fallback=cleared persisted={persisted}"),
+                    true,
+                )
             }
             CircuitFallbackOutcome::DryRun { action } => {
                 info!(
@@ -703,7 +720,12 @@ impl SiteStateTracker {
         };
 
         if Self::circuit_outcome_enters_cooldown(&enters_cooldown) {
-            Self::enter_cooldown(site, recommendation.direction, cooldown_secs, recommendation.action);
+            Self::enter_cooldown(
+                site,
+                recommendation.direction,
+                cooldown_secs,
+                recommendation.action,
+            );
         }
         let _ = log_sender.send(LogCommand::SpeedChange {
             site: recommendation.site.clone(),
@@ -761,28 +783,24 @@ impl SiteStateTracker {
 
     fn set_site_rate(site: &mut SiteState, direction: RecommendationDirection, new_rate: u64) {
         match direction {
-                RecommendationDirection::Download => {
-                    site.queue_download_mbps = new_rate;
-                    site.ticks_since_last_probe_download = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(entry) =
-                        lock.iter_mut().find(|(n, _, _)| n == &site.config.name)
-                    {
-                        entry.1 = new_rate;
-                    }
+            RecommendationDirection::Download => {
+                site.queue_download_mbps = new_rate;
+                site.ticks_since_last_probe_download = 0;
+                let mut lock = crate::STORMGUARD_STATS.lock();
+                if let Some(entry) = lock.iter_mut().find(|(n, _, _)| n == &site.config.name) {
+                    entry.1 = new_rate;
                 }
-                RecommendationDirection::Upload => {
-                    site.queue_upload_mbps = new_rate;
-                    site.ticks_since_last_probe_upload = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock();
-                    if let Some(entry) =
-                        lock.iter_mut().find(|(n, _, _)| n == &site.config.name)
-                    {
-                        entry.2 = new_rate;
-                    }
+            }
+            RecommendationDirection::Upload => {
+                site.queue_upload_mbps = new_rate;
+                site.ticks_since_last_probe_upload = 0;
+                let mut lock = crate::STORMGUARD_STATS.lock();
+                if let Some(entry) = lock.iter_mut().find(|(n, _, _)| n == &site.config.name) {
+                    entry.2 = new_rate;
                 }
             }
         }
+    }
 
     fn apply_dependents(
         site: &crate::config::WatchingSite,
@@ -911,8 +929,8 @@ impl SiteStateTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::WatchingSite;
     use crate::config::StormguardConfig as RuntimeStormguardConfig;
+    use crate::config::WatchingSite;
     use lqos_config::StormguardStrategy;
     use std::collections::HashMap;
 
@@ -1043,7 +1061,10 @@ mod tests {
         site.recommendations(&mut recs, &cfg);
         assert!(recs.iter().any(|(r, _)| {
             r.direction == RecommendationDirection::Download
-                && matches!(r.action, RecommendationAction::DecreaseFast | RecommendationAction::Decrease)
+                && matches!(
+                    r.action,
+                    RecommendationAction::DecreaseFast | RecommendationAction::Decrease
+                )
         }));
     }
 
@@ -1060,7 +1081,10 @@ mod tests {
         site.recommendations(&mut recs, &cfg);
         assert!(recs.iter().any(|(r, _)| {
             r.direction == RecommendationDirection::Download
-                && matches!(r.action, RecommendationAction::Increase | RecommendationAction::IncreaseFast)
+                && matches!(
+                    r.action,
+                    RecommendationAction::Increase | RecommendationAction::IncreaseFast
+                )
         }));
     }
 
@@ -1076,7 +1100,10 @@ mod tests {
         site.recommendations(&mut recs, &cfg);
         assert!(recs.iter().any(|(r, _)| {
             r.direction == RecommendationDirection::Upload
-                && matches!(r.action, RecommendationAction::DecreaseFast | RecommendationAction::Decrease)
+                && matches!(
+                    r.action,
+                    RecommendationAction::DecreaseFast | RecommendationAction::Decrease
+                )
         }));
     }
 }

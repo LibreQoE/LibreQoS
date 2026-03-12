@@ -1,7 +1,7 @@
-use crate::treeguard::status::{treeguard_activity_snapshot, treeguard_status_snapshot};
 use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use crate::treeguard::status::{treeguard_activity_snapshot, treeguard_status_snapshot};
 use std::sync::Arc;
 
 pub async fn treeguard_status(pubsub: Arc<PubSub>) {
@@ -27,7 +27,5 @@ pub async fn treeguard_activity(pubsub: Arc<PubSub>) {
 
     let data = treeguard_activity_snapshot().await;
     let msg = WsResponse::TreeGuardActivity { data };
-    pubsub
-        .send(PublishedChannels::TreeGuardActivity, msg)
-        .await;
+    pubsub.send(PublishedChannels::TreeGuardActivity, msg).await;
 }

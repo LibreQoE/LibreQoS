@@ -34,4 +34,3 @@ pub(crate) fn try_reload_libreqos_locked() -> ReloadExecOutcome {
         Err(e) => ReloadExecOutcome::Failed(e.to_string()),
     }
 }
-

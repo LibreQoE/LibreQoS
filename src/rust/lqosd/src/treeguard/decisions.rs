@@ -325,7 +325,10 @@ pub fn parse_directional_sqm_override(token: &str) -> DownUpOrder<Option<Circuit
 
     let token = token.trim();
     if token.is_empty() {
-        return DownUpOrder { down: None, up: None };
+        return DownUpOrder {
+            down: None,
+            up: None,
+        };
     }
 
     if let Some((down, up)) = token.split_once('/') {
@@ -392,7 +395,10 @@ mod tests {
             true,
             &state,
         );
-        assert_eq!(decision, LinkVirtualDecision::Set(LinkVirtualState::Virtual));
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
     }
 
     #[test]
@@ -440,7 +446,10 @@ mod tests {
                 down: Some(100.0),
                 up: Some(100.0),
             },
-            DownUpOrder { down: 10.0, up: 1.0 },
+            DownUpOrder {
+                down: 10.0,
+                up: 1.0,
+            },
             false,
             &state,
         );

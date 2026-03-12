@@ -664,7 +664,10 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_network_adjustments, m)?)?;
-    m.add_function(wrap_pyfunction!(overrides_network_adjustments_effective, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        overrides_network_adjustments_effective,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -961,13 +964,11 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(
-        apply_stormguard,
-        apply_treeguard,
-    ) {
-        Ok(o) => o,
-        Err(e) => return Err(PyOSError::new_err(e.to_string())),
-    };
+    let overrides =
+        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+            Ok(o) => o,
+            Err(e) => return Err(PyOSError::new_err(e.to_string())),
+        };
 
     let mut out: Vec<PyObject> = Vec::new();
     for dev in overrides.persistent_devices().iter() {
@@ -1143,13 +1144,11 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
     let apply_treeguard = config.treeguard.enabled;
 
-    let overrides = match lqos_overrides::OverrideStore::load_effective(
-        apply_stormguard,
-        apply_treeguard,
-    ) {
-        Ok(o) => o,
-        Err(e) => return Err(PyOSError::new_err(e.to_string())),
-    };
+    let overrides =
+        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+            Ok(o) => o,
+            Err(e) => return Err(PyOSError::new_err(e.to_string())),
+        };
 
     let mut out: Vec<PyObject> = Vec::new();
     for adj in overrides.network_adjustments().iter() {
