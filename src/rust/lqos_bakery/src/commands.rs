@@ -638,28 +638,26 @@ impl BakeryCommands {
 
         // Parse per-direction override tokens: single token applies to both;
         // directional form is "down_sqm/up_sqm" with either side optionally empty.
-        let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
-            match &params.sqm_override {
-                None => (None, None),
-                Some(s) => {
-                    if s.contains('/') {
-                        let mut it = s.splitn(2, '/');
-                        let down = it.next().unwrap_or("").trim();
-                        let up = it.next().unwrap_or("").trim();
-                        let map = |t: &str| -> Option<String> {
-                            if t.is_empty() {
-                                None
-                            } else {
-                                Some(t.to_string())
-                            }
-                        };
-                        (map(down), map(up))
-                    } else {
-                        (Some(s.clone()), Some(s.clone()))
-                    }
+        let (down_override_opt, up_override_opt) = match &params.sqm_override {
+            None => (None, None),
+            Some(s) => {
+                if s.contains('/') {
+                    let mut it = s.splitn(2, '/');
+                    let down = it.next().unwrap_or("").trim();
+                    let up = it.next().unwrap_or("").trim();
+                    let map = |t: &str| -> Option<String> {
+                        if t.is_empty() {
+                            None
+                        } else {
+                            Some(t.to_string())
+                        }
+                    };
+                    (map(down), map(up))
+                } else {
+                    (Some(s.clone()), Some(s.clone()))
                 }
             }
-        })();
+        };
 
         let mut result = Vec::new();
         /*
