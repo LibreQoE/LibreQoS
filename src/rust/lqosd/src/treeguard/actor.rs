@@ -396,17 +396,7 @@ fn run_tick(
 
     let operator_sqm_device_overrides: FxHashSet<String> = operator_overrides_snapshot
         .as_ref()
-        .map(|o| {
-            o.persistent_devices()
-                .iter()
-                .filter(|d| {
-                    d.sqm_override
-                        .as_deref()
-                        .is_some_and(|t| !t.trim().is_empty())
-                })
-                .map(|d| d.device_id.clone())
-                .collect()
-        })
+        .map(overrides_sqm_device_ids)
         .unwrap_or_default();
 
     // --- Link sampling + decisions (virtualization) ---
@@ -1342,11 +1332,7 @@ fn run_tick(
     // Cleanup for removed circuits or disabled circuits/TreeGuard.
     if !manage_circuits {
         let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
-            Ok(of) => of
-                .persistent_devices()
-                .iter()
-                .map(|d| d.device_id.clone())
-                .collect(),
+            Ok(of) => overrides_sqm_device_ids(&of).into_iter().collect(),
             Err(e) => {
                 status.warnings.push(format!(
                     "TreeGuard circuits: unable to load TreeGuard overrides for cleanup: {e}"
@@ -1384,12 +1370,7 @@ fn run_tick(
         // Reconcile device IDs removed from allowlisted circuits.
         let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
-            .map(|of| {
-                of.persistent_devices()
-                    .iter()
-                    .map(|d| d.device_id.clone())
-                    .collect()
-            })
+            .map(overrides_sqm_device_ids)
             .unwrap_or_default();
         let removed: Vec<String> = treeguard_device_ids_with_overrides
             .iter()
@@ -1699,7 +1680,9 @@ fn run_tick(
                     let mut persisted_ok = false;
                     let mut can_apply_live = true;
                     if tg.circuits.persist_sqm_overrides {
-                        match overrides::set_devices_sqm_override(&devices, &token) {
+                        let device_ids: Vec<String> =
+                            devices.iter().map(|device| device.device_id.clone()).collect();
+                        match overrides::set_devices_sqm_override(&device_ids, &token) {
                             Ok(_) => {
                                 persisted_ok = true;
                             }
@@ -1827,7 +1810,73 @@ fn overrides_node_virtual(overrides: &OverrideFile, node_name: &str) -> Option<b
         })
 }
 
-/// Infers an SQM override token for a circuit, preferring persisted device overlays.
+/// Returns the current SQM override token for `device_id`, if present.
+///
+/// This function is pure: it has no side effects.
+fn overrides_device_sqm(overrides: &OverrideFile, device_id: &str) -> Option<String> {
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id: current,
+            sqm_override,
+        } = adj
+        {
+            if current != device_id {
+                continue;
+            }
+            return sqm_override
+                .as_deref()
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .map(str::to_string);
+        }
+    }
+
+    for dev in overrides.persistent_devices() {
+        if dev.device_id != device_id {
+            continue;
+        }
+        if let Some(token) = dev.sqm_override.as_deref().map(str::trim)
+            && !token.is_empty()
+        {
+            return Some(token.to_string());
+        }
+    }
+
+    None
+}
+
+/// Returns the set of device IDs carrying an SQM override in an overrides file.
+///
+/// This function is pure: it has no side effects.
+fn overrides_sqm_device_ids(overrides: &OverrideFile) -> FxHashSet<String> {
+    let mut out = FxHashSet::default();
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id,
+            sqm_override,
+        } = adj
+            && sqm_override
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(device_id.clone());
+        }
+    }
+    for dev in overrides.persistent_devices() {
+        if dev
+            .sqm_override
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(dev.device_id.clone());
+        }
+    }
+    out
+}
+
+/// Infers an SQM override token for a circuit, preferring persisted override entries.
 ///
 /// This function is pure: it has no side effects.
 fn infer_circuit_sqm_override_token(
@@ -1842,15 +1891,9 @@ fn infer_circuit_sqm_override_token(
         .collect();
 
     if let Some(overrides) = overrides {
-        for dev in overrides.persistent_devices() {
-            if !circuit_device_ids.contains(dev.device_id.as_str()) {
-                continue;
-            }
-            if let Some(token) = dev.sqm_override.as_deref() {
-                let token = token.trim();
-                if !token.is_empty() {
-                    return Some(token.to_string());
-                }
+        for device_id in &circuit_device_ids {
+            if let Some(token) = overrides_device_sqm(overrides, device_id) {
+                return Some(token);
             }
         }
     }

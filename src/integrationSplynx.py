@@ -41,8 +41,22 @@ def build_online_ip_maps(customersOnline):
 			temp = ipv6sForService.get(service_id, [])
 			if ipv6 not in temp:
 				temp.append(ipv6)
-			ipv6sForService[service_id] = temp
+				ipv6sForService[service_id] = temp
 	return ipv4sForService, ipv6sForService
+
+
+def stable_splynx_device_id(service_id, equipment_id=None):
+	"""
+	Build a deterministic device ID for Splynx-generated shaped devices.
+
+	For the current importer model, each service maps to a single device row, so the
+	service ID is the stable identity. The optional equipment_id parameter is reserved
+	for a future equipment-aware importer mode.
+	"""
+	base_id = f"splynx_service_{service_id}"
+	if equipment_id is None:
+		return base_id
+	return f"{base_id}_equipment_{equipment_id}"
 
 def supplement_existing_devices_with_online_ips(net, allServices, service_ids_handled, customersOnline, cust_id_to_name, allocated_ipv4s, allocated_ipv6s, device_by_service_id=None):
 	"""
@@ -91,7 +105,7 @@ def supplement_existing_devices_with_online_ips(net, allServices, service_ids_ha
 						matched_via_supplementation += 1
 	return matched_via_supplementation
 
-def create_devices_from_online_for_unhandled_services(net, allServices, service_ids_handled, customersOnline, cust_id_to_name, downloadForTariffID, uploadForTariffID, device_counter, allocated_ipv4s, allocated_ipv6s, parent_selector=None, device_by_service_id=None):
+def create_devices_from_online_for_unhandled_services(net, allServices, service_ids_handled, customersOnline, cust_id_to_name, downloadForTariffID, uploadForTariffID, allocated_ipv4s, allocated_ipv6s, parent_selector=None, device_by_service_id=None):
 	"""
 	For services that didn't produce devices via static IPs, create devices for those
 	with online IPs. Optionally select a parent node via parent_selector(serviceItem).
@@ -119,33 +133,32 @@ def create_devices_from_online_for_unhandled_services(net, allServices, service_
 				except Exception:
 					parent_id = None
 			# Create customer circuit node
-			customer = NetworkNode(
-				type=NodeType.client,
-				id=circuit_id,
-				parentId=parent_id,
-				displayName=customer_name,
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=circuit_id,
+					parentId=parent_id,
+					displayName=customer_name,
 				address=customer_name,
 				customerName=customer_name,
-				download=service_download,
-				upload=service_upload
-			)
-			net.addRawNode(customer)
-			# Create device node under the client circuit
-			device = NetworkNode(
-				id=device_counter[0],
-				displayName=customer_name,
-				type=NodeType.device,
-				parentId=circuit_id,
-				mac=service.get('mac', ''),
-				ipv4=ipv4,
-				ipv6=ipv6
-			)
-			net.addRawNode(device)
-			if device_by_service_id is not None:
-				device_by_service_id[service['id']] = device
-			device_counter[0] += 1
-			service_ids_handled.append(service['id'])
-			matched_via_alternate_method += 1
+					download=service_download,
+					upload=service_upload
+				)
+				net.addRawNode(customer)
+				# Create device node under the client circuit
+				device = NetworkNode(
+					id=stable_splynx_device_id(service['id']),
+					displayName=customer_name,
+					type=NodeType.device,
+					parentId=circuit_id,
+					mac=service.get('mac', ''),
+					ipv4=ipv4,
+					ipv6=ipv6
+				)
+				net.addRawNode(device)
+				if device_by_service_id is not None:
+					device_by_service_id[service['id']] = device
+				service_ids_handled.append(service['id'])
+				matched_via_alternate_method += 1
 	return matched_via_alternate_method
 
 def run_splynx_pipeline(strategy_name: str):
@@ -339,7 +352,6 @@ def run_splynx_pipeline(strategy_name: str):
 	build_infrastructure()
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
-	device_counter = [200000]
 	service_ids_handled = []
 	device_by_service_id = {}
 	static_created = 0
@@ -349,7 +361,7 @@ def run_splynx_pipeline(strategy_name: str):
 			if ipv4_list or ipv6_list:
 				parent_node_id = select_parent(serviceItem)
 				circuit_id = createClientAndDevice(
-					net, serviceItem, cust_id_to_name, downloadForTariffID, uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list
+					net, serviceItem, cust_id_to_name, downloadForTariffID, uploadForTariffID, parent_node_id, ipv4_list, ipv6_list
 				)
 				service_ids_handled.append(serviceItem['id'])
 				# Last added node is the device
@@ -363,7 +375,7 @@ def run_splynx_pipeline(strategy_name: str):
 	)
 	matched_via_alternate_method = create_devices_from_online_for_unhandled_services(
 		net, allServices, service_ids_handled, customersOnline, cust_id_to_name,
-		downloadForTariffID, uploadForTariffID, device_counter, allocated_ipv4s, allocated_ipv6s,
+		downloadForTariffID, uploadForTariffID, allocated_ipv4s, allocated_ipv6s,
 		parent_selector=select_parent, device_by_service_id=device_by_service_id
 	)
 
@@ -592,7 +604,7 @@ def extractServiceIPs(serviceItem, cust_id_to_name, allocated_ipv4s, allocated_i
 	
 	return ipv4_list, ipv6_list
 
-def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID, uploadForTariffID, device_counter, parent_node_id, ipv4_list, ipv6_list):
+def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID, uploadForTariffID, parent_node_id, ipv4_list, ipv6_list):
 	"""
 	Create client and device nodes for a service.
 	"""
@@ -621,7 +633,7 @@ def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID
 	
 	# Always create a device for each service
 	device = NetworkNode(
-		id=device_counter[0],
+		id=stable_splynx_device_id(serviceItem['id']),
 		displayName=customer_name,
 		type=NodeType.device,
 		parentId=circuit_id,
@@ -630,7 +642,6 @@ def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID
 		ipv6=ipv6_list
 	)
 	net.addRawNode(device)
-	device_counter[0] += 1
 	
 	return circuit_id
 

@@ -3,7 +3,6 @@
 //! This module writes TreeGuard-owned changes to `lqos_overrides.treeguard.json`.
 
 use crate::treeguard::TreeguardError;
-use lqos_config::ShapedDevice;
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 
 /// Returns the current virtual override value for `node_name`, if present.
@@ -75,14 +74,13 @@ pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, TreeguardError
     Ok(true)
 }
 
-/// Persists a per-device SQM override token for a list of devices by storing persistent shaped
-/// device overlays.
+/// Persists a per-device SQM override token for a list of devices.
 ///
 /// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
 /// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
 pub(crate) fn set_devices_sqm_override(
-    base_devices: &[ShapedDevice],
+    device_ids: &[String],
     sqm_override: &str,
 ) -> Result<bool, TreeguardError> {
     let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
@@ -92,10 +90,14 @@ pub(crate) fn set_devices_sqm_override(
     })?;
 
     let mut changed = false;
-    for base_device in base_devices {
-        let mut device = base_device.clone();
-        device.sqm_override = Some(sqm_override.to_string());
-        if overrides.add_persistent_shaped_device_return_changed(device) {
+    for device_id in device_ids {
+        if overrides.set_device_sqm_override_return_changed(
+            device_id.clone(),
+            Some(sqm_override.to_string()),
+        ) {
+            changed = true;
+        }
+        if overrides.remove_persistent_shaped_device_by_device_count(device_id) > 0 {
             changed = true;
         }
     }
@@ -112,7 +114,7 @@ pub(crate) fn set_devices_sqm_override(
     Ok(true)
 }
 
-/// Removes any persistent shaped device overlay entries for a list of device IDs.
+/// Removes any persisted SQM override entries for a list of device IDs.
 ///
 /// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
 ///
@@ -126,8 +128,9 @@ pub(crate) fn clear_device_overrides(device_ids: &[String]) -> Result<bool, Tree
 
     let mut removed_any = false;
     for device_id in device_ids {
-        let removed = overrides.remove_persistent_shaped_device_by_device_count(device_id);
-        if removed > 0 {
+        let removed_adjustments = overrides.remove_device_sqm_override_by_device_count(device_id);
+        let removed_devices = overrides.remove_persistent_shaped_device_by_device_count(device_id);
+        if removed_adjustments > 0 || removed_devices > 0 {
             removed_any = true;
         }
     }
