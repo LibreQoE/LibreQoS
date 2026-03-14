@@ -39,6 +39,7 @@ LQOS_FILES=(
   scheduler.py
   ShapedDevices.example.csv
   shaping_skip_report.py
+  systemd_hotfix.sh
   virtual_tree_nodes.py
   mikrotikDHCPRouterList.template.csv
   integrationUISPbandwidths.template.csv
@@ -115,6 +116,18 @@ popd > /dev/null || exit
 pushd "$DEBIAN_DIR" > /dev/null || exit
 cat <<EOF > postinst
 #!/bin/bash
+if /opt/libreqos/src/systemd_hotfix.sh should-offer >/dev/null 2>&1; then
+cat >&2 <<'HOTFIX'
+LibreQoS requires the Ubuntu 24.04 systemd-networkd hotfix on this host before installation can continue.
+
+Run:
+  HOTFIX_BASE_URL=https://downloads.libreqos.com sudo /opt/libreqos/src/systemd_hotfix.sh install
+
+Then re-run the LibreQoS package installation.
+HOTFIX
+exit 1
+fi
+
 # Install Python Dependencies
 pushd /opt/libreqos
 # - Setup Python dependencies as a post-install task
