@@ -256,6 +256,41 @@ class TestGraph(unittest.TestCase):
             exampleFile = json.load(file)
         self.assertEqual(newFile, exampleFile)
 
+    def test_network_json_writes_optional_node_ids(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        import json
+
+        net = NetworkGraph()
+        net.addRawNode(
+            NetworkNode(
+                "Site_1",
+                "Site_1",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="sonar:site:123",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "AP_1",
+                "AP_1",
+                "Site_1",
+                NodeType.ap,
+                500,
+                500,
+                networkJsonId="sonar:ap:456",
+            )
+        )
+        net.prepareTree()
+        net.createNetworkJson()
+        with open('network.json') as file:
+            newFile = json.load(file)
+
+        self.assertEqual(newFile["Site_1"]["id"], "sonar:site:123")
+        self.assertEqual(newFile["Site_1"]["children"]["AP_1"]["id"], "sonar:ap:456")
+
     def test_ipv4_to_ipv6_map(self):
         """
         Tests the underlying functionality of finding an IPv6 address from an IPv4 mapping

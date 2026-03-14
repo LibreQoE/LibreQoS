@@ -204,6 +204,7 @@ impl Layer {
                             site.max_down_mbps.into(),
                         );
                         root.insert("uploadBandwidthMbps".to_owned(), site.max_up_mbps.into());
+                        root.insert("id".to_string(), format!("uisp:site:{}", site.id).into());
                         root.insert("uisp_site".to_string(), site.id.clone().into());
                         root.insert("parent_site".to_string(), name.to_string().into());
                     }
@@ -215,6 +216,7 @@ impl Layer {
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
+                        root.insert("id".to_string(), format!("uisp:device:{}", device.id).into());
                         root.insert("uisp_device".to_string(), device.id.clone().into());
                     }
                 }

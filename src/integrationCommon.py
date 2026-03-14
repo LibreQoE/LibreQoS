@@ -97,6 +97,16 @@ def nodeTypeToString(integer):
 			string = 'device'
 	return(string)
 
+def syntheticNetworkJsonId(scope: str, nodeType: str, name: str) -> str:
+	parts = []
+	for ch in str(name).lower():
+		if ch.isalnum():
+			parts.append(ch)
+		elif not parts or parts[-1] != '-':
+			parts.append('-')
+	slug = ''.join(parts).strip('-')
+	return f"libreqos:generated:{scope}:{nodeType}:{slug}"
+
 class NetworkNode:
 	# Defines a node on a LibreQoS network graph.
 	# Nodes default to being disconnected, and
@@ -114,8 +124,9 @@ class NetworkNode:
 	ipv6: List
 	address: str
 	mac: str
+	networkJsonId: str
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "") -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -131,6 +142,7 @@ class NetworkNode:
 		self.address = address
 		self.customerName = customerName
 		self.mac = mac
+		self.networkJsonId = networkJsonId
 
 
 class NetworkGraph:
@@ -319,7 +331,8 @@ class NetworkGraph:
 					siteNode = NetworkNode(
 						id=str(node.id) + "_gen",
 						displayName="(Generated Site) " + node.displayName,
-						type=NodeType.site
+						type=NodeType.site,
+						networkJsonId=syntheticNetworkJsonId("graph", "site", node.displayName),
 					)
 					siteNode.parentIndex = node.parentIndex
 					node.parentId = siteNode.id
@@ -453,6 +466,8 @@ class NetworkGraph:
 			"uploadBandwidthMbps": self.nodes[idx].uploadMbps,
 			'type': nodeTypeToString(self.nodes[idx].type),
 		}
+		if self.nodes[idx].networkJsonId:
+			node["id"] = self.nodes[idx].networkJsonId
 		children = {}
 		hasChildren = False
 		

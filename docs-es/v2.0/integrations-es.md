@@ -40,6 +40,20 @@ Cuando hay integraciones habilitadas:
 - `network.json` también puede sobrescribirse según configuración (por ejemplo `always_overwrite_network_json`).
 - Las ediciones manuales pueden sobrescribirse en el siguiente ciclo de refresco.
 
+## Soporte para IDs de nodos de topología
+
+LibreQoS soporta un campo genérico opcional `"id"` en los nodos de `network.json`. Este campo está pensado para transportar identificadores estables del sistema de integración cuando sea posible. En la versión actual, el campo es informativo y todavía no es la clave autoritativa para shaping u overrides.
+
+| Integración | Soporte de ID de nodo en `network.json` | Notas |
+|---|---|---|
+| UISP | Sí | Sitios/dispositivos reales de UISP exportan `id` genérico más la metadata existente `uisp_site` / `uisp_device`. Los nodos sintéticos de LibreQoS usan IDs generados estables. |
+| Splynx | Sí | Los nodos de topología de network sites y AP/site exportan `id` genérico. |
+| Sonar | Sí | Los nodos de topología de sitios y AP exportan `id` genérico. |
+| Netzur | Parcial | Se exporta solo cuando el payload upstream de zonas incluye un ID de zona estable. |
+| VISP | No | El importador actual shapea servicios/dispositivos pero no construye nodos de topología en `network.json`. |
+| Powercode | No | El importador actual no construye nodos de topología en `network.json`. |
+| WISPGate | No | El importador actual no construye nodos de topología a partir de identificadores estables upstream. |
+
 ## Manejo común de velocidades de cliente
 
 Para las integraciones incluidas que importan velocidades brutas de plan de suscriptor, LibreQoS aplica la misma regla compartida antes de escribir `ShapedDevices.csv`:

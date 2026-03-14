@@ -123,13 +123,15 @@ def getSitesAndAps():
   sites = []
   aps = []
   for site in sites_and_aps:
+    site_has_ap = False
     for item in site['inventory_items']['entities']:
       ips = findIPs(item)
       if ips:
-        aps.append({'parent': f"site_{site['id']}",'id': f"ap_{item['id']}", 'model': item['inventory_model_id'], 'ip': ips[0]}) # Using the first IP in the list here because each IP should only have 1 IP assigned.
+        aps.append({'parent': f"site_{site['id']}",'id': f"ap_{item['id']}", 'raw_id': item['id'], 'model': item['inventory_model_id'], 'ip': ips[0]}) # Using the first IP in the list here because each IP should only have 1 IP assigned.
+        site_has_ap = True
 
-    if aps: #We don't care about sites that have equipment but no IP addresses.
-      sites.append({'id': f"site_{site['id']}", 'name': site['name']})
+    if site_has_ap: #We don't care about sites that have equipment but no IP addresses.
+      sites.append({'id': f"site_{site['id']}", 'raw_id': site['id'], 'name': site['name']})
   return sites, aps
 
 def getAccounts(sonar_active_status_ids):
@@ -298,11 +300,11 @@ def createShaper():
           break
 
   for site in sites:
-      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site))
+      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site, networkJsonId=f"sonar:site:{site['raw_id']}"))
 
   for ap in aps:
     if ap['cpe_macs']: # I don't think we care about Aps with no customers.
-      net.addRawNode(NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap))
+      net.addRawNode(NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap, networkJsonId=f"sonar:ap:{ap['raw_id']}"))
 
   for account in accounts:
     if account['parent']:
