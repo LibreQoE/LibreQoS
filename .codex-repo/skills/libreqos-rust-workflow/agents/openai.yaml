@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS Rust Workflow"
+  short_description: "Rust crate workflow and checks"
+  default_prompt: "Use $libreqos-rust-workflow to work on LibreQoS Rust crates, validation steps, or packaging-aware Rust changes."
