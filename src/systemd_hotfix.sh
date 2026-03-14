@@ -2,10 +2,11 @@
 
 set -euo pipefail
 
-HOTFIX_BASE_URL="${HOTFIX_BASE_URL:-https://downloads.libreqos.com}"
+HOTFIX_BASE_URL="https://download.libreqos.com"
 HOTFIX_PACKAGE_VERSION="${HOTFIX_PACKAGE_VERSION:-255.4-1ubuntu8.12+libreqos1}"
 SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS="${SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS:-255.4-1ubuntu8 255.4-1ubuntu8.*}"
 HOTFIX_MARKER="${HOTFIX_MARKER:-/opt/libreqos/src/.systemd_hotfix_installed}"
+HOTFIX_SKIP_REBOOT_PROMPT="${HOTFIX_SKIP_REBOOT_PROMPT:-0}"
 ARCH="${ARCH:-amd64}"
 
 HOTFIX_CORE_PACKAGES=(
@@ -35,15 +36,15 @@ Commands:
   status        Show whether this host should be offered the Noble systemd hotfix
   should-offer  Exit 0 when the hotfix should be offered on this host
   download      Download the hotfix bundle into a temporary directory
-  install       Download and install the hotfix bundle with apt
+  install       Download and install the hotfix bundle, then offer to schedule a reboot
   packages      Print the package filenames expected for this host
   urls          Print the expected package URLs for this host
 
 Environment:
-  HOTFIX_BASE_URL                  Base URL hosting the .deb files
   HOTFIX_PACKAGE_VERSION           Backported package version suffix
   SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS Space-separated stock Ubuntu version globs eligible for replacement
   HOTFIX_MARKER                    Marker file written after install
+  HOTFIX_SKIP_REBOOT_PROMPT        Set to 1 to suppress the reboot prompt after install
   ARCH                             Debian architecture suffix, defaults to amd64
 EOF
 }
@@ -59,6 +60,47 @@ fail() {
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+run_as_root() {
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+        return
+    fi
+
+    require_command sudo
+    sudo "$@"
+}
+
+has_tty_prompt() {
+    [[ -r /dev/tty && -w /dev/tty ]]
+}
+
+prompt_yes_no() {
+    local prompt="$1"
+    local default_answer="$2"
+    local reply
+
+    while true; do
+        printf '%s ' "$prompt" >/dev/tty
+        IFS= read -r reply </dev/tty || return 1
+
+        if [[ -z "$reply" ]]; then
+            reply="$default_answer"
+        fi
+
+        case "$reply" in
+            [Yy]|[Yy][Ee][Ss])
+                return 0
+                ;;
+            [Nn]|[Nn][Oo])
+                return 1
+                ;;
+            *)
+                printf 'Please answer y or n.\n' >/dev/tty
+                ;;
+        esac
+    done
 }
 
 current_systemd_version() {
@@ -201,14 +243,34 @@ write_marker() {
             printf 'package_file=%s\n' "$package"
             printf 'package_url=%s/%s\n' "$HOTFIX_BASE_URL" "$package"
         done < <(resolved_hotfix_packages)
-    } | sudo tee "$HOTFIX_MARKER" >/dev/null
+    } | run_as_root tee "$HOTFIX_MARKER" >/dev/null
+}
+
+offer_reboot() {
+    if [[ "$HOTFIX_SKIP_REBOOT_PROMPT" == "1" ]]; then
+        log "Reboot required before validating networkd behavior."
+        return
+    fi
+
+    if ! has_tty_prompt; then
+        log "Reboot required before validating networkd behavior."
+        return
+    fi
+
+    if prompt_yes_no "Schedule a reboot in 1 minute now? [y/N]" "n"; then
+        require_command shutdown
+        run_as_root shutdown -r +1 "LibreQoS systemd hotfix installed; reboot scheduled."
+        log "Reboot scheduled in 1 minute."
+        return
+    fi
+
+    log "Reboot not scheduled. Reboot before validating networkd behavior."
 }
 
 install_bundle() {
     local workdir package_paths=() package
 
     status >/dev/null || fail "Hotfix is not applicable on this host."
-    require_command sudo
     require_command apt-get
 
     workdir="$(download_bundle)"
@@ -216,9 +278,10 @@ install_bundle() {
         package_paths+=("${workdir}/${package}")
     done < <(resolved_hotfix_packages)
 
-    sudo apt-get install -y "${package_paths[@]}"
+    run_as_root apt-get install -y "${package_paths[@]}"
     write_marker
-    log "Hotfix installed. Reboot before validating networkd behavior."
+    log "Hotfix installed."
+    offer_reboot
 }
 
 main() {
