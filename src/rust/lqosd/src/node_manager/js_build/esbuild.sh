@@ -1,17 +1,40 @@
-#!/bin/bash
-set -e
-#ESBUILD_BIN="$(command -v esbuild || true)"
-#if [[ -z "$ESBUILD_BIN" ]]; then
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENTRYPOINTS_FILE="${SCRIPT_DIR}/entrypoints.txt"
+SRC_DIR="${SCRIPT_DIR}/src"
+OUT_DIR="${SCRIPT_DIR}/out"
+
+if [[ ! -f "${ENTRYPOINTS_FILE}" ]]; then
+  echo "Missing entrypoints file: ${ENTRYPOINTS_FILE}" >&2
+  exit 1
+fi
+
+if [[ -z "${ESBUILD_BIN:-}" ]]; then
+  ESBUILD_BIN="$(command -v esbuild || true)"
+fi
+
+if [[ -z "${ESBUILD_BIN}" ]]; then
   mkdir -p /tmp/esbuild
-  pushd /tmp/esbuild
+  pushd /tmp/esbuild >/dev/null
   curl -fsSL https://esbuild.github.io/dl/latest | sh
-  popd
+  popd >/dev/null
   chmod a+x /tmp/esbuild/esbuild
   ESBUILD_BIN="/tmp/esbuild/esbuild"
-#fi
-scripts=( index.js template.js login.js first-run.js shaped-devices.js tree.js help.js unknown-ips.js configuration.js circuit.js flow_map.js all_tree_sankey.js asn_explorer.js lts_trial.js config_general.js config_rtt.js config_tuning.js config_queues.js config_stormguard.js config_treeguard.js config_lts.js config_iprange.js config_flows.js config_integration.js config_splynx.js config_netzur.js config_visp.js config_uisp.js config_powercode.js config_sonar.js config_interface.js config_network.js config_devices.js config_users.js config_wispgate.js chatbot.js cpu_weights.js cpu_tree.js executive_worst_sites.js executive_oversubscribed_sites.js executive_sites_due_upgrade.js executive_circuits_due_upgrade.js executive_top_asns.js executive_heatmap_rtt.js executive_heatmap_retransmit.js executive_heatmap_download.js executive_heatmap_upload.js)
-for script in "${scripts[@]}"
-do
-  echo "Building {$script}"
-  "$ESBUILD_BIN" src/"$script" --bundle --minify --sourcemap --target=chrome58,firefox57,safari11 --outdir=out || exit
+fi
+
+mkdir -p "${OUT_DIR}"
+find "${OUT_DIR}" -maxdepth 1 -type f \( -name '*.js' -o -name '*.js.map' \) -delete
+
+mapfile -t scripts < <(grep -Ev '^\s*(#|$)' "${ENTRYPOINTS_FILE}")
+
+for script in "${scripts[@]}"; do
+  if [[ ! -f "${SRC_DIR}/${script}" ]]; then
+    echo "Missing source entrypoint: ${SRC_DIR}/${script}" >&2
+    exit 1
+  fi
+
+  echo "Building ${script}"
+  "${ESBUILD_BIN}" "${SRC_DIR}/${script}" --bundle --minify --sourcemap --target=chrome58,firefox57,safari11 --outdir="${OUT_DIR}"
 done

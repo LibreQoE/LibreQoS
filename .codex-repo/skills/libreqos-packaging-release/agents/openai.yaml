@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS Packaging Release"
+  short_description: "Packaging and shipped-file workflow"
+  default_prompt: "Use $libreqos-packaging-release to review LibreQoS packaging, shipped files, and release-script changes."
