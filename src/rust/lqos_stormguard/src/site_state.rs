@@ -21,7 +21,8 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle};
+use lqos_bus::{StormguardDebugDirection, StormguardDebugEntry, TcHandle};
+use lqos_config::NetworkJsonTransport;
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -185,63 +186,53 @@ impl SiteStateTracker {
         }
     }
 
-    pub async fn read_new_tick_data(
+    pub fn read_new_tick_data(
         &mut self,
         config: &StormguardConfig,
         active_ping_sample: Option<TimedRtt>,
         active_ping_updated: bool,
+        all_nodes: Vec<(usize, NetworkJsonTransport)>,
     ) {
-        let requests = vec![BusRequest::GetFullNetworkMap];
-        let Ok(responses) = lqos_bus::bus_request(requests).await else {
-            info!("Failed to get lqosd stats");
-            return;
-        };
-
         for site in self.sites.values_mut() {
             site.current_throughput = (0.0, 0.0);
             site.clear_tick_rtt_state();
         }
 
-        for response in responses {
-            let BusResponse::NetworkMap(all_nodes) = response else {
+        for (_, node_info) in all_nodes {
+            let Some(target) = self.sites.get_mut(&node_info.name) else {
                 continue;
             };
-            for (_, node_info) in all_nodes {
-                let Some(target) = self.sites.get_mut(&node_info.name) else {
-                    continue;
-                };
 
-                // Record throughput (Mbps)
-                let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
-                let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
-                target.throughput_down.add(down_mbps);
-                target.throughput_up.add(up_mbps);
-                target.current_throughput = (down_mbps, up_mbps);
+            // Record throughput (Mbps)
+            let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
+            let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
+            target.throughput_down.add(down_mbps);
+            target.throughput_up.add(up_mbps);
+            target.current_throughput = (down_mbps, up_mbps);
 
-                // Retransmits (as a percentage of TCP packets)
-                let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
-                    node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
-                } else {
-                    0.0
-                };
-                let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
-                    node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
-                } else {
-                    0.0
-                };
-                target.retransmits_down.add(retransmits_down);
-                target.retransmits_up.add(retransmits_up);
+            // Retransmits (as a percentage of TCP packets)
+            let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
+                node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
+            } else {
+                0.0
+            };
+            let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
+                node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
+            } else {
+                0.0
+            };
+            target.retransmits_down.add(retransmits_down);
+            target.retransmits_up.add(retransmits_up);
 
-                // Round-Trip Time
-                if !node_info.rtts.is_empty() {
-                    let mut my_round_trip_times = node_info.rtts.clone();
-                    my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
-                    let samples = my_round_trip_times.len();
-                    let mut idx = ((samples as f32) * 0.9).floor() as usize;
-                    idx = idx.min(samples.saturating_sub(1));
-                    let p90 = my_round_trip_times[idx] as f64;
-                    target.record_passive_rtt_sample(p90);
-                }
+            // Round-Trip Time
+            if !node_info.rtts.is_empty() {
+                let mut my_round_trip_times = node_info.rtts.clone();
+                my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
+                let samples = my_round_trip_times.len();
+                let mut idx = ((samples as f32) * 0.9).floor() as usize;
+                idx = idx.min(samples.saturating_sub(1));
+                let p90 = my_round_trip_times[idx] as f64;
+                target.record_passive_rtt_sample(p90);
             }
         }
 

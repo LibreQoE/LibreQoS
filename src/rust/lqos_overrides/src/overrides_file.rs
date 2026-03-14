@@ -60,6 +60,13 @@ pub enum CircuitAdjustment {
         /// Replacement maximum upload bandwidth in Mbps.
         max_upload_bandwidth: Option<f32>,
     },
+    /// Replaces the SQM override token for a specific device without changing any other fields.
+    DeviceAdjustSqm {
+        /// Device identifier to update.
+        device_id: String,
+        /// Replacement SQM override token. `None` or empty removes the override.
+        sqm_override: Option<String>,
+    },
     /// Removes a circuit from generated output by circuit ID.
     RemoveCircuit {
         /// Circuit identifier to remove.
@@ -198,10 +205,16 @@ fn merge_persistent_devices_by_id(
     for dev in operator_devices {
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
-    for dev in stormguard_devices {
+    for dev in stormguard_devices
+        .iter()
+        .filter(|dev| !persistent_device_carries_sqm(dev))
+    {
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
-    for dev in treeguard_devices {
+    for dev in treeguard_devices
+        .iter()
+        .filter(|dev| !persistent_device_carries_sqm(dev))
+    {
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
 
@@ -219,7 +232,10 @@ fn merge_persistent_devices_by_id(
         }
     }
 
-    for dev in stormguard_devices {
+    for dev in stormguard_devices
+        .iter()
+        .filter(|dev| !persistent_device_carries_sqm(dev))
+    {
         let did = dev.device_id.as_str();
         if seen.contains(did) {
             continue;
@@ -230,7 +246,10 @@ fn merge_persistent_devices_by_id(
         }
     }
 
-    for dev in treeguard_devices {
+    for dev in treeguard_devices
+        .iter()
+        .filter(|dev| !persistent_device_carries_sqm(dev))
+    {
         let did = dev.device_id.as_str();
         if seen.contains(did) {
             continue;
@@ -238,6 +257,108 @@ fn merge_persistent_devices_by_id(
         if let Some(merged) = by_id.get(did) {
             out.push(merged.clone());
             seen.insert(did);
+        }
+    }
+
+    out
+}
+
+fn persistent_device_carries_sqm(device: &ShapedDevice) -> bool {
+    device
+        .sqm_override
+        .as_deref()
+        .is_some_and(|sqm| !sqm.trim().is_empty())
+}
+
+fn legacy_sqm_adjustments_from_devices(devices: &[ShapedDevice]) -> Vec<CircuitAdjustment> {
+    devices
+        .iter()
+        .filter_map(|device| {
+            let sqm_override = device.sqm_override.as_deref()?.trim();
+            if sqm_override.is_empty() {
+                return None;
+            }
+            Some(CircuitAdjustment::DeviceAdjustSqm {
+                device_id: device.device_id.clone(),
+                sqm_override: Some(sqm_override.to_string()),
+            })
+        })
+        .collect()
+}
+
+fn circuit_adjustment_merge_key(adj: &CircuitAdjustment) -> (&'static str, &str) {
+    match adj {
+        CircuitAdjustment::CircuitAdjustSpeed { circuit_id, .. } => ("circuit_speed", circuit_id),
+        CircuitAdjustment::DeviceAdjustSpeed { device_id, .. } => ("device_speed", device_id),
+        CircuitAdjustment::DeviceAdjustSqm { device_id, .. } => ("device_sqm", device_id),
+        CircuitAdjustment::RemoveCircuit { circuit_id } => ("remove_circuit", circuit_id),
+        CircuitAdjustment::RemoveDevice { device_id } => ("remove_device", device_id),
+        CircuitAdjustment::ReparentCircuit { circuit_id, .. } => ("reparent_circuit", circuit_id),
+    }
+}
+
+fn merge_circuit_adjustments_owned(
+    operator_adjustments: &[CircuitAdjustment],
+    stormguard_adjustments: &[CircuitAdjustment],
+    treeguard_adjustments: &[CircuitAdjustment],
+    stormguard_devices: &[ShapedDevice],
+    treeguard_devices: &[ShapedDevice],
+) -> Vec<CircuitAdjustment> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut by_key: HashMap<(&'static str, &str), CircuitAdjustment> = HashMap::new();
+    let stormguard_combined: Vec<CircuitAdjustment> = stormguard_adjustments
+        .iter()
+        .cloned()
+        .chain(legacy_sqm_adjustments_from_devices(stormguard_devices))
+        .collect();
+    let treeguard_combined: Vec<CircuitAdjustment> = treeguard_adjustments
+        .iter()
+        .cloned()
+        .chain(legacy_sqm_adjustments_from_devices(treeguard_devices))
+        .collect();
+
+    for adj in operator_adjustments {
+        by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
+    }
+    for adj in &stormguard_combined {
+        by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
+    }
+    for adj in &treeguard_combined {
+        by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
+    }
+
+    let mut out = Vec::new();
+    let mut seen: HashSet<(&'static str, &str)> = HashSet::new();
+
+    for adj in operator_adjustments {
+        let key = circuit_adjustment_merge_key(adj);
+        if seen.contains(&key) {
+            continue;
+        }
+        if let Some(merged) = by_key.get(&key) {
+            out.push(merged.clone());
+            seen.insert(key);
+        }
+    }
+    for adj in &stormguard_combined {
+        let key = circuit_adjustment_merge_key(adj);
+        if seen.contains(&key) {
+            continue;
+        }
+        if let Some(merged) = by_key.get(&key) {
+            out.push(merged.clone());
+            seen.insert(key);
+        }
+    }
+    for adj in &treeguard_combined {
+        let key = circuit_adjustment_merge_key(adj);
+        if seen.contains(&key) {
+            continue;
+        }
+        if let Some(merged) = by_key.get(&key) {
+            out.push(merged.clone());
+            seen.insert(key);
         }
     }
 
@@ -376,9 +497,17 @@ fn merge_owned_sections(
     stormguard: OverrideFile,
     treeguard: OverrideFile,
 ) -> OverrideFile {
+    let operator_circuit = std::mem::take(&mut operator.circuit_adjustments);
     let operator_devices = std::mem::take(&mut operator.persistent_devices);
     operator.persistent_devices = merge_persistent_devices_by_id(
         &operator_devices,
+        &stormguard.persistent_devices,
+        &treeguard.persistent_devices,
+    );
+    operator.circuit_adjustments = merge_circuit_adjustments_owned(
+        &operator_circuit,
+        &stormguard.circuit_adjustments,
+        &treeguard.circuit_adjustments,
         &stormguard.persistent_devices,
         &treeguard.persistent_devices,
     );
@@ -513,6 +642,62 @@ impl OverrideFile {
     /// Add a circuit adjustment entry.
     pub fn add_circuit_adjustment(&mut self, adj: CircuitAdjustment) {
         self.circuit_adjustments.push(adj);
+    }
+
+    /// Add or replace an SQM override token for `device_id`. Returns true if changed.
+    pub fn set_device_sqm_override_return_changed(
+        &mut self,
+        device_id: String,
+        sqm_override: Option<String>,
+    ) -> bool {
+        let normalized = sqm_override.and_then(|sqm| {
+            let trimmed = sqm.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        if self.circuit_adjustments.iter().any(|adj| {
+            matches!(
+                adj,
+                CircuitAdjustment::DeviceAdjustSqm {
+                    device_id: current,
+                    sqm_override: existing_sqm,
+                } if current == &device_id && existing_sqm == &normalized
+            )
+        }) {
+            return false;
+        }
+
+        self.circuit_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                CircuitAdjustment::DeviceAdjustSqm {
+                    device_id: current, ..
+                } if current == &device_id
+            )
+        });
+        self.circuit_adjustments.push(CircuitAdjustment::DeviceAdjustSqm {
+            device_id,
+            sqm_override: normalized,
+        });
+        true
+    }
+
+    /// Remove any SQM override adjustments for `device_id`. Returns number removed.
+    pub fn remove_device_sqm_override_by_device_count(&mut self, device_id: &str) -> usize {
+        let before = self.circuit_adjustments.len();
+        self.circuit_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                CircuitAdjustment::DeviceAdjustSqm {
+                    device_id: current, ..
+                } if current == device_id
+            )
+        });
+        before.saturating_sub(self.circuit_adjustments.len())
     }
 
     /// Remove a circuit adjustment by index. Returns true if removed.
@@ -725,43 +910,111 @@ mod tests {
         }
     }
 
+    fn shaped_device_with_comment(device_id: &str, comment: &str) -> ShapedDevice {
+        ShapedDevice {
+            device_id: device_id.to_string(),
+            comment: comment.to_string(),
+            ..ShapedDevice::default()
+        }
+    }
+
     #[test]
     fn effective_merge_treeguard_wins_for_persistent_devices() {
         let mut operator = OverrideFile::default();
-        operator
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
-        operator
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev2", "cake"));
+        operator.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev1", "operator",
+        ));
+        operator.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev2", "operator",
+        ));
 
         let mut stormguard = OverrideFile::default();
-        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_sqm(
-            "dev1", "fq_codel",
+        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev1", "stormguard",
         ));
-        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_sqm(
-            "dev3", "fq_codel",
+        stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev3", "stormguard",
         ));
 
         let mut treeguard = OverrideFile::default();
-        treeguard
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev1", "cake"));
-        treeguard
-            .add_persistent_shaped_device_return_changed(shaped_device_with_sqm("dev4", "cake"));
+        treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev1", "treeguard",
+        ));
+        treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
+            "dev4", "treeguard",
+        ));
 
         let merged = merge_owned_sections(operator, stormguard, treeguard);
-        let sqm_by_id: std::collections::HashMap<&str, &str> = merged
+        let comments_by_id: std::collections::HashMap<&str, &str> = merged
             .persistent_devices
             .iter()
-            .filter_map(|d| {
-                d.sqm_override
-                    .as_deref()
-                    .map(|sqm| (d.device_id.as_str(), sqm))
-            })
+            .map(|d| (d.device_id.as_str(), d.comment.as_str()))
             .collect();
 
-        assert_eq!(sqm_by_id.get("dev1"), Some(&"cake"));
+        assert_eq!(comments_by_id.get("dev1"), Some(&"treeguard"));
+        assert_eq!(comments_by_id.get("dev2"), Some(&"operator"));
+        assert_eq!(comments_by_id.get("dev3"), Some(&"stormguard"));
+        assert_eq!(comments_by_id.get("dev4"), Some(&"treeguard"));
+    }
+
+    #[test]
+    fn effective_merge_moves_adaptive_legacy_sqm_into_circuit_adjustments() {
+        let mut operator = OverrideFile::default();
+        let mut operator_device = shaped_device_with_sqm("operator_dev", "cake");
+        operator_device.download_max_mbps = 100.0;
+        operator.add_persistent_shaped_device_return_changed(operator_device);
+
+        let mut stormguard = OverrideFile::default();
+        let mut sg_device = shaped_device_with_sqm("dev1", "fq_codel");
+        sg_device.download_max_mbps = 10.0;
+        stormguard.add_persistent_shaped_device_return_changed(sg_device);
+
+        let mut treeguard = OverrideFile::default();
+        let mut tg_device = shaped_device_with_sqm("dev2", "cake");
+        tg_device.download_max_mbps = 20.0;
+        treeguard.add_persistent_shaped_device_return_changed(tg_device);
+
+        let merged = merge_owned_sections(operator, stormguard, treeguard);
+
+        let merged_ids: Vec<&str> = merged
+            .persistent_devices()
+            .iter()
+            .map(|d| d.device_id.as_str())
+            .collect();
+        assert_eq!(merged_ids, vec!["operator_dev"]);
+
+        let sqm_by_id: std::collections::HashMap<&str, &str> = merged
+            .circuit_adjustments()
+            .iter()
+            .filter_map(|adj| match adj {
+                CircuitAdjustment::DeviceAdjustSqm {
+                    device_id,
+                    sqm_override,
+                } => sqm_override.as_deref().map(|sqm| (device_id.as_str(), sqm)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sqm_by_id.get("dev1"), Some(&"fq_codel"));
         assert_eq!(sqm_by_id.get("dev2"), Some(&"cake"));
-        assert_eq!(sqm_by_id.get("dev3"), Some(&"fq_codel"));
-        assert_eq!(sqm_by_id.get("dev4"), Some(&"cake"));
+    }
+
+    #[test]
+    fn set_device_sqm_override_is_idempotent() {
+        let mut of = OverrideFile::default();
+        assert!(of.set_device_sqm_override_return_changed(
+            "dev1".to_string(),
+            Some("fq_codel".to_string())
+        ));
+        assert!(!of.set_device_sqm_override_return_changed(
+            "dev1".to_string(),
+            Some("fq_codel".to_string())
+        ));
+        assert!(of.set_device_sqm_override_return_changed(
+            "dev1".to_string(),
+            Some("cake".to_string())
+        ));
+        assert_eq!(of.remove_device_sqm_override_by_device_count("dev1"), 1);
+        assert_eq!(of.remove_device_sqm_override_by_device_count("dev1"), 0);
     }
 
     #[test]

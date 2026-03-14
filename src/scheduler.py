@@ -12,7 +12,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_effective, overrides_circuit_adjustments, overrides_network_adjustments_effective, \
+    overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, overrides_network_adjustments_effective, \
     scheduler_output
 
 from apscheduler.schedulers.background import BlockingScheduler
@@ -347,7 +347,7 @@ def apply_lqos_overrides():
 
     # 2) Circuit adjustments: speed changes, removals, reparenting
     try:
-        adjustments = overrides_circuit_adjustments()
+        adjustments = overrides_circuit_adjustments_effective()
     except Exception as e:
         print(f"Failed to read circuit adjustments: {e}")
         adjustments = []
@@ -359,6 +359,11 @@ def apply_lqos_overrides():
             return str(float(value_opt))
         except Exception:
             return current_str
+
+    def set_row_value(row, index, value):
+        while len(row) <= index:
+            row.append('')
+        row[index] = value
 
     if adjustments:
         for adj in adjustments:
@@ -381,6 +386,15 @@ def apply_lqos_overrides():
                         r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
                         r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
                         changed = True
+            elif t == 'device_adjust_sqm':
+                did = adj.get('device_id', '')
+                sqm_override = (adj.get('sqm_override') or '').strip()
+                for r in merged_rows:
+                    if len(r) >= 3 and r[2] == did:
+                        current_sqm = r[13] if len(r) > 13 else ''
+                        if current_sqm != sqm_override:
+                            set_row_value(r, 13, sqm_override)
+                            changed = True
             elif t == 'remove_circuit':
                 cid = adj.get('circuit_id', '')
                 before = len(merged_rows)

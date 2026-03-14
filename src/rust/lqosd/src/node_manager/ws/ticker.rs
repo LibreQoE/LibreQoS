@@ -143,7 +143,7 @@ async fn one_second_cadence(
             ),
             ticker_with_timeout(
                 "endpoint_latlon",
-                endpoint_latlon::endpoint_latlon(channels.clone(), bus_tx.clone())
+                endpoint_latlon::endpoint_latlon(channels.clone())
             ),
             ticker_with_timeout(
                 "tree_summary",

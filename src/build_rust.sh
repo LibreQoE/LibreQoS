@@ -135,6 +135,8 @@ fi
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
 echo "Template .service files can be found in bin/"
+echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix bundle."
+echo "LibreQoS package installs on affected Ubuntu 24.04 hosts now require the hotfix first."
 echo ""
 echo "Run sudo rust/remove_pinned_maps.sh before you restart lqosd"
 echo "This ensures that any data-format changes will apply correctly."

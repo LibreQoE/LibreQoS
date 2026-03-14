@@ -23,12 +23,15 @@ use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideSto
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
+use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
+static TREEGUARD_STATUS_CACHE: OnceLock<RwLock<TreeguardStatusData>> = OnceLock::new();
+static TREEGUARD_ACTIVITY_CACHE: OnceLock<RwLock<Vec<TreeguardActivityEntry>>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
@@ -60,6 +63,9 @@ pub(crate) fn start_treeguard_actor(
         return Ok(());
     }
 
+    let _ = TREEGUARD_STATUS_CACHE.set(RwLock::new(empty_status_snapshot()));
+    let _ = TREEGUARD_ACTIVITY_CACHE.set(RwLock::new(Vec::new()));
+
     let (tx, rx) = crossbeam_channel::bounded::<TreeguardCommand>(64);
     let _ = TREEGUARD_SENDER.set(tx);
 
@@ -68,6 +74,14 @@ pub(crate) fn start_treeguard_actor(
         .spawn(move || treeguard_actor_loop(rx, system_usage_tx))?;
 
     Ok(())
+}
+
+pub(crate) fn cached_status_snapshot() -> Option<TreeguardStatusData> {
+    Some(TREEGUARD_STATUS_CACHE.get()?.read().clone())
+}
+
+pub(crate) fn cached_activity_snapshot() -> Option<Vec<TreeguardActivityEntry>> {
+    Some(TREEGUARD_ACTIVITY_CACHE.get()?.read().clone())
 }
 
 /// Requests a status snapshot from the TreeGuard actor.
@@ -110,18 +124,9 @@ fn treeguard_actor_loop(
 ) {
     debug!("TreeGuard actor started");
 
-    let mut status = TreeguardStatusData {
-        enabled: false,
-        dry_run: true,
-        cpu_max_pct: None,
-        managed_nodes: 0,
-        managed_circuits: 0,
-        virtualized_nodes: 0,
-        fq_codel_circuits: 0,
-        last_action_summary: None,
-        warnings: Vec::new(),
-    };
+    let mut status = empty_status_snapshot();
     let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+    update_cached_snapshots(&status, &activity);
 
     let mut runtime_state = TreeguardRuntimeState::default();
 
@@ -143,6 +148,7 @@ fn treeguard_actor_loop(
                     &mut tick_seconds,
                     &mut runtime_state,
                 );
+                update_cached_snapshots(&status, &activity);
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 warn!("TreeGuard actor command channel disconnected; exiting actor");
@@ -168,6 +174,32 @@ fn handle_command(
             let data: Vec<TreeguardActivityEntry> = activity.iter().cloned().rev().collect();
             let _ = reply.send(data);
         }
+    }
+}
+
+fn empty_status_snapshot() -> TreeguardStatusData {
+    TreeguardStatusData {
+        enabled: false,
+        dry_run: true,
+        cpu_max_pct: None,
+        managed_nodes: 0,
+        managed_circuits: 0,
+        virtualized_nodes: 0,
+        fq_codel_circuits: 0,
+        last_action_summary: None,
+        warnings: Vec::new(),
+    }
+}
+
+fn update_cached_snapshots(
+    status: &TreeguardStatusData,
+    activity: &VecDeque<TreeguardActivityEntry>,
+) {
+    if let Some(cache) = TREEGUARD_STATUS_CACHE.get() {
+        *cache.write() = status.clone();
+    }
+    if let Some(cache) = TREEGUARD_ACTIVITY_CACHE.get() {
+        *cache.write() = activity.iter().cloned().rev().collect();
     }
 }
 
@@ -364,17 +396,7 @@ fn run_tick(
 
     let operator_sqm_device_overrides: FxHashSet<String> = operator_overrides_snapshot
         .as_ref()
-        .map(|o| {
-            o.persistent_devices()
-                .iter()
-                .filter(|d| {
-                    d.sqm_override
-                        .as_deref()
-                        .is_some_and(|t| !t.trim().is_empty())
-                })
-                .map(|d| d.device_id.clone())
-                .collect()
-        })
+        .map(overrides_sqm_device_ids)
         .unwrap_or_default();
 
     // --- Link sampling + decisions (virtualization) ---
@@ -1310,11 +1332,7 @@ fn run_tick(
     // Cleanup for removed circuits or disabled circuits/TreeGuard.
     if !manage_circuits {
         let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
-            Ok(of) => of
-                .persistent_devices()
-                .iter()
-                .map(|d| d.device_id.clone())
-                .collect(),
+            Ok(of) => overrides_sqm_device_ids(&of).into_iter().collect(),
             Err(e) => {
                 status.warnings.push(format!(
                     "TreeGuard circuits: unable to load TreeGuard overrides for cleanup: {e}"
@@ -1352,12 +1370,7 @@ fn run_tick(
         // Reconcile device IDs removed from allowlisted circuits.
         let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
-            .map(|of| {
-                of.persistent_devices()
-                    .iter()
-                    .map(|d| d.device_id.clone())
-                    .collect()
-            })
+            .map(overrides_sqm_device_ids)
             .unwrap_or_default();
         let removed: Vec<String> = treeguard_device_ids_with_overrides
             .iter()
@@ -1667,7 +1680,9 @@ fn run_tick(
                     let mut persisted_ok = false;
                     let mut can_apply_live = true;
                     if tg.circuits.persist_sqm_overrides {
-                        match overrides::set_devices_sqm_override(&devices, &token) {
+                        let device_ids: Vec<String> =
+                            devices.iter().map(|device| device.device_id.clone()).collect();
+                        match overrides::set_devices_sqm_override(&device_ids, &token) {
                             Ok(_) => {
                                 persisted_ok = true;
                             }
@@ -1795,7 +1810,73 @@ fn overrides_node_virtual(overrides: &OverrideFile, node_name: &str) -> Option<b
         })
 }
 
-/// Infers an SQM override token for a circuit, preferring persisted device overlays.
+/// Returns the current SQM override token for `device_id`, if present.
+///
+/// This function is pure: it has no side effects.
+fn overrides_device_sqm(overrides: &OverrideFile, device_id: &str) -> Option<String> {
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id: current,
+            sqm_override,
+        } = adj
+        {
+            if current != device_id {
+                continue;
+            }
+            return sqm_override
+                .as_deref()
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .map(str::to_string);
+        }
+    }
+
+    for dev in overrides.persistent_devices() {
+        if dev.device_id != device_id {
+            continue;
+        }
+        if let Some(token) = dev.sqm_override.as_deref().map(str::trim)
+            && !token.is_empty()
+        {
+            return Some(token.to_string());
+        }
+    }
+
+    None
+}
+
+/// Returns the set of device IDs carrying an SQM override in an overrides file.
+///
+/// This function is pure: it has no side effects.
+fn overrides_sqm_device_ids(overrides: &OverrideFile) -> FxHashSet<String> {
+    let mut out = FxHashSet::default();
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id,
+            sqm_override,
+        } = adj
+            && sqm_override
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(device_id.clone());
+        }
+    }
+    for dev in overrides.persistent_devices() {
+        if dev
+            .sqm_override
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(dev.device_id.clone());
+        }
+    }
+    out
+}
+
+/// Infers an SQM override token for a circuit, preferring persisted override entries.
 ///
 /// This function is pure: it has no side effects.
 fn infer_circuit_sqm_override_token(
@@ -1810,15 +1891,9 @@ fn infer_circuit_sqm_override_token(
         .collect();
 
     if let Some(overrides) = overrides {
-        for dev in overrides.persistent_devices() {
-            if !circuit_device_ids.contains(dev.device_id.as_str()) {
-                continue;
-            }
-            if let Some(token) = dev.sqm_override.as_deref() {
-                let token = token.trim();
-                if !token.is_empty() {
-                    return Some(token.to_string());
-                }
+        for device_id in &circuit_device_ids {
+            if let Some(token) = overrides_device_sqm(overrides, device_id) {
+                return Some(token);
             }
         }
     }

@@ -150,17 +150,17 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     }
 }
 
-pub fn get_full_network_map() -> BusResponse {
+pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     let nj = NETWORK_JSON.read();
-    let data = {
-        nj.get_nodes_when_ready()
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (i, n.clone_to_transit()))
-            .collect::<Vec<(usize, NetworkJsonTransport)>>()
-    };
+    nj.get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (i, n.clone_to_transit()))
+        .collect()
+}
 
-    BusResponse::NetworkMap(data)
+pub fn get_full_network_map() -> BusResponse {
+    BusResponse::NetworkMap(full_network_map_snapshot())
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
