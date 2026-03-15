@@ -24,11 +24,30 @@ function escapeAttr(text) {
 }
 
 const SCHEDULER_STATUS_POLL_MS = 2000;
+const SCHEDULER_STATUS_TIMEOUT_MS = 2500;
 const SCHEDULER_STATUS_STARTING_GRACE_MS = 30000;
 let schedulerStatusPollTimer = null;
 let schedulerStatusRequestInFlight = false;
 let schedulerStatusFirstRequestedAt = null;
 let schedulerStatusHealthy = false;
+
+function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
+    let done = false;
+    const wrapped = (msg) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        wsClient.off(eventName, wrapped);
+        onTimeout();
+    }, timeoutMs);
+    wsClient.on(eventName, wrapped);
+}
 
 function renderSchedulerStatus(container, state) {
     if (!container) return;
@@ -94,7 +113,7 @@ function loadSchedulerStatus(force = false) {
     }
 
     schedulerStatusRequestInFlight = true;
-    listenOnce("SchedulerStatus", (msg) => {
+    listenOnceWithTimeout("SchedulerStatus", SCHEDULER_STATUS_TIMEOUT_MS, (msg) => {
         schedulerStatusRequestInFlight = false;
         if (!msg || !msg.data) return;
         const data = msg.data;
@@ -116,6 +135,16 @@ function loadSchedulerStatus(force = false) {
         }
 
         schedulerStatusHealthy = false;
+        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+            renderSchedulerStatus(container, "loading");
+        } else {
+            renderSchedulerStatus(container, "unavailable");
+        }
+        scheduleNextSchedulerStatusPoll();
+    }, () => {
+        schedulerStatusRequestInFlight = false;
+        schedulerStatusHealthy = false;
+        const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
         if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
             renderSchedulerStatus(container, "loading");
         } else {

@@ -11,7 +11,7 @@ const MIN_POINTS = 3;
 const MIN_TOTAL_BYTES = 1_000_000;
 const CLUSTER_PREVIEW_LIMIT = 3;
 const COUNTRIES_GEOJSON_PATH = "vendor/countries.geojson";
-const FLOW_MAP_PROFILE = true;
+const FLOW_MAP_PROFILE = false;
 const DEFAULT_POINT_OF_VIEW = {
     lat: 18,
     lng: -32,
