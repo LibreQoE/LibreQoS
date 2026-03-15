@@ -14,6 +14,10 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 
 ### Flow Map
 - Geographic flow visualization based on endpoint geolocation.
+- Uses a theme-aware globe with country borders for geographic context.
+- Endpoint markers default to latency mode, with a toggle to switch between latency and throughput coloring.
+- Marker size indicates recent traffic volume.
+- Hover a marker for quick details, or click a marker/cluster to pin its details in the side panel.
 - Best used when enough recent flow data is available.
 
 ### ASN Explorer

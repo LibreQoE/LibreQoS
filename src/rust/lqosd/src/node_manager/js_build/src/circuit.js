@@ -40,7 +40,9 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let funnelParentSignature = [];
 let funnelInitialized = false;
+let funnelParentNodeName = null;
 let excludeRttToggle = null;
 let excludeRttLastValue = false;
 let excludeRttBusy = false;
@@ -97,6 +99,130 @@ function resizeFunnelGraphs() {
     });
 }
 
+function arrayEquals(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function resolveFunnelState(msg, parentNode) {
+    const data = msg && msg.data ? msg.data : [];
+    const namedEntry = data.find((node) => node[1] && node[1].name === parentNode);
+    if (!namedEntry) {
+        return null;
+    }
+
+    const immediateParent = namedEntry[1];
+    const parentIndexes = Array.isArray(immediateParent.parents) ? [...immediateParent.parents] : [];
+    const parentSignature = parentIndexes.map((parent) => {
+        const node = data[parent] && data[parent][1] ? data[parent][1] : null;
+        if (!node) {
+            return `${parent}:missing`;
+        }
+        return `${parent}:${node.name}:${node.is_virtual === true ? "virtual" : "physical"}`;
+    });
+
+    return {
+        data,
+        immediateParent,
+        parentIndexes,
+        parentSignature,
+    };
+}
+
+function renderFunnel(state) {
+    const target = document.getElementById("theFunnel");
+    if (!target) {
+        return;
+    }
+
+    if (!state) {
+        funnelGraphs = {};
+        funnelParents = [];
+        funnelParentSignature = [];
+        clearDiv(target);
+        target.appendChild(document.createTextNode("No parent node found"));
+        return;
+    }
+
+    const parentIndexes = [...state.parentIndexes].reverse();
+    let parentDiv = document.createElement("div");
+    parentIndexes.forEach((parent) => {
+        const node = state.data[parent] && state.data[parent][1] ? state.data[parent][1] : null;
+        if (!node) {
+            return;
+        }
+
+        let row = document.createElement("div");
+        row.classList.add("row");
+
+        let col = document.createElement("div");
+        col.classList.add("col-12");
+        let heading = document.createElement("h5");
+        heading.classList.add("redactable");
+        const virtualLabel = node.is_virtual === true ? " <span class='badge text-bg-secondary ms-2'>Virtual</span>" : "";
+        heading.innerHTML = "<i class='fa fa-sitemap'></i> " + node.name + virtualLabel;
+        col.appendChild(heading);
+        row.appendChild(col);
+        parentDiv.appendChild(row);
+
+        row = document.createElement("div");
+        row.classList.add("row");
+
+        let col_tp = document.createElement("div");
+        col_tp.classList.add("col-4");
+        col_tp.id = "funnel_tp_" + parent;
+        col_tp.style.height = "250px";
+        row.appendChild(col_tp);
+
+        let col_rxmit = document.createElement("div");
+        col_rxmit.classList.add("col-4");
+        col_rxmit.id = "funnel_rxmit_" + parent;
+        row.appendChild(col_rxmit);
+
+        let col_rtt = document.createElement("div");
+        col_rtt.classList.add("col-4");
+        col_rtt.id = "funnel_rtt_" + parent;
+        row.appendChild(col_rtt);
+
+        parentDiv.appendChild(row);
+    });
+
+    funnelGraphs = {};
+    clearDiv(target);
+    target.appendChild(parentDiv);
+
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            parentIndexes.forEach((parent) => {
+                if (!document.getElementById("funnel_tp_" + parent)) {
+                    return;
+                }
+                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
+                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
+                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
+                funnelGraphs[parent] = {
+                    tp: tpGraph,
+                    rxmit: rxmitGraph,
+                    rtt: rttGraph,
+                };
+                resizeGraphIfVisible(tpGraph);
+                resizeGraphIfVisible(rxmitGraph);
+                resizeGraphIfVisible(rttGraph);
+            });
+        }, 0);
+    });
+
+    funnelParents = state.parentIndexes;
+    funnelParentSignature = state.parentSignature;
+}
+
 function updateCakeTabAvailability(msg) {
     try {
         const kindDown = (msg?.kind_down || "").toLowerCase();
@@ -116,14 +242,8 @@ function updateCakeTabAvailability(msg) {
         if (tabLi) tabLi.style.display = "";
         if (tabContent) tabContent.style.display = "";
 
-        let displayKind = "Shaper Overview";
-        if (kindDown === "cake" || kindUp === "cake") {
-            displayKind = "CAKE Shaper Overview";
-        } else if (kindDown === "fq_codel" || kindUp === "fq_codel") {
-            displayKind = "fq_codel Shaper Overview";
-        }
         if (tabBtn) {
-            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
+            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> Queue Stats';
         }
     } catch (e) {
         // Ignore label updates; data updates still continue.
@@ -410,9 +530,18 @@ function connectFlowChannel() {
         }
     }, (msg) => {
         latestFlowMsg = msg;
-        $("#activeFlowCount").text(Array.isArray(msg?.flows) ? msg.flows.length : 0);
         applyFlowSankeyMessage(msg);
         updateTrafficTab(msg);
+    });
+}
+
+function initFlowFilters() {
+    const hideSmallFlows = document.getElementById("hideSmallFlows");
+    if (!hideSmallFlows) {
+        return;
+    }
+    hideSmallFlows.addEventListener("change", () => {
+        updateTrafficTab(latestFlowMsg || { flows: [] });
     });
 }
 
@@ -464,6 +593,7 @@ function formatRttPair(p50Nanos, p95Nanos) {
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
+    let visibleRowCount = 0;
 
     let table = document.createElement("table");
     table.classList.add("table", "table-sm", "table-striped");
@@ -669,6 +799,7 @@ function updateTrafficTab(msg) {
     // Render the sorted table
     tableRows.forEach((rowData) => {
         if (!rowData.visible) return;
+        visibleRowCount++;
         
         let row = document.createElement("tr");
         row.classList.add("small");
@@ -699,6 +830,8 @@ function updateTrafficTab(msg) {
 
     clearDiv(target);
     target.appendChild(table);
+    $("#trafficFlowCount").text(visibleRowCount);
+    return visibleRowCount;
 }
 
 function updateSpeedometer(devices) {
@@ -1034,92 +1167,37 @@ function initialDevices(circuits) {
 }
 
 function initialFunnel(parentNode) {
-    let target = document.getElementById("theFunnel");
+    funnelParentNodeName = parentNode;
     listenOnce("NetworkTree", (msg) => {
-        const data = msg && msg.data ? msg.data : [];
-        let immediateParent = null;
-        data.forEach((node) => {
-            if (node[1].name === parentNode) {
-                immediateParent = node[1];
-            }
-        });
-
-        if (immediateParent === null) {
-            clearDiv(target);
-            target.appendChild(document.createTextNode("No parent node found"));
-            return;
+        renderFunnel(resolveFunnelState(msg, parentNode));
+        if (funnelSubscription) {
+            funnelSubscription.dispose();
         }
-
-        let parentDiv = document.createElement("div");
-        immediateParent.parents.reverse().forEach((parent) => {
-            //console.log(data[parent]);
-            let row = document.createElement("div");
-            row.classList.add("row");
-
-            let col = document.createElement("div");
-            col.classList.add("col-12");
-            let heading = document.createElement("h5");
-            heading.classList.add("redactable");
-            heading.innerHTML = "<i class='fa fa-sitemap'></i> " + data[parent][1].name;
-            col.appendChild(heading);
-            row.appendChild(col);
-            parentDiv.appendChild(row);
-
-            // Row for graphs
-            row = document.createElement("div");
-            row.classList.add("row");
-
-            let col_tp = document.createElement("div");
-            col_tp.classList.add("col-4");
-            col_tp.id = "funnel_tp_" + parent;
-            col_tp.style.height = "250px";
-            row.appendChild(col_tp);
-
-            let col_rxmit = document.createElement("div");
-            col_rxmit.classList.add("col-4");
-            col_rxmit.id = "funnel_rxmit_" + parent;
-            row.appendChild(col_rxmit);
-
-            let col_rtt = document.createElement("div");
-            col_rtt.classList.add("col-4");
-            col_rtt.id = "funnel_rtt_" + parent;
-            row.appendChild(col_rtt);
-
-            parentDiv.appendChild(row);
-        });
-        clearDiv(target);
-        target.appendChild(parentDiv);
-        // Ugly hack to defer until the DOM is updated
-        requestAnimationFrame(() => {setTimeout(() => {
-            immediateParent.parents.reverse().forEach((parent) => {
-                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
-                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
-                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
-                funnelGraphs[parent] = {
-                    tp: tpGraph,
-                    rxmit: rxmitGraph,
-                    rtt: rttGraph,
-                };
-                resizeGraphIfVisible(tpGraph);
-                resizeGraphIfVisible(rxmitGraph);
-                resizeGraphIfVisible(rttGraph);
-            });
-            funnelParents = immediateParent.parents;
-            if (funnelSubscription) {
-                funnelSubscription.dispose();
-            }
-            funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
-        }, 0)});
+        funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
     });
     wsClient.send({ NetworkTree: {} });
 }
 
 function onTreeEvent(msg) {
-    //console.log(msg);
+    if (msg.event !== "NetworkTree" || !funnelParentNodeName) {
+        return;
+    }
+
+    const state = resolveFunnelState(msg, funnelParentNodeName);
+    const nextParents = state ? state.parentIndexes : [];
+    const nextSignature = state ? state.parentSignature : [];
+    const shouldRebuild =
+        !arrayEquals(nextParents, funnelParents) ||
+        !arrayEquals(nextSignature, funnelParentSignature);
+
+    if (shouldRebuild) {
+        renderFunnel(state);
+    }
+
     funnelParents.forEach((parent) => {
-        if (msg.event !== "NetworkTree") return;
-        let myMessage = msg.data[parent][1];
-        if (myMessage === undefined) return;
+        const nodeEntry = msg.data[parent];
+        if (!nodeEntry || !nodeEntry[1] || !funnelGraphs[parent]) return;
+        let myMessage = nodeEntry[1];
         let tpGraph = funnelGraphs[parent].tp;
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
@@ -1262,6 +1340,7 @@ function download(dataurl, filename) {
 
 function loadInitial() {
     initExcludeRttToggle();
+    initFlowFilters();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);

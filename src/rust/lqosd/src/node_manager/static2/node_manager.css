@@ -57,10 +57,22 @@ body {
     margin: 0;
     font-family: var(--lqos-font-sans);
     font-size: 1rem;
-    background: var(--lqos-app-bg);
+    background-color: transparent;
     color: var(--bs-body-color);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    position: relative;
+}
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--lqos-app-bg);
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center top;
 }
 #wrapper {
     display: flex;
