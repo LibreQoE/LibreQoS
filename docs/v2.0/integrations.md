@@ -51,6 +51,20 @@ When integrations are enabled:
 - `network.json` may also be overwritten depending on integration settings (for example `always_overwrite_network_json`).
 - Manual edits may be overwritten on the next refresh cycle.
 
+## Topology Node ID Support
+
+LibreQoS supports an optional generic `"id"` field on `network.json` nodes. This field is intended to carry stable node identifiers from the integration source where possible. In the current release, the field is informational and is not yet the authoritative match key for shaping or overrides.
+
+| Integration | `network.json` node ID support | Notes |
+|---|---|---|
+| UISP | Yes | Real UISP sites/devices export generic `id` plus existing `uisp_site` / `uisp_device` metadata. Synthetic LibreQoS nodes use stable generated IDs. |
+| Splynx | Yes | Network sites and AP/site topology nodes export generic `id`. |
+| Sonar | Yes | Site and AP topology nodes export generic `id`. |
+| Netzur | Partial | Exported only when the upstream zone payload includes a stable zone ID. |
+| VISP | No | Current importer shapes services/devices but does not build topology nodes in `network.json`. |
+| Powercode | No | Current importer does not build topology nodes in `network.json`. |
+| WISPGate | No | Current importer does not build topology nodes from stable upstream topology identifiers. |
+
 ## Common Client Rate Handling
 
 For built-in integrations that import raw subscriber plan speeds, LibreQoS applies the same shared client-rate rule before writing `ShapedDevices.csv`:

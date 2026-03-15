@@ -46,6 +46,10 @@ pub async fn build_ap_only_network(
 
                 // Metadata
                 ap_object.insert("type".to_string(), "AP".to_string().into());
+                ap_object.insert(
+                    "id".to_string(),
+                    format!("uisp:device:{}", ap_device.id).into(),
+                );
                 ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
 
                 // Save the entry

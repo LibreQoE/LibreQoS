@@ -18,6 +18,7 @@ pub fn walk_parents(
     let mut map = serde_json::Map::new();
     // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
     map.insert("name".into(), name.clone().into());
+    map.insert("id".into(), node_info.mapping.network_json_id().into());
     map.insert("downloadBandwidthMbps".into(), node_info.download.into());
     map.insert("uploadBandwidthMbps".into(), node_info.upload.into());
     match node_info.mapping {

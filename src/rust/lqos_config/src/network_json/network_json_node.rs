@@ -13,6 +13,9 @@ pub struct NetworkJsonNode {
     /// The node name, as it appears in `network.json`
     pub name: String,
 
+    /// Optional stable node identifier from `network.json` metadata.
+    pub id: Option<String>,
+
     /// If true, this node is "virtual" (logical only): it exists for monitoring/aggregation
     /// but should be omitted from the physical HTB tree.
     pub virtual_node: bool,
@@ -96,6 +99,7 @@ impl NetworkJsonNode {
 
         NetworkJsonTransport {
             name: self.name.clone(),
+            id: self.id.clone(),
             is_virtual: self.virtual_node,
             max_throughput: self.max_throughput,
             current_throughput: (

@@ -31,7 +31,9 @@ pub async fn build_with_strategy(
             flat::build_flat_network(config, ip_ranges).await?;
             Ok(())
         }
-        /*"full" => {
+        /* "full" is now an alias for full2. The legacy full topology builder remains
+         * here only as shared support code and historical reference.
+         * "full" => {
             info!("Strategy selected: full");
             full::build_full_network(config, ip_ranges).await?;
             Ok(())

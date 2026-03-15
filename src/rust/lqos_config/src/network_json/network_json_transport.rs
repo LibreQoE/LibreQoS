@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkJsonTransport {
     /// Display name
     pub name: String,
+    /// Optional stable node identifier carried in network.json metadata.
+    #[serde(default)]
+    pub id: Option<String>,
     /// True if this node is a "virtual" (logical-only) node.
     #[serde(rename = "virtual", default)]
     pub is_virtual: bool,

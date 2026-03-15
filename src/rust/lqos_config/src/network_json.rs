@@ -78,6 +78,7 @@ impl NetworkJson {
     pub fn load() -> Result<Self, NetworkJsonError> {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
@@ -353,6 +354,10 @@ fn recurse_node(
             .unwrap_or(false);
 
     let node = NetworkJsonNode {
+        id: json
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string),
         parents: parents.to_vec(),
         max_throughput: (
             json_to_mbps(json.get("downloadBandwidthMbps")),
@@ -440,6 +445,7 @@ mod test {
     fn parse_network_json_from_value(value: Value) -> NetworkJson {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
@@ -551,5 +557,47 @@ mod test {
         let transport = tiny.clone_to_transit();
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
+    }
+
+    #[test]
+    fn parses_optional_node_ids_and_preserves_them_in_transport() {
+        let raw = serde_json::json!({
+            "Site_1": {
+                "id": "uisp:site:123",
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "AP_1": {
+                        "id": "uisp:device:456",
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500,
+                        "children": {}
+                    }
+                }
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+        let site = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "Site_1")
+            .expect("Site_1 must be present");
+        let ap = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "AP_1")
+            .expect("AP_1 must be present");
+
+        assert_eq!(site.id.as_deref(), Some("uisp:site:123"));
+        assert_eq!(ap.id.as_deref(), Some("uisp:device:456"));
+        assert_eq!(
+            site.clone_to_transit().id.as_deref(),
+            Some("uisp:site:123")
+        );
+        assert_eq!(
+            ap.clone_to_transit().id.as_deref(),
+            Some("uisp:device:456")
+        );
     }
 }

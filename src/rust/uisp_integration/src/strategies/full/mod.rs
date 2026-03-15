@@ -1,3 +1,9 @@
+//! Legacy UISP full-topology builder.
+//!
+//! `build_full_network` is retained for legacy reference and shared support code,
+//! but current strategy dispatch does not select it. The public `"full"` strategy
+//! now aliases to the `full2` backend.
+
 #![allow(dead_code)]
 mod ap_promotion;
 pub(crate) mod bandwidth_overrides;

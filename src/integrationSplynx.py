@@ -298,7 +298,8 @@ def run_splynx_pipeline(strategy_name: str):
 					download = siteBandwidth[nodeName]["download"]
 					upload = siteBandwidth[nodeName]["upload"]
 				node = NetworkNode(id=node_id, displayName=nodeName, type=NodeType.site,
-					parentId=None, download=download, upload=upload, address=address)
+					parentId=None, download=download, upload=upload, address=address,
+					networkJsonId=f"splynx:network_site:{site_id}")
 				net.addRawNode(node)
 			created_ap = 0
 			for ap_id, ap_device in ap_nodes.items():
@@ -313,7 +314,8 @@ def run_splynx_pipeline(strategy_name: str):
 				if site_id in site_id_to_node_id:
 					parent_id = site_id_to_node_id[site_id]
 				node = NetworkNode(id=ap_node_id(ap_id), displayName=nodeName, type=NodeType.ap,
-					parentId=parent_id, download=download, upload=upload, address=None)
+					parentId=parent_id, download=download, upload=upload, address=None,
+					networkJsonId=f"splynx:ap:{ap_id}")
 				net.addRawNode(node)
 				created_ap += 1
 			print(f"Created {created_ap} AP nodes (Network Sites mode)")
@@ -327,7 +329,7 @@ def run_splynx_pipeline(strategy_name: str):
 				if nodeName in siteBandwidth:
 					download = siteBandwidth[nodeName]["download"]
 					upload = siteBandwidth[nodeName]["upload"]
-				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None)
+				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None, networkJsonId=f"splynx:ap:{ap_id}")
 				net.addRawNode(node)
 			return
 		# ap_site and full
@@ -663,10 +665,12 @@ def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, h
 		nodeType = hardware_type[device_num]
 		if nodeType == 'AP':
 			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.ap,
-				parentId=parent_id, download=download, upload=upload, address=None)
+				parentId=parent_id, download=download, upload=upload, address=None,
+				networkJsonId=f"splynx:ap:{device_num}")
 		else:
 			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
-				parentId=parent_id, download=download, upload=upload, address=None)
+				parentId=parent_id, download=download, upload=upload, address=None,
+				networkJsonId=f"splynx:site:{device_num}")
 		net.addRawNode(node)
 
 def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter):

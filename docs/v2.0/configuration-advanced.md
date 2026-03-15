@@ -131,6 +131,26 @@ How overrides apply:
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
+Each topology node may optionally include an `"id"` field. This is intended to carry a stable node identifier from the source CRM/NMS when one exists. LibreQoS currently still matches hierarchy and overrides by node name, not by this ID, so `"id"` is metadata for now.
+
+Recommended format:
+
+```json
+{
+  "Tower_A": {
+    "id": "uisp:site:abc123",
+    "downloadBandwidthMbps": 1000,
+    "uploadBandwidthMbps": 1000,
+    "type": "site"
+  }
+}
+```
+
+Notes:
+- Use namespaced string IDs such as `uisp:site:<id>`, `splynx:network_site:<id>`, or `sonar:ap:<id>`.
+- Generated LibreQoS-only nodes may use stable generated IDs such as `libreqos:generated:uisp:site:orphans`.
+- Existing integration-specific metadata fields such as `uisp_site` and `uisp_device` may also appear alongside the generic `id` field.
+
 If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.
 If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).
 
