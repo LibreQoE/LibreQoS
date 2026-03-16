@@ -74,9 +74,14 @@
     </div>
 </div>
 
-<ul class="nav nav-tabs lqos-pill-tabs mb-3" id="myTab" role="tablist">
+<ul class="nav nav-tabs lqos-pill-tabs lqos-circuit-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="devs-tab" data-bs-toggle="tab" data-bs-target="#devs" type="button" role="tab" aria-controls="devs" aria-selected="true">
+        <button class="nav-link active" id="queuing-tab" data-bs-toggle="tab" data-bs-target="#queuing" type="button" role="tab" aria-controls="queuing" aria-selected="true">
+            <i class="fa fa-wave-square"></i> Queuing Activity
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="devs-tab" data-bs-toggle="tab" data-bs-target="#devs" type="button" role="tab" aria-controls="devs" aria-selected="false">
             <i class="fa fa-server"></i> Devices
         </button>
     </li>
@@ -102,7 +107,71 @@
     </li>
 </ul>
 <div class="tab-content" id="myTabContent">
-    <div class="tab-pane fade show active" id="devs" role="tabpanel" aria-labelledby="devs-tab">
+    <div class="tab-pane fade show active" id="queuing" role="tabpanel" aria-labelledby="queuing-tab">
+        <div class="lqos-circuit-activity-panel">
+            <div class="lqos-circuit-activity-header">
+                <div class="lqos-circuit-activity-title">
+                    <h5>Queuing Activity Live Waveform</h5>
+                </div>
+                <div class="lqos-circuit-activity-controls">
+                    <div class="lqos-circuit-activity-legend" aria-label="Queuing Activity Legend">
+                        <span class="lqos-circuit-activity-legend-item">
+                            <span class="lqos-circuit-activity-legend-dot is-throughput"></span>
+                            <span>Throughput</span>
+                        </span>
+                        <span class="lqos-circuit-activity-legend-item">
+                            <span id="queuingActivityLegendCeiling" class="lqos-circuit-activity-legend-dot is-ceiling"></span>
+                            <span>Ceiling</span>
+                        </span>
+                        <span class="lqos-circuit-activity-legend-item">
+                            <span class="lqos-circuit-activity-legend-dot is-qoo"></span>
+                            <span>Circuit QoO</span>
+                        </span>
+                    </div>
+                    <div class="btn-group btn-group-sm lqos-circuit-activity-toggle" role="group" aria-label="Queuing Activity Direction">
+                        <input type="radio" class="btn-check" name="queuingDirection" id="queuingDirectionDown" autocomplete="off" checked>
+                        <label class="btn btn-outline-secondary" for="queuingDirectionDown">Download</label>
+
+                        <input type="radio" class="btn-check" name="queuingDirection" id="queuingDirectionUp" autocomplete="off">
+                        <label class="btn btn-outline-secondary" for="queuingDirectionUp">Upload</label>
+                    </div>
+                </div>
+            </div>
+            <div id="queuingActivityGraph" class="lqos-circuit-activity-chart">
+                <div class="lqos-loading-block lqos-loading-block-lg">
+                    <i class="fa fa-spinner fa-spin"></i>
+                    <span>Loading queuing activity…</span>
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-12 col-md-6 col-xl-3">
+                    <div class="lqos-circuit-activity-kpi">
+                        <div class="lqos-circuit-activity-kpi-label">Throughput</div>
+                        <div id="queuingActivityThroughput" class="lqos-circuit-activity-kpi-value">-</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <div class="lqos-circuit-activity-kpi">
+                        <div class="lqos-circuit-activity-kpi-label">Circuit QoO</div>
+                        <div id="queuingActivityQoo" class="lqos-circuit-activity-kpi-value">-</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <div class="lqos-circuit-activity-kpi">
+                        <div class="lqos-circuit-activity-kpi-label">Active Flows</div>
+                        <div id="queuingActivityFlows" class="lqos-circuit-activity-kpi-value">0</div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <div class="lqos-circuit-activity-kpi">
+                        <div class="lqos-circuit-activity-kpi-label">Utilization</div>
+                        <div id="queuingActivityUtilization" class="lqos-circuit-activity-kpi-value">0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="devs" role="tabpanel" aria-labelledby="devs-tab">
         <div class="row" id="devices">
             <div class="col-12">
                 <div class="lqos-loading-block lqos-loading-block-lg">
