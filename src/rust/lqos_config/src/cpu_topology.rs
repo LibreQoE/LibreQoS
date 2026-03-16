@@ -7,8 +7,6 @@
 //! runtime directory, and reuses that cached result across processes.
 
 use crate::Config;
-use once_cell::sync::Lazy;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -35,9 +33,6 @@ const CPU_CAPACITY_EFFICIENCY_PERCENT: u32 = 80;
 const CPU_FREQ_EFFICIENCY_PERCENT: u32 = 90;
 const CPUID_CORE_TYPE_ATOM: u32 = 0x20;
 const CPUID_CORE_TYPE_CORE: u32 = 0x40;
-
-static DETECTED_TOPOLOGY: Lazy<RwLock<Option<ResolvedHybridCpuTopology>>> =
-    Lazy::new(|| RwLock::new(None));
 
 /// Indicates which mechanism was used to choose shaping CPUs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,11 +127,7 @@ impl ResolvedHybridCpuTopology {
         }
     }
 
-    fn fallback(
-        source: ShapingCpuSource,
-        possible: &[u32],
-        detail: impl Into<String>,
-    ) -> Self {
+    fn fallback(source: ShapingCpuSource, possible: &[u32], detail: impl Into<String>) -> Self {
         Self {
             source,
             from_cache: false,
@@ -262,7 +253,11 @@ fn filter_subset(possible: &[u32], cpus: Vec<u32>) -> Vec<u32> {
     filtered
 }
 
-fn validate_split(possible: &[u32], performance: Vec<u32>, efficiency: Vec<u32>) -> Option<(Vec<u32>, Vec<u32>)> {
+fn validate_split(
+    possible: &[u32],
+    performance: Vec<u32>,
+    efficiency: Vec<u32>,
+) -> Option<(Vec<u32>, Vec<u32>)> {
     let possible_set: HashSet<u32> = possible.iter().copied().collect();
     let mut perf = filter_subset(possible, performance);
     let eff = filter_subset(possible, efficiency);
@@ -284,7 +279,10 @@ fn validate_split(possible: &[u32], performance: Vec<u32>, efficiency: Vec<u32>)
     Some((perf, eff))
 }
 
-fn detect_from_core_types(possible: &[u32], values: &BTreeMap<u32, u32>) -> Option<ResolvedHybridCpuTopology> {
+fn detect_from_core_types(
+    possible: &[u32],
+    values: &BTreeMap<u32, u32>,
+) -> Option<ResolvedHybridCpuTopology> {
     if values.is_empty() {
         return None;
     }
@@ -308,7 +306,10 @@ fn detect_from_core_types(possible: &[u32], values: &BTreeMap<u32, u32>) -> Opti
     ))
 }
 
-fn detect_from_capacity(possible: &[u32], values: &BTreeMap<u32, u32>) -> Option<ResolvedHybridCpuTopology> {
+fn detect_from_capacity(
+    possible: &[u32],
+    values: &BTreeMap<u32, u32>,
+) -> Option<ResolvedHybridCpuTopology> {
     if values.len() != possible.len() || values.is_empty() {
         return None;
     }
@@ -347,20 +348,29 @@ fn detect_from_cpu_core_atom_lists(
     perf_opt: Option<Vec<u32>>,
     eff_opt: Option<Vec<u32>>,
 ) -> Option<ResolvedHybridCpuTopology> {
-    if let Some(performance) = perf_opt.clone() {
-        let efficiency = eff_opt.clone().unwrap_or_default();
-        if let Some((performance, efficiency)) = validate_split(possible, performance, efficiency) {
+    let filtered_efficiency = eff_opt
+        .clone()
+        .map(|efficiency| filter_subset(possible, efficiency));
+
+    if let Some(mut performance) = perf_opt {
+        performance = filter_subset(possible, performance);
+        if let Some(efficiency) = filtered_efficiency.as_ref() {
+            let eff_set: HashSet<u32> = efficiency.iter().copied().collect();
+            performance.retain(|cpu| !eff_set.contains(cpu));
+        }
+
+        if !performance.is_empty() {
             return Some(ResolvedHybridCpuTopology::hybrid(
                 ShapingCpuSource::CpuCoreSysfs,
                 possible,
                 performance,
-                efficiency,
-                "Detected hybrid CPU split via cpu_core cpulist",
+                filtered_efficiency.unwrap_or_default(),
+                "Detected performance CPUs via cpu_core cpulist",
             ));
         }
     }
 
-    if let Some(efficiency) = eff_opt {
+    if let Some(efficiency) = filtered_efficiency {
         let possible_set: HashSet<u32> = possible.iter().copied().collect();
         let eff_set: HashSet<u32> = efficiency.iter().copied().collect();
         let performance: Vec<u32> = possible_set.difference(&eff_set).copied().collect();
@@ -377,7 +387,10 @@ fn detect_from_cpu_core_atom_lists(
     None
 }
 
-fn detect_from_frequency(possible: &[u32], values: &BTreeMap<u32, u32>) -> Option<ResolvedHybridCpuTopology> {
+fn detect_from_frequency(
+    possible: &[u32],
+    values: &BTreeMap<u32, u32>,
+) -> Option<ResolvedHybridCpuTopology> {
     if values.len() != possible.len() || values.is_empty() {
         return None;
     }
@@ -405,9 +418,7 @@ fn detect_from_frequency(possible: &[u32], values: &BTreeMap<u32, u32>) -> Optio
         possible,
         performance,
         efficiency,
-        format!(
-            "Detected hybrid CPU split via cpuinfo_max_freq (max={max_freq}, min={min_freq})"
-        ),
+        format!("Detected hybrid CPU split via cpuinfo_max_freq (max={max_freq}, min={min_freq})"),
     ))
 }
 
@@ -463,7 +474,10 @@ fn detect_from_cpuid(_possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
     None
 }
 
-fn detect_hybrid_topology(possible: &[u32], possible_source: ShapingCpuSource) -> ResolvedHybridCpuTopology {
+fn detect_hybrid_topology(
+    possible: &[u32],
+    possible_source: ShapingCpuSource,
+) -> ResolvedHybridCpuTopology {
     let core_types = read_per_cpu_values(possible, "topology/core_type");
     if let Some(resolved) = detect_from_core_types(possible, &core_types) {
         return resolved;
@@ -500,7 +514,12 @@ fn cache_file_path(cfg: &Config) -> PathBuf {
     Path::new(&cfg.lqos_directory).join(CPU_TOPOLOGY_CACHE_FILE)
 }
 
-fn read_cpuinfo_identity() -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+fn read_cpuinfo_identity() -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let cpuinfo = match std::fs::read_to_string("/proc/cpuinfo") {
         Ok(cpuinfo) => cpuinfo,
         Err(_) => return (None, None, None, None),
@@ -607,21 +626,14 @@ fn store_topology_cache(
 }
 
 fn cached_or_detected_topology(cfg: &Config) -> ResolvedHybridCpuTopology {
-    if let Some(topology) = DETECTED_TOPOLOGY.read().clone() {
-        return topology;
-    }
-
     let (possible, possible_source) = possible_cpu_list();
     let fingerprint = CpuTopologyFingerprint::gather(&possible);
 
-    let resolved = load_topology_cache(cfg, &fingerprint).unwrap_or_else(|| {
+    load_topology_cache(cfg, &fingerprint).unwrap_or_else(|| {
         let detected = detect_hybrid_topology(&possible, possible_source);
         store_topology_cache(cfg, &fingerprint, &detected);
         detected
-    });
-
-    *DETECTED_TOPOLOGY.write() = Some(resolved.clone());
-    resolved
+    })
 }
 
 /// Detects the set of CPUs that should be used for shaping/CPU binning.
@@ -771,23 +783,31 @@ mod tests {
     #[test]
     fn detects_cpu_core_atom_lists() {
         let possible = vec![0, 1, 2, 3];
-        let detection = detect_from_cpu_core_atom_lists(
-            &possible,
-            Some(vec![0, 1]),
-            Some(vec![2, 3]),
-        )
-        .expect("cpu_core/cpu_atom should detect hybrid");
+        let detection =
+            detect_from_cpu_core_atom_lists(&possible, Some(vec![0, 1]), Some(vec![2, 3]))
+                .expect("cpu_core/cpu_atom should detect hybrid");
         assert_eq!(detection.source, ShapingCpuSource::CpuCoreSysfs);
         assert_eq!(detection.performance, vec![0, 1]);
         assert_eq!(detection.efficiency, vec![2, 3]);
     }
 
     #[test]
+    fn detects_cpu_core_list_without_atom_list() {
+        let possible = vec![0, 1, 2, 3];
+        let detection = detect_from_cpu_core_atom_lists(&possible, Some(vec![0, 1]), None)
+            .expect("cpu_core without cpu_atom should still detect performance CPUs");
+        assert_eq!(detection.source, ShapingCpuSource::CpuCoreSysfs);
+        assert!(detection.has_hybrid_split);
+        assert_eq!(detection.performance, vec![0, 1]);
+        assert!(detection.efficiency.is_empty());
+    }
+
+    #[test]
     fn detects_frequency_split() {
         let possible = vec![0, 1, 2, 3];
         let values = BTreeMap::from([(0, 5200000), (1, 5200000), (2, 3900000), (3, 3900000)]);
-        let detection =
-            detect_from_frequency(&possible, &values).expect("frequency split should detect hybrid");
+        let detection = detect_from_frequency(&possible, &values)
+            .expect("frequency split should detect hybrid");
         assert_eq!(detection.source, ShapingCpuSource::MaxFrequencyHeuristic);
         assert_eq!(detection.performance, vec![0, 1]);
         assert_eq!(detection.efficiency, vec![2, 3]);
@@ -795,7 +815,7 @@ mod tests {
 
     #[test]
     fn fallback_uses_all_possible_cpus() {
-        let possible = vec![0, 1, 2, 3];
+        let possible = vec![9_999];
         let detection = detect_hybrid_topology(&possible, ShapingCpuSource::FallbackAllPossible);
         assert_eq!(detection.source, ShapingCpuSource::FallbackAllPossible);
         assert!(!detection.has_hybrid_split);
@@ -870,5 +890,53 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn cached_detection_uses_each_config_directory_independently() {
+        let (possible, possible_source) = possible_cpu_list();
+        let fingerprint = CpuTopologyFingerprint::gather(&possible);
+
+        let cfg_a = Config {
+            lqos_directory: temp_dir("cpu-topology-cache-a").display().to_string(),
+            ..Config::default()
+        };
+        let cfg_b = Config {
+            lqos_directory: temp_dir("cpu-topology-cache-b").display().to_string(),
+            ..Config::default()
+        };
+
+        let path_a = cache_file_path(&cfg_a);
+        let path_b = cache_file_path(&cfg_b);
+
+        let topology_a = ResolvedHybridCpuTopology::fallback(
+            possible_source,
+            &possible,
+            "cache entry from directory a",
+        );
+        let topology_b = ResolvedHybridCpuTopology::fallback(
+            ShapingCpuSource::FallbackAvailableParallelism,
+            &possible,
+            "cache entry from directory b",
+        );
+
+        store_topology_cache(&cfg_a, &fingerprint, &topology_a);
+        store_topology_cache(&cfg_b, &fingerprint, &topology_b);
+
+        let loaded_a = cached_or_detected_topology(&cfg_a);
+        let loaded_b = cached_or_detected_topology(&cfg_b);
+
+        assert!(loaded_a.from_cache);
+        assert!(loaded_b.from_cache);
+        assert_eq!(loaded_a.detail, "cache entry from directory a");
+        assert_eq!(loaded_b.detail, "cache entry from directory b");
+        assert_eq!(loaded_a.source, possible_source);
+        assert_eq!(
+            loaded_b.source,
+            ShapingCpuSource::FallbackAvailableParallelism
+        );
+
+        let _ = std::fs::remove_file(path_a);
+        let _ = std::fs::remove_file(path_b);
     }
 }

@@ -2023,7 +2023,6 @@ dependencies = [
  "lqos_utils",
  "nix",
  "once_cell",
- "parking_lot",
  "serde",
  "serde_json",
  "sha2",
