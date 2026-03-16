@@ -378,6 +378,7 @@ pub enum WarningLevel {
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+#[allow(clippy::large_enum_variant)]
 pub enum BusResponse {
     /// Yes, we're alive
     Ack,

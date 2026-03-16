@@ -9,6 +9,10 @@ use lqos_config::load_config;
 /// This function is not pure: it sends a request to the TreeGuard actor, and may fall back to
 /// reading the current configuration from disk (via the config cache).
 pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
+    if let Some(snapshot) = actor::cached_status_snapshot() {
+        return snapshot;
+    }
+
     if let Some(snapshot) = actor::request_status_snapshot().await {
         return snapshot;
     }
@@ -71,5 +75,8 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
 /// This function is not pure: it sends a request to the TreeGuard actor.
 /// If the actor isn't available, it returns an empty list.
 pub async fn treeguard_activity_snapshot() -> Vec<TreeguardActivityEntry> {
+    if let Some(snapshot) = actor::cached_activity_snapshot() {
+        return snapshot;
+    }
     actor::request_activity_snapshot().await.unwrap_or_default()
 }

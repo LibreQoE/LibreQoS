@@ -149,7 +149,7 @@ pub fn add_user_data(login: LoginResult, data: UserRequest) -> Result<String, St
     };
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     users
-        .add_or_update_user(&data.username.trim(), password, data.role.into())
+        .add_or_update_user(data.username.trim(), password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(format!("User '{}' added", data.username))
 }
@@ -162,16 +162,16 @@ pub fn update_user_data(login: LoginResult, data: UserRequest) -> Result<String,
     let all_users = users.get_users();
 
     // Prevent turning the last administrator into a non-admin account.
-    if let Some(existing_user) = all_users.iter().find(|u| u.username == data.username) {
-        if existing_user.role == UserRole::Admin {
-            let admin_count = all_users
-                .iter()
-                .filter(|u| u.role == UserRole::Admin)
-                .count();
-            let requested_role: UserRole = data.role.clone().into();
-            if admin_count <= 1 && requested_role != UserRole::Admin {
-                return Err(StatusCode::BAD_REQUEST);
-            }
+    if let Some(existing_user) = all_users.iter().find(|u| u.username == data.username)
+        && existing_user.role == UserRole::Admin
+    {
+        let admin_count = all_users
+            .iter()
+            .filter(|u| u.role == UserRole::Admin)
+            .count();
+        let requested_role: UserRole = data.role.clone().into();
+        if admin_count <= 1 && requested_role != UserRole::Admin {
+            return Err(StatusCode::BAD_REQUEST);
         }
     }
 
@@ -190,15 +190,15 @@ pub fn delete_user_data(login: LoginResult, username: String) -> Result<String, 
     let all_users = users.get_users();
 
     // Prevent deleting the final administrator account.
-    if let Some(existing_user) = all_users.iter().find(|u| u.username == username) {
-        if existing_user.role == UserRole::Admin {
-            let admin_count = all_users
-                .iter()
-                .filter(|u| u.role == UserRole::Admin)
-                .count();
-            if admin_count <= 1 {
-                return Err(StatusCode::BAD_REQUEST);
-            }
+    if let Some(existing_user) = all_users.iter().find(|u| u.username == username)
+        && existing_user.role == UserRole::Admin
+    {
+        let admin_count = all_users
+            .iter()
+            .filter(|u| u.role == UserRole::Admin)
+            .count();
+        if admin_count <= 1 {
+            return Err(StatusCode::BAD_REQUEST);
         }
     }
 

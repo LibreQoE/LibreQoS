@@ -38,7 +38,7 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_overrides"
+PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_overrides"
 mkdir -p bin/static
 pushd rust > /dev/null || exit
 #cargo clean
@@ -135,6 +135,10 @@ fi
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
 echo "Template .service files can be found in bin/"
+echo "Debian package installs constrain Python dependencies with src/deb-requirements-constraints.txt to stay compatible with Ubuntu's distro Python packages."
+echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix bundle from download.libreqos.com."
+echo "The hotfix installer now offers to schedule a reboot after it finishes."
+echo "LibreQoS package installs on affected Ubuntu 24.04 hosts stop until the hotfix is installed; finish with sudo dpkg --configure -a after the reboot."
 echo ""
 echo "Run sudo rust/remove_pinned_maps.sh before you restart lqosd"
 echo "This ensures that any data-format changes will apply correctly."

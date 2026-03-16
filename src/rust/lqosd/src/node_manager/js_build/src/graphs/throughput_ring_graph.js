@@ -1,6 +1,9 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {
+    normalizeDownUpOrder,
+    scaleNumber,
+} from "../lq_js_common/helpers/scaling";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -159,10 +162,12 @@ class RingBuffer {
     }
 
     push(shaped, unshaped, timestamp) {
-        this.data[this.head][1] = shaped.down;
-        this.data[this.head][0] = 0.0 - shaped.up;
-        this.data[this.head][2] = unshaped.down;
-        this.data[this.head][3] = 0.0 - unshaped.up;
+        const shapedPair = normalizeDownUpOrder(shaped, 0);
+        const unshapedPair = normalizeDownUpOrder(unshaped, 0);
+        this.data[this.head][1] = shapedPair.down;
+        this.data[this.head][0] = 0.0 - shapedPair.up;
+        this.data[this.head][2] = unshapedPair.down;
+        this.data[this.head][3] = 0.0 - unshapedPair.up;
         this.data[this.head][4] = timestamp || Date.now();
         this.head += 1;
         this.head %= this.size;

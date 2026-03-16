@@ -5,7 +5,7 @@ use serde::Serialize;
 use tracing::info;
 
 pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
-    let Ok(config) = lqos_config::load_config() else {
+    let Ok(_) = lqos_config::load_config() else {
         return;
     };
     let req = vec![lqos_bus::BusRequest::BlackboardData {
@@ -17,7 +17,7 @@ pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
 }
 
 pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Result<()> {
-    let config = lqos_config::load_config()?;
+    let _ = lqos_config::load_config()?;
     let blob = serde_cbor::to_vec(&value)?;
     let chunks = blob.chunks(1024 * 128);
     info!(

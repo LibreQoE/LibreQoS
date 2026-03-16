@@ -65,7 +65,7 @@ fn recent_flows_by_circuit(
                             last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
                         },
                         local.clone(),
-                        analysis.clone(),
+                        *analysis,
                     ))
                 })
                 .collect();
@@ -83,10 +83,7 @@ pub(super) async fn flows_by_circuit(
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> =
-            recent_flows_by_circuit(&circuit)
-                .into_iter()
-                .map(|(key, local, analysis)| (key.into(), local, analysis))
-                .collect();
+            recent_flows_by_circuit(&circuit).into_iter().collect();
 
         if !flows.is_empty() {
             let result = WsResponse::FlowsByCircuit {
@@ -94,7 +91,7 @@ pub(super) async fn flows_by_circuit(
                 flows,
             };
             if let Ok(payload) = encode_ws_message(&result) {
-                if let Err(_) = tx.send(payload).await {
+                if tx.send(payload).await.is_err() {
                     debug!("Channel is gone");
                     break;
                 }

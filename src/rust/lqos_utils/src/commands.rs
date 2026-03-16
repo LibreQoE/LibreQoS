@@ -64,8 +64,6 @@ macro_rules! run_or_panic {
 
 #[cfg(test)]
 mod test {
-    use crate::run_success;
-
     #[test]
     fn test_true() {
         assert!(run_success!("/bin/true"));

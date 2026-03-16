@@ -49,14 +49,13 @@ impl ShapedDeviceHashCache {
         shaped: &ConfigShapedDevices,
         device_hash: i64,
     ) -> Option<usize> {
-        if let Some(idx) = self.by_device_hash.get(&device_hash).copied() {
-            if shaped
+        if let Some(idx) = self.by_device_hash.get(&device_hash).copied()
+            && shaped
                 .devices
                 .get(idx)
                 .is_some_and(|d| d.device_hash == device_hash)
-            {
-                return Some(idx);
-            }
+        {
+            return Some(idx);
         }
         shaped
             .devices
@@ -69,14 +68,13 @@ impl ShapedDeviceHashCache {
         shaped: &ConfigShapedDevices,
         circuit_hash: i64,
     ) -> Option<usize> {
-        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied() {
-            if shaped
+        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied()
+            && shaped
                 .devices
                 .get(idx)
                 .is_some_and(|d| d.circuit_hash == circuit_hash)
-            {
-                return Some(idx);
-            }
+        {
+            return Some(idx);
         }
         shaped
             .devices
@@ -152,17 +150,17 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     }
 }
 
-pub fn get_full_network_map() -> BusResponse {
+pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     let nj = NETWORK_JSON.read();
-    let data = {
-        nj.get_nodes_when_ready()
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (i, n.clone_to_transit()))
-            .collect::<Vec<(usize, NetworkJsonTransport)>>()
-    };
+    nj.get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (i, n.clone_to_transit()))
+        .collect()
+}
 
-    BusResponse::NetworkMap(data)
+pub fn get_full_network_map() -> BusResponse {
+    BusResponse::NetworkMap(full_network_map_snapshot())
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {

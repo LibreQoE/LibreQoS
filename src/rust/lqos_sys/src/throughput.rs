@@ -48,6 +48,14 @@ pub struct HostCounter {
     pub last_seen: u64,
 }
 
+/// Iterates through all throughput entries, and sends them in turn to `callback`.
+/// This elides the need to clone or copy data.
+pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
+    unsafe {
+        crate::bpf_iterator::iterate_throughput(callback);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::HostCounter;
@@ -55,13 +63,5 @@ mod test {
     #[test]
     fn host_counter_size() {
         assert_eq!(std::mem::size_of::<HostCounter>(), 112);
-    }
-}
-
-/// Iterates through all throughput entries, and sends them in turn to `callback`.
-/// This elides the need to clone or copy data.
-pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
-    unsafe {
-        crate::bpf_iterator::iterate_throughput(callback);
     }
 }

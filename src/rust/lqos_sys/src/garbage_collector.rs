@@ -48,7 +48,7 @@ fn throughput_garbage_collect() {
                 .max()
                 .unwrap_or(0);
             if last_seen < period_ago {
-                expired.push(ip.clone());
+                expired.push(*ip);
             }
         });
     }

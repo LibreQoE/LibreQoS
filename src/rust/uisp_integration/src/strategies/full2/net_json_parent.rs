@@ -1,8 +1,5 @@
-use crate::strategies::full2::GraphType;
 use crate::strategies::full2::graph_mapping::GraphMapping;
-use lqos_config::Config;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct NetJsonParent<'a> {
@@ -16,8 +13,6 @@ pub fn walk_parents(
     parents: &HashMap<String, NetJsonParent>,
     name: &String,
     node_info: &NetJsonParent,
-    config: &Arc<Config>,
-    graph: &GraphType,
     visited: &mut HashSet<String>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
@@ -55,7 +50,7 @@ pub fn walk_parents(
             continue;
         }
         visited.insert(name.to_string());
-        let child = walk_parents(parents, name, &node_info, config, graph, visited);
+        let child = walk_parents(parents, name, node_info, visited);
         children.insert(name.into(), child.into());
     }
 

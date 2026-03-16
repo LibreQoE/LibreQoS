@@ -39,14 +39,14 @@ pub fn add_ip_to_tc(
     };
     let mut circuit_id = circuit_id;
     let mut device_id = device_id;
-    if circuit_id == 0 || device_id == 0 {
-        if let Some(existing) = bpf_map.lookup(&mut key)? {
-            if circuit_id == 0 {
-                circuit_id = existing.circuit_id;
-            }
-            if device_id == 0 {
-                device_id = existing.device_id;
-            }
+    if (circuit_id == 0 || device_id == 0)
+        && let Some(existing) = bpf_map.lookup(&mut key)?
+    {
+        if circuit_id == 0 {
+            circuit_id = existing.circuit_id;
+        }
+        if device_id == 0 {
+            device_id = existing.device_id;
         }
     }
     let mut value = IpHashData {

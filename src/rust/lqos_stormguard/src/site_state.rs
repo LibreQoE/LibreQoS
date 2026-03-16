@@ -21,7 +21,8 @@ use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crossbeam_channel::Sender;
 use lqos_bakery::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse, StormguardDebugDirection, StormguardDebugEntry, TcHandle};
+use lqos_bus::{StormguardDebugDirection, StormguardDebugEntry, TcHandle};
+use lqos_config::NetworkJsonTransport;
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -30,6 +31,18 @@ use tracing::{debug, info, warn};
 pub struct SiteStateTracker {
     sites: HashMap<String, SiteState>,
     active_circuit_fallbacks: HashSet<String>,
+}
+
+struct CircuitQueueRecommendationContext<'a> {
+    active_circuit_fallbacks: &'a mut HashSet<String>,
+    site: &'a mut SiteState,
+    config: &'a StormguardConfig,
+    recommendation: &'a Recommendation,
+    summary: &'a str,
+    circuit_id: &'a str,
+    cooldown_secs: f32,
+    log_sender: &'a std::sync::mpsc::Sender<LogCommand>,
+    bakery_sender: Sender<BakeryCommands>,
 }
 
 impl SiteStateTracker {
@@ -173,63 +186,53 @@ impl SiteStateTracker {
         }
     }
 
-    pub async fn read_new_tick_data(
+    pub fn read_new_tick_data(
         &mut self,
         config: &StormguardConfig,
         active_ping_sample: Option<TimedRtt>,
         active_ping_updated: bool,
+        all_nodes: Vec<(usize, NetworkJsonTransport)>,
     ) {
-        let requests = vec![BusRequest::GetFullNetworkMap];
-        let Ok(responses) = lqos_bus::bus_request(requests).await else {
-            info!("Failed to get lqosd stats");
-            return;
-        };
-
         for site in self.sites.values_mut() {
             site.current_throughput = (0.0, 0.0);
             site.clear_tick_rtt_state();
         }
 
-        for response in responses {
-            let BusResponse::NetworkMap(all_nodes) = response else {
+        for (_, node_info) in all_nodes {
+            let Some(target) = self.sites.get_mut(&node_info.name) else {
                 continue;
             };
-            for (_, node_info) in all_nodes {
-                let Some(target) = self.sites.get_mut(&node_info.name) else {
-                    continue;
-                };
 
-                // Record throughput (Mbps)
-                let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
-                let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
-                target.throughput_down.add(down_mbps);
-                target.throughput_up.add(up_mbps);
-                target.current_throughput = (down_mbps, up_mbps);
+            // Record throughput (Mbps)
+            let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
+            let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
+            target.throughput_down.add(down_mbps);
+            target.throughput_up.add(up_mbps);
+            target.current_throughput = (down_mbps, up_mbps);
 
-                // Retransmits (as a percentage of TCP packets)
-                let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
-                    node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
-                } else {
-                    0.0
-                };
-                let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
-                    node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
-                } else {
-                    0.0
-                };
-                target.retransmits_down.add(retransmits_down);
-                target.retransmits_up.add(retransmits_up);
+            // Retransmits (as a percentage of TCP packets)
+            let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
+                node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
+            } else {
+                0.0
+            };
+            let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
+                node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
+            } else {
+                0.0
+            };
+            target.retransmits_down.add(retransmits_down);
+            target.retransmits_up.add(retransmits_up);
 
-                // Round-Trip Time
-                if !node_info.rtts.is_empty() {
-                    let mut my_round_trip_times = node_info.rtts.clone();
-                    my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
-                    let samples = my_round_trip_times.len();
-                    let mut idx = ((samples as f32) * 0.9).floor() as usize;
-                    idx = idx.min(samples.saturating_sub(1));
-                    let p90 = my_round_trip_times[idx] as f64;
-                    target.record_passive_rtt_sample(p90);
-                }
+            // Round-Trip Time
+            if !node_info.rtts.is_empty() {
+                let mut my_round_trip_times = node_info.rtts.clone();
+                my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
+                let samples = my_round_trip_times.len();
+                let mut idx = ((samples as f32) * 0.9).floor() as usize;
+                idx = idx.min(samples.saturating_sub(1));
+                let p90 = my_round_trip_times[idx] as f64;
+                target.record_passive_rtt_sample(p90);
             }
         }
 
@@ -283,11 +286,9 @@ impl SiteStateTracker {
             ) && active_ping_updated
                 && active.is_some();
             let updated = site.passive_rtt_updated_this_tick() || active_updated;
-            if updated {
-                if let Some(effective) = effective {
-                    site.round_trip_time.add(effective);
-                    site.rtt_sample_for_baseline_ms = Some(effective);
-                }
+            if updated && let Some(effective) = effective {
+                site.round_trip_time.add(effective);
+                site.rtt_sample_for_baseline_ms = Some(effective);
             }
         }
     }
@@ -310,9 +311,7 @@ impl SiteStateTracker {
         self.sites
             .iter()
             .filter_map(|(name, site)| {
-                let Some(site_config) = config.sites.get(name) else {
-                    return None;
-                };
+                let site_config = config.sites.get(name)?;
 
                 let state_string = |state: &StormguardState| -> (String, Option<f32>) {
                     match state {
@@ -487,17 +486,17 @@ impl SiteStateTracker {
 
             // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
             if let Some(circuit_id) = queue.circuit_id.as_deref() {
-                Self::handle_circuit_queue_recommendation(
-                    &mut self.active_circuit_fallbacks,
+                Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
+                    active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
                     site,
                     config,
-                    &recommendation,
-                    &summary,
+                    recommendation: &recommendation,
+                    summary: &summary,
                     circuit_id,
                     cooldown_secs,
-                    &log_sender,
-                    bakery_sender.clone(),
-                );
+                    log_sender: &log_sender,
+                    bakery_sender: bakery_sender.clone(),
+                });
                 continue;
             }
 
@@ -615,17 +614,18 @@ impl SiteStateTracker {
         }
     }
 
-    fn handle_circuit_queue_recommendation(
-        active_circuit_fallbacks: &mut HashSet<String>,
-        site: &mut SiteState,
-        config: &StormguardConfig,
-        recommendation: &Recommendation,
-        summary: &str,
-        circuit_id: &str,
-        cooldown_secs: f32,
-        log_sender: &std::sync::mpsc::Sender<LogCommand>,
-        bakery_sender: Sender<BakeryCommands>,
-    ) {
+    fn handle_circuit_queue_recommendation(ctx: CircuitQueueRecommendationContext<'_>) {
+        let CircuitQueueRecommendationContext {
+            active_circuit_fallbacks,
+            site,
+            config,
+            recommendation,
+            summary,
+            circuit_id,
+            cooldown_secs,
+            log_sender,
+            bakery_sender,
+        } = ctx;
         let outcome = if !config.circuit_fallback_enabled {
             CircuitFallbackOutcome::Skipped {
                 reason: "Circuit fallback disabled in config.".to_string(),
@@ -887,7 +887,6 @@ impl SiteStateTracker {
             new_rate,
         }) {
             warn!("Failed to send StormGuard adjustment command: {}", e);
-            return;
         }
 
         // // Build the HTB command

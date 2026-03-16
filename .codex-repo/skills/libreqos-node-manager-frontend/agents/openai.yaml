@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS Node Manager UI"
+  short_description: "Node manager frontend workflow"
+  default_prompt: "Use $libreqos-node-manager-frontend to update the LibreQoS node_manager frontend, build contract, or static assets."

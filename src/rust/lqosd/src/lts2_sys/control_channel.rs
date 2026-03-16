@@ -150,16 +150,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
             ControlChannelCommand::FetchHistory { request, responder } => {
                 if let Err(err) =
                     tx.try_send(ConnectionCommand::FetchHistory { request, responder })
-                {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                    && let tokio::sync::mpsc::error::TrySendError::Full(
                         ConnectionCommand::FetchHistory { responder, .. },
                     )
                     | tokio::sync::mpsc::error::TrySendError::Closed(
                         ConnectionCommand::FetchHistory { responder, .. },
                     ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::StartChat {
@@ -182,16 +180,15 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                 let _ = tx.try_send(ConnectionCommand::ChatStop { request_id });
             }
             ControlChannelCommand::SupportTicketList { responder } => {
-                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
+                if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketList { responder })
+                    && let tokio::sync::mpsc::error::TrySendError::Full(
                         ConnectionCommand::SupportTicketList { responder },
                     )
                     | tokio::sync::mpsc::error::TrySendError::Closed(
                         ConnectionCommand::SupportTicketList { responder },
                     ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketGet {
@@ -201,16 +198,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                 if let Err(err) = tx.try_send(ConnectionCommand::SupportTicketGet {
                     ticket_id,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketGet { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketGet { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketGet { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketGet { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketCreate {
@@ -226,16 +221,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     body,
                     commentor,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketCreate { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketCreate { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketCreate { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketCreate { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
             ControlChannelCommand::SupportTicketAddComment {
@@ -251,16 +244,14 @@ async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> 
                     body,
                     date,
                     responder,
-                }) {
-                    if let tokio::sync::mpsc::error::TrySendError::Full(
-                        ConnectionCommand::SupportTicketAddComment { responder, .. },
-                    )
-                    | tokio::sync::mpsc::error::TrySendError::Closed(
-                        ConnectionCommand::SupportTicketAddComment { responder, .. },
-                    ) = err
-                    {
-                        let _ = responder.send(Err(()));
-                    }
+                }) && let tokio::sync::mpsc::error::TrySendError::Full(
+                    ConnectionCommand::SupportTicketAddComment { responder, .. },
+                )
+                | tokio::sync::mpsc::error::TrySendError::Closed(
+                    ConnectionCommand::SupportTicketAddComment { responder, .. },
+                ) = err
+                {
+                    let _ = responder.send(Err(()));
                 }
             }
         }
@@ -327,7 +318,7 @@ async fn persistent_connection(
                     error!("Failed to serialize LicenseGrantRequest");
                     return;
                 };
-                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                     match e {
                         TrySendError::Full(_) => {
                             warn!(
@@ -363,7 +354,7 @@ async fn persistent_connection(
                                     error!("Failed to serialize BeginIngest message");
                                     break 'message_pump;
                                 };
-                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                                     match e {
                                         TrySendError::Full(_) => {
                                             warn!("Send unavailable: BeginIngest queue full; dropping message");
@@ -381,7 +372,7 @@ async fn persistent_connection(
                                         error!("Failed to serialize IngestChunk message");
                                         break 'message_pump;
                                     };
-                                    if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                    if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                                         match e {
                                             TrySendError::Full(_) => {
                                                 warn!("Send unavailable: IngestChunk queue full; dropping chunk");
@@ -399,7 +390,7 @@ async fn persistent_connection(
                                     error!("Failed to serialize EndIngest message");
                                     break 'message_pump;
                                 };
-                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                                     match e {
                                         TrySendError::Full(_) => {
                                             warn!("Send unavailable: EndIngest queue full; dropping message");
@@ -443,7 +434,7 @@ async fn persistent_connection(
                                     }
                                     continue 'message_pump;
                                 };
-                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                                     match e {
                                         TrySendError::Full(_) => {
                                             warn!("Send unavailable: history query queue full; dropping request");
@@ -495,7 +486,7 @@ async fn persistent_connection(
                                     continue 'message_pump;
                                 };
                                 if let Err(e) =
-                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                    socket_sender_tx.try_send(Message::Binary(bytes))
                                 {
                                     match e {
                                         TrySendError::Full(_) => {
@@ -555,7 +546,7 @@ async fn persistent_connection(
                                     continue 'message_pump;
                                 };
                                 if let Err(e) =
-                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                    socket_sender_tx.try_send(Message::Binary(bytes))
                                 {
                                     match e {
                                         TrySendError::Full(_) => {
@@ -624,7 +615,7 @@ async fn persistent_connection(
                                     continue 'message_pump;
                                 };
                                 if let Err(e) =
-                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                    socket_sender_tx.try_send(Message::Binary(bytes))
                                 {
                                     match e {
                                         TrySendError::Full(_) => {
@@ -693,7 +684,7 @@ async fn persistent_connection(
                                     continue 'message_pump;
                                 };
                                 if let Err(e) =
-                                    socket_sender_tx.try_send(Message::Binary(bytes.into()))
+                                    socket_sender_tx.try_send(Message::Binary(bytes))
                                 {
                                     match e {
                                         TrySendError::Full(_) => {
@@ -724,7 +715,7 @@ async fn persistent_connection(
                                     break 'message_pump;
                                 };
                                 if permitted {
-                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                    let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone()));
                                 } else {
                                     debug!("Queuing ChatbotStart until connection permitted (request_id={})", request_id);
                                     if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
@@ -738,7 +729,7 @@ async fn persistent_connection(
                                 let message = messages::WsMessage::ChatbotUserInput { request_id, text };
                                 if let Ok((_, _, bytes)) = message.to_bytes() {
                                     if permitted {
-                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone()));
                                     } else {
                                         debug!("Queuing ChatbotUserInput until connection permitted (request_id={})", request_id);
                                         if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
@@ -754,7 +745,7 @@ async fn persistent_connection(
                                 let message = messages::WsMessage::ChatbotStop { request_id };
                                 if let Ok((_, _, bytes)) = message.to_bytes() {
                                     if permitted {
-                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone().into()));
+                                        let _ = socket_sender_tx.try_send(Message::Binary(bytes.clone()));
                                     } else {
                                         debug!("Queuing ChatbotStop until connection permitted (request_id={})", request_id);
                                         if pending_chatbot_messages.len() >= MAX_PENDING_CHATBOT_MESSAGES {
@@ -804,7 +795,7 @@ async fn persistent_connection(
                                                 );
                                                 for bytes in pending_chatbot_messages.drain(..) {
                                                     if let Err(e) = socket_sender_tx
-                                                        .try_send(Message::Binary(bytes.into()))
+                                                        .try_send(Message::Binary(bytes))
                                                     {
                                                         match e {
                                                             TrySendError::Full(_) => warn!(
@@ -857,7 +848,7 @@ async fn persistent_connection(
                                             error!("Failed to serialize heartbeat reply");
                                             break 'message_pump;
                                         };
-                                        if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                                        if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                                             match e {
                                                 TrySendError::Full(_) => {
                                                     warn!("Send unavailable: heartbeat reply queue full; dropping reply");
@@ -1046,7 +1037,7 @@ async fn persistent_connection(
                         // Send a WsMessage::Ping
                         debug!("Sending Ping message");
                         let bytes = vec![1u8; 4];
-                        if let Err(e) = socket_sender_tx.try_send(Message::Ping(bytes.into())) {
+                        if let Err(e) = socket_sender_tx.try_send(Message::Ping(bytes)) {
                             match e {
                                 TrySendError::Full(_) => {
                                     warn!("Send unavailable: ping queue full; dropping ping");
@@ -1078,7 +1069,7 @@ async fn persistent_connection(
                             error!("Failed to serialize license message");
                             break 'message_pump;
                         };
-                        if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes.into())) {
+                        if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
                             match e {
                                 TrySendError::Full(_) => {
                                     warn!("Send unavailable: license message queue full; dropping message");
@@ -1190,9 +1181,7 @@ async fn send_magic_number(
     let (_raw_size, _compressed_size, bytes) = message.to_bytes()?;
     timeout(
         TCP_TIMEOUT,
-        socket.send(tokio_tungstenite::tungstenite::Message::Binary(
-            bytes.into(),
-        )),
+        socket.send(tokio_tungstenite::tungstenite::Message::Binary(bytes)),
     )
     .await??;
     Ok(())
@@ -1219,9 +1208,7 @@ async fn send_license(
     let (_, _, bytes) = message.to_bytes()?;
     timeout(
         TCP_TIMEOUT,
-        socket.send(tokio_tungstenite::tungstenite::Message::Binary(
-            bytes.into(),
-        )),
+        socket.send(tokio_tungstenite::tungstenite::Message::Binary(bytes)),
     )
     .await??;
 
@@ -1311,7 +1298,7 @@ async fn api_request(
         return Ok(());
     };
 
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes)) {
         match e {
             TrySendError::Full(_) => {
                 warn!("Send unavailable: ApiReply queue full; dropping reply");
@@ -1354,7 +1341,7 @@ async fn shaper_snapshot_streaming(
             error!("Failed to serialize StreamingShaper message");
             return Ok(());
         };
-        if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+        if let Err(e) = reply.try_send(Message::Binary(ws_bytes)) {
             match e {
                 TrySendError::Full(_) => {
                     warn!("Send unavailable: StreamingShaper queue full; dropping reply")
@@ -1492,17 +1479,16 @@ async fn circuit_snapshot_streaming(
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(device_hash) = te.device_hash {
-                if let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash) {
-                    if let Some(agg) = aggregates.get_mut(&id) {
-                        // bytes_per_second -> later convert to bits
-                        agg.bps_bytes += te.bytes_per_second;
-                        agg.tcp_packets += te.tcp_packets;
-                        agg.tcp_retries += te.tcp_retransmits;
-                        if let Some(rtt) = te.median_latency() {
-                            agg.rtts.push(rtt);
-                        }
-                    }
+            if let Some(device_hash) = te.device_hash
+                && let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash)
+                && let Some(agg) = aggregates.get_mut(&id)
+            {
+                // bytes_per_second -> later convert to bits
+                agg.bps_bytes += te.bytes_per_second;
+                agg.tcp_packets += te.tcp_packets;
+                agg.tcp_retries += te.tcp_retransmits;
+                if let Some(rtt) = te.median_latency() {
+                    agg.rtts.push(rtt);
                 }
             }
         }
@@ -1627,7 +1613,7 @@ async fn circuit_snapshot_streaming(
         error!("Failed to serialize StreamingCircuit message");
         return Ok(());
     };
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes)) {
         match e {
             TrySendError::Full(_) => {
                 warn!("Send unavailable: StreamingCircuit queue full; dropping reply")
@@ -1702,7 +1688,7 @@ async fn tree_snapshot_streaming(
         error!("Failed to serialize StreamingShaperTree message");
         return Ok(());
     };
-    if let Err(e) = reply.try_send(Message::Binary(ws_bytes.into())) {
+    if let Err(e) = reply.try_send(Message::Binary(ws_bytes)) {
         match e {
             TrySendError::Full(_) => {
                 warn!("Send unavailable: StreamingShaperTree queue full; dropping reply")

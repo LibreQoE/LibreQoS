@@ -20,7 +20,7 @@ pub(crate) struct UispData {
 }
 
 /// Ensure site names are unique by appending the site ID to duplicates.
-pub(crate) fn dedup_site_names(sites: &mut Vec<Site>) {
+pub(crate) fn dedup_site_names(sites: &mut [Site]) {
     let mut name_counts: HashMap<String, usize> = HashMap::new();
     for site in sites.iter() {
         let base_name = site.name_or_blank();
@@ -132,17 +132,16 @@ impl UispData {
             for device in self.find_devices_in_site(&client.id) {
                 //println!("Client {} has a device {:?}", client.name, device.get_name());
                 // Look for Parent AP attributes
-                if let Some(attr) = &device.attributes {
-                    if let Some(ap) = &attr.apDevice {
-                        if let Some(ap_id) = &ap.id {
-                            //println!("AP ID: {}", ap_id);
-                            if let Some(apdev) = self.find_device_by_id(ap_id) {
-                                //println!("AP Device: {:?}", apdev.get_name());
-                                if apdev.get_site_id().unwrap_or_default() != client.id {
-                                    parent = Some(("AP", apdev.identification.id.clone()));
-                                    found = true;
-                                }
-                            }
+                if let Some(attr) = &device.attributes
+                    && let Some(ap) = &attr.apDevice
+                    && let Some(ap_id) = &ap.id
+                {
+                    //println!("AP ID: {}", ap_id);
+                    if let Some(apdev) = self.find_device_by_id(ap_id) {
+                        //println!("AP Device: {:?}", apdev.get_name());
+                        if apdev.get_site_id().unwrap_or_default() != client.id {
+                            parent = Some(("AP", apdev.identification.id.clone()));
+                            found = true;
                         }
                     }
                 }
@@ -155,34 +154,26 @@ impl UispData {
                 if !found {
                     for link in self.data_links_raw.iter() {
                         // Check the FROM side
-                        if let Some(from_device) = &link.from.device {
-                            if from_device.identification.id == device.identification.id {
-                                if let Some(to_device) = &link.to.device {
-                                    if let Some(apdev) =
-                                        self.find_device_by_id(&to_device.identification.id)
-                                    {
-                                        if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent = Some(("AP", apdev.identification.id.clone()));
-                                            found = true;
-                                        }
-                                    }
-                                }
-                            }
+                        if let Some(from_device) = &link.from.device
+                            && from_device.identification.id == device.identification.id
+                            && let Some(to_device) = &link.to.device
+                            && let Some(apdev) =
+                                self.find_device_by_id(&to_device.identification.id)
+                            && apdev.get_site_id().unwrap_or_default() != client.id
+                        {
+                            parent = Some(("AP", apdev.identification.id.clone()));
+                            found = true;
                         }
                         // Check the TO side
-                        if let Some(to_device) = &link.to.device {
-                            if to_device.identification.id == device.identification.id {
-                                if let Some(from_device) = &link.from.device {
-                                    if let Some(apdev) =
-                                        self.find_device_by_id(&from_device.identification.id)
-                                    {
-                                        if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent = Some(("AP", apdev.identification.id.clone()));
-                                            found = true;
-                                        }
-                                    }
-                                }
-                            }
+                        if let Some(to_device) = &link.to.device
+                            && to_device.identification.id == device.identification.id
+                            && let Some(from_device) = &link.from.device
+                            && let Some(apdev) =
+                                self.find_device_by_id(&from_device.identification.id)
+                            && apdev.get_site_id().unwrap_or_default() != client.id
+                        {
+                            parent = Some(("AP", apdev.identification.id.clone()));
+                            found = true;
                         }
                     }
                 }
@@ -191,49 +182,35 @@ impl UispData {
             // If we still haven't found anything, let's try data links to the client site as a whole
             if !found {
                 for link in self.data_links_raw.iter() {
-                    if let Some(from_site) = &link.from.site {
-                        if from_site.identification.id == client.id {
-                            if let Some(to_device) = &link.to.device {
-                                if let Some(apdev) =
-                                    self.find_device_by_id(&to_device.identification.id)
-                                {
-                                    if apdev.get_site_id().unwrap_or_default() != client.id {
-                                        parent = Some(("AP", apdev.identification.id.clone()));
-                                        found = true;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(from_site) = &link.from.site
+                        && from_site.identification.id == client.id
+                        && let Some(to_device) = &link.to.device
+                        && let Some(apdev) = self.find_device_by_id(&to_device.identification.id)
+                        && apdev.get_site_id().unwrap_or_default() != client.id
+                    {
+                        parent = Some(("AP", apdev.identification.id.clone()));
+                        found = true;
                     }
-                    if let Some(to_site) = &link.to.site {
-                        if to_site.identification.id == client.id {
-                            if let Some(from_device) = &link.from.device {
-                                if let Some(apdev) =
-                                    self.find_device_by_id(&from_device.identification.id)
-                                {
-                                    if apdev.get_site_id().unwrap_or_default() != client.id {
-                                        parent = Some(("AP", apdev.identification.id.clone()));
-                                        found = true;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(to_site) = &link.to.site
+                        && to_site.identification.id == client.id
+                        && let Some(from_device) = &link.from.device
+                        && let Some(apdev) = self.find_device_by_id(&from_device.identification.id)
+                        && apdev.get_site_id().unwrap_or_default() != client.id
+                    {
+                        parent = Some(("AP", apdev.identification.id.clone()));
+                        found = true;
                     }
                 }
             }
 
             if !found {
                 //println!("Client {} has no obvious parent AP", client.name);
-                let entry = mappings
-                    .entry("Orphans".to_string())
-                    .or_insert_with(HashSet::new);
+                let entry = mappings.entry("Orphans".to_string()).or_default();
                 entry.insert(client.id.clone());
             } else {
                 //info!("Client {} is connected to {:?}", client.name, parent);
                 if let Some((_, parent)) = &parent {
-                    let entry = mappings
-                        .entry(parent.to_string())
-                        .or_insert_with(HashSet::new);
+                    let entry = mappings.entry(parent.to_string()).or_default();
                     entry.insert(client.id.clone());
                 }
             }

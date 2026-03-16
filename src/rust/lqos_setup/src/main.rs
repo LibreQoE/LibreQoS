@@ -69,7 +69,7 @@ fn main() {
 
     ui.add_layer(
         Dialog::new()
-            .title(&format!("LQOS Setup - v{VERSION}"))
+            .title(format!("LQOS Setup - v{VERSION}"))
             .content(
                 LinearLayout::vertical()
                     .child(TextView::new("Welcome to the LQOS Setup!"))

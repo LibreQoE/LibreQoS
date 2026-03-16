@@ -63,7 +63,7 @@ pub(super) async fn ping_monitor(
             result: PingState::ChannelTest,
         };
         if let Ok(payload) = encode_ws_message(&channel_test) {
-            if let Err(_) = tx.send(payload).await {
+            if tx.send(payload).await.is_err() {
                 debug!("Channel is gone");
                 break;
             }
@@ -78,10 +78,10 @@ async fn send_timeout(tx: tokio::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>, ip
         ip,
         result: PingState::NoResponse,
     };
-    if let Ok(payload) = encode_ws_message(&result) {
-        if let Err(_) = tx.send(payload).await {
-            info!("Channel is gone");
-        }
+    if let Ok(payload) = encode_ws_message(&result)
+        && tx.send(payload).await.is_err()
+    {
+        info!("Channel is gone");
     }
 }
 
@@ -98,10 +98,10 @@ async fn send_alive(
             label,
         },
     };
-    if let Ok(payload) = encode_ws_message(&result) {
-        if let Err(_) = tx.send(payload).await {
-            info!("Channel is gone");
-        }
+    if let Ok(payload) = encode_ws_message(&result)
+        && let Err(_) = tx.send(payload).await
+    {
+        info!("Channel is gone");
     }
 }
 
@@ -123,7 +123,6 @@ async fn ping(
         }
         _ => {
             send_timeout(tx, addr.to_string()).await;
-            return;
         }
     }
 }

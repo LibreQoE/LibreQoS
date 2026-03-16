@@ -23,12 +23,15 @@ use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideSto
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
+use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
+static TREEGUARD_STATUS_CACHE: OnceLock<RwLock<TreeguardStatusData>> = OnceLock::new();
+static TREEGUARD_ACTIVITY_CACHE: OnceLock<RwLock<Vec<TreeguardActivityEntry>>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
@@ -60,6 +63,9 @@ pub(crate) fn start_treeguard_actor(
         return Ok(());
     }
 
+    let _ = TREEGUARD_STATUS_CACHE.set(RwLock::new(empty_status_snapshot()));
+    let _ = TREEGUARD_ACTIVITY_CACHE.set(RwLock::new(Vec::new()));
+
     let (tx, rx) = crossbeam_channel::bounded::<TreeguardCommand>(64);
     let _ = TREEGUARD_SENDER.set(tx);
 
@@ -68,6 +74,14 @@ pub(crate) fn start_treeguard_actor(
         .spawn(move || treeguard_actor_loop(rx, system_usage_tx))?;
 
     Ok(())
+}
+
+pub(crate) fn cached_status_snapshot() -> Option<TreeguardStatusData> {
+    Some(TREEGUARD_STATUS_CACHE.get()?.read().clone())
+}
+
+pub(crate) fn cached_activity_snapshot() -> Option<Vec<TreeguardActivityEntry>> {
+    Some(TREEGUARD_ACTIVITY_CACHE.get()?.read().clone())
 }
 
 /// Requests a status snapshot from the TreeGuard actor.
@@ -110,25 +124,11 @@ fn treeguard_actor_loop(
 ) {
     debug!("TreeGuard actor started");
 
-    let mut status = TreeguardStatusData {
-        enabled: false,
-        dry_run: true,
-        cpu_max_pct: None,
-        managed_nodes: 0,
-        managed_circuits: 0,
-        virtualized_nodes: 0,
-        fq_codel_circuits: 0,
-        last_action_summary: None,
-        warnings: Vec::new(),
-    };
+    let mut status = empty_status_snapshot();
     let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+    update_cached_snapshots(&status, &activity);
 
-    let mut link_states: FxHashMap<String, LinkState> = FxHashMap::default();
-    let mut circuit_states: FxHashMap<String, CircuitState> = FxHashMap::default();
-    let mut managed_nodes: FxHashSet<String> = FxHashSet::default();
-    let mut managed_device_ids: FxHashSet<String> = FxHashSet::default();
-    let mut last_dry_run: Option<bool> = None;
-    let mut reload_controller = ReloadController::default();
+    let mut runtime_state = TreeguardRuntimeState::default();
 
     let mut tick_seconds: u64 = 1;
     let mut last_tick = Instant::now();
@@ -146,13 +146,9 @@ fn treeguard_actor_loop(
                     &mut activity,
                     &system_usage_tx,
                     &mut tick_seconds,
-                    &mut link_states,
-                    &mut circuit_states,
-                    &mut managed_nodes,
-                    &mut managed_device_ids,
-                    &mut last_dry_run,
-                    &mut reload_controller,
+                    &mut runtime_state,
                 );
+                update_cached_snapshots(&status, &activity);
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 warn!("TreeGuard actor command channel disconnected; exiting actor");
@@ -181,6 +177,42 @@ fn handle_command(
     }
 }
 
+fn empty_status_snapshot() -> TreeguardStatusData {
+    TreeguardStatusData {
+        enabled: false,
+        dry_run: true,
+        cpu_max_pct: None,
+        managed_nodes: 0,
+        managed_circuits: 0,
+        virtualized_nodes: 0,
+        fq_codel_circuits: 0,
+        last_action_summary: None,
+        warnings: Vec::new(),
+    }
+}
+
+fn update_cached_snapshots(
+    status: &TreeguardStatusData,
+    activity: &VecDeque<TreeguardActivityEntry>,
+) {
+    if let Some(cache) = TREEGUARD_STATUS_CACHE.get() {
+        *cache.write() = status.clone();
+    }
+    if let Some(cache) = TREEGUARD_ACTIVITY_CACHE.get() {
+        *cache.write() = activity.iter().cloned().rev().collect();
+    }
+}
+
+#[derive(Default)]
+struct TreeguardRuntimeState {
+    link_states: FxHashMap<String, LinkState>,
+    circuit_states: FxHashMap<String, CircuitState>,
+    managed_nodes: FxHashSet<String>,
+    managed_device_ids: FxHashSet<String>,
+    last_dry_run: Option<bool>,
+    reload_controller: ReloadController,
+}
+
 /// Executes a single TreeGuard tick.
 ///
 /// This function has side effects: it samples telemetry, may read/write `lqos_overrides.treeguard.json`,
@@ -190,13 +222,15 @@ fn run_tick(
     activity: &mut VecDeque<TreeguardActivityEntry>,
     system_usage_tx: &Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     tick_seconds: &mut u64,
-    link_states: &mut FxHashMap<String, LinkState>,
-    circuit_states: &mut FxHashMap<String, CircuitState>,
-    managed_nodes: &mut FxHashSet<String>,
-    managed_device_ids: &mut FxHashSet<String>,
-    last_dry_run: &mut Option<bool>,
-    reload_controller: &mut ReloadController,
+    runtime_state: &mut TreeguardRuntimeState,
 ) {
+    let link_states = &mut runtime_state.link_states;
+    let circuit_states = &mut runtime_state.circuit_states;
+    let managed_nodes = &mut runtime_state.managed_nodes;
+    let managed_device_ids = &mut runtime_state.managed_device_ids;
+    let last_dry_run = &mut runtime_state.last_dry_run;
+    let reload_controller = &mut runtime_state.reload_controller;
+
     let now_unix = unix_now().unwrap_or(0);
     let now_nanos_since_boot = time_since_boot()
         .ok()
@@ -362,17 +396,7 @@ fn run_tick(
 
     let operator_sqm_device_overrides: FxHashSet<String> = operator_overrides_snapshot
         .as_ref()
-        .map(|o| {
-            o.persistent_devices()
-                .iter()
-                .filter(|d| {
-                    d.sqm_override
-                        .as_deref()
-                        .is_some_and(|t| !t.trim().is_empty())
-                })
-                .map(|d| d.device_id.clone())
-                .collect()
-        })
+        .map(overrides_sqm_device_ids)
         .unwrap_or_default();
 
     // --- Link sampling + decisions (virtualization) ---
@@ -572,7 +596,11 @@ fn run_tick(
                     continue;
                 }
 
-                if node.virtual_node {
+                let treeguard_virtual_override = treeguard_overrides_snapshot
+                    .as_ref()
+                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
+
+                if node.virtual_node && treeguard_virtual_override.is_none() {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
@@ -597,14 +625,14 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.to_string()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
-                        if let Some(v) = overrides_node_virtual(overrides, node_name) {
-                            state.desired = if v {
-                                LinkVirtualState::Virtual
-                            } else {
-                                LinkVirtualState::Physical
-                            };
-                        }
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
+                        && let Some(v) = overrides_node_virtual(overrides, node_name)
+                    {
+                        state.desired = if v {
+                            LinkVirtualState::Virtual
+                        } else {
+                            LinkVirtualState::Physical
+                        };
                     }
                     state
                 });
@@ -731,19 +759,19 @@ fn run_tick(
                         }
                     }
                 } else {
-                    decisions::decide_link_virtualization(
+                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
                         now_unix,
-                        true,
+                        allowlisted: true,
                         cpu_max_pct,
-                        &tg.cpu,
-                        &tg.links,
-                        &tg.qoo,
+                        cpu_cfg: &tg.cpu,
+                        links_cfg: &tg.links,
+                        qoo_cfg: &tg.qoo,
                         rtt_missing,
                         qoo,
                         util_ewma_pct,
                         sustained_idle,
                         state,
-                    )
+                    })
                 };
 
                 if let decisions::LinkVirtualDecision::Set(target) = decision {
@@ -791,7 +819,7 @@ fn run_tick(
                         };
                         reload_controller.request_reload(
                             priority,
-                            format!("Node '{}' virtualization changed", node_name.to_string()),
+                            format!("Node '{node_name}' virtualization changed"),
                         );
                     }
 
@@ -903,7 +931,11 @@ fn run_tick(
                     continue;
                 };
 
-                if node.virtual_node {
+                let treeguard_virtual_override = treeguard_overrides_snapshot
+                    .as_ref()
+                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
+
+                if node.virtual_node && treeguard_virtual_override.is_none() {
                     status.warnings.push(format!(
                     "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                 ));
@@ -928,14 +960,14 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.clone()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref() {
-                        if let Some(v) = overrides_node_virtual(overrides, node_name) {
-                            state.desired = if v {
-                                LinkVirtualState::Virtual
-                            } else {
-                                LinkVirtualState::Physical
-                            };
-                        }
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
+                        && let Some(v) = overrides_node_virtual(overrides, node_name)
+                    {
+                        state.desired = if v {
+                            LinkVirtualState::Virtual
+                        } else {
+                            LinkVirtualState::Physical
+                        };
                     }
                     state
                 });
@@ -1062,19 +1094,19 @@ fn run_tick(
                         }
                     }
                 } else {
-                    decisions::decide_link_virtualization(
+                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
                         now_unix,
-                        allowlisted_nodes.contains(node_name),
+                        allowlisted: allowlisted_nodes.contains(node_name),
                         cpu_max_pct,
-                        &tg.cpu,
-                        &tg.links,
-                        &tg.qoo,
+                        cpu_cfg: &tg.cpu,
+                        links_cfg: &tg.links,
+                        qoo_cfg: &tg.qoo,
                         rtt_missing,
                         qoo,
                         util_ewma_pct,
                         sustained_idle,
                         state,
-                    )
+                    })
                 };
 
                 if let decisions::LinkVirtualDecision::Set(target) = decision {
@@ -1125,7 +1157,6 @@ fn run_tick(
                             format!("Node '{}' virtualization changed", node_name.clone()),
                         );
                     }
-
                     state.desired = target;
                     state.last_change_unix = Some(now_unix);
                     state.recent_changes_unix.push_back(now_unix);
@@ -1301,11 +1332,7 @@ fn run_tick(
     // Cleanup for removed circuits or disabled circuits/TreeGuard.
     if !manage_circuits {
         let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
-            Ok(of) => of
-                .persistent_devices()
-                .iter()
-                .map(|d| d.device_id.clone())
-                .collect(),
+            Ok(of) => overrides_sqm_device_ids(&of).into_iter().collect(),
             Err(e) => {
                 status.warnings.push(format!(
                     "TreeGuard circuits: unable to load TreeGuard overrides for cleanup: {e}"
@@ -1343,12 +1370,7 @@ fn run_tick(
         // Reconcile device IDs removed from allowlisted circuits.
         let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
-            .map(|of| {
-                of.persistent_devices()
-                    .iter()
-                    .map(|d| d.device_id.clone())
-                    .collect()
-            })
+            .map(overrides_sqm_device_ids)
             .unwrap_or_default();
         let removed: Vec<String> = treeguard_device_ids_with_overrides
             .iter()
@@ -1587,17 +1609,17 @@ fn run_tick(
                 continue;
             }
 
-            let decision = decisions::decide_circuit_sqm(
+            let decision = decisions::decide_circuit_sqm(decisions::CircuitSqmInput {
                 now_unix,
-                allowlisted_circuits.contains(circuit_id) && capacity_known,
+                allowlisted: allowlisted_circuits.contains(circuit_id) && capacity_known,
                 cpu_max_pct,
-                &tg.cpu,
-                &tg.circuits,
-                &tg.qoo,
+                cpu_cfg: &tg.cpu,
+                circuits_cfg: &tg.circuits,
+                qoo_cfg: &tg.qoo,
                 rtt_missing,
                 qoo,
                 state,
-            );
+            });
 
             let mut proposed_down = state.down.desired;
             let mut proposed_up = state.up.desired;
@@ -1658,7 +1680,9 @@ fn run_tick(
                     let mut persisted_ok = false;
                     let mut can_apply_live = true;
                     if tg.circuits.persist_sqm_overrides {
-                        match overrides::set_devices_sqm_override(&devices, &token) {
+                        let device_ids: Vec<String> =
+                            devices.iter().map(|device| device.device_id.clone()).collect();
+                        match overrides::set_devices_sqm_override(&device_ids, &token) {
                             Ok(_) => {
                                 persisted_ok = true;
                             }
@@ -1786,7 +1810,73 @@ fn overrides_node_virtual(overrides: &OverrideFile, node_name: &str) -> Option<b
         })
 }
 
-/// Infers an SQM override token for a circuit, preferring persisted device overlays.
+/// Returns the current SQM override token for `device_id`, if present.
+///
+/// This function is pure: it has no side effects.
+fn overrides_device_sqm(overrides: &OverrideFile, device_id: &str) -> Option<String> {
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id: current,
+            sqm_override,
+        } = adj
+        {
+            if current != device_id {
+                continue;
+            }
+            return sqm_override
+                .as_deref()
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+                .map(str::to_string);
+        }
+    }
+
+    for dev in overrides.persistent_devices() {
+        if dev.device_id != device_id {
+            continue;
+        }
+        if let Some(token) = dev.sqm_override.as_deref().map(str::trim)
+            && !token.is_empty()
+        {
+            return Some(token.to_string());
+        }
+    }
+
+    None
+}
+
+/// Returns the set of device IDs carrying an SQM override in an overrides file.
+///
+/// This function is pure: it has no side effects.
+fn overrides_sqm_device_ids(overrides: &OverrideFile) -> FxHashSet<String> {
+    let mut out = FxHashSet::default();
+    for adj in overrides.circuit_adjustments() {
+        if let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id,
+            sqm_override,
+        } = adj
+            && sqm_override
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(device_id.clone());
+        }
+    }
+    for dev in overrides.persistent_devices() {
+        if dev
+            .sqm_override
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|token| !token.is_empty())
+        {
+            out.insert(dev.device_id.clone());
+        }
+    }
+    out
+}
+
+/// Infers an SQM override token for a circuit, preferring persisted override entries.
 ///
 /// This function is pure: it has no side effects.
 fn infer_circuit_sqm_override_token(
@@ -1801,15 +1891,9 @@ fn infer_circuit_sqm_override_token(
         .collect();
 
     if let Some(overrides) = overrides {
-        for dev in overrides.persistent_devices() {
-            if !circuit_device_ids.contains(dev.device_id.as_str()) {
-                continue;
-            }
-            if let Some(token) = dev.sqm_override.as_deref() {
-                let token = token.trim();
-                if !token.is_empty() {
-                    return Some(token.to_string());
-                }
+        for device_id in &circuit_device_ids {
+            if let Some(token) = overrides_device_sqm(overrides, device_id) {
+                return Some(token);
             }
         }
     }

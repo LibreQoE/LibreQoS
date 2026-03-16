@@ -59,3 +59,13 @@ Dave served as LibreQoS' Chief Science Officer and championed the global fight a
 ## External Pull Request Policy
 
 We can only accept PRs that address one specific change or topic each. We ask that you keep all changes small and focused per-PR to help our review and testing process.
+
+## LLM Agent Setup
+
+If you use an LLM coding agent with shared LibreQoS repo skills:
+
+```bash
+./.codex-repo/link-skills.sh
+```
+
+This links the repo-owned shared skills into `~/.codex/skills`. After linking, or after pulling changes to `.codex-repo/skills/`, restart your agent so it reloads the updated skills.

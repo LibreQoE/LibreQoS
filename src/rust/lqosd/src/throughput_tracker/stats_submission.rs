@@ -48,7 +48,7 @@ pub(crate) fn submit_throughput_stats(
     };
 
     // Bail out if we don't have gather stats or a license key
-    if config.long_term_stats.gather_stats == false {
+    if !config.long_term_stats.gather_stats {
         return;
     }
     if let Some(license_key) = &config.long_term_stats.license_key {
@@ -65,10 +65,10 @@ pub(crate) fn submit_throughput_stats(
 
     // Bail out if the license doesn't indicate that we're allowed to submit stats
     let (license_status, _days_remaining) = get_lts_license_status();
-    let can_submit = match license_status {
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid => false,
-        _ => true,
-    };
+    let can_submit = !matches!(
+        license_status,
+        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
+    );
     if !can_submit {
         return;
     }
@@ -120,11 +120,11 @@ pub(crate) fn submit_throughput_stats(
                         }
                         Ok(json) => {
                             let lts2_format: Vec<_> =
-                                json.iter().map(|(k, v)| v.to_lts2(&k)).collect();
-                            if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
-                                if let Err(e) = crate::lts2_sys::network_tree(now, &bytes) {
-                                    warn!("Error sending message to Insight. {e:?}");
-                                }
+                                json.iter().map(|(k, v)| v.to_lts2(k)).collect();
+                            if let Ok(bytes) = serde_cbor::to_vec(&lts2_format)
+                                && let Err(e) = crate::lts2_sys::network_tree(now, &bytes)
+                            {
+                                warn!("Error sending message to Insight. {e:?}");
                             }
                         }
                     }
@@ -177,24 +177,23 @@ pub(crate) fn submit_throughput_stats(
                         );
                     }
                 }
-                let devices_as_vec: Vec<Lts2Circuit> =
-                    circuit_map.into_iter().map(|(_, v)| v).collect();
+                let devices_as_vec: Vec<Lts2Circuit> = circuit_map.into_values().collect();
                 // Serialize via cbor
-                if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec) {
-                    if crate::lts2_sys::shaped_devices(now, &bytes).is_err() {
-                        warn!("Error sending message to LTS2.");
-                    }
+                if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec)
+                    && crate::lts2_sys::shaped_devices(now, &bytes).is_err()
+                {
+                    warn!("Error sending message to LTS2.");
                 }
             }
 
             // Send permitted IP ranges at the same time
-            if let Ok(config) = lqos_config::load_config() {
-                if let Err(e) = crate::lts2_sys::ip_policies(
+            if let Ok(config) = lqos_config::load_config()
+                && let Err(e) = crate::lts2_sys::ip_policies(
                     &config.ip_ranges.allow_subnets,
                     &config.ip_ranges.ignore_subnets,
-                ) {
-                    debug!("Error sending message to LTS2. {e:?}");
-                }
+                )
+            {
+                debug!("Error sending message to LTS2. {e:?}");
             }
         }
 
@@ -210,30 +209,30 @@ pub(crate) fn submit_throughput_stats(
             median_rtt = Some(rtt_data.median);
         }
         let tcp_retransmits = min_max_median_tcp_retransmits();
-        if crate::lts2_sys::total_throughput(
-            now,
-            scale_u64_by_f64(bytes.down, scale),
-            scale_u64_by_f64(bytes.up, scale),
-            scale_u64_by_f64(shaped_bytes.down, scale),
-            scale_u64_by_f64(shaped_bytes.up, scale),
-            scale_u64_by_f64(packets_per_second.0, scale),
-            scale_u64_by_f64(packets_per_second.1, scale),
-            scale_u64_by_f64(tcp_packets_per_second.0, scale),
-            scale_u64_by_f64(tcp_packets_per_second.1, scale),
-            scale_u64_by_f64(udp_packets_per_second.0, scale),
-            scale_u64_by_f64(udp_packets_per_second.1, scale),
-            scale_u64_by_f64(icmp_packets_per_second.0, scale),
-            scale_u64_by_f64(icmp_packets_per_second.1, scale),
-            min_rtt,
+        if crate::lts2_sys::total_throughput(crate::lts2_sys::shared_types::ShaperThroughput {
+            tick: now,
+            bytes_per_second_down: scale_u64_by_f64(bytes.down, scale) as i64,
+            bytes_per_second_up: scale_u64_by_f64(bytes.up, scale) as i64,
+            shaped_bytes_per_second_down: scale_u64_by_f64(shaped_bytes.down, scale) as i64,
+            shaped_bytes_per_second_up: scale_u64_by_f64(shaped_bytes.up, scale) as i64,
+            packets_down: scale_u64_by_f64(packets_per_second.0, scale) as i64,
+            packets_up: scale_u64_by_f64(packets_per_second.1, scale) as i64,
+            tcp_packets_down: scale_u64_by_f64(tcp_packets_per_second.0, scale) as i64,
+            tcp_packets_up: scale_u64_by_f64(tcp_packets_per_second.1, scale) as i64,
+            udp_packets_down: scale_u64_by_f64(udp_packets_per_second.0, scale) as i64,
+            udp_packets_up: scale_u64_by_f64(udp_packets_per_second.1, scale) as i64,
+            icmp_packets_down: scale_u64_by_f64(icmp_packets_per_second.0, scale) as i64,
+            icmp_packets_up: scale_u64_by_f64(icmp_packets_per_second.1, scale) as i64,
             max_rtt,
+            min_rtt,
             median_rtt,
-            tcp_retransmits.down,
-            tcp_retransmits.up,
-            TOTAL_QUEUE_STATS.marks.get_down() as i32,
-            TOTAL_QUEUE_STATS.marks.get_up() as i32,
-            TOTAL_QUEUE_STATS.drops.get_down() as i32,
-            TOTAL_QUEUE_STATS.drops.get_up() as i32,
-        )
+            tcp_retransmits_down: tcp_retransmits.down,
+            tcp_retransmits_up: tcp_retransmits.up,
+            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
+            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
+            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
+            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
+        })
         .is_err()
         {
             warn!("Error sending message to LTS2.");
@@ -280,14 +279,11 @@ pub(crate) fn submit_throughput_stats(
             .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
-                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
-                    if h.bytes_per_second.down > *dl {
-                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
-                        crazy = true;
-                    } else if h.bytes_per_second.up > *ul {
-                        crazy_values.insert(h.circuit_hash.unwrap_or(0));
-                        crazy = true;
-                    }
+                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
+                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                {
+                    crazy_values.insert(h.circuit_hash.unwrap_or(0));
+                    crazy = true;
                 }
 
                 if crazy {
@@ -416,15 +412,11 @@ pub(crate) fn submit_throughput_stats(
                 });
             }
         });
-        if !cake_drops.is_empty() {
-            if crate::lts2_sys::circuit_cake_drops(&cake_drops).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !cake_drops.is_empty() && crate::lts2_sys::circuit_cake_drops(&cake_drops).is_err() {
+            warn!("Error sending message to LTS2.");
         }
-        if !cake_marks.is_empty() {
-            if crate::lts2_sys::circuit_cake_marks(&cake_marks).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !cake_marks.is_empty() && crate::lts2_sys::circuit_cake_marks(&cake_marks).is_err() {
+            warn!("Error sending message to LTS2.");
         }
 
         // Network tree stats
@@ -502,47 +494,45 @@ pub(crate) fn submit_throughput_stats(
                 });
             }
         });
-        if !site_throughput.is_empty() {
-            if crate::lts2_sys::site_throughput(&site_throughput).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !site_throughput.is_empty()
+            && crate::lts2_sys::site_throughput(&site_throughput).is_err()
+        {
+            warn!("Error sending message to LTS2.");
         }
-        if !site_retransmits.is_empty() {
-            if crate::lts2_sys::site_retransmits(&site_retransmits).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !site_retransmits.is_empty()
+            && crate::lts2_sys::site_retransmits(&site_retransmits).is_err()
+        {
+            warn!("Error sending message to LTS2.");
         }
-        if !site_rtt.is_empty() {
-            if crate::lts2_sys::site_rtt(&site_rtt).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !site_rtt.is_empty() && crate::lts2_sys::site_rtt(&site_rtt).is_err() {
+            warn!("Error sending message to LTS2.");
         }
-        if !site_cake_drops.is_empty() {
-            if crate::lts2_sys::site_cake_drops(&site_cake_drops).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !site_cake_drops.is_empty()
+            && crate::lts2_sys::site_cake_drops(&site_cake_drops).is_err()
+        {
+            warn!("Error sending message to LTS2.");
         }
-        if !site_cake_marks.is_empty() {
-            if crate::lts2_sys::site_cake_marks(&site_cake_marks).is_err() {
-                warn!("Error sending message to LTS2.");
-            }
+        if !site_cake_marks.is_empty()
+            && crate::lts2_sys::site_cake_marks(&site_cake_marks).is_err()
+        {
+            warn!("Error sending message to LTS2.");
         }
 
         // Shaper utilization
-        if counter % 60 == 0 {
+        if counter.is_multiple_of(60) {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            if system_usage_actor.send(tx).is_ok() {
-                if let Ok(reply) = rx.blocking_recv() {
-                    let avg_cpu =
-                        reply.cpu_usage.iter().sum::<u32>() as f32 / reply.cpu_usage.len() as f32;
-                    let peak_cpu: u32 = reply.cpu_usage.iter().copied().sum();
-                    let memory = reply.ram_used as f32 / reply.total_ram as f32;
+            if system_usage_actor.send(tx).is_ok()
+                && let Ok(reply) = rx.blocking_recv()
+            {
+                let avg_cpu =
+                    reply.cpu_usage.iter().sum::<u32>() as f32 / reply.cpu_usage.len() as f32;
+                let peak_cpu: u32 = reply.cpu_usage.iter().copied().sum();
+                let memory = reply.ram_used as f32 / reply.total_ram as f32;
 
-                    if let Err(e) =
-                        crate::lts2_sys::shaper_utilization(now, avg_cpu, peak_cpu as f32, memory)
-                    {
-                        warn!("Error sending message to LTS2: {e:?}");
-                    }
+                if let Err(e) =
+                    crate::lts2_sys::shaper_utilization(now, avg_cpu, peak_cpu as f32, memory)
+                {
+                    warn!("Error sending message to LTS2: {e:?}");
                 }
             }
         }

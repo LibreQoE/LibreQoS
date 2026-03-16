@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShaperStatus {
@@ -20,7 +20,7 @@ pub async fn shaper_status_data() -> Result<Vec<ShaperStatus>, StatusCode> {
             .lts_url
             .unwrap_or("insight.libreqos.com".to_string())
     );
-    println!("URL: {}", url);
+    debug!("Fetching shaper status from {url}");
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)

@@ -135,7 +135,8 @@ pub fn clear_circuit_fallback(
 
 pub fn load_persisted_circuit_fallbacks() -> Result<HashMap<String, PersistedCircuitFallback>> {
     let overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    Ok(group_circuit_fallbacks(overrides.persistent_devices()))
+    let current_devices = ConfigShapedDevices::load()?.devices;
+    Ok(group_circuit_fallbacks(&overrides, &current_devices))
 }
 
 fn current_site_override(
@@ -185,7 +186,19 @@ fn conflicting_sqm_owner(devices: &[ShapedDevice]) -> Result<Option<String>> {
 }
 
 fn has_sqm_override_for_device_ids(overrides: &OverrideFile, device_ids: &HashSet<&str>) -> bool {
-    overrides.persistent_devices().iter().any(|device| {
+    overrides.circuit_adjustments().iter().any(|adj| {
+        matches!(
+            adj,
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+                device_id,
+                sqm_override,
+            } if device_ids.contains(device_id.as_str())
+                && sqm_override
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|token| !token.is_empty())
+        )
+    }) || overrides.persistent_devices().iter().any(|device| {
         device_ids.contains(device.device_id.as_str())
             && device
                 .sqm_override
@@ -196,21 +209,15 @@ fn has_sqm_override_for_device_ids(overrides: &OverrideFile, device_ids: &HashSe
 
 fn set_devices_sqm_override(base_devices: &[ShapedDevice], sqm_override: &str) -> Result<bool> {
     let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let effective = OverrideStore::load_effective(false, true)?;
-    let effective_devices: HashMap<&str, &ShapedDevice> = effective
-        .persistent_devices()
-        .iter()
-        .map(|device| (device.device_id.as_str(), device))
-        .collect();
     let mut changed = false;
     for base_device in base_devices {
-        let mut device = effective_devices
-            .get(base_device.device_id.as_str())
-            .copied()
-            .cloned()
-            .unwrap_or_else(|| base_device.clone());
-        device.sqm_override = Some(sqm_override.to_string());
-        if overrides.add_persistent_shaped_device_return_changed(device) {
+        if overrides.set_device_sqm_override_return_changed(
+            base_device.device_id.clone(),
+            Some(sqm_override.to_string()),
+        ) {
+            changed = true;
+        }
+        if overrides.remove_persistent_shaped_device_by_device_count(&base_device.device_id) > 0 {
             changed = true;
         }
     }
@@ -227,8 +234,9 @@ fn clear_device_overrides(device_ids: &[String]) -> Result<bool> {
     let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
     let mut removed_any = false;
     for device_id in device_ids {
-        let removed = overrides.remove_persistent_shaped_device_by_device_count(device_id);
-        if removed > 0 {
+        let removed_adjustments = overrides.remove_device_sqm_override_by_device_count(device_id);
+        let removed_devices = overrides.remove_persistent_shaped_device_by_device_count(device_id);
+        if removed_adjustments > 0 || removed_devices > 0 {
             removed_any = true;
         }
     }
@@ -321,28 +329,106 @@ fn ip_list(devices: &[ShapedDevice]) -> String {
     ips.join(",")
 }
 
-fn group_circuit_fallbacks(devices: &[ShapedDevice]) -> HashMap<String, PersistedCircuitFallback> {
+fn group_circuit_fallbacks(
+    overrides: &OverrideFile,
+    current_devices: &[ShapedDevice],
+) -> HashMap<String, PersistedCircuitFallback> {
+    let devices_by_id: HashMap<&str, &ShapedDevice> = current_devices
+        .iter()
+        .map(|device| (device.device_id.as_str(), device))
+        .collect();
     let mut grouped: BTreeMap<String, PersistedCircuitFallback> = BTreeMap::new();
-    for device in devices {
-        let Some(token) = device.sqm_override.as_deref().map(str::trim) else {
+
+    for adj in overrides.circuit_adjustments() {
+        let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+            device_id,
+            sqm_override,
+        } = adj
+        else {
+            continue;
+        };
+        let Some(token) = sqm_override.as_deref().map(str::trim) else {
+            continue;
+        };
+        let Some(device) = devices_by_id.get(device_id.as_str()) else {
             continue;
         };
         if token.is_empty() || device.circuit_id.trim().is_empty() {
             continue;
         }
 
-        let entry =
-            grouped
-                .entry(device.circuit_id.clone())
-                .or_insert_with(|| PersistedCircuitFallback {
-                    sqm_override: token.to_string(),
-                    devices: Vec::new(),
-                });
+        let entry = grouped
+            .entry(device.circuit_id.clone())
+            .or_insert_with(|| PersistedCircuitFallback {
+                sqm_override: token.to_string(),
+                devices: Vec::new(),
+            });
+        if entry.sqm_override != token {
+            continue;
+        }
+        entry.devices.push((*device).clone());
+    }
+
+    for device in overrides.persistent_devices() {
+        let Some(token) = device.sqm_override.as_deref().map(str::trim) else {
+            continue;
+        };
+        let Some(current_device) = devices_by_id.get(device.device_id.as_str()) else {
+            continue;
+        };
+        if token.is_empty() || current_device.circuit_id.trim().is_empty() {
+            continue;
+        }
+
+        let entry = grouped
+            .entry(current_device.circuit_id.clone())
+            .or_insert_with(|| PersistedCircuitFallback {
+                sqm_override: token.to_string(),
+                devices: Vec::new(),
+            });
 
         if entry.sqm_override != token {
             continue;
         }
-        entry.devices.push(device.clone());
+        if entry
+            .devices
+            .iter()
+            .any(|existing| existing.device_id == device.device_id)
+        {
+            continue;
+        }
+        entry.devices.push((*device).clone());
+    }
+
+    for device in overrides.persistent_devices() {
+        let Some(token) = device.sqm_override.as_deref().map(str::trim) else {
+            continue;
+        };
+        let Some(current_device) = devices_by_id.get(device.device_id.as_str()) else {
+            continue;
+        };
+        if token.is_empty() || current_device.circuit_id.trim().is_empty() {
+            continue;
+        }
+
+        let entry = grouped
+            .entry(current_device.circuit_id.clone())
+            .or_insert_with(|| PersistedCircuitFallback {
+                sqm_override: token.to_string(),
+                devices: Vec::new(),
+            });
+
+        if entry.sqm_override != token {
+            continue;
+        }
+        if entry
+            .devices
+            .iter()
+            .any(|existing| existing.device_id == current_device.device_id)
+        {
+            continue;
+        }
+        entry.devices.push((*current_device).clone());
     }
     grouped.into_iter().collect()
 }
@@ -370,11 +456,44 @@ mod tests {
         let mut d3 = sample_device("dev3", "c2");
         d3.sqm_override = Some("cake".to_string());
 
-        let grouped = group_circuit_fallbacks(&[d1, d2, d3]);
+        let mut overrides = OverrideFile::default();
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev1".to_string(),
+            Some("fq_codel".to_string())
+        ));
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev2".to_string(),
+            Some("fq_codel".to_string())
+        ));
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev3".to_string(),
+            Some("cake".to_string())
+        ));
+
+        let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
         assert_eq!(grouped.len(), 2);
-        assert_eq!(grouped.get("c1").unwrap().sqm_override, "fq_codel");
-        assert_eq!(grouped.get("c1").unwrap().devices.len(), 2);
-        assert_eq!(grouped.get("c2").unwrap().sqm_override, "cake");
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 circuit fallback should be grouped")
+                .sqm_override,
+            "fq_codel"
+        );
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 circuit fallback should be grouped")
+                .devices
+                .len(),
+            2
+        );
+        assert_eq!(
+            grouped
+                .get("c2")
+                .expect("c2 circuit fallback should be grouped")
+                .sqm_override,
+            "cake"
+        );
     }
 
     #[test]
@@ -386,8 +505,29 @@ mod tests {
         let mut d3 = sample_device("dev3", "c2");
         d3.sqm_override = Some(" ".to_string());
 
-        let grouped = group_circuit_fallbacks(&[d1, d2, d3]);
-        assert_eq!(grouped.get("c1").unwrap().devices.len(), 1);
+        let mut overrides = OverrideFile::default();
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev1".to_string(),
+            Some("fq_codel".to_string())
+        ));
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev2".to_string(),
+            Some("cake".to_string())
+        ));
+        assert!(overrides.set_device_sqm_override_return_changed(
+            "dev3".to_string(),
+            Some(" ".to_string())
+        ));
+
+        let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
+        assert_eq!(
+            grouped
+                .get("c1")
+                .expect("c1 should remain grouped when one token differs")
+                .devices
+                .len(),
+            1
+        );
         assert!(!grouped.contains_key("c2"));
     }
 }

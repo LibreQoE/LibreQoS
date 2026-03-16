@@ -90,7 +90,7 @@ impl RttBufferBucket {
             10..=19 => OFFSET_2MS + ((ms - 10) / 2) as usize,
 
             // 20–25 ms: 5 ms bucket
-            20..=24 => OFFSET_5MS + 0,
+            20..=24 => OFFSET_5MS,
 
             // 25–30 ms
             25..=29 => OFFSET_5MS + 1,
@@ -132,7 +132,7 @@ impl RttBufferBucket {
     pub const fn bucket_upper_bound_nanos(idx: usize) -> u64 {
         match idx {
             // 1 ms buckets
-            0 => 1 * NS_PER_MS,
+            0 => NS_PER_MS,
             1 => 2 * NS_PER_MS,
             2 => 3 * NS_PER_MS,
             3 => 4 * NS_PER_MS,
@@ -371,7 +371,7 @@ impl RttBuffer {
         // Precompute rank targets (ceil(p/100 * total))
         let targets: Vec<u32> = percentiles
             .iter()
-            .map(|p| ((*p as u32 * total) + 99) / 100)
+            .map(|p| (*p as u32 * total).div_ceil(100))
             .collect();
 
         let mut results: smallvec::SmallVec<[Option<RttData>; 3]> =
@@ -400,7 +400,7 @@ impl RttBuffer {
             return None;
         }
 
-        Some(results.into_iter().map(|r| r.unwrap()).collect())
+        results.into_iter().collect()
     }
 
     /// Return the median RTT from the current window if fresh data is present.

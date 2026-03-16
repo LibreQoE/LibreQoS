@@ -14,7 +14,7 @@ pub struct QueueCounts {
 }
 
 /// Holds all of the CAKE queue summaries being tracked by the system.
-pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());
+pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(AllQueueData::new);
 
 /// Tracks the total number of drops and marks across all queues.
 pub static TOTAL_QUEUE_STATS: TotalQueueStats = TotalQueueStats::new();
@@ -89,7 +89,7 @@ impl AllQueueData {
         // Make download markings
         for dl in download.into_iter() {
             if let Some(q) = lock.get_mut(&dl.circuit_hash) {
-                seen_queue_ids.push(dl.circuit_hash.clone());
+                seen_queue_ids.push(dl.circuit_hash);
                 // We need to update it
                 q.drops.down = dl.drops;
                 q.marks.down = dl.marks;
@@ -110,7 +110,7 @@ impl AllQueueData {
         // Make upload markings
         for ul in upload.into_iter() {
             if let Some(q) = lock.get_mut(&ul.circuit_hash) {
-                seen_queue_ids.push(ul.circuit_hash.clone());
+                seen_queue_ids.push(ul.circuit_hash);
                 // We need to update it
                 q.drops.up = ul.drops;
                 q.marks.up = ul.marks;
@@ -136,14 +136,13 @@ impl AllQueueData {
     pub fn iterate_queues(&self, mut f: impl FnMut(i64, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
         let lock = self.data.lock();
         for (circuit_id, q) in lock.iter() {
-            if let Some(prev_drops) = q.prev_drops {
-                if let Some(prev_marks) = q.prev_marks {
-                    if q.drops > prev_drops || q.marks > prev_marks {
-                        let drops = q.drops.checked_sub_or_zero(prev_drops);
-                        let marks = q.marks.checked_sub_or_zero(prev_marks);
-                        f(*circuit_id, &drops, &marks);
-                    }
-                }
+            if let Some(prev_drops) = q.prev_drops
+                && let Some(prev_marks) = q.prev_marks
+                && (q.drops > prev_drops || q.marks > prev_marks)
+            {
+                let drops = q.drops.checked_sub_or_zero(prev_drops);
+                let marks = q.marks.checked_sub_or_zero(prev_marks);
+                f(*circuit_id, &drops, &marks);
             }
         }
     }

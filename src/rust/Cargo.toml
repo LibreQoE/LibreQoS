@@ -5,9 +5,9 @@ edition = "2024"
 license = "GPL-2.0-only"
 
 [profile.release]
-strip = "debuginfo"
+strip = true
 lto = "thin"
-incremental = true
+incremental = false
 
 [profile.release.build-override]
 opt-level = 3
@@ -61,6 +61,7 @@ zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" 
 sysinfo = { version = "0", default-features = false, features = [ "system" ] }
 default-net = "0"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls-no-provider", "charset", "http2", "system-proxy"] }
+rustls = "0.23"
 pyo3 = "0.25.1"
 colored = "2"
 miniz_oxide = "0.8"

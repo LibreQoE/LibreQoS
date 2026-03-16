@@ -597,16 +597,13 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
-        if let Some(ref s) = params.sqm_override {
-            if s.eq_ignore_ascii_case("fq_codel") {
-                debug!(
-                    "Bakery: building AddCircuit with fq_codel override (circuit_hash={}, class_minor=0x{:x}, class_major=0x{:x}, up_class_major=0x{:x})",
-                    params.circuit_hash,
-                    params.class_minor,
-                    params.class_major,
-                    params.up_class_major
-                );
-            }
+        if let Some(ref s) = params.sqm_override
+            && s.eq_ignore_ascii_case("fq_codel")
+        {
+            debug!(
+                "Bakery: building AddCircuit with fq_codel override (circuit_hash={}, class_minor=0x{:x}, class_major=0x{:x}, up_class_major=0x{:x})",
+                params.circuit_hash, params.class_minor, params.class_major, params.up_class_major
+            );
         }
         let do_htb;
         let do_sqm;
@@ -641,28 +638,26 @@ impl BakeryCommands {
 
         // Parse per-direction override tokens: single token applies to both;
         // directional form is "down_sqm/up_sqm" with either side optionally empty.
-        let (down_override_opt, up_override_opt) = (|| -> (Option<String>, Option<String>) {
-            match &params.sqm_override {
-                None => (None, None),
-                Some(s) => {
-                    if s.contains('/') {
-                        let mut it = s.splitn(2, '/');
-                        let down = it.next().unwrap_or("").trim();
-                        let up = it.next().unwrap_or("").trim();
-                        let map = |t: &str| -> Option<String> {
-                            if t.is_empty() {
-                                None
-                            } else {
-                                Some(t.to_string())
-                            }
-                        };
-                        (map(down), map(up))
-                    } else {
-                        (Some(s.clone()), Some(s.clone()))
-                    }
+        let (down_override_opt, up_override_opt) = match &params.sqm_override {
+            None => (None, None),
+            Some(s) => {
+                if s.contains('/') {
+                    let mut it = s.splitn(2, '/');
+                    let down = it.next().unwrap_or("").trim();
+                    let up = it.next().unwrap_or("").trim();
+                    let map = |t: &str| -> Option<String> {
+                        if t.is_empty() {
+                            None
+                        } else {
+                            Some(t.to_string())
+                        }
+                    };
+                    (map(down), map(up))
+                } else {
+                    (Some(s.clone()), Some(s.clone()))
                 }
             }
-        })();
+        };
 
         let mut result = Vec::new();
         /*
@@ -711,23 +706,24 @@ impl BakeryCommands {
                 ),
             ]);
         }
-        if !config.queues.monitor_only && do_sqm {
-            if !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")) {
-                let mut sqm_command = vec![
-                    "qdisc".to_string(),
-                    "replace".to_string(),
-                    "dev".to_string(),
-                    config.isp_interface(),
-                    "parent".to_string(),
-                    format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
-                ];
-                sqm_command.extend(sqm_tokens_for(
-                    params.download_bandwidth_max,
-                    config,
-                    &down_override_opt,
-                ));
-                result.push(sqm_command);
-            }
+        if !config.queues.monitor_only
+            && do_sqm
+            && !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
+        {
+            let mut sqm_command = vec![
+                "qdisc".to_string(),
+                "replace".to_string(),
+                "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(),
+                format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
+            ];
+            sqm_command.extend(sqm_tokens_for(
+                params.download_bandwidth_max,
+                config,
+                &down_override_opt,
+            ));
+            result.push(sqm_command);
         }
 
         if do_htb {
@@ -757,26 +753,25 @@ impl BakeryCommands {
             ]);
         }
 
-        if !config.queues.monitor_only && do_sqm {
-            if !config.on_a_stick_mode() {
-                if !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
-                {
-                    let mut sqm_command = vec![
-                        "qdisc".to_string(),
-                        "replace".to_string(),
-                        "dev".to_string(),
-                        config.internet_interface(),
-                        "parent".to_string(),
-                        format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
-                    ];
-                    sqm_command.extend(sqm_tokens_for(
-                        params.upload_bandwidth_max,
-                        config,
-                        &up_override_opt,
-                    ));
-                    result.push(sqm_command);
-                }
-            }
+        if !config.queues.monitor_only
+            && do_sqm
+            && !config.on_a_stick_mode()
+            && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
+        {
+            let mut sqm_command = vec![
+                "qdisc".to_string(),
+                "replace".to_string(),
+                "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(),
+                format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
+            ];
+            sqm_command.extend(sqm_tokens_for(
+                params.upload_bandwidth_max,
+                config,
+                &up_override_opt,
+            ));
+            result.push(sqm_command);
         }
 
         Some(result)

@@ -48,6 +48,7 @@ use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -189,6 +190,8 @@ fn main() -> Result<()> {
     let config = lqos_config::load_config()?;
     let stick_offset = stick::recompute_stick_offset(&config)?;
 
+    ensure_rustls_crypto_provider()?;
+
     if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
         warn!("Failed to initialize Insight license storage: {e:?}");
     }
@@ -210,7 +213,7 @@ fn main() -> Result<()> {
     // Start the XDP/TC kernels
     let kernels = if config.on_a_stick_mode() {
         LibreQoSKernels::on_a_stick_mode(
-            &config.internet_interface(),
+            config.internet_interface(),
             config.stick_vlans().1 as u16,
             config.stick_vlans().0 as u16,
             stick_offset,
@@ -244,7 +247,7 @@ fn main() -> Result<()> {
     } else {
         info!("Insight client started successfully");
     }
-    let _blackboard_tx = blackboard::start_blackboard();
+    blackboard::start_blackboard();
     start_remote_commands();
     let flow_tx = setup_netflow_tracker()?;
     let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -344,7 +347,12 @@ fn main() -> Result<()> {
                         Err(e) => error!("Insight control channel failed to start: {:#}", e),
                     }
 
-                    match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                    match lqos_stormguard::start_stormguard(
+                        bakery_sender_for_async,
+                        shaped_devices_tracker::full_network_map_snapshot,
+                    )
+                    .await
+                    {
                         Ok(_) => info!("StormGuard started successfully"),
                         Err(e) => error!("StormGuard failed to start: {:#}", e),
                     }
@@ -586,7 +594,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             } => {
                 if let Some(sender) = BLACKBOARD_SENDER.get() {
                     let _ = sender.send(BlackboardCommand::BlackboardData {
-                        subsystem: subsystem.clone(),
+                        subsystem: *subsystem,
                         key: key.to_string(),
                         value: value.to_string(),
                     });
@@ -664,9 +672,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
                         site_hash: *site_hash,
-                        parent_class_id: parent_class_id.clone(),
-                        up_parent_class_id: up_parent_class_id.clone(),
-                        class_minor: class_minor.clone(),
+                        parent_class_id: *parent_class_id,
+                        up_parent_class_id: *up_parent_class_id,
+                        class_minor: *class_minor,
                         download_bandwidth_min: *download_bandwidth_min,
                         upload_bandwidth_min: *upload_bandwidth_min,
                         download_bandwidth_max: *download_bandwidth_max,
@@ -691,8 +699,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 ip_addresses,
                 sqm_override,
             } => {
-                if let Some(s) = sqm_override.as_ref() {
-                    if s.eq_ignore_ascii_case("fq_codel") {
+                if let Some(s) = sqm_override.as_ref()
+                    && s.eq_ignore_ascii_case("fq_codel") {
                         tracing::info!(
                             "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
                             circuit_hash,
@@ -701,7 +709,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                             class_minor
                         );
                     }
-                }
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -709,12 +716,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         parent_class_id: *parent_class_id,
                         up_parent_class_id: *up_parent_class_id,
                         class_minor: *class_minor,
-                        download_bandwidth_min: download_bandwidth_min.clone(),
-                        upload_bandwidth_min: upload_bandwidth_min.clone(),
-                        download_bandwidth_max: download_bandwidth_max.clone(),
-                        upload_bandwidth_max: upload_bandwidth_max.clone(),
-                        class_major: class_major.clone(),
-                        up_class_major: up_class_major.clone(),
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                        class_major: *class_major,
+                        up_class_major: *up_class_major,
                         ip_addresses: ip_addresses.clone(),
                         sqm_override: sqm_override.clone(),
                     });
@@ -754,6 +761,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::SchedulerError(error) => {
                 tool_status::scheduler_error(Some(error.clone()));
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerOutput(output) => {
+                tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
             BusRequest::LogInfo(msg) => {

@@ -180,7 +180,7 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script)
-            .replace("%%MODAL%%", &show_modal)
+            .replace("%%MODAL%%", show_modal)
             .replace("%%MODAL_NUM%%", &show_modal_number);
         // Handle API_LINK placeholder (require service + valid Insight)
         let api_link = if is_api_available() && script_has_insight {

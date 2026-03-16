@@ -38,31 +38,31 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
             // Build the endpoints list
             let mut endpoints: Vec<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> =
                 Vec::new();
-            endpoints.push(FinishedFlowAnalysis::new());
+            endpoints.push(FinishedFlowAnalysis::start());
 
-            if let Some(flow_config) = &config.flows {
-                if let (Some(ip), Some(port), Some(version)) = (
+            if let Some(flow_config) = &config.flows
+                && let (Some(ip), Some(port), Some(version)) = (
                     flow_config.netflow_ip.clone(),
                     flow_config.netflow_port,
                     flow_config.netflow_version,
-                ) {
-                    info!("Setting up netflow target: {ip}:{port}, version: {version}");
-                    let target = format!("{ip}:{port}", ip = ip, port = port);
-                    match version {
-                        5 => {
-                            let endpoint = Netflow5::new(target)
-                                .expect("Cannot parse endpoint for netflow v5");
-                            endpoints.push(endpoint);
-                            info!("Netflow 5 endpoint added");
-                        }
-                        9 => {
-                            let endpoint = Netflow9::new(target)
-                                .expect("Cannot parse endpoint for netflow v9");
-                            endpoints.push(endpoint);
-                            info!("Netflow 9 endpoint added");
-                        }
-                        _ => error!("Unsupported netflow version: {version}"),
+                )
+            {
+                info!("Setting up netflow target: {ip}:{port}, version: {version}");
+                let target = format!("{ip}:{port}", ip = ip, port = port);
+                match version {
+                    5 => {
+                        let endpoint =
+                            Netflow5::start(target).expect("Cannot parse endpoint for netflow v5");
+                        endpoints.push(endpoint);
+                        info!("Netflow 5 endpoint added");
                     }
+                    9 => {
+                        let endpoint =
+                            Netflow9::start(target).expect("Cannot parse endpoint for netflow v9");
+                        endpoints.push(endpoint);
+                        info!("Netflow 9 endpoint added");
+                    }
+                    _ => error!("Unsupported netflow version: {version}"),
                 }
             }
             debug!("Flow Endpoints: {}", endpoints.len());
@@ -71,7 +71,7 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
             while let Ok((key, (value, analysis))) = rx.recv() {
                 endpoints.iter_mut().for_each(|f| {
                     //log::debug!("Enqueueing flow data for {key:?}");
-                    if let Err(e) = f.try_send((key.clone(), (value.clone(), analysis.clone()))) {
+                    if let Err(e) = f.try_send((key, (value.clone(), analysis))) {
                         tracing::warn!("Failed to send flow data to endpoint: {e}");
                     }
                 });

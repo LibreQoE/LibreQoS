@@ -21,17 +21,15 @@ fn check_queues(interface: &str) -> Result<()> {
     let mut counts = (0, 0);
     let paths = std::fs::read_dir(sys_path)?;
     for path in paths {
-        if let Ok(path) = &path {
-            if path.path().is_dir() {
-                if let Some(filename) = path.path().file_name() {
-                    if let Some(filename) = filename.to_str() {
-                        if filename.starts_with("rx-") {
-                            counts.0 += 1;
-                        } else if filename.starts_with("tx-") {
-                            counts.1 += 1;
-                        }
-                    }
-                }
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name()
+            && let Some(filename) = filename.to_str()
+        {
+            if filename.starts_with("rx-") {
+                counts.0 += 1;
+            } else if filename.starts_with("tx-") {
+                counts.1 += 1;
             }
         }
     }
@@ -137,39 +135,39 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
     }
 
     // Is the XDP bridge enabled?
-    if let Some(bridge) = &config.bridge {
-        if bridge.use_xdp_bridge {
-            for bridge_if in interfaces
+    if let Some(bridge) = &config.bridge
+        && bridge.use_xdp_bridge
+    {
+        for bridge_if in interfaces
+            .iter()
+            .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operstate == "UP")
+        {
+            // We found a bridge. Check member interfaces to check that it does NOT include any XDP
+            // bridge members.
+            let in_bridge: Vec<&IpLinkInterface> = interfaces
                 .iter()
-                .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operstate == "UP")
-            {
-                // We found a bridge. Check member interfaces to check that it does NOT include any XDP
-                // bridge members.
-                let in_bridge: Vec<&IpLinkInterface> = interfaces
-                    .iter()
-                    .filter(|member_if| {
-                        if let Some(master) = &member_if.master {
-                            master == &bridge_if.name
-                        } else {
-                            false
-                        }
-                    })
-                    .filter(|member_if| {
-                        member_if.name == config.internet_interface()
-                            || member_if.name == config.isp_interface()
-                    })
-                    .collect();
+                .filter(|member_if| {
+                    if let Some(master) = &member_if.master {
+                        master == &bridge_if.name
+                    } else {
+                        false
+                    }
+                })
+                .filter(|member_if| {
+                    member_if.name == config.internet_interface()
+                        || member_if.name == config.isp_interface()
+                })
+                .collect();
 
-                if in_bridge.len() == 2 {
-                    error!(
-                        "Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.",
-                        bridge_if.name
-                    );
-                    anyhow::bail!(
-                        "Bridge {} contains both the internet and ISP interfaces. This is not supported.",
-                        bridge_if.name
-                    );
-                }
+            if in_bridge.len() == 2 {
+                error!(
+                    "Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.",
+                    bridge_if.name
+                );
+                anyhow::bail!(
+                    "Bridge {} contains both the internet and ISP interfaces. This is not supported.",
+                    bridge_if.name
+                );
             }
         }
     }
