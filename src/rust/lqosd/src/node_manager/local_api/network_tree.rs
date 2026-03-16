@@ -1,4 +1,4 @@
-use crate::shaped_devices_tracker::NETWORK_JSON;
+use crate::shaped_devices_tracker::{NETWORK_JSON, node_to_transport};
 use lqos_config::NetworkJsonTransport;
 
 pub fn network_tree_data() -> Vec<(usize, NetworkJsonTransport)> {
@@ -7,6 +7,6 @@ pub fn network_tree_data() -> Vec<(usize, NetworkJsonTransport)> {
         .get_nodes_when_ready()
         .iter()
         .enumerate()
-        .map(|(i, n)| (i, n.clone_to_transit()))
+        .map(|(i, n)| (i, node_to_transport(n)))
         .collect()
 }

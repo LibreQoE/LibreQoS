@@ -567,6 +567,22 @@ h5 {
 .dash-table .muted-meta {
     color: var(--bs-tertiary-color);
 }
+.lqos-limit-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.14rem;
+    line-height: 1.15;
+}
+.lqos-limit-line {
+    white-space: nowrap;
+}
+.lqos-limit-secondary {
+    font-size: 0.78em;
+    color: var(--bs-tertiary-color);
+}
+.lqos-limit-secondary.is-match {
+    opacity: 0.72;
+}
 .lqos-rtt-metric-cell {
     min-width: 9.5rem;
 }
@@ -617,6 +633,48 @@ h5 {
 }
 .lqos-asn-cell .lqos-table-cell-ellipsis {
     max-width: 100%;
+}
+.lqos-tree-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin-top: 0.8rem;
+}
+.lqos-tree-nav {
+    display: flex;
+    align-items: center;
+    margin-top: 0.15rem;
+}
+.lqos-tree-nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-2) 90%, transparent);
+    color: var(--bs-body-color);
+    text-decoration: none;
+    box-shadow: var(--lqos-shadow-sm);
+}
+.lqos-tree-nav a:hover {
+    background: color-mix(in srgb, var(--lqos-hover-bg) 88%, transparent);
+    color: var(--bs-body-color);
+}
+.lqos-tree-nav-detail {
+    color: var(--bs-secondary-color);
+    font-size: 0.82rem;
+}
+.lqos-tree-section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0 0.55rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 /* Funky tricks for the tree view */

@@ -2,7 +2,8 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use fxhash::FxHashMap;
 use lqos_bus::{BusResponse, Circuit};
-use lqos_config::{ConfigShapedDevices, NetworkJsonTransport, ShapedDevice};
+use lqos_config::{ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice};
+use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
@@ -86,6 +87,15 @@ impl ShapedDeviceHashCache {
 pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
 
+/// Clones a network node into its transport form and overlays effective inherited limits when
+/// the active queue structure contains a matching node entry.
+pub fn node_to_transport(node: &NetworkJsonNode) -> NetworkJsonTransport {
+    let mut transport = node.clone_to_transit();
+    transport.configured_max_throughput = node.max_throughput;
+    transport.effective_max_throughput = EFFECTIVE_NODE_RATES.load().get(&node.name).copied();
+    transport
+}
+
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
     let shaped_devices = ConfigShapedDevices::load();
@@ -141,9 +151,16 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     let net_json = NETWORK_JSON.read();
-    if let Some(parent) = net_json.get_cloned_entry_by_index(parent_idx) {
-        let mut nodes = vec![(parent_idx, parent)];
-        nodes.extend_from_slice(&net_json.get_cloned_children(parent_idx));
+    let nodes_ref = net_json.get_nodes_when_ready();
+    if let Some(parent) = nodes_ref.get(parent_idx) {
+        let mut nodes = vec![(parent_idx, node_to_transport(parent))];
+        nodes.extend(
+            nodes_ref
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
+                .map(|(i, node)| (i, node_to_transport(node))),
+        );
         BusResponse::NetworkMap(nodes)
     } else {
         BusResponse::Fail("No such node".to_string())
@@ -155,7 +172,7 @@ pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     nj.get_nodes_when_ready()
         .iter()
         .enumerate()
-        .map(|(i, n)| (i, n.clone_to_transit()))
+        .map(|(i, n)| (i, node_to_transport(n)))
         .collect()
 }
 
@@ -212,6 +229,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     id: None,
                     is_virtual: false,
                     max_throughput: (0.0, 0.0),
+                    configured_max_throughput: (0.0, 0.0),
+                    effective_max_throughput: None,
                     current_throughput: other_bw,
                     current_packets: other_packets,
                     current_tcp_packets: other_tcp_packets,
@@ -258,7 +277,7 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
             .rev()
             .skip(1)
         {
-            result.push((*idx, reader.get_nodes_when_ready()[*idx].clone_to_transit()));
+            result.push((*idx, node_to_transport(&reader.get_nodes_when_ready()[*idx])));
         }
         return BusResponse::NetworkMap(result);
     }

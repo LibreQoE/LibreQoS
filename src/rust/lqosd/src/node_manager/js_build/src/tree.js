@@ -20,6 +20,7 @@ const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
     "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -76,6 +77,54 @@ function formatIpBytes(bytes) {
         return parts.join(":");
     }
     return list.join(".");
+}
+
+function configuredMax(node) {
+    return node.configured_max_throughput || node.max_throughput || [0, 0];
+}
+
+function effectiveMax(node) {
+    return node.effective_max_throughput || configuredMax(node);
+}
+
+function ratesMatch(a, b) {
+    return Math.abs(toNumber(a?.[0], 0) - toNumber(b?.[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        && Math.abs(toNumber(a?.[1], 0) - toNumber(b?.[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+}
+
+function formatLimitValue(mbps) {
+    if (toNumber(mbps, 0) === 0) {
+        return "Unlimited";
+    }
+    return scaleNumber(toNumber(mbps, 0) * 1000 * 1000, 1);
+}
+
+function buildEffectiveLimitCellHtml(node) {
+    const effective = effectiveMax(node);
+    const effectiveValue = `${formatLimitValue(effective[0])} / ${formatLimitValue(effective[1])}`;
+    return `<div class="lqos-limit-block"><div class="lqos-limit-line">${effectiveValue}</div></div>`;
+}
+
+function buildConfiguredLimitCellHtml(node) {
+    const configured = configuredMax(node);
+    const effective = effectiveMax(node);
+    const secondaryClass = ratesMatch(effective, configured)
+        ? "lqos-limit-line lqos-limit-secondary is-match"
+        : "lqos-limit-line lqos-limit-secondary";
+    const configuredValue = `${formatLimitValue(configured[0])} / ${formatLimitValue(configured[1])}`;
+    return `<div class="lqos-limit-block"><div class="${secondaryClass}">${configuredValue}</div></div>`;
+}
+
+function buildDirectionalLimitHtml(primaryMbps, configuredMbps, showConfigured) {
+    const primary = formatLimitValue(primaryMbps);
+    if (!showConfigured) {
+        return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div></div>`;
+    }
+    const match = Math.abs(toNumber(primaryMbps, 0) - toNumber(configuredMbps, 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+    const secondaryClass = match
+        ? "lqos-limit-line lqos-limit-secondary is-match"
+        : "lqos-limit-line lqos-limit-secondary";
+    return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div><div class="${secondaryClass}">Cfg ${formatLimitValue(configuredMbps)}</div></div>`;
 }
 
 function initTooltipsWithin(rootEl) {
@@ -135,13 +184,16 @@ function toggleNode(nodeId) {
 }
 
 function renderTree() {
+    const treeStack = document.createElement("div");
+    treeStack.classList.add("lqos-tree-stack");
     const tableWrap = document.createElement("div");
     tableWrap.classList.add("lqos-table-wrap");
     let treeTable = document.createElement("table");
     treeTable.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead");
     thead.appendChild(theading("Name"));
-    thead.appendChild(theading("Limit"));
+    thead.appendChild(theading("Effective"));
+    thead.appendChild(theading("Configured"));
     thead.appendChild(theading("⬇️"));
     thead.appendChild(theading("⬆️"));
     thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
@@ -164,16 +216,16 @@ function renderTree() {
     });
 
     if (parent !== 0) {
-        let row = document.createElement("tr");
-        let col = document.createElement("td");
-        col.colSpan = 14;
-        col.classList.add("small", "text-center");
         if (upParent === 0) {
             upParent = tree[parent][1].immediate_parent;
         }
-        col.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'><i class='fa fa-chevron-up'></i> Up One Level - " + tree[upParent][1].name + "</a>";
-        row.appendChild(col);
-        thead.appendChild(row);
+        const navWrap = document.createElement("div");
+        navWrap.classList.add("lqos-tree-nav");
+        navWrap.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'>" +
+            "<i class='fa fa-chevron-up'></i> Up One Level" +
+            "<span class='lqos-tree-nav-detail'>" + tree[upParent][1].name + "</span>" +
+            "</a>";
+        treeStack.appendChild(navWrap);
     }
 
     treeTable.appendChild(tbody);
@@ -182,7 +234,8 @@ function renderTree() {
     let target = document.getElementById("tree");
     clearDiv(target)
     tableWrap.appendChild(treeTable);
-    target.appendChild(tableWrap);
+    treeStack.appendChild(tableWrap);
+    target.appendChild(treeStack);
     initTooltipsWithin(treeTable);
 }
 
@@ -208,22 +261,24 @@ function getInitialTree() {
 function fillHeader(node) {
     //console.log("Header");
     $("#nodeName").text(node.name);
-    let limitD = "";
-    if (node.max_throughput[0] === 0) {
-        limitD = "Unlimited";
-    } else {
-        limitD = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
-    }
-    let limitU = "";
-    if (node.max_throughput[1] === 0) {
-        limitU = "Unlimited";
-    } else {
-        limitU = scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
-    }
-    $("#parentLimitsD").text(limitD);
-    $("#parentLimitsU").text(limitU);
-    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]));
-    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]));
+    const configured = configuredMax(node);
+    const effective = effectiveMax(node);
+    const configuredDown = formatLimitValue(configured[0]);
+    const configuredUp = formatLimitValue(configured[1]);
+    const effectiveDown = formatLimitValue(effective[0]);
+    const effectiveUp = formatLimitValue(effective[1]);
+    const matchClassDown = Math.abs(toNumber(effective[0], 0) - toNumber(configured[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        ? "lqos-limit-secondary is-match"
+        : "lqos-limit-secondary";
+    const matchClassUp = Math.abs(toNumber(effective[1], 0) - toNumber(configured[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        ? "lqos-limit-secondary is-match"
+        : "lqos-limit-secondary";
+    $("#parentEffectiveD").text(effectiveDown);
+    $("#parentEffectiveU").text(effectiveUp);
+    $("#parentConfiguredD").text(configuredDown).removeClass("lqos-limit-secondary is-match").addClass(matchClassDown);
+    $("#parentConfiguredU").text(configuredUp).removeClass("lqos-limit-secondary is-match").addClass(matchClassUp);
+    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effective[0]));
+    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effective[1]));
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
@@ -316,33 +371,28 @@ function buildRow(i, depth=0) {
     col.id = "limit-" + nodeId;
     col.classList.add("small");
     col.style.width = "8%";
-    let limit = "";
-    if (node.max_throughput[0] === 0) {
-        limit = "Unlimited";
-    } else {
-        limit = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
-    }
-    limit += " / ";
-    if (node.max_throughput[1] === 0) {
-        limit += "Unlimited";
-    } else {
-        limit += scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
-    }
-    col.textContent = limit;
+    col.innerHTML = buildEffectiveLimitCellHtml(node);
+    row.appendChild(col);
+
+    col = document.createElement("td");
+    col.id = "configured-limit-" + nodeId;
+    col.classList.add("small");
+    col.style.width = "8%";
+    col.innerHTML = buildConfiguredLimitCellHtml(node);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "down-" + nodeId;
     col.classList.add("small");
-    col.style.width = "6%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
+    col.style.width = "5%";
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
-    col.style.width = "6%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
+    col.style.width = "5%";
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -453,13 +503,22 @@ function treeUpdate(msg) {
             fillHeader(node);
         }
 
-        let col = document.getElementById("down-" + nodeId);
+        let col = document.getElementById("limit-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
+            col.innerHTML = buildEffectiveLimitCellHtml(node);
+        }
+        col = document.getElementById("configured-limit-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = buildConfiguredLimitCellHtml(node);
+        }
+
+        col = document.getElementById("down-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
         }
         col = document.getElementById("up-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
         }
         col = document.getElementById("rtt-down-" + nodeId);
         if (col !== null) {
@@ -672,9 +731,13 @@ function clientsUpdate(msg) {
             tbody.appendChild(tr);
         });
     table.appendChild(tbody);
+    const sectionLabel = document.createElement("div");
+    sectionLabel.classList.add("lqos-tree-section-label");
+    sectionLabel.innerHTML = "<i class='fa fa-network-wired'></i> Attached Circuits";
     const tableWrap = document.createElement("div");
     tableWrap.classList.add("lqos-table-wrap");
     tableWrap.appendChild(table);
+    target.appendChild(sectionLabel);
     target.appendChild(tableWrap);
 }
 
