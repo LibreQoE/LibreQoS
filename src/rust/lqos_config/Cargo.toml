@@ -19,6 +19,8 @@ toml = {  workspace = true }
 lqos_utils = { path = "../lqos_utils" }
 arc-swap = { workspace = true }
 once_cell = { workspace = true }
+parking_lot = { workspace = true }
+nix = { workspace = true, features = ["sched"] }
 
 # For memory debugging
 allocative.workspace = true

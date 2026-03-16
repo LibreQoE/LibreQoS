@@ -278,13 +278,16 @@ pub fn attach_xdp_and_tc_to_interface(
         Ok(cfg) => {
             let det = lqos_config::detect_shaping_cpus(cfg.as_ref());
             info!(
-                "CPU topology: exclude_efficiency_cores={} source={:?} possible={} performance={} efficiency={} shaping={}",
+                "CPU topology: exclude_efficiency_cores={} source={:?} from_cache={} hybrid_split={} possible={} performance={} efficiency={} shaping={} detail={}",
                 det.exclude_efficiency_cores,
                 det.source,
+                det.from_cache,
+                det.has_hybrid_split,
                 det.possible.len(),
                 det.performance.len(),
                 det.efficiency.len(),
-                det.shaping.len()
+                det.shaping.len(),
+                det.detail
             );
             det.shaping
         }

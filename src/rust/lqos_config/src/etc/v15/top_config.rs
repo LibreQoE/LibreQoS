@@ -163,8 +163,9 @@ pub struct Config {
 
     /// Exclude efficiency cores (E-cores) from CPU assignment / shaping where possible.
     ///
-    /// On hybrid CPUs, this attempts to detect performance cores (P-cores) via sysfs and
-    /// restricts LibreQoS CPU binning and XDP redirection to those CPUs.
+    /// On hybrid CPUs, this tries several detection methods, caches the resolved
+    /// P-core/E-core split under the LibreQoS runtime directory, and restricts
+    /// shaping/XDP CPU assignment to performance cores when the split is trustworthy.
     #[serde(default = "default_true")]
     pub exclude_efficiency_cores: bool,
 

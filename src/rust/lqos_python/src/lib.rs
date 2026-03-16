@@ -1427,7 +1427,8 @@ fn monitor_mode_only() -> PyResult<bool> {
 
 /// Returns the number of CPUs that should be used for shaping / binning.
 ///
-/// On hybrid CPUs, this may exclude efficiency cores (E-cores) when configured.
+/// On hybrid CPUs, this may exclude efficiency cores (E-cores) when configured
+/// using the cached multi-method topology detector.
 #[pyfunction]
 fn shaping_cpu_count() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
@@ -1440,12 +1441,11 @@ fn shaping_cpu_count() -> PyResult<u32> {
 fn efficiency_core_ids() -> PyResult<Vec<u32>> {
     let config = lqos_config::load_config().unwrap();
     let det = lqos_config::detect_shaping_cpus(config.as_ref());
-    let efficiency = match det.source {
-        lqos_config::ShapingCpuSource::CpuCoreSysfs
-        | lqos_config::ShapingCpuSource::PossibleMinusAtomSysfs => det.efficiency,
-        _ => Vec::new(),
-    };
-    Ok(efficiency)
+    Ok(if det.has_hybrid_split {
+        det.efficiency
+    } else {
+        Vec::new()
+    })
 }
 
 #[pyfunction]
