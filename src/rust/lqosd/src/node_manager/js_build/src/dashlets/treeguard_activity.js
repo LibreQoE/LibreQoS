@@ -227,8 +227,11 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         const wrap = document.createElement("div");
         wrap.classList.add("p-2");
 
+        const tableWrap = document.createElement("div");
+        tableWrap.classList.add("lqos-table-wrap");
+
         const table = document.createElement("table");
-        table.classList.add("table", "table-sm", "table-striped", "mb-0", "small");
+        table.classList.add("lqos-table", "lqos-table-compact", "mb-0", "small");
 
         const thead = document.createElement("thead");
         thead.classList.add("small");
@@ -243,7 +246,8 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         this.tbody = document.createElement("tbody");
         table.appendChild(thead);
         table.appendChild(this.tbody);
-        wrap.appendChild(table);
+        tableWrap.appendChild(table);
+        wrap.appendChild(tableWrap);
         base.appendChild(wrap);
         return base;
     }

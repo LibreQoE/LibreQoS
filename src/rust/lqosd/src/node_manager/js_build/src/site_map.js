@@ -247,6 +247,7 @@ class SiteMapPage {
         this.unmappedOpen = false;
         this.heavyLayersInstalled = false;
         this.heavyLayersInstallQueued = false;
+        this.heavyLayersFallbackTimer = null;
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -792,14 +793,26 @@ class SiteMapPage {
         }
         this.heavyLayersInstallQueued = true;
         const install = () => {
+            if (this.heavyLayersFallbackTimer !== null) {
+                window.clearTimeout(this.heavyLayersFallbackTimer);
+                this.heavyLayersFallbackTimer = null;
+            }
             this.heavyLayersInstallQueued = false;
             this.installHeavyGeographyLayers();
         };
-        if (typeof window.requestIdleCallback === "function") {
-            window.requestIdleCallback(install, { timeout: 1200 });
-            return;
-        }
-        window.setTimeout(install, 0);
+        const installWhenReady = () => {
+            if (this.heavyLayersInstalled) {
+                return;
+            }
+            if (this.map?.isStyleLoaded()) {
+                install();
+                return;
+            }
+            this.map?.once("idle", install);
+        };
+
+        this.map?.once("idle", installWhenReady);
+        this.heavyLayersFallbackTimer = window.setTimeout(installWhenReady, 1200);
     }
 
     installInteractions() {

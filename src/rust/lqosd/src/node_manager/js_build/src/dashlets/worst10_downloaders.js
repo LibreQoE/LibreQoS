@@ -40,8 +40,7 @@ export class Worst10Downloaders extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+        base.classList.add("dashbox-body-scroll", "dashbox-body-scroll-top10");
         return base;
     }
 
@@ -82,7 +81,7 @@ export class Worst10Downloaders extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("table", "table-sm", "small");
+            table.classList.add("lqos-table", "lqos-table-compact", "small");
             let thead = document.createElement("thead");
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Bytes Downloaded"));
@@ -111,7 +110,10 @@ export class Worst10Downloaders extends DashletBaseInsight {
             })
             table.appendChild(tbody);
             clearDashDiv(this.id, target);
-            target.appendChild(table);
+            const tableWrap = document.createElement("div");
+            tableWrap.classList.add("lqos-table-wrap");
+            tableWrap.appendChild(table);
+            target.appendChild(tableWrap);
         });
         wsClient.send({ LtsWorst10Rtt: { seconds } });
     }

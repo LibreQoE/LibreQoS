@@ -228,7 +228,7 @@ function renderSearchResults(data) {
     }
     searchResults.style.visibility = "visible";
     let list = document.createElement("table");
-    list.classList.add("table", "table-striped");
+    list.classList.add("lqos-table", "lqos-table-compact", "mb-0");
     let tbody = document.createElement("tbody");
     data.forEach((item) => {
         let r = document.createElement("tr");
@@ -249,7 +249,10 @@ function renderSearchResults(data) {
     });
     clearDiv(searchResults);
     list.appendChild(tbody);
-    searchResults.appendChild(list);
+    const wrap = document.createElement("div");
+    wrap.classList.add("table-responsive", "lqos-table-wrap");
+    wrap.appendChild(list);
+    searchResults.appendChild(wrap);
 }
 
 function doSearch(search) {
@@ -461,7 +464,7 @@ function initUrgentIssues() {
                 return;
             }
             const table = document.createElement('table');
-            table.className = 'table table-sm table-striped';
+            table.className = 'lqos-table lqos-table-compact mb-0';
             const tbody = document.createElement('tbody');
             items.forEach((it) => {
                 const tr = document.createElement('tr');
@@ -484,7 +487,10 @@ function initUrgentIssues() {
             });
             table.appendChild(tbody);
             holder.innerHTML = '';
-            holder.appendChild(table);
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'table-responsive lqos-table-wrap';
+            tableWrap.appendChild(table);
+            holder.appendChild(tableWrap);
             $(holder).off('click').on('click', '.urgent-clear', function (e) {
                 e.preventDefault();
                 const id = $(this).data('id');

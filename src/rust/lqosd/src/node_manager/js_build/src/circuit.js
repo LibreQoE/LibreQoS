@@ -19,6 +19,7 @@ import {CakeQueueLength} from "./graphs/cake_queue_length";
 import {CakeTraffic} from "./graphs/cake_traffic";
 import {CakeMarks} from "./graphs/cake_marks";
 import {CakeDrops} from "./graphs/cake_drops";
+import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -61,6 +62,54 @@ const listenOnce = (eventName, handler) => {
 
 function isElementVisible(el) {
     return !!(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
+function loadingBlockHtml(label, sizeClass = "") {
+    const size = sizeClass ? ` ${sizeClass}` : "";
+    return `<div class="lqos-loading-block${size}"><i class="fa fa-spinner fa-spin"></i><span>${label}</span></div>`;
+}
+
+function initTooltipsWithin(rootEl = document) {
+    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) {
+        return;
+    }
+    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
+    elements.forEach((element) => {
+        if (bootstrap.Tooltip.getOrCreateInstance) {
+            bootstrap.Tooltip.getOrCreateInstance(element);
+        } else {
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
+function applyParentNodeLink(parentNodeName) {
+    const parentNodeEl = document.getElementById("parentNode");
+    if (!parentNodeEl) {
+        return;
+    }
+
+    parentNodeEl.textContent = parentNodeName || "";
+
+    if (!parentNodeName) {
+        parentNodeEl.removeAttribute("href");
+        parentNodeEl.removeAttribute("title");
+        parentNodeEl.style.pointerEvents = "none";
+        return;
+    }
+
+    parentNodeEl.style.pointerEvents = "";
+    getNodeIdMap().then((nodeIdLookup) => {
+        const href = linkToTreeNode(parentNodeName, nodeIdLookup);
+        if (!href) {
+            parentNodeEl.removeAttribute("href");
+            parentNodeEl.removeAttribute("title");
+            parentNodeEl.style.pointerEvents = "none";
+            return;
+        }
+        parentNodeEl.href = href;
+        parentNodeEl.title = `Open ${parentNodeName} in Tree`;
+    });
 }
 
 function resizeGraphIfVisible(graph) {
@@ -278,9 +327,11 @@ function renderCakeGraphShell() {
             </div>
             <div class="col-3">
                 Queue Memory: <span id="cakeQueueMemory">?</span>
+                <div class="text-muted small mt-1">Queue Type: <span id="cakeQueueType">?</span></div>
             </div>
         </div>
     `;
+    setQueueTypeDisplay("");
 }
 
 function applyCakeMessage(msg) {
@@ -372,6 +423,36 @@ function ipToString(ip) {
         return formatIpBytes(ip);
     }
     return String(ip);
+}
+
+function parseDirectionalSqmToken(token) {
+    const raw = (token ?? "").toString().trim().toLowerCase();
+    if (!raw) {
+        return { down: "", up: "" };
+    }
+    if (!raw.includes("/")) {
+        return { down: raw, up: raw };
+    }
+    const [down, up] = raw.split("/", 2);
+    return {
+        down: (down ?? "").toString().trim(),
+        up: (up ?? "").toString().trim(),
+    };
+}
+
+function formatQueueTypeDisplay(sqmToken) {
+    const { down, up } = parseDirectionalSqmToken(sqmToken);
+    const downLabel = down || "Unknown";
+    const upLabel = up || down || "Unknown";
+    return `${downLabel} / ${upLabel}`;
+}
+
+function setQueueTypeDisplay(sqmToken) {
+    const queueTypeEl = document.getElementById("cakeQueueType");
+    if (!queueTypeEl) {
+        return;
+    }
+    queueTypeEl.textContent = formatQueueTypeDisplay(sqmToken);
 }
 
 function requestCircuitById(onSuccess, onError) {
@@ -595,8 +676,11 @@ function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
     let visibleRowCount = 0;
 
+    let tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
+
     let table = document.createElement("table");
-    table.classList.add("table", "table-sm", "table-striped");
+    table.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
     
@@ -731,7 +815,7 @@ function updateTrafficTab(msg) {
         const excludeBtn = document.createElement("button");
         excludeBtn.type = "button";
         excludeBtn.className = "btn btn-outline-secondary btn-sm";
-        excludeBtn.textContent = "Exclude RTT…";
+        excludeBtn.textContent = "Exclude";
         excludeBtn.disabled = !remoteIp;
         excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
         excludeBtn.addEventListener("click", (e) => {
@@ -828,8 +912,9 @@ function updateTrafficTab(msg) {
 
     table.appendChild(tbody);
 
+    tableWrap.appendChild(table);
     clearDiv(target);
-    target.appendChild(table);
+    target.appendChild(tableWrap);
     $("#trafficFlowCount").text(visibleRowCount);
     return visibleRowCount;
 }
@@ -902,12 +987,10 @@ function fillLiveDevices(devices) {
             const curP95 = device.rtt_current_p95_nanos || {};
             const totP50 = device.rtt_total_p50_nanos || {};
             const totP95 = device.rtt_total_p95_nanos || {};
-            rttDown.innerHTML =
-                "<div class='tiny'>C: " +
-                formatRttPair(curP50.down, curP95.down) +
-                "</div><div class='tiny text-secondary'>T: " +
-                formatRttPair(totP50.down, totP95.down) +
-                "</div>";
+            rttDown.innerHTML = formatRttMetricBlock(
+                formatRttPair(curP50.down, curP95.down),
+                formatRttPair(totP50.down, totP95.down)
+            );
         }
 
         if (rttUp !== null) {
@@ -915,12 +998,10 @@ function fillLiveDevices(devices) {
             const curP95 = device.rtt_current_p95_nanos || {};
             const totP50 = device.rtt_total_p50_nanos || {};
             const totP95 = device.rtt_total_p95_nanos || {};
-            rttUp.innerHTML =
-                "<div class='tiny'>C: " +
-                formatRttPair(curP50.up, curP95.up) +
-                "</div><div class='tiny text-secondary'>T: " +
-                formatRttPair(totP50.up, totP95.up) +
-                "</div>";
+            rttUp.innerHTML = formatRttMetricBlock(
+                formatRttPair(curP50.up, curP95.up),
+                formatRttPair(totP50.up, totP95.up)
+            );
         }
 
         if (tcp_retransmitsDown !== null) {
@@ -943,6 +1024,19 @@ function fillLiveDevices(devices) {
             rttHistogram.updateManyMs(samples);
         }
     });
+}
+
+function formatRttMetricBlock(currentText, totalText) {
+    return "<div class='lqos-rtt-metric'>" +
+        "<div class='lqos-rtt-metric-line'>" +
+        "<span class='lqos-rtt-metric-label'>C:</span>" +
+        "<span class='lqos-rtt-metric-value'>" + currentText + "</span>" +
+        "</div>" +
+        "<div class='lqos-rtt-metric-line text-secondary'>" +
+        "<span class='lqos-rtt-metric-label'>T:</span>" +
+        "<span class='lqos-rtt-metric-value'>" + totalText + "</span>" +
+        "</div>" +
+        "</div>";
 }
 
 function initialDevices(circuits) {
@@ -969,16 +1063,21 @@ function initialDevices(circuits) {
         name.innerHTML = "<i class='fa fa-computer'></i> " + circuit.device_name;
         d.appendChild(name);
 
+        let infoTableWrap = document.createElement("div");
+        infoTableWrap.classList.add("lqos-table-wrap");
+
         let infoTable = document.createElement("table");
-        infoTable.classList.add("table", "table-sm", "table-striped");
+        infoTable.classList.add("lqos-table", "lqos-table-tight");
         let tbody = document.createElement("tbody");
 
         // MAC Row
         let tr = document.createElement("tr");
         let td = document.createElement("td");
-        td.innerHTML = "<b>MAC Address</b>";
+        td.textContent = "MAC Address";
+        td.classList.add("table-label-cell");
         tr.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.classList.add("redactable");
         td.colSpan = 2;
         td.innerHTML = circuit.mac;
@@ -988,9 +1087,11 @@ function initialDevices(circuits) {
         // Comment Row
         let tr2 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Comment</b>";
+        td.textContent = "Comment";
+        td.classList.add("table-label-cell");
         tr2.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         td.innerHTML = circuit.comment;
         tr2.appendChild(td);
@@ -999,12 +1100,14 @@ function initialDevices(circuits) {
         // IPv4 Row
         let tr3 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>IPv4 Address(es)</b>";
+        td.textContent = "IPv4 Address(es)";
+        td.classList.add("table-label-cell");
         tr3.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         let ipv4Table = document.createElement("table");
-        ipv4Table.classList.add("table", "table-sm");
+        ipv4Table.classList.add("lqos-table", "lqos-table-tight");
         let ipv4Body = document.createElement("tbody");
         circuit.ipv4.forEach((ip) => {
             const ipStr = ipToString(ip[0]);
@@ -1036,13 +1139,15 @@ function initialDevices(circuits) {
         // IPv6 Row
         let tr4 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>IPv6 Address(es)</b>";
+        td.textContent = "IPv6 Address(es)";
+        td.classList.add("table-label-cell");
         tr4.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
 
         let ipv6 = document.createElement("table");
-        ipv6.classList.add("table", "table-sm");
+        ipv6.classList.add("lqos-table", "lqos-table-tight");
         let ipv6Body = document.createElement("tbody");
         circuit.ipv6.forEach((ip) => {
             const ipStr = ipToString(ip[0]);
@@ -1080,9 +1185,11 @@ function initialDevices(circuits) {
         // Placeholder for Last Seen
         let tr8 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Last Seen</b>";
+        td.textContent = "Last Seen";
+        td.classList.add("table-label-cell");
         tr8.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         td.id = "last_seen_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
@@ -1092,13 +1199,16 @@ function initialDevices(circuits) {
         // Placeholder for throughput
         let tr5 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Throughput</b>";
+        td.textContent = "Throughput";
+        td.classList.add("table-label-cell");
         tr5.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "throughputDown_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr5.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "throughputUp_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr5.appendChild(td);
@@ -1107,35 +1217,42 @@ function initialDevices(circuits) {
         // Placeholder for RTT
         let tr6 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>RTT P50/P95</b>";
+        td.textContent = "RTT P50/P95";
+        td.classList.add("table-label-cell");
         tr6.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
         tr6.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttUp_" + circuit.device_id;
-        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
         tr6.appendChild(td);
         tbody.appendChild(tr6);
 
         // Placeholder for TCP Retransmits
         let tr7 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>TCP Re-Xmits</b>";
+        td.textContent = "TCP Re-Xmits";
+        td.classList.add("table-label-cell");
         tr7.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsDown_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr7.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsUp_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr7.appendChild(td);
         tbody.appendChild(tr7);
 
         infoTable.appendChild(tbody);
-        d.appendChild(infoTable);
+        infoTableWrap.appendChild(infoTable);
+        d.appendChild(infoTableWrap);
 
         // Graph container (2x2)
         let graphCol = document.createElement("div");
@@ -1152,7 +1269,7 @@ function initialDevices(circuits) {
             let div = document.createElement("div");
             div.id = divId;
             div.style.height = "250px";
-            div.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+            div.innerHTML = loadingBlockHtml("Loading chart…", "lqos-loading-block-sm");
             col.appendChild(div);
             graphRow.appendChild(col);
             deviceGraphs[divId] = graphFactory(divId);
@@ -1339,18 +1456,21 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
+    initTooltipsWithin(document);
     initExcludeRttToggle();
     initFlowFilters();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);
-        $("#parentNode").text(circuit.parent_node);
+        $("#circuitName").attr("title", circuit.circuit_name || "");
+        applyParentNodeLink(circuit.parent_node);
         $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
         $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
         plan = {
             down: toNumber(circuit.download_max_mbps, 0),
             up: toNumber(circuit.upload_max_mbps, 0),
         };
+        setQueueTypeDisplay(circuit.sqm_override || "");
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
         qooGauge = new QooScoreGauge("qooGauge");

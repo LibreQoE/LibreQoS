@@ -57,7 +57,7 @@ export class LtsShaperStatus extends BaseDashlet {
                     let target = document.getElementById(this.contentId);
 
                     let table = document.createElement("table");
-                    table.classList.add("table", "table-sm", "small");
+                    table.classList.add("lqos-table", "lqos-table-compact", "small");
                     let thead = document.createElement("thead");
                     thead.appendChild(theading(""));
                     thead.appendChild(theading("Shaper"));
@@ -81,7 +81,10 @@ export class LtsShaperStatus extends BaseDashlet {
                     })
                     table.appendChild(tbody);
                     clearDiv(target);
-                    target.appendChild(table);
+                    const tableWrap = document.createElement("div");
+                    tableWrap.classList.add("lqos-table-wrap");
+                    tableWrap.appendChild(table);
+                    target.appendChild(tableWrap);
 
                     //console.log(data);
                 });

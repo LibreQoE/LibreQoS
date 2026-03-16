@@ -177,7 +177,7 @@ export function topNTableRow(r) {
 
 export function TopNTableFromMsgData(circuits) {
     let t = document.createElement("table");
-    t.classList.add("table-sm", "dash-table");
+    t.classList.add("dash-table", "lqos-table", "lqos-table-compact");
 
     t.appendChild(topNTableHeader());
 

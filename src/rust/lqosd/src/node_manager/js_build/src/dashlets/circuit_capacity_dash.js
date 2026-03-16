@@ -56,7 +56,7 @@ export class CircuitCapacityDash extends BaseDashlet {
             const cached = this.timeCache.get();
 
             let table = document.createElement("table");
-            table.classList.add("dash-table", "table-sm", "small");
+            table.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
             let thead = document.createElement("thead");
             thead.classList.add("small");
             thead.appendChild(theading("Circuit"));
