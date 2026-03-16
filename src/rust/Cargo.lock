@@ -2021,6 +2021,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "lqos_utils",
+ "nix",
  "once_cell",
  "serde",
  "serde_json",
