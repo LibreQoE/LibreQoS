@@ -25,7 +25,6 @@ LQOS_FILES=(
   integrationRestHttp.py
   integrationSonar.py
   integrationSplynx.py
-  integrationUISP.py
   integrationVISP.py
   integrationWISPGate.py
   LibreQoS.py
@@ -176,7 +175,7 @@ for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
 
-# Ensure update_api.sh is executable in the package
+# Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then
   chmod a+x "$LQOS_DIR/update_api.sh" || true
 fi

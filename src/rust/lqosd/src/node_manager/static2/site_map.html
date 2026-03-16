@@ -1,0 +1,362 @@
+<script type="text/javascript" src="vendor/maplibre-gl.js"></script>
+
+<style>
+@import url("vendor/maplibre-gl.css");
+
+.site-map-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: calc(100vh - 108px);
+}
+
+.site-map-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.site-map-title h2 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 700;
+}
+
+.site-map-headline {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.site-map-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 82%, transparent);
+    border-radius: 14px;
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.site-map-stage {
+    position: relative;
+    flex: 1 1 auto;
+    height: 70vh;
+    min-height: 620px;
+    max-height: 780px;
+    border-radius: var(--lqos-radius-lg);
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface) 70%, transparent);
+    box-shadow: var(--lqos-shadow-md);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.site-map-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 620px;
+}
+
+.site-map-legend,
+.site-map-details,
+.site-map-unmapped,
+.site-map-tooltip {
+    position: absolute;
+    z-index: 12;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 88%, transparent);
+    border-radius: 14px;
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.site-map-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--lqos-border);
+    border-radius: 999px;
+    padding: 3px;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 76%, transparent);
+    gap: 4px;
+}
+
+.site-map-mode-toggle .btn {
+    border-radius: 999px;
+    min-width: 90px;
+}
+
+.site-map-controls .site-map-divider {
+    width: 1px;
+    height: 28px;
+    background: var(--lqos-border);
+}
+
+.site-map-legend {
+    right: 16px;
+    bottom: 16px;
+    width: min(340px, calc(100% - 32px));
+    padding: 12px 14px;
+}
+
+.site-map-details {
+    right: 16px;
+    top: 16px;
+    width: min(330px, calc(100% - 32px));
+    padding: 14px 16px;
+    display: none;
+}
+
+.site-map-unmapped {
+    left: 16px;
+    top: 16px;
+    width: min(340px, calc(100% - 32px));
+    padding: 12px 14px;
+    display: none;
+}
+
+.site-map-unmapped.is-open {
+    display: block;
+}
+
+.site-map-tooltip {
+    display: none;
+    pointer-events: none;
+    min-width: 220px;
+    max-width: 320px;
+    padding: 10px 12px;
+    z-index: 20;
+}
+
+.site-map-tooltip.is-visible {
+    display: block;
+}
+
+.site-map-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 78%, transparent);
+    border: 1px solid var(--lqos-border);
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.site-map-gradient {
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 78%, transparent);
+    margin: 6px 0 10px;
+}
+
+.site-map-legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 0.85rem;
+}
+
+.site-map-size-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.site-map-size-dot {
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.45);
+    background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(100, 160, 255, 0.95) 42%, rgba(60, 108, 196, 0.92) 100%);
+    box-shadow: 0 0 18px rgba(82, 155, 255, 0.35);
+    flex: 0 0 auto;
+}
+
+.site-map-panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.site-map-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    font-size: 0.85rem;
+}
+
+.site-map-metric {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 78%, transparent);
+    border-radius: 12px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--lqos-surface) 62%, transparent);
+}
+
+.site-map-metric label {
+    display: block;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-secondary-color);
+    margin-bottom: 2px;
+}
+
+.site-map-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 42vh;
+    overflow: auto;
+}
+
+.site-map-list-group h6 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-secondary-color);
+    margin-bottom: 6px;
+}
+
+.site-map-list-item {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 72%, transparent);
+    border-radius: 12px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--lqos-surface) 62%, transparent);
+    font-size: 0.86rem;
+}
+
+.site-map-empty {
+    color: var(--bs-secondary-color);
+    font-size: 0.88rem;
+}
+
+.site-map-popup {
+    min-width: 220px;
+}
+
+.maplibregl-popup-content {
+    border-radius: 14px;
+    border: 1px solid var(--lqos-border);
+    box-shadow: var(--lqos-shadow-md);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 96%, transparent);
+    color: var(--bs-body-color);
+}
+
+.maplibregl-popup-close-button {
+    color: var(--bs-body-color);
+}
+
+@media (max-width: 991.98px) {
+    .site-map-page {
+        min-height: auto;
+    }
+
+    .site-map-stage {
+        height: 64vh;
+        min-height: 520px;
+        max-height: none;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .site-map-stage {
+        height: 60vh;
+        min-height: 460px;
+    }
+
+    .site-map-legend,
+    .site-map-details,
+    .site-map-unmapped {
+        position: static;
+        width: 100%;
+        margin-top: 10px;
+    }
+
+    .site-map-unmapped.is-open,
+    .site-map-details {
+        display: block;
+    }
+}
+</style>
+
+<div class="site-map-page">
+        <div class="site-map-header">
+            <div class="site-map-title">
+                <div class="site-map-headline">
+                    <h2><i class="fa fa-map-location-dot me-2"></i>Site Map</h2>
+                </div>
+            </div>
+        <div class="site-map-controls">
+            <div class="site-map-mode-toggle" role="group" aria-label="Site Map mode">
+                <button type="button" class="btn btn-sm btn-primary active" id="siteMapModeQoo">QoO</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapModeRtt">RTT</button>
+            </div>
+            <span class="site-map-divider" aria-hidden="true"></span>
+            <span class="site-map-chip" id="siteMapStatusChip"><i class="fa fa-spinner fa-spin"></i> Waiting for data</span>
+            <span class="site-map-chip" id="siteMapUpdatedChip"><i class="fa fa-clock"></i> Not updated yet</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapUnmappedToggle">
+                <i class="fa fa-location-crosshairs me-1"></i> Unmapped <span class="badge text-bg-secondary ms-1" id="siteMapUnmappedBadge">0</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="site-map-stage" id="siteMapStage">
+        <div id="siteMapCanvas" class="site-map-canvas"></div>
+
+        <div class="site-map-unmapped" id="siteMapUnmappedPanel">
+            <div class="site-map-panel-title">
+                <strong>Unmapped Nodes</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapUnmappedClose">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="site-map-empty mb-2" id="siteMapUnmappedSummary">All mapped nodes have display coordinates.</div>
+            <div class="site-map-list" id="siteMapUnmappedList"></div>
+        </div>
+
+        <div class="site-map-details" id="siteMapDetails">
+            <div class="site-map-panel-title">
+                <strong id="siteMapDetailsTitle">Select a node</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapDetailsClose">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="text-muted small mb-2" id="siteMapDetailsSubtitle">Click a site or AP marker to inspect it.</div>
+            <div class="site-map-metric-grid" id="siteMapDetailsGrid"></div>
+        </div>
+
+        <div class="site-map-legend">
+            <div class="fw-semibold">Metric Gradient</div>
+            <div class="site-map-gradient" id="siteMapLegendGradient"></div>
+            <div class="site-map-legend-row">
+                <span id="siteMapLegendLow">Poor</span>
+                <span id="siteMapLegendHigh">Healthy</span>
+            </div>
+            <div class="fw-semibold mt-3">Marker Size</div>
+            <div class="site-map-size-row">
+                <span class="site-map-size-dot" style="width: 12px; height: 12px;"></span>
+                <span class="site-map-size-dot" style="width: 20px; height: 20px;"></span>
+                <span class="site-map-size-dot" style="width: 30px; height: 30px;"></span>
+                <div class="text-muted small">Combined recent throughput over the last 30 seconds.</div>
+            </div>
+            <div class="text-muted small mt-3">
+                Zoomed out views emphasize sites. As you zoom in, APs take over where coordinate coverage allows.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="site_map.js%CACHEBUSTERS%"></script>

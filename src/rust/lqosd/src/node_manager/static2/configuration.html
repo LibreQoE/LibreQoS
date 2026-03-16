@@ -96,7 +96,7 @@
                 <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel"
                      aria-labelledby="v-pills-home-tab">
                     <h2><i class="fa fa-server"></i> General Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindVersion">Version: </label></td>
                             <td><input type="text" id="bindVersion" style="background: #ddd"/></td>
@@ -136,7 +136,7 @@
                 <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
                     <h2><i class="fa fa-warning"></i> Tuning Settings</h2>
 
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindStopIrqBalance">Stop IRQ Balancer: </label></td>
                             <td><input type="checkbox" id="bindStopIrqBalance"/></td>
@@ -187,7 +187,7 @@
 
                     <div id="bridgeMode">
                         <h3>Bridge Mode</h3>
-                        <table class="table table-bordered">
+                        <table class="lqos-table lqos-table-compact">
                             <tr>
                                 <td><label for="bindUseXdpBridge">Use XDP Enhanced Bridge: </label></td>
                                 <td><input type="checkbox" id="bindUseXdpBridge"/></td>
@@ -207,7 +207,7 @@
 
                     <div id="OnAStickMode">
                         <h3>Single-Interface ("On a Stick") Mode</h3>
-                        <table class="table table-bordered">
+                        <table class="lqos-table lqos-table-compact">
                             <tr>
                                 <td><label for="bindSingleInterfaceNic">Network Interface: </label></td>
                                 <td><select id="bindSingleInterfaceNic"></select></td>
@@ -228,7 +228,7 @@
                 <div class="tab-pane fade" id="v-pills-queues" role="tabpanel" aria-labelledby="v-pills-queues-tab">
                     <h2><i class="fa car"></i> Queue Settings</h2>
 
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindSqm">SQM Mode: </label></td>
                             <td>
@@ -283,7 +283,7 @@
                 <!-- Long-Term Stats Tab -->
                 <div class="tab-pane fade" id="v-pills-lts" role="tabpanel" aria-labelledby="v-pills-lts-tab">
                     <h2><i class="fa fa-line-chart"></i> Insight Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindEnableLTS">Send Statistics to Insight: </label></td>
                             <td><input type="checkbox" id="bindEnableLTS"/></td>
@@ -327,7 +327,7 @@
                 <!-- Flows Tab -->
                 <div class="tab-pane fade" id="v-pills-flows" role="tabpanel" aria-labelledby="v-pills-flow-tab">
                     <h2><i class="fa fa-arrow-circle-down"></i> Flows Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindFlowsTimeout">Flow Timeout (Seconds): </label></td>
                             <td><input type="number" id="bindFlowsTimeout"/></td>
@@ -359,7 +359,7 @@
                 <!-- Integration Common Tab -->
                 <div class="tab-pane fade" id="v-pills-icommon" role="tabpanel" aria-labelledby="v-pills-icommon-tab">
                     <h2><i class="fa fa-link"></i> Common Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindCircuitNameAsAddress">Use Circuit Name as Address: </label></td>
                             <td><input type="checkbox" id="bindCircuitNameAsAddress"/></td>
@@ -382,7 +382,7 @@
                 <!-- Splynx Tab -->
                 <div class="tab-pane fade" id="v-pills-splynx" role="tabpanel" aria-labelledby="v-pills-splynx-tab">
                     <h2><i class="fa fa-link"></i> Splynx Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindSplynxEnable">Enable Splynx Integration: </label></td>
                             <td><input type="checkbox" id="bindSplynxEnable"/></td>
@@ -405,7 +405,7 @@
                 <!-- Netzur Tab -->
                 <div class="tab-pane fade" id="v-pills-netzur" role="tabpanel" aria-labelledby="v-pills-netzur-tab">
                     <h2><i class="fa fa-link"></i> Netzur Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindNetzurEnable">Enable Netzur Integration: </label></td>
                             <td><input type="checkbox" id="bindNetzurEnable"/></td>
@@ -428,7 +428,7 @@
                 <!-- UISP Tab -->
                 <div class="tab-pane fade" id="v-pills-uisp" role="tabpanel" aria-labelledby="v-pills-uisp-tab">
                     <h2><i class="fa fa-link"></i> UISP Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindUispEnable">Enable UISP Integration: </label></td>
                             <td><input type="checkbox" id="bindUispEnable"/></td>
@@ -506,7 +506,7 @@
                 <div class="tab-pane fade" id="v-pills-powercode" role="tabpanel"
                      aria-labelledby="v-pills-powercode-tab">
                     <h2><i class="fa fa-link"></i> Powercode Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindPowercodeEnable">Enable Powercode Integration: </label></td>
                             <td><input type="checkbox" id="bindPowercodeEnable"/></td>
@@ -525,7 +525,7 @@
                 <!-- Sonar Tab -->
                 <div class="tab-pane fade" id="v-pills-sonar" role="tabpanel" aria-labelledby="v-pills-sonar-tab">
                     <h2><i class="fa fa-link"></i> Sonar Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindSonarEnable">Enable Sonar Integration: </label></td>
                             <td><input type="checkbox" id="bindSonarEnable"/></td>
@@ -560,7 +560,7 @@
                 <!-- InfluxDB Tab -->
                 <div class="tab-pane fade" id="v-pills-influxdb" role="tabpanel" aria-labelledby="v-pills-influxdb-tab">
                     <h2><i class="fa fa-link"></i> InfluxDB Integration Settings</h2>
-                    <table class="table table-bordered">
+                    <table class="lqos-table lqos-table-compact">
                         <tr>
                             <td><label for="bindInfluxEnable">Enable InfluxDB Integration: </label></td>
                             <td><input type="checkbox" id="bindInfluxEnable"/></td>

@@ -31,8 +31,7 @@ export class Top10FlowsRate extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+        base.classList.add("dashbox-body-scroll", "dashbox-body-scroll-top10");
         return base;
     }
 
@@ -56,7 +55,9 @@ export class Top10FlowsRate extends DashletBaseInsight {
             th.appendChild(theading("Total"));
             th.appendChild(theading("RTT", 2));
             th.appendChild(theading("TCP Retransmits", 2));
-            th.appendChild(theading("Remote ASN"));
+            const asnHeading = theading("Remote ASN");
+            asnHeading.classList.add("lqos-asn-cell");
+            th.appendChild(asnHeading);
             t.appendChild(th);
 
             let tbody = document.createElement("tbody");
@@ -126,13 +127,16 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 row.appendChild(tcp2);
 
                 let asn = document.createElement("td");
-                asn.innerText = r.remote_asn_name;
-                if (asn.innerText === "") {
-                    asn.innerText = r.remote_ip;
+                asn.classList.add("lqos-asn-cell");
+                const asnLabel = (r.remote_asn_name && r.remote_asn_name.length > 0) ? r.remote_asn_name : r.remote_ip;
+                const asnText = document.createElement("span");
+                asnText.classList.add("lqos-table-cell-ellipsis");
+                if (asnLabel && asnLabel.length > 13) {
+                    asnText.classList.add("tiny");
                 }
-                if (asn.innerText.length > 13) {
-                    asn.classList.add("tiny");
-                }
+                asnText.textContent = asnLabel || "";
+                asnText.title = asnLabel || "";
+                asn.appendChild(asnText);
                 row.appendChild(asn);
 
                 t.appendChild(row);

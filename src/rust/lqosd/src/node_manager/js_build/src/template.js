@@ -23,29 +23,146 @@ function escapeAttr(text) {
         .replaceAll('>', '&gt;');
 }
 
-function loadSchedulerStatus() {
+const SCHEDULER_STATUS_POLL_MS = 2000;
+const SCHEDULER_STATUS_TIMEOUT_MS = 2500;
+const SCHEDULER_STATUS_STARTING_GRACE_MS = 30000;
+let schedulerStatusPollTimer = null;
+let schedulerStatusRequestInFlight = false;
+let schedulerStatusFirstRequestedAt = null;
+let schedulerStatusHealthy = false;
+
+function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
+    let done = false;
+    const wrapped = (msg) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        wsClient.off(eventName, wrapped);
+        onTimeout();
+    }, timeoutMs);
+    wsClient.on(eventName, wrapped);
+}
+
+function renderSchedulerStatus(container, state) {
+    if (!container) return;
+
+    let color = "text-secondary";
+    let icon = "fa-spinner fa-spin";
+    let label = "Scheduler status is loading";
+    let buttonText = "Scheduler starting...";
+
+    if (state === "healthy") {
+        color = "text-success";
+        icon = "fa-check-circle";
+        label = "Scheduler is available";
+        buttonText = "Scheduler";
+    } else if (state === "unavailable") {
+        color = "text-warning";
+        icon = "fa-clock";
+        label = "Scheduler is still unavailable";
+        buttonText = "Scheduler unavailable";
+    } else if (state === "error") {
+        color = "text-danger";
+        icon = "fa-triangle-exclamation";
+        label = "Scheduler has an internal error";
+        buttonText = "Scheduler error";
+    }
+
+    container.innerHTML = `
+        <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color}" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+            <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> ${escapeAttr(buttonText)}
+        </button>`;
+
+    $("#schedulerStatus").off("click").on("click", "#schedulerStatusLink", (e) => {
+        e.preventDefault();
+        openSchedulerModal();
+    });
+}
+
+function scheduleNextSchedulerStatusPoll(delayMs = SCHEDULER_STATUS_POLL_MS) {
+    if (schedulerStatusPollTimer) {
+        clearTimeout(schedulerStatusPollTimer);
+    }
+    schedulerStatusPollTimer = setTimeout(() => {
+        schedulerStatusPollTimer = null;
+        loadSchedulerStatus();
+    }, delayMs);
+}
+
+function loadSchedulerStatus(force = false) {
     const container = document.getElementById('schedulerStatus');
     if (!container) return;
-    listenOnce("SchedulerStatus", (msg) => {
+
+    if (schedulerStatusHealthy && !force) {
+        return;
+    }
+    if (schedulerStatusRequestInFlight) {
+        return;
+    }
+
+    if (schedulerStatusFirstRequestedAt === null || force) {
+        schedulerStatusFirstRequestedAt = Date.now();
+        schedulerStatusHealthy = false;
+        renderSchedulerStatus(container, "loading");
+    }
+
+    schedulerStatusRequestInFlight = true;
+    listenOnceWithTimeout("SchedulerStatus", SCHEDULER_STATUS_TIMEOUT_MS, (msg) => {
+        schedulerStatusRequestInFlight = false;
         if (!msg || !msg.data) return;
         const data = msg.data;
         const hasError = !!(data.error && String(data.error).trim().length > 0);
         const isHealthy = !!data.available && !hasError;
-        const color = isHealthy ? 'text-success' : 'text-danger';
-        const icon = isHealthy ? 'fa-check-circle' : 'fa-triangle-exclamation';
-        const label = hasError ? 'Scheduler has an internal error' : (data.available ? 'Scheduler is available' : 'Scheduler is unavailable');
-        container.innerHTML = `
-            <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color}" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
-                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Scheduler
-            </button>`;
+        const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
 
-        // Click opens details modal only; no tooltip
-        $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
-            e.preventDefault();
-            openSchedulerModal();
-        });
+        if (hasError) {
+            schedulerStatusHealthy = false;
+            renderSchedulerStatus(container, "error");
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
+        if (isHealthy) {
+            schedulerStatusHealthy = true;
+            renderSchedulerStatus(container, "healthy");
+            return;
+        }
+
+        schedulerStatusHealthy = false;
+        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+            renderSchedulerStatus(container, "loading");
+        } else {
+            renderSchedulerStatus(container, "unavailable");
+        }
+        scheduleNextSchedulerStatusPoll();
+    }, () => {
+        schedulerStatusRequestInFlight = false;
+        schedulerStatusHealthy = false;
+        const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
+        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+            renderSchedulerStatus(container, "loading");
+        } else {
+            renderSchedulerStatus(container, "unavailable");
+        }
+        scheduleNextSchedulerStatusPoll();
     });
     wsClient.send({ SchedulerStatus: {} });
+}
+
+function restartSchedulerStatusPolling() {
+    schedulerStatusHealthy = false;
+    schedulerStatusRequestInFlight = false;
+    if (schedulerStatusPollTimer) {
+        clearTimeout(schedulerStatusPollTimer);
+        schedulerStatusPollTimer = null;
+    }
+    loadSchedulerStatus(true);
 }
 
 function openSchedulerModal() {
@@ -111,7 +228,7 @@ function renderSearchResults(data) {
     }
     searchResults.style.visibility = "visible";
     let list = document.createElement("table");
-    list.classList.add("table", "table-striped");
+    list.classList.add("lqos-table", "lqos-table-compact", "mb-0");
     let tbody = document.createElement("tbody");
     data.forEach((item) => {
         let r = document.createElement("tr");
@@ -132,7 +249,10 @@ function renderSearchResults(data) {
     });
     clearDiv(searchResults);
     list.appendChild(tbody);
-    searchResults.appendChild(list);
+    const wrap = document.createElement("div");
+    wrap.classList.add("table-responsive", "lqos-table-wrap");
+    wrap.appendChild(list);
+    searchResults.appendChild(wrap);
 }
 
 function doSearch(search) {
@@ -344,7 +464,7 @@ function initUrgentIssues() {
                 return;
             }
             const table = document.createElement('table');
-            table.className = 'table table-sm table-striped';
+            table.className = 'lqos-table lqos-table-compact mb-0';
             const tbody = document.createElement('tbody');
             items.forEach((it) => {
                 const tr = document.createElement('tr');
@@ -367,7 +487,10 @@ function initUrgentIssues() {
             });
             table.appendChild(tbody);
             holder.innerHTML = '';
-            holder.appendChild(table);
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'table-responsive lqos-table-wrap';
+            tableWrap.appendChild(table);
+            holder.appendChild(tableWrap);
             $(holder).off('click').on('click', '.urgent-clear', function (e) {
                 e.preventDefault();
                 const id = $(this).data('id');
@@ -421,4 +544,10 @@ setupReload();
 setupDynamicUrls();
 window.lqosInitUrgentIssues = initUrgentIssues;
 initSchedulerTooltips();
-loadSchedulerStatus();
+restartSchedulerStatusPolling();
+
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        restartSchedulerStatusPolling();
+    }
+});

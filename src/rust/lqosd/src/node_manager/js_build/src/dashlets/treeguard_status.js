@@ -243,17 +243,21 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         const wrap = document.createElement("div");
         wrap.classList.add("p-2");
 
+        const tableWrap = document.createElement("div");
+        tableWrap.classList.add("lqos-table-wrap");
+
         const table = document.createElement("table");
-        table.classList.add("table", "table-sm", "mb-2");
+        table.classList.add("lqos-table", "lqos-table-compact", "mb-0");
         const tbody = document.createElement("tbody");
 
         const mkRow = (label, valueEl) => {
             const tr = document.createElement("tr");
             const tdL = document.createElement("td");
-            tdL.classList.add("text-muted");
+            tdL.classList.add("table-label-cell");
             tdL.style.width = "45%";
             tdL.textContent = label;
             const tdV = document.createElement("td");
+            tdV.classList.add("table-value-cell");
             tdV.appendChild(valueEl);
             tr.appendChild(tdL);
             tr.appendChild(tdV);
@@ -280,10 +284,11 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         tbody.appendChild(mkRow("Last Action", this.lastActionEl));
 
         table.appendChild(tbody);
-        wrap.appendChild(table);
+        tableWrap.appendChild(table);
+        wrap.appendChild(tableWrap);
 
         const warningsHeader = document.createElement("div");
-        warningsHeader.classList.add("text-muted", "small", "mb-1");
+        warningsHeader.classList.add("text-muted", "small", "mt-3", "mb-1");
         warningsHeader.textContent = "Warnings";
         wrap.appendChild(warningsHeader);
 

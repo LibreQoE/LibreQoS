@@ -292,7 +292,7 @@ function buildDeviceCard(device) {
 
     // Metrics table
     const table = document.createElement("table");
-    table.classList.add("table", "table-sm", "mb-0", "mt-2");
+    table.classList.add("lqos-table", "lqos-table-tight", "mb-0", "mt-2");
 
     const thead = document.createElement("thead");
     const headRow = document.createElement("tr");

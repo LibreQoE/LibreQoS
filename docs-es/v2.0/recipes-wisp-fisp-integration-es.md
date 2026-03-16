@@ -64,7 +64,7 @@ flowchart LR
 2. El comportamiento de `network.json` coincide con la politica de overwrite.
 3. La salud de vistas en WebUI es correcta.
 4. Revise `Scheduler Status` y `Urgent Issues`.
-5. Revise `Network Tree Overview` y `Flow Map`.
+5. Revise `Network Tree Overview` y `Flow Globe`.
 6. La colocacion de padres y distribucion de colas se ve estable.
 
 ## Fallas Comunes

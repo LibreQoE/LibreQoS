@@ -37,7 +37,7 @@ fn track_queues() {
         } else {
             (
                 read_named_queue_from_interface(&config.isp_interface(), download_class),
-                read_named_queue_from_interface(&config.internet_interface(), download_class),
+                read_named_queue_from_interface(&config.internet_interface(), upload_class),
             )
         };
 

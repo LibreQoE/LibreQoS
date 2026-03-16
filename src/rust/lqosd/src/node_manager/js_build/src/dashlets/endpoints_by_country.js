@@ -26,8 +26,7 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+        base.classList.add("dashbox-body-scroll", "dashbox-body-scroll-top10");
         return base;
     }
 

@@ -35,7 +35,7 @@ export class TopTreeSummary extends DashletBaseInsight {
 
         let t = document.createElement("table");
         t.id = this.id + "_table";
-        t.classList.add("dash-table", "table-sm", "mytable", "small");
+        t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "mytable", "small");
 
         let th = document.createElement("thead");
         th.classList.add('small');

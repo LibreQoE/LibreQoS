@@ -78,6 +78,7 @@ impl NetworkJson {
     pub fn load() -> Result<Self, NetworkJsonError> {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
@@ -92,6 +93,8 @@ impl NetworkJson {
             immediate_parent: None,
             rtt_buffer: RttBuffer::default(),
             node_type: None,
+            latitude: None,
+            longitude: None,
             heatmap: None,
             qoq_heatmap: None,
         }];
@@ -327,6 +330,15 @@ fn json_to_mbps(val: Option<&Value>) -> f64 {
     .unwrap_or(0.0)
 }
 
+fn json_to_coordinate(val: Option<&Value>, min: f32, max: f32) -> Option<f32> {
+    val.and_then(|v| {
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+    })
+    .map(|n| n as f32)
+    .filter(|n| n.is_finite() && *n >= min && *n <= max)
+}
+
 fn recurse_node(
     nodes: &mut Vec<NetworkJsonNode>,
     name: &str,
@@ -353,6 +365,10 @@ fn recurse_node(
             .unwrap_or(false);
 
     let node = NetworkJsonNode {
+        id: json
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string),
         parents: parents.to_vec(),
         max_throughput: (
             json_to_mbps(json.get("downloadBandwidthMbps")),
@@ -373,6 +389,8 @@ fn recurse_node(
         node_type: json
             .get("type")
             .map(|v| v.as_str().unwrap_or_default().to_string()),
+        latitude: json_to_coordinate(json.get("latitude"), -90.0, 90.0),
+        longitude: json_to_coordinate(json.get("longitude"), -180.0, 180.0),
         heatmap: None,
         qoq_heatmap: None,
     };
@@ -440,6 +458,7 @@ mod test {
     fn parse_network_json_from_value(value: Value) -> NetworkJson {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
+            id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
@@ -454,6 +473,8 @@ mod test {
             immediate_parent: None,
             rtt_buffer: RttBuffer::default(),
             node_type: None,
+            latitude: None,
+            longitude: None,
             heatmap: None,
             qoq_heatmap: None,
         }];
@@ -551,5 +572,90 @@ mod test {
         let transport = tiny.clone_to_transit();
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
+    }
+
+    #[test]
+    fn parses_optional_node_ids_and_preserves_them_in_transport() {
+        let raw = serde_json::json!({
+            "Site_1": {
+                "id": "uisp:site:123",
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "AP_1": {
+                        "id": "uisp:device:456",
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500,
+                        "children": {}
+                    }
+                }
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+        let site = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "Site_1")
+            .expect("Site_1 must be present");
+        let ap = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "AP_1")
+            .expect("AP_1 must be present");
+
+        assert_eq!(site.id.as_deref(), Some("uisp:site:123"));
+        assert_eq!(ap.id.as_deref(), Some("uisp:device:456"));
+        assert_eq!(
+            site.clone_to_transit().id.as_deref(),
+            Some("uisp:site:123")
+        );
+        assert_eq!(
+            ap.clone_to_transit().id.as_deref(),
+            Some("uisp:device:456")
+        );
+    }
+
+    #[test]
+    fn parses_coordinate_metadata_tolerantly() {
+        let raw = serde_json::json!({
+            "Tower A": {
+                "latitude": "45.123",
+                "longitude": -111.75,
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {}
+            },
+            "Bad Tower": {
+                "latitude": "not-a-number",
+                "longitude": 999,
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {}
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+        let good = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "Tower A")
+            .expect("Tower A must be present");
+        let bad = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "Bad Tower")
+            .expect("Bad Tower must be present");
+
+        assert!((good.latitude.unwrap() - 45.123).abs() < 0.001);
+        assert!((good.longitude.unwrap() + 111.75).abs() < 0.001);
+        assert_eq!(bad.latitude, None);
+        assert_eq!(bad.longitude, None);
+
+        let encoded = serde_json::to_value(good.clone_to_transit()).expect("transport serializes");
+        let encoded_lat = encoded["latitude"].as_f64().expect("latitude encodes as number");
+        let encoded_lon = encoded["longitude"].as_f64().expect("longitude encodes as number");
+        assert!((encoded_lat - 45.123).abs() < 0.001);
+        assert!((encoded_lon + 111.75).abs() < 0.001);
     }
 }

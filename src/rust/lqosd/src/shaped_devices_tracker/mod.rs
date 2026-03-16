@@ -209,6 +209,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 0,
                 NetworkJsonTransport {
                     name: "Others".into(),
+                    id: None,
                     is_virtual: false,
                     max_throughput: (0.0, 0.0),
                     current_throughput: other_bw,
@@ -224,6 +225,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     parents: Vec::new(),
                     immediate_parent: None,
                     node_type: None,
+                    latitude: None,
+                    longitude: None,
                 },
             ));
         }

@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-2.0-only"
 
 [profile.release]
-strip = yes
+strip = true
 lto = "thin"
 incremental = false
 

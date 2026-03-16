@@ -61,6 +61,18 @@ fn traverse_sites(
         "type".to_string(),
         serde_json::Value::String(sites[idx].site_type.as_network_json_string()),
     );
+    entry.insert(
+        "id".to_string(),
+        serde_json::Value::String(generic_node_id(&sites[idx])),
+    );
+    if let (Some(latitude), Some(longitude)) = (sites[idx].latitude, sites[idx].longitude) {
+        if let Some(number) = serde_json::Number::from_f64(latitude as f64) {
+            entry.insert("latitude".to_string(), serde_json::Value::Number(number));
+        }
+        if let Some(number) = serde_json::Number::from_f64(longitude as f64) {
+            entry.insert("longitude".to_string(), serde_json::Value::Number(number));
+        }
+    }
 
     if depth < 10 {
         let mut children = serde_json::Map::new();
@@ -85,4 +97,60 @@ fn traverse_sites(
 
 fn should_traverse(t: &UispSiteType) -> bool {
     !matches!(t, UispSiteType::Client)
+}
+
+fn generic_node_id(site: &UispSite) -> String {
+    if site.site_type == UispSiteType::ClientWithChildren {
+        format!(
+            "libreqos:generated:uisp:site:{}",
+            slugify_generated_name(&site.name)
+        )
+    } else {
+        format!("uisp:site:{}", site.id)
+    }
+}
+
+fn slugify_generated_name(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut last_was_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+#[cfg(test)]
+mod test {
+    use super::{generic_node_id, slugify_generated_name};
+    use crate::uisp_types::{UispSite, UispSiteType};
+
+    #[test]
+    fn slugifies_generated_site_names() {
+        assert_eq!(slugify_generated_name("Orphans"), "orphans");
+        assert_eq!(
+            slugify_generated_name("Generated Site / Tower 1"),
+            "generated-site-tower-1"
+        );
+    }
+
+    #[test]
+    fn generated_site_ids_use_slugged_names() {
+        let site = UispSite {
+            id: "ignored-for-generated".to_string(),
+            name: "Generated Site / Tower 1".to_string(),
+            site_type: UispSiteType::ClientWithChildren,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            generic_node_id(&site),
+            "libreqos:generated:uisp:site:generated-site-tower-1"
+        );
+    }
 }

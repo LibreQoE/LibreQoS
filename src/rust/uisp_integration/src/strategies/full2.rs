@@ -667,6 +667,16 @@ pub fn add_all_sites_to_graph(
             let root_entry = GraphMapping::Root {
                 name: site_name,
                 id,
+                latitude: site
+                    .description
+                    .as_ref()
+                    .and_then(|description| description.location.as_ref())
+                    .map(|location| location.latitude as f32),
+                longitude: site
+                    .description
+                    .as_ref()
+                    .and_then(|description| description.location.as_ref())
+                    .map(|location| location.longitude as f32),
             };
             let root_ref = graph.add_node(root_entry);
             *root_idx = Some(root_ref);
@@ -676,6 +686,16 @@ pub fn add_all_sites_to_graph(
         let site_entry = GraphMapping::Site {
             name: site_name,
             id,
+            latitude: site
+                .description
+                .as_ref()
+                .and_then(|description| description.location.as_ref())
+                .map(|location| location.latitude as f32),
+            longitude: site
+                .description
+                .as_ref()
+                .and_then(|description| description.location.as_ref())
+                .map(|location| location.longitude as f32),
         };
         let site_ref = graph.add_node(site_entry);
         site_map.insert(site.id.clone(), site_ref);

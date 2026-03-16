@@ -11,7 +11,7 @@ Need definitions for licensing/scheduler terms? See the [Glossary](glossary.md).
 | Cannot access WebUI | `systemctl status lqosd` | N/A (UI unavailable) | No WebUI at x.x.x.x:9123 |
 | Traffic is not shaping | verify `to_internet` / `to_network`, service state | WebUI Dashboard | LibreQoS Is Running, But Traffic Not Shaping |
 | Scheduler appears unhealthy | check `lqosd` and `lqos_scheduler` logs | WebUI -> Scheduler Status | Scheduler status in WebUI looks unhealthy |
-| Topology/flow views blank | confirm recent traffic and `lqosd` health | WebUI -> Flow Map / Tree / ASN Explorer | Flow Map / Tree Overview / ASN Explorer appears blank |
+| Topology/flow views blank | confirm recent traffic and `lqosd` health | WebUI -> Flow Globe / Tree / ASN Analysis | Flow Globe / Tree Overview / ASN Analysis appears blank |
 | Urgent issue code appears | open issue details and map code | WebUI -> Urgent Issues | Urgent issue codes and first actions |
 | Mapped circuit cap events | validate license state and mapped counts | Insight UI + WebUI -> Urgent Issues | Mapped circuit limit reached |
 
@@ -22,7 +22,7 @@ Need definitions for licensing/scheduler terms? See the [Glossary](glossary.md).
 - Service/health overview: `WebUI -> Dashboard`
 - Scheduler readiness: `WebUI -> Scheduler Status`
 - High-priority alerts: `WebUI -> Urgent Issues`
-- Topology/traffic visualization: `WebUI -> Network Tree Overview` and `Flow Map`
+- Topology/traffic visualization: `WebUI -> Network Tree Overview` and `Flow Globe`
 - Shaped records review: `WebUI -> Shaped Devices Editor`
 
 ### Before asking in chat: collect this evidence
@@ -181,7 +181,7 @@ Once you have identified the error and fixed ShapedDevices.csv and/or Network.js
 
 ```sudo systemctl start lqos_scheduler```
 
-### Flow Map / Tree Overview / ASN Explorer appears blank
+### Flow Globe / Tree Overview / ASN Analysis appears blank
 
 Some views require enough recent data to render meaningfully. If pages look empty:
 1. Confirm `lqosd` is healthy.

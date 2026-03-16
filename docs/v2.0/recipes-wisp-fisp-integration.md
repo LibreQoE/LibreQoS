@@ -69,7 +69,7 @@ What this shows:
 2. `network.json` behavior matches overwrite policy.
 3. WebUI views are healthy.
 4. Check `Scheduler Status` and `Urgent Issues`.
-5. Check `Network Tree Overview` and `Flow Map`.
+5. Check `Network Tree Overview` and `Flow Globe`.
 6. Parent placement and queue distribution look sane (no unexpected hierarchy collapse).
 
 ## Common Failure Modes

@@ -12,13 +12,27 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Hierarchical topology view of nodes/circuits from the shaper perspective.
 - Useful for spotting bottlenecks and parent/child utilization patterns.
 
-### Flow Map
+### Site Map
+- Flat operational map of Sites and APs using imported node geodata.
+- Defaults to QoO coloring with an RTT toggle, while marker size reflects recent combined throughput.
+- Uses a 30-second client-side average from `NetworkTree` data rather than adding backend rollup work.
+- APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
+- Uses a local LibreQoS-themed basemap with country/state borders, coastlines, major lakes, major rivers, marine areas, subtle physical-region overlays, and higher-zoom major-highway context for geographic orientation.
+- Site Map uses a local Natural Earth-derived roads layer for orientation while keeping the rest of the basemap quiet and operational.
+
+### Flow Globe
 - Geographic flow visualization based on endpoint geolocation.
+- Uses a theme-aware globe with country borders for geographic context.
+- Endpoint markers default to latency mode, with a toggle to switch between latency and throughput coloring.
+- Marker size indicates recent traffic volume.
+- Hover a marker for quick details, or click a marker/cluster to pin its details in the side panel.
 - Best used when enough recent flow data is available.
 
-### ASN Explorer
-- ASN-centric traffic exploration (volume, RTT/retransmit context, and related flow details).
-- Empty results often indicate low recent data volume rather than failure.
+### ASN Analysis
+- Live ASN operations page combining a top-20 ASN leaderboard, latency-vs-traffic bubble chart, selected ASN KPI strip, 15-minute ASN trend chart, and embedded Flow Evidence.
+- Supports `Impact` and `Throughput` ranking modes while keeping ASN flow evidence on the same page.
+- The legacy `ASN Explorer` route now redirects here so older bookmarks still work.
+- Empty results usually indicate low recent data volume rather than failure.
 
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.
@@ -51,9 +65,10 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 ## Common Empty-State Behavior
 
 The following pages may appear sparse/blank when data is low:
-- Flow Map
+- Site Map
+- Flow Globe
 - Tree Overview Sankey views
-- ASN Explorer
+- ASN Analysis / Flow Evidence
 
 When this happens:
 1. Confirm `lqosd` is healthy.

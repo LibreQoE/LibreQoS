@@ -78,6 +78,10 @@ def createShaper() -> NetworkGraph:
             continue
         if name not in parents:
             parents[name] = parent_counter
+            zone_id = zone.get("id", zone.get("zone_id"))
+            network_json_id = ""
+            if zone_id not in (None, ""):
+                network_json_id = f"netzur:zone:{zone_id}"
             net.addRawNode(
                 NetworkNode(
                     id=parent_counter,
@@ -85,6 +89,7 @@ def createShaper() -> NetworkGraph:
                     type=NodeType.site,
                     download=_apply_rate(zone.get("capacity_download_mbps")),
                     upload=_apply_rate(zone.get("capacity_upload_mbps")),
+                    networkJsonId=network_json_id,
                 )
             )
             parent_counter += 1

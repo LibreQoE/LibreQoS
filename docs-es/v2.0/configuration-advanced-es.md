@@ -87,6 +87,26 @@ flowchart LR
 
 Network.json permite a los operadores de internet (ISP) definir una topología de red jerárquica o plana.
 
+Cada nodo de topología puede incluir opcionalmente un campo `"id"`. Este campo está pensado para transportar un identificador estable del CRM/NMS de origen cuando exista. LibreQoS todavía sigue haciendo match de jerarquía y overrides por nombre de nodo, no por este ID, así que por ahora `"id"` es metadata.
+
+Formato recomendado:
+
+```json
+{
+  "Tower_A": {
+    "id": "uisp:site:abc123",
+    "downloadBandwidthMbps": 1000,
+    "uploadBandwidthMbps": 1000,
+    "type": "site"
+  }
+}
+```
+
+Notas:
+- Use IDs string con namespace como `uisp:site:<id>`, `splynx:network_site:<id>` o `sonar:ap:<id>`.
+- Los nodos generados solo por LibreQoS pueden usar IDs generados estables como `libreqos:generated:uisp:site:orphans`.
+- También pueden aparecer campos de metadata específicos de integración como `uisp_site` y `uisp_device` junto con el campo genérico `id`.
+
 Si planea usar las integraciones ya incluidas en LibreQoS de UISP, Splynx o Netzur, no necesita todavía crear un archivo network.json.
 Si planea usar la integración ya incluida de UISP, el archivo network.json se creará en automático durante la primera ejecución (siempre y cuando network.json no exista previamente).
 

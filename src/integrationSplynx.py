@@ -18,6 +18,28 @@ from integrationCommon import NetworkGraph, NetworkNode, NodeType
 import os
 import csv
 
+def parse_gps_pair(value):
+	"""
+	Parse a Splynx `gps` string in `lat,lon` form.
+	Returns `(latitude, longitude)` or `(None, None)` for malformed data.
+	"""
+	if value is None:
+		return (None, None)
+	text = str(value).strip()
+	if not text:
+		return (None, None)
+	parts = [part.strip() for part in text.split(',')]
+	if len(parts) != 2:
+		return (None, None)
+	try:
+		latitude = float(parts[0])
+		longitude = float(parts[1])
+	except (TypeError, ValueError):
+		return (None, None)
+	if latitude < -90 or latitude > 90 or longitude < -180 or longitude > 180:
+		return (None, None)
+	return (latitude, longitude)
+
 def build_online_ip_maps(customersOnline):
 	"""
 	Build maps of service_id -> [ipv4], [ipv6] from customers-online payload.
@@ -257,6 +279,7 @@ def run_splynx_pipeline(strategy_name: str):
 	site_id_to_node_id = {}
 	site_id_to_name = {}
 	site_id_to_address = {}
+	site_id_to_coords = {}
 	if network_sites:
 		for site in network_sites:
 			site_id = site.get('id')
@@ -268,6 +291,7 @@ def run_splynx_pipeline(strategy_name: str):
 			site_id_to_node_id[site_id] = node_id
 			site_id_to_name[site_id] = name
 			site_id_to_address[site_id] = address
+			site_id_to_coords[site_id] = parse_gps_pair(site.get('gps'))
 
 	def ap_node_id(raw_id):
 		return f"ap_{raw_id}"
@@ -298,7 +322,10 @@ def run_splynx_pipeline(strategy_name: str):
 					download = siteBandwidth[nodeName]["download"]
 					upload = siteBandwidth[nodeName]["upload"]
 				node = NetworkNode(id=node_id, displayName=nodeName, type=NodeType.site,
-					parentId=None, download=download, upload=upload, address=address)
+					parentId=None, download=download, upload=upload, address=address,
+					networkJsonId=f"splynx:network_site:{site_id}",
+					latitude=site_id_to_coords.get(site_id, (None, None))[0],
+					longitude=site_id_to_coords.get(site_id, (None, None))[1])
 				net.addRawNode(node)
 			created_ap = 0
 			for ap_id, ap_device in ap_nodes.items():
@@ -312,8 +339,11 @@ def run_splynx_pipeline(strategy_name: str):
 				site_id = ap_device.get('network_site_id')
 				if site_id in site_id_to_node_id:
 					parent_id = site_id_to_node_id[site_id]
+				latitude, longitude = parse_gps_pair(ap_device.get('gps'))
 				node = NetworkNode(id=ap_node_id(ap_id), displayName=nodeName, type=NodeType.ap,
-					parentId=parent_id, download=download, upload=upload, address=None)
+					parentId=parent_id, download=download, upload=upload, address=None,
+					networkJsonId=f"splynx:ap:{ap_id}",
+					latitude=latitude, longitude=longitude)
 				net.addRawNode(node)
 				created_ap += 1
 			print(f"Created {created_ap} AP nodes (Network Sites mode)")
@@ -327,7 +357,8 @@ def run_splynx_pipeline(strategy_name: str):
 				if nodeName in siteBandwidth:
 					download = siteBandwidth[nodeName]["download"]
 					upload = siteBandwidth[nodeName]["upload"]
-				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None)
+				latitude, longitude = parse_gps_pair(ap_device.get('gps'))
+				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None, networkJsonId=f"splynx:ap:{ap_id}", latitude=latitude, longitude=longitude)
 				net.addRawNode(node)
 			return
 		# ap_site and full
@@ -649,6 +680,10 @@ def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, h
 	"""
 	Create site and AP nodes from monitoring data.
 	"""
+	monitoring_gps = {}
+	for dev in monitoring:
+		if 'id' in dev:
+			monitoring_gps[str(dev.get('id'))] = parse_gps_pair(dev.get('gps'))
 	for device_num in hardware_name:
 		parent_id = None
 		if device_num in hardware_parent.keys():
@@ -661,12 +696,15 @@ def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, h
 			download = siteBandwidth[nodeName]["download"]
 			upload = siteBandwidth[nodeName]["upload"]
 		nodeType = hardware_type[device_num]
+		latitude, longitude = monitoring_gps.get(str(device_num), (None, None))
 		if nodeType == 'AP':
 			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.ap,
-				parentId=parent_id, download=download, upload=upload, address=None)
+				parentId=parent_id, download=download, upload=upload, address=None,
+				networkJsonId=f"splynx:ap:{device_num}", latitude=latitude, longitude=longitude)
 		else:
 			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
-				parentId=parent_id, download=download, upload=upload, address=None)
+				parentId=parent_id, download=download, upload=upload, address=None,
+				networkJsonId=f"splynx:site:{device_num}", latitude=latitude, longitude=longitude)
 		net.addRawNode(node)
 
 def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter):

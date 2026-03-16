@@ -29,6 +29,55 @@ const listenOnce = (eventName, handler) => {
     wsClient.on(eventName, wrapped);
 };
 
+function formatDeviceIp(ip) {
+    if (typeof ip === "string") {
+        return ip;
+    }
+    if (ip === null || ip === undefined) {
+        return "-";
+    }
+    if (ip instanceof Uint8Array) {
+        return formatIpBytes(ip);
+    }
+    if (Array.isArray(ip)) {
+        if (ip.every((entry) => Number.isFinite(Number(entry)))) {
+            return formatIpBytes(ip);
+        }
+        return ip.map((entry) => formatDeviceIp(entry)).filter(Boolean).join(", ");
+    }
+    if (typeof ip === "object") {
+        if (ip.V4 !== undefined) {
+            return formatDeviceIp(ip.V4);
+        }
+        if (ip.V6 !== undefined) {
+            return formatDeviceIp(ip.V6);
+        }
+        if (ip.addr !== undefined) {
+            return formatDeviceIp(ip.addr);
+        }
+        if (Array.isArray(ip.data) || ip.data instanceof Uint8Array) {
+            return formatDeviceIp(ip.data);
+        }
+    }
+    return String(ip);
+}
+
+function formatIpBytes(bytes) {
+    const list = Array.from(bytes);
+    if (list.length === 4) {
+        return list.join(".");
+    }
+    if (list.length === 16) {
+        const parts = [];
+        for (let i = 0; i < list.length; i += 2) {
+            const part = ((Number(list[i]) || 0) << 8) | (Number(list[i + 1]) || 0);
+            parts.push(part.toString(16).padStart(4, "0"));
+        }
+        return parts.join(":");
+    }
+    return list.join(".");
+}
+
 function initTooltipsWithin(rootEl) {
     if (!rootEl) return;
     if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
@@ -86,8 +135,10 @@ function toggleNode(nodeId) {
 }
 
 function renderTree() {
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
     let treeTable = document.createElement("table");
-    treeTable.classList.add("table", "table-striped", "table-bordered");
+    treeTable.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead");
     thead.appendChild(theading("Name"));
     thead.appendChild(theading("Limit"));
@@ -130,7 +181,8 @@ function renderTree() {
     // Clear and apply
     let target = document.getElementById("tree");
     clearDiv(target)
-    target.appendChild(treeTable);
+    tableWrap.appendChild(treeTable);
+    target.appendChild(tableWrap);
     initTooltipsWithin(treeTable);
 }
 
@@ -495,55 +547,135 @@ function clientsUpdate(msg) {
 
     let target = document.getElementById("clients");
     let table = document.createElement("table");
-    table.classList.add("table", "table-striped", "table-bordered");
+    table.classList.add("lqos-table", "lqos-table-tight");
     table.appendChild(clientTableHeader());
     let tbody = document.createElement("tbody");
     clearDiv(target);
 
+    const circuits = new Map();
     msg.data.forEach((device) => {
-        if (device.parent_node === myName) {
+        if (device.parent_node !== myName) {
+            return;
+        }
+
+        const circuitId = device.circuit_id || `${device.parent_node || ""}:${device.circuit_name || ""}`;
+        if (!circuits.has(circuitId)) {
+            circuits.set(circuitId, {
+                circuit_id: circuitId,
+                circuit_name: device.circuit_name || "(Unknown circuit)",
+                parent_node: device.parent_node || "",
+                plan: {
+                    down: toNumber(device.plan?.down, 0),
+                    up: toNumber(device.plan?.up, 0),
+                },
+                device_names: new Set(),
+                ips: new Set(),
+                last_seen_nanos: toNumber(device.last_seen_nanos, 0),
+                bytes_per_second: {down: 0, up: 0},
+                median_latency: {down: null, up: null},
+                tcp_packets: {down: 0, up: 0},
+                tcp_retransmits: {down: 0, up: 0},
+            });
+        }
+
+        const circuit = circuits.get(circuitId);
+        if (device.device_name) {
+            circuit.device_names.add(device.device_name);
+        }
+        const ipText = formatDeviceIp(device.ip);
+        if (ipText && ipText !== "-") {
+            circuit.ips.add(ipText);
+        }
+
+        circuit.last_seen_nanos = Math.min(circuit.last_seen_nanos, toNumber(device.last_seen_nanos, 0));
+        circuit.bytes_per_second.down += toNumber(device.bytes_per_second?.down, 0);
+        circuit.bytes_per_second.up += toNumber(device.bytes_per_second?.up, 0);
+        circuit.tcp_packets.down += toNumber(device.tcp_packets?.down, 0);
+        circuit.tcp_packets.up += toNumber(device.tcp_packets?.up, 0);
+        circuit.tcp_retransmits.down += toNumber(device.tcp_retransmits?.down, 0);
+        circuit.tcp_retransmits.up += toNumber(device.tcp_retransmits?.up, 0);
+
+        const downLatency = toNumber(device.median_latency?.down, 0);
+        if (downLatency > 0 && (circuit.median_latency.down === null || downLatency > circuit.median_latency.down)) {
+            circuit.median_latency.down = downLatency;
+        }
+        const upLatency = toNumber(device.median_latency?.up, 0);
+        if (upLatency > 0 && (circuit.median_latency.up === null || upLatency > circuit.median_latency.up)) {
+            circuit.median_latency.up = upLatency;
+        }
+    });
+
+    Array.from(circuits.values())
+        .sort((a, b) => a.circuit_name.localeCompare(b.circuit_name))
+        .forEach((circuit) => {
             let tr = document.createElement("tr");
             tr.classList.add("small");
+
             let linkTd = document.createElement("td");
             let circuitLink = document.createElement("a");
-            circuitLink.href = "/circuit.html?id=" + device.circuit_id;
-            circuitLink.innerText = device.circuit_name;
+            circuitLink.href = "/circuit.html?id=" + circuit.circuit_id;
+            circuitLink.innerText = circuit.circuit_name;
             circuitLink.classList.add("redactable");
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
-            tr.appendChild(simpleRow(device.device_name, true));
-            tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
-            tr.appendChild(simpleRow(device.parent_node, true));
-            tr.appendChild(simpleRow(device.ip, true));
-            tr.appendChild(simpleRow(formatLastSeen(device.last_seen_nanos)));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, device.plan.down)));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, device.plan.up)));
-            if (device.median_latency !== null) {
-                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.down)));
-                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.up)));
+
+            const deviceNames = Array.from(circuit.device_names);
+            const deviceCell = simpleRow(
+                deviceNames.length > 2 ? `${deviceNames[0]}, ${deviceNames[1]} +${deviceNames.length - 2}` : deviceNames.join(", "),
+                true
+            );
+            if (deviceNames.length > 0) {
+                deviceCell.title = deviceNames.join(", ");
+            }
+            tr.appendChild(deviceCell);
+
+            tr.appendChild(simpleRow(circuit.plan.down + " / " + circuit.plan.up));
+            tr.appendChild(simpleRow(circuit.parent_node, true));
+
+            const ipList = Array.from(circuit.ips);
+            const ipCell = simpleRow(
+                ipList.length > 2 ? `${ipList[0]}, ${ipList[1]} +${ipList.length - 2}` : ipList.join(", "),
+                true
+            );
+            if (ipList.length > 0) {
+                ipCell.title = ipList.join(", ");
+            }
+            tr.appendChild(ipCell);
+
+            tr.appendChild(simpleRow(formatLastSeen(circuit.last_seen_nanos)));
+            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.down * 8, circuit.plan.down)));
+            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.up * 8, circuit.plan.up)));
+
+            if (circuit.median_latency.down !== null) {
+                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.down)));
             } else {
                 tr.appendChild(simpleRow("-"));
+            }
+            if (circuit.median_latency.up !== null) {
+                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.up)));
+            } else {
                 tr.appendChild(simpleRow("-"));
             }
+
             let retr = 0;
-            const devicePacketsDown = toNumber(device.tcp_packets.down, 0);
-            if (devicePacketsDown > 0) {
-                retr = toNumber(device.tcp_retransmits.down, 0) / devicePacketsDown;
-            }
-            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
-            retr = 0;
-            const devicePacketsUp = toNumber(device.tcp_packets.up, 0);
-            if (devicePacketsUp > 0) {
-                retr = toNumber(device.tcp_retransmits.up, 0) / devicePacketsUp;
+            if (circuit.tcp_packets.down > 0) {
+                retr = circuit.tcp_retransmits.down / circuit.tcp_packets.down;
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
-            // Add it
+            retr = 0;
+            if (circuit.tcp_packets.up > 0) {
+                retr = circuit.tcp_retransmits.up / circuit.tcp_packets.up;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
+
             tbody.appendChild(tr);
-        }
-    });
+        });
     table.appendChild(tbody);
-    target.appendChild(table);
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
+    tableWrap.appendChild(table);
+    target.appendChild(tableWrap);
 }
 
 function onMessage(msg) {

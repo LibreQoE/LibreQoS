@@ -11,6 +11,8 @@ pub struct UispSite {
     pub id: String,
     pub name: String,
     pub site_type: UispSiteType,
+    pub latitude: Option<f32>,
+    pub longitude: Option<f32>,
     pub uisp_parent_id: Option<String>,
     pub parent_indices: HashSet<usize>,
     pub max_down_mbps: u64,
@@ -32,6 +34,8 @@ impl Default for UispSite {
             id: "".to_string(),
             name: "".to_string(),
             site_type: UispSiteType::Site,
+            latitude: None,
+            longitude: None,
             uisp_parent_id: None,
             parent_indices: Default::default(),
             max_down_mbps: 0,
@@ -70,6 +74,12 @@ impl UispSite {
             config.queues.generated_pn_download_mbps,
             config.queues.generated_pn_upload_mbps,
         );
+        let (latitude, longitude) = value
+            .description
+            .as_ref()
+            .and_then(|description| description.location.as_ref())
+            .map(|location| (Some(location.latitude as f32), Some(location.longitude as f32)))
+            .unwrap_or((None, None));
         // Extract UISP QoS base speeds (bps -> Mbps) and burst sizes (kB/s -> Mbps)
         let mut base_down_mbps: f32 = 0.0;
         let mut base_up_mbps: f32 = 0.0;
@@ -118,6 +128,8 @@ impl UispSite {
             id: value.id.clone(),
             name: value.name_or_blank(),
             site_type: UispSiteType::from_uisp_record(value).unwrap(),
+            latitude,
+            longitude,
             parent_indices: HashSet::new(),
             uisp_parent_id,
             max_down_mbps,
