@@ -10,7 +10,7 @@ This assembles the JavaScript for the node_manager site using `esbuild`.
 
 ## Commands
 
-- `./test-build-contract.sh`
 - `./esbuild.sh`
+- `./test-build-contract.sh`
 
 `esbuild.sh` prefers a locally installed `esbuild` binary when available. If none is found, it falls back to downloading a standalone binary into `/tmp/esbuild`.
