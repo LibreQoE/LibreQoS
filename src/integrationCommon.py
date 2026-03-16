@@ -125,8 +125,10 @@ class NetworkNode:
 	address: str
 	mac: str
 	networkJsonId: str
+	latitude: float
+	longitude: float
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "") -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "", latitude = None, longitude = None) -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -143,6 +145,8 @@ class NetworkNode:
 		self.customerName = customerName
 		self.mac = mac
 		self.networkJsonId = networkJsonId
+		self.latitude = latitude
+		self.longitude = longitude
 
 
 class NetworkGraph:
@@ -468,6 +472,9 @@ class NetworkGraph:
 		}
 		if self.nodes[idx].networkJsonId:
 			node["id"] = self.nodes[idx].networkJsonId
+		if self.nodes[idx].latitude is not None and self.nodes[idx].longitude is not None:
+			node["latitude"] = self.nodes[idx].latitude
+			node["longitude"] = self.nodes[idx].longitude
 		children = {}
 		hasChildren = False
 		

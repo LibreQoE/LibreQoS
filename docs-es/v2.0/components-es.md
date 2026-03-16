@@ -21,9 +21,10 @@ flowchart LR
 - Implementado en Rust.
 - Ejecuta la UI local disponible en `http://a.b.c.d:9123`.
 - Hospeda páginas de WebUI (Node Manager) como:
-  - Mapa de flujos
+  - Site Map
+  - Flow Globe
   - Árbol de red
-  - Explorador ASN
+  - ASN Analysis
   - Árbol/Pesos de CPU
   - Editores de configuración para integraciones (UISP, Splynx, Netzur, VISP, etc.)
 

@@ -21,9 +21,10 @@ flowchart LR
 - Coded in Rust.
 - Runs the GUI available at http://a.b.c.d:9123
 - Hosts WebUI pages such as:
-  - Flow Map
+  - Site Map
+  - Flow Globe
   - Network Tree Overview
-  - ASN Explorer
+  - ASN Analysis
   - CPU Tree / CPU Weights
   - Configuration editors for integrations (UISP, Splynx, Netzur, VISP, etc.)
 

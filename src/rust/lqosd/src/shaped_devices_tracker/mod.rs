@@ -225,6 +225,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     parents: Vec::new(),
                     immediate_parent: None,
                     node_type: None,
+                    latitude: None,
+                    longitude: None,
                 },
             ));
         }

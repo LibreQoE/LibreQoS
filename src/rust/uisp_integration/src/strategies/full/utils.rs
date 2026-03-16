@@ -78,6 +78,8 @@ pub fn warn_of_no_parents_and_promote(
             id: "orphans".to_string(),
             name: "Orphaned Nodes".to_string(),
             site_type: UispSiteType::Site,
+            latitude: None,
+            longitude: None,
             uisp_parent_id: None,
             parent_indices: Default::default(),
             max_down_mbps: config.queues.downlink_bandwidth_mbps,

@@ -112,11 +112,11 @@ export function colorByRttMs(rttMs, scale = null) {
 export function colorByQoqScore(score0to100) {
     // Distinguish "no data" from a real 0 score (which is legitimately bad).
     if (score0to100 === null || score0to100 === undefined) {
-        return "var(--bs-border-color)";
+        return "#8893a5";
     }
     const raw = Number(score0to100);
     if (!Number.isFinite(raw)) {
-        return "var(--bs-border-color)";
+        return "#8893a5";
     }
     const s = Math.min(100, Math.max(0, raw));
     if (isColorBlindMode()) {

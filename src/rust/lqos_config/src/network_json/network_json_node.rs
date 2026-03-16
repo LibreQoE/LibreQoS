@@ -62,6 +62,12 @@ pub struct NetworkJsonNode {
     /// The node type
     pub node_type: Option<String>,
 
+    /// Optional geographic latitude carried in `network.json` metadata.
+    pub latitude: Option<f32>,
+
+    /// Optional geographic longitude carried in `network.json` metadata.
+    pub longitude: Option<f32>,
+
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
 
@@ -133,6 +139,8 @@ impl NetworkJsonNode {
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,
             node_type: self.node_type.clone(),
+            latitude: self.latitude,
+            longitude: self.longitude,
         }
     }
 }

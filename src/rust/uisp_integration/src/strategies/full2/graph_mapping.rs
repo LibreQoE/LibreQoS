@@ -1,14 +1,18 @@
 use serde::Serialize;
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum GraphMapping {
     Root {
         name: String,
         id: String,
+        latitude: Option<f32>,
+        longitude: Option<f32>,
     },
     Site {
         name: String,
         id: String,
+        latitude: Option<f32>,
+        longitude: Option<f32>,
     },
     GeneratedSite {
         name: String,
@@ -69,6 +73,8 @@ mod test {
         let root = GraphMapping::Root {
             name: "Main".to_string(),
             id: "site-1".to_string(),
+            latitude: None,
+            longitude: None,
         };
         let ap = GraphMapping::AccessPoint {
             name: "AP".to_string(),

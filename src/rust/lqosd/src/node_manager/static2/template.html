@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>%%TITLE%%</title>
     <link rel="icon" href="favicon.png">
+    <script>
+    (function () {
+        try {
+            const theme = localStorage.getItem("theme");
+            document.documentElement.setAttribute(
+                "data-bs-theme",
+                theme === "light" ? "light" : "dark"
+            );
+        } catch (_) {
+            document.documentElement.setAttribute("data-bs-theme", "dark");
+        }
+    })();
+    </script>
     <link href="vendor/bootstrap.min.css" rel="stylesheet">
     <script src="vendor/jquery-3.7.1.min.js"></script>
     <script src="vendor/echarts.min.js"></script>
@@ -71,10 +84,16 @@
                             <i class="fa fa-fw fa-centerline fa-address-card nav-icon"></i> Unknown IP <span id="unknownIpCount" class="badge menu-badge text-warning muted">?</span>
                         </a>
                     </li>
-                    <!-- Flow Map -->
+                    <!-- Site Map -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="site_map.html">
+                            <i class="fa fa-fw fa-centerline fa-map-location-dot nav-icon"></i> Site Map
+                        </a>
+                    </li>
+                    <!-- Flow Globe -->
                     <li class="nav-item">
                         <a class="nav-link" href="flow_map.html">
-                            <i class="fa fa-fw fa-centerline fa-map nav-icon"></i> Flow Map
+                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> Flow Globe
                         </a>
                     </li>
                     <!-- Tree Sankey -->
@@ -83,10 +102,10 @@
                             <i class="fa fa-fw fa-centerline fa-server nav-icon"></i> Tree Overview
                         </a>
                     </li>
-                    <!-- ASN Explorer -->
+                    <!-- ASN Analysis -->
                     <li class="nav-item">
-                        <a class="nav-link" href="asn_explorer.html">
-                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Explorer
+                        <a class="nav-link" href="asn_analysis.html">
+                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Analysis
                         </a>
                     </li>
                     <!-- CPU Affinity -->

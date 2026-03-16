@@ -12,12 +12,26 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Vista jerárquica de nodos/circuitos desde la perspectiva del shaper.
 - Útil para identificar cuellos de botella y patrones de utilización padre/hijo.
 
-### Mapa de flujos
-- Visualización geográfica de flujos según geolocalización de endpoints.
+### Site Map
+- Mapa operativo plano de sitios y APs usando geodatos importados de nodos.
+- Usa QoO por defecto con un selector alternativo para RTT, mientras el tamaño del marcador refleja el throughput combinado reciente.
+- Usa un promedio del lado cliente de 30 segundos a partir de `NetworkTree`, sin agregar trabajo de rollup en el backend.
+- Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
+- Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.
+- Site Map ahora distribuye localmente una superposición GRIP filtrada a mayor zoom para mejorar la orientación, mientras que las carreteras integradas de Natural Earth siguen funcionando como respaldo/contexto a menor zoom. La capa GRIP incluida se adelgaza a corredores más largos para añadir estructura reconocible sin convertir el mapa en un callejero completo.
+
+### Flow Globe
+- Visualización geográfica de flujos basada en la geolocalización de endpoints.
+- Usa un globo temático con bordes de países para contexto geográfico.
+- Los marcadores de endpoints usan latencia por defecto, con un selector para cambiar entre latencia y throughput.
+- El tamaño del marcador indica el volumen reciente de tráfico.
+- Pase el cursor para detalles rápidos o haga clic en un marcador/cluster para fijar sus detalles en el panel lateral.
 - Requiere volumen de datos reciente suficiente.
 
-### Explorador ASN
-- Exploración por ASN (volumen, RTT/retransmisiones y detalle de flujos asociados).
+### ASN Analysis
+- Página operativa ASN en vivo que combina un ranking top-20 de ASN, gráfico de burbujas latencia-vs-tráfico, franja mínima de KPIs del ASN seleccionado, gráfico de tendencia ASN de 15 minutos y la sección integrada de Flow Evidence.
+- Soporta modos de ranking `Impact` y `Throughput`, manteniendo la evidencia de flujos ASN en la misma página.
+- La ruta heredada `ASN Explorer` ahora redirige aquí para conservar compatibilidad con marcadores antiguos.
 - Resultados vacíos suelen indicar poco dato reciente, no necesariamente falla.
 
 ### Árbol/ponderación de CPU
@@ -51,9 +65,10 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ## Comportamiento de vistas vacías
 
 Las siguientes vistas pueden verse vacías cuando hay poco dato:
-- Mapa de flujos
+- Site Map
+- Flow Globe
 - Sankey del árbol de red
-- Explorador ASN
+- ASN Analysis / Flow Evidence
 
 Si ocurre:
 1. Confirme que `lqosd` está saludable.

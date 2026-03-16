@@ -11,7 +11,7 @@ Use esta tabla para ir al primer check rápidamente.
 | No se puede acceder a la WebUI | `systemctl status lqosd` | N/A (UI no disponible) | No hay WebUI en x.x.x.x:9123 |
 | Hay tráfico pero no hace shaping | verificar `to_internet` / `to_network` y servicios | WebUI Dashboard | LibreQoS está en ejecución, pero no hace shaping |
 | Scheduler no saludable | revisar logs de `lqosd` y `lqos_scheduler` | WebUI -> Scheduler Status | El estado del scheduler en WebUI aparece no saludable |
-| Vistas de topología/flujo vacías | confirmar tráfico reciente y estado de `lqosd` | WebUI -> Flow Map / Tree / ASN Explorer | Flow Map / Tree Overview / ASN Explorer aparecen en blanco |
+| Vistas de topología/flujo vacías | confirmar tráfico reciente y estado de `lqosd` | WebUI -> Flow Globe / Tree / ASN Analysis | Flow Globe / Tree Overview / ASN Analysis aparecen en blanco |
 | Aparece código urgente | abrir detalle y mapear código | WebUI -> Urgent Issues | Códigos de problemas urgentes y primeras acciones |
 | Eventos de límite de circuitos | validar licencia y conteos mapped | Insight UI + WebUI -> Urgent Issues | Se alcanzó el límite de circuitos mapeados |
 
@@ -22,7 +22,7 @@ Use esta tabla para ir al primer check rápidamente.
 - Estado de servicios y salud general: `WebUI -> Dashboard`
 - Estado/readiness del scheduler: `WebUI -> Scheduler Status`
 - Alertas prioritarias: `WebUI -> Urgent Issues`
-- Visualización de topología/tráfico: `WebUI -> Network Tree Overview` y `Flow Map`
+- Visualización de topología/tráfico: `WebUI -> Network Tree Overview` y `Flow Globe`
 - Revisión de datos de shaping: `WebUI -> Shaped Devices Editor`
 
 ### Antes de pedir ayuda en chat: recolecte esta evidencia
@@ -155,7 +155,7 @@ Corrija errores en `ShapedDevices.csv` y/o `network.json`, luego:
 sudo systemctl start lqos_scheduler
 ```
 
-### Flow Map / Tree Overview / ASN Explorer aparecen en blanco
+### Flow Globe / Tree Overview / ASN Analysis aparecen en blanco
 
 Algunas vistas requieren suficiente dato reciente para renderizar.
 

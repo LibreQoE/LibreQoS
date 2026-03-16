@@ -21,7 +21,7 @@ Si todavía no eligió ruta de despliegue, empiece por [Quickstart](quickstart-e
 - Comportamiento común de integración: `Configuration -> Integrations`
 - Campos por integración: `Configuration -> Integrations`
 - Validación de salud tras cambios: `WebUI -> Scheduler Status` y `WebUI -> Urgent Issues`
-- Validación de resultados/topología: `WebUI -> Network Tree Overview` y `Flow Map`
+- Validación de resultados/topología: `WebUI -> Network Tree Overview` y `Flow Globe`
 
 ## Integraciones incluidas
 

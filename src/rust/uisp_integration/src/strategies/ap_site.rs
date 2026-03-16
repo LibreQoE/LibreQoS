@@ -207,6 +207,14 @@ impl Layer {
                         root.insert("id".to_string(), format!("uisp:site:{}", site.id).into());
                         root.insert("uisp_site".to_string(), site.id.clone().into());
                         root.insert("parent_site".to_string(), name.to_string().into());
+                        if let (Some(latitude), Some(longitude)) = (site.latitude, site.longitude) {
+                            if let Some(number) = serde_json::Number::from_f64(latitude as f64) {
+                                root.insert("latitude".to_string(), serde_json::Value::Number(number));
+                            }
+                            if let Some(number) = serde_json::Number::from_f64(longitude as f64) {
+                                root.insert("longitude".to_string(), serde_json::Value::Number(number));
+                            }
+                        }
                     }
                 }
                 GraphMapping::AccessPointByName(name) => {

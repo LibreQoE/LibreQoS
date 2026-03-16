@@ -32,7 +32,7 @@ flowchart LR
 - Integration defaults/common behavior: `Configuration -> Integrations`
 - Per-integration configuration fields: `Configuration -> Integrations`
 - Operational health checks after sync changes: `WebUI -> Scheduler Status` and `WebUI -> Urgent Issues`
-- Topology/result validation: `WebUI -> Network Tree Overview` and `Flow Map`
+- Topology/result validation: `WebUI -> Network Tree Overview` and `Flow Globe`
 
 ## Built-In Integrations
 

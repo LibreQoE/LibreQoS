@@ -65,6 +65,14 @@ fn traverse_sites(
         "id".to_string(),
         serde_json::Value::String(generic_node_id(&sites[idx])),
     );
+    if let (Some(latitude), Some(longitude)) = (sites[idx].latitude, sites[idx].longitude) {
+        if let Some(number) = serde_json::Number::from_f64(latitude as f64) {
+            entry.insert("latitude".to_string(), serde_json::Value::Number(number));
+        }
+        if let Some(number) = serde_json::Number::from_f64(longitude as f64) {
+            entry.insert("longitude".to_string(), serde_json::Value::Number(number));
+        }
+    }
 
     if depth < 10 {
         let mut children = serde_json::Map::new();

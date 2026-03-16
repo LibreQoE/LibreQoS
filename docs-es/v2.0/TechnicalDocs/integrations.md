@@ -131,7 +131,7 @@ To ensure the network.json is always overwritten with the newest version pulled 
 Edit the file to set the value of `always_overwrite_network_json` to `true`.
 Then, run `sudo systemctl restart lqosd`.
 
-You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
+You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ### UISP Overrides
 

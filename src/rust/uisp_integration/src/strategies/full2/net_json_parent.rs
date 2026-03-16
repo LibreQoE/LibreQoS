@@ -22,10 +22,31 @@ pub fn walk_parents(
     map.insert("downloadBandwidthMbps".into(), node_info.download.into());
     map.insert("uploadBandwidthMbps".into(), node_info.upload.into());
     match node_info.mapping {
-        GraphMapping::Root { id, .. } | GraphMapping::Site { id, .. } => {
+        GraphMapping::Root {
+            id,
+            latitude,
+            longitude,
+            ..
+        }
+        | GraphMapping::Site {
+            id,
+            latitude,
+            longitude,
+            ..
+        } => {
             map.insert("type".into(), "Site".into());
             map.insert("uisp_site".into(), id.clone().into());
             map.insert("parent_site".into(), name.clone().into());
+            if let Some(latitude) = latitude
+                && let Some(number) = serde_json::Number::from_f64(*latitude as f64)
+            {
+                map.insert("latitude".into(), serde_json::Value::Number(number));
+            }
+            if let Some(longitude) = longitude
+                && let Some(number) = serde_json::Number::from_f64(*longitude as f64)
+            {
+                map.insert("longitude".into(), serde_json::Value::Number(number));
+            }
         }
         GraphMapping::GeneratedSite { .. } => {
             map.insert("type".into(), "Site".into());

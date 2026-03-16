@@ -75,7 +75,7 @@ See [Troubleshooting](troubleshooting.md#urgent-issue-codes-and-first-actions) f
 3. Run/observe `lqos_scheduler` and `lqosd` logs after each change.
 4. Validate WebUI:
    - CPU Tree / CPU Weights distribution
-   - Flow Map/ASN/Tree behavior
+   - Flow Globe/ASN/Tree behavior
    - scheduler status and urgent issues
 5. Keep a rollback copy of prior integration settings and topology files.
 

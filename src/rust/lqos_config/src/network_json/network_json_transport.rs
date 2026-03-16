@@ -46,4 +46,10 @@ pub struct NetworkJsonTransport {
     /// The type of node (site, ap, etc.)
     #[serde(rename = "type")]
     pub node_type: Option<String>,
+    /// Optional node latitude from network.json metadata.
+    #[serde(default)]
+    pub latitude: Option<f32>,
+    /// Optional node longitude from network.json metadata.
+    #[serde(default)]
+    pub longitude: Option<f32>,
 }

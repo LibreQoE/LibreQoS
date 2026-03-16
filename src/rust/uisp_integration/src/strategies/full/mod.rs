@@ -121,6 +121,8 @@ pub async fn build_full_network(
             id: format!("{}_Infrastructure", sites[root_idx].name.clone()),
             name: format!("{}_Infrastructure", sites[root_idx].name.clone()),
             site_type: UispSiteType::Site,
+            latitude: None,
+            longitude: None,
             uisp_parent_id: None,
             parent_indices: Default::default(),
             max_down_mbps: sites[root_idx].max_down_mbps,
