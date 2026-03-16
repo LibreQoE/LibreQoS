@@ -375,6 +375,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     yAxisIndex: 0,
                     showSymbol: false,
                     smooth: false,
+                    step: "end",
                     lineStyle: {
                         width: 2.4,
                         color: this.colors.throughputLine,
@@ -434,6 +435,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     showSymbol: false,
                     connectNulls: false,
                     smooth: false,
+                    step: "end",
                     lineStyle: {
                         width: 2.1,
                         color: this.colors.qooLine,
