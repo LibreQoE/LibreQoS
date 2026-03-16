@@ -180,10 +180,11 @@ function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
         const ceilingBps = toNumber(ceilingData[i][1], 0);
         const throughputBps = toNumber(throughputData[i][1], 0);
         const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
+        const activeTimestamp = i > 0 ? timestamp : windowStart;
 
         if (base.length === 0) {
             base.push([timestamp, ceilingBps]);
-            active.push([timestamp, atCeiling ? ceilingBps : null]);
+            active.push([activeTimestamp, atCeiling ? ceilingBps : null]);
         }
 
         base.push([nextTimestamp, ceilingBps]);
@@ -375,7 +376,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     yAxisIndex: 0,
                     showSymbol: false,
                     smooth: false,
-                    step: "end",
+                    step: "start",
                     lineStyle: {
                         width: 2.4,
                         color: this.colors.throughputLine,
@@ -435,7 +436,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     showSymbol: false,
                     connectNulls: false,
                     smooth: false,
-                    step: "end",
+                    step: "start",
                     lineStyle: {
                         width: 2.1,
                         color: this.colors.qooLine,
