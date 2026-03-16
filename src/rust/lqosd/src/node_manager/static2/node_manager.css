@@ -91,10 +91,10 @@ body::before {
         padding: 12px;
     }
 }
-.lqos_logo {
+html[data-bs-theme="light"] .lqos_logo {
     filter: invert(100%);
 }
-.dark-mode .lqos_logo {
+html[data-bs-theme="dark"] .lqos_logo {
     filter: none;
 }
 .sidebar {

@@ -17,7 +17,6 @@ const PHYSICAL_REGIONS_GEOJSON_PATH = "vendor/site_map_physical_regions.geojson"
 const PHYSICAL_REGIONS_10M_GEOJSON_PATH = "vendor/site_map_physical_regions_10m.geojson";
 const MARINE_AREAS_GEOJSON_PATH = "vendor/site_map_marine_areas.geojson";
 const MAJOR_ROADS_10M_GEOJSON_PATH = "vendor/site_map_major_roads_10m.geojson";
-const GRIP_ROADS_GEOJSON_PATH = "vendor/site_map_grip_roads.geojson";
 const INITIAL_CENTER = [-101.5, 39.8];
 const INITIAL_ZOOM = 3.15;
 const SITE_SOURCE_ID = "site-map-sites";
@@ -31,7 +30,6 @@ const PHYSICAL_REGIONS_SOURCE_ID = "site-map-physical-regions";
 const PHYSICAL_REGIONS_10M_SOURCE_ID = "site-map-physical-regions-10m";
 const MARINE_AREAS_SOURCE_ID = "site-map-marine-areas";
 const MAJOR_ROADS_10M_SOURCE_ID = "site-map-major-roads-10m";
-const GRIP_ROADS_SOURCE_ID = "site-map-grip-roads";
 const SITE_CLUSTER_LAYER_ID = "site-map-site-clusters";
 const SITE_POINTS_LAYER_ID = "site-map-site-points";
 const AP_CLUSTER_LAYER_ID = "site-map-ap-clusters";
@@ -48,7 +46,6 @@ const PHYSICAL_REGIONS_10M_FILL_LAYER_ID = "site-map-physical-regions-10m-fill";
 const PHYSICAL_REGIONS_10M_LINE_LAYER_ID = "site-map-physical-regions-10m-line";
 const MARINE_AREAS_FILL_LAYER_ID = "site-map-marine-areas-fill";
 const MAJOR_ROADS_10M_LAYER_ID = "site-map-major-roads-10m-line";
-const GRIP_ROADS_LAYER_ID = "site-map-grip-roads-line";
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -248,6 +245,8 @@ class SiteMapPage {
         this.lastUpdateAt = 0;
         this.latestRender = null;
         this.unmappedOpen = false;
+        this.heavyLayersInstalled = false;
+        this.heavyLayersInstallQueued = false;
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -311,7 +310,7 @@ class SiteMapPage {
             center: INITIAL_CENTER,
             zoom: INITIAL_ZOOM,
             attributionControl: false,
-            customAttribution: "Natural Earth, GRIP / GLOBIO (CC0)",
+            customAttribution: "Natural Earth",
         });
         this.map.addControl(new window.maplibregl.NavigationControl({ visualizePitch: false }), "bottom-left");
         this.map.addControl(new window.maplibregl.AttributionControl({ compact: true }), "bottom-left");
@@ -325,10 +324,11 @@ class SiteMapPage {
         });
 
         this.map.on("load", () => {
-            this.installSourcesAndLayers();
+            this.installPointSourcesAndLayers();
             this.installInteractions();
             this.applyTheme();
             this.renderFromHistory();
+            this.queueHeavyLayersInstall();
         });
     }
 
@@ -370,9 +370,6 @@ class SiteMapPage {
         if (this.map.getLayer(MAJOR_ROADS_10M_LAYER_ID)) {
             this.map.setPaintProperty(MAJOR_ROADS_10M_LAYER_ID, "line-color", palette.roads);
         }
-        if (this.map.getLayer(GRIP_ROADS_LAYER_ID)) {
-            this.map.setPaintProperty(GRIP_ROADS_LAYER_ID, "line-color", palette.roads);
-        }
         if (this.map.getLayer(LAKES_FILL_LAYER_ID)) {
             this.map.setPaintProperty(LAKES_FILL_LAYER_ID, "fill-color", palette.water);
         }
@@ -396,310 +393,7 @@ class SiteMapPage {
         }
     }
 
-    installSourcesAndLayers() {
-        this.map.addSource(COUNTRIES_SOURCE_ID, {
-            type: "geojson",
-            data: COUNTRIES_GEOJSON_PATH,
-        });
-        this.map.addSource(MARINE_AREAS_SOURCE_ID, {
-            type: "geojson",
-            data: MARINE_AREAS_GEOJSON_PATH,
-        });
-        this.map.addSource(PHYSICAL_REGIONS_SOURCE_ID, {
-            type: "geojson",
-            data: PHYSICAL_REGIONS_GEOJSON_PATH,
-        });
-        this.map.addSource(PHYSICAL_REGIONS_10M_SOURCE_ID, {
-            type: "geojson",
-            data: PHYSICAL_REGIONS_10M_GEOJSON_PATH,
-        });
-        this.map.addSource(MAJOR_ROADS_10M_SOURCE_ID, {
-            type: "geojson",
-            data: MAJOR_ROADS_10M_GEOJSON_PATH,
-        });
-        this.map.addSource(GRIP_ROADS_SOURCE_ID, {
-            type: "geojson",
-            data: GRIP_ROADS_GEOJSON_PATH,
-        });
-        this.map.addSource(LAKES_SOURCE_ID, {
-            type: "geojson",
-            data: LAKES_GEOJSON_PATH,
-        });
-        this.map.addSource(RIVERS_SOURCE_ID, {
-            type: "geojson",
-            data: RIVERS_GEOJSON_PATH,
-        });
-        this.map.addSource(ADMIN1_SOURCE_ID, {
-            type: "geojson",
-            data: ADMIN1_BOUNDARIES_GEOJSON_PATH,
-        });
-        this.map.addSource(COASTLINE_SOURCE_ID, {
-            type: "geojson",
-            data: COASTLINES_GEOJSON_PATH,
-        });
-        this.map.addLayer({
-            id: MARINE_AREAS_FILL_LAYER_ID,
-            type: "fill",
-            source: MARINE_AREAS_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().marine,
-                "fill-opacity": 0.9,
-            },
-        });
-        this.map.addLayer({
-            id: COUNTRY_FILL_LAYER_ID,
-            type: "fill",
-            source: COUNTRIES_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().land,
-                "fill-opacity": isDarkMode() ? 0.8 : 0.76,
-            },
-        });
-        this.map.addLayer({
-            id: PHYSICAL_REGIONS_FILL_LAYER_ID,
-            type: "fill",
-            source: PHYSICAL_REGIONS_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().terrain,
-                "fill-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.22 : 0.15,
-                        "mountain", isDarkMode() ? 0.18 : 0.12,
-                        "plateau", isDarkMode() ? 0.12 : 0.08,
-                        "basin", isDarkMode() ? 0.09 : 0.06,
-                        "plain", isDarkMode() ? 0.06 : 0.04,
-                        "desert", isDarkMode() ? 0.08 : 0.05,
-                        isDarkMode() ? 0.08 : 0.05,
-                    ],
-                    4.5,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.18 : 0.11,
-                        "mountain", isDarkMode() ? 0.15 : 0.09,
-                        "plateau", isDarkMode() ? 0.08 : 0.05,
-                        "basin", isDarkMode() ? 0.06 : 0.04,
-                        "plain", isDarkMode() ? 0.04 : 0.02,
-                        "desert", isDarkMode() ? 0.05 : 0.03,
-                        isDarkMode() ? 0.05 : 0.03,
-                    ],
-                    6,
-                    0,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: PHYSICAL_REGIONS_LINE_LAYER_ID,
-            type: "line",
-            source: PHYSICAL_REGIONS_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().terrain,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.18,
-                    5, 0.3,
-                    8, 0.46,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.05,
-                    4.5, 0.08,
-                    6, 0.03,
-                    7, 0,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: PHYSICAL_REGIONS_10M_FILL_LAYER_ID,
-            type: "fill",
-            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
-            minzoom: 4.5,
-            paint: {
-                "fill-color": countryPalette().terrain,
-                "fill-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5,
-                    0,
-                    5.5,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.24 : 0.16,
-                        "mountain", isDarkMode() ? 0.2 : 0.13,
-                        "plateau", isDarkMode() ? 0.12 : 0.08,
-                        "basin", isDarkMode() ? 0.09 : 0.06,
-                        "plain", isDarkMode() ? 0.05 : 0.03,
-                        "desert", isDarkMode() ? 0.07 : 0.05,
-                        isDarkMode() ? 0.07 : 0.05,
-                    ],
-                    8,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.28 : 0.19,
-                        "mountain", isDarkMode() ? 0.24 : 0.16,
-                        "plateau", isDarkMode() ? 0.15 : 0.1,
-                        "basin", isDarkMode() ? 0.11 : 0.08,
-                        "plain", isDarkMode() ? 0.07 : 0.05,
-                        "desert", isDarkMode() ? 0.09 : 0.06,
-                        isDarkMode() ? 0.09 : 0.06,
-                    ],
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: PHYSICAL_REGIONS_10M_LINE_LAYER_ID,
-            type: "line",
-            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
-            minzoom: 4.5,
-            paint: {
-                "line-color": countryPalette().terrain,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5, 0.18,
-                    6, 0.34,
-                    8, 0.5,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5, 0,
-                    5.5, 0.05,
-                    8, 0.1,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: MAJOR_ROADS_10M_LAYER_ID,
-            type: "line",
-            source: MAJOR_ROADS_10M_SOURCE_ID,
-            minzoom: 5.5,
-            paint: {
-                "line-color": countryPalette().roads,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0.3,
-                    7, 0.55,
-                    9, 0.95,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0,
-                    6.5, isDarkMode() ? 0.18 : 0.14,
-                    9, isDarkMode() ? 0.28 : 0.22,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: GRIP_ROADS_LAYER_ID,
-            type: "line",
-            source: GRIP_ROADS_SOURCE_ID,
-            minzoom: 5.5,
-            paint: {
-                "line-color": countryPalette().roads,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0.4,
-                    7.5, 0.8,
-                    10, 1.35,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0,
-                    6.25, isDarkMode() ? 0.18 : 0.14,
-                    8, isDarkMode() ? 0.3 : 0.24,
-                    10, isDarkMode() ? 0.42 : 0.34,
-                ],
-            },
-        });
-        this.map.setPaintProperty(MAJOR_ROADS_10M_LAYER_ID, "line-opacity", [
-            "interpolate", ["linear"], ["zoom"],
-            0, 0,
-            4.5, isDarkMode() ? 0.1 : 0.08,
-            5.5, isDarkMode() ? 0.14 : 0.1,
-            6.25, 0,
-        ]);
-        this.map.addLayer({
-            id: LAKES_FILL_LAYER_ID,
-            type: "fill",
-            source: LAKES_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().water,
-                "fill-opacity": 0.92,
-            },
-        });
-        this.map.addLayer({
-            id: RIVERS_LINE_LAYER_ID,
-            type: "line",
-            source: RIVERS_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().rivers,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.22,
-                    5, 0.4,
-                    8, 0.62,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.42,
-                    5, 0.34,
-                    8, 0.28,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: ADMIN1_LINE_LAYER_ID,
-            type: "line",
-            source: ADMIN1_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().admin1,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.34,
-                    5, 0.58,
-                    8, 0.95,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.3,
-                    3, 0.46,
-                    5.5, 0.6,
-                    7, 0.52,
-                    9, 0.42,
-                ],
-            },
-        });
-        this.map.addLayer({
-            id: COUNTRY_LINE_LAYER_ID,
-            type: "line",
-            source: COUNTRIES_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().borders,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.5,
-                    5, 0.8,
-                    8, 1.2,
-                ],
-                "line-opacity": 0.9,
-            },
-        });
-        this.map.addLayer({
-            id: COASTLINE_LAYER_ID,
-            type: "line",
-            source: COASTLINE_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().coast,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.45,
-                    5, 0.8,
-                    8, 1.25,
-                ],
-                "line-opacity": 0.82,
-            },
-        });
-
+    installPointSourcesAndLayers() {
         this.map.addSource(SITE_SOURCE_ID, {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
@@ -803,6 +497,311 @@ class SiteMapPage {
         });
     }
 
+    installHeavyGeographyLayers() {
+        if (this.heavyLayersInstalled || !this.map?.isStyleLoaded()) {
+            return;
+        }
+
+        const addLayerBelowPoints = (layer) => this.map.addLayer(layer, SITE_CLUSTER_LAYER_ID);
+
+        this.map.addSource(COUNTRIES_SOURCE_ID, {
+            type: "geojson",
+            data: COUNTRIES_GEOJSON_PATH,
+        });
+        this.map.addSource(MARINE_AREAS_SOURCE_ID, {
+            type: "geojson",
+            data: MARINE_AREAS_GEOJSON_PATH,
+        });
+        this.map.addSource(PHYSICAL_REGIONS_SOURCE_ID, {
+            type: "geojson",
+            data: PHYSICAL_REGIONS_GEOJSON_PATH,
+        });
+        this.map.addSource(PHYSICAL_REGIONS_10M_SOURCE_ID, {
+            type: "geojson",
+            data: PHYSICAL_REGIONS_10M_GEOJSON_PATH,
+        });
+        this.map.addSource(MAJOR_ROADS_10M_SOURCE_ID, {
+            type: "geojson",
+            data: MAJOR_ROADS_10M_GEOJSON_PATH,
+        });
+        this.map.addSource(LAKES_SOURCE_ID, {
+            type: "geojson",
+            data: LAKES_GEOJSON_PATH,
+        });
+        this.map.addSource(RIVERS_SOURCE_ID, {
+            type: "geojson",
+            data: RIVERS_GEOJSON_PATH,
+        });
+        this.map.addSource(ADMIN1_SOURCE_ID, {
+            type: "geojson",
+            data: ADMIN1_BOUNDARIES_GEOJSON_PATH,
+        });
+        this.map.addSource(COASTLINE_SOURCE_ID, {
+            type: "geojson",
+            data: COASTLINES_GEOJSON_PATH,
+        });
+
+        addLayerBelowPoints({
+            id: MARINE_AREAS_FILL_LAYER_ID,
+            type: "fill",
+            source: MARINE_AREAS_SOURCE_ID,
+            paint: {
+                "fill-color": countryPalette().marine,
+                "fill-opacity": 0.9,
+            },
+        });
+        addLayerBelowPoints({
+            id: COUNTRY_FILL_LAYER_ID,
+            type: "fill",
+            source: COUNTRIES_SOURCE_ID,
+            paint: {
+                "fill-color": countryPalette().land,
+                "fill-opacity": isDarkMode() ? 0.8 : 0.76,
+            },
+        });
+        addLayerBelowPoints({
+            id: PHYSICAL_REGIONS_FILL_LAYER_ID,
+            type: "fill",
+            source: PHYSICAL_REGIONS_SOURCE_ID,
+            paint: {
+                "fill-color": countryPalette().terrain,
+                "fill-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    0,
+                    [
+                        "match", ["get", "featurecla"],
+                        "mountain range", isDarkMode() ? 0.22 : 0.15,
+                        "mountain", isDarkMode() ? 0.18 : 0.12,
+                        "plateau", isDarkMode() ? 0.12 : 0.08,
+                        "basin", isDarkMode() ? 0.09 : 0.06,
+                        "plain", isDarkMode() ? 0.06 : 0.04,
+                        "desert", isDarkMode() ? 0.08 : 0.05,
+                        isDarkMode() ? 0.08 : 0.05,
+                    ],
+                    4.5,
+                    [
+                        "match", ["get", "featurecla"],
+                        "mountain range", isDarkMode() ? 0.18 : 0.11,
+                        "mountain", isDarkMode() ? 0.15 : 0.09,
+                        "plateau", isDarkMode() ? 0.08 : 0.05,
+                        "basin", isDarkMode() ? 0.06 : 0.04,
+                        "plain", isDarkMode() ? 0.04 : 0.02,
+                        "desert", isDarkMode() ? 0.05 : 0.03,
+                        isDarkMode() ? 0.05 : 0.03,
+                    ],
+                    6,
+                    0,
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: PHYSICAL_REGIONS_LINE_LAYER_ID,
+            type: "line",
+            source: PHYSICAL_REGIONS_SOURCE_ID,
+            paint: {
+                "line-color": countryPalette().terrain,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.18,
+                    5, 0.3,
+                    8, 0.46,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    0, 0.05,
+                    4.5, 0.08,
+                    6, 0.03,
+                    7, 0,
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: PHYSICAL_REGIONS_10M_FILL_LAYER_ID,
+            type: "fill",
+            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
+            minzoom: 4.5,
+            paint: {
+                "fill-color": countryPalette().terrain,
+                "fill-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    4.5,
+                    0,
+                    5.5,
+                    [
+                        "match", ["get", "featurecla"],
+                        "mountain range", isDarkMode() ? 0.24 : 0.16,
+                        "mountain", isDarkMode() ? 0.2 : 0.13,
+                        "plateau", isDarkMode() ? 0.12 : 0.08,
+                        "basin", isDarkMode() ? 0.09 : 0.06,
+                        "plain", isDarkMode() ? 0.05 : 0.03,
+                        "desert", isDarkMode() ? 0.07 : 0.05,
+                        isDarkMode() ? 0.07 : 0.05,
+                    ],
+                    8,
+                    [
+                        "match", ["get", "featurecla"],
+                        "mountain range", isDarkMode() ? 0.28 : 0.19,
+                        "mountain", isDarkMode() ? 0.24 : 0.16,
+                        "plateau", isDarkMode() ? 0.15 : 0.1,
+                        "basin", isDarkMode() ? 0.11 : 0.08,
+                        "plain", isDarkMode() ? 0.07 : 0.05,
+                        "desert", isDarkMode() ? 0.09 : 0.06,
+                        isDarkMode() ? 0.09 : 0.06,
+                    ],
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: PHYSICAL_REGIONS_10M_LINE_LAYER_ID,
+            type: "line",
+            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
+            minzoom: 4.5,
+            paint: {
+                "line-color": countryPalette().terrain,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    4.5, 0.18,
+                    6, 0.34,
+                    8, 0.5,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    4.5, 0,
+                    5.5, 0.05,
+                    8, 0.1,
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: MAJOR_ROADS_10M_LAYER_ID,
+            type: "line",
+            source: MAJOR_ROADS_10M_SOURCE_ID,
+            minzoom: 5.5,
+            paint: {
+                "line-color": countryPalette().roads,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    5.5, 0.3,
+                    7, 0.55,
+                    9, 0.95,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    5.5, 0,
+                    6.5, isDarkMode() ? 0.18 : 0.14,
+                    9, isDarkMode() ? 0.28 : 0.22,
+                ],
+            },
+        });
+        this.map.setPaintProperty(MAJOR_ROADS_10M_LAYER_ID, "line-opacity", [
+            "interpolate", ["linear"], ["zoom"],
+            0, 0,
+            4.5, isDarkMode() ? 0.1 : 0.08,
+            5.5, isDarkMode() ? 0.14 : 0.1,
+            6.25, 0,
+        ]);
+        addLayerBelowPoints({
+            id: LAKES_FILL_LAYER_ID,
+            type: "fill",
+            source: LAKES_SOURCE_ID,
+            paint: {
+                "fill-color": countryPalette().water,
+                "fill-opacity": 0.92,
+            },
+        });
+        addLayerBelowPoints({
+            id: RIVERS_LINE_LAYER_ID,
+            type: "line",
+            source: RIVERS_SOURCE_ID,
+            paint: {
+                "line-color": countryPalette().rivers,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.22,
+                    5, 0.4,
+                    8, 0.62,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.42,
+                    5, 0.34,
+                    8, 0.28,
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: ADMIN1_LINE_LAYER_ID,
+            type: "line",
+            source: ADMIN1_SOURCE_ID,
+            paint: {
+                "line-color": countryPalette().admin1,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.34,
+                    5, 0.58,
+                    8, 0.95,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    0, 0.3,
+                    3, 0.46,
+                    5.5, 0.6,
+                    7, 0.52,
+                    9, 0.42,
+                ],
+            },
+        });
+        addLayerBelowPoints({
+            id: COUNTRY_LINE_LAYER_ID,
+            type: "line",
+            source: COUNTRIES_SOURCE_ID,
+            paint: {
+                "line-color": countryPalette().borders,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.5,
+                    5, 0.8,
+                    8, 1.2,
+                ],
+                "line-opacity": 0.9,
+            },
+        });
+        addLayerBelowPoints({
+            id: COASTLINE_LAYER_ID,
+            type: "line",
+            source: COASTLINE_SOURCE_ID,
+            paint: {
+                "line-color": countryPalette().coast,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.45,
+                    5, 0.8,
+                    8, 1.25,
+                ],
+                "line-opacity": 0.82,
+            },
+        });
+
+        this.heavyLayersInstalled = true;
+        this.applyTheme();
+    }
+
+    queueHeavyLayersInstall() {
+        if (this.heavyLayersInstalled || this.heavyLayersInstallQueued) {
+            return;
+        }
+        this.heavyLayersInstallQueued = true;
+        const install = () => {
+            this.heavyLayersInstallQueued = false;
+            this.installHeavyGeographyLayers();
+        };
+        if (typeof window.requestIdleCallback === "function") {
+            window.requestIdleCallback(install, { timeout: 1200 });
+            return;
+        }
+        window.setTimeout(install, 0);
+    }
+
     installInteractions() {
         const pointLayers = [SITE_POINTS_LAYER_ID, AP_POINTS_LAYER_ID];
         const clusterLayers = [SITE_CLUSTER_LAYER_ID, AP_CLUSTER_LAYER_ID];
@@ -875,15 +874,15 @@ class SiteMapPage {
 
     requestInitialTree() {
         this.setStatus("Waiting for data", "spinner");
+        if (!this.subscription) {
+            this.subscription = subscribeWS(["NetworkTree"], (liveMsg) => {
+                if (liveMsg.event === "NetworkTree") {
+                    this.processTreeMessage(liveMsg);
+                }
+            });
+        }
         listenOnceWithTimeout("NetworkTree", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
             this.processTreeMessage(msg);
-            if (!this.subscription) {
-                this.subscription = subscribeWS(["NetworkTree"], (liveMsg) => {
-                    if (liveMsg.event === "NetworkTree") {
-                        this.processTreeMessage(liveMsg);
-                    }
-                });
-            }
         }, () => {
             this.setStatus("No data received yet", "warning");
         });

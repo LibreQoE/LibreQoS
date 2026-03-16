@@ -18,7 +18,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Uses a 30-second client-side average from `NetworkTree` data rather than adding backend rollup work.
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
 - Uses a local LibreQoS-themed basemap with country/state borders, coastlines, major lakes, major rivers, marine areas, subtle physical-region overlays, and higher-zoom major-highway context for geographic orientation.
-- Site Map now ships a locally filtered GRIP roads overlay at higher zoom for added orientation, while the built-in Natural Earth roads remain as low-zoom fallback/context. The shipped GRIP layer is thinned to longer corridor segments so the map gains recognizable structure without turning into a full street map.
+- Site Map uses a local Natural Earth-derived roads layer for orientation while keeping the rest of the basemap quiet and operational.
 
 ### Flow Globe
 - Geographic flow visualization based on endpoint geolocation.

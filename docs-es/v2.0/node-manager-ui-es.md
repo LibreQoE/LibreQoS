@@ -18,7 +18,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Usa un promedio del lado cliente de 30 segundos a partir de `NetworkTree`, sin agregar trabajo de rollup en el backend.
 - Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
 - Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.
-- Site Map ahora distribuye localmente una superposición GRIP filtrada a mayor zoom para mejorar la orientación, mientras que las carreteras integradas de Natural Earth siguen funcionando como respaldo/contexto a menor zoom. La capa GRIP incluida se adelgaza a corredores más largos para añadir estructura reconocible sin convertir el mapa en un callejero completo.
+- Site Map utiliza una capa local de carreteras derivada de Natural Earth para ayudar con la orientación, manteniendo el resto del mapa base discreto y operativo.
 
 ### Flow Globe
 - Visualización geográfica de flujos basada en la geolocalización de endpoints.

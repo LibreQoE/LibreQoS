@@ -17,6 +17,8 @@ const DEFAULT_POINT_OF_VIEW = {
     lng: -32,
     altitude: 2.15,
 };
+const MIN_ZOOM_SPEED = 1.8;
+const MAX_ZOOM_SPEED = 3.4;
 const FLOW_MAP_DEBUG = (() => {
     const params = new URLSearchParams(window.location.search);
     const disabled = new Set(
@@ -421,7 +423,6 @@ class FlowMapGlobe {
         this.controls.enablePan = false;
         this.controls.enableDamping = false;
         this.controls.rotateSpeed = 0.75;
-        this.controls.zoomSpeed = 1.5;
         this.controls.minDistance = 120;
         this.controls.maxDistance = 420;
         this.controls.autoRotate = this.autoRotate;
@@ -429,6 +430,7 @@ class FlowMapGlobe {
 
         this.globe.pointOfView(DEFAULT_POINT_OF_VIEW, 0);
         this.captureViewState();
+        this.syncControlSpeeds();
         this.applyTheme();
         this.attachControlListeners();
     }
@@ -471,11 +473,13 @@ class FlowMapGlobe {
         }
         this.controls.addEventListener("start", () => {
             this.userInteracting = true;
+            this.syncControlSpeeds();
             clearScheduledRefresh();
             this.scheduleInteractionRelease();
         });
         this.controls.addEventListener("change", () => {
             this.captureViewState();
+            this.syncControlSpeeds();
             if (this.rawPayload.length > 0 && this.updateClusterRadius()) {
                 this.scheduleRecluster();
             }
@@ -510,6 +514,14 @@ class FlowMapGlobe {
         if (Number.isFinite(altitude)) {
             this.lastKnownAltitude = altitude;
         }
+    }
+
+    syncControlSpeeds() {
+        if (!this.controls) {
+            return;
+        }
+        const altitude = Number.isFinite(this.lastKnownAltitude) ? this.lastKnownAltitude : DEFAULT_POINT_OF_VIEW.altitude;
+        this.controls.zoomSpeed = Math.max(MIN_ZOOM_SPEED, Math.min(MAX_ZOOM_SPEED, 0.95 + (altitude * 0.75)));
     }
 
     currentClusterSize() {
