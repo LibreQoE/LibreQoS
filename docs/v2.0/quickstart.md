@@ -29,9 +29,31 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
+```{note}
+`ShapedDevices.csv` can contain unlimited entries. In v2.0, active shaping without a valid Insight subscription/license is limited to the first 1000 valid mapped circuits. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state).
+```
+
+### Ubuntu 24.04 hotfix if the `.deb` install stops
+
+On affected Ubuntu 24.04 hosts using `systemd-networkd`, the `.deb` install may stop and print a hotfix requirement message. This is expected.
+
+If that happens, run:
+
+```bash
+sudo /opt/libreqos/src/systemd_hotfix.sh install
+sudo reboot
+```
+
+After the reboot, resume the install:
+
+```bash
+cd ~
+sudo apt install ./{deb_url_v1_5}
+```
+
 5. Open WebUI at `http://your_shaper_ip:9123`.
 
-## 2) 10-Minute Health Gate (Required Before Pilot)
+## 2) 10-Minute Health Check
 
 Run:
 
