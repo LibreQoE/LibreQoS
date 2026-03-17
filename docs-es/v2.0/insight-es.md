@@ -1,4 +1,4 @@
-# LibreQoS Insight (Insight)
+# LibreQoS Insight
 
 ## Acerca de Insight
 Conoce más sobre Insight en nuestro sitio web, [aquí](https://libreqos.io/insight/).
