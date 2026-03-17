@@ -114,7 +114,7 @@ popd > /dev/null || exit
 
 # Create the post-installation file
 pushd "$DEBIAN_DIR" > /dev/null || exit
-cat <<EOF > postinst
+cat <<'EOF' > postinst
 #!/bin/bash
 set -euo pipefail
 
@@ -142,7 +142,7 @@ PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
 
 # Ensure folder permissions are correct post-install
-sudo chown -R $USER /opt/libreqos
+sudo chown -R root:root /opt/libreqos
 
 # - Run lqsetup
 /opt/libreqos/src/bin/lqos_setup
