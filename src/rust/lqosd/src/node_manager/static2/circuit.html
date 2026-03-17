@@ -77,7 +77,7 @@
 <ul class="nav nav-tabs lqos-pill-tabs lqos-circuit-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link active" id="queuing-tab" data-bs-toggle="tab" data-bs-target="#queuing" type="button" role="tab" aria-controls="queuing" aria-selected="true">
-            <i class="fa fa-wave-square"></i> Queuing Activity
+            <i class="fa fa-wave-square"></i> Queue Dynamics
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -111,10 +111,10 @@
         <div class="lqos-circuit-activity-panel">
             <div class="lqos-circuit-activity-header">
                 <div class="lqos-circuit-activity-title">
-                    <h5>Queuing Activity Live Waveform</h5>
+                    <h5>Queue Dynamics</h5>
                 </div>
                 <div class="lqos-circuit-activity-controls">
-                    <div class="lqos-circuit-activity-legend" aria-label="Queuing Activity Legend">
+                    <div class="lqos-circuit-activity-legend" aria-label="Queue Dynamics Legend">
                         <span class="lqos-circuit-activity-legend-item">
                             <span class="lqos-circuit-activity-legend-dot is-throughput"></span>
                             <span>Throughput</span>
@@ -125,7 +125,7 @@
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
                             <span class="lqos-circuit-activity-legend-dot is-qoo"></span>
-                            <span>Circuit QoO</span>
+                            <span>Circuit RTT (P50)</span>
                         </span>
                     </div>
                     <div class="btn-group btn-group-sm lqos-circuit-activity-toggle" role="group" aria-label="Queuing Activity Direction">
@@ -140,7 +140,7 @@
             <div id="queuingActivityGraph" class="lqos-circuit-activity-chart">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading queuing activity…</span>
+                    <span>Loading queue dynamics…</span>
                 </div>
             </div>
             <div class="row g-2 mt-2">
@@ -152,8 +152,8 @@
                 </div>
                 <div class="col-12 col-md-6 col-xl-3">
                     <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Circuit QoO</div>
-                        <div id="queuingActivityQoo" class="lqos-circuit-activity-kpi-value">-</div>
+                        <div class="lqos-circuit-activity-kpi-label">Circuit RTT (P50)</div>
+                        <div id="queuingActivityRtt" class="lqos-circuit-activity-kpi-value">-</div>
                     </div>
                 </div>
                 <div class="col-12 col-md-6 col-xl-3">

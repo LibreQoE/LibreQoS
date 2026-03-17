@@ -21,6 +21,7 @@ import {CakeMarks} from "./graphs/cake_marks";
 import {CakeDrops} from "./graphs/cake_drops";
 import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
 import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
+import {loadConfig} from "./config/config_helper";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -58,6 +59,9 @@ let latestCircuitQooScore = null;
 let queuingActivityDirection = "down";
 let deviceGraphSpecs = [];
 let deviceGraphsInitialized = false;
+const QUEUING_ACTIVITY_RTT_FLOOR_BPS = 200_000;
+const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
+let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -158,12 +162,109 @@ function formatBitsPerSecondLabel(bitsPerSecond) {
     return `${scaleNumber(bitsPerSecond, 1)}bps`;
 }
 
-function formatQooLabel(score) {
-    const value = toNumber(score, NaN);
-    if (!Number.isFinite(value)) {
+function medianOfSorted(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+        return null;
+    }
+    const middle = Math.floor(values.length / 2);
+    if (values.length % 2 === 1) {
+        return values[middle];
+    }
+    return (values[middle - 1] + values[middle]) / 2;
+}
+
+function weightedMedian(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return null;
+    }
+
+    const totalWeight = entries.reduce((sum, entry) => sum + Math.max(0, toNumber(entry.weight, 0)), 0);
+    if (!(totalWeight > 0)) {
+        return null;
+    }
+
+    const threshold = totalWeight / 2;
+    let running = 0;
+    for (const entry of entries) {
+        running += Math.max(0, toNumber(entry.weight, 0));
+        if (running >= threshold) {
+            return toNumber(entry.value, null);
+        }
+    }
+
+    return toNumber(entries[entries.length - 1].value, null);
+}
+
+function currentCircuitRttP50Ms(direction) {
+    const directional = direction === "up" ? "up" : "down";
+    const weightedEntries = [];
+    const fallbackValues = [];
+
+    latestCircuitDevices.forEach((device) => {
+        const currentP50Nanos = toNumber(device?.rtt_current_p50_nanos?.[directional], 0);
+        if (!(currentP50Nanos > 0)) {
+            return;
+        }
+
+        const throughputBps = toNumber(device?.bytes_per_second?.[directional], 0) * 8;
+        const currentP50Ms = currentP50Nanos / 1_000_000.0;
+        fallbackValues.push(currentP50Ms);
+
+        if (throughputBps > QUEUING_ACTIVITY_RTT_FLOOR_BPS) {
+            weightedEntries.push({
+                value: currentP50Ms,
+                weight: throughputBps,
+            });
+        }
+    });
+
+    weightedEntries.sort((a, b) => a.value - b.value);
+    const weighted = weightedMedian(weightedEntries);
+    if (Number.isFinite(weighted)) {
+        return weighted;
+    }
+
+    fallbackValues.sort((a, b) => a - b);
+    const fallbackMedian = medianOfSorted(fallbackValues);
+    return Number.isFinite(fallbackMedian) ? fallbackMedian : null;
+}
+
+function formatCircuitRttLabel(rttMs) {
+    const value = toNumber(rttMs, NaN);
+    if (!Number.isFinite(value) || value <= 0) {
         return "-";
     }
-    return `${Math.round(Math.max(0, Math.min(100, value)))} / 100`;
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ms`;
+}
+
+function normalizeRttThresholds(rawThresholds) {
+    const green = Math.max(0, Math.round(toNumber(rawThresholds?.green_ms ?? rawThresholds?.greenMs, DEFAULT_RTT_THRESHOLDS.green_ms)));
+    const yellow = Math.max(green, Math.round(toNumber(rawThresholds?.yellow_ms ?? rawThresholds?.yellowMs, DEFAULT_RTT_THRESHOLDS.yellow_ms)));
+    const red = Math.max(yellow, 1, Math.round(toNumber(rawThresholds?.red_ms ?? rawThresholds?.redMs, DEFAULT_RTT_THRESHOLDS.red_ms)));
+    return {
+        green_ms: green,
+        yellow_ms: yellow,
+        red_ms: red,
+    };
+}
+
+function applyRttThresholds(rawThresholds) {
+    currentRttThresholds = normalizeRttThresholds(rawThresholds);
+    if (queuingActivityGraph) {
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
+    }
+    updateQueuingActivityCards();
+}
+
+function loadRttThresholds() {
+    loadConfig(
+        () => {
+            applyRttThresholds(window.config?.rtt_thresholds);
+        },
+        () => {
+            applyRttThresholds(null);
+        },
+    );
 }
 
 function currentActiveFlowCount() {
@@ -187,7 +288,7 @@ function currentQueuingActivitySnapshot() {
     return {
         throughputBps,
         ceilingBps,
-        qooScore: latestCircuitQooScore,
+        rttP50Ms: currentCircuitRttP50Ms(queuingActivityDirection),
         activeFlows: currentActiveFlowCount(),
         utilizationPercent,
         atCeiling,
@@ -196,17 +297,18 @@ function currentQueuingActivitySnapshot() {
 
 function updateQueuingActivityCards() {
     const throughputEl = document.getElementById("queuingActivityThroughput");
-    const qooEl = document.getElementById("queuingActivityQoo");
+    const rttEl = document.getElementById("queuingActivityRtt");
     const flowsEl = document.getElementById("queuingActivityFlows");
     const utilizationEl = document.getElementById("queuingActivityUtilization");
     const ceilingLegendEl = document.getElementById("queuingActivityLegendCeiling");
-    if (!throughputEl || !qooEl || !flowsEl || !utilizationEl) {
+    if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
         return;
     }
 
     const snapshot = currentQueuingActivitySnapshot();
     throughputEl.textContent = formatBitsPerSecondLabel(snapshot.throughputBps);
-    qooEl.textContent = formatQooLabel(snapshot.qooScore);
+    rttEl.textContent = formatCircuitRttLabel(snapshot.rttP50Ms);
+    rttEl.style.color = snapshot.rttP50Ms !== null ? colorByRttMs(snapshot.rttP50Ms, currentRttThresholds) : "";
     flowsEl.textContent = String(snapshot.activeFlows);
     utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
     utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
@@ -238,7 +340,10 @@ function pushQueuingActivitySample() {
             down: currentDirectionValue(plan, "down", 0) * 1_000_000.0,
             up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
         },
-        qooScore: latestCircuitQooScore,
+        rttP50Ms: {
+            down: currentCircuitRttP50Ms("down"),
+            up: currentCircuitRttP50Ms("up"),
+        },
     });
     updateQueuingActivityCards();
 }
@@ -262,6 +367,7 @@ function ensureQueuingActivityGraph() {
         }
         queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
         queuingActivityGraph.setDirection(queuingActivityDirection);
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
         pushQueuingActivitySample();
     });
 }
@@ -1684,6 +1790,7 @@ function loadInitial() {
     initExcludeRttToggle();
     initFlowFilters();
     initQueuingActivityControls();
+    loadRttThresholds();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);

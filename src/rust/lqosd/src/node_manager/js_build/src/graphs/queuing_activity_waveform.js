@@ -3,7 +3,7 @@ import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 const WINDOW_MS = 30_000;
 const MAX_SAMPLES = 90;
-const RENDER_INTERVAL_MS = 100;
+const RENDER_INTERVAL_MS = 33;
 const DISPLAY_LAG_MS = 1_200;
 const SAMPLE_INTERVAL_MS = 1_000;
 
@@ -16,12 +16,12 @@ function formatBps(value) {
     return `${scaleNumber(Math.abs(value), 1)}bps`;
 }
 
-function formatQoo(value) {
+function formatRttMs(value) {
     const n = toNumber(value, NaN);
     if (!Number.isFinite(n)) {
         return "-";
     }
-    return `${Math.round(Math.max(0, Math.min(100, n)))}`;
+    return `${n.toFixed(n >= 10 ? 0 : 1)} ms`;
 }
 
 function getWaveformTheme() {
@@ -38,17 +38,17 @@ function getWaveformTheme() {
             throughputAreaTop: "rgba(50, 211, 189, 0.48)",
             throughputAreaMid: "rgba(42, 156, 145, 0.3)",
             throughputAreaBottom: "rgba(9, 20, 31, 0.03)",
-            qooLine: "#8fb0ff",
-            qooGlow: "rgba(143, 176, 255, 0.3)",
-            qooAreaTop: "rgba(143, 176, 255, 0.18)",
-            qooAreaBottom: "rgba(16, 22, 34, 0.01)",
-            qooBandGood: "rgba(42, 168, 108, 0.08)",
-            qooBandWarn: "rgba(228, 154, 44, 0.07)",
-            qooBandPoor: "rgba(225, 84, 84, 0.08)",
+            rttLine: "#8fb0ff",
+            rttGlow: "rgba(143, 176, 255, 0.3)",
+            rttAreaTop: "rgba(143, 176, 255, 0.18)",
+            rttAreaBottom: "rgba(16, 22, 34, 0.01)",
+            rttBandGood: "rgba(42, 168, 108, 0.08)",
+            rttBandWarn: "rgba(228, 154, 44, 0.07)",
+            rttBandBad: "rgba(225, 84, 84, 0.08)",
             ceilingInactive: "rgba(255, 255, 255, 0.32)",
-            ceilingInactiveGlow: "rgba(255, 255, 255, 0.12)",
+            ceilingInactiveGlow: "rgba(255, 244, 214, 0.14)",
             ceilingActive: "#ffffff",
-            ceilingActiveGlow: "rgba(255, 255, 255, 0.48)",
+            ceilingActiveGlow: "rgba(255, 248, 224, 0.34)",
         };
     }
 
@@ -63,21 +63,32 @@ function getWaveformTheme() {
         throughputAreaTop: "rgba(18, 154, 135, 0.26)",
         throughputAreaMid: "rgba(18, 154, 135, 0.14)",
         throughputAreaBottom: "rgba(255, 255, 255, 0.02)",
-        qooLine: "#4f79d9",
-        qooGlow: "rgba(79, 121, 217, 0.18)",
-        qooAreaTop: "rgba(79, 121, 217, 0.1)",
-        qooAreaBottom: "rgba(255, 255, 255, 0.01)",
-        qooBandGood: "rgba(46, 163, 111, 0.06)",
-        qooBandWarn: "rgba(214, 148, 40, 0.06)",
-        qooBandPoor: "rgba(196, 82, 82, 0.06)",
+        rttLine: "#4f79d9",
+        rttGlow: "rgba(79, 121, 217, 0.18)",
+        rttAreaTop: "rgba(79, 121, 217, 0.1)",
+        rttAreaBottom: "rgba(255, 255, 255, 0.01)",
+        rttBandGood: "rgba(46, 163, 111, 0.06)",
+        rttBandWarn: "rgba(214, 148, 40, 0.06)",
+        rttBandBad: "rgba(196, 82, 82, 0.06)",
         ceilingInactive: "rgba(110, 120, 134, 0.34)",
-        ceilingInactiveGlow: "rgba(110, 120, 134, 0.08)",
+        ceilingInactiveGlow: "rgba(164, 146, 96, 0.10)",
         ceilingActive: "rgba(255, 255, 255, 0.96)",
-        ceilingActiveGlow: "rgba(104, 118, 138, 0.26)",
+        ceilingActiveGlow: "rgba(186, 160, 84, 0.16)",
     };
 }
 
-function directionalSeriesData(samples, direction, valueKey, windowStart, windowEnd) {
+function normalizeRttThresholds(rawThresholds) {
+    const green = Math.max(0, Math.round(toNumber(rawThresholds?.green_ms ?? rawThresholds?.greenMs, 0)));
+    const yellow = Math.max(green, Math.round(toNumber(rawThresholds?.yellow_ms ?? rawThresholds?.yellowMs, 100)));
+    const red = Math.max(yellow, 1, Math.round(toNumber(rawThresholds?.red_ms ?? rawThresholds?.redMs, 200)));
+    return {
+        green_ms: green,
+        yellow_ms: yellow,
+        red_ms: red,
+    };
+}
+
+function directionalSeriesData(samples, direction, valueKey, windowStart, windowEnd, fallback = 0) {
     if (!samples || samples.length === 0) {
         return [];
     }
@@ -97,20 +108,20 @@ function directionalSeriesData(samples, direction, valueKey, windowStart, window
         }
         points.push([
             sample.timestamp,
-            toNumber(sample?.[valueKey]?.[direction], 0),
+            toNumber(sample?.[valueKey]?.[direction], fallback),
         ]);
     }
 
     if (previous) {
         points.unshift([
             windowStart,
-            toNumber(previous?.[valueKey]?.[direction], 0),
+            toNumber(previous?.[valueKey]?.[direction], fallback),
         ]);
     }
     if (next) {
         points.push([
             Math.min(next.timestamp, windowEnd),
-            toNumber(next?.[valueKey]?.[direction], 0),
+            toNumber(next?.[valueKey]?.[direction], fallback),
         ]);
     } else if (points.length > 0) {
         points.push([
@@ -193,21 +204,43 @@ function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
     return { base, active };
 }
 
-function qooMarkAreas(colors) {
-    return [
-        [
-            { yAxis: 0, itemStyle: { color: colors.qooBandPoor } },
-            { yAxis: 50 },
-        ],
-        [
-            { yAxis: 50, itemStyle: { color: colors.qooBandWarn } },
-            { yAxis: 80 },
-        ],
-        [
-            { yAxis: 80, itemStyle: { color: colors.qooBandGood } },
-            { yAxis: 100 },
-        ],
-    ];
+function rttMarkAreas(colors, thresholds, chartMax) {
+    const yellow = Math.min(chartMax, thresholds.yellow_ms);
+    const red = Math.min(chartMax, thresholds.red_ms);
+    const bands = [];
+
+    if (yellow > 0) {
+        bands.push([
+            { yAxis: 0, itemStyle: { color: colors.rttBandGood } },
+            { yAxis: yellow },
+        ]);
+    }
+    if (red > yellow) {
+        bands.push([
+            { yAxis: yellow, itemStyle: { color: colors.rttBandWarn } },
+            { yAxis: red },
+        ]);
+    }
+    if (chartMax > red) {
+        bands.push([
+            { yAxis: red, itemStyle: { color: colors.rttBandBad } },
+            { yAxis: chartMax },
+        ]);
+    }
+
+    return bands;
+}
+
+function rttAxisMax(thresholds, observedRttMax) {
+    const red = Math.max(1, toNumber(thresholds?.red_ms, 200));
+    const headroom = Math.max(20, Math.round(red * 0.25));
+    const desired = Math.max(
+        red + headroom,
+        observedRttMax > 0 ? Math.ceil(observedRttMax * 1.1) : 0,
+    );
+
+    // Round up to a cleaner axis number.
+    return Math.ceil(desired / 10) * 10;
 }
 
 export class QueuingActivityWaveform extends DashboardGraph {
@@ -228,6 +261,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         this.renderRaf = null;
         this.lastRenderTimestamp = 0;
+        this.rttThresholds = normalizeRttThresholds();
 
         this.option = {
             animation: false,
@@ -244,8 +278,8 @@ export class QueuingActivityWaveform extends DashboardGraph {
                 {
                     left: "9%",
                     right: "9%",
-                    top: "57%",
-                    height: "22%",
+                    top: "60%",
+                    bottom: 26,
                 },
             ],
             legend: {
@@ -264,8 +298,8 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     const lines = [`<div><b>${formatSecondsAgo(this.renderNow, when)}</b></div>`];
                     params.forEach((entry) => {
                         const y = Array.isArray(entry.value) ? entry.value[1] : entry.value;
-                        const formatted = entry.seriesName === "Circuit QoO"
-                            ? `${formatQoo(y)} / 100`
+                        const formatted = entry.seriesName === "Circuit RTT (P50)"
+                            ? formatRttMs(y)
                             : formatBps(y);
                         lines.push(
                             `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${entry.color};"></span>${entry.seriesName}: <b>${formatted}</b></div>`,
@@ -317,7 +351,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     gridIndex: 0,
                     name: "Throughput",
                     nameLocation: "middle",
-                    nameGap: 52,
+                    nameGap: 64,
                     nameTextStyle: {
                         color: this.colors.axisName,
                     },
@@ -340,10 +374,10 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     type: "value",
                     gridIndex: 1,
                     min: 0,
-                    max: 100,
-                    name: "Circuit QoO",
+                    max: this.rttThresholds.red_ms,
+                    name: "Circuit RTT (P50)",
                     nameLocation: "middle",
-                    nameGap: 44,
+                    nameGap: 64,
                     nameTextStyle: {
                         color: this.colors.axisName,
                     },
@@ -359,7 +393,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     },
                     axisLabel: {
                         color: this.colors.axisText,
-                        formatter: (val) => `${Math.round(val)}`,
+                        formatter: (val) => `${Math.round(val)} ms`,
                     },
                     axisTick: {
                         lineStyle: {
@@ -429,7 +463,25 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     data: [],
                 },
                 {
-                    name: "Circuit QoO",
+                    name: "Ceiling Live",
+                    type: "line",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    showSymbol: false,
+                    silent: true,
+                    smooth: false,
+                    connectNulls: false,
+                    step: "start",
+                    lineStyle: {
+                        width: 2.8,
+                        color: this.colors.ceilingActive,
+                        shadowBlur: 14,
+                        shadowColor: this.colors.ceilingActiveGlow,
+                    },
+                    data: [],
+                },
+                {
+                    name: "Circuit RTT (P50)",
                     type: "line",
                     xAxisIndex: 1,
                     yAxisIndex: 1,
@@ -439,14 +491,14 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     step: "start",
                     lineStyle: {
                         width: 2.1,
-                        color: this.colors.qooLine,
+                        color: this.colors.rttLine,
                         shadowBlur: 10,
-                        shadowColor: this.colors.qooGlow,
+                        shadowColor: this.colors.rttGlow,
                     },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: this.colors.qooAreaTop },
-                            { offset: 1, color: this.colors.qooAreaBottom },
+                            { offset: 0, color: this.colors.rttAreaTop },
+                            { offset: 1, color: this.colors.rttAreaBottom },
                         ]),
                     },
                     markArea: {
@@ -454,7 +506,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                         itemStyle: {
                             opacity: 1,
                         },
-                        data: qooMarkAreas(this.colors),
+                        data: rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms),
                     },
                     data: [],
                 },
@@ -505,6 +557,17 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.render();
     }
 
+    setRttThresholds(rawThresholds) {
+        this.rttThresholds = normalizeRttThresholds(rawThresholds);
+        this.option.yAxis[1].max = this.rttThresholds.red_ms;
+        this.option.series[4].markArea.data = rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms);
+        this.chart.setOption({
+            yAxis: [{}, { max: this.rttThresholds.red_ms }],
+            series: [{}, {}, {}, {}, { markArea: { data: this.option.series[4].markArea.data } }],
+        });
+        this.render();
+    }
+
     pushSample(sample) {
         const normalized = {
             timestamp: this.quantizeTimestamp(sample.timestamp || Date.now()),
@@ -516,10 +579,10 @@ export class QueuingActivityWaveform extends DashboardGraph {
                 down: toNumber(sample.ceilingBps?.down, 0),
                 up: toNumber(sample.ceilingBps?.up, 0),
             },
-            qooScore: (() => {
-                const qoo = toNumber(sample.qooScore, NaN);
-                return Number.isFinite(qoo) ? Math.max(0, Math.min(100, qoo)) : null;
-            })(),
+            rttP50Ms: {
+                down: toNumber(sample.rttP50Ms?.down, null),
+                up: toNumber(sample.rttP50Ms?.up, null),
+            },
         };
 
         this.samples.push(normalized);
@@ -557,6 +620,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         const latest = this.samples.length > 0 ? this.samples[this.samples.length - 1] : null;
         if (!latest) {
             return {
+                latestTimestamp: null,
                 throughputBps: 0,
                 ceilingBps: 0,
                 atCeiling: false,
@@ -565,6 +629,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         const throughputBps = toNumber(latest.throughputBps[this.direction], 0);
         const ceilingBps = toNumber(latest.ceilingBps[this.direction], 0);
         return {
+            latestTimestamp: latest.timestamp,
             throughputBps,
             ceilingBps,
             atCeiling: ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95),
@@ -585,18 +650,32 @@ export class QueuingActivityWaveform extends DashboardGraph {
             windowStart,
             displayNow,
         );
-        const qooData = scalarSeriesData(
+        const rttData = directionalSeriesData(
             this.samples,
-            "qooScore",
+            this.direction,
+            "rttP50Ms",
             windowStart,
             displayNow,
+            null,
         );
+        const currentState = this.currentSeriesState();
         const ceilingSeries = ceilingSeriesData(
             this.samples,
             this.direction,
             windowStart,
             displayNow,
         );
+        const observedRttMax = rttData.reduce((max, point) => {
+            const value = toNumber(point?.[1], NaN);
+            return Number.isFinite(value) ? Math.max(max, value) : max;
+        }, 0);
+        const rttAxisMaxValue = rttAxisMax(this.rttThresholds, observedRttMax);
+        const liveCeilingData = currentState.atCeiling && currentState.ceilingBps > 0
+            ? [
+                [Math.max(windowStart, toNumber(currentState.latestTimestamp, windowStart)), currentState.ceilingBps],
+                [displayNow, currentState.ceilingBps],
+            ]
+            : [];
 
         const patch = {
             xAxis: [
@@ -607,6 +686,12 @@ export class QueuingActivityWaveform extends DashboardGraph {
                 {
                     min: windowStart,
                     max: displayNow,
+                },
+            ],
+            yAxis: [
+                {},
+                {
+                    max: rttAxisMaxValue,
                 },
             ],
             series: [
@@ -631,8 +716,19 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     },
                 },
                 {
-                    name: "Circuit QoO",
-                    data: qooData,
+                    name: "Ceiling Live",
+                    data: liveCeilingData,
+                    lineStyle: {
+                        color: this.colors.ceilingActive,
+                        shadowColor: this.colors.ceilingActiveGlow,
+                    },
+                },
+                {
+                    name: "Circuit RTT (P50)",
+                    data: rttData,
+                    markArea: {
+                        data: rttMarkAreas(this.colors, this.rttThresholds, rttAxisMaxValue),
+                    },
                 },
             ],
         };
@@ -666,13 +762,19 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.option.series[1].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
         this.option.series[2].lineStyle.color = this.colors.ceilingActive;
         this.option.series[2].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[3].lineStyle.color = this.colors.qooLine;
-        this.option.series[3].lineStyle.shadowColor = this.colors.qooGlow;
-        this.option.series[3].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: this.colors.qooAreaTop },
-            { offset: 1, color: this.colors.qooAreaBottom },
+        this.option.series[3].lineStyle.color = this.colors.ceilingActive;
+        this.option.series[3].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
+        this.option.series[4].lineStyle.color = this.colors.rttLine;
+        this.option.series[4].lineStyle.shadowColor = this.colors.rttGlow;
+        this.option.series[4].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: this.colors.rttAreaTop },
+            { offset: 1, color: this.colors.rttAreaBottom },
         ]);
-        this.option.series[3].markArea.data = qooMarkAreas(this.colors);
+        this.option.series[4].markArea.data = rttMarkAreas(
+            this.colors,
+            this.rttThresholds,
+            this.option.yAxis[1].max || this.rttThresholds.red_ms,
+        );
         this.chart.setOption(this.option);
         this.render();
     }
