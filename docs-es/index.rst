@@ -37,7 +37,7 @@ Bienvenido a la documentación de LibreQoS
 
 .. toctree::
    :maxdepth: 1
-   :caption: Insight
+   :caption: Funciones Con Licencia
 
    v2.0/insight-es
    v2.0/api-es
