@@ -39,10 +39,10 @@ Cada clase HTB tiene un punto de acople para qdisc hijo. Si no hay qdisc hoja ex
 Modelo práctico de comportamiento en LibreQoS:
 
 1. La política por defecto de fábrica usa `HTB` + `cake diffserv4` para circuitos moldeados.
-2. TreeGuard (función próxima) puede cambiar dinámicamente direcciones de circuito entre `cake diffserv4` y `fq_codel` según guardrails de baja carga/RTT.
-3. TreeGuard no está habilitado por defecto.
+2. TreeGuard puede cambiar dinámicamente direcciones de circuito entre `cake diffserv4` y `fq_codel` según guardrails de baja carga/RTT.
+3. En LibreQoS v2.0, TreeGuard está habilitado por defecto y los operadores deberían revisar su enrolamiento y guardrails si desean comportamiento SQM fijo/manual.
 
-Consulte [TreeGuard (Función Próxima de v2.0)](treeguard-es.md) para detalles de configuración y despliegue.
+Consulte [TreeGuard](treeguard-es.md) para detalles de configuración y despliegue.
 
 ## 3) Resumen de HTB para Usuarios de AQM
 

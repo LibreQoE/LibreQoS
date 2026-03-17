@@ -254,15 +254,15 @@ A continuación un ejemplo de entrada en ShapedDevices.csv:
 
 Si está utilizando una de nuestras integraciones con CRM, este archivo se generará automáticamente. Si no está utilizando una integración, puede editar el archivo manualmente usando la interfaz WebUI o editando directamente el archivo ShapedDevices.csv a través de la CLI.
 
-#### TreeGuard y SQM por circuito (función próxima)
+#### TreeGuard y SQM por circuito
 
-TreeGuard es una función próxima de v2.0 que puede ajustar dinámicamente el SQM por circuito (`cake`/`fq_codel`) según condiciones del circuito.
+TreeGuard puede ajustar dinámicamente el SQM por circuito (`cake`/`fq_codel`) según condiciones del circuito.
 
 Importante:
-- TreeGuard no está habilitado por defecto.
-- El comportamiento por defecto de LibreQoS se mantiene en su SQM configurado/global a menos que habilite TreeGuard explícitamente.
+- En LibreQoS v2.0, TreeGuard está habilitado por defecto.
+- Si desea un comportamiento SQM fijo/manual, revise la configuración de TreeGuard temprano en el despliegue y ajuste su enrolamiento o deshabilítelo explícitamente.
 
-Consulte [TreeGuard (Función Próxima de v2.0)](treeguard-es.md).
+Consulte [TreeGuard](treeguard-es.md).
 
 #### Múltiples IPs por Circuito
 Si necesita listar múltiples IPv4 en el campo IPv4, o múltiples IPv6 en el campo IPv6, agregue una coma entre ellas. Si está editando con un editor CSV (LibreOffice Calc, Excel), el editor CSV automáticamente colocará comillas alrededor de los elementos separados por coma. Si usted está editando el archivo manualmente con un editor de texto como notepad o nano, por favor agregue comillas alrededor de las entradas separadas por coma.

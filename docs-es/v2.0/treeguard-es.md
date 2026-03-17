@@ -1,12 +1,12 @@
-# TreeGuard (Función Próxima de v2.0)
+# TreeGuard
 
-TreeGuard es una función próxima de LibreQoS v2.0 para gestión inteligente de nodos.
+TreeGuard es una función actual de LibreQoS v2.0 para gestión inteligente de nodos.
 
 Estado importante:
 
-1. TreeGuard es **próximo**.
-2. TreeGuard **no está habilitado por defecto**.
-3. Los valores por defecto actuales no cambian a menos que un operador habilite TreeGuard explícitamente.
+1. TreeGuard está **habilitado por defecto** en LibreQoS v2.0.
+2. TreeGuard puede gestionar tanto la virtualización de nodos elegibles como la política SQM por circuito.
+3. Los operadores pueden ajustar o deshabilitar TreeGuard en `/etc/lqos.conf` o en la página TreeGuard de la WebUI.
 
 ## Qué Hace TreeGuard
 
@@ -17,13 +17,15 @@ TreeGuard tiene dos dominios de control:
 
 Para circuitos, TreeGuard puede tomar decisiones por dirección (descarga y subida de forma independiente).
 
-## Comportamiento por Defecto sin TreeGuard
+## Comportamiento por Defecto en LibreQoS v2.0
 
-Cuando TreeGuard no está habilitado, LibreQoS mantiene la política SQM configurada/global (normalmente `cake diffserv4`, con overrides del operador cuando estén configurados).
+En LibreQoS v2.0, TreeGuard está habilitado por defecto.
 
-TreeGuard no afecta el tráfico si no está habilitado.
+Por defecto, TreeGuard puede virtualizar nodos enrolados y puede cambiar direcciones de circuitos enrolados entre `cake diffserv4` y `fq_codel` según los guardrails configurados.
 
-## Modelo de Conmutación SQM por Circuito (Cuando Está Habilitado)
+Si prefiere un comportamiento fijo/manual, deshabilite TreeGuard o reduzca sus listas de enrolamiento.
+
+## Modelo de Conmutación SQM por Circuito
 
 TreeGuard evalúa utilización, frescura de RTT, guardrails de CPU y guardrails opcionales de QoO.
 
@@ -45,34 +47,36 @@ La configuración de TreeGuard vive bajo `[treeguard]` y sus sub-secciones:
 4. `[treeguard.circuits]`: enrolamiento de circuitos y guardrails de conmutación SQM.
 5. `[treeguard.qoo]`: umbral opcional de protección QoO.
 
-Valores por defecto iniciales (PR #946):
+Comportamiento por defecto actual:
 
 ```toml
 [treeguard]
-enabled = false
-dry_run = true
+enabled = true
+dry_run = false
 tick_seconds = 1
+
+[treeguard.links]
+enabled = true
+all_nodes = true
+top_level_auto_virtualize = true
 
 [treeguard.circuits]
 enabled = true
+all_circuits = true
 switching_enabled = true
 independent_directions = true
-idle_util_pct = 2.0
-idle_min_minutes = 15
-rtt_missing_seconds = 120
-upgrade_util_pct = 5.0
-min_switch_dwell_minutes = 30
-max_switches_per_hour = 4
-persist_sqm_overrides = true
+
+[treeguard.qoo]
+enabled = true
 ```
 
 ## Patrón de Despliegue Seguro
 
-1. Mantenga `enabled = false` hasta revisar política y listas de enrolamiento.
-2. Inicie con `enabled = true` y `dry_run = true`.
-3. Use primero una allowlist pequeña de nodos/circuitos.
-4. Valide el comportamiento en varias ventanas pico y valle.
-5. Solo entonces establezca `dry_run = false`.
+1. Revise la configuración de TreeGuard temprano en el despliegue en lugar de asumir comportamiento de colas fijo/manual.
+2. Si desea un rollout más acotado, deshabilite `all_nodes` y/o `all_circuits` y utilice allowlists primero.
+3. Valide el comportamiento en varias ventanas pico y valle.
+4. Si quiere validar solo en modo observación, establezca `dry_run = true` temporalmente.
+5. Si necesita comportamiento fijo/manual, establezca `enabled = false`.
 
 ## Overrides y Notas Operativas
 

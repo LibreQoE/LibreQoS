@@ -39,10 +39,10 @@ Each HTB class has a child qdisc attachment point. If no explicit leaf qdisc is 
 Practical LibreQoS behavior model:
 
 1. Default behavior uses `HTB` + `cake diffserv4` for shaped circuits.
-2. TreeGuard (upcoming feature) can dynamically switch circuit directions between `cake diffserv4` and `fq_codel` based on low-load/RTT guardrails.
-3. TreeGuard is not enabled by default.
+2. TreeGuard can dynamically switch circuit directions between `cake diffserv4` and `fq_codel` based on low-load/RTT guardrails.
+3. In LibreQoS v2.0, TreeGuard is enabled by default and operators should review its enrollment and guardrails if they want fixed/manual SQM behavior.
 
-See [TreeGuard (Upcoming v2.0 Feature)](treeguard.md) for configuration and rollout details.
+See [TreeGuard](treeguard.md) for configuration and rollout details.
 
 ## 3) HTB Summary for AQM Users
 
