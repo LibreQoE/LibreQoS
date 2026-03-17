@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENTRYPOINTS_FILE="${SCRIPT_DIR}/entrypoints.txt"
 SRC_DIR="${SCRIPT_DIR}/src"
 OUT_DIR="${SCRIPT_DIR}/out"
+ESBUILD_VERSION="${ESBUILD_VERSION:-0.25.3}"
+ESBUILD_TARGETS="${ESBUILD_TARGETS:-chrome85,firefox78,safari14}"
 
 if [[ ! -f "${ENTRYPOINTS_FILE}" ]]; then
   echo "Missing entrypoints file: ${ENTRYPOINTS_FILE}" >&2
@@ -18,7 +20,7 @@ fi
 if [[ -z "${ESBUILD_BIN}" ]]; then
   mkdir -p /tmp/esbuild
   pushd /tmp/esbuild >/dev/null
-  curl -fsSL https://esbuild.github.io/dl/latest | sh
+  curl -fsSL "https://esbuild.github.io/dl/v${ESBUILD_VERSION}" | sh
   popd >/dev/null
   chmod a+x /tmp/esbuild/esbuild
   ESBUILD_BIN="/tmp/esbuild/esbuild"
@@ -36,5 +38,5 @@ for script in "${scripts[@]}"; do
   fi
 
   echo "Building ${script}"
-  "${ESBUILD_BIN}" "${SRC_DIR}/${script}" --bundle --minify --sourcemap --target=chrome58,firefox57,safari11 --outdir="${OUT_DIR}"
+  "${ESBUILD_BIN}" "${SRC_DIR}/${script}" --bundle --minify --sourcemap --target="${ESBUILD_TARGETS}" --outdir="${OUT_DIR}"
 done

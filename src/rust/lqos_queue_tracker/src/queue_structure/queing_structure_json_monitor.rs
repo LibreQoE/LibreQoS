@@ -5,14 +5,28 @@ use crate::tracking::ALL_QUEUE_SUMMARY;
 use arc_swap::ArcSwap;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use thiserror::Error;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Global queue structure (from `queueingStructure.json`)
 pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
     Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
+/// Global effective node-rate overlay derived from `queuingStructure.json`.
+///
+/// This contains only named queue nodes that map cleanly back to authored network-tree
+/// entries. Circuit/device rows and generated placeholder nodes are intentionally excluded.
+pub static EFFECTIVE_NODE_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> = Lazy::new(|| {
+    let initial = QUEUE_STRUCTURE.load();
+    let rates = initial
+        .maybe_queues
+        .as_deref()
+        .map(build_effective_node_rates)
+        .unwrap_or_default();
+    ArcSwap::new(Arc::new(rates))
+});
 /// Set to true when the queue structure changes. This is here rather than in StormGuard
 /// to avoid circular dependencies.
 pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);
@@ -34,6 +48,30 @@ impl QueueStructure {
     }
 }
 
+fn build_effective_node_rates(queues: &[QueueNode]) -> HashMap<String, (f64, f64)> {
+    let mut rates = HashMap::with_capacity(queues.len());
+    for queue in queues {
+        let Some(name) = queue.name.as_ref() else {
+            continue;
+        };
+        if name.starts_with("Generated_PN_")
+            || queue.circuit_id.is_some()
+            || queue.device_id.is_some()
+        {
+            continue;
+        }
+
+        rates.insert(
+            name.clone(),
+            (
+                queue.download_bandwidth_mbps as f64,
+                queue.upload_bandwidth_mbps as f64,
+            ),
+        );
+    }
+    rates
+}
+
 /// Global file watched for `queueStructure.json`.
 /// Reloads the queue structure when it is available.
 pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
@@ -49,11 +87,33 @@ pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
 }
 
 fn update_queue_structure() {
-    debug!("queueingStructure.json reloaded");
-    let new_queue_structure = QueueStructure::new();
-    ALL_QUEUE_SUMMARY.clear();
-    QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
-    QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
+    debug!("queueingStructure.json reload requested");
+    match read_queueing_structure() {
+        Ok(queues) => {
+            let new_queue_structure = QueueStructure {
+                maybe_queues: Some(queues.clone()),
+            };
+            let effective_node_rates = build_effective_node_rates(&queues);
+            ALL_QUEUE_SUMMARY.clear();
+            QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
+            EFFECTIVE_NODE_RATES.store(Arc::new(effective_node_rates));
+            QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        Err(err) => {
+            if QUEUE_STRUCTURE.load().maybe_queues.is_some() {
+                warn!(
+                    "Failed to reload queuingStructure.json ({err:?}); preserving last-known-good snapshot"
+                );
+            } else {
+                warn!(
+                    "Failed to load queuingStructure.json ({err:?}); leaving queue structure unavailable"
+                );
+                ALL_QUEUE_SUMMARY.clear();
+                QUEUE_STRUCTURE.store(Arc::new(QueueStructure { maybe_queues: None }));
+                EFFECTIVE_NODE_RATES.store(Arc::new(HashMap::new()));
+            }
+        }
+    }
 }
 
 /// Fires up a Linux file system watcher than notifies

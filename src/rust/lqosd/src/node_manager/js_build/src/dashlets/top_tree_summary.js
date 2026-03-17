@@ -3,6 +3,10 @@ import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/sca
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
+function effectiveMax(node) {
+    return node.effective_max_throughput || node.max_throughput || [0, 0];
+}
+
 export class TopTreeSummary extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
@@ -69,7 +73,7 @@ export class TopTreeSummary extends DashletBaseInsight {
 
                 let nameCol = document.createElement("td");
                 let link = document.createElement("a");
-                link.href = "/tree.html?id=" + r[0];
+                link.href = "/tree.html?parent=" + r[0];
                 link.innerText = r[1].name;
                 link.classList.add("redactable");
                 nameCol.appendChild(link);
@@ -77,8 +81,9 @@ export class TopTreeSummary extends DashletBaseInsight {
                 row.appendChild(nameCol);
                 const tpDown = toNumber(r[1].current_throughput[0], 0) * 8;
                 const tpUp = toNumber(r[1].current_throughput[1], 0) * 8;
-                row.appendChild(simpleRowHtml(formatThroughput(tpDown, r[1].max_throughput[0])));
-                row.appendChild(simpleRowHtml(formatThroughput(tpUp, r[1].max_throughput[1])));
+                const maxThroughput = effectiveMax(r[1]);
+                row.appendChild(simpleRowHtml(formatThroughput(tpDown, maxThroughput[0])));
+                row.appendChild(simpleRowHtml(formatThroughput(tpUp, maxThroughput[1])));
 
                 const tcpPacketsDown = toNumber(r[1].current_tcp_packets[0], 0);
                 const tcpPacketsUp = toNumber(r[1].current_tcp_packets[1], 0);

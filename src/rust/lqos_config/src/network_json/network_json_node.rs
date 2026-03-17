@@ -108,6 +108,8 @@ impl NetworkJsonNode {
             id: self.id.clone(),
             is_virtual: self.virtual_node,
             max_throughput: self.max_throughput,
+            configured_max_throughput: self.max_throughput,
+            effective_max_throughput: None,
             current_throughput: (
                 self.current_throughput.get_down(),
                 self.current_throughput.get_up(),

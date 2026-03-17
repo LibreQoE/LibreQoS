@@ -16,6 +16,12 @@ pub struct NetworkJsonTransport {
     pub is_virtual: bool,
     /// Max throughput for node (not clamped)
     pub max_throughput: (f64, f64),
+    /// Configured max throughput from `network.json`.
+    #[serde(default)]
+    pub configured_max_throughput: (f64, f64),
+    /// Effective max throughput after parent inheritance, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_max_throughput: Option<(f64, f64)>,
     /// Current node throughput
     pub current_throughput: (u64, u64),
     /// Current node packets

@@ -19,7 +19,9 @@ import {CakeQueueLength} from "./graphs/cake_queue_length";
 import {CakeTraffic} from "./graphs/cake_traffic";
 import {CakeMarks} from "./graphs/cake_marks";
 import {CakeDrops} from "./graphs/cake_drops";
+import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
 import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
+import {loadConfig} from "./config/config_helper";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -51,6 +53,15 @@ let latestFlowMsg = null;
 let latestCakeMsg = null;
 let cakeGraphs = null;
 let cakeQueueUnavailable = false;
+let queuingActivityGraph = null;
+let latestCircuitDevices = [];
+let latestCircuitQooScore = null;
+let queuingActivityDirection = "down";
+let deviceGraphSpecs = [];
+let deviceGraphsInitialized = false;
+const QUEUING_ACTIVITY_RTT_FLOOR_BPS = 200_000;
+const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
+let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -62,6 +73,30 @@ const listenOnce = (eventName, handler) => {
 
 function isElementVisible(el) {
     return !!(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
+function hasRenderableSize(el) {
+    if (!el) {
+        return false;
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+}
+
+function runWhenRenderable(el, callback, attempts = 10) {
+    if (!el) {
+        return;
+    }
+    if (hasRenderableSize(el)) {
+        callback();
+        return;
+    }
+    if (attempts <= 0) {
+        return;
+    }
+    window.setTimeout(() => {
+        runWhenRenderable(el, callback, attempts - 1);
+    }, 50);
 }
 
 function loadingBlockHtml(label, sizeClass = "") {
@@ -123,6 +158,240 @@ function resizeGraphIfVisible(graph) {
     graph.chart.resize();
 }
 
+function formatBitsPerSecondLabel(bitsPerSecond) {
+    return `${scaleNumber(bitsPerSecond, 1)}bps`;
+}
+
+function medianOfSorted(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+        return null;
+    }
+    const middle = Math.floor(values.length / 2);
+    if (values.length % 2 === 1) {
+        return values[middle];
+    }
+    return (values[middle - 1] + values[middle]) / 2;
+}
+
+function weightedMedian(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return null;
+    }
+
+    const totalWeight = entries.reduce((sum, entry) => sum + Math.max(0, toNumber(entry.weight, 0)), 0);
+    if (!(totalWeight > 0)) {
+        return null;
+    }
+
+    const threshold = totalWeight / 2;
+    let running = 0;
+    for (const entry of entries) {
+        running += Math.max(0, toNumber(entry.weight, 0));
+        if (running >= threshold) {
+            return toNumber(entry.value, null);
+        }
+    }
+
+    return toNumber(entries[entries.length - 1].value, null);
+}
+
+function currentCircuitRttP50Ms(direction) {
+    const directional = direction === "up" ? "up" : "down";
+    const weightedEntries = [];
+    const fallbackValues = [];
+
+    latestCircuitDevices.forEach((device) => {
+        const currentP50Nanos = toNumber(device?.rtt_current_p50_nanos?.[directional], 0);
+        if (!(currentP50Nanos > 0)) {
+            return;
+        }
+
+        const throughputBps = toNumber(device?.bytes_per_second?.[directional], 0) * 8;
+        const currentP50Ms = currentP50Nanos / 1_000_000.0;
+        fallbackValues.push(currentP50Ms);
+
+        if (throughputBps > QUEUING_ACTIVITY_RTT_FLOOR_BPS) {
+            weightedEntries.push({
+                value: currentP50Ms,
+                weight: throughputBps,
+            });
+        }
+    });
+
+    weightedEntries.sort((a, b) => a.value - b.value);
+    const weighted = weightedMedian(weightedEntries);
+    if (Number.isFinite(weighted)) {
+        return weighted;
+    }
+
+    fallbackValues.sort((a, b) => a - b);
+    const fallbackMedian = medianOfSorted(fallbackValues);
+    return Number.isFinite(fallbackMedian) ? fallbackMedian : null;
+}
+
+function formatCircuitRttLabel(rttMs) {
+    const value = toNumber(rttMs, NaN);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "-";
+    }
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ms`;
+}
+
+function normalizeRttThresholds(rawThresholds) {
+    const green = Math.max(0, Math.round(toNumber(rawThresholds?.green_ms ?? rawThresholds?.greenMs, DEFAULT_RTT_THRESHOLDS.green_ms)));
+    const yellow = Math.max(green, Math.round(toNumber(rawThresholds?.yellow_ms ?? rawThresholds?.yellowMs, DEFAULT_RTT_THRESHOLDS.yellow_ms)));
+    const red = Math.max(yellow, 1, Math.round(toNumber(rawThresholds?.red_ms ?? rawThresholds?.redMs, DEFAULT_RTT_THRESHOLDS.red_ms)));
+    return {
+        green_ms: green,
+        yellow_ms: yellow,
+        red_ms: red,
+    };
+}
+
+function applyRttThresholds(rawThresholds) {
+    currentRttThresholds = normalizeRttThresholds(rawThresholds);
+    if (queuingActivityGraph) {
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
+    }
+    updateQueuingActivityCards();
+}
+
+function loadRttThresholds() {
+    loadConfig(
+        () => {
+            applyRttThresholds(window.config?.rtt_thresholds);
+        },
+        () => {
+            applyRttThresholds(null);
+        },
+    );
+}
+
+function currentActiveFlowCount() {
+    return Array.isArray(latestFlowMsg?.flows) ? latestFlowMsg.flows.length : 0;
+}
+
+function currentDirectionValue(pair, direction, fallback = 0) {
+    return toNumber(pair?.[direction], fallback);
+}
+
+function currentQueuingActivitySnapshot() {
+    const throughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, queuingActivityDirection, 0) * 8);
+    }, 0);
+    const ceilingMbps = currentDirectionValue(plan, queuingActivityDirection, 0);
+    const ceilingBps = ceilingMbps * 1_000_000.0;
+    const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
+    const utilizationPercent = ceilingBps > 0
+        ? Math.max(0, Math.min(999, (throughputBps / ceilingBps) * 100))
+        : 0;
+    return {
+        throughputBps,
+        ceilingBps,
+        rttP50Ms: currentCircuitRttP50Ms(queuingActivityDirection),
+        activeFlows: currentActiveFlowCount(),
+        utilizationPercent,
+        atCeiling,
+    };
+}
+
+function updateQueuingActivityCards() {
+    const throughputEl = document.getElementById("queuingActivityThroughput");
+    const rttEl = document.getElementById("queuingActivityRtt");
+    const flowsEl = document.getElementById("queuingActivityFlows");
+    const utilizationEl = document.getElementById("queuingActivityUtilization");
+    const ceilingLegendEl = document.getElementById("queuingActivityLegendCeiling");
+    if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
+        return;
+    }
+
+    const snapshot = currentQueuingActivitySnapshot();
+    throughputEl.textContent = formatBitsPerSecondLabel(snapshot.throughputBps);
+    rttEl.textContent = formatCircuitRttLabel(snapshot.rttP50Ms);
+    rttEl.style.color = snapshot.rttP50Ms !== null ? colorByRttMs(snapshot.rttP50Ms, currentRttThresholds) : "";
+    flowsEl.textContent = String(snapshot.activeFlows);
+    utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
+    utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
+    if (ceilingLegendEl) {
+        ceilingLegendEl.classList.toggle("is-active", snapshot.atCeiling);
+    }
+}
+
+function pushQueuingActivitySample() {
+    if (!queuingActivityGraph || !latestCircuitDevices.length || !plan) {
+        updateQueuingActivityCards();
+        return;
+    }
+
+    const downThroughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, "down", 0) * 8);
+    }, 0);
+    const upThroughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, "up", 0) * 8);
+    }, 0);
+
+    queuingActivityGraph.pushSample({
+        timestamp: Date.now(),
+        throughputBps: {
+            down: downThroughputBps,
+            up: upThroughputBps,
+        },
+        ceilingBps: {
+            down: currentDirectionValue(plan, "down", 0) * 1_000_000.0,
+            up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
+        },
+        rttP50Ms: {
+            down: currentCircuitRttP50Ms("down"),
+            up: currentCircuitRttP50Ms("up"),
+        },
+    });
+    updateQueuingActivityCards();
+}
+
+function applyQueuingDirection(direction) {
+    queuingActivityDirection = direction === "up" ? "up" : "down";
+    if (queuingActivityGraph) {
+        queuingActivityGraph.setDirection(queuingActivityDirection);
+    }
+    updateQueuingActivityCards();
+}
+
+function ensureQueuingActivityGraph() {
+    const target = document.getElementById("queuingActivityGraph");
+    if (!target || queuingActivityGraph || !isElementVisible(target)) {
+        return;
+    }
+    runWhenRenderable(target, () => {
+        if (queuingActivityGraph || !hasRenderableSize(target)) {
+            return;
+        }
+        queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
+        queuingActivityGraph.setDirection(queuingActivityDirection);
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
+        pushQueuingActivitySample();
+    });
+}
+
+function initQueuingActivityControls() {
+    const downloadToggle = document.getElementById("queuingDirectionDown");
+    const uploadToggle = document.getElementById("queuingDirectionUp");
+    if (downloadToggle) {
+        downloadToggle.addEventListener("change", () => {
+            if (downloadToggle.checked) {
+                applyQueuingDirection("down");
+            }
+        });
+    }
+    if (uploadToggle) {
+        uploadToggle.addEventListener("change", () => {
+            if (uploadToggle.checked) {
+                applyQueuingDirection("up");
+            }
+        });
+    }
+    applyQueuingDirection("down");
+}
+
 function applyFlowSankeyMessage(msg) {
     if (!flowSankey || !msg) {
         return;
@@ -137,8 +406,13 @@ function ensureFlowSankey() {
     if (!target || flowSankey || !isElementVisible(target)) {
         return;
     }
-    flowSankey = new FlowsSankey("flowSankey");
-    applyFlowSankeyMessage(latestFlowMsg);
+    runWhenRenderable(target, () => {
+        if (flowSankey || !hasRenderableSize(target)) {
+            return;
+        }
+        flowSankey = new FlowsSankey("flowSankey");
+        applyFlowSankeyMessage(latestFlowMsg);
+    });
 }
 
 function resizeFunnelGraphs() {
@@ -146,6 +420,29 @@ function resizeFunnelGraphs() {
         if (!graphSet) return;
         Object.values(graphSet).forEach((graph) => resizeGraphIfVisible(graph));
     });
+}
+
+function initializeDeviceGraphs() {
+    if (deviceGraphsInitialized) {
+        return;
+    }
+    deviceGraphSpecs.forEach((spec) => {
+        if (!document.getElementById(spec.id) || deviceGraphs[spec.id]) {
+            return;
+        }
+        deviceGraphs[spec.id] = spec.factory(spec.id);
+    });
+    deviceGraphsInitialized = true;
+    if (latestCircuitDevices.length > 0) {
+        fillLiveDevices(latestCircuitDevices);
+        if (speedometer && totalThroughput && totalRetransmits) {
+            updateSpeedometer(latestCircuitDevices);
+        }
+    }
+}
+
+function resizeDeviceGraphs() {
+    Object.values(deviceGraphs).forEach((graph) => resizeGraphIfVisible(graph));
 }
 
 function arrayEquals(a, b) {
@@ -358,16 +655,21 @@ function ensureCakeGraphs() {
     if (!cakeTab || cakeGraphs || cakeQueueUnavailable || !isElementVisible(cakeTab)) {
         return;
     }
-    renderCakeGraphShell();
-    cakeGraphs = {
-        backlog: new CakeBacklog("cakeBacklog"),
-        delays: new CakeDelays("cakeDelays"),
-        queueLength: new CakeQueueLength("cakeQueueLength"),
-        traffic: new CakeTraffic("cakeTraffic"),
-        marks: new CakeMarks("cakeMarks"),
-        drops: new CakeDrops("cakeDrops"),
-    };
-    applyCakeMessage(latestCakeMsg);
+    runWhenRenderable(cakeTab, () => {
+        if (cakeGraphs || !hasRenderableSize(cakeTab)) {
+            return;
+        }
+        renderCakeGraphShell();
+        cakeGraphs = {
+            backlog: new CakeBacklog("cakeBacklog"),
+            delays: new CakeDelays("cakeDelays"),
+            queueLength: new CakeQueueLength("cakeQueueLength"),
+            traffic: new CakeTraffic("cakeTraffic"),
+            marks: new CakeMarks("cakeMarks"),
+            drops: new CakeDrops("cakeDrops"),
+        };
+        applyCakeMessage(latestCakeMsg);
+    });
 }
 
 function initTabLifecycle(parentNode) {
@@ -376,6 +678,16 @@ function initTabLifecycle(parentNode) {
         tab.addEventListener("shown.bs.tab", () => {
             window.requestAnimationFrame(() => {
                 const target = tab.getAttribute("data-bs-target");
+                if (target === "#queuing") {
+                    ensureQueuingActivityGraph();
+                    updateQueuingActivityCards();
+                    return;
+                }
+                if (target === "#devs") {
+                    initializeDeviceGraphs();
+                    resizeDeviceGraphs();
+                    return;
+                }
                 if (target === "#sankey") {
                     ensureFlowSankey();
                     applyFlowSankeyMessage(latestFlowMsg);
@@ -396,6 +708,11 @@ function initTabLifecycle(parentNode) {
                 }
             });
         });
+    });
+
+    window.requestAnimationFrame(() => {
+        ensureQueuingActivityGraph();
+        updateQueuingActivityCards();
     });
 }
 
@@ -510,18 +827,24 @@ function connectPrivateChannel() {
             circuit: circuit_id
         }
     }, (msg) => {
+        latestCircuitQooScore = toNumber(msg.qoo_score, NaN);
+        if (!Number.isFinite(latestCircuitQooScore)) {
+            latestCircuitQooScore = null;
+        }
         if (msg.devices !== null) {
-            //console.log(msg.devices);
+            latestCircuitDevices = msg.devices || [];
             fillLiveDevices(msg.devices);
             updateSpeedometer(msg.devices);
-            if (qooGauge !== null) {
-                qooGauge.update(msg.qoo_score);
-            }
+            pushQueuingActivitySample();
             if (excludeRttToggle && msg.rtt_excluded !== undefined) {
                 excludeRttLastValue = !!msg.rtt_excluded;
                 excludeRttToggle.checked = excludeRttLastValue;
             }
         }
+        if (qooGauge !== null) {
+            qooGauge.update(msg.qoo_score);
+        }
+        updateQueuingActivityCards();
     });
 }
 
@@ -613,6 +936,7 @@ function connectFlowChannel() {
         latestFlowMsg = msg;
         applyFlowSankeyMessage(msg);
         updateTrafficTab(msg);
+        updateQueuingActivityCards();
     });
 }
 
@@ -1042,6 +1366,9 @@ function formatRttMetricBlock(currentText, totalText) {
 function initialDevices(circuits) {
     let target = document.getElementById("devices");
     clearDiv(target);
+    deviceGraphs = {};
+    deviceGraphSpecs = [];
+    deviceGraphsInitialized = false;
 
     circuits.forEach((circuit) => {
         let outer = document.createElement("div");
@@ -1272,7 +1599,10 @@ function initialDevices(circuits) {
             div.innerHTML = loadingBlockHtml("Loading chart…", "lqos-loading-block-sm");
             col.appendChild(div);
             graphRow.appendChild(col);
-            deviceGraphs[divId] = graphFactory(divId);
+            deviceGraphSpecs.push({
+                id: divId,
+                factory: graphFactory,
+            });
         }
 
         addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, "Throughput"));
@@ -1459,6 +1789,8 @@ function loadInitial() {
     initTooltipsWithin(document);
     initExcludeRttToggle();
     initFlowFilters();
+    initQueuingActivityControls();
+    loadRttThresholds();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);
@@ -1470,6 +1802,7 @@ function loadInitial() {
             down: toNumber(circuit.download_max_mbps, 0),
             up: toNumber(circuit.upload_max_mbps, 0),
         };
+        latestCircuitDevices = circuits;
         setQueueTypeDisplay(circuit.sqm_override || "");
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
@@ -1477,6 +1810,7 @@ function loadInitial() {
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
         initTabLifecycle(circuit.parent_node);
+        updateQueuingActivityCards();
 
         connectPrivateChannel();
         connectPingers(circuits);
@@ -1509,6 +1843,18 @@ function cleanupCircuitPage() {
         funnelSubscription.dispose();
         funnelSubscription = null;
     }
+    if (queuingActivityGraph) {
+        queuingActivityGraph.dispose();
+        queuingActivityGraph = null;
+    }
+    Object.values(deviceGraphs).forEach((graph) => {
+        if (graph && typeof graph.dispose === "function") {
+            graph.dispose();
+        }
+    });
+    deviceGraphs = {};
+    deviceGraphSpecs = [];
+    deviceGraphsInitialized = false;
 }
 
 window.addEventListener("beforeunload", cleanupCircuitPage);

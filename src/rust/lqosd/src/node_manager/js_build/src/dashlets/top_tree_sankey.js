@@ -33,6 +33,10 @@ import {isRedacted} from "../helpers/redact";
 
 let lastRtt = {};
 
+function effectiveMax(node) {
+    return node.effective_max_throughput || node.max_throughput || [0, 0];
+}
+
 class TopTreeSankeyGraph extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -157,7 +161,8 @@ export class TopTreeSankey extends BaseDashlet {
                 let parentSum = 0;
                 // Compute link color from parent's capacity percent (as before)
                 const downBitsPerSec = toNumber(p.current_throughput[0], 0) * 8;
-                const maxBitsPerSec = toNumber(p.max_throughput[0], 0) * 1_000_000;
+                const parentMax = effectiveMax(p);
+                const maxBitsPerSec = toNumber(parentMax[0], 0) * 1_000_000;
                 const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
                 const capacityColor = isColorBlindMode()
                     ? lerpViridis(percent / 100)
@@ -179,7 +184,8 @@ export class TopTreeSankey extends BaseDashlet {
 
                     // Link color for child can use child's capacity percent
                     const cDownBitsPerSec = toNumber(child.current_throughput?.[0], 0) * 8;
-                    const cMaxBitsPerSec = toNumber(child.max_throughput?.[0], 0) * 1_000_000;
+                    const childMax = effectiveMax(child);
+                    const cMaxBitsPerSec = toNumber(childMax[0], 0) * 1_000_000;
                     const cPercent = Math.min(100, cMaxBitsPerSec > 0 ? (cDownBitsPerSec / cMaxBitsPerSec) * 100 : 0);
                     const cCapacityColor = isColorBlindMode()
                         ? lerpViridis(cPercent / 100)
@@ -213,7 +219,7 @@ export class TopTreeSankey extends BaseDashlet {
 
             let name = r[1].name;
             const downBitsPerSec = toNumber(r[1].current_throughput[0], 0) * 8;
-            const maxBitsPerSec = toNumber(r[1].max_throughput[0], 0) * 1_000_000;
+            const maxBitsPerSec = toNumber(effectiveMax(r[1])[0], 0) * 1_000_000;
             let percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
             let capacityColor = isColorBlindMode()
                 ? lerpViridis(percent / 100)
