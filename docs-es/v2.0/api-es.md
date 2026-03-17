@@ -5,8 +5,9 @@
 El servicio `lqos_api` (API del nodo) requiere una suscripción activa a LibreQoS Insight.
 
 Esto es independiente de los límites base de shaping:
-- El shaping base de LibreQoS puede operar hasta 1000 suscriptores sin Insight.
-- Límites superiores dependen de una licencia Insight activa.
+- `ShapedDevices.csv` puede contener entradas ilimitadas.
+- Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
+- Conteos superiores de circuitos mapeados dependen de una licencia Insight activa.
 
 ## Fuente de verdad y pruebas
 

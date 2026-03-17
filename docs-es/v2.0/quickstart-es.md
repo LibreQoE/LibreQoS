@@ -29,6 +29,28 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
+```{note}
+`ShapedDevices.csv` puede contener entradas ilimitadas. En v2.0, el shaping activo sin una suscripción/licencia Insight válida está limitado a los primeros 1000 circuitos mapeados válidos. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia).
+```
+
+### Hotfix de Ubuntu 24.04 si la instalación del `.deb` se detiene
+
+En hosts Ubuntu 24.04 afectados que usan `systemd-networkd`, la instalación del `.deb` puede detenerse y mostrar un mensaje requiriendo el hotfix. Esto es esperado.
+
+Si eso ocurre, ejecute:
+
+```bash
+sudo /opt/libreqos/src/systemd_hotfix.sh install
+sudo reboot
+```
+
+Después del reinicio, reanude la instalación:
+
+```bash
+cd ~
+sudo apt install ./{deb_url_v1_5}
+```
+
 5. Abra WebUI en `http://your_shaper_ip:9123`.
 
 ## 2) Puerta de salud en 10 minutos (obligatoria antes del piloto)

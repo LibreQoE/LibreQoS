@@ -6,20 +6,56 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 
 ## If you installed the .deb
 
+```{important}
+Starting in v2.0, mapped-circuit ingest depends on valid Insight license state. Without a valid Insight subscription/license, LibreQoS reads only the first 1000 valid mapped circuits into active shaping state. This includes expired or otherwise invalid local grant/license state. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state) and [Troubleshooting](troubleshooting.md).
 ```
+
+Run:
+
+```bash
 cd ~
 sudo apt-get update
 sudo apt-get upgrade
 wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
+```
+
+If `apt install` completes normally, restart services:
+
+```bash
 sudo systemctl restart lqosd lqos_scheduler
 ```
 
-Now reboot the LibreQoS box with:
-```
+### Ubuntu 24.04 hotfix if the upgrade stops
+
+On affected Ubuntu 24.04 hosts using `systemd-networkd`, `apt install` may stop with a hotfix requirement message. This is expected.
+
+If that happens, run:
+
+```bash
+sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
+
+After the reboot, resume the upgrade and restart services:
+
+```bash
+cd ~
+sudo apt install ./{deb_url_v1_5}
+sudo systemctl restart lqosd lqos_scheduler
+```
+
+### Post-upgrade reboot
+
+Now reboot the LibreQoS box with:
+
+```bash
+sudo reboot
+```
+
 This will flush the old eBPF maps and load the latest LibreQoS version.
+
+Then continue with the normal post-upgrade validation below.
 
 ### Post-Upgrade Validation (Required)
 
@@ -44,6 +80,22 @@ If checks fail, go directly to [Troubleshooting](troubleshooting.md) before furt
 3. ```git switch develop```
 5. Recompile: `./build_rust.sh`
 6. `sudo rust/remove_pinned_maps.sh`
+
+### Ubuntu 24.04 hotfix for Git installs
+
+Before restarting LibreQoS services on Ubuntu 24.04, check whether the Noble `systemd-networkd` hotfix should be offered:
+
+```bash
+cd /opt/libreqos/src
+./systemd_hotfix.sh status
+```
+
+If the script reports that the hotfix should be offered, install it and reboot before continuing:
+
+```bash
+sudo ./systemd_hotfix.sh install
+sudo reboot
+```
 
 Run the following commands to reload the LibreQoS services.
 

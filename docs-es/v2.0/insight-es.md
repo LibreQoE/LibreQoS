@@ -124,15 +124,27 @@ Notas operativas:
 
 ### Límites de circuitos mapeados y estado de licencia
 
-Compilaciones recientes aplican límites de circuitos mapeados según estado de licencia.
+`ShapedDevices.csv` puede contener entradas ilimitadas. En compilaciones v2.0 actuales, la admisión al estado de shaping activo depende del estado válido de la licencia Insight.
 
-Si su nodo está sin licencia/válido, LibreQoS puede aplicar un límite predeterminado de circuitos mapeados. Cuando se excede, los logs incluyen mensajes como:
+Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Los circuitos mapeados válidos adicionales permanecen fuera del shaping activo hasta que se restaure una licencia Insight válida.
 
-- `Mapped circuit limit reached`
-- `Bakery mapped circuit cap enforced`
+Una suscripción/licencia Insight válida habilita conteos de circuitos mapeados por encima del límite predeterminado de 1000.
+
+El comportamiento predeterminado del límite de 1000 aplica cuando Insight está:
+- ausente
+- expirado
+- inválido por cualquier motivo
+- operando con estado local de grant offline inválido
+
+Cuando se alcanza el límite, los operadores normalmente verán:
+- una advertencia prominente en WebUI
+- un indicador de uso en la navegación izquierda mostrando cercanía al límite
+- mensajes de `lqosd` como:
+  - `Mapped circuit limit reached`
+  - `Bakery mapped circuit cap enforced`
 
 Cuando ocurra:
 
 1. Revise estado de licencia Insight en la UI.
 2. Revise `journalctl -u lqosd` para conteos requested/allowed/dropped.
-3. Verifique si la cantidad de circuitos mapeados excede su licencia.
+3. Verifique si el nodo está operando con el límite predeterminado de 1000 circuitos mapeados porque el estado actual de Insight/licencia es inválido.

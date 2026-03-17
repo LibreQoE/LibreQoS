@@ -5,8 +5,9 @@
 The `lqos_api` (Node API service) requires an active LibreQoS Insight subscription.
 
 This is separate from base shaping limits:
-- Core LibreQoS shaping can run up to 1000 subscribers without Insight.
-- Higher subscriber limits depend on active Insight licensing.
+- `ShapedDevices.csv` can contain unlimited entries.
+- Without a valid Insight subscription/license, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state.
+- Higher mapped-circuit counts depend on active Insight licensing.
 
 ## Source of Truth and Testing
 
