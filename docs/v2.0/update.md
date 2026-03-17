@@ -13,12 +13,14 @@ Starting in v2.0, mapped-circuit ingest depends on valid Insight license state. 
 Run:
 
 ```bash
-cd ~
+cd /tmp
 sudo apt-get update
 sudo apt-get upgrade
 wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
+
+Using `/tmp` avoids local `.deb` permission issues where `apt` cannot access a package stored in a private home directory as user `_apt`.
 
 If `apt install` completes normally, restart services:
 
@@ -40,7 +42,7 @@ sudo reboot
 After the reboot, resume the upgrade and restart services:
 
 ```bash
-cd ~
+cd /tmp
 sudo apt install ./{deb_url_v1_5}
 sudo systemctl restart lqosd lqos_scheduler
 ```

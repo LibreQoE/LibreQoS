@@ -22,12 +22,14 @@ Complete this once:
 4. Install LibreQoS (`.deb` recommended):
 
 ```bash
-cd ~
+cd /tmp
 sudo apt-get update
 sudo apt-get upgrade
 wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
+
+Using `/tmp` avoids local `.deb` permission issues where `apt` cannot access a package stored in a private home directory as user `_apt`.
 
 ### Ubuntu 24.04 hotfix if the `.deb` install stops
 
@@ -43,7 +45,7 @@ sudo reboot
 After the reboot, resume the install:
 
 ```bash
-cd ~
+cd /tmp
 sudo apt install ./{deb_url_v1_5}
 ```
 

@@ -13,12 +13,14 @@ Desde v2.0, la ingesta de circuitos mapeados depende del estado válido de la li
 Ejecuta:
 
 ```bash
-cd ~
+cd /tmp
 sudo apt-get update
 sudo apt-get upgrade
 wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
+
+Usar `/tmp` evita problemas de permisos con `.deb` locales cuando `apt` no puede acceder al paquete almacenado en un directorio home privado con el usuario `_apt`.
 
 Si `apt install` termina normalmente, reinicia los servicios:
 
@@ -40,7 +42,7 @@ sudo reboot
 Después del reinicio, reanuda la actualización y reinicia los servicios:
 
 ```bash
-cd ~
+cd /tmp
 sudo apt install ./{deb_url_v1_5}
 sudo systemctl restart lqosd lqos_scheduler
 ```
