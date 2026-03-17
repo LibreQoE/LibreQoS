@@ -1290,6 +1290,14 @@ pub struct Lts2Circuit {
     pub upload_min_mbps: u32,
     pub download_max_mbps: u32,
     pub upload_max_mbps: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_min_mbps_exact: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_min_mbps_exact: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_max_mbps_exact: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_max_mbps_exact: Option<f32>,
     pub parent_node: i64,
     pub parent_node_name: Option<String>,
     pub devices: Vec<Lts2Device>,
@@ -1305,4 +1313,62 @@ pub struct Lts2Device {
     pub ipv4: Vec<([u8; 4], u8)>,
     pub ipv6: Vec<([u8; 16], u8)>,
     pub comment: String,
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::Lts2Circuit;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    struct OldLts2Device {
+        device_id: String,
+        device_name: String,
+        device_hash: i64,
+        mac: String,
+        ipv4: Vec<([u8; 4], u8)>,
+        ipv6: Vec<([u8; 16], u8)>,
+        comment: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OldLts2Circuit {
+        circuit_id: String,
+        circuit_name: String,
+        circuit_hash: i64,
+        download_min_mbps: u32,
+        upload_min_mbps: u32,
+        download_max_mbps: u32,
+        upload_max_mbps: u32,
+        parent_node: i64,
+        parent_node_name: Option<String>,
+        devices: Vec<OldLts2Device>,
+    }
+
+    #[test]
+    fn old_receivers_ignore_exact_rate_fields() {
+        let current = Lts2Circuit {
+            circuit_id: "cid".to_string(),
+            circuit_name: "Circuit".to_string(),
+            circuit_hash: 7,
+            download_min_mbps: 3,
+            upload_min_mbps: 2,
+            download_max_mbps: 7,
+            upload_max_mbps: 4,
+            download_min_mbps_exact: Some(2.5),
+            upload_min_mbps_exact: Some(1.5),
+            download_max_mbps_exact: Some(6.6),
+            upload_max_mbps_exact: Some(3.3),
+            parent_node: 9,
+            parent_node_name: Some("Parent".to_string()),
+            devices: Vec::new(),
+        };
+
+        let bytes = serde_cbor::to_vec(&current).expect("current payload serializes");
+        let decoded: OldLts2Circuit =
+            serde_cbor::from_slice(&bytes).expect("legacy shape ignores extra fields");
+
+        assert_eq!(decoded.download_max_mbps, 7);
+        assert_eq!(decoded.upload_max_mbps, 4);
+    }
 }
