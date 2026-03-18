@@ -162,6 +162,10 @@ pub(crate) fn submit_throughput_stats(
                                 upload_min_mbps: rate_for_submission(device.upload_min_mbps),
                                 download_max_mbps: rate_for_submission(device.download_max_mbps),
                                 upload_max_mbps: rate_for_submission(device.upload_max_mbps),
+                                download_min_mbps_exact: Some(device.download_min_mbps),
+                                upload_min_mbps_exact: Some(device.upload_min_mbps),
+                                download_max_mbps_exact: Some(device.download_max_mbps),
+                                upload_max_mbps_exact: Some(device.upload_max_mbps),
                                 parent_node: device.parent_hash,
                                 parent_node_name: Some(device.parent_node),
                                 devices: vec![Lts2Device {
