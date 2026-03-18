@@ -44,7 +44,7 @@ impl From<&ShapedDevice> for SerializableShapedDevice {
                 .sqm_override
                 .as_ref()
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| "".to_string()),
+                .unwrap_or_default(),
         }
     }
 }

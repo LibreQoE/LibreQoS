@@ -2,12 +2,13 @@
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
-import {colorByQoqScore} from "./helpers/color_scales";
+import {colorByQoqScore, colorByRttMs} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
+import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey} from "./graphs/flow_sankey";
@@ -18,6 +19,9 @@ import {CakeQueueLength} from "./graphs/cake_queue_length";
 import {CakeTraffic} from "./graphs/cake_traffic";
 import {CakeMarks} from "./graphs/cake_marks";
 import {CakeDrops} from "./graphs/cake_drops";
+import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
+import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
+import {loadConfig} from "./config/config_helper";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -26,8 +30,10 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 let circuit_id = decodeURI(params.id);
 let plan = null;
 let channelLink = null;
+let cakeChannel = null;
 let pinger = null;
 let flowChannel = null;
+let funnelSubscription = null;
 let speedometer = null;
 let qooGauge = null;
 let totalThroughput = null;
@@ -37,6 +43,25 @@ let devicePings = [];
 let flowSankey = null;
 let funnelGraphs = {};
 let funnelParents = [];
+let funnelParentSignature = [];
+let funnelInitialized = false;
+let funnelParentNodeName = null;
+let excludeRttToggle = null;
+let excludeRttLastValue = false;
+let excludeRttBusy = false;
+let latestFlowMsg = null;
+let latestCakeMsg = null;
+let cakeGraphs = null;
+let cakeQueueUnavailable = false;
+let queuingActivityGraph = null;
+let latestCircuitDevices = [];
+let latestCircuitQooScore = null;
+let queuingActivityDirection = "down";
+let deviceGraphSpecs = [];
+let deviceGraphsInitialized = false;
+const QUEUING_ACTIVITY_RTT_FLOOR_BPS = 200_000;
+const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
+let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -45,6 +70,651 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function isElementVisible(el) {
+    return !!(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
+function hasRenderableSize(el) {
+    if (!el) {
+        return false;
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+}
+
+function runWhenRenderable(el, callback, attempts = 10) {
+    if (!el) {
+        return;
+    }
+    if (hasRenderableSize(el)) {
+        callback();
+        return;
+    }
+    if (attempts <= 0) {
+        return;
+    }
+    window.setTimeout(() => {
+        runWhenRenderable(el, callback, attempts - 1);
+    }, 50);
+}
+
+function loadingBlockHtml(label, sizeClass = "") {
+    const size = sizeClass ? ` ${sizeClass}` : "";
+    return `<div class="lqos-loading-block${size}"><i class="fa fa-spinner fa-spin"></i><span>${label}</span></div>`;
+}
+
+function initTooltipsWithin(rootEl = document) {
+    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) {
+        return;
+    }
+    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
+    elements.forEach((element) => {
+        if (bootstrap.Tooltip.getOrCreateInstance) {
+            bootstrap.Tooltip.getOrCreateInstance(element);
+        } else {
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
+function applyParentNodeLink(parentNodeName) {
+    const parentNodeEl = document.getElementById("parentNode");
+    if (!parentNodeEl) {
+        return;
+    }
+
+    parentNodeEl.textContent = parentNodeName || "";
+
+    if (!parentNodeName) {
+        parentNodeEl.removeAttribute("href");
+        parentNodeEl.removeAttribute("title");
+        parentNodeEl.style.pointerEvents = "none";
+        return;
+    }
+
+    parentNodeEl.style.pointerEvents = "";
+    getNodeIdMap().then((nodeIdLookup) => {
+        const href = linkToTreeNode(parentNodeName, nodeIdLookup);
+        if (!href) {
+            parentNodeEl.removeAttribute("href");
+            parentNodeEl.removeAttribute("title");
+            parentNodeEl.style.pointerEvents = "none";
+            return;
+        }
+        parentNodeEl.href = href;
+        parentNodeEl.title = `Open ${parentNodeName} in Tree`;
+    });
+}
+
+function resizeGraphIfVisible(graph) {
+    if (!graph || !graph.chart || typeof graph.chart.resize !== "function") {
+        return;
+    }
+    const dom = typeof graph.chart.getDom === "function" ? graph.chart.getDom() : graph.dom;
+    if (!isElementVisible(dom)) {
+        return;
+    }
+    graph.chart.resize();
+}
+
+function formatBitsPerSecondLabel(bitsPerSecond) {
+    return `${scaleNumber(bitsPerSecond, 1)}bps`;
+}
+
+function medianOfSorted(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+        return null;
+    }
+    const middle = Math.floor(values.length / 2);
+    if (values.length % 2 === 1) {
+        return values[middle];
+    }
+    return (values[middle - 1] + values[middle]) / 2;
+}
+
+function weightedMedian(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return null;
+    }
+
+    const totalWeight = entries.reduce((sum, entry) => sum + Math.max(0, toNumber(entry.weight, 0)), 0);
+    if (!(totalWeight > 0)) {
+        return null;
+    }
+
+    const threshold = totalWeight / 2;
+    let running = 0;
+    for (const entry of entries) {
+        running += Math.max(0, toNumber(entry.weight, 0));
+        if (running >= threshold) {
+            return toNumber(entry.value, null);
+        }
+    }
+
+    return toNumber(entries[entries.length - 1].value, null);
+}
+
+function currentCircuitRttP50Ms(direction) {
+    const directional = direction === "up" ? "up" : "down";
+    const weightedEntries = [];
+    const fallbackValues = [];
+
+    latestCircuitDevices.forEach((device) => {
+        const currentP50Nanos = toNumber(device?.rtt_current_p50_nanos?.[directional], 0);
+        if (!(currentP50Nanos > 0)) {
+            return;
+        }
+
+        const throughputBps = toNumber(device?.bytes_per_second?.[directional], 0) * 8;
+        const currentP50Ms = currentP50Nanos / 1_000_000.0;
+        fallbackValues.push(currentP50Ms);
+
+        if (throughputBps > QUEUING_ACTIVITY_RTT_FLOOR_BPS) {
+            weightedEntries.push({
+                value: currentP50Ms,
+                weight: throughputBps,
+            });
+        }
+    });
+
+    weightedEntries.sort((a, b) => a.value - b.value);
+    const weighted = weightedMedian(weightedEntries);
+    if (Number.isFinite(weighted)) {
+        return weighted;
+    }
+
+    fallbackValues.sort((a, b) => a - b);
+    const fallbackMedian = medianOfSorted(fallbackValues);
+    return Number.isFinite(fallbackMedian) ? fallbackMedian : null;
+}
+
+function formatCircuitRttLabel(rttMs) {
+    const value = toNumber(rttMs, NaN);
+    if (!Number.isFinite(value) || value <= 0) {
+        return "-";
+    }
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ms`;
+}
+
+function normalizeRttThresholds(rawThresholds) {
+    const green = Math.max(0, Math.round(toNumber(rawThresholds?.green_ms ?? rawThresholds?.greenMs, DEFAULT_RTT_THRESHOLDS.green_ms)));
+    const yellow = Math.max(green, Math.round(toNumber(rawThresholds?.yellow_ms ?? rawThresholds?.yellowMs, DEFAULT_RTT_THRESHOLDS.yellow_ms)));
+    const red = Math.max(yellow, 1, Math.round(toNumber(rawThresholds?.red_ms ?? rawThresholds?.redMs, DEFAULT_RTT_THRESHOLDS.red_ms)));
+    return {
+        green_ms: green,
+        yellow_ms: yellow,
+        red_ms: red,
+    };
+}
+
+function applyRttThresholds(rawThresholds) {
+    currentRttThresholds = normalizeRttThresholds(rawThresholds);
+    if (queuingActivityGraph) {
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
+    }
+    updateQueuingActivityCards();
+}
+
+function loadRttThresholds() {
+    loadConfig(
+        () => {
+            applyRttThresholds(window.config?.rtt_thresholds);
+        },
+        () => {
+            applyRttThresholds(null);
+        },
+    );
+}
+
+function currentActiveFlowCount() {
+    return Array.isArray(latestFlowMsg?.flows) ? latestFlowMsg.flows.length : 0;
+}
+
+function currentDirectionValue(pair, direction, fallback = 0) {
+    return toNumber(pair?.[direction], fallback);
+}
+
+function currentQueuingActivitySnapshot() {
+    const throughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, queuingActivityDirection, 0) * 8);
+    }, 0);
+    const ceilingMbps = currentDirectionValue(plan, queuingActivityDirection, 0);
+    const ceilingBps = ceilingMbps * 1_000_000.0;
+    const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
+    const utilizationPercent = ceilingBps > 0
+        ? Math.max(0, Math.min(999, (throughputBps / ceilingBps) * 100))
+        : 0;
+    return {
+        throughputBps,
+        ceilingBps,
+        rttP50Ms: currentCircuitRttP50Ms(queuingActivityDirection),
+        activeFlows: currentActiveFlowCount(),
+        utilizationPercent,
+        atCeiling,
+    };
+}
+
+function updateQueuingActivityCards() {
+    const throughputEl = document.getElementById("queuingActivityThroughput");
+    const rttEl = document.getElementById("queuingActivityRtt");
+    const flowsEl = document.getElementById("queuingActivityFlows");
+    const utilizationEl = document.getElementById("queuingActivityUtilization");
+    const ceilingLegendEl = document.getElementById("queuingActivityLegendCeiling");
+    if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
+        return;
+    }
+
+    const snapshot = currentQueuingActivitySnapshot();
+    throughputEl.textContent = formatBitsPerSecondLabel(snapshot.throughputBps);
+    rttEl.textContent = formatCircuitRttLabel(snapshot.rttP50Ms);
+    rttEl.style.color = snapshot.rttP50Ms !== null ? colorByRttMs(snapshot.rttP50Ms, currentRttThresholds) : "";
+    flowsEl.textContent = String(snapshot.activeFlows);
+    utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
+    utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
+    if (ceilingLegendEl) {
+        ceilingLegendEl.classList.toggle("is-active", snapshot.atCeiling);
+    }
+}
+
+function pushQueuingActivitySample() {
+    if (!queuingActivityGraph || !latestCircuitDevices.length || !plan) {
+        updateQueuingActivityCards();
+        return;
+    }
+
+    const downThroughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, "down", 0) * 8);
+    }, 0);
+    const upThroughputBps = latestCircuitDevices.reduce((sum, device) => {
+        return sum + (currentDirectionValue(device?.bytes_per_second, "up", 0) * 8);
+    }, 0);
+
+    queuingActivityGraph.pushSample({
+        timestamp: Date.now(),
+        throughputBps: {
+            down: downThroughputBps,
+            up: upThroughputBps,
+        },
+        ceilingBps: {
+            down: currentDirectionValue(plan, "down", 0) * 1_000_000.0,
+            up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
+        },
+        rttP50Ms: {
+            down: currentCircuitRttP50Ms("down"),
+            up: currentCircuitRttP50Ms("up"),
+        },
+    });
+    updateQueuingActivityCards();
+}
+
+function applyQueuingDirection(direction) {
+    queuingActivityDirection = direction === "up" ? "up" : "down";
+    if (queuingActivityGraph) {
+        queuingActivityGraph.setDirection(queuingActivityDirection);
+    }
+    updateQueuingActivityCards();
+}
+
+function ensureQueuingActivityGraph() {
+    const target = document.getElementById("queuingActivityGraph");
+    if (!target || queuingActivityGraph || !isElementVisible(target)) {
+        return;
+    }
+    runWhenRenderable(target, () => {
+        if (queuingActivityGraph || !hasRenderableSize(target)) {
+            return;
+        }
+        queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
+        queuingActivityGraph.setDirection(queuingActivityDirection);
+        queuingActivityGraph.setRttThresholds(currentRttThresholds);
+        pushQueuingActivitySample();
+    });
+}
+
+function initQueuingActivityControls() {
+    const downloadToggle = document.getElementById("queuingDirectionDown");
+    const uploadToggle = document.getElementById("queuingDirectionUp");
+    if (downloadToggle) {
+        downloadToggle.addEventListener("change", () => {
+            if (downloadToggle.checked) {
+                applyQueuingDirection("down");
+            }
+        });
+    }
+    if (uploadToggle) {
+        uploadToggle.addEventListener("change", () => {
+            if (uploadToggle.checked) {
+                applyQueuingDirection("up");
+            }
+        });
+    }
+    applyQueuingDirection("down");
+}
+
+function applyFlowSankeyMessage(msg) {
+    if (!flowSankey || !msg) {
+        return;
+    }
+    const activeFlows = flowSankey.update(msg);
+    resizeGraphIfVisible(flowSankey);
+    $("#activeFlowCount").text(activeFlows);
+}
+
+function ensureFlowSankey() {
+    const target = document.getElementById("flowSankey");
+    if (!target || flowSankey || !isElementVisible(target)) {
+        return;
+    }
+    runWhenRenderable(target, () => {
+        if (flowSankey || !hasRenderableSize(target)) {
+            return;
+        }
+        flowSankey = new FlowsSankey("flowSankey");
+        applyFlowSankeyMessage(latestFlowMsg);
+    });
+}
+
+function resizeFunnelGraphs() {
+    Object.values(funnelGraphs).forEach((graphSet) => {
+        if (!graphSet) return;
+        Object.values(graphSet).forEach((graph) => resizeGraphIfVisible(graph));
+    });
+}
+
+function initializeDeviceGraphs() {
+    if (deviceGraphsInitialized) {
+        return;
+    }
+    deviceGraphSpecs.forEach((spec) => {
+        if (!document.getElementById(spec.id) || deviceGraphs[spec.id]) {
+            return;
+        }
+        deviceGraphs[spec.id] = spec.factory(spec.id);
+    });
+    deviceGraphsInitialized = true;
+    if (latestCircuitDevices.length > 0) {
+        fillLiveDevices(latestCircuitDevices);
+        if (speedometer && totalThroughput && totalRetransmits) {
+            updateSpeedometer(latestCircuitDevices);
+        }
+    }
+}
+
+function resizeDeviceGraphs() {
+    Object.values(deviceGraphs).forEach((graph) => resizeGraphIfVisible(graph));
+}
+
+function arrayEquals(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function resolveFunnelState(msg, parentNode) {
+    const data = msg && msg.data ? msg.data : [];
+    const namedEntry = data.find((node) => node[1] && node[1].name === parentNode);
+    if (!namedEntry) {
+        return null;
+    }
+
+    const immediateParent = namedEntry[1];
+    const parentIndexes = Array.isArray(immediateParent.parents) ? [...immediateParent.parents] : [];
+    const parentSignature = parentIndexes.map((parent) => {
+        const node = data[parent] && data[parent][1] ? data[parent][1] : null;
+        if (!node) {
+            return `${parent}:missing`;
+        }
+        return `${parent}:${node.name}:${node.is_virtual === true ? "virtual" : "physical"}`;
+    });
+
+    return {
+        data,
+        immediateParent,
+        parentIndexes,
+        parentSignature,
+    };
+}
+
+function renderFunnel(state) {
+    const target = document.getElementById("theFunnel");
+    if (!target) {
+        return;
+    }
+
+    if (!state) {
+        funnelGraphs = {};
+        funnelParents = [];
+        funnelParentSignature = [];
+        clearDiv(target);
+        target.appendChild(document.createTextNode("No parent node found"));
+        return;
+    }
+
+    const parentIndexes = [...state.parentIndexes].reverse();
+    let parentDiv = document.createElement("div");
+    parentIndexes.forEach((parent) => {
+        const node = state.data[parent] && state.data[parent][1] ? state.data[parent][1] : null;
+        if (!node) {
+            return;
+        }
+
+        let row = document.createElement("div");
+        row.classList.add("row");
+
+        let col = document.createElement("div");
+        col.classList.add("col-12");
+        let heading = document.createElement("h5");
+        heading.classList.add("redactable");
+        const virtualLabel = node.is_virtual === true ? " <span class='badge text-bg-secondary ms-2'>Virtual</span>" : "";
+        heading.innerHTML = "<i class='fa fa-sitemap'></i> " + node.name + virtualLabel;
+        col.appendChild(heading);
+        row.appendChild(col);
+        parentDiv.appendChild(row);
+
+        row = document.createElement("div");
+        row.classList.add("row");
+
+        let col_tp = document.createElement("div");
+        col_tp.classList.add("col-4");
+        col_tp.id = "funnel_tp_" + parent;
+        col_tp.style.height = "250px";
+        row.appendChild(col_tp);
+
+        let col_rxmit = document.createElement("div");
+        col_rxmit.classList.add("col-4");
+        col_rxmit.id = "funnel_rxmit_" + parent;
+        row.appendChild(col_rxmit);
+
+        let col_rtt = document.createElement("div");
+        col_rtt.classList.add("col-4");
+        col_rtt.id = "funnel_rtt_" + parent;
+        row.appendChild(col_rtt);
+
+        parentDiv.appendChild(row);
+    });
+
+    funnelGraphs = {};
+    clearDiv(target);
+    target.appendChild(parentDiv);
+
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            parentIndexes.forEach((parent) => {
+                if (!document.getElementById("funnel_tp_" + parent)) {
+                    return;
+                }
+                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
+                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
+                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
+                funnelGraphs[parent] = {
+                    tp: tpGraph,
+                    rxmit: rxmitGraph,
+                    rtt: rttGraph,
+                };
+                resizeGraphIfVisible(tpGraph);
+                resizeGraphIfVisible(rxmitGraph);
+                resizeGraphIfVisible(rttGraph);
+            });
+        }, 0);
+    });
+
+    funnelParents = state.parentIndexes;
+    funnelParentSignature = state.parentSignature;
+}
+
+function updateCakeTabAvailability(msg) {
+    try {
+        const kindDown = (msg?.kind_down || "").toLowerCase();
+        const kindUp = (msg?.kind_up || "").toLowerCase();
+        const tabBtn = document.getElementById("cake-tab");
+        const tabLi = tabBtn ? tabBtn.parentElement : null;
+        const tabContent = document.getElementById("cake");
+
+        if (kindDown === "none" && kindUp === "none") {
+            cakeQueueUnavailable = true;
+            if (tabLi) tabLi.style.display = "none";
+            if (tabContent) tabContent.style.display = "none";
+            return false;
+        }
+
+        cakeQueueUnavailable = false;
+        if (tabLi) tabLi.style.display = "";
+        if (tabContent) tabContent.style.display = "";
+
+        if (tabBtn) {
+            tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> Queue Stats';
+        }
+    } catch (e) {
+        // Ignore label updates; data updates still continue.
+    }
+    return true;
+}
+
+function renderCakeGraphShell() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || document.getElementById("cakeBacklog")) {
+        return;
+    }
+    cakeTab.innerHTML = `
+        <div class="row">
+            <div class="col-4">
+                <div id="cakeBacklog" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDelays" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeQueueLength" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeTraffic" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeMarks" style="height: 250px"></div>
+            </div>
+            <div class="col-4">
+                <div id="cakeDrops" style="height: 250px"></div>
+            </div>
+            <div class="col-3">
+                Queue Memory: <span id="cakeQueueMemory">?</span>
+                <div class="text-muted small mt-1">Queue Type: <span id="cakeQueueType">?</span></div>
+            </div>
+        </div>
+    `;
+    setQueueTypeDisplay("");
+}
+
+function applyCakeMessage(msg) {
+    if (!cakeGraphs || !msg) {
+        return;
+    }
+    $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
+    cakeGraphs.backlog.update(msg);
+    resizeGraphIfVisible(cakeGraphs.backlog);
+    cakeGraphs.delays.update(msg);
+    resizeGraphIfVisible(cakeGraphs.delays);
+    cakeGraphs.queueLength.update(msg);
+    resizeGraphIfVisible(cakeGraphs.queueLength);
+    cakeGraphs.traffic.update(msg);
+    resizeGraphIfVisible(cakeGraphs.traffic);
+    cakeGraphs.marks.update(msg);
+    resizeGraphIfVisible(cakeGraphs.marks);
+    cakeGraphs.drops.update(msg);
+    resizeGraphIfVisible(cakeGraphs.drops);
+}
+
+function ensureCakeGraphs() {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab || cakeGraphs || cakeQueueUnavailable || !isElementVisible(cakeTab)) {
+        return;
+    }
+    runWhenRenderable(cakeTab, () => {
+        if (cakeGraphs || !hasRenderableSize(cakeTab)) {
+            return;
+        }
+        renderCakeGraphShell();
+        cakeGraphs = {
+            backlog: new CakeBacklog("cakeBacklog"),
+            delays: new CakeDelays("cakeDelays"),
+            queueLength: new CakeQueueLength("cakeQueueLength"),
+            traffic: new CakeTraffic("cakeTraffic"),
+            marks: new CakeMarks("cakeMarks"),
+            drops: new CakeDrops("cakeDrops"),
+        };
+        applyCakeMessage(latestCakeMsg);
+    });
+}
+
+function initTabLifecycle(parentNode) {
+    const tabs = document.querySelectorAll('#myTab button[data-bs-toggle="tab"]');
+    tabs.forEach((tab) => {
+        tab.addEventListener("shown.bs.tab", () => {
+            window.requestAnimationFrame(() => {
+                const target = tab.getAttribute("data-bs-target");
+                if (target === "#queuing") {
+                    ensureQueuingActivityGraph();
+                    updateQueuingActivityCards();
+                    return;
+                }
+                if (target === "#devs") {
+                    initializeDeviceGraphs();
+                    resizeDeviceGraphs();
+                    return;
+                }
+                if (target === "#sankey") {
+                    ensureFlowSankey();
+                    applyFlowSankeyMessage(latestFlowMsg);
+                    return;
+                }
+                if (target === "#funnel") {
+                    if (!funnelInitialized) {
+                        funnelInitialized = true;
+                        initialFunnel(parentNode);
+                    } else {
+                        resizeFunnelGraphs();
+                    }
+                    return;
+                }
+                if (target === "#cake") {
+                    ensureCakeGraphs();
+                    applyCakeMessage(latestCakeMsg);
+                }
+            });
+        });
+    });
+
+    window.requestAnimationFrame(() => {
+        ensureQueuingActivityGraph();
+        updateQueuingActivityCards();
+    });
+}
 
 function formatIpBytes(bytes) {
     const list = Array.from(bytes);
@@ -72,6 +742,36 @@ function ipToString(ip) {
     return String(ip);
 }
 
+function parseDirectionalSqmToken(token) {
+    const raw = (token ?? "").toString().trim().toLowerCase();
+    if (!raw) {
+        return { down: "", up: "" };
+    }
+    if (!raw.includes("/")) {
+        return { down: raw, up: raw };
+    }
+    const [down, up] = raw.split("/", 2);
+    return {
+        down: (down ?? "").toString().trim(),
+        up: (up ?? "").toString().trim(),
+    };
+}
+
+function formatQueueTypeDisplay(sqmToken) {
+    const { down, up } = parseDirectionalSqmToken(sqmToken);
+    const downLabel = down || "Unknown";
+    const upLabel = up || down || "Unknown";
+    return `${downLabel} / ${upLabel}`;
+}
+
+function setQueueTypeDisplay(sqmToken) {
+    const queueTypeEl = document.getElementById("cakeQueueType");
+    if (!queueTypeEl) {
+        return;
+    }
+    queueTypeEl.textContent = formatQueueTypeDisplay(sqmToken);
+}
+
 function requestCircuitById(onSuccess, onError) {
     listenOnce("CircuitByIdResult", (msg) => {
         if (!msg || !msg.ok) {
@@ -87,20 +787,64 @@ function requestCircuitById(onSuccess, onError) {
     wsClient.send({ CircuitById: { id: circuit_id } });
 }
 
+function initExcludeRttToggle() {
+    excludeRttToggle = document.getElementById("excludeRttToggle");
+    if (!excludeRttToggle) return;
+
+    const listenOnceMatch = (eventName, predicate, handler) => {
+        const wrapped = (msg) => {
+            if (!predicate(msg)) return;
+            wsClient.off(eventName, wrapped);
+            handler(msg);
+        };
+        wsClient.on(eventName, wrapped);
+    };
+
+    excludeRttToggle.addEventListener("change", () => {
+        if (excludeRttBusy) return;
+        const desired = !!excludeRttToggle.checked;
+        excludeRttBusy = true;
+        listenOnceMatch(
+            "SetCircuitRttExcludedResult",
+            (msg) => !msg?.circuit_id || msg.circuit_id === circuit_id,
+            (msg) => {
+                excludeRttBusy = false;
+                if (!msg || !msg.ok) {
+                    alert((msg && msg.message) ? msg.message : "Failed to update RTT exclusion");
+                    excludeRttToggle.checked = !!excludeRttLastValue;
+                    return;
+                }
+                excludeRttLastValue = desired;
+            },
+        );
+        wsClient.send({ SetCircuitRttExcluded: { circuit_id, excluded: desired } });
+    });
+}
+
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
         CircuitWatcher: {
             circuit: circuit_id
         }
     }, (msg) => {
+        latestCircuitQooScore = toNumber(msg.qoo_score, NaN);
+        if (!Number.isFinite(latestCircuitQooScore)) {
+            latestCircuitQooScore = null;
+        }
         if (msg.devices !== null) {
-            //console.log(msg.devices);
+            latestCircuitDevices = msg.devices || [];
             fillLiveDevices(msg.devices);
             updateSpeedometer(msg.devices);
-            if (qooGauge !== null) {
-                qooGauge.update(msg.qoo_score);
+            pushQueuingActivitySample();
+            if (excludeRttToggle && msg.rtt_excluded !== undefined) {
+                excludeRttLastValue = !!msg.rtt_excluded;
+                excludeRttToggle.checked = excludeRttLastValue;
             }
         }
+        if (qooGauge !== null) {
+            qooGauge.update(msg.qoo_score);
+        }
+        updateQueuingActivityCards();
     });
 }
 
@@ -178,9 +922,6 @@ function connectPingers(circuits) {
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
                     target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
-                // Initialize Bootstrap tooltips
-                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
-                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -192,11 +933,20 @@ function connectFlowChannel() {
             circuit: circuit_id
         }
     }, (msg) => {
-        //console.log(msg);
-        let activeFlows = flowSankey.update(msg);
-        flowSankey.chart.resize();
-        $("#activeFlowCount").text(activeFlows);
+        latestFlowMsg = msg;
+        applyFlowSankeyMessage(msg);
         updateTrafficTab(msg);
+        updateQueuingActivityCards();
+    });
+}
+
+function initFlowFilters() {
+    const hideSmallFlows = document.getElementById("hideSmallFlows");
+    if (!hideSmallFlows) {
+        return;
+    }
+    hideSmallFlows.addEventListener("change", () => {
+        updateTrafficTab(latestFlowMsg || { flows: [] });
     });
 }
 
@@ -232,8 +982,8 @@ function formatRttNanos(rttNanos) {
     if (n === 0) {
         return "<span class='muted' style='color: var(--bs-border-color)'>■</span>-";
     }
-    const rttInMs = Math.min(200, n / 1000000);
-    const color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    const rttInMs = n / 1000000;
+    const color = colorByRttMs(rttInMs);
     return "<span class='muted' style='color: " + color + "'>■</span>" + scaleNanos(n);
 }
 
@@ -248,9 +998,13 @@ function formatRttPair(p50Nanos, p95Nanos) {
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
+    let visibleRowCount = 0;
+
+    let tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
 
     let table = document.createElement("table");
-    table.classList.add("table", "table-sm", "table-striped");
+    table.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
     
@@ -283,6 +1037,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
+    thead.appendChild(theading("RTT Exclude"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
@@ -380,6 +1135,19 @@ function updateTrafficTab(msg) {
         const qooUp = qoq ? qoq.upload_total : null;
         const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
 
+        const remoteIp = String(flow[0].remote_ip || "").trim();
+        const excludeBtn = document.createElement("button");
+        excludeBtn.type = "button";
+        excludeBtn.className = "btn btn-outline-secondary btn-sm";
+        excludeBtn.textContent = "Exclude";
+        excludeBtn.disabled = !remoteIp;
+        excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+        excludeBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+        });
+
         // Collect row data
         tableRows.push({
             sortKeys: {
@@ -392,7 +1160,7 @@ function updateTrafficTab(msg) {
                 qoo: qooForSort,
                 asn: flow[0].asn_name || "",
                 country: flow[0].asn_country || "",
-                ip: flow[0].remote_ip
+                ip: remoteIp
             },
             columns: [
                 flow[0].protocol_name,
@@ -410,7 +1178,8 @@ function updateTrafficTab(msg) {
                 formatQooScore(qooUp),
                 flow[0].asn_name,
                 flow[0].asn_country,
-                flow[0].remote_ip
+                remoteIp,
+                excludeBtn,
             ],
             opacity: 1.0 - opacity,
             visible: visible
@@ -438,6 +1207,7 @@ function updateTrafficTab(msg) {
     // Render the sorted table
     tableRows.forEach((rowData) => {
         if (!rowData.visible) return;
+        visibleRowCount++;
         
         let row = document.createElement("tr");
         row.classList.add("small");
@@ -445,6 +1215,14 @@ function updateTrafficTab(msg) {
         
         // Add columns
         rowData.columns.forEach((col, index) => {
+            const isNode = col && typeof col === "object" && typeof col.nodeType === "number";
+            if (isNode) {
+                const td = document.createElement("td");
+                td.classList.add("text-center");
+                td.appendChild(col);
+                row.appendChild(td);
+                return;
+            }
             if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
                 // These columns have HTML formatting
                 row.appendChild(simpleRowHtml(col));
@@ -458,8 +1236,11 @@ function updateTrafficTab(msg) {
 
     table.appendChild(tbody);
 
+    tableWrap.appendChild(table);
     clearDiv(target);
-    target.appendChild(table);
+    target.appendChild(tableWrap);
+    $("#trafficFlowCount").text(visibleRowCount);
+    return visibleRowCount;
 }
 
 function updateSpeedometer(devices) {
@@ -530,12 +1311,10 @@ function fillLiveDevices(devices) {
             const curP95 = device.rtt_current_p95_nanos || {};
             const totP50 = device.rtt_total_p50_nanos || {};
             const totP95 = device.rtt_total_p95_nanos || {};
-            rttDown.innerHTML =
-                "<div class='tiny'>C: " +
-                formatRttPair(curP50.down, curP95.down) +
-                "</div><div class='tiny text-secondary'>T: " +
-                formatRttPair(totP50.down, totP95.down) +
-                "</div>";
+            rttDown.innerHTML = formatRttMetricBlock(
+                formatRttPair(curP50.down, curP95.down),
+                formatRttPair(totP50.down, totP95.down)
+            );
         }
 
         if (rttUp !== null) {
@@ -543,12 +1322,10 @@ function fillLiveDevices(devices) {
             const curP95 = device.rtt_current_p95_nanos || {};
             const totP50 = device.rtt_total_p50_nanos || {};
             const totP95 = device.rtt_total_p95_nanos || {};
-            rttUp.innerHTML =
-                "<div class='tiny'>C: " +
-                formatRttPair(curP50.up, curP95.up) +
-                "</div><div class='tiny text-secondary'>T: " +
-                formatRttPair(totP50.up, totP95.up) +
-                "</div>";
+            rttUp.innerHTML = formatRttMetricBlock(
+                formatRttPair(curP50.up, curP95.up),
+                formatRttPair(totP50.up, totP95.up)
+            );
         }
 
         if (tcp_retransmitsDown !== null) {
@@ -573,9 +1350,25 @@ function fillLiveDevices(devices) {
     });
 }
 
+function formatRttMetricBlock(currentText, totalText) {
+    return "<div class='lqos-rtt-metric'>" +
+        "<div class='lqos-rtt-metric-line'>" +
+        "<span class='lqos-rtt-metric-label'>C:</span>" +
+        "<span class='lqos-rtt-metric-value'>" + currentText + "</span>" +
+        "</div>" +
+        "<div class='lqos-rtt-metric-line text-secondary'>" +
+        "<span class='lqos-rtt-metric-label'>T:</span>" +
+        "<span class='lqos-rtt-metric-value'>" + totalText + "</span>" +
+        "</div>" +
+        "</div>";
+}
+
 function initialDevices(circuits) {
     let target = document.getElementById("devices");
     clearDiv(target);
+    deviceGraphs = {};
+    deviceGraphSpecs = [];
+    deviceGraphsInitialized = false;
 
     circuits.forEach((circuit) => {
         let outer = document.createElement("div");
@@ -597,16 +1390,21 @@ function initialDevices(circuits) {
         name.innerHTML = "<i class='fa fa-computer'></i> " + circuit.device_name;
         d.appendChild(name);
 
+        let infoTableWrap = document.createElement("div");
+        infoTableWrap.classList.add("lqos-table-wrap");
+
         let infoTable = document.createElement("table");
-        infoTable.classList.add("table", "table-sm", "table-striped");
+        infoTable.classList.add("lqos-table", "lqos-table-tight");
         let tbody = document.createElement("tbody");
 
         // MAC Row
         let tr = document.createElement("tr");
         let td = document.createElement("td");
-        td.innerHTML = "<b>MAC Address</b>";
+        td.textContent = "MAC Address";
+        td.classList.add("table-label-cell");
         tr.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.classList.add("redactable");
         td.colSpan = 2;
         td.innerHTML = circuit.mac;
@@ -616,9 +1414,11 @@ function initialDevices(circuits) {
         // Comment Row
         let tr2 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Comment</b>";
+        td.textContent = "Comment";
+        td.classList.add("table-label-cell");
         tr2.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         td.innerHTML = circuit.comment;
         tr2.appendChild(td);
@@ -627,21 +1427,25 @@ function initialDevices(circuits) {
         // IPv4 Row
         let tr3 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>IPv4 Address(es)</b>";
+        td.textContent = "IPv4 Address(es)";
+        td.classList.add("table-label-cell");
         tr3.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         let ipv4Table = document.createElement("table");
-        ipv4Table.classList.add("table", "table-sm");
+        ipv4Table.classList.add("lqos-table", "lqos-table-tight");
         let ipv4Body = document.createElement("tbody");
         circuit.ipv4.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv4Body.appendChild(tr);
@@ -662,22 +1466,26 @@ function initialDevices(circuits) {
         // IPv6 Row
         let tr4 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>IPv6 Address(es)</b>";
+        td.textContent = "IPv6 Address(es)";
+        td.classList.add("table-label-cell");
         tr4.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
 
         let ipv6 = document.createElement("table");
-        ipv6.classList.add("table", "table-sm");
+        ipv6.classList.add("lqos-table", "lqos-table-tight");
         let ipv6Body = document.createElement("tbody");
         circuit.ipv6.forEach((ip) => {
+            const ipStr = ipToString(ip[0]);
             let tr = document.createElement("tr");
             let label = document.createElement("td");
-            label.innerHTML = ip[0] + "/" + ip[1];
+            label.textContent = ipStr + "/" + ip[1];
+            label.classList.add("redactable");
             label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
-            value.id = "ip_" + ip[0];
+            value.id = "ip_" + ipStr;
             value.innerText = "-";
             tr.appendChild(value);
             ipv6Body.appendChild(tr);
@@ -704,9 +1512,11 @@ function initialDevices(circuits) {
         // Placeholder for Last Seen
         let tr8 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Last Seen</b>";
+        td.textContent = "Last Seen";
+        td.classList.add("table-label-cell");
         tr8.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.colSpan = 2;
         td.id = "last_seen_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
@@ -716,13 +1526,16 @@ function initialDevices(circuits) {
         // Placeholder for throughput
         let tr5 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>Throughput</b>";
+        td.textContent = "Throughput";
+        td.classList.add("table-label-cell");
         tr5.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "throughputDown_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr5.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "throughputUp_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr5.appendChild(td);
@@ -731,35 +1544,42 @@ function initialDevices(circuits) {
         // Placeholder for RTT
         let tr6 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>RTT P50/P95</b>";
+        td.textContent = "RTT P50/P95";
+        td.classList.add("table-label-cell");
         tr6.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
         tr6.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell", "lqos-rtt-metric-cell");
         td.id = "rttUp_" + circuit.device_id;
-        td.innerHTML = "<span class='text-secondary'>Sampling...</span>";
+        td.innerHTML = formatRttMetricBlock("Sampling...", "Sampling...");
         tr6.appendChild(td);
         tbody.appendChild(tr6);
 
         // Placeholder for TCP Retransmits
         let tr7 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>TCP Re-Xmits</b>";
+        td.textContent = "TCP Re-Xmits";
+        td.classList.add("table-label-cell");
         tr7.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsDown_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr7.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("table-value-cell");
         td.id = "tcp_retransmitsUp_" + circuit.device_id;
         td.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         tr7.appendChild(td);
         tbody.appendChild(tr7);
 
         infoTable.appendChild(tbody);
-        d.appendChild(infoTable);
+        infoTableWrap.appendChild(infoTable);
+        d.appendChild(infoTableWrap);
 
         // Graph container (2x2)
         let graphCol = document.createElement("div");
@@ -776,10 +1596,13 @@ function initialDevices(circuits) {
             let div = document.createElement("div");
             div.id = divId;
             div.style.height = "250px";
-            div.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+            div.innerHTML = loadingBlockHtml("Loading chart…", "lqos-loading-block-sm");
             col.appendChild(div);
             graphRow.appendChild(col);
-            deviceGraphs[divId] = graphFactory(divId);
+            deviceGraphSpecs.push({
+                id: divId,
+                factory: graphFactory,
+            });
         }
 
         addGraph("throughputGraph_" + circuit.device_id, (id) => new CircuitTotalGraph(id, "Throughput"));
@@ -791,86 +1614,37 @@ function initialDevices(circuits) {
 }
 
 function initialFunnel(parentNode) {
-    let target = document.getElementById("theFunnel");
+    funnelParentNodeName = parentNode;
     listenOnce("NetworkTree", (msg) => {
-        const data = msg && msg.data ? msg.data : [];
-        let immediateParent = null;
-        data.forEach((node) => {
-            if (node[1].name === parentNode) {
-                immediateParent = node[1];
-            }
-        });
-
-        if (immediateParent === null) {
-            clearDiv(target);
-            target.appendChild(document.createTextNode("No parent node found"));
-            return;
+        renderFunnel(resolveFunnelState(msg, parentNode));
+        if (funnelSubscription) {
+            funnelSubscription.dispose();
         }
-
-        let parentDiv = document.createElement("div");
-        immediateParent.parents.reverse().forEach((parent) => {
-            //console.log(data[parent]);
-            let row = document.createElement("div");
-            row.classList.add("row");
-
-            let col = document.createElement("div");
-            col.classList.add("col-12");
-            let heading = document.createElement("h5");
-            heading.classList.add("redactable");
-            heading.innerHTML = "<i class='fa fa-sitemap'></i> " + data[parent][1].name;
-            col.appendChild(heading);
-            row.appendChild(col);
-            parentDiv.appendChild(row);
-
-            // Row for graphs
-            row = document.createElement("div");
-            row.classList.add("row");
-
-            let col_tp = document.createElement("div");
-            col_tp.classList.add("col-4");
-            col_tp.id = "funnel_tp_" + parent;
-            col_tp.style.height = "250px";
-            row.appendChild(col_tp);
-
-            let col_rxmit = document.createElement("div");
-            col_rxmit.classList.add("col-4");
-            col_rxmit.id = "funnel_rxmit_" + parent;
-            row.appendChild(col_rxmit);
-
-            let col_rtt = document.createElement("div");
-            col_rtt.classList.add("col-4");
-            col_rtt.id = "funnel_rtt_" + parent;
-            row.appendChild(col_rtt);
-
-            parentDiv.appendChild(row);
-        });
-        clearDiv(target);
-        target.appendChild(parentDiv);
-        // Ugly hack to defer until the DOM is updated
-        requestAnimationFrame(() => {setTimeout(() => {
-            immediateParent.parents.reverse().forEach((parent) => {
-                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
-                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
-                let rttGraph = new WindowedLatencyHistogram("funnel_rtt_" + parent, "Latency Histogram", 300000);
-                funnelGraphs[parent] = {
-                    tp: tpGraph,
-                    rxmit: rxmitGraph,
-                    rtt: rttGraph,
-                };
-            });
-            funnelParents = immediateParent.parents;
-            subscribeWS(["NetworkTree"], onTreeEvent);
-        }, 0)});
+        funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
     });
     wsClient.send({ NetworkTree: {} });
 }
 
 function onTreeEvent(msg) {
-    //console.log(msg);
+    if (msg.event !== "NetworkTree" || !funnelParentNodeName) {
+        return;
+    }
+
+    const state = resolveFunnelState(msg, funnelParentNodeName);
+    const nextParents = state ? state.parentIndexes : [];
+    const nextSignature = state ? state.parentSignature : [];
+    const shouldRebuild =
+        !arrayEquals(nextParents, funnelParents) ||
+        !arrayEquals(nextSignature, funnelParentSignature);
+
+    if (shouldRebuild) {
+        renderFunnel(state);
+    }
+
     funnelParents.forEach((parent) => {
-        if (msg.event !== "NetworkTree") return;
-        let myMessage = msg.data[parent][1];
-        if (myMessage === undefined) return;
+        const nodeEntry = msg.data[parent];
+        if (!nodeEntry || !nodeEntry[1] || !funnelGraphs[parent]) return;
+        let myMessage = nodeEntry[1];
         let tpGraph = funnelGraphs[parent].tp;
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
@@ -892,19 +1666,10 @@ function onTreeEvent(msg) {
         }
         rxmitGraph.update(rxmit[0], rxmit[1]);
         rttGraph.updateManyMs(myMessage.rtts);
-        tpGraph.chart.resize();
-        rxmitGraph.chart.resize();
-        rttGraph.chart.resize();
     });
 }
 
 function subscribeToCake() {
-    let backlogGraph = new CakeBacklog("cakeBacklog");
-    let delaysGraph = new CakeDelays("cakeDelays");
-    let queueLength = new CakeQueueLength("cakeQueueLength");
-    let traffic = new CakeTraffic("cakeTraffic");
-    let marks = new CakeMarks("cakeMarks");
-    let drops = new CakeDrops("cakeDrops");
     let noDataTimeout = null;
     let hasReceivedData = false;
     
@@ -919,12 +1684,13 @@ function subscribeToCake() {
     // Set a timeout to show the message if no data arrives within 3 seconds
     noDataTimeout = setTimeout(showNoQueueMessage, 3000);
     
-    channelLink = new DirectChannel({
+    cakeChannel = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
     }, (msg) => {
         //console.log(msg);
+        latestCakeMsg = msg;
         
         // Clear the timeout and set flag that we've received data
         if (noDataTimeout) {
@@ -935,81 +1701,13 @@ function subscribeToCake() {
         // If this is the first data received, restore the original HTML structure
         if (!hasReceivedData) {
             hasReceivedData = true;
-            // Update the tab heading based on queue kind
-            try {
-                const kindDown = (msg.kind_down || '').toLowerCase();
-                const kindUp = (msg.kind_up || '').toLowerCase();
-                const tabBtn = document.getElementById('cake-tab');
-                const tabLi = tabBtn ? tabBtn.parentElement : null;
-                if (kindDown === 'none' && kindUp === 'none') {
-                    // Hide the shaper overview tab entirely for SQM=none
-                    if (tabLi) tabLi.style.display = 'none';
-                    const tabContent = document.getElementById('cake');
-                    if (tabContent) tabContent.style.display = 'none';
-                    return; // Skip building graphs
-                } else {
-                    let displayKind = 'Shaper Overview';
-                    if (kindDown === 'cake' || kindUp === 'cake') {
-                        displayKind = 'CAKE Shaper Overview';
-                    } else if (kindDown === 'fq_codel' || kindUp === 'fq_codel') {
-                        displayKind = 'fq_codel Shaper Overview';
-                    }
-                    if (tabBtn) {
-                        tabBtn.innerHTML = '<i class="fa fa-birthday-cake"></i> ' + displayKind;
-                    }
-                }
-            } catch (e) { /* ignore */ }
-            const cakeTab = document.getElementById("cake");
-            if (cakeTab) {
-                cakeTab.innerHTML = `
-                    <div class="row">
-                        <div class="col-4">
-                            <div id="cakeBacklog" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDelays" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeQueueLength" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeTraffic" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeMarks" style="height: 250px"></div>
-                        </div>
-                        <div class="col-4">
-                            <div id="cakeDrops" style="height: 250px"></div>
-                        </div>
-                        <div class="col-3">
-                            Queue Memory: <span id="cakeQueueMemory">?</span>
-                        </div>
-                    </div>
-                `;
-                // Reinitialize the graphs
-                backlogGraph = new CakeBacklog("cakeBacklog");
-                delaysGraph = new CakeDelays("cakeDelays");
-                queueLength = new CakeQueueLength("cakeQueueLength");
-                traffic = new CakeTraffic("cakeTraffic");
-                marks = new CakeMarks("cakeMarks");
-                drops = new CakeDrops("cakeDrops");
+            if (!updateCakeTabAvailability(msg)) {
+                return;
             }
         }
 
-        // Cake Memory Usage
-        $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
-        backlogGraph.update(msg);
-        backlogGraph.chart.resize();
-        delaysGraph.update(msg);
-        delaysGraph.chart.resize();
-        queueLength.update(msg);
-        queueLength.chart.resize();
-        traffic.update(msg);
-        traffic.chart.resize();
-        marks.update(msg);
-        marks.chart.resize();
-        drops.update(msg);
-        drops.chart.resize();
+        ensureCakeGraphs();
+        applyCakeMessage(msg);
     });
 }
 
@@ -1030,7 +1728,7 @@ function wireupAnalysis(circuits) {
         let entry = document.createElement("li");
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
-        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from " + ip[0];
+        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from <span class='redactable'>" + ip[0] + "</span>";
         let address = ip[0]; // For closure capture
         item.onclick = () => {
             //console.log("Clicky " + address);
@@ -1051,7 +1749,7 @@ function wireupAnalysis(circuits) {
                     if (counter === -1) {
                         clearInterval(interval);
                         btn.disabled = false;
-                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for " + address;
+                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for <span class='redactable'>" + address + "</span>";
                         btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
@@ -1088,27 +1786,35 @@ function download(dataurl, filename) {
 }
 
 function loadInitial() {
+    initTooltipsWithin(document);
+    initExcludeRttToggle();
+    initFlowFilters();
+    initQueuingActivityControls();
+    loadRttThresholds();
     requestCircuitById((circuits) => {
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);
-        $("#parentNode").text(circuit.parent_node);
+        $("#circuitName").attr("title", circuit.circuit_name || "");
+        applyParentNodeLink(circuit.parent_node);
         $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
         $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
         plan = {
             down: toNumber(circuit.download_max_mbps, 0),
             up: toNumber(circuit.upload_max_mbps, 0),
         };
+        latestCircuitDevices = circuits;
+        setQueueTypeDisplay(circuit.sqm_override || "");
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
         qooGauge = new QooScoreGauge("qooGauge");
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-        flowSankey = new FlowsSankey("flowSankey");
+        initTabLifecycle(circuit.parent_node);
+        updateQueuingActivityCards();
 
         connectPrivateChannel();
         connectPingers(circuits);
         connectFlowChannel();
-        initialFunnel(circuit.parent_node);
         subscribeToCake();
         wireupAnalysis(circuits);
     }, () => {
@@ -1116,4 +1822,40 @@ function loadInitial() {
     });
 }
 
+function cleanupCircuitPage() {
+    if (channelLink) {
+        channelLink.close();
+        channelLink = null;
+    }
+    if (cakeChannel) {
+        cakeChannel.close();
+        cakeChannel = null;
+    }
+    if (pinger) {
+        pinger.close();
+        pinger = null;
+    }
+    if (flowChannel) {
+        flowChannel.close();
+        flowChannel = null;
+    }
+    if (funnelSubscription) {
+        funnelSubscription.dispose();
+        funnelSubscription = null;
+    }
+    if (queuingActivityGraph) {
+        queuingActivityGraph.dispose();
+        queuingActivityGraph = null;
+    }
+    Object.values(deviceGraphs).forEach((graph) => {
+        if (graph && typeof graph.dispose === "function") {
+            graph.dispose();
+        }
+    });
+    deviceGraphs = {};
+    deviceGraphSpecs = [];
+    deviceGraphsInitialized = false;
+}
+
+window.addEventListener("beforeunload", cleanupCircuitPage);
 loadInitial();

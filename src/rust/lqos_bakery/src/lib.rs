@@ -28,7 +28,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
@@ -38,10 +38,11 @@ use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
-use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient, TcHandle};
+use lqos_bus::{
+    BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
+    UrgentSource,
+};
 use lqos_config::{Config, LazyQueueMode};
-use lqos_sys; // direct mapping control for live-move to avoid bus full-sync side-effects
-
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,10 +120,9 @@ fn used_minors_for_parent(
             class_minor,
             ..
         } = v.as_ref()
+            && parent_class_id == parent
         {
-            if parent_class_id == parent {
-                set.insert(*class_minor);
-            }
+            set.insert(*class_minor);
         }
     }
     set
@@ -143,12 +143,7 @@ fn find_free_minor(
             }
         }
     }
-    for m in 1..=0xFFFEu16 {
-        if !used_down.contains(&m) && !used_up.contains(&m) {
-            return Some(m);
-        }
-    }
-    None
+    (1..=0xFFFEu16).find(|&m| !used_down.contains(&m) && !used_up.contains(&m))
 }
 
 fn add_commands_for_circuit(
@@ -199,6 +194,12 @@ fn build_temp_add_cmd(
 
 /// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
+/// Maximum number of mapped circuits allowed without Insight.
+const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
+/// Minimum interval between repeated mapped-circuit-limit urgent issues.
+const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
+/// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
+static LAST_CIRCUIT_LIMIT_URGENT_TS: AtomicU64 = AtomicU64::new(0);
 
 /// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
@@ -206,6 +207,248 @@ static MQ_CREATED: AtomicBool = AtomicBool::new(false);
 /// Indicates that at least one command batch has been processed and applied.
 /// Used to avoid racing live activation against initial class creation.
 static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Default, Clone, Copy)]
+struct MappedLimitStats {
+    enforced_limit: Option<usize>,
+    requested_mapped: usize,
+    allowed_mapped: usize,
+    dropped_mapped: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedMappedLimit {
+    licensed: bool,
+    max_circuits: Option<usize>,
+    effective_limit: Option<usize>,
+}
+
+fn format_mapped_limit(limit: Option<usize>) -> String {
+    limit
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "unlimited".to_string())
+}
+
+fn is_mapped_add_circuit(cmd: &BakeryCommands) -> bool {
+    let BakeryCommands::AddCircuit { ip_addresses, .. } = cmd else {
+        return false;
+    };
+    !parse_ip_list(ip_addresses).is_empty()
+}
+
+fn mapped_circuit_hash(cmd: &BakeryCommands) -> Option<i64> {
+    let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd else {
+        return None;
+    };
+    if is_mapped_add_circuit(cmd) {
+        Some(*circuit_hash)
+    } else {
+        None
+    }
+}
+
+fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn!("Bakery: failed to build runtime for Insight license summary: {e:?}");
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            };
+        }
+    };
+
+    rt.block_on(async {
+        let Ok(mut bus) = LibreqosBusClient::new().await else {
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            };
+        };
+        let Ok(reply) = bus
+            .request(vec![BusRequest::GetInsightLicenseSummary])
+            .await
+        else {
+            return ResolvedMappedLimit {
+                licensed: false,
+                max_circuits: None,
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            };
+        };
+
+        for r in reply {
+            if let BusResponse::InsightLicenseSummary(InsightLicenseSummary {
+                licensed,
+                max_circuits,
+            }) = r
+            {
+                let max_circuits_usize = max_circuits.map(|n| {
+                    let clamped = std::cmp::min(n, usize::MAX as u64);
+                    clamped as usize
+                });
+                let effective_limit = if licensed {
+                    max_circuits_usize
+                } else {
+                    Some(DEFAULT_MAPPED_CIRCUITS_LIMIT)
+                };
+                return ResolvedMappedLimit {
+                    licensed,
+                    max_circuits: max_circuits_usize,
+                    effective_limit,
+                };
+            }
+        }
+        ResolvedMappedLimit {
+            licensed: false,
+            max_circuits: None,
+            effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+        }
+    })
+}
+
+fn filter_batch_by_mapped_circuit_limit(
+    batch: Vec<Arc<BakeryCommands>>,
+    existing_circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    effective_limit: Option<usize>,
+) -> (Vec<Arc<BakeryCommands>>, MappedLimitStats) {
+    let mut mapped_candidates: Vec<i64> = Vec::new();
+    let mut seen = HashSet::new();
+
+    for cmd in &batch {
+        if let Some(hash) = mapped_circuit_hash(cmd.as_ref())
+            && seen.insert(hash)
+        {
+            mapped_candidates.push(hash);
+        }
+    }
+
+    let requested = mapped_candidates.len();
+    let Some(effective_limit) = effective_limit else {
+        return (
+            batch,
+            MappedLimitStats {
+                enforced_limit: None,
+                requested_mapped: requested,
+                allowed_mapped: requested,
+                dropped_mapped: 0,
+            },
+        );
+    };
+
+    if requested <= effective_limit {
+        return (
+            batch,
+            MappedLimitStats {
+                enforced_limit: Some(effective_limit),
+                requested_mapped: requested,
+                allowed_mapped: requested,
+                dropped_mapped: 0,
+            },
+        );
+    }
+
+    let mut keep_set: HashSet<i64> = HashSet::new();
+
+    // Preserve existing mapped circuits first to minimize churn.
+    for hash in &mapped_candidates {
+        if keep_set.len() >= effective_limit {
+            break;
+        }
+        if existing_circuits
+            .get(hash)
+            .is_some_and(|existing| is_mapped_add_circuit(existing.as_ref()))
+        {
+            keep_set.insert(*hash);
+        }
+    }
+
+    // Fill remaining slots in deterministic batch order.
+    for hash in &mapped_candidates {
+        if keep_set.len() >= effective_limit {
+            break;
+        }
+        keep_set.insert(*hash);
+    }
+
+    let filtered = batch
+        .into_iter()
+        .filter(|cmd| match mapped_circuit_hash(cmd.as_ref()) {
+            Some(hash) => keep_set.contains(&hash),
+            None => true,
+        })
+        .collect::<Vec<_>>();
+
+    let allowed = keep_set.len();
+    (
+        filtered,
+        MappedLimitStats {
+            enforced_limit: Some(effective_limit),
+            requested_mapped: requested,
+            allowed_mapped: allowed,
+            dropped_mapped: requested.saturating_sub(allowed),
+        },
+    )
+}
+
+fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
+    if stats.dropped_mapped == 0 {
+        return;
+    }
+
+    let now = current_timestamp();
+    let last = LAST_CIRCUIT_LIMIT_URGENT_TS.load(Ordering::Relaxed);
+    if last != 0 && now.saturating_sub(last) < CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS {
+        return;
+    }
+    LAST_CIRCUIT_LIMIT_URGENT_TS.store(now, Ordering::Relaxed);
+
+    let message = format!(
+        "Mapped circuit limit reached: requested {} mapped circuits, allowed {}, dropped {}.",
+        stats.requested_mapped, stats.allowed_mapped, stats.dropped_mapped
+    );
+
+    let context = Some(format!(
+        "{{\"requested_mapped\":{},\"allowed_mapped\":{},\"dropped_mapped\":{},\"enforced_limit\":{}}}",
+        stats.requested_mapped,
+        stats.allowed_mapped,
+        stats.dropped_mapped,
+        stats
+            .enforced_limit
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "null".to_string())
+    ));
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn!("Bakery: failed to build runtime for urgent issue submission: {e:?}");
+            return;
+        }
+    };
+    rt.block_on(async {
+        if let Ok(mut bus) = LibreqosBusClient::new().await {
+            let _ = bus
+                .request(vec![BusRequest::SubmitUrgentIssue {
+                    source: UrgentSource::System,
+                    severity: UrgentSeverity::Warning,
+                    code: "MAPPED_CIRCUIT_LIMIT".to_string(),
+                    message,
+                    context,
+                    dedupe_key: Some("mapped_circuit_limit".to_string()),
+                }])
+                .await;
+        }
+    });
+}
 
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
 pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
@@ -237,7 +480,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     struct MappingKey {
         ip: String,
         prefix: u32,
-        upload: bool,
     }
     #[derive(Clone, Debug)]
     struct MappingVal {
@@ -257,10 +499,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     const MIGRATIONS_PER_TICK: usize = 16;
 
     fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
-        if let Some((addr, pfx)) = ip.split_once('/') {
-            if let Ok(n) = pfx.parse::<u32>() {
-                return (addr.to_string(), n);
-            }
+        if let Some((addr, pfx)) = ip.split_once('/')
+            && let Ok(n) = pfx.parse::<u32>()
+        {
+            return (addr.to_string(), n);
         }
         // No prefix provided; infer by address family
         // Simple heuristic: ':' suggests IPv6
@@ -275,11 +517,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         ip_address: &str,
         tc_handle: TcHandle,
         cpu: u32,
-        upload: bool,
         mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
     ) {
         let (ip, prefix) = parse_ip_and_prefix(ip_address);
-        let key = MappingKey { ip, prefix, upload };
+        let key = MappingKey { ip, prefix };
         let val = MappingVal {
             handle: tc_handle,
             cpu,
@@ -294,7 +535,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
 
     fn handle_del_ip(
         ip_address: &str,
-        upload: bool,
         mapping_staged: &mut Option<HashMap<MappingKey, MappingVal>>,
         mapping_current: &mut HashMap<MappingKey, MappingVal>,
     ) {
@@ -303,7 +543,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         let key = MappingKey {
             ip: ip.clone(),
             prefix,
-            upload,
         };
         if let Some(stage) = mapping_staged.as_mut() {
             stage.remove(&key);
@@ -311,28 +550,21 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         mapping_current.remove(&key);
     }
 
-    fn build_handle_sets(
-        circuits: &HashMap<i64, Arc<BakeryCommands>>,
-    ) -> (HashSet<TcHandle>, HashSet<TcHandle>) {
+    fn build_known_handle_set(circuits: &HashMap<i64, Arc<BakeryCommands>>) -> HashSet<TcHandle> {
         let mut down = HashSet::new();
-        let mut up = HashSet::new();
         for (_k, v) in circuits.iter() {
             if let BakeryCommands::AddCircuit {
                 class_minor,
                 class_major,
-                up_class_major,
                 ..
             } = v.as_ref()
             {
                 let down_tc =
                     TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32));
-                let up_tc =
-                    TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32));
                 down.insert(down_tc);
-                up.insert(up_tc);
             }
         }
-        (down, up)
+        down
     }
 
     fn attempt_seed_mappings(
@@ -340,8 +572,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         mapping_current: &mut HashMap<MappingKey, MappingVal>,
         mapping_unknown: &mut HashSet<MappingKey>,
     ) -> anyhow::Result<()> {
-        // Build classification sets
-        let (down_set, up_set) = build_handle_sets(circuits);
+        // Build classification set (known circuit handles)
+        let known_set = build_known_handle_set(circuits);
 
         // Create a small runtime to make a one-shot bus request
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -357,28 +589,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         let key = MappingKey {
                             ip: m.ip_address.clone(),
                             prefix: m.prefix_length,
-                            upload: if up_set.contains(&m.tc_handle) {
-                                true
-                            } else if down_set.contains(&m.tc_handle) {
-                                false
-                            } else {
-                                // Unknown mapping (do not delete automatically)
-                                let k = MappingKey {
-                                    ip: m.ip_address.clone(),
-                                    prefix: m.prefix_length,
-                                    upload: false, // default; upload is unknown
-                                };
-                                mapping_unknown.insert(k.clone());
-                                mapping_current.insert(
-                                    k,
-                                    MappingVal {
-                                        handle: m.tc_handle,
-                                        cpu: m.cpu,
-                                    },
-                                );
-                                continue;
-                            },
                         };
+                        if !known_set.contains(&m.tc_handle) {
+                            // Unknown mapping (do not delete automatically)
+                            mapping_unknown.insert(key.clone());
+                        }
                         mapping_current.insert(
                             key,
                             MappingVal {
@@ -414,9 +629,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 ip_address,
                 tc_handle,
                 cpu,
-                upload,
+                ..
             } => {
-                handle_map_ip(&ip_address, tc_handle, cpu, upload, &mut mapping_staged);
+                handle_map_ip(&ip_address, tc_handle, cpu, &mut mapping_staged);
             }
             BakeryCommands::BusReady => {
                 if !mapping_seeded {
@@ -438,13 +653,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     }
                 }
             }
-            BakeryCommands::DelIp { ip_address, upload } => {
-                handle_del_ip(
-                    &ip_address,
-                    upload,
-                    &mut mapping_staged,
-                    &mut mapping_current,
-                );
+            BakeryCommands::DelIp { ip_address, .. } => {
+                handle_del_ip(&ip_address, &mut mapping_staged, &mut mapping_current);
             }
             BakeryCommands::ClearIpAll => {
                 mapping_current.clear();
@@ -491,7 +701,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             .build();
                         if let Ok(rt) = rt {
                             let stale_to_delete = stale.clone();
-                            let _ = rt.block_on(async move {
+                            rt.block_on(async move {
                                 if let Ok(mut bus) = LibreqosBusClient::new().await {
                                     // chunk operations to keep request sizes reasonable
                                     const CHUNK: usize = 512;
@@ -506,7 +716,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                             };
                                             reqs.push(BusRequest::DelIpFlow {
                                                 ip_address: ip,
-                                                upload: k.upload,
+                                                upload: false,
                                             });
                                         }
                                         let _ = bus.request(reqs).await;
@@ -651,31 +861,20 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             }
                         }
                         MigrationStage::SwapToShadow => {
-                            // Remap all IPs to shadow handles using existing CPU
+                            // Remap all IPs to shadow handles using existing CPU.
+                            // Upload mapping is derived in the dataplane for on-a-stick mode.
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                                for &upload in &[false, true] {
-                                    let key = MappingKey {
-                                        ip: ip_s.clone(),
-                                        prefix,
-                                        upload,
-                                    };
-                                    let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                                    let handle = if upload {
-                                        tc_handle_from_major_minor(
-                                            mig.up_class_major,
-                                            mig.shadow_minor,
-                                        )
-                                    } else {
-                                        tc_handle_from_major_minor(
-                                            mig.class_major,
-                                            mig.shadow_minor,
-                                        )
-                                    };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload);
-                                    // Update local mapping view
-                                    mapping_current.insert(key.clone(), MappingVal { handle, cpu });
-                                }
+                                let key = MappingKey {
+                                    ip: ip_s.clone(),
+                                    prefix,
+                                };
+                                let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
+                                let handle =
+                                    tc_handle_from_major_minor(mig.class_major, mig.shadow_minor);
+                                let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
+                                // Update local mapping view
+                                mapping_current.insert(key, MappingVal { handle, cpu });
                             }
                             // Clear the hot cache directly
                             let _ = lqos_sys::clear_hot_cache();
@@ -772,24 +971,15 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         MigrationStage::SwapToFinal => {
                             for ip in &mig.ips {
                                 let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                                for &upload in &[false, true] {
-                                    let key = MappingKey {
-                                        ip: ip_s.clone(),
-                                        prefix,
-                                        upload,
-                                    };
-                                    let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                                    let handle = if upload {
-                                        tc_handle_from_major_minor(
-                                            mig.up_class_major,
-                                            mig.final_minor,
-                                        )
-                                    } else {
-                                        tc_handle_from_major_minor(mig.class_major, mig.final_minor)
-                                    };
-                                    let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, upload);
-                                    mapping_current.insert(key.clone(), MappingVal { handle, cpu });
-                                }
+                                let key = MappingKey {
+                                    ip: ip_s.clone(),
+                                    prefix,
+                                };
+                                let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
+                                let handle =
+                                    tc_handle_from_major_minor(mig.class_major, mig.final_minor);
+                                let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
+                                mapping_current.insert(key, MappingVal { handle, cpu });
                             }
                             let _ = lqos_sys::clear_hot_cache();
                             mig.stage = MigrationStage::TeardownShadow;
@@ -817,10 +1007,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mig.old_down_max,
                                 mig.old_up_min,
                                 mig.old_up_max,
-                            ) {
-                                if let Some(prune) = shadow_cmd.to_prune(&config, true) {
-                                    execute_in_memory(&prune, "live-move: prune shadow");
-                                }
+                            ) && let Some(prune) = shadow_cmd.to_prune(&config, true)
+                            {
+                                execute_in_memory(&prune, "live-move: prune shadow");
                             }
                             mig.stage = MigrationStage::Done;
                             advanced += 1;
@@ -862,7 +1051,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     continue;
                 }
                 let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
-                    warn!("StormGuardAdjustment has invalid class_id [{}], skipping.", class_id);
+                    warn!(
+                        "StormGuardAdjustment has invalid class_id [{}], skipping.",
+                        class_id
+                    );
                     continue;
                 };
                 if !dry_run {
@@ -935,8 +1127,26 @@ fn handle_commit_batch(
         return;
     };
 
+    let mapped_limit = resolve_mapped_circuit_limit();
+    let effective_limit = mapped_limit.effective_limit;
+    let limit_label = format_mapped_limit(effective_limit);
+
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (full reload): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                limit_label,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
         info!("MQ not created, performing full reload.");
         full_reload(
@@ -946,7 +1156,7 @@ fn handle_commit_batch(
             live_circuits,
             &config,
             new_batch,
-            &stormguard_overrides,
+            stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -954,6 +1164,20 @@ fn handle_commit_batch(
 
     let site_change_mode = diff_sites(&new_batch, sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (site-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                limit_label,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
         // If the site structure has changed, we need to rebuild everything.
         info!("Bakery full reload: site_struct=1, circuit_struct=0");
         full_reload(
@@ -963,7 +1187,7 @@ fn handle_commit_batch(
             live_circuits,
             &config,
             new_batch,
-            &stormguard_overrides,
+            stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -981,24 +1205,38 @@ fn handle_commit_batch(
     }
 
     // If any structural changes occurred, do a full reload
-    if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode {
-        if !categories.structural_changed.is_empty() {
-            info!(
-                "Bakery full reload: site_struct=0, circuit_struct={}",
-                categories.structural_changed.len()
+    if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode
+        && !categories.structural_changed.is_empty()
+    {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch.clone(), circuits, effective_limit);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (circuit-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                limit_label,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
             );
-            full_reload(
-                batch,
-                sites,
-                circuits,
-                live_circuits,
-                &config,
-                new_batch,
-                &stormguard_overrides,
-            );
-            MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
-            return;
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
         }
+        info!(
+            "Bakery full reload: site_struct=0, circuit_struct={}",
+            categories.structural_changed.len()
+        );
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            &config,
+            new_batch,
+            stormguard_overrides,
+        );
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+        return;
     }
 
     // Declare any site speed changes that need to be applied. We're sending them
@@ -1038,7 +1276,7 @@ fn handle_commit_batch(
                     live_circuits,
                     &config,
                     new_batch.clone(),
-                    &stormguard_overrides,
+                    stormguard_overrides,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
@@ -1084,7 +1322,10 @@ fn handle_commit_batch(
                     }
                     live_circuits.remove(&circuit_hash);
                 } else {
-                    debug!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
+                    debug!(
+                        "RemoveCircuit received for unknown circuit: {}",
+                        circuit_hash
+                    );
                 }
             }
         }
@@ -1115,41 +1356,40 @@ fn handle_commit_batch(
                             find_free_minor(circuits, parent_class_id, up_parent_class_id)
                         {
                             // Find old command for old rates
-                            if let Some(old_cmd) = circuits.get(circuit_hash) {
-                                if let BakeryCommands::AddCircuit {
+                            if let Some(old_cmd) = circuits.get(circuit_hash)
+                                && let BakeryCommands::AddCircuit {
                                     download_bandwidth_min: old_down_min,
                                     upload_bandwidth_min: old_up_min,
                                     download_bandwidth_max: old_down_max,
                                     upload_bandwidth_max: old_up_max,
                                     ..
                                 } = old_cmd.as_ref()
-                                {
-                                    let mig = Migration {
-                                        circuit_hash: *circuit_hash,
-                                        parent_class_id: *parent_class_id,
-                                        up_parent_class_id: *up_parent_class_id,
-                                        class_major: *class_major,
-                                        up_class_major: *up_class_major,
-                                        old_down_min: *old_down_min,
-                                        old_down_max: *old_down_max,
-                                        old_up_min: *old_up_min,
-                                        old_up_max: *old_up_max,
-                                        new_down_min: *download_bandwidth_min,
-                                        new_down_max: *download_bandwidth_max,
-                                        new_up_min: *upload_bandwidth_min,
-                                        new_up_max: *upload_bandwidth_max,
-                                        old_minor: *class_minor,
-                                        shadow_minor,
-                                        final_minor: *class_minor,
-                                        ips: parse_ip_list(ip_addresses),
-                                        sqm_override: sqm_override.clone(),
-                                        stage: MigrationStage::PrepareShadow,
-                                    };
-                                    migrations.insert(*circuit_hash, mig);
-                                    // Update desired circuit definition now
-                                    circuits.insert(*circuit_hash, Arc::clone(cmd));
-                                    continue; // skip immediate path
-                                }
+                            {
+                                let mig = Migration {
+                                    circuit_hash: *circuit_hash,
+                                    parent_class_id: *parent_class_id,
+                                    up_parent_class_id: *up_parent_class_id,
+                                    class_major: *class_major,
+                                    up_class_major: *up_class_major,
+                                    old_down_min: *old_down_min,
+                                    old_down_max: *old_down_max,
+                                    old_up_min: *old_up_min,
+                                    old_up_max: *old_up_max,
+                                    new_down_min: *download_bandwidth_min,
+                                    new_down_max: *download_bandwidth_max,
+                                    new_up_min: *upload_bandwidth_min,
+                                    new_up_max: *upload_bandwidth_max,
+                                    old_minor: *class_minor,
+                                    shadow_minor,
+                                    final_minor: *class_minor,
+                                    ips: parse_ip_list(ip_addresses),
+                                    sqm_override: sqm_override.clone(),
+                                    stage: MigrationStage::PrepareShadow,
+                                };
+                                migrations.insert(*circuit_hash, mig);
+                                // Update desired circuit definition now
+                                circuits.insert(*circuit_hash, Arc::clone(cmd));
+                                continue; // skip immediate path
                             }
                         }
                     }
@@ -1178,12 +1418,10 @@ fn handle_commit_batch(
                                 {
                                     immediate_commands.extend(add_qdisc);
                                 }
-                            } else {
-                                if let Some(add_htb) =
-                                    cmd.to_commands(&config, ExecutionMode::Builder)
-                                {
-                                    immediate_commands.extend(add_htb);
-                                }
+                            } else if let Some(add_htb) =
+                                cmd.to_commands(&config, ExecutionMode::Builder)
+                            {
+                                immediate_commands.extend(add_htb);
                             }
                         }
                         Some(LazyQueueMode::Full) => {
@@ -1211,8 +1449,50 @@ fn handle_commit_batch(
 
         // 3) Additions
         if !categories.newly_added.is_empty() {
-            let commands: Vec<Vec<String>> = categories
-                .newly_added
+            let mut accepted_additions: Vec<&Arc<BakeryCommands>> = Vec::new();
+            let mut dropped_mapped_additions = 0usize;
+            let mut requested_mapped_additions = 0usize;
+
+            let mut mapped_in_state = circuits
+                .values()
+                .filter(|c| is_mapped_add_circuit(c.as_ref()))
+                .count();
+
+            for command in &categories.newly_added {
+                if is_mapped_add_circuit(command.as_ref()) {
+                    requested_mapped_additions += 1;
+                    if let Some(limit) = effective_limit
+                        && mapped_in_state >= limit
+                    {
+                        dropped_mapped_additions += 1;
+                        continue;
+                    }
+                    mapped_in_state += 1;
+                }
+                accepted_additions.push(*command);
+            }
+
+            if dropped_mapped_additions > 0 {
+                let stats = MappedLimitStats {
+                    enforced_limit: effective_limit,
+                    requested_mapped: requested_mapped_additions,
+                    allowed_mapped: requested_mapped_additions
+                        .saturating_sub(dropped_mapped_additions),
+                    dropped_mapped: dropped_mapped_additions,
+                };
+                warn!(
+                    "Bakery mapped circuit cap enforced (incremental additions): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                    stats.requested_mapped,
+                    stats.allowed_mapped,
+                    stats.dropped_mapped,
+                    limit_label,
+                    mapped_limit.licensed,
+                    mapped_limit.max_circuits
+                );
+                maybe_emit_mapped_circuit_limit_urgent(&stats);
+            }
+
+            let commands: Vec<Vec<String>> = accepted_additions
                 .iter()
                 .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
@@ -1220,7 +1500,7 @@ fn handle_commit_batch(
             if !commands.is_empty() {
                 execute_in_memory(&commands, "adding new circuits");
             }
-            for command in categories.newly_added {
+            for command in accepted_additions {
                 if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
                     circuits.insert(*circuit_hash, Arc::clone(command));
                 }
@@ -1576,4 +1856,132 @@ fn apply_stormguard_overrides(
         ]);
     }
     execute_in_memory(&commands, "replaying StormGuard overrides");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
+        Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: hash,
+            parent_class_id: TcHandle::from_u32(0x1),
+            up_parent_class_id: TcHandle::from_u32(0x2),
+            class_minor: 0x10,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            ip_addresses: ip_addresses.to_string(),
+            sqm_override: None,
+        })
+    }
+
+    fn has_hash(batch: &[Arc<BakeryCommands>], hash: i64) -> bool {
+        batch.iter().any(|cmd| {
+            matches!(
+                cmd.as_ref(),
+                BakeryCommands::AddCircuit {
+                    circuit_hash,
+                    ..
+                } if *circuit_hash == hash
+            )
+        })
+    }
+
+    #[test]
+    fn mapped_circuit_predicate_works() {
+        let mapped = mk_add_circuit(1, "192.0.2.1/32");
+        let unmapped = mk_add_circuit(2, "");
+        assert!(is_mapped_add_circuit(mapped.as_ref()));
+        assert!(!is_mapped_add_circuit(unmapped.as_ref()));
+    }
+
+    #[test]
+    fn mapped_circuit_limit_preserves_existing_first() {
+        let mut existing = HashMap::new();
+        let mut batch = Vec::new();
+
+        for h in 1..=1000 {
+            let c = mk_add_circuit(h, &format!("10.0.{}.1/32", h % 255));
+            existing.insert(h, Arc::clone(&c));
+            batch.push(c);
+        }
+        batch.push(mk_add_circuit(1001, "10.0.0.200/32"));
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
+            batch,
+            &existing,
+            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+        );
+        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(stats.requested_mapped, 1001);
+        assert_eq!(stats.allowed_mapped, 1000);
+        assert_eq!(stats.dropped_mapped, 1);
+        assert_eq!(filtered.len(), 1000);
+        assert!(!has_hash(&filtered, 1001));
+        assert!(has_hash(&filtered, 1));
+        assert!(has_hash(&filtered, 1000));
+    }
+
+    #[test]
+    fn unmapped_additions_are_not_limited() {
+        let mut existing = HashMap::new();
+        let mut batch = Vec::new();
+
+        for h in 1..=1000 {
+            let c = mk_add_circuit(h, &format!("10.1.{}.1/32", h % 255));
+            existing.insert(h, c);
+            batch.push(mk_add_circuit(h, &format!("10.1.{}.1/32", h % 255)));
+        }
+        batch.push(mk_add_circuit(9001, ""));
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
+            batch,
+            &existing,
+            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+        );
+        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(stats.requested_mapped, 1000);
+        assert_eq!(stats.allowed_mapped, 1000);
+        assert_eq!(stats.dropped_mapped, 0);
+        assert!(has_hash(&filtered, 9001));
+        assert_eq!(filtered.len(), 1001);
+    }
+
+    #[test]
+    fn mapped_circuit_limit_uses_custom_limit() {
+        let existing = HashMap::new();
+        let batch = vec![
+            mk_add_circuit(1, "10.2.0.1/32"),
+            mk_add_circuit(2, "10.2.0.2/32"),
+            mk_add_circuit(3, "10.2.0.3/32"),
+        ];
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, Some(2));
+        assert_eq!(stats.enforced_limit, Some(2));
+        assert_eq!(stats.requested_mapped, 3);
+        assert_eq!(stats.allowed_mapped, 2);
+        assert_eq!(stats.dropped_mapped, 1);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn mapped_circuit_limit_none_is_unlimited() {
+        let existing = HashMap::new();
+        let batch = vec![
+            mk_add_circuit(1, "10.3.0.1/32"),
+            mk_add_circuit(2, "10.3.0.2/32"),
+            mk_add_circuit(3, "10.3.0.3/32"),
+        ];
+
+        let (filtered, stats) = filter_batch_by_mapped_circuit_limit(batch, &existing, None);
+        assert_eq!(stats.enforced_limit, None);
+        assert_eq!(stats.requested_mapped, 3);
+        assert_eq!(stats.allowed_mapped, 3);
+        assert_eq!(stats.dropped_mapped, 0);
+        assert_eq!(filtered.len(), 3);
+    }
 }

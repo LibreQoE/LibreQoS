@@ -85,7 +85,8 @@ impl TemporalQoqHeatmap {
 
         download_total[TOTAL_BLOCKS - 1] =
             Self::median_from_raw(&self.raw_download_total, self.raw_filled);
-        upload_total[TOTAL_BLOCKS - 1] = Self::median_from_raw(&self.raw_upload_total, self.raw_filled);
+        upload_total[TOTAL_BLOCKS - 1] =
+            Self::median_from_raw(&self.raw_upload_total, self.raw_filled);
 
         QoqHeatmapBlocks {
             download_total,
@@ -123,11 +124,9 @@ impl TemporalQoqHeatmap {
 
         let mut values = [0.0f32; RAW_SAMPLES];
         let mut len = 0usize;
-        for value in raw.iter().take(filled) {
-            if let Some(sample) = value {
-                values[len] = *sample;
-                len += 1;
-            }
+        for sample in raw.iter().take(filled).flatten() {
+            values[len] = *sample;
+            len += 1;
         }
 
         if len == 0 {

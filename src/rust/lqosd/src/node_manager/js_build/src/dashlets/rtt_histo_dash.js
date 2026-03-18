@@ -35,9 +35,26 @@ export class RttHistoDash extends DashletBaseInsight {
         window.timeGraphs.push(this);
     }
 
+    setupZoomed() {
+        const period = window.timePeriods && window.timePeriods.activePeriod ? window.timePeriods.activePeriod : "Live";
+        if (period === "Live") {
+            this.zoomGraph = new RttHistogram(this.zoomGraphDivId());
+        } else {
+            this.zoomGraph = new RttHistogramTimeseries(this.zoomGraphDivId(), period);
+        }
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "RttHistogram" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.data);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data);
+            }
         }
     }
 
@@ -49,6 +66,10 @@ export class RttHistoDash extends DashletBaseInsight {
             this.graph = new RttHistogram(this.graphDivId());
         } else {
             this.graph = new RttHistogramTimeseries(this.graphDivId(), window.timePeriods.activePeriod);
+        }
+        if (this.zoomed) {
+            this.teardownZoomed();
+            this.setupZoomed();
         }
     }
 }

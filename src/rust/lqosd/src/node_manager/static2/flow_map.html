@@ -1,6 +1,384 @@
-<script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js"></script>
+<script type="text/javascript" src="vendor/globe.gl.min.js"></script>
 
-<div class="row" style="height: 100%;">
-    <div class="col-12" style="height: 100%;" id="flowMap"></div>
+<style>
+.flow-map-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: calc(100vh - 108px);
+}
+
+.flow-map-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.flow-map-title h2 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 700;
+}
+
+.flow-map-headline {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.flow-map-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 82%, transparent);
+    border-radius: 14px;
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.flow-map-stage {
+    position: relative;
+    flex: 1 1 auto;
+    height: 70vh;
+    min-height: 620px;
+    max-height: 760px;
+    border-radius: var(--lqos-radius-lg);
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface) 70%, transparent);
+    box-shadow: var(--lqos-shadow-md);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.flow-map-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 620px;
+}
+
+.flow-map-legend,
+.flow-map-legend,
+.flow-map-details,
+.flow-map-tooltip {
+    position: absolute;
+    z-index: 12;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 82%, transparent);
+    border-radius: 14px;
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.flow-map-controls .form-select,
+.flow-map-controls .btn {
+    font-size: 0.9rem;
+}
+
+.flow-map-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--lqos-border);
+    border-radius: 999px;
+    padding: 3px;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 76%, transparent);
+    gap: 4px;
+}
+
+.flow-map-mode-toggle .btn {
+    border-radius: 999px;
+    min-width: 104px;
+}
+
+.flow-map-controls .flow-map-divider {
+    width: 1px;
+    height: 28px;
+    background: var(--lqos-border);
+}
+
+.flow-map-legend {
+    right: 16px;
+    bottom: 16px;
+    width: min(360px, calc(100% - 32px));
+    padding: 12px 14px;
+}
+
+.flow-map-details {
+    right: 16px;
+    top: 16px;
+    width: min(320px, calc(100% - 32px));
+    padding: 14px 16px;
+    display: none;
+}
+
+.flow-map-details.active {
+    display: block;
+}
+
+.flow-map-tooltip {
+    left: 16px;
+    top: 16px;
+    width: min(300px, calc(100% - 32px));
+    padding: 12px 14px;
+    display: none;
+    pointer-events: none;
+    z-index: 14;
+}
+
+.flow-map-tooltip.active {
+    display: block;
+}
+
+.flow-map-details-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.flow-map-details-title strong {
+    display: block;
+    line-height: 1.25;
+}
+
+.flow-map-details-body {
+    display: grid;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.flow-map-details-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.flow-map-details-row span:first-child {
+    color: var(--bs-secondary-color);
+}
+
+.flow-map-details-members {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--lqos-border);
+    font-size: 0.84rem;
+    line-height: 1.4;
+}
+
+.flow-map-legend-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.flow-map-legend-scale {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.flow-map-legend-gradient {
+    flex: 1 1 auto;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.flow-map-legend-notes {
+    font-size: 0.83rem;
+    line-height: 1.32;
+}
+
+.flow-map-legend-notes p {
+    margin: 0 0 4px 0;
+}
+
+.flow-map-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 0.35rem 0.65rem;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 80%, transparent);
+    border: 1px solid var(--lqos-border);
+    font-size: 0.86rem;
+}
+
+.flow-map-cluster-orb {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transform: translate(-50%, -50%);
+    width: var(--cluster-size, 34px);
+    height: var(--cluster-size, 34px);
+    border-radius: 999px;
+    border: 2px solid var(--cluster-rim, rgba(255, 255, 255, 0.9));
+    background:
+        radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.88) 14%, color-mix(in srgb, var(--cluster-color, #7cffb2) 70%, white) 24%, var(--cluster-color, #7cffb2) 58%, color-mix(in srgb, var(--cluster-color, #7cffb2) 72%, black) 100%);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--cluster-color, #7cffb2) 58%, rgba(255, 255, 255, 0.16)),
+        0 0 18px color-mix(in srgb, var(--cluster-color, #7cffb2) 46%, transparent),
+        0 0 34px color-mix(in srgb, var(--cluster-color, #7cffb2) 28%, transparent);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    font-weight: 700;
+    font-size: var(--cluster-font-size, 12px);
+    line-height: 1;
+    color: var(--cluster-text, #f8fbff);
+    text-shadow:
+        0 1px 2px rgba(3, 7, 18, 0.72),
+        0 0 10px color-mix(in srgb, var(--cluster-color, #7cffb2) 30%, transparent);
+    pointer-events: auto;
+    user-select: none;
+    cursor: pointer;
+}
+
+.flow-map-cluster-orb::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--cluster-color, #7cffb2) 42%, transparent);
+    opacity: 0.82;
+}
+
+.flow-map-cluster-orb::after {
+    content: "";
+    position: absolute;
+    inset: 18%;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+    .flow-map-stage,
+    .flow-map-canvas {
+        height: auto;
+        min-height: calc(100vh - 310px);
+        max-height: none;
+    }
+
+    .flow-map-controls {
+        padding: 10px;
+    }
+
+    .flow-map-legend {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        bottom: 12px;
+    }
+
+    .flow-map-details {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        top: auto;
+        bottom: 160px;
+    }
+
+    .flow-map-tooltip {
+        left: 12px;
+        right: 12px;
+        top: auto;
+        width: auto;
+        bottom: 320px;
+    }
+
+    .flow-map-controls .flow-map-divider {
+        display: none;
+    }
+}
+</style>
+
+<div class="flow-map-page">
+    <div class="flow-map-header">
+        <div class="flow-map-title">
+            <h2><i class="fa fa-globe me-2"></i>Flow Globe</h2>
+        </div>
+        <div class="flow-map-headline">
+            <span class="flow-map-badge"><i class="fa fa-satellite-dish"></i><span id="flowMapSampleCount">0 endpoints</span></span>
+            <span class="flow-map-badge"><i class="fa fa-clock"></i><span id="flowMapLastUpdated">Waiting for data</span></span>
+        </div>
+    </div>
+
+    <div class="flow-map-controls">
+        <button type="button" class="btn btn-sm btn-primary" id="flowMapRefreshBtn">
+            <i class="fa fa-rotate me-1"></i>Refresh
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapResetBtn">
+            <i class="fa fa-rotate-left me-1"></i>Reset View
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapRotateBtn" aria-pressed="false">
+            <i class="fa fa-arrows-rotate me-1"></i>Auto Rotate
+        </button>
+        <div class="form-check form-switch mb-0 ms-1">
+            <input class="form-check-input" type="checkbox" role="switch" id="flowMapAutoRefresh">
+            <label class="form-check-label small text-muted" for="flowMapAutoRefresh">Auto Refresh</label>
+        </div>
+        <div class="flow-map-divider"></div>
+        <label class="small text-muted mb-0">Mode</label>
+        <div class="flow-map-mode-toggle" role="group" aria-label="Flow Globe mode">
+            <button type="button" class="btn btn-sm btn-primary" id="flowMapModeLatency" aria-pressed="true">Latency</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapModeThroughput" aria-pressed="false">Throughput</button>
+        </div>
+        <label class="small text-muted mb-0" for="flowMapDensity">Density</label>
+        <select class="form-select form-select-sm" id="flowMapDensity" style="width: auto;">
+            <option value="250">Top 250</option>
+            <option value="1000" selected>Top 1000</option>
+            <option value="5000">Top 5000</option>
+        </select>
+    </div>
+
+    <div class="flow-map-stage">
+        <div id="flowMap" class="flow-map-canvas"></div>
+
+        <div class="flow-map-tooltip" id="flowMapTooltip"></div>
+
+        <div class="flow-map-details" id="flowMapDetails">
+            <div class="flow-map-details-title">
+                <div>
+                    <strong id="flowMapDetailsTitle">Selected endpoint</strong>
+                    <span class="small text-muted" id="flowMapDetailsSubtitle">Click a marker to pin details.</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="flowMapDetailsClose">
+                    <i class="fa fa-xmark"></i>
+                </button>
+            </div>
+            <div class="flow-map-details-body" id="flowMapDetailsBody"></div>
+            <div class="flow-map-details-members text-muted" id="flowMapDetailsMembers" style="display: none;"></div>
+        </div>
+
+        <div class="flow-map-legend">
+            <div class="flow-map-legend-title">
+                <strong><i class="fa fa-swatchbook me-1"></i><span id="flowMapLegendTitle">Latency Gradient</span></strong>
+                <span class="small text-muted" id="flowMapLegendStatus">Sizing by traffic volume</span>
+            </div>
+            <div class="flow-map-legend-scale">
+                <span class="small text-muted" id="flowMapLegendMin">Low</span>
+                <div class="flow-map-legend-gradient" id="flowMapLegendGradient"></div>
+                <span class="small text-muted" id="flowMapLegendMax">High</span>
+            </div>
+            <div class="flow-map-legend-notes text-muted">
+                <p id="flowMapLegendBody">Marker color shows RTT and marker size shows recent traffic volume.</p>
+                <p class="mb-0">Drag to rotate. Use the mouse wheel or trackpad pinch to zoom.</p>
+            </div>
+        </div>
+    </div>
 </div>
+
 <script src="flow_map.js%CACHEBUSTERS%"></script>

@@ -19,23 +19,21 @@ pub async fn bakery_ticker(
     // Request stats from bus
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetBakeryStats;
-    if let Ok(_) = bus_tx.send((tx, request)).await {
-        if let Ok(replies) = rx.await {
-            for response in replies.responses {
-                if let BusResponse::BakeryActiveCircuits(stats) = response {
-                    // Format as JSON
-                    let msg = WsResponse::BakeryStatus {
-                        data: BakeryStatusData {
-                            current_state: BakeryStatusState {
-                                active_circuits: stats,
-                            },
+    if let Ok(_) = bus_tx.send((tx, request)).await
+        && let Ok(replies) = rx.await
+    {
+        for response in replies.responses {
+            if let BusResponse::BakeryActiveCircuits(stats) = response {
+                // Format as JSON
+                let msg = WsResponse::BakeryStatus {
+                    data: BakeryStatusData {
+                        current_state: BakeryStatusState {
+                            active_circuits: stats,
                         },
-                    };
+                    },
+                };
 
-                    pubsub
-                        .send(PublishedChannels::BakeryStatus, msg)
-                        .await;
-                }
+                pubsub.send(PublishedChannels::BakeryStatus, msg).await;
             }
         }
     }

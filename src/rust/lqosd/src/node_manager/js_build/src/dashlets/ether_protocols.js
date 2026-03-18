@@ -39,7 +39,7 @@ export class EtherProtocols extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("dash-table", "table-sm", "small");
+            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
 
             let th = document.createElement("thead");
             th.classList.add("small");

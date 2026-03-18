@@ -42,7 +42,7 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
 
     // Get the Python environment going
     let output = Command::new("/usr/bin/python3")
-        .args(&[&code, &csv_path])
+        .args([&code, &csv_path])
         .output();
     if let Err(e) = output {
         tracing::error!("Python error: {:?}", e);

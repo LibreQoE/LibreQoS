@@ -25,12 +25,33 @@ function sendWsRequest(responseEvent, request, onComplete, onError) {
     wsClient.send(request);
 }
 
+function ensureOptionalConfigSections(config) {
+    if (!config || typeof config !== "object") {
+        return config;
+    }
+
+    if (!config.splynx_integration || typeof config.splynx_integration !== "object") {
+        config.splynx_integration = {};
+    }
+
+    const splynx = config.splynx_integration;
+    if (typeof splynx.enable_splynx !== "boolean") splynx.enable_splynx = false;
+    if (typeof splynx.api_key !== "string") splynx.api_key = "";
+    if (typeof splynx.api_secret !== "string") splynx.api_secret = "";
+    if (typeof splynx.url !== "string") splynx.url = "";
+    if (typeof splynx.strategy !== "string" || splynx.strategy.length === 0) {
+        splynx.strategy = "ap_only";
+    }
+
+    return config;
+}
+
 export function loadConfig(onComplete, onError) {
     sendWsRequest(
         "GetConfig",
         { GetConfig: {} },
         (msg) => {
-            window.config = msg.data;
+            window.config = ensureOptionalConfigSections(msg.data);
             if (onComplete) onComplete(msg);
         },
         onError,
@@ -253,16 +274,19 @@ export function validNodeList(network_json) {
 export function renderConfigMenu(currentPage) {
     const menuItems = [
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
+        { href: "config_rtt.html", icon: "fa-stopwatch", text: "RTT Thresholds", id: "rtt" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
         { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
+        { href: "config_treeguard.html", icon: "fa-shield-halved", text: "TreeGuard", id: "treeguard" },
         { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
+        { href: "config_visp.html", icon: "fa-link", text: "VISP", id: "visp" },
         { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
         { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
         { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },

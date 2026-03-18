@@ -21,7 +21,8 @@ struct CachedProfiles {
     file: Arc<QooProfilesFile>,
 }
 
-static PROFILES: Lazy<ArcSwap<Option<Arc<CachedProfiles>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
+static PROFILES: Lazy<ArcSwap<Option<Arc<CachedProfiles>>>> =
+    Lazy::new(|| ArcSwap::from_pointee(None));
 
 /// Minimal profile metadata for UI selection lists.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,10 +84,11 @@ pub fn load_qoo_profiles_file() -> Result<Arc<QooProfilesFile>, QooProfilesError
     let path = profiles_path_from_config()?;
     let modified = metadata_modified(&path);
 
-    if let Some(cached) = PROFILES.load().as_ref() {
-        if cached.path == path && cached.modified == modified {
-            return Ok(cached.file.clone());
-        }
+    if let Some(cached) = PROFILES.load().as_ref()
+        && cached.path == path
+        && cached.modified == modified
+    {
+        return Ok(cached.file.clone());
     }
 
     let file = load_profiles_from_disk(&path)?;
@@ -137,4 +139,3 @@ pub fn active_qoo_profile() -> Result<Arc<QooProfile>, QooProfilesError> {
 
     Ok(Arc::new(selected.to_runtime()))
 }
-

@@ -15,9 +15,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
-use crate::qoo::{
-    Baseline, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile,
-};
+use crate::qoo::{Baseline, LatencyNormalization, LatencyReq, LossHandling, LowHigh, QooProfile};
 
 /// File containing a table of QoO profiles.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -78,13 +76,13 @@ impl QooProfilesFile {
         }
 
         // Default profile must exist (if set).
-        if let Some(default_id) = &self.default_profile_id {
-            if !self.profiles.iter().any(|p| &p.id == default_id) {
-                errs.push(format!(
-                    "default_profile_id '{}' does not match any profile id",
-                    default_id
-                ));
-            }
+        if let Some(default_id) = &self.default_profile_id
+            && !self.profiles.iter().any(|p| &p.id == default_id)
+        {
+            errs.push(format!(
+                "default_profile_id '{}' does not match any profile id",
+                default_id
+            ));
         }
 
         for p in &self.profiles {
@@ -100,10 +98,10 @@ impl QooProfilesFile {
 
     /// Find the default profile (if configured), otherwise first profile.
     pub fn pick_default(&self) -> Option<&QooProfileSpec> {
-        if let Some(id) = &self.default_profile_id {
-            if let Some(p) = self.profiles.iter().find(|p| &p.id == id) {
-                return Some(p);
-            }
+        if let Some(id) = &self.default_profile_id
+            && let Some(p) = self.profiles.iter().find(|p| &p.id == id)
+        {
+            return Some(p);
         }
         self.profiles.first()
     }
@@ -249,7 +247,10 @@ impl QooProfileSpec {
 
         for l in &self.latency {
             if l.percentile > 100 {
-                errs.push(format!("latency percentile {} must be 0..100", l.percentile));
+                errs.push(format!(
+                    "latency percentile {} must be 0..100",
+                    l.percentile
+                ));
             }
             if !l.low_ms.is_finite() || !l.high_ms.is_finite() {
                 errs.push(format!("latency p{} values must be finite", l.percentile));
@@ -263,21 +264,26 @@ impl QooProfileSpec {
             LatencyNormalizationSpec::None => {}
             LatencyNormalizationSpec::ThresholdOffsetMs { ms } => {
                 if !ms.is_finite() || ms < 0.0 {
-                    errs.push("latency_normalization.threshold_offset_ms.ms must be finite and >= 0".into());
+                    errs.push(
+                        "latency_normalization.threshold_offset_ms.ms must be finite and >= 0"
+                            .into(),
+                    );
                 }
             }
-            LatencyNormalizationSpec::ExcessOverBaseline { baseline } => match baseline {
-                BaselineSpec::FixedMs { ms } => {
-                    if !ms.is_finite() || ms < 0.0 {
-                        errs.push("latency_normalization.excess_over_baseline.fixed_ms.ms must be finite and >= 0".into());
+            LatencyNormalizationSpec::ExcessOverBaseline { baseline } => {
+                match baseline {
+                    BaselineSpec::FixedMs { ms } => {
+                        if !ms.is_finite() || ms < 0.0 {
+                            errs.push("latency_normalization.excess_over_baseline.fixed_ms.ms must be finite and >= 0".into());
+                        }
+                    }
+                    BaselineSpec::Percentile { percentile } => {
+                        if percentile > 100 {
+                            errs.push("latency_normalization.excess_over_baseline.percentile must be 0..100".into());
+                        }
                     }
                 }
-                BaselineSpec::Percentile { percentile } => {
-                    if percentile > 100 {
-                        errs.push("latency_normalization.excess_over_baseline.percentile must be 0..100".into());
-                    }
-                }
-            },
+            }
         }
 
         errs
@@ -311,21 +317,16 @@ pub struct LatencySpec {
 ///
 /// - `threshold_offset_ms`: Subtract a fixed `ms` before scoring (equivalent to shifting thresholds upward).
 /// - `excess_over_baseline`: Subtract a baseline derived from the same RTT distribution (or fixed).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum LatencyNormalizationSpec {
     /// Score absolute RTT directly against thresholds.
+    #[default]
     None,
     /// Subtract a fixed offset before scoring.
     ThresholdOffsetMs { ms: f64 },
     /// Subtract a baseline (fixed or derived from an RTT percentile) before scoring.
     ExcessOverBaseline { baseline: BaselineSpec },
-}
-
-impl Default for LatencyNormalizationSpec {
-    fn default() -> Self {
-        LatencyNormalizationSpec::None
-    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -337,17 +338,12 @@ pub enum BaselineSpec {
     Percentile { percentile: u8 },
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LossHandlingSpec {
     /// Use loss score directly in the final `min()`.
     Strict,
     /// Blend loss score toward 100 based on confidence.
+    #[default]
     ConfidenceWeighted,
-}
-
-impl Default for LossHandlingSpec {
-    fn default() -> Self {
-        LossHandlingSpec::ConfidenceWeighted
-    }
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS lqos_sys eBPF"
+  short_description: "eBPF, wrapper, and ABI workflow"
+  default_prompt: "Use $libreqos-lqos-sys-ebpf to update LibreQoS eBPF, wrapper, or pinned-map ABI code safely."

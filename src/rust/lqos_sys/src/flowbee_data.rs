@@ -78,9 +78,21 @@ pub struct FlowbeeData {
     pub flags: u8,
     /// Padding.
     pub padding2: [u8; 5],
+    /// TC handle from the `ip_info` match (0 if unshaped).
+    pub tc_handle: u32,
+    /// CPU mapping from the `ip_info` match (0 if unshaped).
+    pub cpu: u32,
+    /// Hashed circuit identifier (bit-pattern of `hash_to_i64` stored as `u64`).
+    pub circuit_hash: u64,
+    /// Hashed device identifier (bit-pattern of `hash_to_i64` stored as `u64`).
+    pub device_hash: u64,
+    /// Cached mapping epoch (from `ip_mapping_epoch`).
+    pub mapping_epoch: u32,
+    /// Padding to keep struct alignment stable.
+    pub pad3: u32,
 }
 
 const _: [(); 40] = [(); core::mem::size_of::<FlowbeeKey>()];
 const _: [(); 24] = [(); core::mem::size_of::<TsvalRecordBuffer>()];
 const _: [(); 48] = [(); core::mem::size_of::<DownUpOrder<TsvalRecordBuffer>>()];
-const _: [(); 208] = [(); core::mem::size_of::<FlowbeeData>()];
+const _: [(); 240] = [(); core::mem::size_of::<FlowbeeData>()];

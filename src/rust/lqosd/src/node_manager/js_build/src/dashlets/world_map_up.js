@@ -70,7 +70,7 @@ export class ShaperWorldMapUp extends BaseDashlet {
         for (let i=0;i<rows.length;i++) {
             const lat = rows[i][0], lon = rows[i][1];
             const bytes = Number(rows[i][3] || 0);
-            const rtt = Math.min(200, Number(rows[i][4]||0));
+            const rtt = Number(rows[i][4]||0);
             let norm = 0;
             if (maxBytes > 0) {
                 norm = Math.sqrt(bytes / maxBytes);
@@ -78,7 +78,7 @@ export class ShaperWorldMapUp extends BaseDashlet {
                 if (norm > 1) norm = 1;
             }
             const size = Math.round(minSize + (maxSize - minSize) * norm);
-            const color = colorByRttMs(rtt, 200);
+            const color = colorByRttMs(rtt);
             out.push({ value: [lon, lat], symbolSize: size, itemStyle: { color, opacity: 0.6 } });
         }
         const hasData = out.length > 0;

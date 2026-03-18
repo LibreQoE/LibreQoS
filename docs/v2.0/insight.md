@@ -1,4 +1,4 @@
-# LibreQoS Insight (Insight)
+# LibreQoS Insight
 
 ## About Insight
 Learn more about Insight on our website, [here](https://libreqos.io/insight/).
@@ -74,9 +74,12 @@ This view allows you to identify the general topology of the network from LibreQ
 ### Libby (AI Assistant)
 <img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
 
-Libby is LibreQoS Insight's AI Chat Assistant. Libby can help with questions you may have about using LibreQoS or LibreQoS Insight. Libby leverages the official LibreQoS documentation to help you with any questions you may have. Libby can access both live and long-term data - both from synced LibreQoS shaper boxes and from Insight itself. Libby can reply to queries in most major languages with automatic translation.
+Libby is an assistive chat interface for Insight operations and documentation lookup.
 
-You may find new ways to use Libby that we had not originally considered. Please feel welcome to share with us ways you have found Libby to help your workflow.
+Operational guidance:
+- Treat Libby output as assistive guidance, not an authoritative change command.
+- Validate recommendations against current node status, logs, and documented procedures before making production changes.
+- For sensitive/impactful actions, confirm with standard operator workflows (service status, scheduler state, and rollback path).
 
 ### Site Heatmap
 <img width="3830" height="2160" alt="08 heatmap" src="https://github.com/user-attachments/assets/dfaea245-3221-4cea-874b-fd795ac8da33" />
@@ -98,3 +101,44 @@ LibreQoS Insight enables you to trigger AI-generated reports on specific subscri
 <img width="3831" height="2160" alt="11 alerts" src="https://github.com/user-attachments/assets/66f0a465-eb00-4bfb-9cf8-c8302af78ead" />
 
 The Alerts section provides you with automated warnings of out-of-norm performance for nodes across the network (Access Points, OLTs, Sites).
+
+## Insight Licensing Behavior (Node-side)
+
+### Local key material and offline grants
+
+LibreQoS stores Insight key material under:
+
+`<lqos_directory>/.keys/`
+
+Current builds can cache signed license grants locally so nodes can continue operating through temporary connectivity loss to Insight control services. Grant validity and expiration are enforced locally.
+
+Operational notes:
+- Keep `.keys/` persistent across reboots.
+- Treat `.keys/` as sensitive local key material.
+- If grant or key state is invalid, `lqosd` logs will show license/grant errors.
+
+### Mapped circuit limits and license state
+
+`ShapedDevices.csv` can contain unlimited entries. In current v2.0 builds, admission into active shaping state depends on valid Insight license state.
+
+Without a valid Insight subscription/license, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state. Additional valid mapped circuits remain outside active shaping until valid Insight licensing is restored.
+
+A valid Insight subscription/license enables mapped-circuit counts above the default 1000 limit.
+
+The default 1000-limit behavior applies when Insight is:
+- missing
+- expired
+- otherwise invalid
+- operating with offline-invalid local grant state
+
+When the limit is reached, operators will typically see:
+- a prominent warning in WebUI
+- a left-nav usage indicator showing proximity to the limit
+- `lqosd` log messages such as:
+  - `Mapped circuit limit reached`
+  - `Bakery mapped circuit cap enforced`
+
+When this occurs, check:
+1. Insight license status in the UI.
+2. `journalctl -u lqosd` for requested/allowed/dropped mapped counts.
+3. Whether your node is operating at the default 1000 mapped-circuit limit because the current Insight/license state is invalid.

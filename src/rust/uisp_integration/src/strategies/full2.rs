@@ -1,5 +1,5 @@
-mod dot;
 mod directionality;
+mod dot;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
@@ -10,8 +10,10 @@ use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use crate::strategies::full2::directionality::{
+    build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
+};
 use crate::strategies::full2::dot::save_dot_file;
-use crate::strategies::full2::directionality::{build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps};
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
@@ -168,10 +170,10 @@ pub async fn build_full_network_v2(
         if aps_with_clients.contains(ap_id) {
             continue;
         }
-        if let Some(link_count) = ap_link_count.get(ap_id) {
-            if *link_count > 1 {
-                continue;
-            }
+        if let Some(link_count) = ap_link_count.get(ap_id)
+            && *link_count > 1
+        {
+            continue;
         }
         to_remove.push(*ap_ref);
     }
@@ -209,7 +211,7 @@ pub async fn build_full_network_v2(
                     |n| n == node,
                     |e| {
                         (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            &e.weight(),
+                            e.weight(),
                             &uisp_data.devices,
                             &routing_overrides,
                         ))
@@ -224,7 +226,7 @@ pub async fn build_full_network_v2(
                     |n| n == root_idx,
                     |e| {
                         (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            &e.weight(),
+                            e.weight(),
                             &uisp_data.devices,
                             &routing_overrides,
                         ))
@@ -287,17 +289,17 @@ pub async fn build_full_network_v2(
                     }
 
                     // Overrides
-                    if !bandwidth_overrides.is_empty() {
-                        if let Some(bw_override) = bandwidth_overrides.get(name) {
-                            info!("Applying bandwidth override for {}", name);
-                            info!("Capacity was: {} / {}", download_capacity, upload_capacity);
-                            download_capacity = bw_override.0 as u64;
-                            upload_capacity = bw_override.1 as u64;
-                            info!(
-                                "Capacity is now: {} / {}",
-                                download_capacity, upload_capacity
-                            );
-                        }
+                    if !bandwidth_overrides.is_empty()
+                        && let Some(bw_override) = bandwidth_overrides.get(name)
+                    {
+                        info!("Applying bandwidth override for {}", name);
+                        info!("Capacity was: {} / {}", download_capacity, upload_capacity);
+                        download_capacity = bw_override.0 as u64;
+                        upload_capacity = bw_override.1 as u64;
+                        info!(
+                            "Capacity is now: {} / {}",
+                            download_capacity, upload_capacity
+                        );
                     }
 
                     let parent_node =
@@ -350,7 +352,7 @@ pub async fn build_full_network_v2(
     }) {
         network_json.insert(
             name.into(),
-            walk_parents(&parents, name, &node_info, &config, &graph, &mut visited).into(),
+            walk_parents(&parents, name, node_info, &mut visited).into(),
         );
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");
@@ -390,7 +392,7 @@ pub async fn build_full_network_v2(
                 }
 
                 // Compute subscriber rates: prefer UISP QoS + burst; fallback to capacity-based
-                let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                let (download_min, mut download_max, upload_min, mut upload_max) =
                     if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
                         (
                             f32::max(0.1, dl_min),
@@ -426,7 +428,7 @@ pub async fn build_full_network_v2(
                 }
 
                 let parent_node = {
-                    if parents.get(&ap_device.name).is_some() {
+                    if parents.contains_key(&ap_device.name) {
                         ap_device.name.clone()
                     } else {
                         warn!(
@@ -514,19 +516,14 @@ fn add_device_links_to_graph(
             .devices_raw
             .iter()
             .find(|d| d.get_id() == from_device.identification.id)
-        {
-            if let Some(dev_b) = uisp_data
+            && let Some(dev_b) = uisp_data
                 .devices_raw
                 .iter()
                 .find(|d| d.get_id() == to_device.identification.id)
-            {
-                if dev_a.get_site_id().unwrap_or_default()
-                    == dev_b.get_site_id().unwrap_or_default()
-                {
-                    // If the devices are in the same site, we don't need to add an edge
-                    continue;
-                }
-            }
+            && dev_a.get_site_id().unwrap_or_default() == dev_b.get_site_id().unwrap_or_default()
+        {
+            // If the devices are in the same site, we don't need to add an edge
+            continue;
         }
         if graph.contains_edge(*a_ref, *b_ref) {
             // If the edge already exists, we don't need to add it
@@ -539,20 +536,21 @@ fn add_device_links_to_graph(
 
         let id_a = from_device.identification.id.as_str();
         let id_b = to_device.identification.id.as_str();
-        let (cap_ab, cap_ba) =
-            if let Some((cap_ab, cap_ba)) = directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b) {
-                (cap_ab, cap_ba)
-            } else {
-                warn!(
-                    link_id = %link.id,
-                    from_id = %id_a,
-                    to_id = %id_b,
-                    from_name = %from_device.identification.name,
-                    to_name = %to_device.identification.name,
-                    "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
-                );
-                get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
-            };
+        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) =
+            directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b)
+        {
+            (cap_ab, cap_ba)
+        } else {
+            warn!(
+                link_id = %link.id,
+                from_id = %id_a,
+                to_id = %id_b,
+                from_name = %from_device.identification.name,
+                to_name = %to_device.identification.name,
+                "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
+            );
+            get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
+        };
         graph.add_edge(
             *a_ref,
             *b_ref,
@@ -669,6 +667,16 @@ pub fn add_all_sites_to_graph(
             let root_entry = GraphMapping::Root {
                 name: site_name,
                 id,
+                latitude: site
+                    .description
+                    .as_ref()
+                    .and_then(|description| description.location.as_ref())
+                    .map(|location| location.latitude as f32),
+                longitude: site
+                    .description
+                    .as_ref()
+                    .and_then(|description| description.location.as_ref())
+                    .map(|location| location.longitude as f32),
             };
             let root_ref = graph.add_node(root_entry);
             *root_idx = Some(root_ref);
@@ -678,6 +686,16 @@ pub fn add_all_sites_to_graph(
         let site_entry = GraphMapping::Site {
             name: site_name,
             id,
+            latitude: site
+                .description
+                .as_ref()
+                .and_then(|description| description.location.as_ref())
+                .map(|location| location.latitude as f32),
+            longitude: site
+                .description
+                .as_ref()
+                .and_then(|description| description.location.as_ref())
+                .map(|location| location.longitude as f32),
         };
         let site_ref = graph.add_node(site_entry);
         site_map.insert(site.id.clone(), site_ref);
@@ -804,10 +822,10 @@ fn find_point_to_point_squash_candidates(
     // For each potential relay node, check if it's part of a 2-relay chain
     for &relay_node in &relay_nodes {
         // Skip if this relay node is an AP with clients
-        if let GraphMapping::AccessPoint { id, .. } = &graph[relay_node] {
-            if aps_with_clients.contains(id) {
-                continue;
-            }
+        if let GraphMapping::AccessPoint { id, .. } = &graph[relay_node]
+            && aps_with_clients.contains(id)
+        {
+            continue;
         }
         // Get the unique neighbors for this relay node
         let mut unique_neighbors = std::collections::HashSet::new();
@@ -884,10 +902,10 @@ fn find_point_to_point_squash_candidates(
             }
 
             // Check if node_b (relay) is an AP with clients - if so, skip
-            if let GraphMapping::AccessPoint { id, .. } = &graph[node_b] {
-                if aps_with_clients.contains(id) {
-                    continue;
-                }
+            if let GraphMapping::AccessPoint { id, .. } = &graph[node_b]
+                && aps_with_clients.contains(id)
+            {
+                continue;
             }
 
             // Find the other neighbor of node_b (the endpoint on the far side)
@@ -984,10 +1002,10 @@ fn find_point_to_point_squash_candidates(
             }
 
             // Check if node_a (relay) is an AP with clients - if so, skip
-            if let GraphMapping::AccessPoint { id, .. } = &graph[node_a] {
-                if aps_with_clients.contains(id) {
-                    continue;
-                }
+            if let GraphMapping::AccessPoint { id, .. } = &graph[node_a]
+                && aps_with_clients.contains(id)
+            {
+                continue;
             }
 
             // Find the other neighbor of node_a (the endpoint on the far side)
@@ -1103,8 +1121,8 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
         let (forward_capacity, reverse_capacity) = calculate_chain_capacity(graph, &chain_nodes);
 
         // Check if endpoints still exist (previous squashing might have removed them)
-        if !graph.node_weight(candidate.endpoint_a).is_some()
-            || !graph.node_weight(candidate.endpoint_b).is_some()
+        if graph.node_weight(candidate.endpoint_a).is_none()
+            || graph.node_weight(candidate.endpoint_b).is_none()
         {
             info!("  Skipping - endpoints no longer exist");
             continue;

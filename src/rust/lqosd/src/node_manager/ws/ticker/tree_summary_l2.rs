@@ -1,7 +1,7 @@
 use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::shaped_devices_tracker::NETWORK_JSON;
+use crate::shaped_devices_tracker::{NETWORK_JSON, node_to_transport};
 use lqos_config::NetworkJsonTransport;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ pub async fn tree_summary_l2(channels: Arc<PubSub>) {
                 // For each child-of-child under this parent
                 for (c_idx, c_node) in nodes.iter().enumerate() {
                     if c_node.immediate_parent == Some(p_idx) {
-                        let t = c_node.clone_to_transit();
+                        let t = node_to_transport(c_node);
                         let total = t.current_throughput.0 + t.current_throughput.1;
                         candidates.push((p_idx, c_idx, t, total));
                     }

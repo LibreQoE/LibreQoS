@@ -1,40 +1,47 @@
 <div class="row">
     <div class="col-4">
         <h5><i class="fa fa-tree"></i> Network Tree (<span id="nodeName" class="redactable"></span>)</h5>
-        <table class="table table-sm">
-            <thead>
-                <th></th>
-                <th>Download</th>
-                <th>Upload</th>
-            </thead>
-            <tbody>
-                <tr class="small">
-                    <td style="font-weight: bold;">Limits:</td>
-                    <td class="small"><span id="parentLimitsD"></span></td>
-                    <td class="small"><span id="parentLimitsU"></span></td>
-                </tr>
-                <tr class="small">
-                    <td style="font-weight: bold;">Throughput:</td>
-                    <td><span id="parentTpD"></span></td>
-                    <td><span id="parentTpU"></span></td>
-                </tr>
-                <tr class="small">
-                    <td style="font-weight: bold;">RTT:</td>
-                    <td><span id="parentRttD"></span></td>
-                    <td><span id="parentRttU"></span></td>
-                </tr>
-                <tr class="small">
-                    <td style="font-weight: bold;">QoO:</td>
-                    <td><span id="parentQooD"></span></td>
-                    <td><span id="parentQooU"></span></td>
-                </tr>
-                <tr class="small">
-                    <td style="font-weight: bold;">TCP Retransmits:</td>
-                    <td><span id="parentRxmitD"></span></td>
-                    <td><span id="parentRxmitU"></span></td>
-                </tr>
-            </tbody>
-        </table>
+        <div class="lqos-table-wrap">
+            <table class="lqos-table lqos-table-compact">
+                <thead>
+                    <th></th>
+                    <th>Download</th>
+                    <th>Upload</th>
+                </thead>
+                <tbody>
+                    <tr class="small">
+                        <td class="table-label-cell">Effective Limit</td>
+                        <td class="small"><span id="parentEffectiveD"></span></td>
+                        <td class="small"><span id="parentEffectiveU"></span></td>
+                    </tr>
+                    <tr class="small">
+                        <td class="table-label-cell">Configured Limit</td>
+                        <td class="small"><span id="parentConfiguredD"></span></td>
+                        <td class="small"><span id="parentConfiguredU"></span></td>
+                    </tr>
+                    <tr class="small">
+                        <td class="table-label-cell">Throughput</td>
+                        <td><span id="parentTpD"></span></td>
+                        <td><span id="parentTpU"></span></td>
+                    </tr>
+                    <tr class="small">
+                        <td class="table-label-cell">RTT</td>
+                        <td><span id="parentRttD"></span></td>
+                        <td><span id="parentRttU"></span></td>
+                    </tr>
+                    <tr class="small">
+                        <td class="table-label-cell">QoO</td>
+                        <td><span id="parentQooD"></span></td>
+                        <td><span id="parentQooU"></span></td>
+                    </tr>
+                    <tr class="small">
+                        <td class="table-label-cell">TCP Retransmits</td>
+                        <td><span id="parentRxmitD"></span></td>
+                        <td><span id="parentRxmitU"></span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 <div class="row">

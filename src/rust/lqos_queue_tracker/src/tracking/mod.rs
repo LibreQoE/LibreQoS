@@ -37,32 +37,32 @@ fn track_queues() {
         } else {
             (
                 read_named_queue_from_interface(&config.isp_interface(), download_class),
-                read_named_queue_from_interface(&config.internet_interface(), download_class),
+                read_named_queue_from_interface(&config.internet_interface(), upload_class),
             )
         };
 
-        if let Ok(download) = download {
-            if let Ok(upload) = upload {
-                if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
-                    if !download.is_empty() && !upload.is_empty() {
-                        circuit.update(&download[0], &upload[0]);
-                    }
+        if let Ok(download) = download
+            && let Ok(upload) = upload
+        {
+            if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
+                if !download.is_empty() && !upload.is_empty() {
+                    circuit.update(&download[0], &upload[0]);
+                }
+            } else {
+                // It's new: insert it
+                if !download.is_empty() && !upload.is_empty() {
+                    CIRCUIT_TO_QUEUE.insert(
+                        circuit_id.to_string(),
+                        QueueStore::new(download[0].clone(), upload[0].clone()),
+                    );
                 } else {
-                    // It's new: insert it
-                    if !download.is_empty() && !upload.is_empty() {
-                        CIRCUIT_TO_QUEUE.insert(
-                            circuit_id.to_string(),
-                            QueueStore::new(download[0].clone(), upload[0].clone()),
-                        );
-                    } else {
-                        debug!(
-                            "No queue data returned for {}, {}/{} found.",
-                            circuit_id.to_string(),
-                            download.len(),
-                            upload.len()
-                        );
-                        debug!("You probably want to run LibreQoS.py");
-                    }
+                    debug!(
+                        "No queue data returned for {}, {}/{} found.",
+                        circuit_id.to_string(),
+                        download.len(),
+                        upload.len()
+                    );
+                    debug!("You probably want to run LibreQoS.py");
                 }
             }
         }
@@ -134,16 +134,15 @@ fn connect_queues_to_circuit_up(
                 if let Some(s) = structure
                     .iter()
                     .find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32)
+                    && let Some(circuit_hash) = &s.circuit_hash
                 {
-                    if let Some(circuit_hash) = &s.circuit_hash {
-                        let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
-                        if cake.drops > 0 || marks > 0 {
-                            return Some(TrackedQueue {
-                                circuit_hash: *circuit_hash,
-                                drops: cake.drops as u64,
-                                marks: marks as u64,
-                            });
-                        }
+                    let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
+                    if cake.drops > 0 || marks > 0 {
+                        return Some(TrackedQueue {
+                            circuit_hash: *circuit_hash,
+                            drops: cake.drops as u64,
+                            marks: marks as u64,
+                        });
                     }
                 }
             }
@@ -161,8 +160,8 @@ fn all_queue_reader() {
             let (download, upload, queue_counts) = if config.on_a_stick_mode() {
                 let all_queues = read_all_queues_from_interface(&config.internet_interface());
                 let (download, upload, counts) = if let Ok(q) = all_queues {
-                    let download = connect_queues_to_circuit(&structure, &q);
-                    let upload = connect_queues_to_circuit_up(&structure, &q);
+                    let download = connect_queues_to_circuit(structure, &q);
+                    let upload = connect_queues_to_circuit_up(structure, &q);
                     (download, upload, count_queue_types(&q))
                 } else {
                     (Vec::new(), Vec::new(), QueueCounts::default())
@@ -173,12 +172,12 @@ fn all_queue_reader() {
                 let all_queues_up = read_all_queues_from_interface(&config.isp_interface());
 
                 let download = if let Ok(q) = &all_queues_down {
-                    connect_queues_to_circuit(&structure, q)
+                    connect_queues_to_circuit(structure, q)
                 } else {
                     Vec::new()
                 };
                 let upload = if let Ok(q) = &all_queues_up {
-                    connect_queues_to_circuit(&structure, q)
+                    connect_queues_to_circuit(structure, q)
                 } else {
                     Vec::new()
                 };
@@ -261,7 +260,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
                 let missed_ticks = tfd.read();
                 if missed_ticks > 1 {
                     warn!("All Queue Reader: Missed {} ticks", missed_ticks - 1);
-                    interval_seconds = 2 + (missed_ticks - 1) as u64;
+                    interval_seconds = 2 + (missed_ticks - 1);
                     tfd.set_state(
                         TimerState::Periodic {
                             current: Duration::new(interval_seconds, 0),

@@ -7,16 +7,16 @@ use self::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
     snapshot_asn_heatmaps,
 };
-pub(crate) use flow_data::RttBuffer;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
-use arc_swap::ArcSwap;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
-    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
+    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
-    throughput_tracker::tracking_data::ThroughputTracker,
+    throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
 };
+use arc_swap::ArcSwap;
+pub(crate) use flow_data::RttBuffer;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
 use lqos_bus::{
@@ -115,6 +115,9 @@ fn throughput_task(
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) {
+    // Load RTT exclusion overrides once on startup. UI/API calls will refresh this on update.
+    crate::rtt_exclusions::refresh_from_disk();
+
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
         if let Some(flow_config) = &config.flows {
@@ -124,17 +127,6 @@ fn throughput_task(
         }
     } else {
         30
-    };
-
-    // Obtain the netflow_enabled from the config, default to false
-    let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = &config.flows {
-            flow_config.netflow_enabled
-        } else {
-            false
-        }
-    } else {
-        false
     };
 
     let mut last_submitted_to_lts: Option<Instant> = None;
@@ -180,16 +172,15 @@ fn throughput_task(
                 .apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
             timer_metrics.apply_new_throughput_counters =
                 timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_flow_data(
+            THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
                 timeout_seconds,
-                netflow_enabled,
-                netflow_sender.clone(),
-                &mut net_json_calc,
-                &mut rtt_circuit_tracker,
-                &mut rtt_by_circuit,
-                &mut tcp_retries,
-                &mut expired_flows,
-            );
+                sender: netflow_sender.clone(),
+                net_json_calc: &mut net_json_calc,
+                rtt_circuit_tracker: &mut rtt_circuit_tracker,
+                rtt_by_circuit: &mut rtt_by_circuit,
+                tcp_retries: &mut tcp_retries,
+                expired_keys: &mut expired_flows,
+            });
             CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
             THROUGHPUT_TRACKER.record_circuit_heatmaps();
             let enable_site_heatmaps = lqos_config::load_config()
@@ -226,41 +217,39 @@ fn throughput_task(
                 stats_counter,
                 system_usage_actor.clone(),
             );
-        } else {
-            if let Some(last) = last_submitted_to_lts {
-                let elapsed_f64 = last.elapsed().as_secs_f64();
-                // Temporary: place this in a thread to not block the timer
-                let my_system_usage_actor = system_usage_actor.clone();
-                // Submit if a reasonable amount of time has passed - drop if there was a long hitch
-                if elapsed_f64 < 2.0 {
-                    match std::thread::Builder::new()
-                        .name("Throughput Stats Submit".to_string())
-                        .spawn(move || {
-                            stats_submission::submit_throughput_stats(
-                                elapsed_f64,
-                                stats_counter,
-                                my_system_usage_actor,
-                            );
-                        }) {
-                        Ok(handle) => {
-                            if let Err(e) = handle.join() {
-                                info!(
-                                    "Throughput stats submit thread join error (ignored): {:?}",
-                                    e
-                                );
-                            }
-                        }
-                        Err(e) => {
+        } else if let Some(last) = last_submitted_to_lts {
+            let elapsed_f64 = last.elapsed().as_secs_f64();
+            // Temporary: place this in a thread to not block the timer
+            let my_system_usage_actor = system_usage_actor.clone();
+            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
+            if elapsed_f64 < 2.0 {
+                match std::thread::Builder::new()
+                    .name("Throughput Stats Submit".to_string())
+                    .spawn(move || {
+                        stats_submission::submit_throughput_stats(
+                            elapsed_f64,
+                            stats_counter,
+                            my_system_usage_actor,
+                        );
+                    }) {
+                    Ok(handle) => {
+                        if let Err(e) = handle.join() {
                             info!(
-                                "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                                "Throughput stats submit thread join error (ignored): {:?}",
                                 e
                             );
                         }
                     }
+                    Err(e) => {
+                        info!(
+                            "Failed to spawn throughput stats submit thread (ignored): {:?}",
+                            e
+                        );
+                    }
                 }
-            } else {
-                info!("No last submission timestamp; skipping stats submission this cycle");
             }
+        } else {
+            info!("No last submission timestamp; skipping stats submission this cycle");
         }
         // Notify of completion, which triggers processing
         if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
@@ -505,7 +494,11 @@ pub fn asn_heatmaps() -> BusResponse {
             } else {
                 Some(name)
             };
-            AsnHeatmapData { asn, asn_name, blocks }
+            AsnHeatmapData {
+                asn,
+                asn_name,
+                blocks,
+            }
         })
         .collect();
     BusResponse::AsnHeatmaps(rows)
@@ -528,6 +521,11 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, d)| {
+                d.circuit_hash
+                    .map(|h| !crate::rtt_exclusions::is_excluded_hash(h))
+                    .unwrap_or(true)
+            })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
                 (
@@ -624,6 +622,11 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, d)| {
+                d.circuit_hash
+                    .map(|h| !crate::rtt_exclusions::is_excluded_hash(h))
+                    .unwrap_or(true)
+            })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
                 (
@@ -751,9 +754,9 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     samples.sort_by(|a, b| a.total_cmp(b));
 
     let result = MinMaxMedianRtt {
-        min: samples[0] as f32,
-        max: samples[samples.len() - 1] as f32,
-        median: samples[samples.len() / 2] as f32,
+        min: samples[0],
+        max: samples[samples.len() - 1],
+        median: samples[samples.len() / 2],
     };
 
     Some(result)
@@ -990,7 +993,12 @@ pub fn dump_active_flows() -> BusResponse {
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
+                rtt_nanos: DownUpOrder::new(
+                    row.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                    row.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                ),
                 circuit_id,
                 circuit_name,
             }
@@ -1012,7 +1020,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .flow_data
         .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
+        .map(|(key, value)| (*key, value.clone()))
         .collect();
     std::mem::drop(lock); // Early lock release
 
@@ -1054,7 +1062,9 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let sd = SHAPED_DEVICES.load();
+    let shaped = SHAPED_DEVICES.load();
+    let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let throughput = THROUGHPUT_TRACKER.raw_data.lock();
 
     let result = table
         .iter()
@@ -1062,9 +1072,27 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .map(|(ip, flow)| {
             let geo = get_asn_name_and_country(ip.remote_ip.as_ip());
 
-            let (circuit_id, circuit_name) = sd
-                .get_circuit_id_and_name_from_ip(&ip.local_ip)
-                .unwrap_or((String::new(), String::new()));
+            let mut circuit_id = String::new();
+            let mut circuit_name = String::new();
+            if let Some(te) = throughput.get(&ip.local_ip) {
+                if let Some(id) = &te.circuit_id {
+                    circuit_id = id.clone();
+                }
+                let shaped_device = te
+                    .device_hash
+                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
+                    .or_else(|| {
+                        te.circuit_hash
+                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
+                    })
+                    .and_then(|idx| shaped.devices.get(idx));
+                if let Some(device) = shaped_device {
+                    if circuit_id.is_empty() {
+                        circuit_id = device.circuit_id.clone();
+                    }
+                    circuit_name = device.circuit_name.clone();
+                }
+            }
 
             lqos_bus::FlowbeeSummaryData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
@@ -1085,7 +1113,12 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), flow.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
+                rtt_nanos: DownUpOrder::new(
+                    flow.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                    flow.0
+                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                ),
                 circuit_id,
                 circuit_name,
             }
@@ -1100,17 +1133,39 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
-        let sd = SHAPED_DEVICES.load();
+        let throughput = THROUGHPUT_TRACKER.raw_data.lock();
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let (circuit_id, circuit_name) = {
+            let mut circuit_id = String::new();
+            let mut circuit_name = String::new();
+            if let Some(te) = throughput.get(&ip) {
+                if let Some(id) = &te.circuit_id {
+                    circuit_id = id.clone();
+                }
+                let shaped_device = te
+                    .device_hash
+                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
+                    .or_else(|| {
+                        te.circuit_hash
+                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
+                    })
+                    .and_then(|idx| shaped.devices.get(idx));
+                if let Some(device) = shaped_device {
+                    if circuit_id.is_empty() {
+                        circuit_id = device.circuit_id.clone();
+                    }
+                    circuit_name = device.circuit_name.clone();
+                }
+            }
+            (circuit_id, circuit_name)
+        };
         let matching_flows: Vec<_> = lock
             .flow_data
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-
-                let (circuit_id, circuit_name) = sd
-                    .get_circuit_id_and_name_from_ip(&key.local_ip)
-                    .unwrap_or((String::new(), String::new()));
 
                 lqos_bus::FlowbeeSummaryData {
                     remote_ip: key.remote_ip.as_ip().to_string(),
@@ -1131,9 +1186,14 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download), row.0.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload)),
-                    circuit_id,
-                    circuit_name,
+                    rtt_nanos: DownUpOrder::new(
+                        row.0
+                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
+                        row.0
+                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
+                    ),
+                    circuit_id: circuit_id.clone(),
+                    circuit_name: circuit_name.clone(),
                 }
             })
             .collect();

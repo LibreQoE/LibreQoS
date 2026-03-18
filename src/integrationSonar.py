@@ -5,7 +5,7 @@ import subprocess
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
-from integrationCommon import NetworkGraph, NetworkNode, NodeType
+from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 from multiprocessing.pool import ThreadPool
 
 ### Requirements
@@ -123,13 +123,15 @@ def getSitesAndAps():
   sites = []
   aps = []
   for site in sites_and_aps:
+    site_has_ap = False
     for item in site['inventory_items']['entities']:
       ips = findIPs(item)
       if ips:
-        aps.append({'parent': f"site_{site['id']}",'id': f"ap_{item['id']}", 'model': item['inventory_model_id'], 'ip': ips[0]}) # Using the first IP in the list here because each IP should only have 1 IP assigned.
+        aps.append({'parent': f"site_{site['id']}",'id': f"ap_{item['id']}", 'raw_id': item['id'], 'model': item['inventory_model_id'], 'ip': ips[0]}) # Using the first IP in the list here because each IP should only have 1 IP assigned.
+        site_has_ap = True
 
-    if aps: #We don't care about sites that have equipment but no IP addresses.
-      sites.append({'id': f"site_{site['id']}", 'name': site['name']})
+    if site_has_ap: #We don't care about sites that have equipment but no IP addresses.
+      sites.append({'id': f"site_{site['id']}", 'raw_id': site['id'], 'name': site['name']})
   return sites, aps
 
 def getAccounts(sonar_active_status_ids):
@@ -235,8 +237,8 @@ def getAccounts(sonar_active_status_ids):
       for item in account['addresses']['entities'][0]['inventory_items']['entities']:
         devices.append({'id': item['id'], 'name': item['inventory_model']['name'], 'ips': findIPs(item), 'mac': item['inventory_model_field_data']['entities'][0]['value']})
       if account['account_services']['entities'] and devices: # Make sure there is a data plan and devices on the account.
-        download = float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000
-        upload = float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000
+        download = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000)
+        upload = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000)
         if download < 2:
            download = 2
         if upload < 2:
@@ -298,11 +300,11 @@ def createShaper():
           break
 
   for site in sites:
-      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site))
+      net.addRawNode(NetworkNode(id=site['id'], displayName=site['name'], parentId="", type=NodeType.site, networkJsonId=f"sonar:site:{site['raw_id']}"))
 
   for ap in aps:
     if ap['cpe_macs']: # I don't think we care about Aps with no customers.
-      net.addRawNode(NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap))
+      net.addRawNode(NetworkNode(id=ap['id'], displayName=ap['name'], parentId=ap['parent'], type=NodeType.ap, networkJsonId=f"sonar:ap:{ap['raw_id']}"))
 
   for account in accounts:
     if account['parent']:

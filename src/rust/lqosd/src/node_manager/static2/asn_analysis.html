@@ -1,0 +1,571 @@
+<style>
+.asn-analysis-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: calc(100vh - 108px);
+}
+
+.asn-analysis-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.asn-analysis-title h2 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 700;
+}
+
+.asn-analysis-title p {
+    margin: 4px 0 0;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-live {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px solid var(--lqos-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 84%, transparent);
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.asn-analysis-live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(16, 185, 129, 0.14);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.28);
+}
+
+.asn-analysis-row {
+    display: grid;
+    grid-template-columns: minmax(420px, 1.32fr) minmax(280px, 0.68fr);
+    gap: 14px;
+}
+
+.asn-analysis-right-stack {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 14px;
+}
+
+.asn-analysis-grid-bottom {
+    display: block;
+}
+
+.asn-analysis-card {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-lg);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 90%, transparent);
+    box-shadow: var(--lqos-shadow-sm);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.asn-analysis-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+}
+
+.asn-analysis-card--selected {
+    border-color: color-mix(in srgb, var(--bs-primary) 22%, var(--lqos-border) 78%);
+    box-shadow: var(--lqos-shadow-md);
+}
+
+.asn-analysis-card--selected .asn-analysis-card-header {
+    background:
+        radial-gradient(500px 180px at 0% 0%, rgba(59, 130, 246, 0.10), transparent 70%),
+        linear-gradient(180deg, color-mix(in srgb, var(--lqos-surface) 70%, transparent), transparent);
+}
+
+.asn-analysis-card-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.asn-analysis-card-header p {
+    margin: 3px 0 0;
+    color: var(--bs-secondary-color);
+    font-size: 0.85rem;
+}
+
+.asn-analysis-card-body {
+    padding: 14px 16px 16px;
+}
+
+.asn-analysis-leaderboard-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+}
+
+.asn-analysis-leaderboard-wrap {
+    max-height: 620px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.asn-analysis-leaderboard-table thead th {
+    padding: 0 10px 6px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+    white-space: nowrap;
+}
+
+.asn-analysis-leaderboard-row {
+    cursor: pointer;
+}
+
+.asn-analysis-leaderboard-row td {
+    padding: 12px 10px;
+    background: color-mix(in srgb, var(--lqos-surface) 58%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--lqos-border) 70%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--lqos-border) 70%, transparent);
+    vertical-align: middle;
+}
+
+.asn-analysis-leaderboard-row td:first-child {
+    border-left: 1px solid color-mix(in srgb, var(--lqos-border) 70%, transparent);
+    border-top-left-radius: 14px;
+    border-bottom-left-radius: 14px;
+}
+
+.asn-analysis-leaderboard-row td:last-child {
+    border-right: 1px solid color-mix(in srgb, var(--lqos-border) 70%, transparent);
+    border-top-right-radius: 14px;
+    border-bottom-right-radius: 14px;
+}
+
+.asn-analysis-leaderboard-row:hover td {
+    background: color-mix(in srgb, var(--lqos-hover-bg) 78%, var(--lqos-surface) 44%);
+}
+
+.asn-analysis-leaderboard-row.is-selected td {
+    background: color-mix(in srgb, var(--lqos-active-bg) 78%, var(--lqos-surface) 34%);
+    border-color: color-mix(in srgb, var(--bs-primary) 28%, var(--lqos-border) 72%);
+}
+
+.asn-analysis-leaderboard-rank {
+    width: 44px;
+    font-weight: 700;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-asn-name {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.asn-analysis-asn-name strong {
+    line-height: 1.2;
+}
+
+.asn-analysis-asn-sub {
+    font-size: 0.82rem;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-qoo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.asn-analysis-kpis {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.asn-analysis-kpi {
+    border: 1px solid color-mix(in srgb, var(--bs-primary) 12%, var(--lqos-border) 88%);
+    border-radius: 16px;
+    padding: 14px 16px;
+    background:
+        linear-gradient(180deg, color-mix(in srgb, var(--lqos-surface-solid) 92%, transparent), color-mix(in srgb, var(--lqos-surface) 64%, transparent));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.asn-analysis-kpi label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.74rem;
+    color: var(--bs-secondary-color);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.asn-analysis-kpi strong {
+    display: block;
+    font-size: 1.15rem;
+    line-height: 1.2;
+}
+
+.asn-analysis-kpi small {
+    display: block;
+    margin-top: 4px;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-rationale {
+    margin: 12px 0 0;
+    color: var(--bs-body-color);
+    font-size: 0.93rem;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--lqos-surface) 60%, transparent);
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 72%, transparent);
+}
+
+.asn-analysis-chart {
+    width: 100%;
+    min-height: 292px;
+    height: 292px;
+}
+
+.asn-analysis-chart--compact {
+    min-height: 216px;
+    height: 216px;
+}
+
+.asn-analysis-flow-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.asn-analysis-flow-controls-left,
+.asn-analysis-flow-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.asn-analysis-flow-context {
+    margin: 0 0 10px;
+    font-size: 0.9rem;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-flow-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.asn-analysis-flow-table th,
+.asn-analysis-flow-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--lqos-border) 72%, transparent);
+    vertical-align: middle;
+}
+
+.asn-analysis-flow-table th {
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+    white-space: nowrap;
+}
+
+.asn-analysis-flow-table td {
+    font-size: 0.86rem;
+}
+
+.asn-analysis-flow-table canvas {
+    display: block;
+    width: 100%;
+    height: 18px;
+}
+
+.asn-analysis-flow-circuit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 150px;
+}
+
+.asn-analysis-flow-circuit strong {
+    font-size: 0.9rem;
+    line-height: 1.15;
+}
+
+.asn-analysis-flow-circuit span {
+    font-size: 0.76rem;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-flow-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.asn-analysis-flow-meta strong {
+    font-size: 0.84rem;
+    line-height: 1.15;
+}
+
+.asn-analysis-flow-meta span {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-flow-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+}
+
+.asn-analysis-empty {
+    padding: 18px 0 4px;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-muted {
+    color: var(--bs-secondary-color);
+}
+
+@media (max-width: 1399.98px) {
+    .asn-analysis-kpis {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1199.98px) {
+    .asn-analysis-row,
+    .asn-analysis-grid-bottom {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .asn-analysis-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .asn-analysis-card-header,
+    .asn-analysis-flow-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .asn-analysis-flow-controls-left,
+    .asn-analysis-flow-controls-right {
+        width: 100%;
+    }
+}
+</style>
+
+<div class="asn-analysis-page">
+    <section class="asn-analysis-header">
+        <div class="asn-analysis-title">
+            <h2>ASN Live Analysis</h2>
+            <p>Live ASN QoE and flow analysis from recent finished flows and 15-minute executive ASN heatmaps.</p>
+        </div>
+        <div class="asn-analysis-live">
+            <span class="asn-analysis-live-pill"><i class="fa fa-signal"></i> Live</span>
+            <span class="small text-secondary" id="asnAnalysisCadence">Heatmaps auto-refresh about every second</span>
+            <span class="small text-secondary" id="asnAnalysisLastRefresh">Waiting for executive ASN heatmaps…</span>
+        </div>
+    </section>
+
+    <section class="asn-analysis-row">
+        <div class="asn-analysis-card">
+            <div class="asn-analysis-card-header">
+                <div>
+                    <h3>Top 20 ASNs</h3>
+                    <p>Shows the top 20 ASNs by recent traffic and throughput, ordered highest to lowest.</p>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisRefreshButton">
+                        <i class="fa fa-rotate-right me-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="asn-analysis-card-body pt-2">
+                <div class="table-responsive asn-analysis-leaderboard-wrap">
+                    <table class="asn-analysis-leaderboard-table">
+                        <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>ASN</th>
+                            <th>Traffic</th>
+                            <th>Flows</th>
+                            <th>RTT</th>
+                            <th>Retrans</th>
+                            <th>QoO</th>
+                        </tr>
+                        </thead>
+                        <tbody id="asnAnalysisLeaderboardBody">
+                        <tr>
+                            <td colspan="7" class="asn-analysis-empty">Waiting for executive ASN heatmaps…</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="asn-analysis-right-stack">
+            <div class="asn-analysis-card">
+                <div class="asn-analysis-card-header">
+                    <div>
+                        <h3>Latency vs Traffic</h3>
+                        <p>Plots the same top-20 throughput ASNs. Bubble size reflects recent flow count.</p>
+                    </div>
+                </div>
+                <div class="asn-analysis-card-body pt-2">
+                    <div id="asnAnalysisBubbleChart" class="asn-analysis-chart"></div>
+                </div>
+            </div>
+
+            <div class="asn-analysis-card">
+                <div class="asn-analysis-card-header">
+                    <div>
+                        <h3>Retransmit Outliers</h3>
+                        <p>Same top-20 throughput ASN set, sorted by retransmit so operators can spot outliers quickly.</p>
+                    </div>
+                </div>
+                <div class="asn-analysis-card-body pt-2">
+                    <div id="asnAnalysisRetransmitChart" class="asn-analysis-chart asn-analysis-chart--compact"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="asn-analysis-card asn-analysis-card--selected">
+        <div class="asn-analysis-card-header">
+            <div>
+                <h3 id="asnAnalysisDetailTitle">Selected ASN</h3>
+                <p id="asnAnalysisDetailSubtitle">Choose an ASN from the leaderboard or bubble chart.</p>
+            </div>
+        </div>
+        <div class="asn-analysis-card-body">
+            <div class="asn-analysis-kpis" id="asnAnalysisKpis">
+                <div class="asn-analysis-kpi">
+                    <label>Status</label>
+                    <strong>—</strong>
+                    <small>Waiting for selection</small>
+                </div>
+                <div class="asn-analysis-kpi">
+                    <label>Median RTT</label>
+                    <strong>—</strong>
+                </div>
+                <div class="asn-analysis-kpi">
+                    <label>Retransmit</label>
+                    <strong>—</strong>
+                </div>
+                <div class="asn-analysis-kpi">
+                    <label>Recent Flows</label>
+                    <strong>—</strong>
+                </div>
+                <div class="asn-analysis-kpi">
+                    <label>Recent Traffic</label>
+                    <strong>—</strong>
+                </div>
+            </div>
+            <p class="asn-analysis-rationale" id="asnAnalysisRationale">Waiting for enough data to rank ASNs.</p>
+        </div>
+    </section>
+
+    <section class="asn-analysis-grid-bottom">
+        <div class="asn-analysis-card">
+            <div class="asn-analysis-card-header">
+                <div>
+                    <h3>Flow Evidence</h3>
+                    <p>Recent completed flows for the selected ASN, with more room for the evidence table itself.</p>
+                </div>
+            </div>
+            <div class="asn-analysis-card-body">
+                <div class="asn-analysis-flow-controls">
+                    <div class="asn-analysis-flow-controls-left">
+                        <button class="btn btn-sm btn-primary" type="button" id="asnAnalysisEvidenceSelectedAsn">
+                            <i class="fa fa-fingerprint me-1"></i>Selected ASN
+                        </button>
+                        <span id="asnAnalysisCountryControl"><i class="fa fa-spin fa-spinner"></i> Loading countries…</span>
+                        <span id="asnAnalysisProtocolControl"><i class="fa fa-spin fa-spinner"></i> Loading protocols…</span>
+                    </div>
+                    <div class="asn-analysis-flow-controls-right">
+                        <label class="small text-secondary" for="asnAnalysisFlowSort">Sort by</label>
+                        <select class="form-select form-select-sm" id="asnAnalysisFlowSort" style="width:auto">
+                            <option value="bytes">Bytes</option>
+                            <option value="duration">Duration</option>
+                            <option value="start">Start Time</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="asn-analysis-flow-context" id="asnAnalysisFlowContext">Flow evidence will follow the selected ASN.</p>
+                <div class="table-responsive">
+                    <table class="asn-analysis-flow-table">
+                        <thead>
+                        <tr>
+                            <th>Circuit</th>
+                            <th>Remote</th>
+                            <th>Protocol</th>
+                            <th>Bytes</th>
+                            <th>RTT</th>
+                            <th style="min-width: 250px;">Timeline</th>
+                        </tr>
+                        </thead>
+                        <tbody id="asnAnalysisFlowTableBody">
+                        <tr>
+                            <td colspan="6" class="asn-analysis-empty">Waiting for selection…</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="asn-analysis-flow-actions">
+                    <div class="small text-secondary" id="asnAnalysisPaginator">Page 1 of 1</div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisPrevPage">
+                            <i class="fa fa-arrow-left me-1"></i>Prev
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisNextPage">
+                            Next<i class="fa fa-arrow-right ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script src="asn_analysis.js%CACHEBUSTERS%"></script>

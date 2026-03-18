@@ -52,11 +52,23 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
         this.graph = new StormguardAdjustmentsGraph(this.graphDivId());
     }
 
+    setupZoomed() {
+        this.zoomGraph = new StormguardAdjustmentsGraph(this.zoomGraphDivId());
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "StormguardStatus") {
             this.lastUpdate = msg.data;
             if (msg.data && Array.isArray(msg.data)) {
                 this.graph.update(msg.data);
+                if (this.zoomGraph) {
+                    this.zoomGraph.update(msg.data);
+                }
             }
         }
     }

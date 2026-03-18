@@ -43,6 +43,7 @@ export class Dashboard {
 
         // Data Wrangling
         this.channels = [];
+        this.subscription = null;
 
         // Auto Refresh Handling
         this.paused = false;
@@ -58,12 +59,29 @@ export class Dashboard {
 
 
     build() {
+        this.destroy();
         this.#filterWidgetList();
-        this.#clearRenderedDashboard();
         this.#buildTabUI();
         this.#buildTabContents();
         this.#buildChannelList(this.dashlets);
         this.#webSocketSubscription();
+    }
+
+    destroy() {
+        if (this.subscription) {
+            this.subscription.dispose();
+            this.subscription = null;
+        }
+        for (let i = 0; i < this.dashlets.length; i++) {
+            if (this.dashlets[i] && this.dashlets[i].dispose) {
+                this.dashlets[i].dispose();
+            }
+        }
+        this.dashlets = [];
+        this.tabDashlets = {};
+        this.channels = [];
+        this.childIds = [];
+        this.#clearRenderedDashboard();
     }
 
     #buildTabUI() {
@@ -240,7 +258,7 @@ export class Dashboard {
             }
             return;
         }
-        subscribeWS(this.channels, (msg) => {
+        this.subscription = subscribeWS(this.channels, (msg) => {
             if (msg.event === "join") {
                 // The DOM will be present now, setup events
                 for (let i=0; i<this.dashlets.length; i++) {

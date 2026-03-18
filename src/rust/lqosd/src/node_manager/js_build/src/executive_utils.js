@@ -20,7 +20,7 @@ export function listenExecutiveHeatmaps(onData) {
 let siteIdMap = null;
 let siteIdMapPromise = null;
 
-export function getSiteIdMap() {
+export function getNodeIdMap() {
     if (siteIdMap) return Promise.resolve(siteIdMap);
     if (siteIdMapPromise) return siteIdMapPromise;
     siteIdMapPromise = new Promise((resolve) => {
@@ -42,6 +42,7 @@ export function getSiteIdMap() {
                     map.set(node.name, id);
                 }
             });
+            resolveOnce(map);
         });
         wsClient.send({ NetworkTree: {} });
         setTimeout(() => {
@@ -49,6 +50,10 @@ export function getSiteIdMap() {
         }, 5000);
     });
     return siteIdMapPromise;
+}
+
+export function getSiteIdMap() {
+    return getNodeIdMap();
 }
 
 export function linkToCircuit(circuitId) {
@@ -61,6 +66,13 @@ export function linkToSite(siteName, siteIdLookup) {
     const siteId = siteIdLookup.get(siteName);
     if (siteId === undefined || siteId === null) return null;
     return `tree.html?parent=${encodeURIComponent(siteId)}`;
+}
+
+export function linkToTreeNode(nodeName, nodeIdLookup) {
+    if (!nodeName || !nodeIdLookup) return null;
+    const nodeId = nodeIdLookup.get(nodeName);
+    if (nodeId === undefined || nodeId === null) return null;
+    return `tree.html?parent=${encodeURIComponent(nodeId)}`;
 }
 
 export function renderCircuitLink(name, circuitId) {
@@ -117,8 +129,8 @@ export function renderTable(targetId, columns, rows, emptyMessage) {
         return `<tr>${cells}</tr>`;
     }).join("");
     target.innerHTML = `
-        <div class="table-responsive">
-            <table class="table table-sm table-striped align-middle mb-0">
+        <div class="table-responsive lqos-table-wrap">
+            <table class="lqos-table lqos-table-compact align-middle mb-0">
                 ${thead}
                 <tbody>${tbody}</tbody>
             </table>

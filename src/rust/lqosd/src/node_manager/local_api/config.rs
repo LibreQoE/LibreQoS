@@ -3,9 +3,10 @@ use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use axum::http::StatusCode;
 use default_net::get_interfaces;
 use lqos_bus::{BusRequest, bus_request};
-use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser, WebUsers};
+use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, UserRole, WebUser, WebUsers};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub fn admin_check_data(login: LoginResult) -> bool {
@@ -25,16 +26,33 @@ pub fn list_nics_data(login: LoginResult) -> Result<Vec<(String, String, String)
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    let result = get_interfaces()
-        .iter()
-        .map(|eth| {
-            let mac = if let Some(mac) = &eth.mac_addr {
-                mac.to_string()
-            } else {
-                String::new()
-            };
-            (eth.name.clone(), format!("{:?}", eth.if_type), mac)
-        })
+
+    // Some systems can report the same interface more than once. The UI keys
+    // off interface name, so dedupe by name here before returning results.
+    let mut deduped: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for eth in get_interfaces() {
+        let mac = eth
+            .mac_addr
+            .map(|m| m.to_string())
+            .unwrap_or_else(String::new);
+        let if_type = format!("{:?}", eth.if_type);
+
+        deduped
+            .entry(eth.name)
+            .and_modify(|(existing_type, existing_mac)| {
+                if existing_mac.is_empty() && !mac.is_empty() {
+                    *existing_mac = mac.clone();
+                }
+                if existing_type == "Unknown" && if_type != "Unknown" {
+                    *existing_type = if_type.clone();
+                }
+            })
+            .or_insert((if_type, mac));
+    }
+
+    let result = deduped
+        .into_iter()
+        .map(|(name, (if_type, mac))| (name, if_type, mac))
         .collect();
     Ok(result)
 }
@@ -131,7 +149,7 @@ pub fn add_user_data(login: LoginResult, data: UserRequest) -> Result<String, St
     };
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     users
-        .add_or_update_user(&data.username.trim(), password, data.role.into())
+        .add_or_update_user(data.username.trim(), password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(format!("User '{}' added", data.username))
 }
@@ -141,6 +159,22 @@ pub fn update_user_data(login: LoginResult, data: UserRequest) -> Result<String,
         return Err(StatusCode::FORBIDDEN);
     }
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let all_users = users.get_users();
+
+    // Prevent turning the last administrator into a non-admin account.
+    if let Some(existing_user) = all_users.iter().find(|u| u.username == data.username)
+        && existing_user.role == UserRole::Admin
+    {
+        let admin_count = all_users
+            .iter()
+            .filter(|u| u.role == UserRole::Admin)
+            .count();
+        let requested_role: UserRole = data.role.clone().into();
+        if admin_count <= 1 && requested_role != UserRole::Admin {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
     let password = data.password.as_deref().filter(|p| !p.is_empty());
     users
         .update_user_with_optional_password(&data.username, password, data.role.into())
@@ -153,6 +187,21 @@ pub fn delete_user_data(login: LoginResult, username: String) -> Result<String, 
         return Err(StatusCode::FORBIDDEN);
     }
     let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let all_users = users.get_users();
+
+    // Prevent deleting the final administrator account.
+    if let Some(existing_user) = all_users.iter().find(|u| u.username == username)
+        && existing_user.role == UserRole::Admin
+    {
+        let admin_count = all_users
+            .iter()
+            .filter(|u| u.role == UserRole::Admin)
+            .count();
+        if admin_count <= 1 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
     users
         .remove_user(&username)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

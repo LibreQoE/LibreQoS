@@ -91,7 +91,8 @@ function loadUsers() {
             return;
         }
 
-        const table = $('<table class="table table-striped">')
+        const tableWrap = $('<div class="table-responsive lqos-table-wrap">');
+        const table = $('<table class="lqos-table lqos-table-compact mb-0">')
             .append('<thead><tr><th>Username</th><th>Role</th><th>Actions</th></tr></thead>');
         const tbody = $('<tbody>');
         
@@ -112,7 +113,8 @@ function loadUsers() {
         });
 
         table.append(tbody);
-        userList.append(table);
+        tableWrap.append(table);
+        userList.append(tableWrap);
 
         // Attach edit handlers
         $('.edit-user').on('click', function() {

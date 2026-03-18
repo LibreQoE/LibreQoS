@@ -192,9 +192,7 @@ mod tests {
                 .await
                 .expect("write_frame");
         };
-        let read = async {
-            read_frame(&mut server).await.expect("read_frame")
-        };
+        let read = async { read_frame(&mut server).await.expect("read_frame") };
 
         let (_, (request_id, read_payload)) = tokio::join!(write, read);
         assert_eq!(request_id, 7);
@@ -212,9 +210,7 @@ mod tests {
                 .await
                 .expect("write_frame");
         };
-        let read = async {
-            read_frame(&mut server).await.expect("read_frame")
-        };
+        let read = async { read_frame(&mut server).await.expect("read_frame") };
 
         let (_, (request_id, read_payload)) = tokio::join!(write, read);
         assert_eq!(request_id, 11);
@@ -233,18 +229,13 @@ mod tests {
     async fn frame_rejects_oversized_on_read() {
         let (mut client, mut server) = duplex(128 * 1024);
         let write = async {
-            client
-                .write_u64_le(5)
-                .await
-                .expect("write request id");
+            client.write_u64_le(5).await.expect("write request id");
             client
                 .write_u64_le((MAX_FRAME_BYTES as u64) + 1)
                 .await
                 .expect("write oversized len");
         };
-        let read = async {
-            read_frame(&mut server).await
-        };
+        let read = async { read_frame(&mut server).await };
 
         let (_, result) = tokio::join!(write, read);
         assert!(matches!(result, Err(BusClientError::DecodingError)));

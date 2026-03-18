@@ -71,6 +71,14 @@ const defaultLayout = {
                 { tag: "ipProtocols", size: 6 },
                 { tag: "totalCakeStats", size: 6 }
             ]
+        },
+        {
+            name: "TreeGuard",
+            dashlets: [
+                { tag: "treeguardControls", size: 6 },
+                { tag: "treeguardStatus", size: 6 },
+                { tag: "treeguardActivity", size: 12 }
+            ]
         }
     ]
 };

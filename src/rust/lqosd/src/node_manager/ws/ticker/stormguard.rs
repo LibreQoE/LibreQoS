@@ -24,15 +24,13 @@ pub async fn stormguard_ticker(
     if status_alive {
         let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
         let request = BusRequest::GetStormguardStats;
-        if let Ok(_) = bus_tx.send((tx, request)).await {
-            if let Ok(replies) = rx.await {
-                for response in replies.responses {
-                    if let BusResponse::StormguardStats(stats) = response {
-                        let msg = WsResponse::StormguardStatus { data: stats };
-                        pubsub
-                            .send(PublishedChannels::StormguardStatus, msg)
-                            .await;
-                    }
+        if let Ok(_) = bus_tx.send((tx, request)).await
+            && let Ok(replies) = rx.await
+        {
+            for response in replies.responses {
+                if let BusResponse::StormguardStats(stats) = response {
+                    let msg = WsResponse::StormguardStatus { data: stats };
+                    pubsub.send(PublishedChannels::StormguardStatus, msg).await;
                 }
             }
         }
@@ -41,16 +39,14 @@ pub async fn stormguard_ticker(
     if debug_alive {
         let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
         let request = BusRequest::GetStormguardDebug;
-        if let Ok(_) = bus_tx.send((tx, request)).await {
-            if let Ok(replies) = rx.await {
-                for response in replies.responses {
-                    if let BusResponse::StormguardDebug(stats) = response {
-                        let msg = WsResponse::StormguardDebug { data: stats };
+        if let Ok(_) = bus_tx.send((tx, request)).await
+            && let Ok(replies) = rx.await
+        {
+            for response in replies.responses {
+                if let BusResponse::StormguardDebug(stats) = response {
+                    let msg = WsResponse::StormguardDebug { data: stats };
 
-                        pubsub
-                            .send(PublishedChannels::StormguardDebug, msg)
-                            .await;
-                    }
+                    pubsub.send(PublishedChannels::StormguardDebug, msg).await;
                 }
             }
         }

@@ -13,12 +13,15 @@ pub struct NetworkJsonNode {
     /// The node name, as it appears in `network.json`
     pub name: String,
 
+    /// Optional stable node identifier from `network.json` metadata.
+    pub id: Option<String>,
+
     /// If true, this node is "virtual" (logical only): it exists for monitoring/aggregation
     /// but should be omitted from the physical HTB tree.
     pub virtual_node: bool,
 
     /// The maximum throughput allowed per `network.json` for this node
-    pub max_throughput: (u32, u32), // In mbps
+    pub max_throughput: (f64, f64), // In mbps
 
     /// Current throughput (in bytes/second) at this node
     pub current_throughput: DownUpOrder<u64>, // In bytes
@@ -59,6 +62,12 @@ pub struct NetworkJsonNode {
     /// The node type
     pub node_type: Option<String>,
 
+    /// Optional geographic latitude carried in `network.json` metadata.
+    pub latitude: Option<f32>,
+
+    /// Optional geographic longitude carried in `network.json` metadata.
+    pub longitude: Option<f32>,
+
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
 
@@ -70,14 +79,12 @@ impl NetworkJsonNode {
     /// Make a deep copy of a `NetworkJsonNode`, converting atomics
     /// into concrete values.
     pub fn clone_to_transit(&self) -> NetworkJsonTransport {
-        let download = self.rtt_buffer.percentile(
-            RttBucket::Current,
-            FlowbeeEffectiveDirection::Download,
-            50,
-        );
-        let upload = self
-            .rtt_buffer
-            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
+        let download =
+            self.rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50);
+        let upload =
+            self.rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
 
         let rtts = match (download, upload) {
             (None, None) => Vec::new(),
@@ -98,8 +105,11 @@ impl NetworkJsonNode {
 
         NetworkJsonTransport {
             name: self.name.clone(),
+            id: self.id.clone(),
             is_virtual: self.virtual_node,
             max_throughput: self.max_throughput,
+            configured_max_throughput: self.max_throughput,
+            effective_max_throughput: None,
             current_throughput: (
                 self.current_throughput.get_down(),
                 self.current_throughput.get_up(),
@@ -131,6 +141,8 @@ impl NetworkJsonNode {
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,
             node_type: self.node_type.clone(),
+            latitude: self.latitude,
+            longitude: self.longitude,
         }
     }
 }

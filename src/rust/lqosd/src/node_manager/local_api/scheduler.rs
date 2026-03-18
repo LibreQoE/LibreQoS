@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::tool_status::{is_scheduler_available, scheduler_error_message};
+use crate::tool_status::{is_scheduler_available, scheduler_error_message, scheduler_output_message};
 
 // Remove ANSI escape sequences (basic CSI/OSC handling) for browser display
 fn strip_ansi(input: &str) -> String {
@@ -68,11 +68,23 @@ pub struct SchedulerStatus {
 pub struct SchedulerDetails {
     pub available: bool,
     pub error: Option<String>,
+    pub output: Option<String>,
     pub details: String,
 }
 
 fn scheduler_error() -> Option<String> {
     scheduler_error_message().and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(strip_ansi(&t))
+        }
+    })
+}
+
+fn scheduler_output() -> Option<String> {
+    scheduler_output_message().and_then(|s| {
         let t = s.trim().to_string();
         if t.is_empty() {
             None
@@ -90,6 +102,7 @@ pub fn scheduler_status_data() -> SchedulerStatus {
 
 pub fn scheduler_details_data() -> SchedulerDetails {
     let status = scheduler_status_data();
+    let output = scheduler_output();
     let mut body = String::new();
     body.push_str(&format!("Scheduler available: {}\n\n", status.available));
     match status.error.as_ref() {
@@ -102,11 +115,23 @@ pub fn scheduler_details_data() -> SchedulerDetails {
             body.push_str("No scheduler error reported.\n");
         }
     }
+    body.push('\n');
+    match output.as_ref() {
+        Some(text) => {
+            body.push_str("Recent output:\n");
+            body.push_str(text);
+            body.push('\n');
+        }
+        None => {
+            body.push_str("No recent scheduler output recorded.\n");
+        }
+    }
     body.push_str("\n(Additional scheduler diagnostics not available.)\n");
 
     SchedulerDetails {
         available: status.available,
         error: status.error,
+        output,
         details: body,
     }
 }

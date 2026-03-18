@@ -23,26 +23,146 @@ function escapeAttr(text) {
         .replaceAll('>', '&gt;');
 }
 
-function loadSchedulerStatus() {
+const SCHEDULER_STATUS_POLL_MS = 2000;
+const SCHEDULER_STATUS_TIMEOUT_MS = 2500;
+const SCHEDULER_STATUS_STARTING_GRACE_MS = 30000;
+let schedulerStatusPollTimer = null;
+let schedulerStatusRequestInFlight = false;
+let schedulerStatusFirstRequestedAt = null;
+let schedulerStatusHealthy = false;
+
+function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
+    let done = false;
+    const wrapped = (msg) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        wsClient.off(eventName, wrapped);
+        handler(msg);
+    };
+    const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        wsClient.off(eventName, wrapped);
+        onTimeout();
+    }, timeoutMs);
+    wsClient.on(eventName, wrapped);
+}
+
+function renderSchedulerStatus(container, state) {
+    if (!container) return;
+
+    let color = "text-secondary";
+    let icon = "fa-spinner fa-spin";
+    let label = "Scheduler status is loading";
+    let buttonText = "Scheduler starting...";
+
+    if (state === "healthy") {
+        color = "text-success";
+        icon = "fa-check-circle";
+        label = "Scheduler is available";
+        buttonText = "Scheduler";
+    } else if (state === "unavailable") {
+        color = "text-warning";
+        icon = "fa-clock";
+        label = "Scheduler is still unavailable";
+        buttonText = "Scheduler unavailable";
+    } else if (state === "error") {
+        color = "text-danger";
+        icon = "fa-triangle-exclamation";
+        label = "Scheduler has an internal error";
+        buttonText = "Scheduler error";
+    }
+
+    container.innerHTML = `
+        <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color}" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+            <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> ${escapeAttr(buttonText)}
+        </button>`;
+
+    $("#schedulerStatus").off("click").on("click", "#schedulerStatusLink", (e) => {
+        e.preventDefault();
+        openSchedulerModal();
+    });
+}
+
+function scheduleNextSchedulerStatusPoll(delayMs = SCHEDULER_STATUS_POLL_MS) {
+    if (schedulerStatusPollTimer) {
+        clearTimeout(schedulerStatusPollTimer);
+    }
+    schedulerStatusPollTimer = setTimeout(() => {
+        schedulerStatusPollTimer = null;
+        loadSchedulerStatus();
+    }, delayMs);
+}
+
+function loadSchedulerStatus(force = false) {
     const container = document.getElementById('schedulerStatus');
     if (!container) return;
-    listenOnce("SchedulerStatus", (msg) => {
+
+    if (schedulerStatusHealthy && !force) {
+        return;
+    }
+    if (schedulerStatusRequestInFlight) {
+        return;
+    }
+
+    if (schedulerStatusFirstRequestedAt === null || force) {
+        schedulerStatusFirstRequestedAt = Date.now();
+        schedulerStatusHealthy = false;
+        renderSchedulerStatus(container, "loading");
+    }
+
+    schedulerStatusRequestInFlight = true;
+    listenOnceWithTimeout("SchedulerStatus", SCHEDULER_STATUS_TIMEOUT_MS, (msg) => {
+        schedulerStatusRequestInFlight = false;
         if (!msg || !msg.data) return;
         const data = msg.data;
-        const color = data.available ? 'text-success' : 'text-danger';
-        const icon = data.available ? 'fa-check-circle' : 'fa-times-circle';
-        container.innerHTML = `
-            <a class="nav-link ${color}" href="#" id="schedulerStatusLink">
-                <i class="fa fa-fw fa-centerline ${icon}"></i> Scheduler
-            </a>`;
+        const hasError = !!(data.error && String(data.error).trim().length > 0);
+        const isHealthy = !!data.available && !hasError;
+        const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
 
-        // Click opens details modal only; no tooltip
-        $('#schedulerStatus').off('click').on('click', '#schedulerStatusLink', (e) => {
-            e.preventDefault();
-            openSchedulerModal();
-        });
+        if (hasError) {
+            schedulerStatusHealthy = false;
+            renderSchedulerStatus(container, "error");
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
+        if (isHealthy) {
+            schedulerStatusHealthy = true;
+            renderSchedulerStatus(container, "healthy");
+            return;
+        }
+
+        schedulerStatusHealthy = false;
+        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+            renderSchedulerStatus(container, "loading");
+        } else {
+            renderSchedulerStatus(container, "unavailable");
+        }
+        scheduleNextSchedulerStatusPoll();
+    }, () => {
+        schedulerStatusRequestInFlight = false;
+        schedulerStatusHealthy = false;
+        const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
+        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+            renderSchedulerStatus(container, "loading");
+        } else {
+            renderSchedulerStatus(container, "unavailable");
+        }
+        scheduleNextSchedulerStatusPoll();
     });
     wsClient.send({ SchedulerStatus: {} });
+}
+
+function restartSchedulerStatusPolling() {
+    schedulerStatusHealthy = false;
+    schedulerStatusRequestInFlight = false;
+    if (schedulerStatusPollTimer) {
+        clearTimeout(schedulerStatusPollTimer);
+        schedulerStatusPollTimer = null;
+    }
+    loadSchedulerStatus(true);
 }
 
 function openSchedulerModal() {
@@ -108,18 +228,18 @@ function renderSearchResults(data) {
     }
     searchResults.style.visibility = "visible";
     let list = document.createElement("table");
-    list.classList.add("table", "table-striped");
+    list.classList.add("lqos-table", "lqos-table-compact", "mb-0");
     let tbody = document.createElement("tbody");
     data.forEach((item) => {
         let r = document.createElement("tr");
         let c = document.createElement("td");
 
         if (item.Circuit !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
         } else if (item.Device !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
         } else if (item.Site !== undefined) {
-            c.innerHTML = "<a class='nav-link' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
+            c.innerHTML = "<a class='nav-link redactable' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
         } else {
             console.log(item);
             c.innerText = item;
@@ -129,7 +249,10 @@ function renderSearchResults(data) {
     });
     clearDiv(searchResults);
     list.appendChild(tbody);
-    searchResults.appendChild(list);
+    const wrap = document.createElement("div");
+    wrap.classList.add("table-responsive", "lqos-table-wrap");
+    wrap.appendChild(list);
+    searchResults.appendChild(wrap);
 }
 
 function doSearch(search) {
@@ -308,10 +431,10 @@ function initUrgentIssues() {
         const cls = count > 0 ? 'text-danger' : 'text-secondary';
         const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
         cont.innerHTML = `
-            <a class="nav-link ${cls}" href="#" id="${linkId}">
-                <i class="fa fa-fw fa-centerline ${icon}"></i> Urgent Issues
+            <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${cls}" type="button" id="${linkId}" aria-label="Urgent issues${count > 0 ? `: ${count} active` : ': none active'}" title="Urgent issues">
+                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Urgent Issues
                 <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
-            </a>`;
+            </button>`;
         $("#" + containerId).off("click").on("click", `#${linkId}`, (e) => {
             e.preventDefault();
             showModal();
@@ -341,7 +464,7 @@ function initUrgentIssues() {
                 return;
             }
             const table = document.createElement('table');
-            table.className = 'table table-sm table-striped';
+            table.className = 'lqos-table lqos-table-compact mb-0';
             const tbody = document.createElement('tbody');
             items.forEach((it) => {
                 const tr = document.createElement('tr');
@@ -354,7 +477,7 @@ function initUrgentIssues() {
                         <strong class="ms-2">${it.code}</strong>
                         <span class="text-muted ms-2">(${it.source})</span>
                         <span class="text-muted float-end">${when}</span>
-                        <a href="#" class="text-secondary float-end ms-3 urgent-clear" data-id="${it.id}" title="Acknowledge"><i class="fa fa-times"></i></a>
+                        <button type="button" class="btn btn-link btn-sm text-secondary float-end ms-3 p-0 urgent-clear" data-id="${it.id}" title="Acknowledge issue" aria-label="Acknowledge issue ${escapeAttr(it.code)}"><i class="fa fa-times" aria-hidden="true"></i></button>
                     </div>
                     <div class="mt-1" style="white-space: pre-wrap;">${it.message}</div>
                     ${it.context ? `<pre class="mt-2">${it.context}</pre>` : ''}
@@ -364,8 +487,11 @@ function initUrgentIssues() {
             });
             table.appendChild(tbody);
             holder.innerHTML = '';
-            holder.appendChild(table);
-            $(holder).off('click').on('click', 'a.urgent-clear', function (e) {
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'table-responsive lqos-table-wrap';
+            tableWrap.appendChild(table);
+            holder.appendChild(tableWrap);
+            $(holder).off('click').on('click', '.urgent-clear', function (e) {
                 e.preventDefault();
                 const id = $(this).data('id');
                 listenOnce("UrgentClearResult", () => {
@@ -418,4 +544,10 @@ setupReload();
 setupDynamicUrls();
 window.lqosInitUrgentIssues = initUrgentIssues;
 initSchedulerTooltips();
-loadSchedulerStatus();
+restartSchedulerStatusPolling();
+
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        restartSchedulerStatusPolling();
+    }
+});

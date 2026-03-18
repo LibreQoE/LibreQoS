@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS Python Workflow"
+  short_description: "Python shaping and integration workflow"
+  default_prompt: "Use $libreqos-python-workflow to work on LibreQoS Python orchestration, scheduler, integrations, or generated config files."

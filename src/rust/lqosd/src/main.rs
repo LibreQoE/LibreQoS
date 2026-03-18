@@ -12,13 +12,17 @@ pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
 mod program_control;
+mod reload_lock;
 mod remote_commands;
+mod rtt_exclusions;
 mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
+mod stick;
 mod system_stats;
 mod throughput_tracker;
 mod tool_status;
+mod treeguard;
 mod tuning;
 mod urgent;
 mod validation;
@@ -37,12 +41,13 @@ use crate::{
 #[cfg(feature = "flamegraphs")]
 use allocative::Allocative;
 use anyhow::Result;
-use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
+use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
+use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -110,6 +115,50 @@ pub fn set_console_logging() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn normalize_mapping_request(
+    tc_handle: lqos_bus::TcHandle,
+    cpu: u32,
+    upload: bool,
+) -> anyhow::Result<(lqos_bus::TcHandle, u32, bool)> {
+    let config = lqos_config::load_config()?;
+
+    // With derived upload mapping, we only store one mapping in the kernel.
+    // In non-stick mode, `upload` is meaningless; treat it as false.
+    if !config.on_a_stick_mode() {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    let stick_offset = stick::stick_offset();
+    if stick_offset == 0 {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    if !upload {
+        return Ok((tc_handle, cpu, false));
+    }
+
+    let base_cpu = cpu.checked_sub(stick_offset).ok_or_else(|| {
+        anyhow::anyhow!(
+            "On-a-stick upload mapping CPU ({cpu}) is less than stick_offset ({stick_offset})."
+        )
+    })?;
+
+    let (major, minor) = tc_handle.get_major_minor();
+    let stick_offset_u16 = u16::try_from(stick_offset).map_err(|_| {
+        anyhow::anyhow!(
+            "stick_offset ({stick_offset}) exceeds u16 range; cannot normalize tc_handle."
+        )
+    })?;
+    let base_major = major.checked_sub(stick_offset_u16).ok_or_else(|| {
+        anyhow::anyhow!(
+            "On-a-stick upload mapping tc_handle major ({major}) is less than stick_offset ({stick_offset})."
+        )
+    })?;
+
+    let base_tc_handle = lqos_bus::TcHandle::from_u32(((base_major as u32) << 16) | minor as u32);
+    Ok((base_tc_handle, base_cpu, false))
+}
+
 fn main() -> Result<()> {
     // Set up logging
     set_console_logging()?;
@@ -138,6 +187,9 @@ fn main() -> Result<()> {
 
     // Load config
     let config = lqos_config::load_config()?;
+    let stick_offset = stick::recompute_stick_offset(&config)?;
+
+    ensure_rustls_crypto_provider()?;
 
     if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
         warn!("Failed to initialize Insight license storage: {e:?}");
@@ -153,9 +205,10 @@ fn main() -> Result<()> {
     // Start the XDP/TC kernels
     let kernels = if config.on_a_stick_mode() {
         LibreQoSKernels::on_a_stick_mode(
-            &config.internet_interface(),
+            config.internet_interface(),
             config.stick_vlans().1 as u16,
             config.stick_vlans().0 as u16,
+            stick_offset,
             Some(heimdall_handle_events),
             Some(flowbee_handle_events),
         )?
@@ -186,7 +239,7 @@ fn main() -> Result<()> {
     } else {
         info!("Insight client started successfully");
     }
-    let _blackboard_tx = blackboard::start_blackboard();
+    blackboard::start_blackboard();
     start_remote_commands();
     let flow_tx = setup_netflow_tracker()?;
     let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -201,6 +254,11 @@ fn main() -> Result<()> {
         bakery_sender.clone(),
     )?;
     spawn_queue_monitor()?;
+
+    if let Err(err) = treeguard::actor::start_treeguard_actor(system_usage_tx.clone()) {
+        warn!("Failed to start TreeGuard actor: {err}");
+    }
+
     lqos_sys::bpf_garbage_collector();
     version_checks::start_version_check()?;
 
@@ -278,7 +336,12 @@ fn main() -> Result<()> {
                         Err(e) => error!("Insight control channel failed to start: {:#}", e),
                     }
 
-                    match lqos_stormguard::start_stormguard(bakery_sender_for_async).await {
+                    match lqos_stormguard::start_stormguard(
+                        bakery_sender_for_async,
+                        shaped_devices_tracker::full_network_map_snapshot,
+                    )
+                    .await
+                    {
                         Ok(_) => info!("StormGuard started successfully"),
                         Err(e) => error!("StormGuard failed to start: {:#}", e),
                     }
@@ -377,18 +440,32 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 ip_address,
                 tc_handle,
                 cpu,
+                circuit_id,
+                device_id,
                 upload,
             } => {
-                let resp = map_ip_to_flow(ip_address, tc_handle, *cpu, *upload);
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
-                        ip_address: ip_address.clone(),
-                        tc_handle: *tc_handle,
-                        cpu: *cpu,
-                        upload: *upload,
-                    });
+                match normalize_mapping_request(*tc_handle, *cpu, *upload) {
+                    Ok((tc_handle, cpu, upload)) => {
+                        let resp = map_ip_to_flow(
+                            ip_address,
+                            &tc_handle,
+                            cpu,
+                            upload,
+                            *circuit_id,
+                            *device_id,
+                        );
+                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                            let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
+                                ip_address: ip_address.clone(),
+                                tc_handle,
+                                cpu,
+                                upload,
+                            });
+                        }
+                        resp
+                    }
+                    Err(e) => BusResponse::Fail(e.to_string()),
                 }
-                resp
             }
             BusRequest::ClearHotCache => {
                 // Let the bakery finalize staged mapping changes, then clear hot cache.
@@ -397,12 +474,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 clear_hot_cache()
             }
-            BusRequest::DelIpFlow { ip_address, upload } => {
-                let resp = del_ip_flow(ip_address, *upload);
+            BusRequest::DelIpFlow { ip_address, upload: _ } => {
+                // With derived upload mapping, both directions share a single mapping entry.
+                // Always delete from the base mapping set.
+                let resp = del_ip_flow(ip_address, false);
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
                         ip_address: ip_address.clone(),
-                        upload: *upload,
+                        upload: false,
                     });
                 }
                 resp
@@ -430,6 +509,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let result = lqos_config::update_config(config);
                 if result.is_err() {
                     error!("Error updating config: {:?}", result);
+                }
+                if let Ok(cfg) = lqos_config::load_config() {
+                    let _ = stick::recompute_stick_offset(&cfg);
                 }
                 BusResponse::Ack
             }
@@ -501,7 +583,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             } => {
                 if let Some(sender) = BLACKBOARD_SENDER.get() {
                     let _ = sender.send(BlackboardCommand::BlackboardData {
-                        subsystem: subsystem.clone(),
+                        subsystem: *subsystem,
                         key: key.to_string(),
                         value: value.to_string(),
                     });
@@ -579,9 +661,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
                         site_hash: *site_hash,
-                        parent_class_id: parent_class_id.clone(),
-                        up_parent_class_id: up_parent_class_id.clone(),
-                        class_minor: class_minor.clone(),
+                        parent_class_id: *parent_class_id,
+                        up_parent_class_id: *up_parent_class_id,
+                        class_minor: *class_minor,
                         download_bandwidth_min: *download_bandwidth_min,
                         upload_bandwidth_min: *upload_bandwidth_min,
                         download_bandwidth_max: *download_bandwidth_max,
@@ -606,8 +688,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 ip_addresses,
                 sqm_override,
             } => {
-                if let Some(s) = sqm_override.as_ref() {
-                    if s.eq_ignore_ascii_case("fq_codel") {
+                if let Some(s) = sqm_override.as_ref()
+                    && s.eq_ignore_ascii_case("fq_codel") {
                         tracing::info!(
                             "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
                             circuit_hash,
@@ -616,7 +698,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                             class_minor
                         );
                     }
-                }
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -624,12 +705,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         parent_class_id: *parent_class_id,
                         up_parent_class_id: *up_parent_class_id,
                         class_minor: *class_minor,
-                        download_bandwidth_min: download_bandwidth_min.clone(),
-                        upload_bandwidth_min: upload_bandwidth_min.clone(),
-                        download_bandwidth_max: download_bandwidth_max.clone(),
-                        upload_bandwidth_max: upload_bandwidth_max.clone(),
-                        class_major: class_major.clone(),
-                        up_class_major: up_class_major.clone(),
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                        class_major: *class_major,
+                        up_class_major: *up_class_major,
                         ip_addresses: ip_addresses.clone(),
                         sqm_override: sqm_override.clone(),
                     });
@@ -669,6 +750,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::SchedulerError(error) => {
                 tool_status::scheduler_error(Some(error.clone()));
+                BusResponse::Ack
+            }
+            BusRequest::SchedulerOutput(output) => {
+                tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
             BusRequest::LogInfo(msg) => {
@@ -826,6 +911,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     _ => BusResponse::InsightStatus(true)
                 }
             }
+            BusRequest::GetInsightLicenseSummary => {
+                let (licensed, max_circuits) =
+                    crate::lts2_sys::license_grant::current_license_limits();
+                BusResponse::InsightLicenseSummary(InsightLicenseSummary {
+                    licensed,
+                    max_circuits,
+                })
+            }
         });
     }
 }
@@ -939,16 +1032,17 @@ fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
         .iter()
         .enumerate()
         .map(|(id, node)| {
-            let node = node.clone_to_transit();
+            let node = crate::shaped_devices_tracker::node_to_transport(node);
             let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
             let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
-            let max_down = node.max_throughput.0 as f64;
-            let max_up = node.max_throughput.1 as f64;
+            let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
+            let max_down = effective_max.0;
+            let max_up = effective_max.1;
             let median_rtt = if node.rtts.is_empty() {
                 0.0
             } else {
                 let n = node.rtts.len() / 2;
-                if node.rtts.len() % 2 == 0 {
+                if node.rtts.len().is_multiple_of(2) {
                     (node.rtts[n - 1] + node.rtts[n]) / 2.0
                 } else {
                     node.rtts[n]
@@ -990,7 +1084,7 @@ fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTra
         if p_node.immediate_parent == Some(0) {
             for (c_idx, c_node) in nodes.iter().enumerate() {
                 if c_node.immediate_parent == Some(p_idx) {
-                    let t = c_node.clone_to_transit();
+                    let t = crate::shaped_devices_tracker::node_to_transport(c_node);
                     let total = t.current_throughput.0 + t.current_throughput.1;
                     candidates.push((p_idx, c_idx, t, total));
                 }

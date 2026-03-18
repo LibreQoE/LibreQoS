@@ -46,7 +46,7 @@ function loadUnknownIps() {
       }
 
       let table = document.createElement("table");
-      table.classList.add("table", "table-striped");
+      table.classList.add("lqos-table", "lqos-table-compact");
       let thead = document.createElement("thead");
       thead.appendChild(theading("IP Address"));
       thead.appendChild(theading("Last Seen"));
@@ -56,7 +56,7 @@ function loadUnknownIps() {
 
       data.forEach((row) => {
          let tr = document.createElement("tr");
-         tr.appendChild(simpleRow(row.ip));
+         tr.appendChild(simpleRow(row.ip, true));
          tr.appendChild(simpleRow(formatLastSeen(row.last_seen_nanos)));
          tr.appendChild(simpleRow(scaleNumber(row.total_bytes.down)));
          tr.appendChild(simpleRow(scaleNumber(row.total_bytes.up)));
@@ -64,7 +64,10 @@ function loadUnknownIps() {
       });
 
       table.appendChild(tbody);
-      target.appendChild(table);
+      const tableWrap = document.createElement("div");
+      tableWrap.classList.add("lqos-table-wrap");
+      tableWrap.appendChild(table);
+      target.appendChild(tableWrap);
    });
    wsClient.send({ UnknownIps: {} });
 }

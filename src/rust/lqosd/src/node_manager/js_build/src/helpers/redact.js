@@ -45,6 +45,8 @@ function cssRedact() {
     } else {
         r.style.setProperty('--redact-font-family', 'inherit');
     }
+
+    window.dispatchEvent(new CustomEvent("redact-change", { detail: { redacted: isRedacted() } }));
 }
 
 export function isRedacted() {

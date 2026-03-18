@@ -67,10 +67,10 @@ pub async fn executive_heatmaps(
 fn should_publish() -> bool {
     let now = Instant::now();
     let mut lock = LAST_PUBLISH.lock();
-    if let Some(last) = *lock {
-        if now.duration_since(last) < MIN_INTERVAL {
-            return false;
-        }
+    if let Some(last) = *lock
+        && now.duration_since(last) < MIN_INTERVAL
+    {
+        return false;
     }
     *lock = Some(now);
     true
@@ -178,51 +178,50 @@ fn compute_oversubscribed_sites() -> Vec<OversubscribedSite> {
     // Build children adjacency from immediate_parent.
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
     for (idx, node) in nodes.iter().enumerate() {
-        if let Some(parent) = node.immediate_parent {
-            if parent < children.len() {
-                children[parent].push(idx);
-            }
+        if let Some(parent) = node.immediate_parent
+            && parent < children.len()
+        {
+            children[parent].push(idx);
         }
     }
 
     // Helper to collect descendant names including the node itself.
-    let collect_descendants = |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<lqos_config::NetworkJsonNode>| {
-        let mut stack = vec![start];
-        let mut visited = HashSet::new();
-        let mut names = HashSet::new();
-        while let Some(idx) = stack.pop() {
-            if !visited.insert(idx) {
-                continue;
-            }
-            if let Some(name) = nodes.get(idx).map(|n| n.name.clone()) {
-                names.insert(name);
-            }
-            if let Some(kids) = children.get(idx) {
-                for &child in kids {
-                    stack.push(child);
+    let collect_descendants =
+        |start: usize, children: &Vec<Vec<usize>>, nodes: &Vec<lqos_config::NetworkJsonNode>| {
+            let mut stack = vec![start];
+            let mut visited = HashSet::new();
+            let mut names = HashSet::new();
+            while let Some(idx) = stack.pop() {
+                if !visited.insert(idx) {
+                    continue;
+                }
+                if let Some(name) = nodes.get(idx).map(|n| n.name.clone()) {
+                    names.insert(name);
+                }
+                if let Some(kids) = children.get(idx) {
+                    for &child in kids {
+                        stack.push(child);
+                    }
                 }
             }
-        }
-        names
-    };
+            names
+        };
 
     let mut results: Vec<(String, OversubTally)> = Vec::new();
     for (idx, node) in nodes.iter().enumerate() {
         if node.name == "Root" {
             continue;
         }
-        let node_type = node
-            .node_type
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let node_type = node.node_type.as_deref().unwrap_or("").to_ascii_lowercase();
         if node_type != "site" && !node_type.is_empty() && node_type != "ap" {
             continue;
         }
 
-        let mut tally = OversubTally::default();
-        tally.cap_down = node.max_throughput.0 as f32;
-        tally.cap_up = node.max_throughput.1 as f32;
+        let mut tally = OversubTally {
+            cap_down: node.max_throughput.0 as f32,
+            cap_up: node.max_throughput.1 as f32,
+            ..Default::default()
+        };
 
         let descendants = collect_descendants(idx, &children, nodes);
         for (_circuit_id, (parent_name, down, up)) in circuit_map.iter() {

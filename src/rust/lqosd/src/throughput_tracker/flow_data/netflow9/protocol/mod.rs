@@ -62,9 +62,7 @@ fn ipv4_record(
     //println!("Field bytes was: {}", field_bytes.len());
 
     // Pad to 32-bits
-    for _ in 0..padding {
-        bytes.push(0);
-    }
+    bytes.resize(bytes.len() + padding, 0);
 
     Ok(bytes)
 }

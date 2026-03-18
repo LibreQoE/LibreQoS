@@ -3,7 +3,9 @@ use lqos_bus::{IpStats, TcHandle};
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 
-// Removed rate_for_plan() function - no longer needed with f32 plan structures
+fn truncate_by_chars(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {
@@ -38,15 +40,14 @@ impl From<&IpStats> for IpStatsWithPlan {
                 .find(|sd| sd.circuit_id == result.circuit_id)
             {
                 let name = if circuit.circuit_name.chars().count() > 20 {
-                    let name_trimmed: String = circuit.circuit_name.chars().take(20).collect();
-                    name_trimmed
+                    truncate_by_chars(&circuit.circuit_name, 20)
                 } else {
                     circuit.circuit_name.clone()
                 };
-                result.ip_address = format!("{}", name);
+                result.ip_address = name.to_string();
                 result.plan = DownUpOrder {
-                    down: circuit.download_max_mbps as f32,
-                    up: circuit.upload_max_mbps as f32,
+                    down: circuit.download_max_mbps,
+                    up: circuit.upload_max_mbps,
                 };
             }
         }
@@ -55,4 +56,28 @@ impl From<&IpStats> for IpStatsWithPlan {
     }
 }
 
-// Tests removed - rate_for_plan() function no longer needed with f32 plan structures
+#[cfg(test)]
+mod tests {
+    use super::truncate_by_chars;
+
+    #[test]
+    fn truncates_ascii_to_exact_length() {
+        assert_eq!(
+            truncate_by_chars("abcdefghijklmnopqrstuvwxyz", 20),
+            "abcdefghijklmnopqrst"
+        );
+    }
+
+    #[test]
+    fn truncates_utf8_without_panicking_on_char_boundaries() {
+        assert_eq!(
+            truncate_by_chars("Punčochářová, Věra", 15),
+            "Punčochářová, V"
+        );
+    }
+
+    #[test]
+    fn keeps_short_strings_unchanged() {
+        assert_eq!(truncate_by_chars("Věra", 20), "Věra");
+    }
+}

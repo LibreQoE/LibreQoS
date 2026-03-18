@@ -95,11 +95,9 @@ impl GeoTable {
         if !path.exists() {
             info!("geo2.bin not found - trying to download it");
             Self::download()?;
-        } else {
-            if !Self::is_file_uptodate().unwrap_or(true) {
-                info!("geo2.bin is outdated - trying to download it");
-                Self::download()?;
-            }
+        } else if !Self::is_file_uptodate().unwrap_or(true) {
+            info!("geo2.bin is outdated - trying to download it");
+            Self::download()?;
         }
 
         // Decompress and deserialize

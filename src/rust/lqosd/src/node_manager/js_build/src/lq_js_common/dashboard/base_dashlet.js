@@ -11,6 +11,7 @@ export class BaseDashlet {
         this.graphs = [];
         this.graphDivs = [];
         this.zoomed = false;
+        this.disposed = false;
     }
 
     canBeSlowedDown() {
@@ -51,6 +52,9 @@ export class BaseDashlet {
     }
 
     setupOnce(msg) {
+        if (this.disposed) {
+            return;
+        }
         if (!this.setupDone) {
             this.setup(msg);
         }
@@ -61,10 +65,38 @@ export class BaseDashlet {
     setup() {}
 
     graphDivId() {
-        if (this.zoomed) {
-            return this.id + "_zoomed_graph";
-        } else {
-            return this.id + "_graph";
+        return this.id + "_graph";
+    }
+
+    zoomGraphDivId() {
+        return this.id + "_zoomed_graph";
+    }
+
+    zoomContainerId() {
+        return this.id + "_zoomed";
+    }
+
+    setupZoomed() {
+        // Optional: override in dashlets that support zoom.
+    }
+
+    teardownZoomed() {
+        // Best-effort cleanup for zoom graphs. Dashlets can override for custom teardown.
+        try {
+            const el = document.getElementById(this.zoomGraphDivId());
+            if (el && typeof echarts !== "undefined" && echarts.getInstanceByDom) {
+                const existing = echarts.getInstanceByDom(el);
+                if (existing) existing.dispose();
+            }
+        } catch (_) {}
+
+        if (window.graphList !== undefined) {
+            window.graphList = window.graphList.filter((g) => {
+                if (!g || !g.dom || !g.dom.id) return false;
+                if (g.dom.id === this.zoomGraphDivId()) return false;
+                if (typeof g.dom.isConnected === "boolean") return g.dom.isConnected;
+                return document.body && document.body.contains ? document.body.contains(g.dom) : true;
+            });
         }
     }
 
@@ -111,41 +143,7 @@ export class BaseDashlet {
             button.title = "Zoom";
             button.innerHTML = "<i class='fas fa-search-plus'></i>";
             button.onclick = () => {
-                if (!this.zoomed) {
-                    let zoomDiv = document.createElement("div");
-                    zoomDiv.classList.add("zoomed");
-                    zoomDiv.id = this.id + "_zoomed";
-                    zoomDiv.classList.add("dashbox");
-
-                    let title = document.createElement("h5");
-                    title.classList.add("dashbox-title");
-                    title.innerText = this.title();
-
-                    let button = document.createElement("a");
-                    button.title = "Zoom";
-                    button.innerHTML = "<i class='fas fa-search-minus'></i>";
-                    button.style.marginLeft = "5px";
-                    button.onclick = () => {
-                        document.getElementById(zoomDiv.id).remove();
-                        this.zoomed = !this.zoomed;
-                    };
-                    title.appendChild(button);
-
-                    zoomDiv.appendChild(title);
-
-                    let graphDiv = document.createElement("div");
-                    graphDiv.id = zoomDiv.id + "_graph";
-                    graphDiv.classList.add("dashgraphZoomed");
-                    zoomDiv.appendChild(graphDiv);
-
-                    document.getElementById("content").insertBefore(zoomDiv, document.getElementById("content").firstChild);
-
-                    requestAnimationFrame(() => {
-                        this.setup();
-                        zoomDiv.scrollIntoView({behavior: "smooth"});
-                    });
-                }
-                this.zoomed = !this.zoomed;
+                this.openZoom();
             }
             zoom.appendChild(button);
             title.appendChild(zoom);
@@ -158,6 +156,101 @@ export class BaseDashlet {
 
     supportsZoom() {
         return false;
+    }
+
+    openZoom() {
+        if (this.zoomed) {
+            return;
+        }
+        const content = document.getElementById("content");
+        if (!content) {
+            return;
+        }
+
+        this.zoomed = true;
+
+        let zoomDiv = document.createElement("div");
+        zoomDiv.classList.add("zoomed");
+        zoomDiv.id = this.zoomContainerId();
+        zoomDiv.classList.add("dashbox");
+
+        let title = document.createElement("h5");
+        title.classList.add("dashbox-title");
+        title.innerText = this.title();
+
+        let closeBtn = document.createElement("a");
+        closeBtn.title = "Zoom";
+        closeBtn.innerHTML = "<i class='fas fa-search-minus'></i>";
+        closeBtn.style.marginLeft = "5px";
+        closeBtn.onclick = () => {
+            this.closeZoom();
+        };
+        title.appendChild(closeBtn);
+
+        zoomDiv.appendChild(title);
+
+        let graphDiv = document.createElement("div");
+        graphDiv.id = this.zoomGraphDivId();
+        graphDiv.classList.add("dashgraphZoomed");
+        zoomDiv.appendChild(graphDiv);
+
+        content.insertBefore(zoomDiv, content.firstChild);
+
+        requestAnimationFrame(() => {
+            try {
+                this.setupZoomed();
+            } catch (e) {
+                console.error("Failed to set up zoomed dashlet", e);
+            }
+            zoomDiv.scrollIntoView({behavior: "smooth"});
+        });
+    }
+
+    closeZoom() {
+        if (!this.zoomed) {
+            return;
+        }
+        try {
+            this.teardownZoomed();
+        } catch (e) {
+            console.error("Failed to tear down zoomed dashlet", e);
+        }
+        const zoomDiv = document.getElementById(this.zoomContainerId());
+        if (zoomDiv) {
+            zoomDiv.remove();
+        }
+        this.zoomed = false;
+    }
+
+    dispose() {
+        if (this.disposed) {
+            return;
+        }
+        this.disposed = true;
+        this.closeZoom();
+        this.#disposeGraph(this.graph);
+        this.#disposeGraph(this.zoomGraph);
+        for (let i = 0; i < this.graphs.length; i++) {
+            this.#disposeGraph(this.graphs[i]);
+        }
+        if (window.timeGraphs !== undefined) {
+            window.timeGraphs = window.timeGraphs.filter((graph) => graph && graph !== this);
+        }
+    }
+
+    #disposeGraph(graph) {
+        if (!graph) {
+            return;
+        }
+        try {
+            if (graph.chart && graph.chart.dispose) {
+                graph.chart.dispose();
+            }
+        } catch (_) {}
+
+        if (window.graphList !== undefined) {
+            window.graphList = window.graphList.filter((entry) => entry && entry !== graph);
+        }
     }
 
     makePeriodBtn(name) {

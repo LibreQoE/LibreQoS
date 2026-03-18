@@ -2,18 +2,26 @@ use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+/// A UISP device record, optionally including interface and radio overview data.
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Device {
+    /// Device identity fields returned by UISP.
     pub identification: DeviceIdentification,
+    /// The primary management IP address, typically in CIDR notation.
     pub ipAddress: Option<String>,
+    /// Additional UISP attributes such as SSID and linked access point.
     pub attributes: Option<DeviceAttributes>,
+    /// The UISP mode string for the device.
     pub mode: Option<String>,
+    /// Interface definitions when `withInterfaces=true` is requested.
     pub interfaces: Option<Vec<DeviceInterface>>,
+    /// Summary radio, capacity, and health data reported by UISP.
     pub overview: Option<DeviceOverview>,
 }
 
 impl Device {
+    /// Returns the device hostname when UISP provides one.
     pub fn get_name(&self) -> Option<String> {
         if let Some(hostname) = &self.identification.hostname {
             return Some(hostname.clone());
@@ -21,6 +29,7 @@ impl Device {
         None
     }
 
+    /// Returns the device model identifier when available.
     pub fn get_model(&self) -> Option<String> {
         if let Some(model) = &self.identification.model {
             return Some(model.clone());
@@ -28,6 +37,7 @@ impl Device {
         None
     }
 
+    /// Returns the human-readable model name when available.
     pub fn get_model_name(&self) -> Option<String> {
         if let Some(model) = &self.identification.modelName {
             return Some(model.clone());
@@ -35,6 +45,7 @@ impl Device {
         None
     }
 
+    /// Returns the firmware version reported by UISP.
     pub fn get_firmware(&self) -> Option<String> {
         if let Some(firmware) = &self.identification.firmwareVersion {
             return Some(firmware.clone());
@@ -42,10 +53,12 @@ impl Device {
         None
     }
 
+    /// Returns the UISP device identifier.
     pub fn get_id(&self) -> String {
         self.identification.id.clone()
     }
 
+    /// Returns the containing site identifier when the device is assigned to a site.
     pub fn get_site_id(&self) -> Option<String> {
         if let Some(site) = &self.identification.site {
             return Some(site.id.clone());
@@ -53,20 +66,22 @@ impl Device {
         None
     }
 
+    /// Returns the current UISP status string from the overview block.
     pub fn get_status(&self) -> Option<String> {
-        if let Some(overview) = &self.overview {
-            if let Some(status) = &overview.status {
-                return Some(status.clone());
-            }
+        if let Some(overview) = &self.overview
+            && let Some(status) = &overview.status
+        {
+            return Some(status.clone());
         }
         None
     }
 
+    /// Returns the operating frequency from the overview block.
     pub fn get_frequency(&self) -> Option<f64> {
-        if let Some(overview) = &self.overview {
-            if let Some(frequency) = &overview.frequency {
-                return Some(*frequency);
-            }
+        if let Some(overview) = &self.overview
+            && let Some(frequency) = &overview.frequency
+        {
+            return Some(*frequency);
         }
         None
     }
@@ -79,6 +94,7 @@ impl Device {
         }
     }
 
+    /// Collects the device management and interface IP addresses without CIDR suffixes.
     pub fn get_addresses(&self) -> HashSet<String> {
         let mut result = HashSet::new();
         if let Some(ip) = &self.ipAddress {
@@ -98,13 +114,14 @@ impl Device {
         result
     }
 
+    /// Returns the first wireless noise-floor value found on the device interfaces.
     pub fn get_noise_floor(&self) -> Option<i64> {
         if let Some(interfaces) = &self.interfaces {
             for intf in interfaces.iter() {
-                if let Some(w) = &intf.wireless {
-                    if let Some(nf) = &w.noiseFloor {
-                        return Some(*nf);
-                    }
+                if let Some(w) = &intf.wireless
+                    && let Some(nf) = &w.noiseFloor
+                {
+                    return Some(*nf);
                 }
             }
         }

@@ -69,7 +69,7 @@ function qoqHeatmapRow(blocks, colorFn) {
             (dlTotal === null || dlTotal === undefined) &&
             (ulTotal === null || ulTotal === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" title="No data"></div>`;
+            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no data"></div>`;
             continue;
         }
 
@@ -93,7 +93,7 @@ function qoqHeatmapRow(blocks, colorFn) {
 
         // Top = upload, bottom = download.
         cells += `
-            <div class="exec-heat-cell split" title="${title}">
+            <div class="exec-heat-cell split" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">
                 <div class="exec-split-grid">
                     ${part(ulTotal)}
                     ${part(dlTotal)}
@@ -115,13 +115,14 @@ function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     `;
     const labelTitle = escapeAttr(labelText);
     const visibleLabel = labelHtml ?? escapeHtml(labelText);
+    const latestLabel = `${formatLatest(latestTop, "", 0)} / ${formatLatest(latestBottom, "", 0)}`;
     return `
-        <div class="exec-heat-row">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(`${labelText} ${badge || ""} latest ${latestLabel}`)}">
             <div class="exec-heat-label text-truncate" title="${labelTitle}">
                 <div class="fw-semibold text-truncate">${visibleLabel}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
-            <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorFn)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(`${labelText} heatmap history`)}">${qoqHeatmapRow(blocks, colorFn)}</div>
             <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
@@ -139,13 +140,14 @@ function qoqHeatRow(label, badge, blocks, link = null) {
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    const latestLabel = `${formatLatest(latestTop, "", 0)} / ${formatLatest(latestBottom, "", 0)}`;
     return `
-        <div class="exec-heat-row">
-            <div class="exec-heat-label text-truncate" title="${label}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(`${label} ${badge || ""} latest ${latestLabel}`)}">
+            <div class="exec-heat-label text-truncate" title="${escapeAttr(label)}">
                 <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
-            <div class="exec-heat-cells">${qoqHeatmapRow(blocks, colorByQoqScore)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(`${label} heatmap history`)}">${qoqHeatmapRow(blocks, colorByQoqScore)}</div>
             <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
@@ -156,6 +158,12 @@ class ExecutiveHeatmapBase extends BaseDashlet {
         super(slot);
         this.size = 6;
         this.lastData = null;
+        this._colorBlindListener = () => {
+            if (this.lastData) {
+                this.render();
+            }
+        };
+        this._colorBlindBound = false;
     }
 
     canBeSlowedDown() { return true; }
@@ -170,6 +178,10 @@ class ExecutiveHeatmapBase extends BaseDashlet {
     }
 
     setup() {
+        if (!this._colorBlindBound) {
+            window.addEventListener("colorBlindModeChanged", this._colorBlindListener);
+            this._colorBlindBound = true;
+        }
         if (window.executiveHeatmapData) {
             this.lastData = window.executiveHeatmapData;
             this.render();
@@ -223,7 +235,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                         row.label,
                         row.badge,
                         row.blocks,
-                        (v) => colorByRttMs(v, 200),
+                        (v) => colorByRttMs(v),
                         (v) => formatLatest(v, "ms"),
                     );
                 }
@@ -255,7 +267,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                         <div class="exec-section-title mb-0"><i class="fas fa-thermometer-half me-2 text-warning"></i>Global Heatmap</div>
                         <span class="text-muted small">15 minutes, newest on the right</span>
                     </div>
-                    <div class="exec-heat-rows">${body}</div>
+                    <div class="exec-heat-rows" role="list">${body}</div>
                 </div>
             </div>
         `;
@@ -361,7 +373,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                             <div class="exec-section-title mb-0">${titleHtml}</div>
                         </div>
-                        <div class="exec-heat-rows">${metricRows}</div>
+                        <div class="exec-heat-rows" role="list">${metricRows}</div>
                     </div>
                 </div>
             `;
@@ -450,7 +462,7 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             title: "Median RTT",
             icon: "fa-stopwatch",
             metricKey: "rtt",
-            colorFn: (v) => colorByRttMs(v, 200),
+            colorFn: (v) => colorByRttMs(v),
             formatFn: (v) => formatLatest(v, "ms"),
             link: "executive_heatmap_rtt.html",
             countWeight: 100,

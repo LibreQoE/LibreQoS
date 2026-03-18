@@ -31,11 +31,10 @@ pub async fn flow_count(
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CountActiveFlows(active) = reply {
-            let active_flows = WsResponse::FlowCount {
-                active,
-                recent: 0,
-            };
-            channels.send(PublishedChannels::FlowCount, active_flows).await;
+            let active_flows = WsResponse::FlowCount { active, recent: 0 };
+            channels
+                .send(PublishedChannels::FlowCount, active_flows)
+                .await;
         }
     }
 }

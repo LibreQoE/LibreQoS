@@ -38,6 +38,12 @@ pub struct HostCounter {
     /// Mapped TC handle, 0 if there isn't one.
     pub tc_handle: u32,
 
+    /// Hashed circuit identifier (from ShapedDevices.csv), 0 if unknown/unshaped.
+    pub circuit_id: u64,
+
+    /// Hashed device identifier (from ShapedDevices.csv), 0 if unknown/unshaped.
+    pub device_id: u64,
+
     /// Time last seen, in nanoseconds since kernel boot
     pub last_seen: u64,
 }
@@ -47,5 +53,15 @@ pub struct HostCounter {
 pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
     unsafe {
         crate::bpf_iterator::iterate_throughput(callback);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::HostCounter;
+
+    #[test]
+    fn host_counter_size() {
+        assert_eq!(std::mem::size_of::<HostCounter>(), 112);
     }
 }

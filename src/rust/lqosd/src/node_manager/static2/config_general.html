@@ -27,8 +27,8 @@
                 <div class="card-header">Available QoO Profiles</div>
                 <div class="card-body">
                     <div id="qooProfilesLoadAlert"></div>
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0">
+                    <div class="table-responsive lqos-table-wrap">
+                        <table class="lqos-table lqos-table-compact align-middle mb-0">
                             <thead>
                             <tr>
                                 <th>Name</th>
@@ -87,6 +87,12 @@
                 <input type="checkbox" class="form-check-input" id="disableIcmpPing">
                 <label class="form-check-label" for="disableIcmpPing">Disable ICMP Ping</label>
                 <div class="form-text">Disable ICMP ping monitoring for devices in the hosts view</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="excludeEfficiencyCores">
+                <label class="form-check-label" for="excludeEfficiencyCores">Exclude Efficiency Cores</label>
+                <div class="form-text">Use cached hybrid-core detection to keep shaping on P-cores and leave E-cores for background work when available</div>
             </div>
 
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>

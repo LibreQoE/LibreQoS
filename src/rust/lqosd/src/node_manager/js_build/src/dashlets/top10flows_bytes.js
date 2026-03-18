@@ -8,6 +8,7 @@ import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
 
 const wsClient = get_ws_client();
+const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
 const listenOnceForSeconds = (eventName, seconds, handler) => {
     const wrapped = (msg) => {
         if (!msg || msg.seconds !== seconds) return;
@@ -41,8 +42,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "250px";
-        base.style.overflow = "auto";
+        base.classList.add("dashbox-body-scroll", "dashbox-body-scroll-top10");
         return base;
     }
 
@@ -56,7 +56,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("dash-table", "table-sm", "small");
+            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small");
 
             let th = document.createElement("thead");
             th.classList.add("small");
@@ -67,7 +67,9 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             th.appendChild(theading("Total"));
             th.appendChild(theading("RTT", 2));
             th.appendChild(theading("TCP Retransmits", 2));
-            th.appendChild(theading("Remote ASN"));
+            const asnHeading = theading("Remote ASN");
+            asnHeading.classList.add("lqos-asn-cell");
+            th.appendChild(asnHeading);
             t.appendChild(th);
 
             let tbody = document.createElement("tbody");
@@ -87,6 +89,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 } else {
                     let localIp = document.createElement("td");
                     localIp.innerText = r.local_ip;
+                    localIp.classList.add("redactable");
                     row.appendChild(localIp);
                 }
 
@@ -106,10 +109,11 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
+                const cacheKey = flowCacheKey(r);
                 if (r.rtt_nanos['down'] !== undefined) {
-                    this.rttCache.set(r.remote_ip + r.analysis, r.rtt_nanos);
+                    this.rttCache.set(cacheKey, r.rtt_nanos);
                 }
-                let rtt = this.rttCache.get(r.remote_ip + r.analysis);
+                let rtt = this.rttCache.get(cacheKey);
                 if (rtt === 0) {
                     rtt = { down: 0, up: 0 };
                 }
@@ -135,13 +139,16 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 row.appendChild(tcp2);
 
                 let asn = document.createElement("td");
-                asn.innerText = r.remote_asn_name;
-                if (asn.innerText === "") {
-                    asn.innerText = r.remote_ip;
+                asn.classList.add("lqos-asn-cell");
+                const asnLabel = (r.remote_asn_name && r.remote_asn_name.length > 0) ? r.remote_asn_name : r.remote_ip;
+                const asnText = document.createElement("span");
+                asnText.classList.add("lqos-table-cell-ellipsis");
+                if (asnLabel && asnLabel.length > 13) {
+                    asnText.classList.add("tiny");
                 }
-                if (asn.innerText.length > 13) {
-                    asn.classList.add("tiny");
-                }
+                asnText.textContent = asnLabel || "";
+                asnText.title = asnLabel || "";
+                asn.appendChild(asnText);
                 row.appendChild(asn);
 
                 t.appendChild(row);
@@ -167,7 +174,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("table", "table-sm", "small");
+            table.classList.add("lqos-table", "lqos-table-compact", "small");
             let thead = document.createElement("thead");
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Protocol"));
@@ -177,14 +184,16 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             thead.appendChild(theading("RTT UL"));
             thead.appendChild(theading("Rxmits DL"));
             thead.appendChild(theading("Rxmits UL"));
-            thead.appendChild(theading("ASN"));
+                const asnHeading = theading("ASN");
+                asnHeading.classList.add("lqos-asn-cell");
+                thead.appendChild(asnHeading);
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
 
             data.forEach((row) => {
                 let tr = document.createElement("tr");
                 tr.classList.add("small");
-                tr.appendChild(simpleRow(row.circuit_name));
+                tr.appendChild(simpleRow(row.circuit_name || "", true));
                 tr.appendChild(simpleRow(row.protocol));
                 tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_down)));
                 tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_up)));
@@ -208,16 +217,26 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 } else {
                     tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_up)));
                 }
-                if (row.asn_name === null) {
-                    row.asn_name = "-";
-                } else {
-                    tr.appendChild(simpleRow(row.asn_name));
+                const asnCell = document.createElement("td");
+                asnCell.classList.add("lqos-asn-cell");
+                const asnText = document.createElement("span");
+                const asnLabel = row.asn_name === null ? "-" : row.asn_name;
+                asnText.classList.add("lqos-table-cell-ellipsis");
+                if (asnLabel && asnLabel.length > 13) {
+                    asnText.classList.add("tiny");
                 }
+                asnText.textContent = asnLabel || "";
+                asnText.title = asnLabel || "";
+                asnCell.appendChild(asnText);
+                tr.appendChild(asnCell);
                 tbody.appendChild(tr);
             })
             table.appendChild(tbody);
             clearDashDiv(this.id, target);
-            target.appendChild(table);
+            const tableWrap = document.createElement("div");
+            tableWrap.classList.add("lqos-table-wrap");
+            tableWrap.appendChild(table);
+            target.appendChild(tableWrap);
         });
         wsClient.send({ LtsTopFlows: { seconds } });
     }

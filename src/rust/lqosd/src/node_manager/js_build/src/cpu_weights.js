@@ -78,8 +78,10 @@ function renderSummary(data) {
     const right = document.createElement('div');
     right.className = 'col-12 col-lg-4';
 
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
     const table = document.createElement("table");
-    table.classList.add("table", "table-striped", "table-sm");
+    table.classList.add("lqos-table", "lqos-table-compact");
     const thead = document.createElement("thead");
     thead.appendChild(theading("CPU"));
     thead.appendChild(theading("DL Circuits"));
@@ -128,7 +130,8 @@ function renderSummary(data) {
     });
 
     table.appendChild(tbody);
-    left.appendChild(table);
+    tableWrap.appendChild(table);
+    left.appendChild(tableWrap);
 
     // Right column pie chart (DL Max per CPU)
     const chartDiv = document.createElement('div');
@@ -205,8 +208,10 @@ function renderCircuits(page) {
     smallNote.innerText = `Total: ${page.total.toLocaleString()} circuits`;
     target.appendChild(smallNote);
 
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
     const table = document.createElement("table");
-    table.classList.add("table", "table-striped", "table-sm");
+    table.classList.add("lqos-table", "lqos-table-compact");
     const thead = document.createElement("thead");
     thead.appendChild(theading("Circuit ID"));
     thead.appendChild(theading("Circuit Name"));
@@ -233,8 +238,8 @@ function renderCircuits(page) {
             idCell.textContent = "";
         }
         tr.appendChild(idCell);
-        tr.appendChild(simpleRow(c.circuit_name || ""));
-        tr.appendChild(simpleRow(c.parent_node || ""));
+        tr.appendChild(simpleRow(c.circuit_name || "", true));
+        tr.appendChild(simpleRow(c.parent_node || "", true));
         tr.appendChild(simpleRow(c.classid || ""));
         const weightCell = document.createElement('td');
         if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {
@@ -249,7 +254,8 @@ function renderCircuits(page) {
     });
 
     table.appendChild(tbody);
-    target.appendChild(table);
+    tableWrap.appendChild(table);
+    target.appendChild(tableWrap);
 }
 
 function fetchSummary() {

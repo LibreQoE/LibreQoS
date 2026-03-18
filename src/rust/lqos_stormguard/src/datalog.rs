@@ -37,10 +37,10 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
     };
 
     // If the log file exists, delete it
-    if std::path::Path::new(path).exists() {
-        if let Err(e) = std::fs::remove_file(path) {
-            eprintln!("Failed to delete existing log file: {}", e);
-        }
+    if std::path::Path::new(path).exists()
+        && let Err(e) = std::fs::remove_file(path)
+    {
+        eprintln!("Failed to delete existing log file: {}", e);
     }
 
     // Create the log file if it doesn't exist with the header
@@ -48,55 +48,44 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
         eprintln!("Failed to create log file: {}", e);
     } else {
         // Write the header to the file
-        if let Err(e) = std::fs::write(
-            path,
-            "Time,Site,Download,Upload,DirectionChanged,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n",
-        ) {
+        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload,Summary\n") {
             eprintln!("Failed to write header to log file: {}", e);
         }
     }
 
-    loop {
-        match rx.recv() {
-            Ok(message) => {
-                // Open for append
-                let mut file = match std::fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(path)
-                {
-                    Ok(file) => file,
-                    Err(e) => {
-                        eprintln!("Failed to open log file: {}", e);
-                        continue;
-                    }
-                };
-                // Write the message to the file
-                match message {
-                    LogCommand::SpeedChange {
-                        site,
-                        download,
-                        upload,
-                        state,
-                    } => {
-                        // Append the line to the file
-                        let Ok(date_time) = unix_now() else {
-                            eprintln!("Failed to get current time");
-                            continue;
-                        };
-                        if let Err(e) = writeln!(
-                            file,
-                            "{},{},{},{},{}",
-                            date_time, site, download, upload, state
-                        ) {
-                            eprintln!("Failed to write to log file: {}", e);
-                        }
-                    }
-                }
+    while let Ok(message) = rx.recv() {
+        // Open for append
+        let mut file = match std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("Failed to open log file: {}", e);
+                continue;
             }
-            Err(_) => {
-                // If the channel is closed, exit the loop
-                break;
+        };
+        // Write the message to the file
+        match message {
+            LogCommand::SpeedChange {
+                site,
+                download,
+                upload,
+                state,
+            } => {
+                // Append the line to the file
+                let Ok(date_time) = unix_now() else {
+                    eprintln!("Failed to get current time");
+                    continue;
+                };
+                if let Err(e) = writeln!(
+                    file,
+                    "{},{},{},{},{}",
+                    date_time, site, download, upload, state
+                ) {
+                    eprintln!("Failed to write to log file: {}", e);
+                }
             }
         }
     }

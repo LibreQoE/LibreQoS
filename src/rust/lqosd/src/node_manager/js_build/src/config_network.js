@@ -7,6 +7,7 @@ import {
 
 let network_json = null;
 let shaped_devices = null;
+const MIN_NODE_MBPS = 0.1;
 
 function renderNetworkNode(level, depth) {
     let html = `<div class="card mb-3" style="margin-left: ${depth * 30}px;">`;
@@ -19,17 +20,17 @@ function renderNetworkNode(level, depth) {
         html += `<h5 class="card-title mb-0">${key}${isVirtual ? ' <span class="badge bg-secondary ms-2"><i class="fa fa-ghost"></i> Virtual</span>' : ''}</h5>`;
         html += `<div>`;
         if (depth > 0) {
-            html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')">
+            html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}">
                         <i class="fas fa-arrow-up"></i> Promote
                      </button>`;
         }
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')">
+        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')" title="Toggle virtual mode for ${key}" aria-label="Toggle virtual mode for ${key}">
                     <i class="fas ${isVirtual ? 'fa-toggle-on' : 'fa-toggle-off'}"></i> Virtual
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')">
+        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}">
                     <i class="fas fa-pencil-alt"></i> Rename
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')">
+        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="Delete ${key}" aria-label="Delete ${key}">
                     <i class="fas fa-trash-alt"></i> Delete
                  </button>`;
         html += `</div></div>`;
@@ -37,12 +38,12 @@ function renderNetworkNode(level, depth) {
         // Node details
         html += `<div class="mb-3">`;
         html += `<span class="badge bg-primary me-2">Download: ${value.downloadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-2" onclick="nodeSpeedChange('${key}', 'd')">
-                    <i class="fas fa-pencil-alt"></i>
+        html += `<button class="btn btn-sm btn-outline-secondary me-2" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}">
+                    <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `<span class="badge bg-success me-2">Upload: ${value.uploadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary" onclick="nodeSpeedChange('${key}', 'u')">
-                    <i class="fas fa-pencil-alt"></i>
+        html += `<button class="btn btn-sm btn-outline-secondary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}">
+                    <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `</div>`;
 
@@ -89,13 +90,13 @@ function promoteNode(nodeId) {
 
 function nodeSpeedChange(nodeId, direction) {
     let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
-    newVal = parseInt(newVal);
+    newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
         alert("Please enter a valid number");
         return;
     }
-    if (newVal < 1) {
-        alert("Value must be greater than 1");
+    if (newVal < MIN_NODE_MBPS) {
+        alert(`Value must be at least ${MIN_NODE_MBPS} Mbps`);
         return;
     }
 

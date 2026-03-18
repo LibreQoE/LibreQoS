@@ -7,6 +7,73 @@ import {
 
 let networkData = null;
 let selectedTargets = [];
+let excludedSites = [];
+
+function defaultStormguardConfig() {
+    return {
+        enabled: false,
+        dry_run: true,
+        log_file: null,
+        strategy: "delay_probe",
+        all_sites: false,
+        targets: [],
+        exclude_sites: [],
+        minimum_download_percentage: 0.5,
+        minimum_upload_percentage: 0.5,
+        increase_fast_multiplier: 1.30,
+        increase_multiplier: 1.15,
+        decrease_multiplier: 0.95,
+        decrease_fast_multiplier: 0.88,
+        increase_fast_cooldown_seconds: 2,
+        increase_cooldown_seconds: 1,
+        decrease_cooldown_seconds: 3.75,
+        decrease_fast_cooldown_seconds: 7.5,
+        circuit_fallback_enabled: false,
+        circuit_fallback_persist: true,
+        circuit_fallback_sqm: "fq_codel",
+        delay_threshold_ms: 40,
+        delay_threshold_ratio: 1.10,
+        baseline_alpha_up: 0.01,
+        baseline_alpha_down: 0.10,
+        probe_interval_seconds: 10,
+        min_throughput_mbps_for_rtt: 0.05,
+        active_ping_target: "1.1.1.1",
+        active_ping_interval_seconds: 10,
+        active_ping_weight: 0.70,
+        active_ping_timeout_seconds: 1.0,
+    };
+}
+
+const VALID_FALLBACK_SQMS = ['fq_codel', 'cake'];
+
+function ensureStormguardConfig(config) {
+    return {
+        ...defaultStormguardConfig(),
+        ...(config || {}),
+        targets: Array.isArray(config?.targets) ? [...config.targets] : [],
+        exclude_sites: Array.isArray(config?.exclude_sites) ? [...config.exclude_sites] : [],
+    };
+}
+
+function updateTargetsUi() {
+    const allSites = document.getElementById("allSites")?.checked ?? false;
+    const section = document.getElementById("targetsSection");
+    if (section) {
+        section.style.display = allSites ? "none" : "";
+    }
+}
+
+function updateStrategyUi() {
+    const strategy = document.getElementById("strategy")?.value ?? "delay_probe";
+    const section = document.getElementById("delayProbeSection");
+    if (section) {
+        section.style.display = (strategy === "delay_probe" || strategy === "delay_probe_active") ? "" : "none";
+    }
+    const pingSection = document.getElementById("activePingSection");
+    if (pingSection) {
+        pingSection.style.display = strategy === "delay_probe_active" ? "" : "none";
+    }
+}
 
 // Load network.json for site dropdown
 function loadNetworkData() {
@@ -22,7 +89,7 @@ function loadNetworkData() {
                 }
                 networkData = data;
                 console.log('Network data loaded:', networkData);
-                populateSiteSelector();
+                populateSiteSelectors();
                 resolve();
             },
             (err) => {
@@ -34,143 +101,348 @@ function loadNetworkData() {
     });
 }
 
-// Build dropdown options from network tree
-function populateSiteSelector() {
-    const selector = document.getElementById('siteSelector');
+function setSelectorOptions(selectorId) {
+    const selector = document.getElementById(selectorId);
     selector.innerHTML = '<option value="">Select a site...</option>';
-    
+
     function iterate(data, level = 0) {
-        // Handle case where data might be a string or other non-object
         if (typeof data !== 'object' || data === null) {
-            console.warn('Data is not an object:', data);
             return;
         }
-        
+
         for (const [key, value] of Object.entries(data)) {
             const option = document.createElement('option');
             option.value = key;
-            
-            // Add indentation for hierarchy
+
             let prefix = '';
             for (let i = 0; i < level; i++) {
                 prefix += '- ';
             }
             option.textContent = prefix + key;
-            
+
             selector.appendChild(option);
-            
-            // Recursively add children
+
             if (value && typeof value === 'object' && value.children != null) {
                 iterate(value.children, level + 1);
             }
         }
     }
-    
+
     if (networkData) {
-        console.log('Populating site selector with:', networkData);
         iterate(networkData);
-    } else {
-        console.error('Network data is null or undefined');
     }
 }
 
-// Add site to targets list
-function addSite() {
-    const selector = document.getElementById('siteSelector');
+function populateSiteSelectors() {
+    setSelectorOptions("targetSiteSelector");
+    setSelectorOptions("excludeSiteSelector");
+}
+
+function addItemToList(listName, value, duplicateMessage) {
+    if (!value) {
+        return false;
+    }
+
+    const list = listName === "targets" ? selectedTargets : excludedSites;
+    if (list.includes(value)) {
+        alert(duplicateMessage);
+        return false;
+    }
+
+    list.push(value);
+    list.sort((a, b) => a.localeCompare(b));
+    return true;
+}
+
+function addTargetFromSelector() {
+    const selector = document.getElementById("targetSiteSelector");
     const selectedSite = selector.value;
-    
+
     if (!selectedSite) {
         alert('Please select a site to add');
         return;
     }
-    
-    // Check if already in list
-    if (selectedTargets.includes(selectedSite)) {
-        alert('This site is already being monitored');
-        return;
-    }
-    
-    selectedTargets.push(selectedSite);
-    updateTargetsList();
-    
-    // Reset selector
-    selector.value = '';
-}
 
-// Remove site from targets list
-function removeSite(siteName) {
-    const index = selectedTargets.indexOf(siteName);
-    if (index > -1) {
-        selectedTargets.splice(index, 1);
+    if (addItemToList("targets", selectedSite, 'This site is already in the allowlist')) {
+        selector.value = '';
         updateTargetsList();
     }
 }
 
-// Update the targets list UI
-function updateTargetsList() {
-    const listContainer = document.getElementById('selectedSitesList');
-    listContainer.innerHTML = '';
-    
-    if (selectedTargets.length === 0) {
-        listContainer.innerHTML = '<div class="text-muted">No sites selected</div>';
+function addTargetFromManual() {
+    const input = document.getElementById("targetSiteManual");
+    const siteName = input.value.trim();
+    if (!siteName) {
+        alert('Please enter a site name');
         return;
     }
-    
-    selectedTargets.forEach(site => {
+
+    if (addItemToList("targets", siteName, 'This site is already in the allowlist')) {
+        input.value = '';
+        updateTargetsList();
+    }
+}
+
+function addExcludeFromSelector() {
+    const selector = document.getElementById("excludeSiteSelector");
+    const selectedSite = selector.value;
+    if (!selectedSite) {
+        alert('Please select a site to exclude');
+        return;
+    }
+
+    if (addItemToList("exclude", selectedSite, 'This site is already excluded')) {
+        selector.value = '';
+        updateExcludedSitesList();
+    }
+}
+
+function addExcludeFromManual() {
+    const input = document.getElementById("excludeSiteManual");
+    const siteName = input.value.trim();
+    if (!siteName) {
+        alert('Please enter a site name');
+        return;
+    }
+
+    if (addItemToList("exclude", siteName, 'This site is already excluded')) {
+        input.value = '';
+        updateExcludedSitesList();
+    }
+}
+
+function removeItem(listName, itemName) {
+    const list = listName === "targets" ? selectedTargets : excludedSites;
+    const index = list.indexOf(itemName);
+    if (index > -1) {
+        list.splice(index, 1);
+    }
+}
+
+// Add site to targets list
+function removeTarget(siteName) {
+    removeItem("targets", siteName);
+    updateTargetsList();
+}
+
+function removeExcludedSite(siteName) {
+    removeItem("exclude", siteName);
+    updateExcludedSitesList();
+}
+
+function updateList(listId, emptyMessage, items, removeHandler) {
+    const listContainer = document.getElementById(listId);
+    listContainer.innerHTML = '';
+
+    if (items.length === 0) {
+        listContainer.innerHTML = `<div class="text-muted">${emptyMessage}</div>`;
+        return;
+    }
+
+    items.forEach((site) => {
         const listItem = document.createElement('div');
         listItem.className = 'list-group-item d-flex justify-content-between align-items-center';
-        
+
         const siteName = document.createElement('span');
         siteName.textContent = site;
-        
+
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn btn-sm btn-outline-danger';
         removeBtn.innerHTML = '<i class="fa fa-times"></i>';
-        removeBtn.onclick = () => removeSite(site);
-        
+        removeBtn.onclick = () => removeHandler(site);
+
         listItem.appendChild(siteName);
         listItem.appendChild(removeBtn);
         listContainer.appendChild(listItem);
     });
 }
 
+function updateTargetsList() {
+    updateList("selectedTargetsList", "No allowlisted sites", selectedTargets, removeTarget);
+}
+
+function updateExcludedSitesList() {
+    updateList("excludedSitesList", "No excluded sites", excludedSites, removeExcludedSite);
+}
+
+function parseNumber(id) {
+    return parseFloat(document.getElementById(id).value);
+}
+
+function validatePercent(name, value) {
+    if (Number.isNaN(value) || value < 1 || value > 100) {
+        alert(`${name} must be between 1 and 100`);
+        return false;
+    }
+    return true;
+}
+
+function validatePositiveNumber(name, value, min, relationText) {
+    if (Number.isNaN(value) || value < min) {
+        alert(`${name} must be ${relationText}`);
+        return false;
+    }
+    return true;
+}
+
 // Validate configuration
 function validateConfig() {
     const enabled = document.getElementById('enabled').checked;
-    const minDownloadPct = parseInt(document.getElementById('minDownloadPct').value);
-    const minUploadPct = parseInt(document.getElementById('minUploadPct').value);
-    
-    // Validate percentage values
-    if (isNaN(minDownloadPct) || minDownloadPct < 1 || minDownloadPct > 100) {
-        alert('Minimum Download Percentage must be between 1 and 100');
+    const allSites = document.getElementById('allSites').checked;
+    const minDownloadPct = parseNumber('minDownloadPct');
+    const minUploadPct = parseNumber('minUploadPct');
+    const strategy = document.getElementById('strategy').value;
+
+    if (!validatePercent('Minimum Download Percentage', minDownloadPct)) {
         return false;
     }
-    
-    if (isNaN(minUploadPct) || minUploadPct < 1 || minUploadPct > 100) {
-        alert('Minimum Upload Percentage must be between 1 and 100');
+
+    if (!validatePercent('Minimum Upload Percentage', minUploadPct)) {
         return false;
     }
-    
-    // If enabled, must have at least one target
-    if (enabled && selectedTargets.length === 0) {
+
+    if (enabled && !allSites && selectedTargets.length === 0) {
         alert('Please select at least one site to monitor when StormGuard is enabled');
         return false;
     }
-    
+
+    const increaseFastMultiplier = parseNumber('increaseFastMultiplier');
+    const increaseMultiplier = parseNumber('increaseMultiplier');
+    const decreaseMultiplier = parseNumber('decreaseMultiplier');
+    const decreaseFastMultiplier = parseNumber('decreaseFastMultiplier');
+
+    if (!validatePositiveNumber('Increase Fast Multiplier', increaseFastMultiplier, 0.01, 'greater than 1.0')) return false;
+    if (!validatePositiveNumber('Increase Multiplier', increaseMultiplier, 0.01, 'greater than 1.0')) return false;
+    if (!validatePositiveNumber('Decrease Multiplier', decreaseMultiplier, 0.01, 'greater than 0')) return false;
+    if (!validatePositiveNumber('Decrease Fast Multiplier', decreaseFastMultiplier, 0.01, 'greater than 0')) return false;
+
+    if (increaseFastMultiplier <= 1) {
+        alert('Increase Fast Multiplier must be greater than 1.0');
+        return false;
+    }
+
+    if (increaseMultiplier <= 1) {
+        alert('Increase Multiplier must be greater than 1.0');
+        return false;
+    }
+
+    if (decreaseMultiplier > 1) {
+        alert('Decrease Multiplier must be less than or equal to 1.0');
+        return false;
+    }
+
+    if (decreaseFastMultiplier > 1) {
+        alert('Decrease Fast Multiplier must be less than or equal to 1.0');
+        return false;
+    }
+
+    const cooldownFields = [
+        ['Increase Fast Cooldown', 'increaseFastCooldownSeconds'],
+        ['Increase Cooldown', 'increaseCooldownSeconds'],
+        ['Decrease Cooldown', 'decreaseCooldownSeconds'],
+        ['Decrease Fast Cooldown', 'decreaseFastCooldownSeconds'],
+    ];
+
+    for (const [name, id] of cooldownFields) {
+        if (!validatePositiveNumber(name, parseNumber(id), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+    }
+
+    const fallbackEnabled = document.getElementById('circuitFallbackEnabled').checked;
+    const fallbackSqm = document.getElementById('circuitFallbackSqm').value.trim();
+    if (fallbackEnabled && !VALID_FALLBACK_SQMS.includes(fallbackSqm)) {
+        alert('Circuit Fallback SQM must be one of: fq_codel, cake');
+        return false;
+    }
+
+    if (strategy === 'delay_probe' || strategy === 'delay_probe_active') {
+        if (!validatePositiveNumber('Delay Threshold (ms)', parseNumber('delayThresholdMs'), 0.01, 'greater than 0 ms')) {
+            return false;
+        }
+        const delayRatio = parseNumber('delayThresholdRatio');
+        if (Number.isNaN(delayRatio) || delayRatio <= 1.0) {
+            alert('Delay Threshold Ratio must be greater than 1.0');
+            return false;
+        }
+        const alphaUp = parseNumber('baselineAlphaUp');
+        if (Number.isNaN(alphaUp) || alphaUp <= 0 || alphaUp > 1) {
+            alert('Baseline Alpha Up must be > 0 and <= 1');
+            return false;
+        }
+        const alphaDown = parseNumber('baselineAlphaDown');
+        if (Number.isNaN(alphaDown) || alphaDown <= 0 || alphaDown > 1) {
+            alert('Baseline Alpha Down must be > 0 and <= 1');
+            return false;
+        }
+        if (!validatePositiveNumber('Probe Interval (seconds)', parseNumber('probeIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const minThroughput = parseNumber('minThroughputMbpsForRtt');
+        if (Number.isNaN(minThroughput) || minThroughput < 0) {
+            alert('Min Throughput (Mbps) must be >= 0');
+            return false;
+        }
+    }
+
+    if (strategy === 'delay_probe_active') {
+        const pingTarget = document.getElementById('activePingTarget').value.trim();
+        if (!pingTarget) {
+            alert('Ping Target must not be empty');
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Interval (seconds)', parseNumber('activePingIntervalSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        if (!validatePositiveNumber('Ping Timeout (seconds)', parseNumber('activePingTimeoutSeconds'), 0.01, 'greater than 0 seconds')) {
+            return false;
+        }
+        const weightPct = parseNumber('activePingWeight');
+        if (Number.isNaN(weightPct) || weightPct < 0 || weightPct > 100) {
+            alert('Active Ping Weight must be between 0 and 100');
+            return false;
+        }
+    }
+
     return true;
 }
 
 // Update config object
 function updateConfig() {
     const logFilePath = document.getElementById('logFile').value.trim();
+    const weightPct = parseNumber('activePingWeight');
     
     window.config.stormguard = {
         enabled: document.getElementById('enabled').checked,
-        targets: selectedTargets,
         dry_run: document.getElementById('dryRun').checked,
         log_file: logFilePath === '' ? null : logFilePath,
-        minimum_download_percentage: parseInt(document.getElementById('minDownloadPct').value) / 100,
-        minimum_upload_percentage: parseInt(document.getElementById('minUploadPct').value) / 100
+        strategy: document.getElementById('strategy').value,
+        all_sites: document.getElementById('allSites').checked,
+        targets: [...selectedTargets],
+        exclude_sites: [...excludedSites],
+        minimum_download_percentage: parseNumber('minDownloadPct') / 100,
+        minimum_upload_percentage: parseNumber('minUploadPct') / 100,
+        increase_fast_multiplier: parseNumber('increaseFastMultiplier'),
+        increase_multiplier: parseNumber('increaseMultiplier'),
+        decrease_multiplier: parseNumber('decreaseMultiplier'),
+        decrease_fast_multiplier: parseNumber('decreaseFastMultiplier'),
+        increase_fast_cooldown_seconds: parseNumber('increaseFastCooldownSeconds'),
+        increase_cooldown_seconds: parseNumber('increaseCooldownSeconds'),
+        decrease_cooldown_seconds: parseNumber('decreaseCooldownSeconds'),
+        decrease_fast_cooldown_seconds: parseNumber('decreaseFastCooldownSeconds'),
+        circuit_fallback_enabled: document.getElementById('circuitFallbackEnabled').checked,
+        circuit_fallback_persist: document.getElementById('circuitFallbackPersist').checked,
+        circuit_fallback_sqm: document.getElementById('circuitFallbackSqm').value.trim() || 'fq_codel',
+        delay_threshold_ms: parseNumber('delayThresholdMs'),
+        delay_threshold_ratio: parseNumber('delayThresholdRatio'),
+        baseline_alpha_up: parseNumber('baselineAlphaUp'),
+        baseline_alpha_down: parseNumber('baselineAlphaDown'),
+        probe_interval_seconds: parseNumber('probeIntervalSeconds'),
+        min_throughput_mbps_for_rtt: parseNumber('minThroughputMbpsForRtt'),
+        active_ping_target: document.getElementById('activePingTarget').value.trim() || '1.1.1.1',
+        active_ping_interval_seconds: parseNumber('activePingIntervalSeconds'),
+        active_ping_weight: Number.isNaN(weightPct) ? 0.70 : (weightPct / 100.0),
+        active_ping_timeout_seconds: parseNumber('activePingTimeoutSeconds'),
     };
 }
 
@@ -185,37 +457,92 @@ Promise.all([
     })
 ]).then(() => {
     console.log('Both network data and config loaded');
-    
-    // Now populate the UI with config data
-    if (window.config && window.config.stormguard) {
-        const sg = window.config.stormguard;
-        
-        // Set form values
-        document.getElementById('enabled').checked = sg.enabled || false;
-        document.getElementById('dryRun').checked = sg.dry_run || false;
-        document.getElementById('logFile').value = sg.log_file || '';
-        
-        // Convert decimal to percentage for display
-        document.getElementById('minDownloadPct').value = Math.round((sg.minimum_download_percentage || 0.5) * 100);
-        document.getElementById('minUploadPct').value = Math.round((sg.minimum_upload_percentage || 0.5) * 100);
-        
-        // Load targets
-        selectedTargets = sg.targets || [];
-        updateTargetsList();
+
+    const sg = ensureStormguardConfig(window.config?.stormguard);
+
+    document.getElementById('enabled').checked = sg.enabled;
+    document.getElementById('dryRun').checked = sg.dry_run;
+    document.getElementById('logFile').value = sg.log_file || '';
+    document.getElementById('strategy').value = sg.strategy || 'delay_probe';
+    document.getElementById('allSites').checked = sg.all_sites;
+    document.getElementById('minDownloadPct').value = Math.round(sg.minimum_download_percentage * 100);
+    document.getElementById('minUploadPct').value = Math.round(sg.minimum_upload_percentage * 100);
+    document.getElementById('increaseFastMultiplier').value = sg.increase_fast_multiplier;
+    document.getElementById('increaseMultiplier').value = sg.increase_multiplier;
+    document.getElementById('decreaseMultiplier').value = sg.decrease_multiplier;
+    document.getElementById('decreaseFastMultiplier').value = sg.decrease_fast_multiplier;
+    document.getElementById('increaseFastCooldownSeconds').value = sg.increase_fast_cooldown_seconds;
+    document.getElementById('increaseCooldownSeconds').value = sg.increase_cooldown_seconds;
+    document.getElementById('decreaseCooldownSeconds').value = sg.decrease_cooldown_seconds;
+    document.getElementById('decreaseFastCooldownSeconds').value = sg.decrease_fast_cooldown_seconds;
+    document.getElementById('circuitFallbackEnabled').checked = sg.circuit_fallback_enabled;
+    document.getElementById('circuitFallbackPersist').checked = sg.circuit_fallback_persist;
+    document.getElementById('circuitFallbackSqm').value = VALID_FALLBACK_SQMS.includes(sg.circuit_fallback_sqm)
+        ? sg.circuit_fallback_sqm
+        : 'fq_codel';
+    document.getElementById('delayThresholdMs').value = sg.delay_threshold_ms;
+    document.getElementById('delayThresholdRatio').value = sg.delay_threshold_ratio;
+    document.getElementById('baselineAlphaUp').value = sg.baseline_alpha_up;
+    document.getElementById('baselineAlphaDown').value = sg.baseline_alpha_down;
+    document.getElementById('probeIntervalSeconds').value = sg.probe_interval_seconds;
+    document.getElementById('minThroughputMbpsForRtt').value = sg.min_throughput_mbps_for_rtt;
+    document.getElementById('activePingTarget').value = sg.active_ping_target || '1.1.1.1';
+    document.getElementById('activePingIntervalSeconds').value = sg.active_ping_interval_seconds;
+    document.getElementById('activePingTimeoutSeconds').value = sg.active_ping_timeout_seconds;
+    document.getElementById('activePingWeight').value = Math.round((sg.active_ping_weight ?? 0.70) * 100);
+    const weightValue = document.getElementById('activePingWeightValue');
+    if (weightValue) {
+        weightValue.textContent = document.getElementById('activePingWeight').value;
     }
-    
-    // Set up event handlers
-    document.getElementById('addSiteBtn').addEventListener('click', addSite);
-    
-    // Allow Enter key in site selector to add site
-    document.getElementById('siteSelector').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addSite();
+
+    selectedTargets = [...sg.targets].sort((a, b) => a.localeCompare(b));
+    excludedSites = [...sg.exclude_sites].sort((a, b) => a.localeCompare(b));
+    updateStrategyUi();
+    updateTargetsUi();
+    updateTargetsList();
+    updateExcludedSitesList();
+
+    document.getElementById('allSites').addEventListener('change', updateTargetsUi);
+    document.getElementById('strategy').addEventListener('change', updateStrategyUi);
+    document.getElementById('activePingWeight').addEventListener('input', () => {
+        const weightValue = document.getElementById('activePingWeightValue');
+        if (weightValue) {
+            weightValue.textContent = document.getElementById('activePingWeight').value;
         }
     });
-    
-    // Save button handler
+    document.getElementById('addTargetBtn').addEventListener('click', addTargetFromSelector);
+    document.getElementById('addTargetManualBtn').addEventListener('click', addTargetFromManual);
+    document.getElementById('addExcludeBtn').addEventListener('click', addExcludeFromSelector);
+    document.getElementById('addExcludeManualBtn').addEventListener('click', addExcludeFromManual);
+
+    document.getElementById('targetSiteSelector').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addTargetFromSelector();
+        }
+    });
+
+    document.getElementById('targetSiteManual').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addTargetFromManual();
+        }
+    });
+
+    document.getElementById('excludeSiteSelector').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addExcludeFromSelector();
+        }
+    });
+
+    document.getElementById('excludeSiteManual').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addExcludeFromManual();
+        }
+    });
+
     document.getElementById('saveButton').addEventListener('click', () => {
         if (validateConfig()) {
             updateConfig();

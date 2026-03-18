@@ -1,14 +1,20 @@
-use std::{ffi::CString, fs::{remove_file, File}, io::{Read, Write}, path::Path};
 use anyhow::{Error, Result};
-use nix::{errno::Errno, libc::{getpid, mode_t}};
+use nix::{
+    errno::Errno,
+    libc::{getpid, mode_t},
+};
+use std::{
+    ffi::CString,
+    fs::{File, remove_file},
+    io::{Read, Write},
+    path::Path,
+};
 
 const LOCK_PATH: &str = "/run/lqos/lqos_overrides.lock";
 const LOCK_DIR: &str = "/run/lqos";
 const LOCK_DIR_PERMS: &str = "/run/lqos";
 
-pub struct FileLock {
-
-}
+pub struct FileLock {}
 
 impl FileLock {
     pub fn new() -> Result<Self> {
@@ -16,7 +22,9 @@ impl FileLock {
         let lock_path = Path::new(LOCK_PATH);
         if lock_path.exists() {
             if Self::is_lock_valid()? {
-                return Err(Error::msg("The lqos_overrides file is locked by another process."));
+                return Err(Error::msg(
+                    "The lqos_overrides file is locked by another process.",
+                ));
             }
 
             // It's a stale pid, so we need to replace it

@@ -20,6 +20,7 @@ const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
     "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -28,6 +29,103 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function formatDeviceIp(ip) {
+    if (typeof ip === "string") {
+        return ip;
+    }
+    if (ip === null || ip === undefined) {
+        return "-";
+    }
+    if (ip instanceof Uint8Array) {
+        return formatIpBytes(ip);
+    }
+    if (Array.isArray(ip)) {
+        if (ip.every((entry) => Number.isFinite(Number(entry)))) {
+            return formatIpBytes(ip);
+        }
+        return ip.map((entry) => formatDeviceIp(entry)).filter(Boolean).join(", ");
+    }
+    if (typeof ip === "object") {
+        if (ip.V4 !== undefined) {
+            return formatDeviceIp(ip.V4);
+        }
+        if (ip.V6 !== undefined) {
+            return formatDeviceIp(ip.V6);
+        }
+        if (ip.addr !== undefined) {
+            return formatDeviceIp(ip.addr);
+        }
+        if (Array.isArray(ip.data) || ip.data instanceof Uint8Array) {
+            return formatDeviceIp(ip.data);
+        }
+    }
+    return String(ip);
+}
+
+function formatIpBytes(bytes) {
+    const list = Array.from(bytes);
+    if (list.length === 4) {
+        return list.join(".");
+    }
+    if (list.length === 16) {
+        const parts = [];
+        for (let i = 0; i < list.length; i += 2) {
+            const part = ((Number(list[i]) || 0) << 8) | (Number(list[i + 1]) || 0);
+            parts.push(part.toString(16).padStart(4, "0"));
+        }
+        return parts.join(":");
+    }
+    return list.join(".");
+}
+
+function configuredMax(node) {
+    return node.configured_max_throughput || node.max_throughput || [0, 0];
+}
+
+function effectiveMax(node) {
+    return node.effective_max_throughput || configuredMax(node);
+}
+
+function ratesMatch(a, b) {
+    return Math.abs(toNumber(a?.[0], 0) - toNumber(b?.[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        && Math.abs(toNumber(a?.[1], 0) - toNumber(b?.[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+}
+
+function formatLimitValue(mbps) {
+    if (toNumber(mbps, 0) === 0) {
+        return "Unlimited";
+    }
+    return scaleNumber(toNumber(mbps, 0) * 1000 * 1000, 1);
+}
+
+function buildEffectiveLimitCellHtml(node) {
+    const effective = effectiveMax(node);
+    const effectiveValue = `${formatLimitValue(effective[0])} / ${formatLimitValue(effective[1])}`;
+    return `<div class="lqos-limit-block"><div class="lqos-limit-line">${effectiveValue}</div></div>`;
+}
+
+function buildConfiguredLimitCellHtml(node) {
+    const configured = configuredMax(node);
+    const effective = effectiveMax(node);
+    const secondaryClass = ratesMatch(effective, configured)
+        ? "lqos-limit-line lqos-limit-secondary is-match"
+        : "lqos-limit-line lqos-limit-secondary";
+    const configuredValue = `${formatLimitValue(configured[0])} / ${formatLimitValue(configured[1])}`;
+    return `<div class="lqos-limit-block"><div class="${secondaryClass}">${configuredValue}</div></div>`;
+}
+
+function buildDirectionalLimitHtml(primaryMbps, configuredMbps, showConfigured) {
+    const primary = formatLimitValue(primaryMbps);
+    if (!showConfigured) {
+        return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div></div>`;
+    }
+    const match = Math.abs(toNumber(primaryMbps, 0) - toNumber(configuredMbps, 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+    const secondaryClass = match
+        ? "lqos-limit-line lqos-limit-secondary is-match"
+        : "lqos-limit-line lqos-limit-secondary";
+    return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div><div class="${secondaryClass}">Cfg ${formatLimitValue(configuredMbps)}</div></div>`;
+}
 
 function initTooltipsWithin(rootEl) {
     if (!rootEl) return;
@@ -86,11 +184,16 @@ function toggleNode(nodeId) {
 }
 
 function renderTree() {
+    const treeStack = document.createElement("div");
+    treeStack.classList.add("lqos-tree-stack");
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
     let treeTable = document.createElement("table");
-    treeTable.classList.add("table", "table-striped", "table-bordered");
+    treeTable.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead");
     thead.appendChild(theading("Name"));
-    thead.appendChild(theading("Limit"));
+    thead.appendChild(theading("Effective"));
+    thead.appendChild(theading("Configured"));
     thead.appendChild(theading("⬇️"));
     thead.appendChild(theading("⬆️"));
     thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
@@ -113,16 +216,16 @@ function renderTree() {
     });
 
     if (parent !== 0) {
-        let row = document.createElement("tr");
-        let col = document.createElement("td");
-        col.colSpan = 14;
-        col.classList.add("small", "text-center");
         if (upParent === 0) {
             upParent = tree[parent][1].immediate_parent;
         }
-        col.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'><i class='fa fa-chevron-up'></i> Up One Level - " + tree[upParent][1].name + "</a>";
-        row.appendChild(col);
-        thead.appendChild(row);
+        const navWrap = document.createElement("div");
+        navWrap.classList.add("lqos-tree-nav");
+        navWrap.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'>" +
+            "<i class='fa fa-chevron-up'></i> Up One Level" +
+            "<span class='lqos-tree-nav-detail'>" + tree[upParent][1].name + "</span>" +
+            "</a>";
+        treeStack.appendChild(navWrap);
     }
 
     treeTable.appendChild(tbody);
@@ -130,7 +233,9 @@ function renderTree() {
     // Clear and apply
     let target = document.getElementById("tree");
     clearDiv(target)
-    target.appendChild(treeTable);
+    tableWrap.appendChild(treeTable);
+    treeStack.appendChild(tableWrap);
+    target.appendChild(treeStack);
     initTooltipsWithin(treeTable);
 }
 
@@ -156,22 +261,24 @@ function getInitialTree() {
 function fillHeader(node) {
     //console.log("Header");
     $("#nodeName").text(node.name);
-    let limitD = "";
-    if (node.max_throughput[0] === 0) {
-        limitD = "Unlimited";
-    } else {
-        limitD = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
-    }
-    let limitU = "";
-    if (node.max_throughput[1] === 0) {
-        limitU = "Unlimited";
-    } else {
-        limitU = scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
-    }
-    $("#parentLimitsD").text(limitD);
-    $("#parentLimitsU").text(limitU);
-    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]));
-    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]));
+    const configured = configuredMax(node);
+    const effective = effectiveMax(node);
+    const configuredDown = formatLimitValue(configured[0]);
+    const configuredUp = formatLimitValue(configured[1]);
+    const effectiveDown = formatLimitValue(effective[0]);
+    const effectiveUp = formatLimitValue(effective[1]);
+    const matchClassDown = Math.abs(toNumber(effective[0], 0) - toNumber(configured[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        ? "lqos-limit-secondary is-match"
+        : "lqos-limit-secondary";
+    const matchClassUp = Math.abs(toNumber(effective[1], 0) - toNumber(configured[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+        ? "lqos-limit-secondary is-match"
+        : "lqos-limit-secondary";
+    $("#parentEffectiveD").text(effectiveDown);
+    $("#parentEffectiveU").text(effectiveUp);
+    $("#parentConfiguredD").text(configuredDown).removeClass("lqos-limit-secondary is-match").addClass(matchClassDown);
+    $("#parentConfiguredU").text(configuredUp).removeClass("lqos-limit-secondary is-match").addClass(matchClassUp);
+    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effective[0]));
+    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effective[1]));
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
@@ -264,33 +371,28 @@ function buildRow(i, depth=0) {
     col.id = "limit-" + nodeId;
     col.classList.add("small");
     col.style.width = "8%";
-    let limit = "";
-    if (node.max_throughput[0] === 0) {
-        limit = "Unlimited";
-    } else {
-        limit = scaleNumber(toNumber(node.max_throughput[0], 0) * 1000 * 1000, 1);
-    }
-    limit += " / ";
-    if (node.max_throughput[1] === 0) {
-        limit += "Unlimited";
-    } else {
-        limit += scaleNumber(toNumber(node.max_throughput[1], 0) * 1000 * 1000, 1);
-    }
-    col.textContent = limit;
+    col.innerHTML = buildEffectiveLimitCellHtml(node);
+    row.appendChild(col);
+
+    col = document.createElement("td");
+    col.id = "configured-limit-" + nodeId;
+    col.classList.add("small");
+    col.style.width = "8%";
+    col.innerHTML = buildConfiguredLimitCellHtml(node);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "down-" + nodeId;
     col.classList.add("small");
-    col.style.width = "6%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
+    col.style.width = "5%";
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
-    col.style.width = "6%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
+    col.style.width = "5%";
+    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -401,13 +503,22 @@ function treeUpdate(msg) {
             fillHeader(node);
         }
 
-        let col = document.getElementById("down-" + nodeId);
+        let col = document.getElementById("limit-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, node.max_throughput[0]);
+            col.innerHTML = buildEffectiveLimitCellHtml(node);
+        }
+        col = document.getElementById("configured-limit-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = buildConfiguredLimitCellHtml(node);
+        }
+
+        col = document.getElementById("down-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
         }
         col = document.getElementById("up-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, node.max_throughput[1]);
+            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
         }
         col = document.getElementById("rtt-down-" + nodeId);
         if (col !== null) {
@@ -495,54 +606,139 @@ function clientsUpdate(msg) {
 
     let target = document.getElementById("clients");
     let table = document.createElement("table");
-    table.classList.add("table", "table-striped", "table-bordered");
+    table.classList.add("lqos-table", "lqos-table-tight");
     table.appendChild(clientTableHeader());
     let tbody = document.createElement("tbody");
     clearDiv(target);
 
+    const circuits = new Map();
     msg.data.forEach((device) => {
-        if (device.parent_node === myName) {
+        if (device.parent_node !== myName) {
+            return;
+        }
+
+        const circuitId = device.circuit_id || `${device.parent_node || ""}:${device.circuit_name || ""}`;
+        if (!circuits.has(circuitId)) {
+            circuits.set(circuitId, {
+                circuit_id: circuitId,
+                circuit_name: device.circuit_name || "(Unknown circuit)",
+                parent_node: device.parent_node || "",
+                plan: {
+                    down: toNumber(device.plan?.down, 0),
+                    up: toNumber(device.plan?.up, 0),
+                },
+                device_names: new Set(),
+                ips: new Set(),
+                last_seen_nanos: toNumber(device.last_seen_nanos, 0),
+                bytes_per_second: {down: 0, up: 0},
+                median_latency: {down: null, up: null},
+                tcp_packets: {down: 0, up: 0},
+                tcp_retransmits: {down: 0, up: 0},
+            });
+        }
+
+        const circuit = circuits.get(circuitId);
+        if (device.device_name) {
+            circuit.device_names.add(device.device_name);
+        }
+        const ipText = formatDeviceIp(device.ip);
+        if (ipText && ipText !== "-") {
+            circuit.ips.add(ipText);
+        }
+
+        circuit.last_seen_nanos = Math.min(circuit.last_seen_nanos, toNumber(device.last_seen_nanos, 0));
+        circuit.bytes_per_second.down += toNumber(device.bytes_per_second?.down, 0);
+        circuit.bytes_per_second.up += toNumber(device.bytes_per_second?.up, 0);
+        circuit.tcp_packets.down += toNumber(device.tcp_packets?.down, 0);
+        circuit.tcp_packets.up += toNumber(device.tcp_packets?.up, 0);
+        circuit.tcp_retransmits.down += toNumber(device.tcp_retransmits?.down, 0);
+        circuit.tcp_retransmits.up += toNumber(device.tcp_retransmits?.up, 0);
+
+        const downLatency = toNumber(device.median_latency?.down, 0);
+        if (downLatency > 0 && (circuit.median_latency.down === null || downLatency > circuit.median_latency.down)) {
+            circuit.median_latency.down = downLatency;
+        }
+        const upLatency = toNumber(device.median_latency?.up, 0);
+        if (upLatency > 0 && (circuit.median_latency.up === null || upLatency > circuit.median_latency.up)) {
+            circuit.median_latency.up = upLatency;
+        }
+    });
+
+    Array.from(circuits.values())
+        .sort((a, b) => a.circuit_name.localeCompare(b.circuit_name))
+        .forEach((circuit) => {
             let tr = document.createElement("tr");
             tr.classList.add("small");
+
             let linkTd = document.createElement("td");
             let circuitLink = document.createElement("a");
-            circuitLink.href = "/circuit.html?id=" + device.circuit_id;
-            circuitLink.innerText = device.circuit_name;
+            circuitLink.href = "/circuit.html?id=" + circuit.circuit_id;
+            circuitLink.innerText = circuit.circuit_name;
+            circuitLink.classList.add("redactable");
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
-            tr.appendChild(simpleRow(device.device_name, true));
-            tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
-            tr.appendChild(simpleRow(device.parent_node));
-            tr.appendChild(simpleRow(device.ip));
-            tr.appendChild(simpleRow(formatLastSeen(device.last_seen_nanos)));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, device.plan.down)));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, device.plan.up)));
-            if (device.median_latency !== null) {
-                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.down)));
-                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.up)));
+
+            const deviceNames = Array.from(circuit.device_names);
+            const deviceCell = simpleRow(
+                deviceNames.length > 2 ? `${deviceNames[0]}, ${deviceNames[1]} +${deviceNames.length - 2}` : deviceNames.join(", "),
+                true
+            );
+            if (deviceNames.length > 0) {
+                deviceCell.title = deviceNames.join(", ");
+            }
+            tr.appendChild(deviceCell);
+
+            tr.appendChild(simpleRow(circuit.plan.down + " / " + circuit.plan.up));
+            tr.appendChild(simpleRow(circuit.parent_node, true));
+
+            const ipList = Array.from(circuit.ips);
+            const ipCell = simpleRow(
+                ipList.length > 2 ? `${ipList[0]}, ${ipList[1]} +${ipList.length - 2}` : ipList.join(", "),
+                true
+            );
+            if (ipList.length > 0) {
+                ipCell.title = ipList.join(", ");
+            }
+            tr.appendChild(ipCell);
+
+            tr.appendChild(simpleRow(formatLastSeen(circuit.last_seen_nanos)));
+            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.down * 8, circuit.plan.down)));
+            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.up * 8, circuit.plan.up)));
+
+            if (circuit.median_latency.down !== null) {
+                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.down)));
             } else {
                 tr.appendChild(simpleRow("-"));
+            }
+            if (circuit.median_latency.up !== null) {
+                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.up)));
+            } else {
                 tr.appendChild(simpleRow("-"));
             }
+
             let retr = 0;
-            const devicePacketsDown = toNumber(device.tcp_packets.down, 0);
-            if (devicePacketsDown > 0) {
-                retr = toNumber(device.tcp_retransmits.down, 0) / devicePacketsDown;
-            }
-            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
-            retr = 0;
-            const devicePacketsUp = toNumber(device.tcp_packets.up, 0);
-            if (devicePacketsUp > 0) {
-                retr = toNumber(device.tcp_retransmits.up, 0) / devicePacketsUp;
+            if (circuit.tcp_packets.down > 0) {
+                retr = circuit.tcp_retransmits.down / circuit.tcp_packets.down;
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
-            // Add it
+            retr = 0;
+            if (circuit.tcp_packets.up > 0) {
+                retr = circuit.tcp_retransmits.up / circuit.tcp_packets.up;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
+
             tbody.appendChild(tr);
-        }
-    });
+        });
     table.appendChild(tbody);
-    target.appendChild(table);
+    const sectionLabel = document.createElement("div");
+    sectionLabel.classList.add("lqos-tree-section-label");
+    sectionLabel.innerHTML = "<i class='fa fa-network-wired'></i> Attached Circuits";
+    const tableWrap = document.createElement("div");
+    tableWrap.classList.add("lqos-table-wrap");
+    tableWrap.appendChild(table);
+    target.appendChild(sectionLabel);
+    target.appendChild(tableWrap);
 }
 
 function onMessage(msg) {

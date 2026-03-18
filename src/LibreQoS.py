@@ -26,6 +26,12 @@ from virtual_tree_nodes import (
     build_physical_network,
     is_virtual_node,
 )
+from shaping_skip_report import (
+    build_unshaped_device_report,
+    collect_parent_node_names,
+    device_shaping_key,
+    format_unshaped_device_line,
+)
 
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
     is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
@@ -35,6 +41,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     is_insight_enabled, \
     fast_queues_fq_codel, \
+    shaping_cpu_count, \
     Bakery
 
 # Optional: urgent issue submission (available in newer liblqos_python)
@@ -189,7 +196,10 @@ def findQueuesAvailable(interfaceName):
         else:
             queuesAvailable = queues_available_override()
             print(f"Interface {interfaceName} NIC queues (Override):\t\t\t" + str(queuesAvailable))
-        cpuCount = multiprocessing.cpu_count()
+        try:
+            cpuCount = shaping_cpu_count()
+        except Exception:
+            cpuCount = multiprocessing.cpu_count()
         print("CPU cores:\t\t\t" + str(cpuCount))
         if queuesAvailable < 2:
             raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available.')
@@ -1550,7 +1560,7 @@ def refreshShapers():
         bakery = Bakery()
         bakery.start_batch() # Initializes the bakery transaction
         linuxTCcommands = []
-        devicesShaped = []
+        shapedDeviceKeys = set()
         # Root HTB Setup
         # Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
         thisInterface = interface_a()
@@ -1765,20 +1775,47 @@ def refreshShapers():
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:
-                                    ipMapBatch.add_ip_mapping(str(ipv4), circuit['classid'], data[node]['cpuNum'], False)
+                                    ipMapBatch.add_ip_mapping(
+                                        str(ipv4),
+                                        circuit['classid'],
+                                        data[node]['cpuNum'],
+                                        False,
+                                        circuit.get('circuitID', ''),
+                                        device.get('deviceID', ''),
+                                    )
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
-                                        ipMapBatch.add_ip_mapping(str(ipv4), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        ipMapBatch.add_ip_mapping(
+                                            str(ipv4),
+                                            circuit['up_classid'],
+                                            data[node]['up_cpuNum'],
+                                            True,
+                                            circuit.get('circuitID', ''),
+                                            device.get('deviceID', ''),
+                                        )
                                         #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
                             if device['ipv6s']:
                                 for ipv6 in device['ipv6s']:
-                                    ipMapBatch.add_ip_mapping(str(ipv6), circuit['classid'], data[node]['cpuNum'], False)
+                                    ipMapBatch.add_ip_mapping(
+                                        str(ipv6),
+                                        circuit['classid'],
+                                        data[node]['cpuNum'],
+                                        False,
+                                        circuit.get('circuitID', ''),
+                                        device.get('deviceID', ''),
+                                    )
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
-                                        ipMapBatch.add_ip_mapping(str(ipv6), circuit['up_classid'], data[node]['up_cpuNum'], True)
+                                        ipMapBatch.add_ip_mapping(
+                                            str(ipv6),
+                                            circuit['up_classid'],
+                                            data[node]['up_cpuNum'],
+                                            True,
+                                            circuit.get('circuitID', ''),
+                                            device.get('deviceID', ''),
+                                        )
                                         #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
-                            if device['deviceName'] not in devicesShaped:
-                                devicesShaped.append(device['deviceName'])
+                            shapedDeviceKeys.add(device_shaping_key(circuit, device))
                 # Recursive call this function for children nodes attached to this node
                 if 'children' in data[node]:
                     # Sort children to ensure consistent traversal order
@@ -1864,17 +1901,21 @@ def refreshShapers():
 
 
         # Recap - warn operator if devices were skipped
-        devicesSkipped = []
-        for circuit in subscriberCircuits:
-            for device in circuit['devices']:
-                if device['deviceName'] not in devicesShaped:
-                    devicesSkipped.append((device['deviceName'],device['deviceID']))
+        validParentNodes = collect_parent_node_names(network)
+        devicesSkipped = build_unshaped_device_report(
+            subscriberCircuits,
+            shapedDeviceKeys,
+            validParentNodes,
+            flat_network,
+        )
         if len(devicesSkipped) > 0:
-            warnings.warn('Some devices were not shaped. Please check to ensure they have a valid ParentNode listed in ShapedDevices.csv:', stacklevel=2)
+            warnings.warn(
+                str(len(devicesSkipped)) + " device(s) were not shaped. Detailed reasons are listed below.",
+                stacklevel=2,
+            )
             print("Devices not shaped:")
             for entry in devicesSkipped:
-                name, idNum = entry
-                print('DeviceID: ' + idNum + '\t DeviceName: ' + name)
+                print(format_unshaped_device_line(entry))
 
         # Save ShapedDevices.csv as ShapedDevices.lastLoaded.csv
         shutil.copyfile('ShapedDevices.csv', 'ShapedDevices.lastLoaded.csv')

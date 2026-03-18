@@ -11,6 +11,8 @@ pub struct UispSite {
     pub id: String,
     pub name: String,
     pub site_type: UispSiteType,
+    pub latitude: Option<f32>,
+    pub longitude: Option<f32>,
     pub uisp_parent_id: Option<String>,
     pub parent_indices: HashSet<usize>,
     pub max_down_mbps: u64,
@@ -32,6 +34,8 @@ impl Default for UispSite {
             id: "".to_string(),
             name: "".to_string(),
             site_type: UispSiteType::Site,
+            latitude: None,
+            longitude: None,
             uisp_parent_id: None,
             parent_indices: Default::default(),
             max_down_mbps: 0,
@@ -54,15 +58,15 @@ impl UispSite {
         let mut uisp_parent_id = None;
 
         if let Some(id) = &value.identification {
-            if let Some(parent) = &id.parent {
-                if let Some(pid) = &parent.id {
-                    uisp_parent_id = Some(pid.clone());
-                }
+            if let Some(parent) = &id.parent
+                && let Some(pid) = &parent.id
+            {
+                uisp_parent_id = Some(pid.clone());
             }
-            if let Some(status) = &id.status {
-                if status == "disconnected" {
-                    warn!("Site {:?} is disconnected.", id.name);
-                }
+            if let Some(status) = &id.status
+                && status == "disconnected"
+            {
+                warn!("Site {:?} is disconnected.", id.name);
             }
         }
 
@@ -70,6 +74,12 @@ impl UispSite {
             config.queues.generated_pn_download_mbps,
             config.queues.generated_pn_upload_mbps,
         );
+        let (latitude, longitude) = value
+            .description
+            .as_ref()
+            .and_then(|description| description.location.as_ref())
+            .map(|location| (Some(location.latitude as f32), Some(location.longitude as f32)))
+            .unwrap_or((None, None));
         // Extract UISP QoS base speeds (bps -> Mbps) and burst sizes (kB/s -> Mbps)
         let mut base_down_mbps: f32 = 0.0;
         let mut base_up_mbps: f32 = 0.0;
@@ -118,6 +128,8 @@ impl UispSite {
             id: value.id.clone(),
             name: value.name_or_blank(),
             site_type: UispSiteType::from_uisp_record(value).unwrap(),
+            latitude,
+            longitude,
             parent_indices: HashSet::new(),
             uisp_parent_id,
             max_down_mbps,
@@ -159,57 +171,52 @@ impl UispSite {
         let mut links = Vec::new();
 
         for device in devices.iter() {
-            if let Some(device_site) = device.get_site_id() {
-                if device_site == self.id {
-                    // We're in the correct site, now look for anything that
-                    // links to/from this device
-                    let potential_ap_id = device.get_id();
-                    let mut potential_ap = DetectedAccessPoint {
-                        site_id: self.id.clone(),
-                        device_id: potential_ap_id.clone(),
-                        device_name: device.get_name().unwrap_or(String::new()),
-                        child_sites: vec![],
-                    };
+            if let Some(device_site) = device.get_site_id()
+                && device_site == self.id
+            {
+                // We're in the correct site, now look for anything that
+                // links to/from this device
+                let potential_ap_id = device.get_id();
+                let mut potential_ap = DetectedAccessPoint {
+                    site_id: self.id.clone(),
+                    device_id: potential_ap_id.clone(),
+                    device_name: device.get_name().unwrap_or(String::new()),
+                    child_sites: vec![],
+                };
 
-                    for dl in data_links.iter() {
-                        // The "I'm the FROM device case"
-                        if let Some(from_device) = &dl.from.device {
-                            if from_device.identification.id == potential_ap_id {
-                                if let Some(to_site) = &dl.to.site {
-                                    if to_site.identification.id != self.id {
-                                        // We have a data link from this device that goes to
-                                        // another site.
-                                        if let Some(remote_site) =
-                                            sites.iter().find(|s| s.id == to_site.identification.id)
-                                        {
-                                            potential_ap.child_sites.push(remote_site.id.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // The "I'm the TO the device case"
-                        if let Some(to_device) = &dl.to.device {
-                            if to_device.identification.id == potential_ap_id {
-                                if let Some(from_site) = &dl.from.site {
-                                    if from_site.identification.id != self.id {
-                                        // We have a data link from this device that goes to
-                                        // another site.
-                                        if let Some(remote_site) = sites
-                                            .iter()
-                                            .find(|s| s.id == from_site.identification.id)
-                                        {
-                                            potential_ap.child_sites.push(remote_site.id.clone());
-                                        }
-                                    }
-                                }
-                            }
+                for dl in data_links.iter() {
+                    // The "I'm the FROM device case"
+                    if let Some(from_device) = &dl.from.device
+                        && from_device.identification.id == potential_ap_id
+                        && let Some(to_site) = &dl.to.site
+                        && to_site.identification.id != self.id
+                    {
+                        // We have a data link from this device that goes to
+                        // another site.
+                        if let Some(remote_site) =
+                            sites.iter().find(|s| s.id == to_site.identification.id)
+                        {
+                            potential_ap.child_sites.push(remote_site.id.clone());
                         }
                     }
-                    if !potential_ap.child_sites.is_empty() {
-                        links.push(potential_ap);
+
+                    // The "I'm the TO the device case"
+                    if let Some(to_device) = &dl.to.device
+                        && to_device.identification.id == potential_ap_id
+                        && let Some(from_site) = &dl.from.site
+                        && from_site.identification.id != self.id
+                    {
+                        // We have a data link from this device that goes to
+                        // another site.
+                        if let Some(remote_site) =
+                            sites.iter().find(|s| s.id == from_site.identification.id)
+                        {
+                            potential_ap.child_sites.push(remote_site.id.clone());
+                        }
                     }
+                }
+                if !potential_ap.child_sites.is_empty() {
+                    links.push(potential_ap);
                 }
             }
         }

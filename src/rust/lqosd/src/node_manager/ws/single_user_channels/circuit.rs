@@ -1,5 +1,6 @@
 use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
+use crate::rtt_exclusions;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_bus::BusRequest;
@@ -60,10 +61,11 @@ pub(super) async fn circuit_watcher(
             circuit_id: circuit.clone(),
             devices: devices_for_circuit,
             qoo_score,
+            rtt_excluded: rtt_exclusions::is_excluded_circuit_id(&circuit),
         };
 
         if let Ok(payload) = encode_ws_message(&result) {
-            if let Err(_) = tx.send(payload).await {
+            if tx.send(payload).await.is_err() {
                 info!("Channel is gone");
                 break;
             }

@@ -1,79 +1,135 @@
-# Solución de Problemas
+# Solución de problemas
 
-## Problemas Comunes
+## Empiece aquí: triage por síntoma
+
+Use esta tabla para ir al primer check rápidamente.
+
+¿Necesita definiciones de términos de licencia/scheduler? Vea el [Glosario](glossary-es.md).
+
+| Síntoma | Primer check | Ubicación en WebUI | Siguiente sección |
+|---|---|---|---|
+| No se puede acceder a la WebUI | `systemctl status lqosd` | N/A (UI no disponible) | No hay WebUI en x.x.x.x:9123 |
+| Hay tráfico pero no hace shaping | verificar `to_internet` / `to_network` y servicios | WebUI Dashboard | LibreQoS está en ejecución, pero no hace shaping |
+| Scheduler no saludable | revisar logs de `lqosd` y `lqos_scheduler` | WebUI -> Scheduler Status | El estado del scheduler en WebUI aparece no saludable |
+| Vistas de topología/flujo vacías | confirmar tráfico reciente y estado de `lqosd` | WebUI -> Flow Globe / Tree / ASN Analysis | Flow Globe / Tree Overview / ASN Analysis aparecen en blanco |
+| Aparece código urgente | abrir detalle y mapear código | WebUI -> Urgent Issues | Códigos de problemas urgentes y primeras acciones |
+| Eventos de límite de circuitos | validar licencia y conteos mapped | Insight UI + WebUI -> Urgent Issues | Se alcanzó el límite de circuitos mapeados |
+
+## Problemas comunes
+
+### Dónde en la WebUI
+
+- Estado de servicios y salud general: `WebUI -> Dashboard`
+- Estado/readiness del scheduler: `WebUI -> Scheduler Status`
+- Alertas prioritarias: `WebUI -> Urgent Issues`
+- Visualización de topología/tráfico: `WebUI -> Network Tree Overview` y `Flow Globe`
+- Revisión de datos de shaping: `WebUI -> Shaped Devices Editor`
+
+### Antes de pedir ayuda en chat: recolecte esta evidencia
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqosd --since "30 minutes ago"
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+
+Si el problema es de integración, agregue:
+
+```bash
+ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+```
+
+Incluya también:
+- versión/build actual
+- tipo de integración y estrategia
+- síntoma exacto y hora de inicio
 
 ### La contraseña de usuario no funciona
 
-Eliminar el archivo lqusers:
-```
+Elimine el archivo de usuarios:
+
+```bash
 sudo rm /opt/libreqos/src/lqusers.toml
 sudo systemctl restart lqosd lqos_scheduler
 ```
-Entonces visita: BOX_IP:9123/index.html
-Esto le permitirá configurar el usuario nuevamente desde cero utilizando la interfaz web.
+
+Luego abra: `IP_CAJA:9123/index.html`.
 
 ### No hay WebUI en x.x.x.x:9123
 
-La interfaz web (WebUI) está controlada por el servicio lqosd. Generalmente, cuando la WebUI no se inicia, se debe a que lqosd está en un estado fallido. Verifica si el servicio lqosd está corriendo con el siguiente comando:
-```
+La WebUI depende de `lqosd`. En builds actuales, la mayoría de fallas de acceso WebUI se explican por `lqosd` no saludable.
+
+```bash
 sudo systemctl status lqosd
 ```
 
-Si el estado es 'failed', examina la causa usando journalctl, que muestra el estado completo del servicio:
-```
-journalctl -u lqosd --since "10 minutes ago"
-```
-Presiona la tecla End en el teclado para ir al final del registro y ver las últimas actualizaciones.
+Luego siga el flujo completo en **El servicio lqosd no se ejecuta o falla al iniciar**.
 
-Lqosd proporcionará razones específicas del fallo, como por ejemplo que una interfaz no está activa, o que le falta soporte para múltiples filas (multi-queue), u otros problemas.
+### LibreQoS está en ejecución, pero no hace shaping
 
-### LibreQoS está en ejecución, pero no se está aplicando el shaping al tráfico
+Verifique en `/etc/lqos.conf` que `to_internet` y `to_network` estén correctos.
 
-En el archivo /etc/lqos.conf, asegúrese de que los parámetros `to_internet` y `to_network` estén configurados correctamente.
-Si no lo están, simplemente intercambie las interfaces y reinicie lqosd y el scheduler.
-
-```
+```bash
 sudo systemctl restart lqosd lqos_scheduler
-```
-
-Asegurese de que los servicios estén funcionando correctamente
-
-```
 sudo systemctl status lqosd lqos_scheduler
 ```
 
-El servicio lqos_scheduler depende de que el servicio lqosd esté en buen estado y en ejecución.
+### On-a-stick: shaping incorrecto o una dirección débil
 
-### El servicio lqosd no se está ejecutando o falló al iniciar
+On-a-stick depende de split correcto por dirección. Si la detección TX o `override_available_queues` está mal, el mapeo puede degradarse.
 
-Verifica el estado del servicio lqosd:
-```
+```bash
 sudo systemctl status lqosd
+journalctl -u lqosd --since "10 minutes ago"
+sudo systemctl restart lqosd lqos_scheduler
 ```
 
-Si el estado es 'failed', examine la causa con journalctl, que muestra el estado completo del servicio:
-```
+### El servicio lqosd no se ejecuta o falla al iniciar
+
+```bash
+sudo systemctl status lqosd
 journalctl -u lqosd --since "10 minutes ago"
 ```
-Presiona la tecla End en el teclado para ir al final del registro y ver las últimas actualizaciones.
-
-Lqosd le mostrará razones específicas del fallo, como por ejemplo que una interfaz no está activa, que le falta soporte multi-queue, u otros problemas.
 
 ### Depuración avanzada de lqosd
 
-Desde la línea de comandos, ejecuta:
-```
+```bash
 sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd
 ```
-Esto ejecutará lqosd en modo debug y te proporcionará detalles sobre por qué falló al iniciar.
+
+### El servicio lqos_scheduler muestra errores
+
+```bash
+sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_log.txt
+```
+
+### El estado del scheduler en WebUI aparece no saludable
+
+Versiones recientes muestran estado/readiness del scheduler en WebUI.
+
+Si aparece caído/desactualizado:
+
+1. Verifique ambos servicios.
+2. Revise logs recientes del scheduler.
+3. Revise logs de `lqosd` para eventos de scheduler ready/error.
+4. Si hubo cambios recientes, reinicie servicios.
+
+```bash
+sudo systemctl status lqosd lqos_scheduler
+journalctl -u lqos_scheduler --since "30 minutes ago"
+journalctl -u lqosd --since "30 minutes ago"
+sudo systemctl restart lqosd lqos_scheduler
+```
+
+Si oscila entre ready/error, valide credenciales y timeouts de integración en `/etc/lqos.conf`.
 
 ### RTNETLINK answers: Invalid argument
 
-Este error suele aparecer cuando el qdisc tipo MQ no puede ser añadido correctamente a la interfaz de red (NIC).
-Esto sugiere que la tarjeta de red no tiene suficientes filas RX/TX. Asegurese de estar utilizando las [NICs recomendadas](requirements-es.md).
+Suele indicar que no se pudo agregar correctamente qdisc MQ en la NIC (colas RX/TX insuficientes). Verifique [NICs recomendadas](requirements-es.md).
 
-### Error de Python ModuleNotFoundError en Ubuntu 24.04
-```
+### Python ModuleNotFoundError en Ubuntu 24.04
+
+```bash
 pip uninstall binpacking --break-system-packages --yes
 sudo pip uninstall binpacking --break-system-packages --yes
 sudo pip install binpacking --break-system-packages
@@ -84,50 +140,92 @@ pip uninstall deepdiff --break-system-packages --yes
 sudo pip uninstall deepdiff --break-system-packages --yes
 sudo pip install deepdiff --break-system-packages
 ```
-### Todas las IPs de clientes aparecen como "Unknown IPs" en lugar de "Shaped Devices" en la interfaz gráfica
-```
+
+### Todas las IPs de clientes aparecen como Unknown IPs
+
+```bash
 cd /opt/libreqos/src
 sudo systemctl stop lqos_scheduler
 sudo python3 LibreQoS.py
 ```
-El texto que se genera en la terminal al ejecutar LibreQoS.py proporciona más detalles sobre errores más específicos relacionados con problemas en los archivos ShapedDevices.csv y network.json.
-Una vez que haya identificado el error y corregido ShapedDevices.csv y/o network.json, ejecute:
 
-```sudo systemctl start lqos_scheduler```
+Corrija errores en `ShapedDevices.csv` y/o `network.json`, luego:
 
-### Colisión al promover nodos virtuales (network.json)
-
-Si LibreQoS.py falla con un error como `Virtual node promotion collision: 'AP_A' already exists at this level.`, tienes un nodo con `"virtual": true` cuyos hijos se promueven a un nivel padre donde ya existe un nodo con el mismo nombre.
-
-Renombra uno de los nodos en conflicto (los nombres deben ser únicos entre hermanos después de la promoción), o reestructura la jerarquía para que los hijos promovidos no colisionen.
-
-### Error de segmentación (segfault) en systemd
-
-Si experimenta un segfault en systemd, este es un problema conocido en systemd [1](https://github.com/systemd/systemd/issues/36031) [2](https://github.com/systemd/systemd/issues/33643).
-Como solución temporal, puede compilar systemd desde cero:
-
-### Instalar dependencias de compilación
-
-```
-sudo apt update
-sudo apt install build-essential git meson libcap-dev libmount-dev libseccomp-dev \
-libblkid-dev libacl1-dev libattr1-dev libcryptsetup-dev libaudit-dev \
-libpam0g-dev libselinux1-dev libzstd-dev libcurl4-openssl-dev
+```bash
+sudo systemctl start lqos_scheduler
 ```
 
-#### Clonar el repositorio de systemd desde github
+### Flow Globe / Tree Overview / ASN Analysis aparecen en blanco
 
-```
-git clone https://github.com/systemd/systemd.git
-cd systemd
-git checkout v257.5
-meson setup build
-meson compile -C build
-sudo meson install -C build
-```
-Después, reinicia el sistema y confirma la versión de systemd con `systemctl --version`
+Algunas vistas requieren suficiente dato reciente para renderizar.
 
+1. Confirme que `lqosd` está saludable.
+2. Espere acumulación de tráfico.
+3. Recargue la página tras 1-2 minutos.
+4. Revise logs:
+
+```bash
+journalctl -u lqosd --since "10 minutes ago"
 ```
-libreqos@libreqos:~$ systemctl --version
-systemd 257 (257.5)
-```
+
+Si sigue en blanco con tráfico normal, recolecte logs y abra issue.
+
+### Colisión de promoción de nodo virtual (`network.json`)
+
+Si `LibreQoS.py` falla con `Virtual node promotion collision: 'AP_A' already exists at this level.`, hay un nodo con `"virtual": true` cuyos hijos colisionan por nombre al promoverse.
+
+Renombre nodos en conflicto o reestructure jerarquía para evitar colisiones.
+Para un visual del flujo lógico-a-físico y la asignación de CPU, consulte [Referencia avanzada de configuración](configuration-advanced-es.md).
+
+### Se alcanzó el límite de circuitos mapeados
+
+Si ve mensajes como:
+
+- `Mapped circuit limit reached`
+- `Bakery mapped circuit cap enforced`
+
+LibreQoS está aplicando un límite de circuitos mapeados.
+
+`ShapedDevices.csv` puede contener entradas ilimitadas, pero sin una suscripción/licencia Insight válida LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
+
+El límite predeterminado de 1000 circuitos mapeados aplica cuando Insight está:
+- ausente
+- expirado
+- inválido por cualquier motivo
+- operando con estado local de grant offline inválido
+
+Síntomas típicos visibles para el operador:
+- advertencia prominente de límite de circuitos mapeados en WebUI
+- indicador de uso en la navegación izquierda mostrando cercanía o agotamiento del límite de 1000
+- mensajes en `journalctl -u lqosd` con conteos requested/allowed/dropped
+- shaping parcial, con circuitos fuera del límite activo quedando fuera del estado de shaping
+
+Checks recomendados:
+
+1. Confirmar estado de licencia Insight en UI.
+2. Revisar logs de `lqosd` para requested/allowed/dropped.
+3. Reducir circuitos mapeados (corto plazo) o ajustar licencia/límites (largo plazo).
+
+### Códigos de problemas urgentes y primeras acciones
+
+WebUI muestra códigos legibles por máquina para triage rápido.
+
+| Código | Significado | Primeros checks | Ruta de corrección típica |
+|---|---|---|---|
+| `MAPPED_CIRCUIT_LIMIT` | Bakery está forzando límite de circuitos mapeados. | Estado de licencia Insight y `journalctl -u lqosd` con requested/allowed/dropped. | Reducir circuitos mapeados o actualizar licencia/límites. |
+| `TC_U16_OVERFLOW` | IDs minor de clases/colas excedieron rango u16 de tc en una cola CPU. | `journalctl -u lqos_scheduler -u lqosd`, profundidad topológica y distribución por colas. | Aumentar paralelismo de colas y/o simplificar/rebalancear jerarquía. |
+
+Patrón operativo:
+
+1. Abra el detalle del problema urgente en WebUI (código/mensaje/contexto).
+2. Recolecte logs correlacionados de `lqosd` y `lqos_scheduler`.
+3. Aplique mitigación inmediata.
+4. Reconozca/limpie el evento en UI cuando esté estable.
+
+## Páginas relacionadas
+
+- [Quickstart](quickstart-es.md)
+- [Configurar LibreQoS](configuration-es.md)
+- [Integraciones CRM/NMS](integrations-es.md)
+- [Escalado y diseño de topología](scale-topology-es.md)
+- [Ajuste de rendimiento](performance-tuning-es.md)

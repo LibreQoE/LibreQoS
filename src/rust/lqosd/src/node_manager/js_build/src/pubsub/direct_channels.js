@@ -8,7 +8,7 @@ export class DirectChannel {
         this.bound_handler = (msg) => {
             handler(msg);
         };
-        this.client.on(this.event_name, this.bound_handler);
+        this.dispose_handler = this.client.on(this.event_name, this.bound_handler);
         this.client.send({ Private: subObject });
     }
 
@@ -16,6 +16,11 @@ export class DirectChannel {
         if (!this.client || !this.bound_handler) {
             return;
         }
-        this.client.off(this.event_name, this.bound_handler);
+        if (this.dispose_handler) {
+            this.dispose_handler();
+            this.dispose_handler = null;
+        } else {
+            this.client.off(this.event_name, this.bound_handler);
+        }
     }
 }

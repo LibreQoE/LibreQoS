@@ -18,22 +18,21 @@ Si tu despliegue MPLS usa un patrón distinto, lo ideal es terminar el tráfico 
 - Ruta primaria (bajo costo) *a través* del servidor que ejecuta LibreQoS.
 - Ruta de respaldo (alto costo) *evitando* el servidor que ejecuta LibreQoS.
 
-#### Diagrama
-![Offical Configuration](https://github.com/user-attachments/assets/e5914a58-3ec6-4eb1-b016-8a57582dd082)
+```{mermaid}
+flowchart LR
+    A[Router de borde] -->|Ruta preferida OSPF/BGP| B[Ruta inline de LibreQoS]
+    B --> C[Router/Switch core]
+    A -->|Ruta de respaldo de mayor costo| C
+```
+
+Interpretación:
+1. En operación normal, el enrutamiento prefiere la ruta inline de bajo costo a través de LibreQoS.
+2. Si la ruta inline falla, el enrutamiento converge hacia la ruta bypass de mayor costo.
+3. Tras la recuperación, la preferencia de rutas devuelve el tráfico a la ruta inline.
 
 ### Opción 1: Enrutamiento dinámico (recomendado)
 
 Recomendamos usar protocolos como OSPF para definir rutas de bajo y alto costo entre el router de borde y el router/switch de distribución. La ruta de bajo costo debe pasar “a través” de las interfaces puente del shaper para que LibreQoS pueda observar y regular el tráfico. Por ejemplo, la ruta OSPF de bajo costo puede tener costo 1. El enlace de alto costo (respaldo) debe omitir por completo LibreQoS y configurarse con un costo mayor (por ejemplo 100 en OSPF) para que el tráfico solo tome ese camino cuando el puente de LibreQoS no esté operativo.
-
-### Opción 2: Spanning Tree Protocol (no recomendado)
-
-También puedes usar Spanning Tree Protocol con costos de ruta si OSPF u otro protocolo dinámico no es posible.
-
-```{note}
-Casi las mismas consideraciones aplican a la configuración alternativa que a la configuración oficialmente soportada.
-```
-
-Ten en cuenta que, si usas enlaces con distintos anchos de banda (por ejemplo, 10 Gbps a través de LibreQoS y 1 Gbps entre el switch central y el router de borde), deberás ajustar con mayor cuidado los costos de STP.
 
 ## Despliegue de laboratorio (opcional)
 Cuando pruebes LibreQoS por primera vez puedes desplegar un laboratorio a pequeña escala para verlo en acción.

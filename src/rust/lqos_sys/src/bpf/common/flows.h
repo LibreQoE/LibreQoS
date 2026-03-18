@@ -6,6 +6,7 @@
 #include <bpf/bpf_helpers.h>
 #include "dissector.h"
 #include "debug.h"
+#include "lpm.h"
 
 
 #define SECOND_IN_NANOS 1000000000ULL
@@ -91,6 +92,21 @@ struct flow_data_t {
     __u8 ip_flags;
     // Padding
     __u8 pad2[5];
+
+    // Mapped TC handle and CPU from ip_info.
+    // NOTE: These are not currently used for shaping decisions in userspace,
+    // but are stored for future use and to avoid repeated lookups.
+    __u32 tc_handle;
+    __u32 cpu;
+
+    // Hashed circuit/device identifiers (from ShapedDevices.csv) as stored in ip_info.
+    __u64 circuit_hash;
+    __u64 device_hash;
+
+    // Cached mapping epoch (from ip_mapping_epoch). When this differs from the
+    // current epoch, per-flow mapping metadata should be refreshed from the LPM/hotcache.
+    __u32 mapping_epoch;
+    __u32 pad3;
 };
 
 // Map for tracking TCP flow progress.
@@ -204,22 +220,54 @@ static __always_inline void update_flow_rates(
     }
 }
 
+static __always_inline void update_flow_metadata(
+    struct flow_data_t *data,
+    __u32 tc_handle,
+    __u32 cpu,
+    __u64 circuit_hash,
+    __u64 device_hash,
+    __u32 mapping_epoch
+) {
+    data->tc_handle = tc_handle;
+    data->cpu = cpu;
+    data->circuit_hash = circuit_hash;
+    data->device_hash = device_hash;
+    data->mapping_epoch = mapping_epoch;
+}
+
+static __always_inline __u32 get_current_ip_mapping_epoch() {
+    __u32 zero = 0;
+    __u32 *epoch = bpf_map_lookup_elem(&ip_mapping_epoch, &zero);
+    if (epoch) {
+        return *epoch;
+    }
+    return 0;
+}
+
 // Handle Per-Flow ICMP Analysis
 static __always_inline void process_icmp(
     struct dissector_t *dissector,
-    u_int8_t direction,
+    struct flow_key_t *key,
+    struct flow_data_t *data,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    struct ip_hash_info *mapping,
+    __u32 mapping_epoch
 ) {
-    struct flow_key_t key = build_flow_key(dissector, direction);
-    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         __u32 zero = 0;
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_metadata(
+            new_data,
+            mapping->tc_handle,
+            mapping->cpu,
+            mapping->circuit_id,
+            mapping->device_id,
+            mapping_epoch
+        );
         update_flow_rates(dissector, rate_index, new_data);
-        if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
+        if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
@@ -231,19 +279,27 @@ static __always_inline void process_icmp(
 // Handle Per-Flow UDP Analysis
 static __always_inline void process_udp(
     struct dissector_t *dissector,
-    u_int8_t direction,
+    struct flow_key_t *key,
+    struct flow_data_t *data,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    struct ip_hash_info *mapping,
+    __u32 mapping_epoch
 ) {
-    struct flow_key_t key = build_flow_key(dissector, direction);
-    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         __u32 zero = 0;
         struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
         if (!new_data) return;
         init_flow_data(dissector, new_data);
+        update_flow_metadata(
+            new_data,
+            mapping->tc_handle,
+            mapping->cpu,
+            mapping->circuit_id,
+            mapping->device_id,
+            mapping_epoch
+        );
         update_flow_rates(dissector, rate_index, new_data);
-        if (bpf_map_update_elem(&flowbee, &key, new_data, BPF_ANY) != 0) {
+        if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
         }
@@ -413,7 +469,11 @@ static __always_inline void process_tcp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index
+    u_int8_t other_rate_index,
+    struct flow_key_t *key,
+    struct flow_data_t *data,
+    struct ip_hash_info *mapping,
+    __u32 mapping_epoch
 ) {
     // SYN packet indicating the start of a conversation. We are explicitly ignoring
     // SYN-ACK packets, we just want to catch the opening of a new connection.
@@ -424,29 +484,68 @@ static __always_inline void process_tcp(
         #ifdef VERBOSE
         bpf_debug("[FLOWS] New TCP Connection Detected (%u)", direction);
         #endif
-        struct flow_key_t key = build_flow_key(dissector, direction);
         __u32 zero = 0;
-        struct flow_data_t *data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
-        if (!data) {
+        struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
+        if (!new_data) {
             bpf_debug("[FLOWS] Failed to allocate scratch flow");
             return;
         }
-        init_flow_data(dissector, data);
-        data->ip_flags = 0; // Obtain these
-        if (bpf_map_update_elem(&flowbee, &key, data, BPF_ANY) != 0) {
+        init_flow_data(dissector, new_data);
+        new_data->ip_flags = 0; // Obtain these
+        update_flow_metadata(
+            new_data,
+            mapping->tc_handle,
+            mapping->cpu,
+            mapping->circuit_id,
+            mapping->device_id,
+            mapping_epoch
+        );
+        if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
         }
         return;
     }
 
-    // Build the flow key to uniquely identify this flow
-    struct flow_key_t key = build_flow_key(dissector, direction);
-    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
-        // If it isn't a flow we're tracking, bail out now
-        #ifdef VERBOSE
-        bpf_debug("Bailing");
-        #endif
+        // If we missed the SYN (e.g., program reload), consider seeding an entry so
+        // subsequent packets can use the flowbee mapping cache. Only do this when
+        // the packet is shaped (tc_handle != 0) to limit map churn.
+        if (mapping->tc_handle == 0) {
+            return;
+        }
+        __u32 zero = 0;
+        struct flow_data_t *new_data = bpf_map_lookup_elem(&flowbee_scratch, &zero);
+        if (!new_data) {
+            bpf_debug("[FLOWS] Failed to allocate scratch flow");
+            return;
+        }
+        init_flow_data(dissector, new_data);
+        new_data->ip_flags = 0; // Obtain these
+        update_flow_metadata(
+            new_data,
+            mapping->tc_handle,
+            mapping->cpu,
+            mapping->circuit_id,
+            mapping->device_id,
+            mapping_epoch
+        );
+
+        // Update the flow data with the current packet's information
+        update_flow_rates(dissector, rate_index, new_data);
+        // Sequence and Acknowledgement numbers
+        detect_retries(dissector, rate_index, new_data);
+        // Check TCP timestamps and attempt to calculate RTT
+        infer_tcp_rtt(dissector, key, new_data, rate_index, other_rate_index);
+        // Has the connection ended?
+        if (BITCHECK(DIS_TCP_FIN)) {
+            new_data->end_status = 1;
+        } else if (BITCHECK(DIS_TCP_RST)) {
+            new_data->end_status = 2;
+        }
+
+        if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
+            bpf_debug("[FLOWS] Failed to add new flow to map");
+        }
         return;
     }
 
@@ -457,7 +556,7 @@ static __always_inline void process_tcp(
     detect_retries(dissector, rate_index, data);
 
     // Check TCP timestamps and attempt to calculate RTT
-    infer_tcp_rtt(dissector, &key, data, rate_index, other_rate_index);
+    infer_tcp_rtt(dissector, key, data, rate_index, other_rate_index);
 
     // Has the connection ended?
     if (BITCHECK(DIS_TCP_FIN)) {
@@ -471,8 +570,75 @@ static __always_inline void process_tcp(
 // to replace both it and the old RTT system.
 static __always_inline void track_flows(
     struct dissector_t *dissector, // The packet dissector from the previous step
-    u_int8_t direction // The direction of the packet (1 = to internet, 2 = to local network)
+    u_int8_t direction, // The direction of the packet (1 = to internet, 2 = to local network)
+    struct ip_hash_info *out_mapping
 ) {
+    // Default to "unshaped".
+    out_mapping->tc_handle = 0;
+    out_mapping->cpu = 0;
+    out_mapping->circuit_id = 0;
+    out_mapping->device_id = 0;
+
+    // We only track flowbee entries for these protocols. For everything else,
+    // fall back to the (hotcache + LPM) lookup and skip flow tracking.
+    if (
+        dissector->ip_protocol != IPPROTO_TCP &&
+        dissector->ip_protocol != IPPROTO_UDP &&
+        dissector->ip_protocol != IPPROTO_ICMP
+    ) {
+        struct ip_hash_key lookup_key;
+        struct ip_hash_info *ip_info = setup_lookup_key_and_tc_cpu(direction, &lookup_key, dissector);
+        if (ip_info) {
+            out_mapping->tc_handle = ip_info->tc_handle;
+            out_mapping->cpu = ip_info->cpu;
+            out_mapping->circuit_id = ip_info->circuit_id;
+            out_mapping->device_id = ip_info->device_id;
+        }
+        apply_stick_offset_to_mapping(direction, out_mapping);
+        return;
+    }
+
+    __u32 mapping_epoch = get_current_ip_mapping_epoch();
+
+    // Build the flow key to uniquely identify this flow.
+    struct flow_key_t key = build_flow_key(dissector, direction);
+    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
+
+    if (data) {
+        // If mappings changed, refresh per-flow mapping metadata from the hotcache/LPM.
+        if (data->mapping_epoch != mapping_epoch) {
+            struct ip_hash_key lookup_key;
+            struct ip_hash_info *ip_info = setup_lookup_key_and_tc_cpu(direction, &lookup_key, dissector);
+            __u32 tc_handle = 0;
+            __u32 cpu = 0;
+            __u64 circuit_hash = 0;
+            __u64 device_hash = 0;
+            if (ip_info) {
+                tc_handle = ip_info->tc_handle;
+                cpu = ip_info->cpu;
+                circuit_hash = ip_info->circuit_id;
+                device_hash = ip_info->device_id;
+            }
+            update_flow_metadata(data, tc_handle, cpu, circuit_hash, device_hash, mapping_epoch);
+        }
+
+        // Populate out_mapping from the flow (fast path - no hotcache/LPM required).
+        out_mapping->tc_handle = data->tc_handle;
+        out_mapping->cpu = data->cpu;
+        out_mapping->circuit_id = data->circuit_hash;
+        out_mapping->device_id = data->device_hash;
+    } else {
+        // New flow (or untracked TCP before SYN). Do hotcache/LPM lookup.
+        struct ip_hash_key lookup_key;
+        struct ip_hash_info *ip_info = setup_lookup_key_and_tc_cpu(direction, &lookup_key, dissector);
+        if (ip_info) {
+            out_mapping->tc_handle = ip_info->tc_handle;
+            out_mapping->cpu = ip_info->cpu;
+            out_mapping->circuit_id = ip_info->circuit_id;
+            out_mapping->device_id = ip_info->device_id;
+        }
+    }
+
     u_int8_t rate_index;
     u_int8_t other_rate_index;
     // Ensure that we get DownUp order in the lqosd map
@@ -487,13 +653,18 @@ static __always_inline void track_flows(
     // Pass to the appropriate protocol handler
     switch (dissector->ip_protocol)
     {
-        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index); break;
-        case IPPROTO_UDP: process_udp(dissector, direction, rate_index, other_rate_index); break;
-        case IPPROTO_ICMP: process_icmp(dissector, direction, rate_index, other_rate_index); break;
+        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index, &key, data, out_mapping, mapping_epoch); break;
+        case IPPROTO_UDP: process_udp(dissector, &key, data, rate_index, out_mapping, mapping_epoch); break;
+        case IPPROTO_ICMP: process_icmp(dissector, &key, data, rate_index, out_mapping, mapping_epoch); break;
         default: {
             #ifdef VERBOSE
             bpf_debug("[FLOWS] Unsupported protocol: %d", dissector->ip_protocol);
             #endif
         }
     }
+
+    // Derive the upload-side mapping in on-a-stick mode by applying the
+    // configured stick offset. We do this after flow processing so we only
+    // cache the base mapping inside flowbee.
+    apply_stick_offset_to_mapping(direction, out_mapping);
 }

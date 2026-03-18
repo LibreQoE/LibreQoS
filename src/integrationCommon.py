@@ -57,6 +57,19 @@ def fixSubnet(inputIP):
 			return rawIp + "/32"
 	return inputIP
 
+
+def apply_client_bandwidth_multiplier(plan_rate_mbps):
+	# Convert a raw client/service plan rate into the effective shaped rate.
+	# The higher of bandwidth_overhead_factor and client_bandwidth_multiplier wins.
+	plan_rate_mbps = float(plan_rate_mbps or 0.0)
+	if plan_rate_mbps <= 0:
+		return 0.0
+	overhead = bandwidth_overhead_factor()
+	minimum = client_bandwidth_multiplier()
+	adjusted = plan_rate_mbps * overhead
+	floor_value = plan_rate_mbps * minimum
+	return max(adjusted, floor_value)
+
 class NodeType(enum.IntEnum):
 	# Enumeration to define what type of node
 	# a NetworkNode is.
@@ -84,6 +97,16 @@ def nodeTypeToString(integer):
 			string = 'device'
 	return(string)
 
+def syntheticNetworkJsonId(scope: str, nodeType: str, name: str) -> str:
+	parts = []
+	for ch in str(name).lower():
+		if ch.isalnum():
+			parts.append(ch)
+		elif not parts or parts[-1] != '-':
+			parts.append('-')
+	slug = ''.join(parts).strip('-')
+	return f"libreqos:generated:{scope}:{nodeType}:{slug}"
+
 class NetworkNode:
 	# Defines a node on a LibreQoS network graph.
 	# Nodes default to being disconnected, and
@@ -101,8 +124,11 @@ class NetworkNode:
 	ipv6: List
 	address: str
 	mac: str
+	networkJsonId: str
+	latitude: float
+	longitude: float
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "", networkJsonId: str = "", latitude = None, longitude = None) -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -118,6 +144,9 @@ class NetworkNode:
 		self.address = address
 		self.customerName = customerName
 		self.mac = mac
+		self.networkJsonId = networkJsonId
+		self.latitude = latitude
+		self.longitude = longitude
 
 
 class NetworkGraph:
@@ -306,7 +335,8 @@ class NetworkGraph:
 					siteNode = NetworkNode(
 						id=str(node.id) + "_gen",
 						displayName="(Generated Site) " + node.displayName,
-						type=NodeType.site
+						type=NodeType.site,
+						networkJsonId=syntheticNetworkJsonId("graph", "site", node.displayName),
 					)
 					siteNode.parentIndex = node.parentIndex
 					node.parentId = siteNode.id
@@ -440,6 +470,11 @@ class NetworkGraph:
 			"uploadBandwidthMbps": self.nodes[idx].uploadMbps,
 			'type': nodeTypeToString(self.nodes[idx].type),
 		}
+		if self.nodes[idx].networkJsonId:
+			node["id"] = self.nodes[idx].networkJsonId
+		if self.nodes[idx].latitude is not None and self.nodes[idx].longitude is not None:
+			node["latitude"] = self.nodes[idx].latitude
+			node["longitude"] = self.nodes[idx].longitude
 		children = {}
 		hasChildren = False
 		

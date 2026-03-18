@@ -46,6 +46,10 @@ pub async fn build_ap_only_network(
 
                 // Metadata
                 ap_object.insert("type".to_string(), "AP".to_string().into());
+                ap_object.insert(
+                    "id".to_string(),
+                    format!("uisp:device:{}", ap_device.id).into(),
+                );
                 ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
 
                 // Save the entry
@@ -75,7 +79,7 @@ pub async fn build_ap_only_network(
                 .collect::<Vec<_>>();
             for device in devices.iter().filter(|d| d.has_address()) {
                 // Compute subscriber rates: prefer UISP QoS + burst
-                let (mut download_min, mut download_max, mut upload_min, mut upload_max) =
+                let (download_min, mut download_max, upload_min, mut upload_max) =
                     if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
                         (
                             f32::max(0.1, dl_min),

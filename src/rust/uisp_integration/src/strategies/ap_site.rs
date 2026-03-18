@@ -107,18 +107,17 @@ pub(crate) fn map_sites_above_aps(
     let mut sites = HashMap::new();
     for (ap_name, client_ids) in ap_mappings.iter() {
         if let Some(device) = uisp_data.find_device_by_name(ap_name) {
-            if let Some(device_site_id) = device.get_site_id() {
-                if let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id) {
-                    let site_entry =
-                        sites
-                            .entry(device_site.name.clone())
-                            .or_insert_with(|| Layer {
-                                id: GraphMapping::SiteByName(device_site.name.clone()),
-                                children: Vec::new(),
-                            });
-                    let ap_map = access_points.get(ap_name).unwrap().clone();
-                    site_entry.children.push(ap_map);
-                }
+            if let Some(device_site_id) = device.get_site_id()
+                && let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id)
+            {
+                let site_entry = sites
+                    .entry(device_site.name.clone())
+                    .or_insert_with(|| Layer {
+                        id: GraphMapping::SiteByName(device_site.name.clone()),
+                        children: Vec::new(),
+                    });
+                let ap_map = access_points.get(ap_name).unwrap().clone();
+                site_entry.children.push(ap_map);
             }
         } else {
             let mut detached = Layer {
@@ -205,8 +204,17 @@ impl Layer {
                             site.max_down_mbps.into(),
                         );
                         root.insert("uploadBandwidthMbps".to_owned(), site.max_up_mbps.into());
+                        root.insert("id".to_string(), format!("uisp:site:{}", site.id).into());
                         root.insert("uisp_site".to_string(), site.id.clone().into());
                         root.insert("parent_site".to_string(), name.to_string().into());
+                        if let (Some(latitude), Some(longitude)) = (site.latitude, site.longitude) {
+                            if let Some(number) = serde_json::Number::from_f64(latitude as f64) {
+                                root.insert("latitude".to_string(), serde_json::Value::Number(number));
+                            }
+                            if let Some(number) = serde_json::Number::from_f64(longitude as f64) {
+                                root.insert("longitude".to_string(), serde_json::Value::Number(number));
+                            }
+                        }
                     }
                 }
                 GraphMapping::AccessPointByName(name) => {
@@ -216,6 +224,7 @@ impl Layer {
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
+                        root.insert("id".to_string(), format!("uisp:device:{}", device.id).into());
                         root.insert("uisp_device".to_string(), device.id.clone().into());
                     }
                 }
@@ -228,58 +237,58 @@ impl Layer {
                             .collect::<Vec<_>>();
                         for device in devices.iter().filter(|d| d.has_address()) {
                             // Compute subscriber rates: prefer UISP QoS + burst
-                            let (
-                                mut download_min,
-                                mut download_max,
-                                mut upload_min,
-                                mut upload_max,
-                            ) = if let Some(site) =
-                                uisp_data.sites.iter().find(|s| s.id == *client_id)
-                            {
-                                if let Some((dl_min, dl_max, ul_min, ul_max)) =
-                                    site.burst_rates(&config)
+                            let (download_min, mut download_max, upload_min, mut upload_max) =
+                                if let Some(site) =
+                                    uisp_data.sites.iter().find(|s| s.id == *client_id)
                                 {
-                                    (
-                                        f32::max(0.1, dl_min),
-                                        f32::max(0.1, dl_max),
-                                        f32::max(0.1, ul_min),
-                                        f32::max(0.1, ul_max),
-                                    )
-                                } else if site.suspended
-                                    && config.uisp_integration.suspended_strategy == "slow"
-                                {
-                                    (0.1, 0.1, 0.1, 0.1)
+                                    if let Some((dl_min, dl_max, ul_min, ul_max)) =
+                                        site.burst_rates(config)
+                                    {
+                                        (
+                                            f32::max(0.1, dl_min),
+                                            f32::max(0.1, dl_max),
+                                            f32::max(0.1, ul_min),
+                                            f32::max(0.1, ul_max),
+                                        )
+                                    } else if site.suspended
+                                        && config.uisp_integration.suspended_strategy == "slow"
+                                    {
+                                        (0.1, 0.1, 0.1, 0.1)
+                                    } else {
+                                        (
+                                            f32::max(
+                                                0.1,
+                                                site.max_down_mbps as f32
+                                                    * config
+                                                        .uisp_integration
+                                                        .commit_bandwidth_multiplier,
+                                            ),
+                                            f32::max(
+                                                0.1,
+                                                site.max_down_mbps as f32
+                                                    * config
+                                                        .uisp_integration
+                                                        .bandwidth_overhead_factor,
+                                            ),
+                                            f32::max(
+                                                0.1,
+                                                site.max_up_mbps as f32
+                                                    * config
+                                                        .uisp_integration
+                                                        .commit_bandwidth_multiplier,
+                                            ),
+                                            f32::max(
+                                                0.1,
+                                                site.max_up_mbps as f32
+                                                    * config
+                                                        .uisp_integration
+                                                        .bandwidth_overhead_factor,
+                                            ),
+                                        )
+                                    }
                                 } else {
-                                    (
-                                        f32::max(
-                                            0.1,
-                                            site.max_down_mbps as f32
-                                                * config
-                                                    .uisp_integration
-                                                    .commit_bandwidth_multiplier,
-                                        ),
-                                        f32::max(
-                                            0.1,
-                                            site.max_down_mbps as f32
-                                                * config.uisp_integration.bandwidth_overhead_factor,
-                                        ),
-                                        f32::max(
-                                            0.1,
-                                            site.max_up_mbps as f32
-                                                * config
-                                                    .uisp_integration
-                                                    .commit_bandwidth_multiplier,
-                                        ),
-                                        f32::max(
-                                            0.1,
-                                            site.max_up_mbps as f32
-                                                * config.uisp_integration.bandwidth_overhead_factor,
-                                        ),
-                                    )
-                                }
-                            } else {
-                                (0.1, 0.1, 0.1, 0.1)
-                            };
+                                    (0.1, 0.1, 0.1, 0.1)
+                                };
                             if download_max < download_min {
                                 download_max = download_min;
                             }

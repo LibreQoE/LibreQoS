@@ -33,9 +33,21 @@ export class CpuDash extends BaseDashlet{
         this.graph = new CpuHistogram(this.graphDivId());
     }
 
+    setupZoomed() {
+        this.zoomGraph = new CpuHistogram(this.zoomGraphDivId());
+    }
+
+    teardownZoomed() {
+        super.teardownZoomed();
+        this.zoomGraph = null;
+    }
+
     onMessage(msg) {
         if (msg.event === "Cpu") {
             this.graph.update(msg.data);
+            if (this.zoomGraph) {
+                this.zoomGraph.update(msg.data);
+            }
         }
     }
 }

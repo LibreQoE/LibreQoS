@@ -128,10 +128,10 @@ function mdToHtml(md){
           const cells = rowMatch[1].split('|').map(c => c.trim());
           bodyRows.push(cells);
         }
-        let html = '<table class="table table-sm table-striped table-bordered">';
+        let html = '<div class="table-responsive lqos-table-wrap"><table class="lqos-table lqos-table-compact mb-0">';
         html += '<thead><tr>' + headerCells.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
         html += '<tbody>' + bodyRows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody>';
-        html += '</table>';
+        html += '</table></div>';
         out.push(html);
       } else {
         out.push(l);

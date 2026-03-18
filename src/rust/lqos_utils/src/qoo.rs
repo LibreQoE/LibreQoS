@@ -14,14 +14,14 @@ mod qoo_profile;
 
 pub use qoo_profile::{ProfileIoError, QooProfileSpec, QooProfilesFile};
 
+use crate::rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer};
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
-use crate::rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer};
 use smallvec::SmallVec;
 
 #[inline]
 fn clamp_0_100(x: f64) -> f64 {
-    x.max(0.0).min(100.0)
+    if x.is_nan() { 0.0 } else { x.clamp(0.0, 100.0) }
 }
 
 #[inline]
@@ -164,10 +164,11 @@ pub enum LossHandling {
 /// - Many deployments have unavoidable baseline RTT (geography/backhaul). If you want to measure
 ///   "how much extra latency is being added" (bufferbloat), subtract a baseline.
 /// - If you want an "absolute outcome score", use `None`.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum LatencyNormalization {
     /// Score absolute RTT directly against thresholds.
+    #[default]
     None,
 
     /// Subtract a fixed offset before scoring (equivalent to shifting thresholds upward).
@@ -219,12 +220,6 @@ pub struct QooProfile {
     /// Optional baseline/bias handling for latency.
     #[serde(default)]
     pub latency_normalization: LatencyNormalization,
-}
-
-impl Default for LatencyNormalization {
-    fn default() -> Self {
-        LatencyNormalization::None
-    }
 }
 
 /// Loss measurement input.
@@ -505,18 +500,20 @@ impl QoqScores {
     /// Return the download score as `Some(f32)` if present, otherwise `None`.
     #[inline]
     pub fn download_total_f32(self) -> Option<f32> {
-        (self.download_total != QOQ_UNKNOWN).then(|| self.download_total as f32)
+        (self.download_total != QOQ_UNKNOWN).then_some(self.download_total as f32)
     }
 
     /// Return the upload score as `Some(f32)` if present, otherwise `None`.
     #[inline]
     pub fn upload_total_f32(self) -> Option<f32> {
-        (self.upload_total != QOQ_UNKNOWN).then(|| self.upload_total as f32)
+        (self.upload_total != QOQ_UNKNOWN).then_some(self.upload_total as f32)
     }
 }
 
 fn score_to_u8(score: Option<f64>) -> u8 {
-    let Some(score) = score else { return QOQ_UNKNOWN };
+    let Some(score) = score else {
+        return QOQ_UNKNOWN;
+    };
     if !score.is_finite() {
         return QOQ_UNKNOWN;
     }
@@ -568,8 +565,13 @@ pub fn compute_qoq_scores(
     let ul_total = (rtt.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload)
         >= MIN_RTT_SAMPLES_FOR_QOO)
         .then(|| {
-            latency_for_direction(profile, rtt, FlowbeeEffectiveDirection::Upload, RttBucket::Total)
-                .score
+            latency_for_direction(
+                profile,
+                rtt,
+                FlowbeeEffectiveDirection::Upload,
+                RttBucket::Total,
+            )
+            .score
         })
         .flatten();
 

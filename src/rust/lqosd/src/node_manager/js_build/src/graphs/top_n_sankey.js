@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
+import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 /**
  * Viridis color scale interpolation (0-1 input).
@@ -49,7 +50,7 @@ export class TopNSankey extends DashboardGraph {
         this.option.series[0].data = data;
         this.option.series[0].links = links;
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        this.chart.setOption(this.option, true);
     }
 
     processMessage(msg) {
@@ -88,10 +89,8 @@ export class TopNSankey extends DashboardGraph {
                 ? lerpViridis(percent / 100)
                 : lerpGreenToRedViaOrange(100 - percent, 100);
             
-            let rtt = Math.max(Math.min(toNumber(r.median_tcp_rtt, 0), 200), 0);
-            let rttColor = isColorBlindMode()
-                ? lerpViridis(rtt / 200)
-                : lerpGreenToRedViaOrange(200 - rtt, 200);
+            let rtt = toNumber(r.median_tcp_rtt, 0);
+            let rttColor = colorByRttMs(rtt);
             
             let percentRxmit = Math.min(100, toNumber(r.tcp_retransmits[0], 0) + toNumber(r.tcp_retransmits[1], 0)) / 100;
             let rxmitColor = isColorBlindMode()

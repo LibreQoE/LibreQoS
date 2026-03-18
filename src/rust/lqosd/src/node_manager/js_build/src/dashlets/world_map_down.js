@@ -143,8 +143,8 @@ export class ShaperWorldMapDown extends BaseDashlet {
         for (let i=0;i<rows.length;i++) {
             const lat = rows[i][0], lon = rows[i][1];
             const bytes = Number(rows[i][3] || 0);
-            const rtt = Math.min(200, Number(rows[i][4]||0));
-            const color = colorByRttMs(rtt, 200);
+            const rtt = Number(rows[i][4]||0);
+            const color = colorByRttMs(rtt);
             let norm = 0;
             if (maxBytes > 0) {
                 norm = Math.sqrt(bytes / maxBytes);

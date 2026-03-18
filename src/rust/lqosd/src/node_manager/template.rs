@@ -12,7 +12,7 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use itertools::Itertools;
-use lqos_config::load_config;
+use lqos_config::{RttThresholds, load_config};
 use lqos_utils::unix_time::unix_now;
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
@@ -115,6 +115,10 @@ pub async fn apply_templates(
         // Change the LTS part of the template
         let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
         trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
+        let script_has_support_tickets = matches!(
+            lts_status,
+            LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full
+        );
         match lts_status {
             LtsStatus::Invalid | LtsStatus::NotChecked => {}
             _ => {
@@ -126,20 +130,21 @@ pub async fn apply_templates(
         }
 
         // Title and node_id
-        let mut title = "LibreQoS Node Manager".to_string();
-        let mut node_id_js = String::new();
-        if let Ok(config) = load_config() {
-            title = config.node_name.clone();
-            node_id_js = escape_html_attr(&config.node_id);
-        }
+        let title = config.node_name.clone();
+        let node_id_js = escape_html_attr(&config.node_id);
+        let rtt_thresholds: RttThresholds = config.rtt_thresholds.clone().unwrap_or_default();
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {}; window.nodeId = '{}';</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
+            js_tf(script_has_support_tickets),
             js_tf(new_version),
-            node_id_js
+            node_id_js,
+            rtt_thresholds.green_ms,
+            rtt_thresholds.yellow_ms,
+            rtt_thresholds.red_ms,
         );
 
         // First Login
@@ -175,7 +180,7 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script)
-            .replace("%%MODAL%%", &show_modal)
+            .replace("%%MODAL%%", show_modal)
             .replace("%%MODAL_NUM%%", &show_modal_number);
         // Handle API_LINK placeholder (require service + valid Insight)
         let api_link = if is_api_available() && script_has_insight {

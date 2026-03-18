@@ -9,12 +9,11 @@ pub fn count_devices_in_site(site_id: &str, devices: &[Device]) -> usize {
     devices
         .iter()
         .filter(|d| {
-            if let Some(site) = &d.identification.site {
-                if let Some(parent) = &site.parent {
-                    if parent.id == site_id {
-                        return true;
-                    }
-                }
+            if let Some(site) = &d.identification.site
+                && let Some(parent) = &site.parent
+                && parent.id == site_id
+            {
+                return true;
             }
             false
         })
@@ -79,6 +78,8 @@ pub fn warn_of_no_parents_and_promote(
             id: "orphans".to_string(),
             name: "Orphaned Nodes".to_string(),
             site_type: UispSiteType::Site,
+            latitude: None,
+            longitude: None,
             uisp_parent_id: None,
             parent_indices: Default::default(),
             max_down_mbps: config.queues.downlink_bandwidth_mbps,

@@ -31,6 +31,16 @@ pub struct UrgentIssue {
     /// Optional dedupe key
     pub dedupe_key: Option<String>,
 }
+
+/// Summary of current Insight license state and limits.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct InsightLicenseSummary {
+    /// True when a currently valid Insight grant is available.
+    pub licensed: bool,
+    /// Optional maximum mapped-circuit limit from license.
+    /// `None` means the license did not specify a max.
+    pub max_circuits: Option<u64>,
+}
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
@@ -126,6 +136,20 @@ pub struct StormguardDebugDirection {
     pub rtt: Option<f64>,
     /// Moving-average RTT
     pub rtt_ma: Option<f64>,
+    /// Latest passive RTT sample (TCP-derived)
+    pub passive_rtt_ms: Option<f64>,
+    /// Latest active ping RTT sample
+    pub active_ping_rtt_ms: Option<f64>,
+    /// Learned RTT baseline (DelayProbe strategy)
+    pub baseline_rtt_ms: Option<f64>,
+    /// Standing delay over baseline (DelayProbe strategy)
+    pub delay_ms: Option<f64>,
+    /// Active strategy name
+    pub strategy: String,
+    /// Last applied action, if any
+    pub last_action: Option<String>,
+    /// Seconds since last action, if any
+    pub last_action_age_secs: Option<f32>,
     /// State (Warmup/Running/Cooldown)
     pub state: String,
     /// Seconds remaining in cooldown, if applicable
@@ -354,6 +378,7 @@ pub enum WarningLevel {
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+#[allow(clippy::large_enum_variant)]
 pub enum BusResponse {
     /// Yes, we're alive
     Ack,
@@ -597,4 +622,7 @@ pub enum BusResponse {
 
     /// Is Insight Enabled?
     InsightStatus(bool),
+
+    /// Insight license summary (licensed + optional max circuits).
+    InsightLicenseSummary(InsightLicenseSummary),
 }

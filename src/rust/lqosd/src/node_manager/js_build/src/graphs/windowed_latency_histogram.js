@@ -7,6 +7,8 @@ export class WindowedLatencyHistogram extends DashboardGraph {
         super(id);
         this.windowMs = windowMs;
         this.samples = [];
+        this.sampleHead = 0;
+        this.bucketCounts = [];
 
         this.bucketSizeMs = 10;
         this.bucketCount = 20; // 0..200ms in 10ms buckets
@@ -14,6 +16,7 @@ export class WindowedLatencyHistogram extends DashboardGraph {
         let d = [];
         let axis = [];
         for (let i = 0; i < this.bucketCount; i++) {
+            this.bucketCounts.push(0);
             d.push({
                 value: 0,
                 itemStyle: { color: lerpGreenToRedViaOrange(this.bucketCount - i, this.bucketCount) },
@@ -49,7 +52,7 @@ export class WindowedLatencyHistogram extends DashboardGraph {
         const now = Date.now();
         const ms = toNumber(pingOrRttMs, 0);
         if (ms > 0) {
-            this.samples.push({ t: now, ms: ms });
+            this.#pushSample(now, ms);
         }
         this.render(now);
     }
@@ -60,7 +63,7 @@ export class WindowedLatencyHistogram extends DashboardGraph {
             values.forEach((v) => {
                 const ms = toNumber(v, 0);
                 if (ms > 0) {
-                    this.samples.push({ t: now, ms: ms });
+                    this.#pushSample(now, ms);
                 }
             });
         }
@@ -69,22 +72,31 @@ export class WindowedLatencyHistogram extends DashboardGraph {
 
     render(nowMs) {
         const cutoff = nowMs - this.windowMs;
-        while (this.samples.length > 0 && this.samples[0].t < cutoff) {
-            this.samples.shift();
+        while (
+            this.sampleHead < this.samples.length &&
+            this.samples[this.sampleHead].t < cutoff
+        ) {
+            const expired = this.samples[this.sampleHead];
+            this.bucketCounts[expired.bucket] = Math.max(0, this.bucketCounts[expired.bucket] - 1);
+            this.sampleHead++;
         }
 
-        const counts = new Array(this.bucketCount).fill(0);
-        this.samples.forEach((s) => {
-            let bucket = Math.floor(s.ms / this.bucketSizeMs);
-            bucket = Math.min(bucket, this.bucketCount - 1);
-            counts[bucket] += 1;
-        });
+        if (this.sampleHead > 0 && this.sampleHead >= this.samples.length / 2) {
+            this.samples = this.samples.slice(this.sampleHead);
+            this.sampleHead = 0;
+        }
 
         for (let i = 0; i < this.bucketCount; i++) {
-            this.option.series.data[i].value = counts[i];
+            this.option.series.data[i].value = this.bucketCounts[i];
         }
 
         this.chart.setOption(this.option);
     }
-}
 
+    #pushSample(now, ms) {
+        let bucket = Math.floor(ms / this.bucketSizeMs);
+        bucket = Math.min(bucket, this.bucketCount - 1);
+        this.samples.push({ t: now, bucket });
+        this.bucketCounts[bucket] += 1;
+    }
+}

@@ -229,10 +229,15 @@ static FLOWBEE_TRACKER: OnceLock<
 pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
     let traffic_map = MAP_TRAFFIC.get_or_init(|| {
         let lock = BPF_SKELETON.lock();
-        let Some(skeleton) = lock.as_ref() else { return Mutex::new(Err(BpfIteratorError::FailedToLink)) };
+        let Some(skeleton) = lock.as_ref() else {
+            return Mutex::new(Err(BpfIteratorError::FailedToLink));
+        };
         let skeleton = skeleton.get_ptr();
         let iter = unsafe {
-            BpfMapIterator::new((*skeleton).progs.throughput_reader, (*skeleton).maps.map_traffic)
+            BpfMapIterator::new(
+                (*skeleton).progs.throughput_reader,
+                (*skeleton).maps.map_traffic,
+            )
         };
         Mutex::new(iter)
     });
@@ -254,9 +259,12 @@ pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostC
 pub fn iterate_flows(callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)) {
     let flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
         let lock = BPF_SKELETON.lock();
-        let Some(skeleton) = lock.as_ref() else { return Mutex::new(Err(BpfIteratorError::FailedToLink)) };
+        let Some(skeleton) = lock.as_ref() else {
+            return Mutex::new(Err(BpfIteratorError::FailedToLink));
+        };
         let skeleton = skeleton.get_ptr();
-        let iter = unsafe { BpfMapIterator::new((*skeleton).progs.flow_reader, (*skeleton).maps.flowbee) };
+        let iter =
+            unsafe { BpfMapIterator::new((*skeleton).progs.flow_reader, (*skeleton).maps.flowbee) };
         Mutex::new(iter)
     });
 
@@ -278,7 +286,7 @@ pub fn iterate_flows(callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)) {
 // Arguments: the list of flow keys to expire
 pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
     let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
-    let mut keys = flows.iter().map(|k| k.clone()).collect();
+    let mut keys = flows.to_vec();
 
     map.clear_bulk_keys(&mut keys)?;
 

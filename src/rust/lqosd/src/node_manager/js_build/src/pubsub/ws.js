@@ -35,13 +35,22 @@ export class WsClient {
         this.ws = null;
         this.handlers = new Map();
         this.pending = [];
+        this.desiredChannels = new Map();
         this.handshake_done = false;
+        this.reconnectTimer = null;
+        this.reconnectDelayMs = 1000;
+        this.manualClose = false;
     }
 
     connect() {
         if (this.ws) {
             return;
         }
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        this.manualClose = false;
         this.ws = new WebSocket(ws_proto() + window.location.host + "/websocket/ws");
         this.ws.binaryType = "arraybuffer";
 
@@ -69,27 +78,58 @@ export class WsClient {
         this.ws.onclose = () => {
             this.ws = null;
             this.handshake_done = false;
-            this.pending = [];
+            this._scheduleReconnect();
         };
 
         this.ws.onerror = () => {
             this.ws = null;
             this.handshake_done = false;
+            this._scheduleReconnect();
         };
     }
 
     close() {
+        this.manualClose = true;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.ws) {
             this.ws.close();
         }
         this.ws = null;
         this.handshake_done = false;
         this.pending = [];
+        this.desiredChannels.clear();
+        this.handlers.clear();
     }
 
     subscribe(channels) {
         for (let i = 0; i < channels.length; i++) {
-            this.send({ Subscribe: { channel: channels[i] } });
+            const channel = channels[i];
+            const current = this.desiredChannels.get(channel) || 0;
+            this.desiredChannels.set(channel, current + 1);
+            if (current === 0 && this.handshake_done && this.ws) {
+                this.ws.send(encoder.encode({ Subscribe: { channel } }));
+            }
+        }
+        if (channels.length > 0) {
+            this.connect();
+        }
+    }
+
+    unsubscribe(channels) {
+        for (let i = 0; i < channels.length; i++) {
+            const channel = channels[i];
+            const current = this.desiredChannels.get(channel) || 0;
+            if (current <= 1) {
+                this.desiredChannels.delete(channel);
+                if (this.handshake_done && this.ws) {
+                    this.ws.send(encoder.encode({ Unsubscribe: { channel } }));
+                }
+            } else {
+                this.desiredChannels.set(channel, current - 1);
+            }
         }
     }
 
@@ -106,9 +146,15 @@ export class WsClient {
     }
 
     on(event_name, handler) {
-        const list = this.handlers.get(event_name) || [];
-        list.push(handler);
-        this.handlers.set(event_name, list);
+        let list = this.handlers.get(event_name);
+        if (!list) {
+            list = new Set();
+            this.handlers.set(event_name, list);
+        }
+        list.add(handler);
+        return () => {
+            this.off(event_name, handler);
+        };
     }
 
     off(event_name, handler) {
@@ -116,10 +162,10 @@ export class WsClient {
         if (!list) {
             return;
         }
-        this.handlers.set(
-            event_name,
-            list.filter((h) => h !== handler),
-        );
+        list.delete(handler);
+        if (list.size === 0) {
+            this.handlers.delete(event_name);
+        }
     }
 
     _acknowledge_handshake(hello) {
@@ -147,6 +193,10 @@ export class WsClient {
             this.ws.send(encoder.encode(this.pending[i]));
         }
         this.pending = [];
+        for (const channel of this.desiredChannels.keys()) {
+            this.ws.send(encoder.encode({ Subscribe: { channel } }));
+        }
+        this.reconnectDelayMs = 1000;
     }
 
     _dispatch(msg) {
@@ -157,9 +207,32 @@ export class WsClient {
         if (!list) {
             return;
         }
-        for (let i = 0; i < list.length; i++) {
-            list[i](msg);
+        for (const handler of Array.from(list)) {
+            handler(msg);
         }
+    }
+
+    _scheduleReconnect() {
+        if (this.manualClose || this.reconnectTimer) {
+            return;
+        }
+        if (!this._shouldMaintainConnection()) {
+            return;
+        }
+        const delay = this.reconnectDelayMs;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect();
+        }, delay);
+        this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, 10000);
+    }
+
+    _shouldMaintainConnection() {
+        return (
+            this.pending.length > 0 ||
+            this.desiredChannels.size > 0 ||
+            this.handlers.size > 0
+        );
     }
 }
 
@@ -200,14 +273,23 @@ export function get_ws_client() {
 
 export function subscribeWS(channels, handler) {
     if (!channels || channels.length === 0) {
-        return;
+        return { dispose() {} };
     }
     const client = get_ws_client();
-    client.on("join", handler);
+    const disposers = [];
+    disposers.push(client.on("join", handler));
     for (let i = 0; i < channels.length; i++) {
-        client.on(channels[i], handler);
+        disposers.push(client.on(channels[i], handler));
     }
     client.subscribe(channels);
+    return {
+        dispose() {
+            for (let i = 0; i < disposers.length; i++) {
+                disposers[i]();
+            }
+            client.unsubscribe(channels);
+        },
+    };
 }
 
 export function resetWS() {

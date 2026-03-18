@@ -114,6 +114,18 @@ pub enum BusRequest {
         /// The CPU on which the TC handle should be shaped.
         cpu: u32,
 
+        /// Hashed circuit identifier (from ShapedDevices.csv).
+        ///
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for circuit attribution.
+        circuit_id: u64,
+
+        /// Hashed device identifier (from ShapedDevices.csv).
+        ///
+        /// This is required because lqosd treats kernel-provided hashes as the
+        /// authoritative source for device attribution.
+        device_id: u64,
+
         /// If true, this is a *second* flow for the same IP range on
         /// the same NIC. Used for handling "on a stick" configurations.
         upload: bool,
@@ -360,6 +372,9 @@ pub enum BusRequest {
     /// Announce a scheduler error
     SchedulerError(String),
 
+    /// Announce informational scheduler output
+    SchedulerOutput(String),
+
     /// Write an informational message to the lqosd logs
     LogInfo(String),
 
@@ -469,6 +484,9 @@ pub enum BusRequest {
 
     /// Is Insight Enabled?
     CheckInsight,
+
+    /// Retrieve current Insight license summary (licensed + optional max circuits).
+    GetInsightLicenseSummary,
 }
 
 /// Defines the parts of the blackboard

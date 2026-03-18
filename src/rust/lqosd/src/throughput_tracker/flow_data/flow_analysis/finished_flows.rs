@@ -1,4 +1,7 @@
-use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id, FlowbeeEffectiveDirection};
+use super::{
+    FlowAnalysis, FlowbeeEffectiveDirection, get_asn_lat_lon, get_asn_name_and_country,
+    get_asn_name_by_id,
+};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use allocative_derive::Allocative;
@@ -108,7 +111,10 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                let rtt = [data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32, data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32]; // TODO: Fix these types
+                let rtt = [
+                    data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32,
+                    data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32,
+                ]; // TODO: Fix these types
                 (geo.country, data.bytes_sent, rtt, geo.flag)
             })
             .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
@@ -129,7 +135,7 @@ impl TimeBuffer {
                 if !last_country.is_empty() {
                     country_summary.push((
                         last_country.to_string(),
-                        total_bytes.clone(),
+                        total_bytes,
                         [
                             Self::median_f32(&rtt_buffer[0]),
                             Self::median_f32(&rtt_buffer[1]),
@@ -171,9 +177,9 @@ impl TimeBuffer {
             return 0;
         }
         let mut slice = slice.to_vec();
-        slice.sort_by(|a, b| a.cmp(b));
+        slice.sort();
         let mid = slice.len() / 2;
-        if slice.len() % 2 == 0 {
+        if slice.len().is_multiple_of(2) {
             (slice[mid] + slice[mid - 1]) / 2
         } else {
             slice[mid]
@@ -187,7 +193,7 @@ impl TimeBuffer {
         let mut slice = slice.to_vec();
         slice.sort_by(|a, b| a.total_cmp(b));
         let mid = slice.len() / 2;
-        if slice.len() % 2 == 0 {
+        if slice.len().is_multiple_of(2) {
             (slice[mid] + slice[mid - 1]) / 2.0
         } else {
             slice[mid]
@@ -212,10 +218,12 @@ impl TimeBuffer {
                 v4_packets_sent.checked_add(data.packets_sent);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
-                    v4_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
+                    v4_rtt[0]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
-                    v4_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
+                    v4_rtt[1]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             } else {
                 // It's V6
@@ -223,10 +231,12 @@ impl TimeBuffer {
                 v6_packets_sent.checked_add(data.packets_sent);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
-                    v6_rtt[0].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
+                    v6_rtt[0]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
                 }
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) > 0 {
-                    v6_rtt[1].push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
+                    v6_rtt[1]
+                        .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload));
                 }
             }
         });
@@ -404,7 +414,7 @@ impl TimeBuffer {
             .collect();
 
         // Sort the buffer
-        buffer.sort_unstable_by(|a, b| a.cmp(&b));
+        buffer.sort_unstable();
 
         // Deduplicate and count, decorate with name
         buffer
@@ -422,12 +432,12 @@ impl TimeBuffer {
     }
 }
 
-pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
+pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(TimeBuffer::new);
 
 pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
-    pub fn new() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
+    pub fn start() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
         debug!("Created Flow Analysis Endpoint");
         let (tx, rx) =
             crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
@@ -459,8 +469,18 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
     let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
-    let sd = SHAPED_DEVICES.load();
-    let circuit_hash = sd.get_circuit_hash_from_ip(&key.local_ip);
+    let circuit_hash = data.circuit_hash.or_else(|| {
+        crate::throughput_tracker::THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .get(&key.local_ip)
+            .and_then(|te| te.circuit_hash)
+            .or_else(|| {
+                SHAPED_DEVICES
+                    .load()
+                    .get_circuit_hash_from_ip(&key.local_ip)
+            })
+    });
 
     if !one_way {
         //data.trim(); // Remove the trailing 30 seconds of zeroes
@@ -480,24 +500,26 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
             .collect();
 
-        if let Err(e) = crate::lts2_sys::two_way_flow(
+        if let Err(e) = crate::lts2_sys::two_way_flow(crate::lts2_sys::shared_types::TwoWayFlow {
             start_time,
-            last_seen,
-            key.local_ip.as_ip(),
-            key.remote_ip.as_ip(),
-            key.ip_protocol,
-            key.dst_port,
-            key.src_port,
-            data.bytes_sent.down,
-            data.bytes_sent.up,
-            data.packets_sent.down as i64,
-            data.packets_sent.up as i64,
+            end_time: last_seen,
+            local_ip: key.local_ip.as_ip(),
+            remote_ip: key.remote_ip.as_ip(),
+            protocol: key.ip_protocol,
+            dst_port: key.dst_port,
+            src_port: key.src_port,
+            bytes_down: data.bytes_sent.down,
+            bytes_up: data.bytes_sent.up,
             retransmit_times_down,
             retransmit_times_up,
-            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
-            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
-            circuit_hash,
-        ) {
+            rtt: [
+                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
+                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
+            ],
+            circuit_hash: circuit_hash.unwrap_or(0),
+            packets_down: Some(data.packets_sent.down as i64),
+            packets_up: Some(data.packets_sent.up as i64),
+        }) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");
         }
         if let Ok(time) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -514,17 +536,17 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         if !config.long_term_stats.gather_stats {
             return;
         }
-        if let Err(e) = crate::lts2_sys::one_way_flow(
+        if let Err(e) = crate::lts2_sys::one_way_flow(crate::lts2_sys::shared_types::OneWayFlow {
             start_time,
-            last_seen,
-            key.local_ip.as_ip(),
-            key.remote_ip.as_ip(),
-            key.ip_protocol,
-            key.dst_port,
-            key.src_port,
-            data.bytes_sent.sum(),
-            circuit_hash,
-        ) {
+            end_time: last_seen,
+            local_ip: key.local_ip.as_ip(),
+            remote_ip: key.remote_ip.as_ip(),
+            protocol: key.ip_protocol,
+            dst_port: key.dst_port,
+            src_port: key.src_port,
+            bytes: data.bytes_sent.sum(),
+            circuit_hash: circuit_hash.unwrap_or(0),
+        }) {
             debug!("Failed to send one-way flow to LTS2: {e:?}");
         }
     }

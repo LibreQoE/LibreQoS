@@ -18,27 +18,34 @@ ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
   csvToNetworkJSON.py
+  configMigrator.py
   integrationCommon.py
   integrationPowercode.py
   integrationNetzur.py
   integrationRestHttp.py
   integrationSonar.py
   integrationSplynx.py
-  integrationUISP.py
+  integrationVISP.py
+  integrationWISPGate.py
   LibreQoS.py
   lqos.example
   lqTools.py
   mikrotikFindIPv6.py
   network.example.json
   pythonCheck.py
+  qoo_profiles.json
   README.md
   scheduler.py
   ShapedDevices.example.csv
+  shaping_skip_report.py
+  systemd_hotfix.sh
+  virtual_tree_nodes.py
   mikrotikDHCPRouterList.template.csv
   integrationUISPbandwidths.template.csv
   manualNetwork.template.csv
   integrationUISProutes.template.csv
   integrationSplynxBandwidths.template.csv
+  deb-requirements-constraints.txt
   ../requirements.txt
   update_api.sh
 )
@@ -58,7 +65,6 @@ RUSTPROGS=(
   lqos_setup
   lqos_map_perf
   uisp_integration
-  lqos_support_tool
   lqos_overrides
 )
 
@@ -108,20 +114,36 @@ popd > /dev/null || exit
 
 # Create the post-installation file
 pushd "$DEBIAN_DIR" > /dev/null || exit
-cat <<EOF > postinst
+cat <<'EOF' > postinst
 #!/bin/bash
+set -euo pipefail
+
+if /opt/libreqos/src/systemd_hotfix.sh should-offer >/dev/null 2>&1; then
+cat >&2 <<'HOTFIX'
+LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this host.
+
+Run:
+  sudo /opt/libreqos/src/systemd_hotfix.sh install
+
+The hotfix installer downloads from https://download.libreqos.com and will offer to schedule a reboot.
+
+After the reboot, finish the LibreQoS package configuration with:
+  sudo dpkg --configure -a
+HOTFIX
+exit 1
+fi
+
 # Install Python Dependencies
-pushd /opt/libreqos
+pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -c src/deb-requirements-constraints.txt -r src/requirements.txt
 # - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler deepdiff --yes
-PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler deepdiff --yes
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler deepdiff
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
 
 # Ensure folder permissions are correct post-install
-sudo chown -R $USER /opt/libreqos
+sudo chown -R root:root /opt/libreqos
+
 # - Run lqsetup
 /opt/libreqos/src/bin/lqos_setup
 # - Setup the services
@@ -133,6 +155,7 @@ cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.s
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl enable lqosd lqos_scheduler lqos_api || true
 /bin/systemctl start lqosd lqos_scheduler lqos_api || true
+popd > /dev/null
 EOF
 
 # Uninstall Script
@@ -152,7 +175,7 @@ for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
 
-# Ensure update_api.sh is executable in the package
+# Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then
   chmod a+x "$LQOS_DIR/update_api.sh" || true
 fi

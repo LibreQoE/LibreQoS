@@ -1,8 +1,5 @@
-use crate::strategies::full2::GraphType;
 use crate::strategies::full2::graph_mapping::GraphMapping;
-use lqos_config::Config;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct NetJsonParent<'a> {
@@ -16,20 +13,40 @@ pub fn walk_parents(
     parents: &HashMap<String, NetJsonParent>,
     name: &String,
     node_info: &NetJsonParent,
-    config: &Arc<Config>,
-    graph: &GraphType,
     visited: &mut HashSet<String>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
     // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
     map.insert("name".into(), name.clone().into());
+    map.insert("id".into(), node_info.mapping.network_json_id().into());
     map.insert("downloadBandwidthMbps".into(), node_info.download.into());
     map.insert("uploadBandwidthMbps".into(), node_info.upload.into());
     match node_info.mapping {
-        GraphMapping::Root { id, .. } | GraphMapping::Site { id, .. } => {
+        GraphMapping::Root {
+            id,
+            latitude,
+            longitude,
+            ..
+        }
+        | GraphMapping::Site {
+            id,
+            latitude,
+            longitude,
+            ..
+        } => {
             map.insert("type".into(), "Site".into());
             map.insert("uisp_site".into(), id.clone().into());
             map.insert("parent_site".into(), name.clone().into());
+            if let Some(latitude) = latitude
+                && let Some(number) = serde_json::Number::from_f64(*latitude as f64)
+            {
+                map.insert("latitude".into(), serde_json::Value::Number(number));
+            }
+            if let Some(longitude) = longitude
+                && let Some(number) = serde_json::Number::from_f64(*longitude as f64)
+            {
+                map.insert("longitude".into(), serde_json::Value::Number(number));
+            }
         }
         GraphMapping::GeneratedSite { .. } => {
             map.insert("type".into(), "Site".into());
@@ -55,7 +72,7 @@ pub fn walk_parents(
             continue;
         }
         visited.insert(name.to_string());
-        let child = walk_parents(parents, name, &node_info, config, graph, visited);
+        let child = walk_parents(parents, name, node_info, visited);
         children.insert(name.into(), child.into());
     }
 

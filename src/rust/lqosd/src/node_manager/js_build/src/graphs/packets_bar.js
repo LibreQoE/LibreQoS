@@ -1,6 +1,9 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {
+    normalizeDownUpOrder,
+    scaleNumber,
+} from "../lq_js_common/helpers/scaling";
 
 export class PacketsPerSecondBar extends DashboardGraph {
     constructor(id) {
@@ -136,27 +139,34 @@ export class PacketsPerSecondBar extends DashboardGraph {
 
     update(down, up, tcp, udp, icmp) {
         this.chart.hideLoading();
+        const tcpPair = normalizeDownUpOrder(tcp, 0);
+        const udpPair = normalizeDownUpOrder(udp, 0);
+        const icmpPair = normalizeDownUpOrder(icmp, 0);
 
         const now = Date.now();
-        this.option.series[0].data.push({ value: tcp.down, timestamp: now });
+        this.option.series[0].data.push({ value: tcpPair.down, timestamp: now });
         if (this.option.series[0].data.length > 300) {
             this.option.series[0].data.shift();
         }
-        this.option.series[1].data.push({ value: -tcp.up, timestamp: now });
+        this.option.series[1].data.push({ value: -tcpPair.up, timestamp: now });
         if (this.option.series[1].data.length > 300) {
             this.option.series[1].data.shift();
         }
-        this.option.series[2].data.push({ value: udp.down, timestamp: now });
+        this.option.series[2].data.push({ value: udpPair.down, timestamp: now });
         if (this.option.series[2].data.length > 300) {
             this.option.series[2].data.shift();
         }
-        this.option.series[3].data.push({ value: -udp.up, timestamp: now });
+        this.option.series[3].data.push({ value: -udpPair.up, timestamp: now });
         if (this.option.series[3].data.length > 300) {
             this.option.series[3].data.shift();
         }
-        this.option.series[4].data.push({ value: icmp.down, timestamp: now });
+        this.option.series[4].data.push({ value: icmpPair.down, timestamp: now });
         if (this.option.series[4].data.length > 300) {
             this.option.series[4].data.shift();
+        }
+        this.option.series[5].data.push({ value: -icmpPair.up, timestamp: now });
+        if (this.option.series[5].data.length > 300) {
+            this.option.series[5].data.shift();
         }
 
         this.chart.setOption(this.option);

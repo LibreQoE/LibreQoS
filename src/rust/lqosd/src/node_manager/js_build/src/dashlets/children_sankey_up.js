@@ -1,6 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
+import {isRedacted} from "../helpers/redact";
 
 class ChildrenSankeyGraphUp extends DashboardGraph {
     constructor(id) {
@@ -12,6 +13,12 @@ class ChildrenSankeyGraphUp extends DashboardGraph {
         this.chart.setOption(this.option);
     }
     update(items){
+        const redact = isRedacted();
+        if (redact) {
+            this.option.series[0].label = { fontFamily: "Illegible" };
+        } else {
+            delete this.option.series[0].label;
+        }
         if (Array.isArray(items)) {
             const nodes = [{ name: 'Shaper' }];
             const links = [];
@@ -27,7 +34,7 @@ class ChildrenSankeyGraphUp extends DashboardGraph {
             this.option.series[0].links = items.links;
         }
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        this.chart.setOption(this.option, true);
     }
 }
 

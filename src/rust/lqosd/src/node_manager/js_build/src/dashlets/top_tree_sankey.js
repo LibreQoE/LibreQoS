@@ -2,6 +2,7 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
+import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 
 /**
@@ -31,6 +32,10 @@ function lerpViridis(t) {
 import {isRedacted} from "../helpers/redact";
 
 let lastRtt = {};
+
+function effectiveMax(node) {
+    return node.effective_max_throughput || node.max_throughput || [0, 0];
+}
 
 class TopTreeSankeyGraph extends DashboardGraph {
     constructor(id) {
@@ -63,7 +68,7 @@ class TopTreeSankeyGraph extends DashboardGraph {
         this.option.series[0].data = data;
         this.option.series[0].links = links;
         this.chart.hideLoading();
-        this.chart.setOption(this.option);
+        this.chart.setOption(this.option, true);
     }
 }
 
@@ -134,10 +139,7 @@ export class TopTreeSankey extends BaseDashlet {
                 rtt = lastRtt[name];
             }
             lastRtt[name] = rtt;
-            const rttPercent = Math.min(100, (rtt / 200) * 100);
-            const color = isColorBlindMode()
-                ? lerpViridis(rttPercent / 100)
-                : lerpGreenToRedViaOrange(200 - rtt, 200);
+            const color = colorByRttMs(rtt);
             return { itemStyle: { color } };
         };
 
@@ -158,9 +160,10 @@ export class TopTreeSankey extends BaseDashlet {
                 // Compute Root->Parent value as sum of included child totals (down + up)
                 let parentSum = 0;
                 // Compute link color from parent's capacity percent (as before)
-                const bytesAsMegabits = toNumber(p.current_throughput[0], 0) / 1000000;
-                const maxBytes = toNumber(p.max_throughput[0], 0) / 8;
-                const percent = Math.min(100, maxBytes > 0 ? (bytesAsMegabits / maxBytes) * 100 : 0);
+                const downBitsPerSec = toNumber(p.current_throughput[0], 0) * 8;
+                const parentMax = effectiveMax(p);
+                const maxBitsPerSec = toNumber(parentMax[0], 0) * 1_000_000;
+                const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
                 const capacityColor = isColorBlindMode()
                     ? lerpViridis(percent / 100)
                     : lerpGreenToRedViaOrange(100 - percent, 100);
@@ -180,9 +183,10 @@ export class TopTreeSankey extends BaseDashlet {
                     nodes.push({ name: cName, label: cLabel, ...cStyle });
 
                     // Link color for child can use child's capacity percent
-                    const cBytesAsMegabits = toNumber(child.current_throughput?.[0], 0) / 1000000;
-                    const cMaxBytes = toNumber(child.max_throughput?.[0], 0) / 8;
-                    const cPercent = Math.min(100, cMaxBytes > 0 ? (cBytesAsMegabits / cMaxBytes) * 100 : 0);
+                    const cDownBitsPerSec = toNumber(child.current_throughput?.[0], 0) * 8;
+                    const childMax = effectiveMax(child);
+                    const cMaxBitsPerSec = toNumber(childMax[0], 0) * 1_000_000;
+                    const cPercent = Math.min(100, cMaxBitsPerSec > 0 ? (cDownBitsPerSec / cMaxBitsPerSec) * 100 : 0);
                     const cCapacityColor = isColorBlindMode()
                         ? lerpViridis(cPercent / 100)
                         : lerpGreenToRedViaOrange(100 - cPercent, 100);
@@ -214,10 +218,9 @@ export class TopTreeSankey extends BaseDashlet {
             if (redact) label.fontFamily = "Illegible";
 
             let name = r[1].name;
-            let bytes = toNumber(r[1].current_throughput[0], 0);
-            let bytesAsMegabits = bytes / 1000000;
-            let maxBytes = toNumber(r[1].max_throughput[0], 0) / 8;
-            let percent = Math.min(100, maxBytes > 0 ? (bytesAsMegabits / maxBytes) * 100 : 0);
+            const downBitsPerSec = toNumber(r[1].current_throughput[0], 0) * 8;
+            const maxBitsPerSec = toNumber(effectiveMax(r[1])[0], 0) * 1_000_000;
+            let percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
             let capacityColor = isColorBlindMode()
                 ? lerpViridis(percent / 100)
                 : lerpGreenToRedViaOrange(100 - percent, 100);
@@ -227,12 +230,9 @@ export class TopTreeSankey extends BaseDashlet {
             } else {
                 lastRtt[name] = 0;
             }
-            let rttPercent = Math.min(100, (lastRtt[name] / 200) * 100);
-            let color = isColorBlindMode()
-                ? lerpViridis(rttPercent / 100)
-                : lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
+            let color = colorByRttMs(lastRtt[name]);
 
-            if (bytesAsMegabits > 0) {
+            if (downBitsPerSec > 0) {
                 nodes.push({ name: r[1].name, label, itemStyle: { color } });
                 links.push({
                     source: "Root",

@@ -16,6 +16,10 @@ use tracing::{debug, error, info, warn};
 use super::BUS_SOCKET_DIRECTORY;
 use super::protocol::{decode_session_cbor, encode_reply_cbor, read_frame, write_frame};
 
+fn dropped_reply_response_count(reply: &BusReply) -> usize {
+    reply.responses.len()
+}
+
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
@@ -111,8 +115,11 @@ impl UnixSocketServer {
                 if let Some((reply_channel, msg)) = ret {
                   let mut response = BusReply { responses: Vec::with_capacity(8) };
                   handle_bus_requests(&[msg], &mut response.responses);
-                  if let Err(e) = reply_channel.send(response) {
-                      warn!("Unable to send response back to client: {:?}", e);
+                  if let Err(reply) = reply_channel.send(response) {
+                      warn!(
+                          dropped_response_count = dropped_reply_response_count(&reply),
+                          "Unable to send response back to client; receiver dropped"
+                      );
                   }
                 }
               },
@@ -225,4 +232,19 @@ pub enum UnixSocketServerError {
     ListenFail,
     #[error("Unable to write to socket")]
     WriteFail,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dropped_reply_response_count;
+    use crate::{BusReply, BusResponse};
+
+    #[test]
+    fn dropped_reply_summary_only_counts_responses() {
+        let reply = BusReply {
+            responses: vec![BusResponse::Ack, BusResponse::Ack, BusResponse::Ack],
+        };
+
+        assert_eq!(dropped_reply_response_count(&reply), 3);
+    }
 }

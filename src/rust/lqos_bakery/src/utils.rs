@@ -76,7 +76,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
         }
         // Convenience: keep a rolling 'last error' file
         let path_last = Path::new("/tmp/lqos_bakery_last_error.txt");
-        if let Ok(mut f) = File::create(&path_last) {
+        if let Ok(mut f) = File::create(path_last) {
             let _ = f.write_all(detailed.as_bytes());
             let _ = f.flush();
         }

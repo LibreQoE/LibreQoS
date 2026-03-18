@@ -32,51 +32,160 @@ import {trimStringWithElipsis} from "./helpers/strings_help";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
-const listenOnce = (eventName, handler) => {
+
+const REQUEST_TIMEOUT_MS = 2000;
+const MIN_LINK_BITS_PER_SEC = 1_000_000;
+
+let sankeyOverlay = null;
+
+function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
+    let done = false;
     const wrapped = (msg) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
         wsClient.off(eventName, wrapped);
         handler(msg);
     };
+    const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        wsClient.off(eventName, wrapped);
+        onTimeout();
+    }, timeoutMs);
     wsClient.on(eventName, wrapped);
-};
+    return { cancel: () => { wsClient.off(eventName, wrapped); clearTimeout(timer); } };
+}
+
+function makeOverlay(container, id) {
+    container.style.position = "relative";
+
+    const overlay = document.createElement("div");
+    overlay.id = id;
+    overlay.style.position = "absolute";
+    overlay.style.inset = "0";
+    overlay.style.display = "none";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "10";
+    overlay.style.padding = "16px";
+
+    const panel = document.createElement("div");
+    panel.style.background = "var(--lqos-surface)";
+    panel.style.border = "1px solid var(--lqos-border)";
+    panel.style.borderRadius = "var(--lqos-radius-lg)";
+    panel.style.boxShadow = "var(--lqos-shadow-sm)";
+    panel.style.padding = "14px 18px";
+    panel.style.maxWidth = "560px";
+    panel.style.textAlign = "center";
+    panel.style.backdropFilter = "blur(10px)";
+    panel.style.webkitBackdropFilter = "blur(10px)";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "700";
+    title.style.fontSize = "1.1rem";
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "text-muted";
+    subtitle.style.marginTop = "4px";
+
+    panel.appendChild(title);
+    panel.appendChild(subtitle);
+    overlay.appendChild(panel);
+    container.appendChild(overlay);
+
+    return {
+        show: (t, s) => {
+            title.textContent = t;
+            subtitle.textContent = s || "";
+            overlay.style.display = "flex";
+        },
+        hide: () => {
+            overlay.style.display = "none";
+        },
+    };
+}
 
 class AllTreeSankeyGraph extends GenericRingBuffer {
     constructor() {
         super(10);
+        this.pending = false;
+        this.pendingCancel = null;
+    }
+
+    cancelPending() {
+        if (this.pendingCancel) {
+            try {
+                this.pendingCancel.cancel();
+            } catch (e) {
+                // ignore
+            }
+        }
+        this.pendingCancel = null;
+        this.pending = false;
     }
 
     onTick(graph) {
-        let self = this;
-        listenOnce("NetworkTree", (msg) => {
+        if (this.pending) {
+            return;
+        }
+        this.pending = true;
+
+        const self = this;
+        this.pendingCancel = listenOnceWithTimeout("NetworkTree", REQUEST_TIMEOUT_MS, (msg) => {
+            self.pending = false;
+            self.pendingCancel = null;
+
+            if (paused) {
+                return;
+            }
+
             const data = msg && msg.data ? msg.data : [];
             // Maintain a 10-second ringbuffer of recent data
-            this.push(data);
+            self.push(data);
 
             let redact = isRedacted();
             let nodes = [];
             let links = [];
+            const linkMap = new Map();
 
             // Build the basic tree from the current head, to ensure
             // that we're displaying the most recent nodes.
             let head = self.getHead();
-            if (head === undefined) { return }
-            let startDepth = head[rootId][1].parents.length - 1;
+            if (!Array.isArray(head) || head.length === 0 || !head[rootId] || !head[rootId][1]) {
+                if (sankeyOverlay) {
+                    sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+                }
+                graph.update([], []);
+                return;
+            }
+
+            allNodes = head;
+
+            const rootParents = head[rootId][1].parents || [];
+            let startDepth = rootParents.length - 1;
+
             for (let i=0; i<head.length; i++) {
-                let depth = head[i][1].parents.length - startDepth;
+                if (!head[i] || !head[i][1]) continue;
+
+                const parents = head[i][1].parents || [];
+                let depth = parents.length - startDepth;
                 if (depth > maxDepth) {
                     continue;
                 }
                 // If head[i][1].parents does not contain rootId, skip
-                if (rootId !== 0 && !head[i][1].parents.includes(rootId)) {
+                if (rootId !== 0 && !parents.includes(rootId)) {
                     continue;
                 }
-                let name = head[i][1].name;
-                let bytes = toNumber(head[i][1].current_throughput[0], 0);
-                let bytesAsMegabits = bytes / 1000000;
-                let maxBytes = toNumber(head[i][1].max_throughput[0], 0) / 8;
-                let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
+
+                const downBytesPerSec = toNumber(head[i][1].current_throughput?.[0], 0);
+                const downBitsPerSec = downBytesPerSec * 8;
+                const maxBitsPerSec = toNumber(head[i][1].max_throughput?.[0], 0) * 1_000_000;
+                const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
+
                 // Use appropriate color scale based on color blind mode
-                let capacityColor = isColorBlindMode() 
+                let capacityColor = isColorBlindMode()
                     ? lerpViridis(percent / 100)
                     : lerpGreenToRedViaOrange(100 - percent, 100);
 
@@ -106,16 +215,22 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
 
                 if (i > 0) {
                     let immediateParent = head[i][1].immediate_parent;
+                    if (immediateParent === null || immediateParent === undefined) continue;
+                    if (!head[immediateParent] || !head[immediateParent][1]) continue;
                     links.push({
                         source: head[immediateParent][1].name,
                         target: head[i][1].name,
-                        value: Math.min(1, toNumber(head[i][1].current_throughput[0], 0)),
+                        value: downBitsPerSec,
                         lineStyle: {
                             color: capacityColor,
                         },
-                        maxBytes: maxBytes,
+                        maxBitsPerSec: maxBitsPerSec,
                         n: 1,
                     });
+                    linkMap.set(
+                        `${head[immediateParent][1].name}\u0000${head[i][1].name}`,
+                        links[links.length - 1],
+                    );
                 }
             }
 
@@ -123,12 +238,18 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             // of the ringbuffer.
             self.iterate((data) => {
                 for (let i=0; i<data.length; i++) {
+                    if (!data[i] || !data[i][1]) continue;
                     // Search for links that match so we can update the value
                     if (i > 0) {
                         let immediateParent = data[i][1].immediate_parent;
-                        let link = links.find((link) => { return link.source === data[immediateParent][1].name && link.target === data[i][1].name; });
+                        if (immediateParent === null || immediateParent === undefined) continue;
+                        if (!data[immediateParent] || !data[immediateParent][1]) continue;
+
+                        const link = linkMap.get(
+                            `${data[immediateParent][1].name}\u0000${data[i][1].name}`,
+                        );
                         if (link !== undefined) {
-                            link.value += toNumber(data[i][1].current_throughput[0], 0);
+                            link.value += toNumber(data[i][1].current_throughput?.[0], 0) * 8;
                             link.n++;
                         }
                     }
@@ -138,8 +259,8 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             // Now go through the links and average the values, recalculating the color
             for (let i=0; i<links.length; i++) {
                 links[i].value /= links[i].n;
-                let bytesAsMegabits = links[i].value / 1000000;
-                let percent = Math.min(100, (bytesAsMegabits / links[i].maxBytes) * 100);
+                const maxBits = toNumber(links[i].maxBitsPerSec, 0);
+                const percent = Math.min(100, maxBits > 0 ? (links[i].value / maxBits) * 100 : 0);
                 let capacityColor = isColorBlindMode()
                     ? lerpViridis(percent / 100)
                     : lerpGreenToRedViaOrange(100 - percent, 100);
@@ -147,7 +268,19 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             }
 
             // Filter links with <1 Mbps average throughput
-            links = links.filter(link => link.value >= 1000000);
+            links = links.filter(link => link.value >= MIN_LINK_BITS_PER_SEC);
+
+            if (links.length === 0) {
+                if (sankeyOverlay) {
+                    sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+                }
+                graph.update([], []);
+                return;
+            }
+
+            if (sankeyOverlay) {
+                sankeyOverlay.hide();
+            }
 
             // Collect node names that are still referenced by links
             const referenced = new Set();
@@ -165,7 +298,19 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
 
             // Update the graph
             graph.update(nodes, links);
+        }, () => {
+            self.pending = false;
+            self.pendingCancel = null;
+
+            if (paused) {
+                return;
+            }
+            if (sankeyOverlay) {
+                sankeyOverlay.show("Waiting for data", "No NetworkTree websocket response received yet.");
+            }
+            graph.update([], []);
         });
+
         wsClient.send({ NetworkTree: {} });
     }
 }
@@ -226,8 +371,13 @@ class AllTreeSankey extends DashboardGraph {
 }
 
 function start() {
-    graph.model.onTick(graph);
-    setTimeout(start, 1000);
+    if (!paused) {
+        graph.model.onTick(graph);
+    }
+    loopTimer = setTimeout(() => {
+        loopTimer = null;
+        start();
+    }, 1000);
 }
 
 function getMaxDepth() {
@@ -253,13 +403,44 @@ function bindMaxDepth() {
 let maxDepth = getMaxDepth();
 bindMaxDepth();
 let graph = new AllTreeSankey("sankey");
+sankeyOverlay = makeOverlay(graph.dom, "allTreeSankeyOverlay");
+sankeyOverlay.show("Waiting for data", "Requesting network tree...");
+let loopTimer = null;
 
 $("#btnPause").click(() => {
     paused = !paused;
     if (paused) {
         $("#btnPause").html("<i class='fa fa-play'></i> Resume");
+        graph.model.cancelPending();
+        if (loopTimer) {
+            clearTimeout(loopTimer);
+            loopTimer = null;
+        }
     } else {
         $("#btnPause").html("<i class='fa fa-pause'></i>Pause");
+        start();
+    }
+});
+
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        graph.model.cancelPending();
+        if (loopTimer) {
+            clearTimeout(loopTimer);
+            loopTimer = null;
+        }
+        return;
+    }
+    if (!paused && !loopTimer) {
+        start();
+    }
+});
+
+window.addEventListener("beforeunload", () => {
+    graph.model.cancelPending();
+    if (loopTimer) {
+        clearTimeout(loopTimer);
+        loopTimer = null;
     }
 });
 

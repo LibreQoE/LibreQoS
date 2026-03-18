@@ -62,13 +62,13 @@ fn record_first_login_timestamp_if_needed() {
 
 pub async fn get_username(jar: &CookieJar) -> String {
     let lock = WEB_USERS.lock().await;
-    if let Some(users) = &*lock {
-        if let Some(token) = jar.get(COOKIE_PATH) {
-            return users.get_username(token.value());
-        }
+    if let Some(users) = &*lock
+        && let Some(token) = jar.get(COOKIE_PATH)
+    {
+        return users.get_username(token.value());
     }
 
-    return "Anonymous".to_string();
+    "Anonymous".to_string()
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -145,17 +145,15 @@ pub async fn login_from_token(token: &str) -> LoginResult {
     let mut lock = WEB_USERS.lock().await;
     if lock.is_none() {
         match WebUsers::does_users_file_exist() {
-            Ok(true) => {
-                match WebUsers::load_or_create() {
-                    Ok(users) => {
-                        *lock = Some(users);
-                    }
-                    Err(e) => {
-                        warn!("Unable to load users file for websocket auth: {e}");
-                        return LoginResult::Denied;
-                    }
+            Ok(true) => match WebUsers::load_or_create() {
+                Ok(users) => {
+                    *lock = Some(users);
                 }
-            }
+                Err(e) => {
+                    warn!("Unable to load users file for websocket auth: {e}");
+                    return LoginResult::Denied;
+                }
+            },
             Ok(false) => {
                 return LoginResult::Denied;
             }
@@ -181,6 +179,27 @@ pub async fn login_from_token(token: &str) -> LoginResult {
     }
 
     login_result
+}
+
+/// Reload the cached users from disk after user-management changes.
+pub async fn refresh_cached_users() {
+    let mut lock = WEB_USERS.lock().await;
+    match WebUsers::does_users_file_exist() {
+        Ok(true) => match WebUsers::load_or_create() {
+            Ok(users) => {
+                *lock = Some(users);
+            }
+            Err(e) => {
+                warn!("Unable to refresh users cache: {e}");
+            }
+        },
+        Ok(false) => {
+            *lock = None;
+        }
+        Err(e) => {
+            warn!("Unable to check users file while refreshing cache: {e}");
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

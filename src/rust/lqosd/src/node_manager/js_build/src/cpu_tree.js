@@ -1,5 +1,6 @@
 import { clearDiv } from "./helpers/builders";
 import { isDarkMode } from "./helpers/dark_mode";
+import { isRedacted } from "./helpers/redact";
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import { get_ws_client } from "./pubsub/ws";
 
@@ -107,6 +108,8 @@ function escapeHtml(value) {
 
 function buildTreeOption(root, levels) {
     const dark = isDarkMode();
+    const redact = isRedacted();
+    const redactFont = redact ? "Illegible" : null;
     const accent = dark ? "#4992ff" : "#61a0a8";
     const lineColor = dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.18)";
     const lineEmphasisColor = dark ? "rgba(255,255,255,0.42)" : "rgba(0,0,0,0.32)";
@@ -127,6 +130,7 @@ function buildTreeOption(root, levels) {
             textStyle: {
                 color: labelColor,
                 fontSize: 12,
+                ...(redactFont ? { fontFamily: redactFont } : {}),
             },
             formatter: (params) => {
                 const data = params && params.data ? params.data : null;
@@ -175,6 +179,7 @@ function buildTreeOption(root, levels) {
                     borderWidth: 1,
                     borderRadius: 4,
                     padding: [3, 6],
+                    ...(redactFont ? { fontFamily: redactFont } : {}),
                 },
                 leaves: {
                     label: {
@@ -188,6 +193,7 @@ function buildTreeOption(root, levels) {
                         borderWidth: 1,
                         borderRadius: 4,
                         padding: [3, 6],
+                        ...(redactFont ? { fontFamily: redactFont } : {}),
                     },
                 },
                 emphasis: {
@@ -326,6 +332,12 @@ window.addEventListener("resize", () => {
         try {
             treeGraph.chart.resize();
         } catch (_) {}
+    }
+});
+
+window.addEventListener("redact-change", () => {
+    if (lastRoot) {
+        renderTree(lastRoot);
     }
 });
 

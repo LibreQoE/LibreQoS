@@ -1,3 +1,11 @@
+//! Typed UISP API models and convenience loaders used by LibreQoS.
+//!
+//! The crate maps selected UISP REST responses into Rust data structures and
+//! provides helpers for loading sites, devices, and data links from a UISP
+//! instance configured in `lqos_config`.
+
+#![warn(missing_docs)]
+
 mod data_link;
 mod device; // UISP data definition for a device, including interfaces
 /// UISP Data Structures
@@ -61,10 +69,10 @@ pub async fn load_all_devices_with_interfaces(
 
 /// Loads all data links from UISP (including links in client sites)
 pub async fn load_all_data_links(config: Arc<Config>) -> Result<Vec<DataLink>> {
-    Ok(nms_request_get_vec(
+    nms_request_get_vec(
         "data-links",
         &config.uisp_integration.token,
         &config.uisp_integration.url,
     )
-    .await?)
+    .await
 }

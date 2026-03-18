@@ -90,7 +90,7 @@ impl RttBufferBucket {
             10..=19 => OFFSET_2MS + ((ms - 10) / 2) as usize,
 
             // 20–25 ms: 5 ms bucket
-            20..=24 => OFFSET_5MS + 0,
+            20..=24 => OFFSET_5MS,
 
             // 25–30 ms
             25..=29 => OFFSET_5MS + 1,
@@ -132,7 +132,7 @@ impl RttBufferBucket {
     pub const fn bucket_upper_bound_nanos(idx: usize) -> u64 {
         match idx {
             // 1 ms buckets
-            0 => 1 * NS_PER_MS,
+            0 => NS_PER_MS,
             1 => 2 * NS_PER_MS,
             2 => 3 * NS_PER_MS,
             3 => 4 * NS_PER_MS,
@@ -286,11 +286,7 @@ impl RttBuffer {
     }
 
     /// Create a new buffer seeded with a single RTT reading.
-    pub fn new(
-        reading: RttData,
-        direction: FlowbeeEffectiveDirection,
-        last_seen: u64,
-    ) -> Self {
+    pub fn new(reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) -> Self {
         let mut entry = Self {
             last_seen,
             download_bucket: RttBufferBucket::default(),
@@ -315,12 +311,7 @@ impl RttBuffer {
     /// - The current bucket is time-windowed (10s) based on `last_seen` and is cleared/rotated when
     ///   the window elapses.
     /// - Bucket counts saturate on overflow.
-    pub fn push(
-        &mut self,
-        reading: RttData,
-        direction: FlowbeeEffectiveDirection,
-        last_seen: u64,
-    ) {
+    pub fn push(&mut self, reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) {
         self.last_seen = last_seen;
         let target_bucket = self.pick_bucket_mut(direction);
 
@@ -334,10 +325,10 @@ impl RttBuffer {
         }
 
         let bucket_idx = RttBufferBucket::bucket(reading);
-        target_bucket.current_bucket[bucket_idx] = target_bucket.current_bucket[bucket_idx]
-            .saturating_add(1);
-        target_bucket.total_bucket[bucket_idx] = target_bucket.total_bucket[bucket_idx]
-            .saturating_add(1);
+        target_bucket.current_bucket[bucket_idx] =
+            target_bucket.current_bucket[bucket_idx].saturating_add(1);
+        target_bucket.total_bucket[bucket_idx] =
+            target_bucket.total_bucket[bucket_idx].saturating_add(1);
         target_bucket.has_new_data = true;
 
         if let Some(other_max) = target_bucket.worst_rtt {
@@ -380,10 +371,11 @@ impl RttBuffer {
         // Precompute rank targets (ceil(p/100 * total))
         let targets: Vec<u32> = percentiles
             .iter()
-            .map(|p| ((*p as u32 * total) + 99) / 100)
+            .map(|p| (*p as u32 * total).div_ceil(100))
             .collect();
 
-        let mut results: smallvec::SmallVec<[Option<RttData>; 3]> = smallvec![None; percentiles.len()];
+        let mut results: smallvec::SmallVec<[Option<RttData>; 3]> =
+            smallvec![None; percentiles.len()];
         let mut cumulative: u32 = 0;
         let mut next_idx = 0;
 
@@ -408,7 +400,7 @@ impl RttBuffer {
             return None;
         }
 
-        Some(results.into_iter().map(|r| r.unwrap()).collect())
+        results.into_iter().collect()
     }
 
     /// Return the median RTT from the current window if fresh data is present.
@@ -421,7 +413,8 @@ impl RttBuffer {
         if !target.has_new_data {
             return RttData::from_nanos(0);
         }
-        let Some(median) = self.percentiles_from_bucket(RttBucket::Current, direction, &[50]) else {
+        let Some(median) = self.percentiles_from_bucket(RttBucket::Current, direction, &[50])
+        else {
             return RttData::from_nanos(0);
         };
         median[0]
@@ -461,7 +454,7 @@ impl RttBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{FlowbeeEffectiveDirection, RttBuffer, RttBucket, RttData};
+    use super::{FlowbeeEffectiveDirection, RttBucket, RttBuffer, RttData};
 
     #[test]
     fn accumulate_direction_only_affects_selected_direction() {

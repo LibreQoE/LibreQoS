@@ -18,4 +18,3 @@ pub enum FlowbeeEffectiveDirection {
     /// Upload direction (from the subscriber).
     Upload = 1,
 }
-

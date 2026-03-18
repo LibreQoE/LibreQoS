@@ -2,6 +2,7 @@
 
 mod top_config;
 pub use top_config::Config;
+pub use top_config::RttThresholds;
 mod bridge;
 mod flows;
 pub mod influxdb;
@@ -14,12 +15,18 @@ mod queues;
 mod sonar_integration;
 mod splynx_integration;
 mod stormguard;
+mod treeguard;
 mod tuning;
 mod uisp_integration;
+mod visp_integration;
 mod wispgate;
 
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;
 pub use queues::LazyQueueMode;
-pub use stormguard::StormguardConfig;
+pub use stormguard::{StormguardConfig, StormguardStrategy};
+pub use treeguard::{
+    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig,
+};
 pub use tuning::Tunables;

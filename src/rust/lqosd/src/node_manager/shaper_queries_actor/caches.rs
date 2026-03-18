@@ -45,9 +45,13 @@ impl CacheType {
     }
 }
 
+type CacheKey = (CacheType, i32);
+type CacheEntry = (Instant, Vec<u8>);
+type CacheMap = HashMap<CacheKey, CacheEntry>;
+
 pub struct Caches {
     on_update: tokio::sync::broadcast::Sender<CacheType>,
-    cache: Mutex<HashMap<(CacheType, i32), (Instant, Vec<u8>)>>,
+    cache: Mutex<CacheMap>,
 }
 
 impl Caches {
@@ -93,7 +97,7 @@ impl Caches {
             tag,
             data.len()
         );
-        let deserialized = serde_cbor::from_slice(&data);
+        let deserialized = serde_cbor::from_slice(data);
         let Ok(deserialized) = deserialized else {
             drop(cache);
             warn!("Failed to deserialize cache {tag:?}");

@@ -8,11 +8,20 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkJsonTransport {
     /// Display name
     pub name: String,
+    /// Optional stable node identifier carried in network.json metadata.
+    #[serde(default)]
+    pub id: Option<String>,
     /// True if this node is a "virtual" (logical-only) node.
     #[serde(rename = "virtual", default)]
     pub is_virtual: bool,
     /// Max throughput for node (not clamped)
-    pub max_throughput: (u32, u32),
+    pub max_throughput: (f64, f64),
+    /// Configured max throughput from `network.json`.
+    #[serde(default)]
+    pub configured_max_throughput: (f64, f64),
+    /// Effective max throughput after parent inheritance, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_max_throughput: Option<(f64, f64)>,
     /// Current node throughput
     pub current_throughput: (u64, u64),
     /// Current node packets
@@ -43,4 +52,10 @@ pub struct NetworkJsonTransport {
     /// The type of node (site, ap, etc.)
     #[serde(rename = "type")]
     pub node_type: Option<String>,
+    /// Optional node latitude from network.json metadata.
+    #[serde(default)]
+    pub latitude: Option<f32>,
+    /// Optional node longitude from network.json metadata.
+    #[serde(default)]
+    pub longitude: Option<f32>,
 }

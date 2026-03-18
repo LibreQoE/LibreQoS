@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>%%TITLE%%</title>
     <link rel="icon" href="favicon.png">
+    <script>
+    (function () {
+        try {
+            const theme = localStorage.getItem("theme");
+            document.documentElement.setAttribute(
+                "data-bs-theme",
+                theme === "light" ? "light" : "dark"
+            );
+        } catch (_) {
+            document.documentElement.setAttribute("data-bs-theme", "dark");
+        }
+    })();
+    </script>
     <link href="vendor/bootstrap.min.css" rel="stylesheet">
     <script src="vendor/jquery-3.7.1.min.js"></script>
     <script src="vendor/echarts.min.js"></script>
@@ -41,10 +54,10 @@
                     <li class="text-center">
                         <form class="d-none d-sm-inline-block form-inline navbar-search">
                             <div class="input-group">
-                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" id="txtSearch">
+                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search" autocomplete="off" id="txtSearch">
                                 <div class="input-group-append">
-                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch">
-                                        <i class="fas fa-search fa-sm"></i>
+                                    <button class="btn btn-secondary btn-sm" type="button" id="btnSearch" aria-label="Search" title="Search">
+                                        <i class="fas fa-search fa-sm" aria-hidden="true"></i>
                                     </button>
                                 </div>
                             </div>
@@ -71,10 +84,16 @@
                             <i class="fa fa-fw fa-centerline fa-address-card nav-icon"></i> Unknown IP <span id="unknownIpCount" class="badge menu-badge text-warning muted">?</span>
                         </a>
                     </li>
-                    <!-- Flow Map -->
+                    <!-- Site Map -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="site_map.html">
+                            <i class="fa fa-fw fa-centerline fa-map-location-dot nav-icon"></i> Site Map
+                        </a>
+                    </li>
+                    <!-- Flow Globe -->
                     <li class="nav-item">
                         <a class="nav-link" href="flow_map.html">
-                            <i class="fa fa-fw fa-centerline fa-map nav-icon"></i> Flow Map
+                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> Flow Globe
                         </a>
                     </li>
                     <!-- Tree Sankey -->
@@ -83,10 +102,10 @@
                             <i class="fa fa-fw fa-centerline fa-server nav-icon"></i> Tree Overview
                         </a>
                     </li>
-                    <!-- ASN Explorer -->
+                    <!-- ASN Analysis -->
                     <li class="nav-item">
-                        <a class="nav-link" href="asn_explorer.html">
-                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Explorer
+                        <a class="nav-link" href="asn_analysis.html">
+                            <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Analysis
                         </a>
                     </li>
                     <!-- CPU Affinity -->
@@ -114,9 +133,9 @@
                     </li>
                     <!-- Reload Button -->
                     <li class="nav-item">
-                        <a class="nav-link" id="lnkReloadLqos">
-                            <i class="fa fa-fw fa-centerline fa-recycle"></i> Reload LibreQoS
-                        </a>
+                        <button class="nav-link btn btn-link text-start w-100 p-0 border-0" type="button" id="lnkReloadLqos" aria-label="Reload LibreQoS">
+                            <i class="fa fa-fw fa-centerline fa-recycle" aria-hidden="true"></i> Reload LibreQoS
+                        </button>
                     </li>
                     %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
@@ -124,29 +143,29 @@
                     <!-- Dark mode switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light">
-                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon"></i></label>
+                            <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" aria-label="Toggle day or night mode">
+                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span class="visually-hidden">Toggle day or night mode</span></label>
                         </div>
                     </li>
                     <!-- Redact switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact">
-                            <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret"></i></label>
+                            <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" aria-label="Toggle redaction mode">
+                            <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span class="visually-hidden">Toggle redaction mode</span></label>
                         </div>
                     </li>
                     <!-- Color blind switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode">
-                            <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye"></i></label>
+                            <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" aria-label="Toggle color blind mode">
+                            <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span class="visually-hidden">Toggle color blind mode</span></label>
                         </div>
                     </li>
                     <!-- Klingon switch -->
                     <li class="nav-item">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon">
-                            <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock"></i></label>
+                            <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" aria-label="Toggle Klingon mode">
+                            <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span class="visually-hidden">Toggle Klingon mode</span></label>
                         </div>
                         <hr />
                     </li>
@@ -157,7 +176,7 @@
                                 <i class="fa fa-fw fa-centerline fa-user-circle"></i> <span id="username">%%USERNAME%%</span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" id="btnLogout"><i class="fa fa-sign-out"></i> Logout</a></li>
+                                <li><button class="dropdown-item" type="button" id="btnLogout"><i class="fa fa-sign-out" aria-hidden="true"></i> Logout</button></li>
                             </ul>
 
                         </div>
@@ -221,7 +240,7 @@
         <div class='modal-content'>
             <div class='modal-header'>
                 <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Urgent Issues</h1>
-                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge All'><i class='fa fa-times'></i></button>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all urgent issues' aria-label='Acknowledge all urgent issues'><i class='fa fa-times' aria-hidden='true'></i></button>
                 <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
             </div>
             <div class='modal-body'>
@@ -240,7 +259,7 @@
     LibreQoS %%VERSION%%. &copy; Copyright 2022-<span id="year"></span>, LibreQoE LLC. All Rights Reserved.
 </footer>
 
-    <script src="template.js"></script>
+    <script src="template.js%CACHEBUSTERS%"></script>
     <script>
     // Remove scheduler tooltip (keep click-to-see only)
     (function(){

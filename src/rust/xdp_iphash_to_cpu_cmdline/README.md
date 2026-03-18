@@ -19,6 +19,7 @@ Examples:
 ```
 xdp_iphash_to_cpu_cmdline list
 xdp_iphash_to_cpu_cmdline add --ip 192.168.100.1 --classid 5:3 --cpu 4
+xdp_iphash_to_cpu_cmdline add --ip 192.168.100.1 --classid 5:3 --cpu 4 --circuit-id CIRCUIT123 --device-id DEVICE456
 xdp_iphash_to_cpu_cmdline del 192.168.100.1
 xdp_iphash_to_cpu_cmdline clear
 ```

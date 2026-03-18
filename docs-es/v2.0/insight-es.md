@@ -1,4 +1,4 @@
-# LibreQoS Insight (Insight)
+# LibreQoS Insight
 
 ## Acerca de Insight
 Conoce más sobre Insight en nuestro sitio web, [aquí](https://libreqos.io/insight/).
@@ -75,9 +75,12 @@ Permite identificar la topología general de la red desde la perspectiva de Insi
 
 <img width="1784" height="882" alt="07 libby" src="https://github.com/user-attachments/assets/591a3fd1-3946-44ed-a4fd-e1b1d84b9ef6" />
 
-Libby es el asistente IA de Insight. Puede ayudarte con dudas sobre LibreQoS o Insight basándose en la documentación oficial. Libby accede a datos en vivo y de largo plazo tanto de los shapers sincronizados como de Insight. Puede responder en la mayoría de los idiomas mediante traducción automática.
+Libby es una interfaz de chat asistiva para operaciones de Insight y consulta de documentación.
 
-Si encuentras nuevos casos de uso para Libby, comparte con nosotros cómo te ayuda en el flujo de trabajo.
+Guía operativa:
+- Trate la salida de Libby como guía asistiva, no como comando autoritativo de cambio.
+- Valide recomendaciones contra estado actual del nodo, logs y procedimientos documentados antes de aplicar cambios en producción.
+- Para acciones sensibles/de alto impacto, confirme con el flujo estándar del operador (estado de servicios, estado del scheduler y ruta de rollback).
 
 ### Site Heatmap
 
@@ -102,3 +105,46 @@ Insight permite generar reportes asistidos por IA sobre circuitos específicos. 
 <img width="3831" height="2160" alt="11 alerts" src="https://github.com/user-attachments/assets/66f0a465-eb00-4bfb-9cf8-c8302af78ead" />
 
 La sección **Alerts** entrega advertencias automáticas sobre comportamientos fuera de norma para nodos de la red (AP, OLT, sitios, etc.).
+
+## Comportamiento de licenciamiento de Insight (lado nodo)
+
+### Material de claves local y grants offline
+
+LibreQoS guarda material de claves de Insight en:
+
+`<lqos_directory>/.keys/`
+
+Las compilaciones actuales pueden cachear grants firmados localmente para que el nodo siga operando durante pérdidas temporales de conectividad con servicios de control de Insight. La validez y expiración del grant se aplica localmente.
+
+Notas operativas:
+
+- Mantenga `.keys/` persistente entre reinicios.
+- Trate `.keys/` como material sensible.
+- Si hay estado inválido de grant/clave, `lqosd` mostrará errores de licencia/grant en logs.
+
+### Límites de circuitos mapeados y estado de licencia
+
+`ShapedDevices.csv` puede contener entradas ilimitadas. En compilaciones v2.0 actuales, la admisión al estado de shaping activo depende del estado válido de la licencia Insight.
+
+Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Los circuitos mapeados válidos adicionales permanecen fuera del shaping activo hasta que se restaure una licencia Insight válida.
+
+Una suscripción/licencia Insight válida habilita conteos de circuitos mapeados por encima del límite predeterminado de 1000.
+
+El comportamiento predeterminado del límite de 1000 aplica cuando Insight está:
+- ausente
+- expirado
+- inválido por cualquier motivo
+- operando con estado local de grant offline inválido
+
+Cuando se alcanza el límite, los operadores normalmente verán:
+- una advertencia prominente en WebUI
+- un indicador de uso en la navegación izquierda mostrando cercanía al límite
+- mensajes de `lqosd` como:
+  - `Mapped circuit limit reached`
+  - `Bakery mapped circuit cap enforced`
+
+Cuando ocurra:
+
+1. Revise estado de licencia Insight en la UI.
+2. Revise `journalctl -u lqosd` para conteos requested/allowed/dropped.
+3. Verifique si el nodo está operando con el límite predeterminado de 1000 circuitos mapeados porque el estado actual de Insight/licencia es inválido.
