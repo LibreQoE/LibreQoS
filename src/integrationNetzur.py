@@ -87,8 +87,8 @@ def createShaper() -> NetworkGraph:
                     id=parent_counter,
                     displayName=name,
                     type=NodeType.site,
-                    download=_apply_rate(zone.get("capacity_download_mbps")),
-                    upload=_apply_rate(zone.get("capacity_upload_mbps")),
+                    download=apply_client_bandwidth_multiplier(zone.get("capacity_download_mbps")),
+                    upload=apply_client_bandwidth_multiplier(zone.get("capacity_upload_mbps")),
                     networkJsonId=network_json_id,
                 )
             )
