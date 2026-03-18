@@ -34,6 +34,13 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - The legacy `ASN Explorer` route now redirects here so older bookmarks still work.
 - Empty results usually indicate low recent data volume rather than failure.
 
+### Circuit page
+- Circuit pages combine queue behavior, live throughput, RTT, retransmits, and per-flow troubleshooting for an individual subscriber/circuit.
+- `Queue Dynamics` shows circuit throughput and RTT behavior over time, including an `Active Flows` KPI based on the same recent flow window used by the `Traffic Flows` table.
+- `Traffic Flows` is a recent-flow operational table rather than a long-term history view.
+- `Traffic Flows` includes paging and a `Hide Small Flows` filter so large busy circuits remain usable without trying to render every row at once.
+- `Flow Sankey` emphasizes the hottest recent flows rather than every older retained flow.
+
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.
 - Helps evaluate binpacking and load distribution behavior.

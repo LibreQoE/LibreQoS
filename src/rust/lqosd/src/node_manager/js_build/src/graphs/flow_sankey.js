@@ -2,6 +2,28 @@ import {DashboardGraph} from "./dashboard_graph";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
 
+const SANKEY_RECENT_FLOW_WINDOW_NANOS = 10_000_000_000;
+const SANKEY_TOP_FLOW_LIMIT = 20;
+
+function totalFlowRate(flow) {
+    return (
+        toNumber(flow?.[1]?.rate_estimate_bps?.down, 0) +
+        toNumber(flow?.[1]?.rate_estimate_bps?.up, 0)
+    );
+}
+
+function renderableSankeyFlows(flowMsg) {
+    const flows = Array.isArray(flowMsg?.flows) ? flowMsg.flows : [];
+    return flows
+        .filter((flow) => toNumber(flow?.[0]?.last_seen_nanos, 0) <= SANKEY_RECENT_FLOW_WINDOW_NANOS)
+        .sort((a, b) => totalFlowRate(b) - totalFlowRate(a))
+        .slice(0, SANKEY_TOP_FLOW_LIMIT);
+}
+
+export function getRenderableSankeyFlowCount(flowMsg) {
+    return renderableSankeyFlows(flowMsg).length;
+}
+
 export class FlowsSankey extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -26,27 +48,10 @@ export class FlowsSankey extends DashboardGraph {
         let protocols = {};
         let remoteDevices = {};
 
-        const ten_second_in_nanos = 10000000000;
-
         // Iterate over each flow and accumulate traffic.
         let flowCount = 0;
-        
-        // Sort flows by total rate (down + up) descending, then take top 20
-        let sortedTopFlows = flows.flows
-            .slice() // copy to avoid mutating original
-            .sort((a, b) => {
-                const rateA =
-                    toNumber(a[1]?.rate_estimate_bps?.down, 0) +
-                    toNumber(a[1]?.rate_estimate_bps?.up, 0);
-                const rateB =
-                    toNumber(b[1]?.rate_estimate_bps?.down, 0) +
-                    toNumber(b[1]?.rate_estimate_bps?.up, 0);
-                return rateB - rateA;
-            })
-            .slice(0, 20);
-        
-        sortedTopFlows.forEach((flow) => {
-            if (toNumber(flow[0].last_seen_nanos, 0) > ten_second_in_nanos) return;
+
+        renderableSankeyFlows(flows).forEach((flow) => {
             flowCount++;
             let localDevice = flow[0].device_name;
             let proto = flow[0].protocol_name;
