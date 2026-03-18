@@ -190,9 +190,27 @@
     </div>
     <div class="tab-pane fade" id="traffic" role="tabpanel" aria-labelledby="traffic-tab">
         <div class="row">
-            <div class="d-inline-flex align-items-center">
-                <input type="checkbox" id="hideSmallFlows" class="text-secondary">
-                <label for="hideSmallFlows" class="ms-2">Hide Small Flows</label>
+            <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div class="d-inline-flex align-items-center">
+                    <input type="checkbox" id="hideSmallFlows" class="text-secondary">
+                    <label for="hideSmallFlows" class="ms-2">Hide Small Flows</label>
+                </div>
+                <div class="d-inline-flex align-items-center gap-2">
+                    <label for="trafficPageSize" class="small text-muted mb-0">Rows</label>
+                    <select id="trafficPageSize" class="form-select form-select-sm w-auto">
+                        <option value="100" selected>100</option>
+                        <option value="250">250</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                    <button type="button" id="trafficPagePrev" class="btn btn-sm btn-outline-secondary">
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    <span id="trafficPageInfo" class="small text-muted">Page 1 / 1</span>
+                    <button type="button" id="trafficPageNext" class="btn btn-sm btn-outline-secondary">
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                </div>
             </div>
             <div class="col-12" id="allTraffic">
                 <div class="lqos-loading-block lqos-loading-block-lg">

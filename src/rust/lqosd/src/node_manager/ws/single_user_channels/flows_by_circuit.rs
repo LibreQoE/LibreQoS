@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::debug;
 
-const FIVE_MINUTES_AS_NANOS: u64 = 300 * 1_000_000_000;
+const RECENT_CIRCUIT_FLOWS_WINDOW_NANOS: u64 = 30 * 1_000_000_000;
 
 fn recent_flows_by_circuit(
     circuit_id: &str,
@@ -19,7 +19,7 @@ fn recent_flows_by_circuit(
     let cache = SHAPED_DEVICE_HASH_CACHE.load();
     if let Ok(now) = time_since_boot() {
         let now_as_nanos = Duration::from(now).as_nanos() as u64;
-        let five_minutes_ago = now_as_nanos.saturating_sub(FIVE_MINUTES_AS_NANOS);
+        let recent_cutoff = now_as_nanos.saturating_sub(RECENT_CIRCUIT_FLOWS_WINDOW_NANOS);
 
         {
             let all_flows = ALL_FLOWS.lock();
@@ -28,7 +28,7 @@ fn recent_flows_by_circuit(
                 .iter()
                 .filter_map(|(key, (local, analysis))| {
                     // Don't show older flows
-                    if local.last_seen < five_minutes_ago {
+                    if local.last_seen < recent_cutoff {
                         return None;
                     }
 
@@ -85,19 +85,17 @@ pub(super) async fn flows_by_circuit(
         let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> =
             recent_flows_by_circuit(&circuit).into_iter().collect();
 
-        if !flows.is_empty() {
-            let result = WsResponse::FlowsByCircuit {
-                circuit_id: circuit.clone(),
-                flows,
-            };
-            if let Ok(payload) = encode_ws_message(&result) {
-                if tx.send(payload).await.is_err() {
-                    debug!("Channel is gone");
-                    break;
-                }
-            } else {
+        let result = WsResponse::FlowsByCircuit {
+            circuit_id: circuit.clone(),
+            flows,
+        };
+        if let Ok(payload) = encode_ws_message(&result) {
+            if tx.send(payload).await.is_err() {
+                debug!("Channel is gone");
                 break;
             }
+        } else {
+            break;
         }
 
         ticker.tick().await;

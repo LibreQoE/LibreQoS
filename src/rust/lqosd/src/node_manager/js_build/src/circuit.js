@@ -11,7 +11,7 @@ import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling"
 import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
-import {FlowsSankey} from "./graphs/flow_sankey";
+import {FlowsSankey, getRenderableSankeyFlowCount} from "./graphs/flow_sankey";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
@@ -63,6 +63,10 @@ const QUEUING_ACTIVITY_RTT_FLOOR_BPS = 200_000;
 const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
 let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
+const RECENT_TRAFFIC_FLOW_WINDOW_NANOS = 30_000_000_000;
+const TRAFFIC_FLOW_HIDE_THRESHOLD_BPS = 1024 * 1024;
+const DEFAULT_TRAFFIC_PAGE_SIZE = 100;
+
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
         wsClient.off(eventName, wrapped);
@@ -268,7 +272,7 @@ function loadRttThresholds() {
 }
 
 function currentActiveFlowCount() {
-    return Array.isArray(latestFlowMsg?.flows) ? latestFlowMsg.flows.length : 0;
+    return latestTrafficRows.length;
 }
 
 function currentDirectionValue(pair, direction, fallback = 0) {
@@ -392,13 +396,21 @@ function initQueuingActivityControls() {
     applyQueuingDirection("down");
 }
 
+function isTrafficTabActive() {
+    return document.getElementById("traffic-tab")?.classList.contains("active") ?? false;
+}
+
+function isSankeyTabActive() {
+    return document.getElementById("sankey-tab")?.classList.contains("active") ?? false;
+}
+
 function applyFlowSankeyMessage(msg) {
+    $("#activeFlowCount").text(getRenderableSankeyFlowCount(msg));
     if (!flowSankey || !msg) {
         return;
     }
-    const activeFlows = flowSankey.update(msg);
+    flowSankey.update(msg);
     resizeGraphIfVisible(flowSankey);
-    $("#activeFlowCount").text(activeFlows);
 }
 
 function ensureFlowSankey() {
@@ -693,6 +705,10 @@ function initTabLifecycle(parentNode) {
                     applyFlowSankeyMessage(latestFlowMsg);
                     return;
                 }
+                if (target === "#traffic") {
+                    renderTrafficTab();
+                    return;
+                }
                 if (target === "#funnel") {
                     if (!funnelInitialized) {
                         funnelInitialized = true;
@@ -934,20 +950,77 @@ function connectFlowChannel() {
         }
     }, (msg) => {
         latestFlowMsg = msg;
-        applyFlowSankeyMessage(msg);
-        updateTrafficTab(msg);
+        ingestTrafficRows(msg);
+        if (isSankeyTabActive()) {
+            ensureFlowSankey();
+            applyFlowSankeyMessage(msg);
+        } else {
+            $("#activeFlowCount").text(getRenderableSankeyFlowCount(msg));
+        }
+        if (isTrafficTabActive()) {
+            renderTrafficTab();
+        } else {
+            updateTrafficCountBadge();
+            updateTrafficPaginationControls();
+        }
         updateQueuingActivityCards();
     });
 }
 
 function initFlowFilters() {
     const hideSmallFlows = document.getElementById("hideSmallFlows");
-    if (!hideSmallFlows) {
-        return;
+    const pageSize = document.getElementById("trafficPageSize");
+    const prev = document.getElementById("trafficPagePrev");
+    const next = document.getElementById("trafficPageNext");
+    const trafficContainer = document.getElementById("allTraffic");
+
+    if (hideSmallFlows) {
+        hideSmallFlows.addEventListener("change", () => {
+            trafficCurrentPage = 1;
+            renderTrafficTab();
+        });
     }
-    hideSmallFlows.addEventListener("change", () => {
-        updateTrafficTab(latestFlowMsg || { flows: [] });
-    });
+    if (pageSize) {
+        pageSize.value = String(trafficPageSize);
+        pageSize.addEventListener("change", () => {
+            const parsed = parseInt(pageSize.value, 10);
+            trafficPageSize = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TRAFFIC_PAGE_SIZE;
+            trafficCurrentPage = 1;
+            renderTrafficTab();
+        });
+    }
+    if (prev) {
+        prev.addEventListener("click", () => {
+            if (trafficCurrentPage > 1) {
+                trafficCurrentPage--;
+                renderTrafficTab();
+            }
+        });
+    }
+    if (next) {
+        next.addEventListener("click", () => {
+            const totalPages = getTrafficTotalPages();
+            if (trafficCurrentPage < totalPages) {
+                trafficCurrentPage++;
+                renderTrafficTab();
+            }
+        });
+    }
+    if (trafficContainer) {
+        trafficContainer.addEventListener("click", (event) => {
+            const button = event.target.closest(".flow-rtt-exclude-btn");
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            const remoteIp = String(button.dataset.remoteIp || "").trim();
+            if (!remoteIp) {
+                return;
+            }
+            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+        });
+    }
 }
 
 let movingAverages = new Map();
@@ -955,6 +1028,9 @@ let prevFlowBytes = new Map();
 let tickCount = 0;
 let trafficSortColumn = 'rate'; // Default sort by rate
 let trafficSortDirection = 'desc'; // 'asc' or 'desc'
+let latestTrafficRows = [];
+let trafficCurrentPage = 1;
+let trafficPageSize = DEFAULT_TRAFFIC_PAGE_SIZE;
 
 function diffToNumber(current, previous, fallback = 0) {
     if (typeof current === "bigint" && typeof previous === "bigint") {
@@ -996,9 +1072,174 @@ function formatRttPair(p50Nanos, p95Nanos) {
     return formatRttNanos(p50) + " / " + scaleNanos(p95);
 }
 
-function updateTrafficTab(msg) {
-    let target = document.getElementById("allTraffic");
-    let visibleRowCount = 0;
+function visibleTrafficRows() {
+    if (!hideSmallFlowsEnabled()) {
+        return latestTrafficRows;
+    }
+    return latestTrafficRows.filter((row) => row.downBps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS || row.upBps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS);
+}
+
+function hideSmallFlowsEnabled() {
+    return document.getElementById("hideSmallFlows")?.checked ?? false;
+}
+
+function sortTrafficRows(rows) {
+    rows.sort((a, b) => {
+        let aVal = a.sortKeys[trafficSortColumn];
+        let bVal = b.sortKeys[trafficSortColumn];
+        if (typeof aVal === "string" && typeof bVal === "string") {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+        }
+        if (trafficSortDirection === "asc") {
+            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        }
+        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+    });
+}
+
+function getTrafficTotalPages() {
+    return Math.max(1, Math.ceil(visibleTrafficRows().length / trafficPageSize));
+}
+
+function updateTrafficPaginationControls() {
+    const totalPages = getTrafficTotalPages();
+    trafficCurrentPage = Math.min(Math.max(1, trafficCurrentPage), totalPages);
+
+    const info = document.getElementById("trafficPageInfo");
+    const prev = document.getElementById("trafficPagePrev");
+    const next = document.getElementById("trafficPageNext");
+    if (info) {
+        info.textContent = `Page ${trafficCurrentPage} / ${totalPages}`;
+    }
+    if (prev) {
+        prev.disabled = trafficCurrentPage <= 1;
+    }
+    if (next) {
+        next.disabled = trafficCurrentPage >= totalPages;
+    }
+}
+
+function updateTrafficCountBadge() {
+    $("#trafficFlowCount").text(visibleTrafficRows().length);
+}
+
+function ingestTrafficRows(msg) {
+    tickCount++;
+    const rows = [];
+    const seenFlowKeys = new Set();
+    const flowList = Array.isArray(msg?.flows) ? msg.flows : [];
+
+    flowList.forEach((flow) => {
+        const flowKey = `${flow?.[0]?.protocol_name || ""}${flow?.[0]?.row_id || ""}`;
+        seenFlowKeys.add(flowKey);
+
+        let down = toNumber(flow?.[1]?.rate_estimate_bps?.down, 0);
+        let up = toNumber(flow?.[1]?.rate_estimate_bps?.up, 0);
+        const prev = prevFlowBytes.get(flowKey);
+        if (prev) {
+            const ticks = tickCount - prev.tick;
+            if (ticks === 1) {
+                down = diffToNumber(flow[1].bytes_sent.down, prev.downBytes, 0) * 8;
+                up = diffToNumber(flow[1].bytes_sent.up, prev.upBytes, 0) * 8;
+            } else if (ticks > 1) {
+                down = diffToNumber(flow[1].bytes_sent.down, prev.downBytes, 0) * 8 / ticks;
+                up = diffToNumber(flow[1].bytes_sent.up, prev.upBytes, 0) * 8 / ticks;
+            }
+        }
+        if (down < 0) down = 0;
+        if (up < 0) up = 0;
+
+        prevFlowBytes.set(flowKey, {
+            downBytes: flow?.[1]?.bytes_sent?.down,
+            upBytes: flow?.[1]?.bytes_sent?.up,
+            tick: tickCount,
+        });
+
+        const currentRate = down + up;
+        const average = movingAverages.get(flowKey) || { values: [], total: 0 };
+        average.values.push(currentRate);
+        average.total += currentRate;
+        if (average.values.length > 10) {
+            average.total -= average.values.shift();
+        }
+        movingAverages.set(flowKey, average);
+
+        const lastSeenNanos = toNumber(flow?.[0]?.last_seen_nanos, 0);
+        if (lastSeenNanos > RECENT_TRAFFIC_FLOW_WINDOW_NANOS) {
+            return;
+        }
+
+        const tcpRetransmitsDown = toNumber(flow?.[1]?.tcp_retransmits?.down, 0);
+        const tcpRetransmitsUp = toNumber(flow?.[1]?.tcp_retransmits?.up, 0);
+        const packetsSentDown = toNumber(flow?.[1]?.packets_sent?.down, 0);
+        const packetsSentUp = toNumber(flow?.[1]?.packets_sent?.up, 0);
+        const retransmitDownPct = tcpRetransmitsDown > 0 && packetsSentDown > 0 ? tcpRetransmitsDown / packetsSentDown : 0;
+        const retransmitUpPct = tcpRetransmitsUp > 0 && packetsSentUp > 0 ? tcpRetransmitsUp / packetsSentUp : 0;
+        const bytesSentDown = toNumber(flow?.[1]?.bytes_sent?.down, 0);
+        const bytesSentUp = toNumber(flow?.[1]?.bytes_sent?.up, 0);
+        const rttDownNanos = toNumber(flow?.[1]?.rtt?.[0]?.nanoseconds, 0);
+        const rttUpNanos = toNumber(flow?.[1]?.rtt?.[1]?.nanoseconds, 0);
+        const qoq = flow?.[1]?.qoq || null;
+        const qooDown = qoq ? qoq.download_total : null;
+        const qooUp = qoq ? qoq.upload_total : null;
+        const remoteIp = String(flow?.[0]?.remote_ip || "").trim();
+
+        rows.push({
+            protocolName: flow?.[0]?.protocol_name || "",
+            downBps: down,
+            upBps: up,
+            bytesSentDown,
+            bytesSentUp,
+            packetsSentDown,
+            packetsSentUp,
+            retransmitDownPct,
+            retransmitUpPct,
+            rttDownNanos,
+            rttUpNanos,
+            qooDown,
+            qooUp,
+            asnName: flow?.[0]?.asn_name || "",
+            asnCountry: flow?.[0]?.asn_country || "",
+            remoteIp,
+            opacity: 1.0 - Math.min(1, lastSeenNanos / RECENT_TRAFFIC_FLOW_WINDOW_NANOS),
+            sortKeys: {
+                protocol: flow?.[0]?.protocol_name || "",
+                rate: average.values.length > 0 ? average.total / average.values.length : currentRate,
+                bytes: bytesSentDown + bytesSentUp,
+                packets: packetsSentDown + packetsSentUp,
+                retransmits: retransmitDownPct + retransmitUpPct,
+                rtt: rttDownNanos + rttUpNanos,
+                qoo: (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0),
+                asn: flow?.[0]?.asn_name || "",
+                country: flow?.[0]?.asn_country || "",
+                ip: remoteIp,
+            },
+        });
+    });
+
+    Array.from(prevFlowBytes.keys()).forEach((key) => {
+        if (!seenFlowKeys.has(key)) {
+            prevFlowBytes.delete(key);
+            movingAverages.delete(key);
+        }
+    });
+
+    latestTrafficRows = rows;
+}
+
+function renderTrafficTab() {
+    const target = document.getElementById("allTraffic");
+    if (!target) {
+        return;
+    }
+
+    const visibleRows = visibleTrafficRows().slice();
+    sortTrafficRows(visibleRows);
+    const totalPages = Math.max(1, Math.ceil(visibleRows.length / trafficPageSize));
+    trafficCurrentPage = Math.min(Math.max(1, trafficCurrentPage), totalPages);
+    const startIndex = (trafficCurrentPage - 1) * trafficPageSize;
+    const pagedRows = visibleRows.slice(startIndex, startIndex + trafficPageSize);
 
     let tableWrap = document.createElement("div");
     tableWrap.classList.add("lqos-table-wrap");
@@ -1007,26 +1248,26 @@ function updateTrafficTab(msg) {
     table.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
-    
-    // Create clickable headers
+
     const createSortableHeader = (text, sortKey, colspan = 1) => {
         let th = theading(text, colspan);
         th.style.cursor = "pointer";
         th.onclick = () => {
             if (trafficSortColumn === sortKey) {
-                trafficSortDirection = trafficSortDirection === 'asc' ? 'desc' : 'asc';
+                trafficSortDirection = trafficSortDirection === "asc" ? "desc" : "asc";
             } else {
                 trafficSortColumn = sortKey;
-                trafficSortDirection = 'desc';
+                trafficSortDirection = "desc";
             }
+            trafficCurrentPage = 1;
+            renderTrafficTab();
         };
-        // Add sort indicator
         if (trafficSortColumn === sortKey) {
-            th.innerHTML += trafficSortDirection === 'asc' ? ' ▲' : ' ▼';
+            th.innerHTML += trafficSortDirection === "asc" ? " ▲" : " ▼";
         }
         return th;
     };
-    
+
     thead.appendChild(createSortableHeader("Protocol", "protocol"));
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
     thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
@@ -1039,208 +1280,61 @@ function updateTrafficTab(msg) {
     thead.appendChild(createSortableHeader("Remote IP", "ip"));
     thead.appendChild(theading("RTT Exclude"));
     table.appendChild(thead);
+
     let tbody = document.createElement("tbody");
-    const thirty_seconds_in_nanos = 30000000000; // For display filtering
-    tickCount++;
-    
-    let hideSmallFlows = document.getElementById("hideSmallFlows").checked;
-    let tableRows = [];
+    if (pagedRows.length === 0) {
+        const empty = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 17;
+        td.classList.add("text-center", "text-muted", "small");
+        td.textContent = "No recent flows match the current filter.";
+        empty.appendChild(td);
+        tbody.appendChild(empty);
+    } else {
+        pagedRows.forEach((rowData) => {
+            let row = document.createElement("tr");
+            row.classList.add("small");
+            row.style.opacity = rowData.opacity;
 
-    msg.flows.forEach((flow) => {
-        let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let rate =
-            toNumber(flow[1].rate_estimate_bps.down, 0) +
-            toNumber(flow[1].rate_estimate_bps.up, 0);
-        if (prevFlowBytes.has(flowKey)) {
-            let down = diffToNumber(flow[1].bytes_sent.down, prevFlowBytes.get(flowKey)[0], 0);
-            let up = diffToNumber(flow[1].bytes_sent.up, prevFlowBytes.get(flowKey)[1], 0);
-            rate = down + up;
-        }
-        if (movingAverages.has(flowKey)) {
-            let avg = movingAverages.get(flowKey);
-            avg.push(rate);
-            if (avg.length > 10) {
-                avg.shift();
-            }
-            movingAverages.set(flowKey, avg);
-        } else {
-            movingAverages.set(flowKey, [ rate ]);
-        }
-    });
+            row.appendChild(simpleRow(rowData.protocolName));
+            row.appendChild(simpleRowHtml(formatThroughput(rowData.downBps, plan.down)));
+            row.appendChild(simpleRowHtml(formatThroughput(rowData.upBps, plan.up)));
+            row.appendChild(simpleRow(scaleNumber(rowData.bytesSentDown)));
+            row.appendChild(simpleRow(scaleNumber(rowData.bytesSentUp)));
+            row.appendChild(simpleRow(scaleNumber(rowData.packetsSentDown)));
+            row.appendChild(simpleRow(scaleNumber(rowData.packetsSentUp)));
+            row.appendChild(simpleRowHtml(rowData.retransmitDownPct > 0 ? formatRetransmit(rowData.retransmitDownPct) : "-"));
+            row.appendChild(simpleRowHtml(rowData.retransmitUpPct > 0 ? formatRetransmit(rowData.retransmitUpPct) : "-"));
+            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rttDownNanos)));
+            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rttUpNanos)));
+            row.appendChild(simpleRowHtml(formatQooScore(rowData.qooDown)));
+            row.appendChild(simpleRowHtml(formatQooScore(rowData.qooUp)));
+            row.appendChild(simpleRow(rowData.asnName));
+            row.appendChild(simpleRow(rowData.asnCountry));
+            row.appendChild(simpleRow(rowData.remoteIp));
 
-    // Process flows and collect data
-    msg.flows.forEach((flow) => {
-        let flowKey = flow[0].protocol_name + flow[0].row_id;
-        let down = toNumber(flow[1].rate_estimate_bps.down, 0);
-        let up = toNumber(flow[1].rate_estimate_bps.up, 0);
+            const td = document.createElement("td");
+            td.classList.add("text-center");
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "btn btn-outline-secondary btn-sm flow-rtt-exclude-btn";
+            button.textContent = "Exclude";
+            button.disabled = !rowData.remoteIp;
+            button.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
+            button.dataset.remoteIp = rowData.remoteIp;
+            td.appendChild(button);
+            row.appendChild(td);
 
-        //console.log(flow);
-        if (prevFlowBytes.has(flowKey)) {
-            let prev = prevFlowBytes.get(flowKey);
-            let ticks = tickCount - prev[2];
-            if (ticks === 1) {
-                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
-                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
-            } else if (ticks > 1) {
-                down = diffToNumber(flow[1].bytes_sent.down, prev[0], 0) * 8;
-                up = diffToNumber(flow[1].bytes_sent.up, prev[1], 0) * 8;
-                down = down / ticks;
-                up = up / ticks;
-            }
-        }
-        if (down < 0) down = 0;
-        if (up < 0) up = 0;
-        prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
-
-        const lastSeenNanos = toNumber(flow[0].last_seen_nanos, 0);
-        if (lastSeenNanos > thirty_seconds_in_nanos) return;
-        
-        let opacity = Math.min(1, lastSeenNanos / thirty_seconds_in_nanos);
-        let visible = !hideSmallFlows || (down > 1024*1024 || up > 1024*1024);
-        
-        // Calculate retransmit percentages
-        let retransmitDown = "-";
-        let retransmitUp = "-";
-        let retransmitDownPct = 0;
-        let retransmitUpPct = 0;
-        
-        const tcpRetransmitsDown = toNumber(flow[1].tcp_retransmits.down, 0);
-        const tcpRetransmitsUp = toNumber(flow[1].tcp_retransmits.up, 0);
-        const packetsSentDown = toNumber(flow[1].packets_sent.down, 0);
-        const packetsSentUp = toNumber(flow[1].packets_sent.up, 0);
-
-        if (tcpRetransmitsDown > 0 && packetsSentDown > 0) {
-            retransmitDownPct = tcpRetransmitsDown / packetsSentDown;
-            retransmitDown = formatRetransmit(retransmitDownPct);
-        }
-        if (tcpRetransmitsUp > 0 && packetsSentUp > 0) {
-            retransmitUpPct = tcpRetransmitsUp / packetsSentUp;
-            retransmitUp = formatRetransmit(retransmitUpPct);
-        }
-        
-        // Get average rate for sorting
-        let avgRate = down + up;
-        if (movingAverages.has(flowKey)) {
-            const avg = movingAverages.get(flowKey);
-            avgRate = avg.reduce((a, b) => a + b, 0) / avg.length;
-        }
-        
-        const bytesSentDown = toNumber(flow[1].bytes_sent.down, 0);
-        const bytesSentUp = toNumber(flow[1].bytes_sent.up, 0);
-        const rttDownNanos = toNumber(flow[1].rtt[0].nanoseconds, 0);
-        const rttUpNanos = toNumber(flow[1].rtt[1].nanoseconds, 0);
-
-        const qoq = flow[1].qoq || null;
-        const qooDown = qoq ? qoq.download_total : null;
-        const qooUp = qoq ? qoq.upload_total : null;
-        const qooForSort = (typeof qooDown === "number" ? qooDown : 0) + (typeof qooUp === "number" ? qooUp : 0);
-
-        const remoteIp = String(flow[0].remote_ip || "").trim();
-        const excludeBtn = document.createElement("button");
-        excludeBtn.type = "button";
-        excludeBtn.className = "btn btn-outline-secondary btn-sm";
-        excludeBtn.textContent = "Exclude";
-        excludeBtn.disabled = !remoteIp;
-        excludeBtn.title = "Open a wizard to exclude RTT samples for this remote IP/CIDR (requires saving in Flow Tracking config).";
-        excludeBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openFlowRttExcludeWizard({ remoteIp, sourceLabel: "Circuit" });
+            tbody.appendChild(row);
         });
-
-        // Collect row data
-        tableRows.push({
-            sortKeys: {
-                protocol: flow[0].protocol_name,
-                rate: avgRate,
-                bytes: bytesSentDown + bytesSentUp,
-                packets: packetsSentDown + packetsSentUp,
-                retransmits: retransmitDownPct + retransmitUpPct,
-                rtt: rttDownNanos + rttUpNanos,
-                qoo: qooForSort,
-                asn: flow[0].asn_name || "",
-                country: flow[0].asn_country || "",
-                ip: remoteIp
-            },
-            columns: [
-                flow[0].protocol_name,
-                formatThroughput(down, plan.down),
-                formatThroughput(up, plan.up),
-                scaleNumber(bytesSentDown),
-                scaleNumber(bytesSentUp),
-                scaleNumber(packetsSentDown),
-                scaleNumber(packetsSentUp),
-                retransmitDown,
-                retransmitUp,
-                formatRttNanos(rttDownNanos),
-                formatRttNanos(rttUpNanos),
-                formatQooScore(qooDown),
-                formatQooScore(qooUp),
-                flow[0].asn_name,
-                flow[0].asn_country,
-                remoteIp,
-                excludeBtn,
-            ],
-            opacity: 1.0 - opacity,
-            visible: visible
-        });
-    });
-    
-    // Sort tableRows based on current sort preferences
-    tableRows.sort((a, b) => {
-        let aVal = a.sortKeys[trafficSortColumn];
-        let bVal = b.sortKeys[trafficSortColumn];
-        
-        // Handle string vs number comparison
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
-            aVal = aVal.toLowerCase();
-            bVal = bVal.toLowerCase();
-        }
-        
-        if (trafficSortDirection === 'asc') {
-            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-        } else {
-            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-        }
-    });
-    
-    // Render the sorted table
-    tableRows.forEach((rowData) => {
-        if (!rowData.visible) return;
-        visibleRowCount++;
-        
-        let row = document.createElement("tr");
-        row.classList.add("small");
-        row.style.opacity = rowData.opacity;
-        
-        // Add columns
-        rowData.columns.forEach((col, index) => {
-            const isNode = col && typeof col === "object" && typeof col.nodeType === "number";
-            if (isNode) {
-                const td = document.createElement("td");
-                td.classList.add("text-center");
-                td.appendChild(col);
-                row.appendChild(td);
-                return;
-            }
-            if (index === 1 || index === 2 || index === 7 || index === 8 || index === 9 || index === 10 || index === 11 || index === 12) {
-                // These columns have HTML formatting
-                row.appendChild(simpleRowHtml(col));
-            } else {
-                row.appendChild(simpleRow(col));
-            }
-        });
-        
-        tbody.appendChild(row);
-    });
+    }
 
     table.appendChild(tbody);
-
     tableWrap.appendChild(table);
     clearDiv(target);
     target.appendChild(tableWrap);
-    $("#trafficFlowCount").text(visibleRowCount);
-    return visibleRowCount;
+    updateTrafficCountBadge();
+    updateTrafficPaginationControls();
 }
 
 function updateSpeedometer(devices) {
