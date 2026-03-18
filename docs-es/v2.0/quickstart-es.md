@@ -46,6 +46,7 @@ Después del reinicio, reanude la instalación:
 
 ```bash
 cd /tmp
+wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 

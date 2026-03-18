@@ -43,6 +43,7 @@ After the reboot, resume the upgrade and restart services:
 
 ```bash
 cd /tmp
+wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 sudo systemctl restart lqosd lqos_scheduler
 ```
