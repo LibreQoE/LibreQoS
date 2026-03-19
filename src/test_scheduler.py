@@ -34,6 +34,7 @@ def install_scheduler_stubs():
     lqlib.overrides_persistent_devices_effective = lambda: []
     lqlib.overrides_circuit_adjustments_effective = lambda: []
     lqlib.overrides_network_adjustments_effective = lambda: []
+    lqlib.overrides_network_adjustments_materialized = lambda: []
     sys.modules["liblqos_python"] = lqlib
 
     apscheduler_pkg = types.ModuleType("apscheduler")
@@ -281,6 +282,94 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertEqual(written_rows[0][10], "330")
         self.assertEqual(written_rows[0][11], "330")
         self.assertEqual(written_rows[0][13], "fq_codel/fq_codel")
+
+    def test_apply_network_adjustments_uses_materialized_adjustments(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "SiteA": {
+                        "downloadBandwidthMbps": 100,
+                        "uploadBandwidthMbps": 50,
+                        "children": {},
+                    },
+                    "NodeB": {
+                        "downloadBandwidthMbps": 200,
+                        "uploadBandwidthMbps": 100,
+                        "virtual": False,
+                        "children": {},
+                    },
+                },
+            }
+        }
+
+        with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[
+                {
+                    "type": "adjust_site_speed",
+                    "site_name": "SiteA",
+                    "download_bandwidth_mbps": 80,
+                    "upload_bandwidth_mbps": 40,
+                },
+                {
+                    "type": "set_node_virtual",
+                    "node_name": "NodeB",
+                    "virtual": True,
+                },
+            ],
+        ):
+            changed = scheduler.apply_network_adjustments(network)
+
+        self.assertTrue(changed)
+        site = network["Root"]["children"]["SiteA"]
+        self.assertEqual(site["downloadBandwidthMbps"], 80)
+        self.assertEqual(site["uploadBandwidthMbps"], 40)
+        self.assertTrue(network["Root"]["children"]["NodeB"]["virtual"])
+
+    def test_apply_network_adjustments_does_not_use_effective_stormguard_speeds(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "Pine Hills": {
+                        "downloadBandwidthMbps": 940,
+                        "uploadBandwidthMbps": 500,
+                        "children": {},
+                    }
+                },
+            }
+        }
+
+        effective_adjustments = [
+            {
+                "type": "adjust_site_speed",
+                "site_name": "Pine Hills",
+                "download_bandwidth_mbps": 4,
+                "upload_bandwidth_mbps": 4,
+            }
+        ]
+
+        with patch.dict(
+            scheduler.apply_network_adjustments.__globals__,
+            {"overrides_network_adjustments_effective": lambda: effective_adjustments},
+            clear=False,
+        ):
+            with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[],
+            ) as mock_materialized:
+                changed = scheduler.apply_network_adjustments(network)
+
+        mock_materialized.assert_called_once_with()
+        self.assertFalse(changed)
+        site = network["Root"]["children"]["Pine Hills"]
+        self.assertEqual(site["downloadBandwidthMbps"], 940)
+        self.assertEqual(site["uploadBandwidthMbps"], 500)
 
 
 if __name__ == "__main__":

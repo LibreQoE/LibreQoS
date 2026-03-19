@@ -677,6 +677,10 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         overrides_network_adjustments_effective,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        overrides_network_adjustments_materialized,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
     m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
@@ -1229,38 +1233,7 @@ fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
 
-    let mut out: Vec<PyObject> = Vec::new();
-    for adj in overrides.network_adjustments().iter() {
-        let d = PyDict::new(py);
-        match adj {
-            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
-                site_name,
-                download_bandwidth_mbps,
-                upload_bandwidth_mbps,
-            } => {
-                d.set_item("type", "adjust_site_speed")?;
-                d.set_item("site_name", site_name.clone())?;
-                if let Some(v) = download_bandwidth_mbps {
-                    d.set_item("download_bandwidth_mbps", *v)?;
-                }
-                if let Some(v) = upload_bandwidth_mbps {
-                    d.set_item("upload_bandwidth_mbps", *v)?;
-                }
-            }
-            lqos_overrides::NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            } => {
-                d.set_item("type", "set_node_virtual")?;
-                d.set_item("node_name", node_name.clone())?;
-                d.set_item("virtual", *virtual_node)?;
-            }
-        }
-        let obj: PyObject = d.unbind().into();
-        out.push(obj);
-    }
-
-    Ok(out)
+    network_adjustments_to_py(py, overrides.network_adjustments())
 }
 
 /// Returns the list of network adjustments as Python dicts, using the effective overrides view
@@ -1280,8 +1253,33 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
             Err(e) => return Err(PyOSError::new_err(e.to_string())),
         };
 
+    network_adjustments_to_py(py, overrides.network_adjustments())
+}
+
+/// Returns the list of network adjustments that should be materialized into `network.json`.
+///
+/// This includes operator-owned network adjustments and TreeGuard virtual-node changes, but
+/// intentionally excludes StormGuard site-speed adjustments so adaptive runtime rates do not
+/// overwrite the operator-authored topology/source-of-truth file.
+#[pyfunction]
+fn overrides_network_adjustments_materialized(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let apply_treeguard = config.treeguard.enabled;
+
+    let overrides = match lqos_overrides::OverrideStore::load_effective(false, apply_treeguard) {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    network_adjustments_to_py(py, overrides.network_adjustments())
+}
+
+fn network_adjustments_to_py(
+    py: Python<'_>,
+    adjustments: &[lqos_overrides::NetworkAdjustment],
+) -> PyResult<Vec<PyObject>> {
     let mut out: Vec<PyObject> = Vec::new();
-    for adj in overrides.network_adjustments().iter() {
+    for adj in adjustments.iter() {
         let d = PyDict::new(py);
         match adj {
             lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {

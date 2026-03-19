@@ -12,7 +12,8 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, overrides_network_adjustments_effective, \
+    overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, \
+    overrides_network_adjustments_materialized, \
     scheduler_output
 
 from apscheduler.schedulers.background import BlockingScheduler
@@ -455,10 +456,14 @@ def apply_network_adjustments(network: dict) -> bool:
     Currently supports: adjust_site_speed (by site_name) updating
     downloadBandwidthMbps and uploadBandwidthMbps at the matching node, and
     set_node_virtual (by node_name) updating the boolean 'virtual' flag.
+
+    This path intentionally excludes StormGuard adaptive site-speed overrides so
+    runtime StormGuard decisions do not overwrite the operator-authored
+    `network.json` source of truth.
     Returns True if any changes were applied.
     """
     try:
-        adjustments = overrides_network_adjustments_effective()
+        adjustments = overrides_network_adjustments_materialized()
     except Exception as e:
         print(f"Failed to read network adjustments: {e}")
         return False
