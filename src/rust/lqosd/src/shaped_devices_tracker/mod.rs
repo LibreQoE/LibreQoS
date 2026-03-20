@@ -277,7 +277,10 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
             .rev()
             .skip(1)
         {
-            result.push((*idx, node_to_transport(&reader.get_nodes_when_ready()[*idx])));
+            result.push((
+                *idx,
+                node_to_transport(&reader.get_nodes_when_ready()[*idx]),
+            ));
         }
         return BusResponse::NetworkMap(result);
     }

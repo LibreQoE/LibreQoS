@@ -86,6 +86,15 @@ Cuando está habilitado y no está en dry-run, TreeGuard puede persistir decisio
 
 TreeGuard está diseñado para no pelear con overrides del operador. Si existen overrides del operador para entidades enroladas, TreeGuard omite esas entidades y reporta advertencias.
 
+TreeGuard también se niega a gestionar nodos que ya estén marcados con `"virtual": true` en el `network.json` base. Si existen overrides viejos de TreeGuard para esos nodos, TreeGuard limpia su propia capa de overrides y vuelve a respetar la definición base de la topología.
+
+Para la gestión SQM por circuito, TreeGuard trata los valores duplicados de `device_id` como colisiones de identidad inseguras. Si el mismo `device_id` aparece en más de un circuito dentro de `ShapedDevices.csv`, TreeGuard omite esos circuitos afectados y limpia cualquier override SQM de TreeGuard asociado a esos `device_id` duplicados.
+
+La actividad reciente de TreeGuard está disponible en dos lugares:
+
+- Las vistas de estado/actividad de TreeGuard en la WebUI.
+- El journal de `lqosd`, donde TreeGuard ahora registra cada evento de actividad para que recargas, limpieza de overrides, cambios de SQM y fallos se puedan diagnosticar sin inspeccionar websockets.
+
 ## Páginas Relacionadas
 
 - [HTB + fq_codel + CAKE: Comportamiento Detallado de Colas](htb_fq_codel_cake-es.md)
