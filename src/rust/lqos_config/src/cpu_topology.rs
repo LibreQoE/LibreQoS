@@ -432,6 +432,10 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::__cpuid_count;
 
+    if __cpuid_count(0, 0).eax < 0x1a {
+        return None;
+    }
+
     let original_affinity = sched_getaffinity(Pid::from_raw(0)).ok()?;
     let restore_affinity = original_affinity;
     let mut performance = Vec::new();
@@ -448,7 +452,7 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
             return None;
         }
 
-        let leaf = unsafe { __cpuid_count(0x1a, 0) };
+        let leaf = __cpuid_count(0x1a, 0);
         let core_type = (leaf.eax >> 24) & 0xff;
         match core_type {
             CPUID_CORE_TYPE_CORE => performance.push(*cpu),
