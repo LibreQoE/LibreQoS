@@ -436,8 +436,11 @@ mod tests {
     }
 
     #[test]
-    fn link_does_not_virtualize_when_cpu_low() {
-        let cpu = TreeguardCpuConfig::default();
+    fn link_does_not_virtualize_when_cpu_low_in_cpu_aware_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::CpuAware,
+            ..TreeguardCpuConfig::default()
+        };
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
@@ -458,6 +461,34 @@ mod tests {
             state: &state,
         });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn link_virtualizes_when_cpu_low_in_traffic_rtt_only_mode() {
+        let cpu = TreeguardCpuConfig::default();
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
+        let state = LinkState::default();
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
     }
 
     #[test]
@@ -694,8 +725,11 @@ mod tests {
     }
 
     #[test]
-    fn circuit_reverts_when_cpu_low() {
-        let cpu = TreeguardCpuConfig::default();
+    fn circuit_reverts_when_cpu_low_in_cpu_aware_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::CpuAware,
+            ..TreeguardCpuConfig::default()
+        };
         let circuits = TreeguardCircuitsConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = CircuitState {
@@ -725,6 +759,40 @@ mod tests {
         });
         assert_eq!(decision.down, Some(CircuitSqmState::Cake));
         assert_eq!(decision.up, Some(CircuitSqmState::Cake));
+    }
+
+    #[test]
+    fn circuit_does_not_revert_when_cpu_low_in_traffic_rtt_only_mode() {
+        let cpu = TreeguardCpuConfig::default();
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
+        let state = CircuitState {
+            down: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
+            up: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
+        };
+
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            state: &state,
+        });
+        assert_eq!(decision.down, None);
+        assert_eq!(decision.up, None);
     }
 
     #[test]

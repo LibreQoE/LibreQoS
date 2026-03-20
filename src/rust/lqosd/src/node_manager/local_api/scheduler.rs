@@ -1,6 +1,8 @@
 use serde::Serialize;
 
-use crate::tool_status::{is_scheduler_available, scheduler_error_message, scheduler_output_message};
+use crate::tool_status::{
+    is_scheduler_available, scheduler_error_message, scheduler_output_message,
+};
 
 // Remove ANSI escape sequences (basic CSI/OSC handling) for browser display
 fn strip_ansi(input: &str) -> String {

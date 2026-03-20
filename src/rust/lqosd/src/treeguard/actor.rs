@@ -27,7 +27,7 @@ use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
 static TREEGUARD_STATUS_CACHE: OnceLock<RwLock<TreeguardStatusData>> = OnceLock::new();
@@ -209,6 +209,7 @@ struct TreeguardRuntimeState {
     circuit_states: FxHashMap<String, CircuitState>,
     managed_nodes: FxHashSet<String>,
     managed_device_ids: FxHashSet<String>,
+    duplicate_device_conflict_circuits: FxHashSet<String>,
     last_dry_run: Option<bool>,
     reload_controller: ReloadController,
 }
@@ -228,6 +229,7 @@ fn run_tick(
     let circuit_states = &mut runtime_state.circuit_states;
     let managed_nodes = &mut runtime_state.managed_nodes;
     let managed_device_ids = &mut runtime_state.managed_device_ids;
+    let duplicate_device_conflict_circuits = &mut runtime_state.duplicate_device_conflict_circuits;
     let last_dry_run = &mut runtime_state.last_dry_run;
     let reload_controller = &mut runtime_state.reload_controller;
 
@@ -600,10 +602,60 @@ fn run_tick(
                     .as_ref()
                     .and_then(|overrides| overrides_node_virtual(overrides, node_name));
 
-                if node.virtual_node && treeguard_virtual_override.is_none() {
+                if node.virtual_node {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
+                    if treeguard_virtual_override.is_some() {
+                        let needs_reload = treeguard_virtual_override == Some(false);
+                        match overrides::clear_node_virtual(node_name) {
+                            Ok(changed) => {
+                                if changed {
+                                    if needs_reload {
+                                        reload_controller.request_reload(
+                                            ReloadPriority::Normal,
+                                            format!(
+                                                "Cleared stale TreeGuard override for base-virtual node '{node_name}'"
+                                            ),
+                                        );
+                                    }
+                                    push_activity(
+                                        activity,
+                                        TreeguardActivityEntry {
+                                            time: now_unix.to_string(),
+                                            entity_type: "node".to_string(),
+                                            entity_id: node_name.to_string(),
+                                            action: "clear_virtual_override_base_virtual"
+                                                .to_string(),
+                                            persisted: true,
+                                            reason: "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.".to_string(),
+                                        },
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                status.warnings.push(format!(
+                                    "TreeGuard links: failed to clear stale TreeGuard override for base-virtual node '{node_name}': {e}"
+                                ));
+                                push_activity(
+                                    activity,
+                                    TreeguardActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "node".to_string(),
+                                        entity_id: node_name.to_string(),
+                                        action: "clear_virtual_override_base_virtual_failed"
+                                            .to_string(),
+                                        persisted: false,
+                                        reason: format!(
+                                            "Failed to clear stale TreeGuard override for base-virtual node: {e}"
+                                        ),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    managed_nodes.remove(node_name);
+                    link_states.remove(node_name);
                     continue;
                 }
 
@@ -935,10 +987,60 @@ fn run_tick(
                     .as_ref()
                     .and_then(|overrides| overrides_node_virtual(overrides, node_name));
 
-                if node.virtual_node && treeguard_virtual_override.is_none() {
+                if node.virtual_node {
                     status.warnings.push(format!(
-                    "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
-                ));
+                        "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
+                    ));
+                    if treeguard_virtual_override.is_some() {
+                        let needs_reload = treeguard_virtual_override == Some(false);
+                        match overrides::clear_node_virtual(node_name) {
+                            Ok(changed) => {
+                                if changed {
+                                    if needs_reload {
+                                        reload_controller.request_reload(
+                                            ReloadPriority::Normal,
+                                            format!(
+                                                "Cleared stale TreeGuard override for base-virtual node '{node_name}'"
+                                            ),
+                                        );
+                                    }
+                                    push_activity(
+                                        activity,
+                                        TreeguardActivityEntry {
+                                            time: now_unix.to_string(),
+                                            entity_type: "node".to_string(),
+                                            entity_id: node_name.clone(),
+                                            action: "clear_virtual_override_base_virtual"
+                                                .to_string(),
+                                            persisted: true,
+                                            reason: "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.".to_string(),
+                                        },
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                status.warnings.push(format!(
+                                    "TreeGuard links: failed to clear stale TreeGuard override for base-virtual node '{node_name}': {e}"
+                                ));
+                                push_activity(
+                                    activity,
+                                    TreeguardActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "node".to_string(),
+                                        entity_id: node_name.clone(),
+                                        action: "clear_virtual_override_base_virtual_failed"
+                                            .to_string(),
+                                        persisted: false,
+                                        reason: format!(
+                                            "Failed to clear stale TreeGuard override for base-virtual node: {e}"
+                                        ),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    managed_nodes.remove(node_name);
+                    link_states.remove(node_name);
                     continue;
                 }
 
@@ -1365,8 +1467,36 @@ fn run_tick(
             }
         }
         managed_device_ids.clear();
+        duplicate_device_conflict_circuits.clear();
         circuit_states.clear();
     } else {
+        let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
+        circuits_by_device_id.reserve(shaped.devices.len());
+        for device in shaped.devices.iter() {
+            let device_id = device.device_id.trim();
+            let circuit_id = device.circuit_id.trim();
+            if device_id.is_empty() || circuit_id.is_empty() {
+                continue;
+            }
+            circuits_by_device_id
+                .entry(device_id.to_string())
+                .or_default()
+                .insert(circuit_id.to_string());
+        }
+        let duplicate_device_ids: FxHashMap<String, Vec<String>> = circuits_by_device_id
+            .into_iter()
+            .filter_map(|(device_id, circuits)| {
+                if circuits.len() <= 1 {
+                    return None;
+                }
+                let mut circuits: Vec<String> = circuits.into_iter().collect();
+                circuits.sort();
+                Some((device_id, circuits))
+            })
+            .collect();
+        let mut current_duplicate_device_conflict_circuits: FxHashSet<String> =
+            FxHashSet::default();
+
         // Reconcile device IDs removed from allowlisted circuits.
         let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
@@ -1460,6 +1590,102 @@ fn run_tick(
         }
 
         for circuit_id in enrolled_circuits.iter() {
+            let devices: Vec<lqos_config::ShapedDevice> = shaped
+                .devices
+                .iter()
+                .filter(|d| d.circuit_id == circuit_id.as_str())
+                .cloned()
+                .collect();
+
+            let circuit_name: Option<String> = devices.iter().find_map(|d| {
+                let name = d.circuit_name.trim();
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                }
+            });
+            let circuit_entity_id: String = match circuit_name.as_deref() {
+                Some(name) => format!("{name} ({circuit_id})"),
+                None => circuit_id.clone(),
+            };
+            let circuit_label: String = circuit_name.unwrap_or_else(|| circuit_id.clone());
+
+            let mut circuit_device_ids: Vec<String> =
+                devices.iter().map(|d| d.device_id.clone()).collect();
+            circuit_device_ids.sort();
+            circuit_device_ids.dedup();
+            let duplicate_details: Vec<(String, Vec<String>)> = circuit_device_ids
+                .iter()
+                .filter_map(|device_id| {
+                    duplicate_device_ids
+                        .get(device_id)
+                        .map(|circuits| (device_id.clone(), circuits.clone()))
+                })
+                .collect();
+            if !duplicate_details.is_empty() {
+                current_duplicate_device_conflict_circuits.insert(circuit_id.clone());
+                let duplicate_reason = duplicate_details
+                    .iter()
+                    .map(|(device_id, circuits)| {
+                        format!(
+                            "device_id '{}' is shared by circuits [{}]",
+                            device_id,
+                            circuits.join(", ")
+                        )
+                    })
+                    .collect::<Vec<String>>()
+                    .join("; ");
+                status.warnings.push(format!(
+                    "TreeGuard circuits: circuit '{circuit_id}' has duplicate device IDs; TreeGuard will not manage it. {duplicate_reason}"
+                ));
+                if !duplicate_device_conflict_circuits.contains(circuit_id) {
+                    push_activity(
+                        activity,
+                        TreeguardActivityEntry {
+                            time: now_unix.to_string(),
+                            entity_type: "circuit".to_string(),
+                            entity_id: circuit_entity_id.clone(),
+                            action: "skip_duplicate_device_id".to_string(),
+                            persisted: false,
+                            reason: format!(
+                                "TreeGuard refuses circuits with duplicate device IDs. {duplicate_reason}"
+                            ),
+                        },
+                    );
+                }
+                if !circuit_device_ids.is_empty() {
+                    match overrides::clear_device_overrides(&circuit_device_ids) {
+                        Ok(changed) => {
+                            if changed {
+                                push_activity(
+                                    activity,
+                                    TreeguardActivityEntry {
+                                        time: now_unix.to_string(),
+                                        entity_type: "circuit".to_string(),
+                                        entity_id: circuit_entity_id.clone(),
+                                        action: "clear_sqm_overrides_duplicate_device_id"
+                                            .to_string(),
+                                        persisted: true,
+                                        reason: "Duplicate device IDs detected; cleared TreeGuard SQM overlays and skipped management.".to_string(),
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            status.warnings.push(format!(
+                                "TreeGuard circuits: failed to clear TreeGuard SQM overlays for duplicate device IDs on circuit '{circuit_id}': {e}"
+                            ));
+                        }
+                    }
+                    for did in circuit_device_ids.iter() {
+                        managed_device_ids.remove(did);
+                    }
+                }
+                circuit_states.remove(circuit_id);
+                continue;
+            }
+
             let state = circuit_states.entry(circuit_id.clone()).or_insert_with(|| {
                 let mut state = CircuitState::default();
                 if let Some(token) = infer_circuit_sqm_override_token(
@@ -1547,31 +1773,6 @@ fn run_tick(
                     up: None,
                 });
 
-            let devices: Vec<lqos_config::ShapedDevice> = shaped
-                .devices
-                .iter()
-                .filter(|d| d.circuit_id == circuit_id.as_str())
-                .cloned()
-                .collect();
-
-            let circuit_name: Option<String> = devices.iter().find_map(|d| {
-                let name = d.circuit_name.trim();
-                if name.is_empty() {
-                    None
-                } else {
-                    Some(name.to_string())
-                }
-            });
-            let circuit_entity_id: String = match circuit_name.as_deref() {
-                Some(name) => format!("{name} ({circuit_id})"),
-                None => circuit_id.clone(),
-            };
-            let circuit_label: String = circuit_name.unwrap_or_else(|| circuit_id.clone());
-
-            let mut circuit_device_ids: Vec<String> =
-                devices.iter().map(|d| d.device_id.clone()).collect();
-            circuit_device_ids.sort();
-            circuit_device_ids.dedup();
             let operator_conflict = circuit_device_ids
                 .iter()
                 .any(|did| operator_sqm_device_overrides.contains(did));
@@ -1680,8 +1881,10 @@ fn run_tick(
                     let mut persisted_ok = false;
                     let mut can_apply_live = true;
                     if tg.circuits.persist_sqm_overrides {
-                        let device_ids: Vec<String> =
-                            devices.iter().map(|device| device.device_id.clone()).collect();
+                        let device_ids: Vec<String> = devices
+                            .iter()
+                            .map(|device| device.device_id.clone())
+                            .collect();
                         match overrides::set_devices_sqm_override(&device_ids, &token) {
                             Ok(_) => {
                                 persisted_ok = true;
@@ -1788,6 +1991,7 @@ fn run_tick(
                 fq_codel_circuits += 1;
             }
         }
+        *duplicate_device_conflict_circuits = current_duplicate_device_conflict_circuits;
     }
 
     status.virtualized_nodes = virtualized_nodes;
@@ -1914,6 +2118,17 @@ fn infer_circuit_sqm_override_token(
 ///
 /// This function is not pure: it mutates `activity`.
 fn push_activity(activity: &mut VecDeque<TreeguardActivityEntry>, entry: TreeguardActivityEntry) {
+    if entry.action.contains("failed") {
+        warn!(
+            "TreeGuard activity: entity_type={} entity_id={} action={} persisted={} reason={}",
+            entry.entity_type, entry.entity_id, entry.action, entry.persisted, entry.reason
+        );
+    } else {
+        info!(
+            "TreeGuard activity: entity_type={} entity_id={} action={} persisted={} reason={}",
+            entry.entity_type, entry.entity_id, entry.action, entry.persisted, entry.reason
+        );
+    }
     if activity.len() >= ACTIVITY_RING_CAPACITY {
         activity.pop_front();
     }
