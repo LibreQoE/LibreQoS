@@ -1061,6 +1061,10 @@ h5 {
 .lqos-tree-details-panel #nodeOverrideDisabledReason .alert:last-child {
     margin-bottom: 0;
 }
+.lqos-tree-editor #nodeOverrideFlash:empty,
+.lqos-tree-details-panel #nodeOverrideDisabledReason:empty {
+    display: none;
+}
 .lqos-tree-editor-row {
     display: flex;
     align-items: center;
