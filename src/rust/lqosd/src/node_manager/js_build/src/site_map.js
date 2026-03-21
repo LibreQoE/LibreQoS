@@ -471,6 +471,9 @@ class SiteMapPage {
         this.legendGradient = document.getElementById("siteMapLegendGradient");
         this.legendLow = document.getElementById("siteMapLegendLow");
         this.legendHigh = document.getElementById("siteMapLegendHigh");
+        this.sizeDotSmall = document.getElementById("siteMapSizeDotSmall");
+        this.sizeDotMedium = document.getElementById("siteMapSizeDotMedium");
+        this.sizeDotLarge = document.getElementById("siteMapSizeDotLarge");
     }
 
     init() {
@@ -1089,6 +1092,29 @@ class SiteMapPage {
         this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-opacity", apOpacity);
 
         this.syncSiteLabels(aggregate.siteFeatures);
+        this.syncMarkerSizeLegend(aggregate.maxBitsPerSecond);
+    }
+
+    syncMarkerSizeLegend(maxBitsPerSecond) {
+        const dots = [this.sizeDotSmall, this.sizeDotMedium, this.sizeDotLarge];
+        if (dots.some((dot) => !dot)) {
+            return;
+        }
+
+        const max = Math.max(1, toNumber(maxBitsPerSecond, 1));
+        // Match the actual marker sizing function by sampling at a few ratios.
+        const ratios = [0, 0.1, 1.0];
+        const diameters = ratios.map((ratio) => throughputRadiusPx(max * ratio, max) * 2);
+
+        const apply = (el, diameter) => {
+            const sizePx = Math.max(10, Math.min(64, Math.round(toNumber(diameter, 12))));
+            el.style.width = `${sizePx}px`;
+            el.style.height = `${sizePx}px`;
+        };
+
+        apply(this.sizeDotSmall, diameters[0]);
+        apply(this.sizeDotMedium, diameters[1]);
+        apply(this.sizeDotLarge, diameters[2]);
     }
 
     syncSiteLabels(siteFeatures) {
