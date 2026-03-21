@@ -8,6 +8,7 @@ pub(crate) mod flow_explorer;
 pub(crate) mod flow_map;
 pub mod lts;
 pub(crate) mod network_tree;
+pub(crate) mod node_rate_overrides;
 pub(crate) mod packet_analysis;
 pub(crate) mod reload_libreqos;
 pub(crate) mod scheduler;

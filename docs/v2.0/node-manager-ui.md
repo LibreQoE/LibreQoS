@@ -11,6 +11,16 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 ### Network Tree Overview
 - Hierarchical topology view of nodes/circuits from the shaper perspective.
 - Useful for spotting bottlenecks and parent/child utilization patterns.
+- Tree detail pages now show a breadcrumb path to the selected node, so drilling down does not require repeated resets back to root.
+- Tree rows include subtree summaries for descendant `Sites` plus attached/descendant `Circuits`, which helps estimate branch size before expanding further.
+- Tree rows and the selected-node header can show small status icons for special handling, including virtual nodes and nodes currently managed by StormGuard.
+- Tree detail pages include a `Node Settings` inspector that shows:
+  - base configured rate from generated `network.json`
+  - any operator-owned rate override from `lqos_overrides.json`
+  - current effective configured rate
+- Administrators can save or clear node rate overrides from that inspector. Read-only users can still inspect the values, but the controls remain disabled.
+- Tree node rate overrides require a stable node ID and intentionally refuse generated nodes. When an override has been saved but not yet materialized into generated `network.json`, the inspector shows a `⟳ Pending` indicator explaining that the change will apply on the next scheduler run.
+- The full-tree Sankey pause control now freezes polling only; local drill-down, reset, and max-depth changes continue to rerender from the cached snapshot while paused.
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.

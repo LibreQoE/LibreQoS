@@ -58,4 +58,16 @@ pub struct NetworkJsonTransport {
     /// Optional node longitude from network.json metadata.
     #[serde(default)]
     pub longitude: Option<f32>,
+    /// Total number of descendant site-tree nodes below this node.
+    ///
+    /// This excludes the node itself. For the synthetic root node, this is the
+    /// total number of nodes in the loaded site tree.
+    #[serde(default)]
+    pub subtree_site_count: u32,
+    /// Total number of unique circuits attached to this node or any descendant node.
+    #[serde(default)]
+    pub subtree_circuit_count: u32,
+    /// Total number of shaped devices attached to this node or any descendant node.
+    #[serde(default)]
+    pub subtree_device_count: u32,
 }

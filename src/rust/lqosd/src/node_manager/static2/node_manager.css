@@ -864,6 +864,45 @@ h5 {
     gap: 0.8rem;
     margin-top: 0.8rem;
 }
+.lqos-tree-settings-card {
+    padding: 1rem 1.15rem;
+    border-radius: var(--lqos-radius-md);
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-2) 92%, transparent);
+    box-shadow: var(--lqos-shadow-sm);
+}
+.lqos-tree-settings-grid dt {
+    color: var(--bs-secondary-color);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.lqos-tree-settings-grid dd {
+    margin-bottom: 0.85rem;
+    font-size: 0.95rem;
+}
+.lqos-tree-settings-value {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.lqos-tree-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--bs-warning-text-emphasis, var(--bs-warning));
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+.lqos-tree-pending-symbol {
+    font-size: 1rem;
+    line-height: 1;
+}
+.lqos-tree-settings-card .alert {
+    margin-bottom: 0.75rem;
+}
 .lqos-tree-nav {
     display: flex;
     align-items: center;
@@ -888,6 +927,28 @@ h5 {
 .lqos-tree-nav-detail {
     color: var(--bs-secondary-color);
     font-size: 0.82rem;
+}
+.lqos-tree-breadcrumb {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+.lqos-tree-breadcrumb-link {
+    color: var(--bs-body-color);
+    text-decoration: none;
+}
+.lqos-tree-breadcrumb-link:hover {
+    color: var(--bs-body-color);
+    text-decoration: underline;
+}
+.lqos-tree-breadcrumb-current {
+    font-weight: 600;
+    color: var(--bs-body-color);
+}
+.lqos-tree-breadcrumb-separator {
+    color: var(--bs-secondary-color);
+    font-size: 0.72rem;
 }
 .lqos-tree-section-label {
     display: inline-flex;

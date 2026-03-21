@@ -87,17 +87,20 @@ pub enum CircuitAdjustment {
 }
 
 /// A network-level override applied while generating `network.json`.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NetworkAdjustment {
     /// Replaces site bandwidth values for a named site.
     AdjustSiteSpeed {
+        /// Optional stable node identifier to update.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        node_id: Option<String>,
         /// Site name to update.
         site_name: String,
         /// Replacement download bandwidth in Mbps.
-        download_bandwidth_mbps: Option<u32>,
+        download_bandwidth_mbps: Option<f32>,
         /// Replacement upload bandwidth in Mbps.
-        upload_bandwidth_mbps: Option<u32>,
+        upload_bandwidth_mbps: Option<f32>,
     },
     /// Marks a named node as virtual or non-virtual.
     SetNodeVirtual {
@@ -372,21 +375,30 @@ fn merge_network_adjustments_owned(
 ) -> Vec<NetworkAdjustment> {
     use std::collections::{HashMap, HashSet};
 
-    let mut stormguard_site_speeds: HashMap<&str, (Option<u32>, Option<u32>)> = HashMap::new();
-    let mut stormguard_site_order: Vec<&str> = Vec::new();
-    let mut stormguard_site_seen: HashSet<&str> = HashSet::new();
+    let mut stormguard_site_speeds: HashMap<String, NetworkAdjustment> = HashMap::new();
+    let mut stormguard_site_order: Vec<String> = Vec::new();
+    let mut stormguard_site_seen: HashSet<String> = HashSet::new();
     for adj in stormguard_adjustments {
         if let NetworkAdjustment::AdjustSiteSpeed {
+            node_id,
             site_name,
             download_bandwidth_mbps,
             upload_bandwidth_mbps,
         } = adj
         {
-            let name = site_name.as_str();
-            stormguard_site_speeds.insert(name, (*download_bandwidth_mbps, *upload_bandwidth_mbps));
-            if !stormguard_site_seen.contains(name) {
-                stormguard_site_order.push(name);
-                stormguard_site_seen.insert(name);
+            let key = site_speed_key(node_id.as_deref(), site_name);
+            stormguard_site_speeds.insert(
+                key.clone(),
+                NetworkAdjustment::AdjustSiteSpeed {
+                    node_id: node_id.clone(),
+                    site_name: site_name.clone(),
+                    download_bandwidth_mbps: *download_bandwidth_mbps,
+                    upload_bandwidth_mbps: *upload_bandwidth_mbps,
+                },
+            );
+            if !stormguard_site_seen.contains(&key) {
+                stormguard_site_order.push(key.clone());
+                stormguard_site_seen.insert(key);
             }
         }
     }
@@ -413,7 +425,8 @@ fn merge_network_adjustments_owned(
     let mut out = Vec::new();
     let mut used_treeguard_virtual: HashSet<&str> = HashSet::new();
     let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
-    let mut operator_site_speed_seen: HashSet<&str> = HashSet::new();
+    let mut operator_site_speed_seen: HashSet<String> = HashSet::new();
+    let mut operator_site_name_seen: HashSet<String> = HashSet::new();
 
     for adj in operator_adjustments {
         match adj {
@@ -441,16 +454,19 @@ fn merge_network_adjustments_owned(
                 }
             }
             NetworkAdjustment::AdjustSiteSpeed {
+                node_id,
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
             } => {
-                let name = site_name.as_str();
-                if operator_site_speed_seen.contains(name) {
+                let key = site_speed_key(node_id.as_deref(), site_name);
+                if operator_site_speed_seen.contains(&key) {
                     continue;
                 }
-                operator_site_speed_seen.insert(name);
+                operator_site_speed_seen.insert(key);
+                operator_site_name_seen.insert(site_name.clone());
                 out.push(NetworkAdjustment::AdjustSiteSpeed {
+                    node_id: node_id.clone(),
                     site_name: site_name.clone(),
                     download_bandwidth_mbps: *download_bandwidth_mbps,
                     upload_bandwidth_mbps: *upload_bandwidth_mbps,
@@ -459,17 +475,25 @@ fn merge_network_adjustments_owned(
         }
     }
 
-    for name in stormguard_site_order {
-        if operator_site_speed_seen.contains(name) {
+    for key in stormguard_site_order {
+        if operator_site_speed_seen.contains(&key) {
             continue;
         }
-        let Some((download_bandwidth_mbps, upload_bandwidth_mbps)) =
-            stormguard_site_speeds.get(name)
+        let Some(NetworkAdjustment::AdjustSiteSpeed {
+            node_id,
+            site_name,
+            download_bandwidth_mbps,
+            upload_bandwidth_mbps,
+        }) = stormguard_site_speeds.get(&key)
         else {
             continue;
         };
+        if operator_site_name_seen.contains(site_name) {
+            continue;
+        }
         out.push(NetworkAdjustment::AdjustSiteSpeed {
-            site_name: name.to_string(),
+            node_id: node_id.clone(),
+            site_name: site_name.clone(),
             download_bandwidth_mbps: *download_bandwidth_mbps,
             upload_bandwidth_mbps: *upload_bandwidth_mbps,
         });
@@ -679,10 +703,11 @@ impl OverrideFile {
                 } if current == &device_id
             )
         });
-        self.circuit_adjustments.push(CircuitAdjustment::DeviceAdjustSqm {
-            device_id,
-            sqm_override: normalized,
-        });
+        self.circuit_adjustments
+            .push(CircuitAdjustment::DeviceAdjustSqm {
+                device_id,
+                sqm_override: normalized,
+            });
         true
     }
 
@@ -714,34 +739,95 @@ impl OverrideFile {
         self.network_adjustments.push(adj);
     }
 
+    /// Returns the stored site bandwidth override that best matches this node.
+    ///
+    /// Preference order:
+    /// 1. Exact `node_id` match when one is supplied.
+    /// 2. Legacy name-only match for the same `site_name`.
+    pub fn find_site_bandwidth_override(
+        &self,
+        node_id: Option<&str>,
+        site_name: &str,
+    ) -> Option<&NetworkAdjustment> {
+        if let Some(node_id) = node_id
+            && let Some(found) = self.network_adjustments.iter().find(|adj| {
+                matches!(
+                    adj,
+                    NetworkAdjustment::AdjustSiteSpeed {
+                        node_id: Some(current_node_id),
+                        ..
+                    } if current_node_id == node_id
+                )
+            })
+        {
+            return Some(found);
+        }
+
+        self.network_adjustments.iter().find(|adj| {
+            matches!(
+                adj,
+                NetworkAdjustment::AdjustSiteSpeed {
+                    node_id: None,
+                    site_name: current_site_name,
+                    ..
+                } if current_site_name == site_name
+            )
+        })
+    }
+
     /// Add or replace a site bandwidth override for `site_name`.
     pub fn set_site_bandwidth_override(
         &mut self,
+        node_id: Option<String>,
         site_name: String,
-        download_bandwidth_mbps: Option<u32>,
-        upload_bandwidth_mbps: Option<u32>,
-    ) {
+        download_bandwidth_mbps: Option<f32>,
+        upload_bandwidth_mbps: Option<f32>,
+    ) -> bool {
+        let desired = NetworkAdjustment::AdjustSiteSpeed {
+            node_id: node_id.clone(),
+            site_name: site_name.clone(),
+            download_bandwidth_mbps,
+            upload_bandwidth_mbps,
+        };
+        if self.find_site_bandwidth_override(node_id.as_deref(), &site_name) == Some(&desired) {
+            return false;
+        }
+
         self.network_adjustments.retain(|adj| match adj {
             NetworkAdjustment::AdjustSiteSpeed {
-                site_name: current, ..
-            } => current != &site_name,
+                node_id: current_node_id,
+                site_name: current_site_name,
+                ..
+            } => !site_speed_override_matches(
+                current_node_id.as_deref(),
+                current_site_name,
+                node_id.as_deref(),
+                &site_name,
+            ),
             _ => true,
         });
-        self.network_adjustments
-            .push(NetworkAdjustment::AdjustSiteSpeed {
-                site_name,
-                download_bandwidth_mbps,
-                upload_bandwidth_mbps,
-            });
+        self.network_adjustments.push(desired);
+        true
     }
 
-    /// Remove any site bandwidth overrides for `site_name`. Returns number removed.
-    pub fn remove_site_bandwidth_override_by_name_count(&mut self, site_name: &str) -> usize {
+    /// Remove any site bandwidth overrides for `site_name` or `node_id`. Returns number removed.
+    pub fn remove_site_bandwidth_override_count(
+        &mut self,
+        node_id: Option<&str>,
+        site_name: &str,
+    ) -> usize {
         let before = self.network_adjustments.len();
         self.network_adjustments.retain(|adj| match adj {
             NetworkAdjustment::AdjustSiteSpeed {
-                site_name: current, ..
-            } => current != site_name,
+                node_id: current_node_id,
+                site_name: current_site_name,
+                ..
+            } => !site_speed_override_matches(
+                current_node_id.as_deref(),
+                current_site_name,
+                node_id,
+                site_name,
+            ),
             _ => true,
         });
         before.saturating_sub(self.network_adjustments.len())
@@ -817,6 +903,29 @@ impl OverrideFile {
         }
         false
     }
+}
+
+fn site_speed_key(node_id: Option<&str>, site_name: &str) -> String {
+    match node_id {
+        Some(node_id) if !node_id.trim().is_empty() => format!("id:{node_id}"),
+        _ => format!("name:{site_name}"),
+    }
+}
+
+fn site_speed_override_matches(
+    current_node_id: Option<&str>,
+    current_site_name: &str,
+    requested_node_id: Option<&str>,
+    requested_site_name: &str,
+) -> bool {
+    if let Some(requested_node_id) = requested_node_id {
+        if current_node_id == Some(requested_node_id) {
+            return true;
+        }
+        return current_node_id.is_none() && current_site_name == requested_site_name;
+    }
+
+    current_site_name == requested_site_name
 }
 
 impl OverrideStore {
@@ -930,18 +1039,22 @@ mod tests {
 
         let mut stormguard = OverrideFile::default();
         stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev1", "stormguard",
+            "dev1",
+            "stormguard",
         ));
         stormguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev3", "stormguard",
+            "dev3",
+            "stormguard",
         ));
 
         let mut treeguard = OverrideFile::default();
         treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev1", "treeguard",
+            "dev1",
+            "treeguard",
         ));
         treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev4", "treeguard",
+            "dev4",
+            "treeguard",
         ));
 
         let merged = merge_owned_sections(operator, stormguard, treeguard);
@@ -1009,10 +1122,9 @@ mod tests {
             "dev1".to_string(),
             Some("fq_codel".to_string())
         ));
-        assert!(of.set_device_sqm_override_return_changed(
-            "dev1".to_string(),
-            Some("cake".to_string())
-        ));
+        assert!(
+            of.set_device_sqm_override_return_changed("dev1".to_string(), Some("cake".to_string()))
+        );
         assert_eq!(of.remove_device_sqm_override_by_device_count("dev1"), 1);
         assert_eq!(of.remove_device_sqm_override_by_device_count("dev1"), 0);
     }
@@ -1022,21 +1134,23 @@ mod tests {
         let mut operator = OverrideFile::default();
         operator.set_network_node_virtual("NodeA".to_string(), false);
         operator.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            node_id: Some("node-site-1".to_string()),
             site_name: "Site1".to_string(),
-            download_bandwidth_mbps: Some(100),
-            upload_bandwidth_mbps: Some(50),
+            download_bandwidth_mbps: Some(100.0),
+            upload_bandwidth_mbps: Some(50.0),
         });
 
         let mut stormguard = OverrideFile::default();
-        stormguard.set_site_bandwidth_override("Site1".to_string(), Some(80), Some(40));
-        stormguard.set_site_bandwidth_override("Site2".to_string(), Some(150), Some(75));
+        stormguard.set_site_bandwidth_override(None, "Site1".to_string(), Some(80.0), Some(40.0));
+        stormguard.set_site_bandwidth_override(None, "Site2".to_string(), Some(150.0), Some(75.0));
 
         let mut treeguard = OverrideFile::default();
         treeguard.set_network_node_virtual("NodeA".to_string(), true);
         treeguard.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            node_id: Some("node-site-3".to_string()),
             site_name: "Site3".to_string(),
-            download_bandwidth_mbps: Some(200),
-            upload_bandwidth_mbps: Some(100),
+            download_bandwidth_mbps: Some(200.0),
+            upload_bandwidth_mbps: Some(100.0),
         });
 
         let merged = merge_owned_sections(operator, stormguard, treeguard);
@@ -1063,6 +1177,29 @@ mod tests {
             })
             .collect();
         assert_eq!(site_speed_names, vec!["Site1", "Site2"]);
+    }
+
+    #[test]
+    fn find_site_bandwidth_override_prefers_node_id_match() {
+        let mut of = OverrideFile::default();
+        of.set_site_bandwidth_override(None, "AP27".to_string(), Some(80.0), Some(40.0));
+        of.set_site_bandwidth_override(
+            Some("node-ap27".to_string()),
+            "AP27".to_string(),
+            Some(120.5),
+            Some(60.25),
+        );
+
+        let found = of.find_site_bandwidth_override(Some("node-ap27"), "AP27");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::AdjustSiteSpeed {
+                node_id: Some(node_id),
+                download_bandwidth_mbps: Some(download),
+                upload_bandwidth_mbps: Some(upload),
+                ..
+            }) if node_id == "node-ap27" && *download == 120.5 && *upload == 60.25
+        ));
     }
 
     #[test]

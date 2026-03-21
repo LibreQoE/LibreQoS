@@ -606,14 +606,8 @@ mod test {
 
         assert_eq!(site.id.as_deref(), Some("uisp:site:123"));
         assert_eq!(ap.id.as_deref(), Some("uisp:device:456"));
-        assert_eq!(
-            site.clone_to_transit().id.as_deref(),
-            Some("uisp:site:123")
-        );
-        assert_eq!(
-            ap.clone_to_transit().id.as_deref(),
-            Some("uisp:device:456")
-        );
+        assert_eq!(site.clone_to_transit().id.as_deref(), Some("uisp:site:123"));
+        assert_eq!(ap.clone_to_transit().id.as_deref(), Some("uisp:device:456"));
     }
 
     #[test]
@@ -653,8 +647,12 @@ mod test {
         assert_eq!(bad.longitude, None);
 
         let encoded = serde_json::to_value(good.clone_to_transit()).expect("transport serializes");
-        let encoded_lat = encoded["latitude"].as_f64().expect("latitude encodes as number");
-        let encoded_lon = encoded["longitude"].as_f64().expect("longitude encodes as number");
+        let encoded_lat = encoded["latitude"]
+            .as_f64()
+            .expect("latitude encodes as number");
+        let encoded_lon = encoded["longitude"]
+            .as_f64()
+            .expect("longitude encodes as number");
         assert!((encoded_lat - 45.123).abs() < 0.001);
         assert!((encoded_lon + 111.75).abs() < 0.001);
     }

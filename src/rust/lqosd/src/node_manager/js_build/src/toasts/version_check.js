@@ -1,7 +1,6 @@
 import {createBootstrapToast} from "../lq_js_common/helpers/toasts";
 
 export function checkForUpgrades() {
-    // Wait 1 second to ensure the newVersion variable has been set
     setTimeout(() => {
         if (window.newVersion) {
             let headerSpan = document.createElement("span");

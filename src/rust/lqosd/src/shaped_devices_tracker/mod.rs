@@ -1,6 +1,6 @@
 use anyhow::Result;
 use arc_swap::ArcSwap;
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice};
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
@@ -87,13 +87,75 @@ impl ShapedDeviceHashCache {
 pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
 
+#[derive(Clone, Copy, Debug, Default)]
+struct NetworkTreeSummary {
+    subtree_site_count: u32,
+    subtree_circuit_count: u32,
+    subtree_device_count: u32,
+}
+
 /// Clones a network node into its transport form and overlays effective inherited limits when
 /// the active queue structure contains a matching node entry.
 pub fn node_to_transport(node: &NetworkJsonNode) -> NetworkJsonTransport {
+    node_to_transport_with_summary(node, NetworkTreeSummary::default())
+}
+
+fn node_to_transport_with_summary(
+    node: &NetworkJsonNode,
+    summary: NetworkTreeSummary,
+) -> NetworkJsonTransport {
     let mut transport = node.clone_to_transit();
     transport.configured_max_throughput = node.max_throughput;
     transport.effective_max_throughput = EFFECTIVE_NODE_RATES.load().get(&node.name).copied();
+    transport.subtree_site_count = summary.subtree_site_count;
+    transport.subtree_circuit_count = summary.subtree_circuit_count;
+    transport.subtree_device_count = summary.subtree_device_count;
     transport
+}
+
+fn build_network_tree_summaries(
+    nodes: &[NetworkJsonNode],
+    shaped_devices: &ConfigShapedDevices,
+) -> Vec<NetworkTreeSummary> {
+    let mut summaries = vec![NetworkTreeSummary::default(); nodes.len()];
+    let mut direct_circuits = vec![FxHashSet::default(); nodes.len()];
+    let mut node_index_by_name = FxHashMap::default();
+    node_index_by_name.reserve(nodes.len());
+
+    for (idx, node) in nodes.iter().enumerate() {
+        node_index_by_name.entry(node.name.as_str()).or_insert(idx);
+    }
+
+    for device in &shaped_devices.devices {
+        let Some(node_idx) = node_index_by_name.get(device.parent_node.as_str()).copied() else {
+            continue;
+        };
+        summaries[node_idx].subtree_device_count =
+            summaries[node_idx].subtree_device_count.saturating_add(1);
+        direct_circuits[node_idx].insert(device.circuit_hash);
+    }
+
+    for (idx, circuits) in direct_circuits.iter().enumerate() {
+        summaries[idx].subtree_circuit_count = circuits.len() as u32;
+    }
+
+    for idx in (1..nodes.len()).rev() {
+        let Some(parent_idx) = nodes[idx].immediate_parent else {
+            continue;
+        };
+        summaries[parent_idx].subtree_site_count = summaries[parent_idx]
+            .subtree_site_count
+            .saturating_add(1)
+            .saturating_add(summaries[idx].subtree_site_count);
+        summaries[parent_idx].subtree_circuit_count = summaries[parent_idx]
+            .subtree_circuit_count
+            .saturating_add(summaries[idx].subtree_circuit_count);
+        summaries[parent_idx].subtree_device_count = summaries[parent_idx]
+            .subtree_device_count
+            .saturating_add(summaries[idx].subtree_device_count);
+    }
+
+    summaries
 }
 
 fn load_shaped_devices() {
@@ -152,14 +214,30 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     let net_json = NETWORK_JSON.read();
     let nodes_ref = net_json.get_nodes_when_ready();
+    let shaped_devices = SHAPED_DEVICES.load();
+    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
     if let Some(parent) = nodes_ref.get(parent_idx) {
-        let mut nodes = vec![(parent_idx, node_to_transport(parent))];
+        let mut nodes = vec![(
+            parent_idx,
+            node_to_transport_with_summary(
+                parent,
+                summaries.get(parent_idx).copied().unwrap_or_default(),
+            ),
+        )];
         nodes.extend(
             nodes_ref
                 .iter()
                 .enumerate()
                 .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
-                .map(|(i, node)| (i, node_to_transport(node))),
+                .map(|(i, node)| {
+                    (
+                        i,
+                        node_to_transport_with_summary(
+                            node,
+                            summaries.get(i).copied().unwrap_or_default(),
+                        ),
+                    )
+                }),
         );
         BusResponse::NetworkMap(nodes)
     } else {
@@ -169,10 +247,18 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 
 pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     let nj = NETWORK_JSON.read();
-    nj.get_nodes_when_ready()
+    let nodes = nj.get_nodes_when_ready();
+    let shaped_devices = SHAPED_DEVICES.load();
+    let summaries = build_network_tree_summaries(nodes, shaped_devices.as_ref());
+    nodes
         .iter()
         .enumerate()
-        .map(|(i, n)| (i, node_to_transport(n)))
+        .map(|(i, n)| {
+            (
+                i,
+                node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
+            )
+        })
         .collect()
 }
 
@@ -182,9 +268,29 @@ pub fn get_full_network_map() -> BusResponse {
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
     let net_json = NETWORK_JSON.read();
-    if let Some(parent) = net_json.get_cloned_entry_by_index(0) {
-        let mut nodes = vec![(0, parent)];
-        nodes.extend_from_slice(&net_json.get_cloned_children(0));
+    let nodes_ref = net_json.get_nodes_when_ready();
+    let shaped_devices = SHAPED_DEVICES.load();
+    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
+    if let Some(parent) = nodes_ref.first() {
+        let mut nodes = vec![(
+            0,
+            node_to_transport_with_summary(parent, summaries.first().copied().unwrap_or_default()),
+        )];
+        nodes.extend(
+            nodes_ref
+                .iter()
+                .enumerate()
+                .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
+                .map(|(idx, node)| {
+                    (
+                        idx,
+                        node_to_transport_with_summary(
+                            node,
+                            summaries.get(idx).copied().unwrap_or_default(),
+                        ),
+                    )
+                }),
+        );
         // Remove the top-level entry for root
         nodes.remove(0);
         // Sort by total bandwidth (up + down) descending
@@ -246,6 +352,9 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     node_type: None,
                     latitude: None,
                     longitude: None,
+                    subtree_site_count: 0,
+                    subtree_circuit_count: 0,
+                    subtree_device_count: 0,
                 },
             ));
         }

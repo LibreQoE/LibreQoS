@@ -136,11 +136,10 @@ pub async fn apply_templates(
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.newVersion = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(script_has_lts),
             js_tf(script_has_insight),
             js_tf(script_has_support_tickets),
-            js_tf(new_version),
             node_id_js,
             rtt_thresholds.green_ms,
             rtt_thresholds.yellow_ms,
@@ -217,6 +216,19 @@ pub async fn apply_templates(
 </li>
 "##;
         let byte_string = byte_string.replace("%%URGENT_STATUS%%", urgent_placeholder);
+
+        let update_placeholder = if new_version {
+            r##"
+<li class="nav-item" id="updateStatus">
+    <a class="nav-link btn btn-link text-start w-100 p-0 border-0 text-warning" href="https://libreqos.readthedocs.io/en/latest/docs/v2.0/update.html" target="_blank" rel="noopener noreferrer" id="updateStatusLink" aria-label="Open LibreQoS update guide" title="Open LibreQoS update guide">
+        <i class="fa fa-fw fa-centerline fa-download"></i> Update Available
+    </a>
+</li>
+"##
+        } else {
+            ""
+        };
+        let byte_string = byte_string.replace("%%UPDATE_STATUS%%", update_placeholder);
 
         let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {

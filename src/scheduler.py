@@ -453,9 +453,10 @@ def load_network_json(path: str):
 def apply_network_adjustments(network: dict) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
-    Currently supports: adjust_site_speed (by site_name) updating
-    downloadBandwidthMbps and uploadBandwidthMbps at the matching node, and
-    set_node_virtual (by node_name) updating the boolean 'virtual' flag.
+    Currently supports: adjust_site_speed (preferring node_id, with legacy
+    site_name fallback) updating downloadBandwidthMbps and
+    uploadBandwidthMbps at the matching node, and set_node_virtual (by
+    node_name) updating the boolean 'virtual' flag.
 
     This path intentionally excludes StormGuard adaptive site-speed overrides so
     runtime StormGuard decisions do not overwrite the operator-authored
@@ -471,27 +472,40 @@ def apply_network_adjustments(network: dict) -> bool:
     if not adjustments:
         return False
 
-    def adjust_node(tree: dict, site: str, dl_opt, ul_opt) -> bool:
+    def normalize_bandwidth_value(value):
+        numeric = float(value)
+        if numeric.is_integer():
+            return int(numeric)
+        return numeric
+
+    def adjust_node(tree: dict, site: str, node_id, dl_opt, ul_opt) -> bool:
         changed_local = False
         for key in list(tree.keys()):
             if key == 'children':
                 child = tree.get('children')
                 if isinstance(child, dict):
-                    if adjust_node(child, site, dl_opt, ul_opt):
+                    if adjust_node(child, site, node_id, dl_opt, ul_opt):
                         changed_local = True
                 continue
             node = tree.get(key)
             if isinstance(node, dict):
-                if key == site:
+                current_node_id = node.get('id')
+                matches_target = False
+                if node_id:
+                    matches_target = current_node_id == node_id
+                elif key == site:
+                    matches_target = True
+
+                if matches_target:
                     if dl_opt is not None:
-                        node['downloadBandwidthMbps'] = int(dl_opt)
+                        node['downloadBandwidthMbps'] = normalize_bandwidth_value(dl_opt)
                         changed_local = True
                     if ul_opt is not None:
-                        node['uploadBandwidthMbps'] = int(ul_opt)
+                        node['uploadBandwidthMbps'] = normalize_bandwidth_value(ul_opt)
                         changed_local = True
                 # Recurse into children
                 if 'children' in node and isinstance(node['children'], dict):
-                    if adjust_node(node['children'], site, dl_opt, ul_opt):
+                    if adjust_node(node['children'], site, node_id, dl_opt, ul_opt):
                         changed_local = True
         return changed_local
 
@@ -521,10 +535,11 @@ def apply_network_adjustments(network: dict) -> bool:
     for adj in adjustments:
         if adj.get('type') == 'adjust_site_speed':
             site = adj.get('site_name', '')
+            node_id = adj.get('node_id', None)
             dl = adj.get('download_bandwidth_mbps', None)
             ul = adj.get('upload_bandwidth_mbps', None)
-            if site:
-                if adjust_node(network, site, dl, ul):
+            if site or node_id:
+                if adjust_node(network, site, node_id, dl, ul):
                     net_changed = True
         elif adj.get('type') == 'set_node_virtual':
             node_name = adj.get('node_name', '')

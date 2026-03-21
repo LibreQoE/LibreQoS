@@ -11,8 +11,8 @@ use std::sync::Arc;
 use crate::node_manager::auth::{LoginResult, login_from_token};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, flow_explorer,
-    flow_map, lts, network_tree, packet_analysis, reload_libreqos, scheduler, search,
-    shaped_device_api, unknown_ips, urgent, warnings,
+    flow_map, lts, network_tree, node_rate_overrides, packet_analysis, reload_libreqos, scheduler,
+    search, shaped_device_api, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -1368,6 +1368,146 @@ async fn receive_channel_message(
             let response = WsResponse::UpdateNetworkAndDevicesResult { ok, message };
             if send_ws_response(&tx, response).await {
                 return true;
+            }
+        }
+        WsRequest::GetNodeRateOverride { query } => {
+            match node_rate_overrides::get_node_rate_override_data(*request_state.login, query) {
+                Ok(data) => {
+                    let response = WsResponse::GetNodeRateOverride { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load tree node override state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetNodeRateOverride { update } => {
+            let result =
+                node_rate_overrides::set_node_rate_override_data(*request_state.login, update);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: true,
+                        message: "Override saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: false,
+                        message: "Unauthorized".to_string(),
+                        data: node_rate_overrides::NodeRateOverrideData {
+                            writable: false,
+                            can_edit: false,
+                            disabled_reason: Some(
+                                "Only administrators can edit node rate overrides.".to_string(),
+                            ),
+                            has_override: false,
+                            override_node_id: None,
+                            override_download_bandwidth_mbps: None,
+                            override_upload_bandwidth_mbps: None,
+                            legacy_warnings: Vec::new(),
+                        },
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override payload".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: false,
+                        message: "Error saving override".to_string(),
+                        data: node_rate_overrides::NodeRateOverrideData {
+                            writable: true,
+                            can_edit: false,
+                            disabled_reason: Some(
+                                "Unable to reload tree node override state.".to_string(),
+                            ),
+                            has_override: false,
+                            override_node_id: None,
+                            override_download_bandwidth_mbps: None,
+                            override_upload_bandwidth_mbps: None,
+                            legacy_warnings: Vec::new(),
+                        },
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearNodeRateOverride { query } => {
+            let result =
+                node_rate_overrides::clear_node_rate_override_data(*request_state.login, query);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearNodeRateOverrideResult {
+                        ok: true,
+                        message: "Override cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override payload".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear tree node override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
             }
         }
         WsRequest::ListNics => match config::list_nics_data(*request_state.login) {

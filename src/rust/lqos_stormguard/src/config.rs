@@ -130,7 +130,7 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
     Ok(result)
 }
 
-fn load_stormguard_site_overrides() -> HashMap<String, (Option<u32>, Option<u32>)> {
+fn load_stormguard_site_overrides() -> HashMap<String, (Option<f32>, Option<f32>)> {
     let Ok(overrides) = OverrideStore::load_layer(OverrideLayer::Stormguard) else {
         warn!("Unable to load StormGuard override layer; starting from planned rates.");
         return HashMap::new();
@@ -141,6 +141,7 @@ fn load_stormguard_site_overrides() -> HashMap<String, (Option<u32>, Option<u32>
         .iter()
         .filter_map(|adj| match adj {
             NetworkAdjustment::AdjustSiteSpeed {
+                node_id: _,
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
@@ -155,7 +156,7 @@ fn load_stormguard_site_overrides() -> HashMap<String, (Option<u32>, Option<u32>
 
 fn get_sites_from_queueing_structure(
     sg_config: &lqos_config::StormguardConfig,
-    persisted_site_overrides: &HashMap<String, (Option<u32>, Option<u32>)>,
+    persisted_site_overrides: &HashMap<String, (Option<f32>, Option<f32>)>,
 ) -> HashMap<String, WatchingSite> {
     let mut selected: Vec<String> = if sg_config.all_sites {
         all_candidate_site_names()
@@ -196,12 +197,12 @@ fn get_sites_from_queueing_structure(
             .unwrap_or((None, None));
         let current_download_mbps = persisted
             .0
-            .map(u64::from)
+            .map(|mbps| mbps.max(0.0) as u64)
             .unwrap_or(max_down)
             .clamp(min_down, max_down);
         let current_upload_mbps = persisted
             .1
-            .map(u64::from)
+            .map(|mbps| mbps.max(0.0) as u64)
             .unwrap_or(max_up)
             .clamp(min_up, max_up);
 

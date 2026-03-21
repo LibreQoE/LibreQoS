@@ -2,6 +2,9 @@ use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::node_manager::WarningLevel;
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
+use crate::node_manager::local_api::node_rate_overrides::{
+    NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
+};
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
@@ -143,6 +146,15 @@ pub enum WsRequest {
     UpdateNetworkAndDevices {
         network_json: Value,
         shaped_devices: Vec<ShapedDevice>,
+    },
+    GetNodeRateOverride {
+        query: NodeRateOverrideQuery,
+    },
+    SetNodeRateOverride {
+        update: NodeRateOverrideUpdate,
+    },
+    ClearNodeRateOverride {
+        query: NodeRateOverrideQuery,
     },
     ListNics,
     NetworkJson,
@@ -454,6 +466,19 @@ pub enum WsResponse {
     UpdateNetworkAndDevicesResult {
         ok: bool,
         message: String,
+    },
+    GetNodeRateOverride {
+        data: NodeRateOverrideData,
+    },
+    SetNodeRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeRateOverrideData,
+    },
+    ClearNodeRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeRateOverrideData,
     },
     GetUsers {
         data: Vec<WebUser>,

@@ -6,6 +6,7 @@ import {
     formatThroughput,
 } from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
+import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
@@ -15,12 +16,23 @@ var upParent = 0;
 var subscribed = false;
 var expandedNodes = new Set();
 var childrenByParentId = new Map();
+var stormguardNodes = new Set();
+var nodeRateOverrideState = {
+    loading: false,
+    saving: false,
+    data: null,
+    error: null,
+    flash: null,
+};
+var nodeOverrideInputsDirty = false;
+var nodeOverrideLastSeedSignature = null;
 const wsClient = get_ws_client();
 const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
     "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
 const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
+const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -29,6 +41,29 @@ const listenOnce = (eventName, handler) => {
     };
     wsClient.on(eventName, wrapped);
 };
+
+function sendWsRequest(responseEvent, request) {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const responseHandler = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, responseHandler);
+            wsClient.off("Error", errorHandler);
+            resolve(msg);
+        };
+        const errorHandler = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, responseHandler);
+            wsClient.off("Error", errorHandler);
+            reject(msg);
+        };
+        wsClient.on(responseEvent, responseHandler);
+        wsClient.on("Error", errorHandler);
+        wsClient.send(request);
+    });
+}
 
 function formatDeviceIp(ip) {
     if (typeof ip === "string") {
@@ -99,6 +134,40 @@ function formatLimitValue(mbps) {
     return scaleNumber(toNumber(mbps, 0) * 1000 * 1000, 1);
 }
 
+function formatMbpsInputValue(mbps) {
+    if (mbps === null || mbps === undefined) {
+        return "";
+    }
+    const numeric = Number(mbps);
+    if (!Number.isFinite(numeric)) {
+        return "";
+    }
+    return numeric.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function ratesApproximatelyEqual(left, right) {
+    return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+}
+
+function formatRatePair(downMbps, upMbps) {
+    return `${formatLimitValue(downMbps)} / ${formatLimitValue(upMbps)}`;
+}
+
+function currentNode() {
+    return tree && tree[parent] ? tree[parent][1] : null;
+}
+
+function currentNodeRateQuery() {
+    const node = currentNode();
+    if (!node) {
+        return null;
+    }
+    return {
+        node_id: node.id ?? null,
+        node_name: node.name,
+    };
+}
+
 function buildEffectiveLimitCellHtml(node) {
     const effective = effectiveMax(node);
     const effectiveValue = `${formatLimitValue(effective[0])} / ${formatLimitValue(effective[1])}`;
@@ -127,17 +196,453 @@ function buildDirectionalLimitHtml(primaryMbps, configuredMbps, showConfigured) 
     return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div><div class="${secondaryClass}">Cfg ${formatLimitValue(configuredMbps)}</div></div>`;
 }
 
-function initTooltipsWithin(rootEl) {
-    if (!rootEl) return;
-    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
-    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
-    elements.forEach((element) => {
-        if (bootstrap.Tooltip.getOrCreateInstance) {
-            bootstrap.Tooltip.getOrCreateInstance(element);
+function subtreeSiteCount(node) {
+    return toNumber(node.subtree_site_count, 0);
+}
+
+function subtreeCircuitCount(node) {
+    return toNumber(node.subtree_circuit_count, 0);
+}
+
+function nodeDetailParts(node) {
+    const parts = [];
+    if (node.type !== null && node.type !== undefined && node.type !== "") {
+        parts.push(node.type);
+    }
+    const circuitCount = subtreeCircuitCount(node);
+    if (circuitCount > 0) {
+        parts.push(`Circuits ${circuitCount}`);
+    }
+    const siteCount = subtreeSiteCount(node);
+    if (siteCount > 0) {
+        parts.push(`Sites ${siteCount}`);
+    }
+    return parts;
+}
+
+function appendNodeDetailText(target, node) {
+    const parts = nodeDetailParts(node);
+    if (parts.length === 0) {
+        return;
+    }
+    const detail = document.createElement("span");
+    detail.classList.add("text-body-secondary");
+    detail.textContent = ` (${parts.join(", ")})`;
+    target.appendChild(detail);
+}
+
+function buildStatusIcon(iconName, textClass, title) {
+    let icon = document.createElement("i");
+    icon.classList.add("fa", "fa-fw", iconName, textClass);
+    icon.setAttribute("data-bs-toggle", "tooltip");
+    icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("title", title);
+    return icon;
+}
+
+function isStormguardNode(node) {
+    return node && typeof node.name === "string" && stormguardNodes.has(node.name);
+}
+
+function renderHeaderStatusIcons(node) {
+    const target = document.getElementById("nodeNameIcons");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    if (!node) {
+        return;
+    }
+    if (node.virtual === true) {
+        target.appendChild(buildStatusIcon(
+            "fa-ghost",
+            "text-secondary",
+            "Virtual node (logical only; not shaped in HTB)."
+        ));
+    }
+    if (isStormguardNode(node)) {
+        target.appendChild(buildStatusIcon(
+            "fa-cloud-bolt",
+            "text-primary",
+            "StormGuard-managed node (dynamic queue limits active)."
+        ));
+    }
+    enableTooltipsWithin(target);
+}
+
+function sameStringSet(a, b) {
+    if (a.size !== b.size) {
+        return false;
+    }
+    for (const entry of a) {
+        if (!b.has(entry)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function treeHref(nodeId) {
+    return `/tree.html?parent=${nodeId}`;
+}
+
+function renderBreadcrumb() {
+    const target = document.getElementById("treeBreadcrumb");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    if (!tree || tree[parent] === undefined) {
+        return;
+    }
+
+    const current = tree[parent][1];
+    const path = Array.isArray(current.parents) && current.parents.length > 0
+        ? current.parents
+        : [parent];
+    const navWrap = document.createElement("div");
+    navWrap.classList.add("lqos-tree-nav");
+    const trail = document.createElement("div");
+    trail.classList.add("lqos-tree-breadcrumb");
+
+    path.forEach((nodeId, index) => {
+        const entry = tree[nodeId];
+        if (!entry || !entry[1]) {
+            return;
+        }
+        if (index > 0) {
+            const separator = document.createElement("span");
+            separator.classList.add("lqos-tree-breadcrumb-separator");
+            separator.innerHTML = "<i class='fa fa-chevron-right'></i>";
+            trail.appendChild(separator);
+        }
+
+        if (index === path.length - 1) {
+            const currentNode = document.createElement("span");
+            currentNode.classList.add("lqos-tree-breadcrumb-current", "redactable");
+            currentNode.textContent = entry[1].name;
+            trail.appendChild(currentNode);
         } else {
-            new bootstrap.Tooltip(element);
+            const link = document.createElement("a");
+            link.href = treeHref(nodeId);
+            link.classList.add("lqos-tree-breadcrumb-link", "redactable");
+            link.textContent = entry[1].name;
+            trail.appendChild(link);
         }
     });
+
+    navWrap.appendChild(trail);
+    target.appendChild(navWrap);
+}
+
+function setNodeOverrideFlash(message, variant = "success") {
+    nodeRateOverrideState.flash = message ? {message, variant} : null;
+    renderNodeSettings();
+}
+
+function renderAlertMessages(targetId, messages, variant) {
+    const target = document.getElementById(targetId);
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    messages.forEach((message) => {
+        if (!message) {
+            return;
+        }
+        const alert = document.createElement("div");
+        alert.classList.add("alert", `alert-${variant}`, "py-2", "px-3", "small");
+        alert.textContent = message;
+        target.appendChild(alert);
+    });
+}
+
+function currentOverridePair(node, overrideData) {
+    const base = configuredMax(node);
+    return [
+        overrideData && overrideData.has_override && overrideData.override_download_bandwidth_mbps !== null && overrideData.override_download_bandwidth_mbps !== undefined
+            ? overrideData.override_download_bandwidth_mbps
+            : base[0],
+        overrideData && overrideData.has_override && overrideData.override_upload_bandwidth_mbps !== null && overrideData.override_upload_bandwidth_mbps !== undefined
+            ? overrideData.override_upload_bandwidth_mbps
+            : base[1],
+    ];
+}
+
+function isPendingApply(node, overrideData) {
+    if (!node || !overrideData || !overrideData.has_override) {
+        return false;
+    }
+    const configured = configuredMax(node);
+    if (overrideData.override_download_bandwidth_mbps !== null
+        && overrideData.override_download_bandwidth_mbps !== undefined
+        && !ratesApproximatelyEqual(overrideData.override_download_bandwidth_mbps, configured[0])) {
+        return true;
+    }
+    if (overrideData.override_upload_bandwidth_mbps !== null
+        && overrideData.override_upload_bandwidth_mbps !== undefined
+        && !ratesApproximatelyEqual(overrideData.override_upload_bandwidth_mbps, configured[1])) {
+        return true;
+    }
+    return false;
+}
+
+function setNodeOverrideInputsDisabled(disabled) {
+    ["nodeOverrideDownload", "nodeOverrideUpload", "nodeOverrideSave", "nodeOverrideClear"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = disabled;
+        }
+    });
+}
+
+function maybeSeedOverrideInputs(node, overrideData, force = false) {
+    const downloadInput = document.getElementById("nodeOverrideDownload");
+    const uploadInput = document.getElementById("nodeOverrideUpload");
+    if (!downloadInput || !uploadInput || !node) {
+        return;
+    }
+
+    const [down, up] = currentOverridePair(node, overrideData);
+    const signature = JSON.stringify({
+        nodeId: node.id ?? null,
+        nodeName: node.name,
+        download: down,
+        upload: up,
+    });
+    if (!force && nodeOverrideInputsDirty) {
+        return;
+    }
+    if (!force && nodeOverrideLastSeedSignature === signature) {
+        return;
+    }
+
+    downloadInput.value = formatMbpsInputValue(down);
+    uploadInput.value = formatMbpsInputValue(up);
+    nodeOverrideLastSeedSignature = signature;
+    nodeOverrideInputsDirty = false;
+}
+
+function renderOverrideValue(node, overrideData) {
+    const target = document.getElementById("nodeSettingsOverride");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    const wrap = document.createElement("span");
+    wrap.classList.add("lqos-tree-settings-value");
+
+    const value = document.createElement("span");
+    if (!overrideData || !overrideData.has_override) {
+        value.textContent = "None";
+        wrap.appendChild(value);
+        target.appendChild(wrap);
+        return;
+    }
+
+    const [overrideDown, overrideUp] = currentOverridePair(node, overrideData);
+    value.textContent = formatRatePair(overrideDown, overrideUp);
+    wrap.appendChild(value);
+
+    if (isPendingApply(node, overrideData)) {
+        const pending = document.createElement("span");
+        pending.classList.add("lqos-tree-pending");
+        pending.setAttribute("data-bs-toggle", "tooltip");
+        pending.setAttribute("data-bs-placement", "top");
+        pending.setAttribute("title", NODE_OVERRIDE_PENDING_TOOLTIP);
+
+        const symbol = document.createElement("span");
+        symbol.classList.add("lqos-tree-pending-symbol");
+        symbol.textContent = "⟳";
+        pending.appendChild(symbol);
+
+        const label = document.createElement("span");
+        label.textContent = "Pending";
+        pending.appendChild(label);
+        wrap.appendChild(pending);
+    }
+
+    target.appendChild(wrap);
+}
+
+function renderNodeSettings() {
+    const node = currentNode();
+    if (!node) {
+        return;
+    }
+
+    const statusTarget = document.getElementById("nodeOverrideStatus");
+    if (statusTarget) {
+        if (nodeRateOverrideState.loading) {
+            statusTarget.textContent = "Loading operator override...";
+        } else if (nodeRateOverrideState.saving) {
+            statusTarget.textContent = "Saving operator override...";
+        } else if (nodeRateOverrideState.error) {
+            statusTarget.textContent = nodeRateOverrideState.error;
+        } else {
+            statusTarget.textContent = "";
+        }
+    }
+
+    const typeTarget = document.getElementById("nodeSettingsType");
+    if (typeTarget) {
+        typeTarget.textContent = node.type ?? "-";
+    }
+    const nodeIdTarget = document.getElementById("nodeSettingsNodeId");
+    if (nodeIdTarget) {
+        nodeIdTarget.textContent = node.id ?? "Unavailable";
+    }
+    const baseConfiguredTarget = document.getElementById("nodeSettingsBaseConfigured");
+    if (baseConfiguredTarget) {
+        const configured = configuredMax(node);
+        baseConfiguredTarget.textContent = formatRatePair(configured[0], configured[1]);
+    }
+    const effectiveTarget = document.getElementById("nodeSettingsEffectiveNow");
+    if (effectiveTarget) {
+        const effective = effectiveMax(node);
+        effectiveTarget.textContent = formatRatePair(effective[0], effective[1]);
+    }
+
+    renderOverrideValue(node, nodeRateOverrideState.data);
+
+    renderAlertMessages(
+        "nodeOverrideFlash",
+        nodeRateOverrideState.flash ? [nodeRateOverrideState.flash.message] : [],
+        nodeRateOverrideState.flash ? nodeRateOverrideState.flash.variant : "success",
+    );
+    renderAlertMessages(
+        "nodeOverrideLegacyWarnings",
+        nodeRateOverrideState.data?.legacy_warnings || [],
+        "warning",
+    );
+    renderAlertMessages(
+        "nodeOverrideDisabledReason",
+        nodeRateOverrideState.data?.disabled_reason ? [nodeRateOverrideState.data.disabled_reason] : [],
+        "secondary",
+    );
+
+    maybeSeedOverrideInputs(node, nodeRateOverrideState.data);
+
+    const canEdit = !!nodeRateOverrideState.data?.can_edit && !nodeRateOverrideState.loading && !nodeRateOverrideState.saving;
+    setNodeOverrideInputsDisabled(!canEdit);
+    const clearButton = document.getElementById("nodeOverrideClear");
+    if (clearButton) {
+        clearButton.disabled = !canEdit || !nodeRateOverrideState.data?.has_override;
+    }
+
+    const settingsCard = document.querySelector(".lqos-tree-settings-card");
+    if (settingsCard) {
+        enableTooltipsWithin(settingsCard);
+    }
+}
+
+async function loadNodeRateOverrideState() {
+    const query = currentNodeRateQuery();
+    if (!query) {
+        return;
+    }
+    nodeRateOverrideState.loading = true;
+    nodeRateOverrideState.error = null;
+    nodeRateOverrideState.data = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("GetNodeRateOverride", {
+            GetNodeRateOverride: {query},
+        });
+        nodeRateOverrideState.data = response.data || null;
+        nodeRateOverrideState.error = null;
+    } catch (errorMsg) {
+        nodeRateOverrideState.data = null;
+        nodeRateOverrideState.error = errorMsg?.message || "Unable to load override state";
+    } finally {
+        nodeRateOverrideState.loading = false;
+        renderNodeSettings();
+    }
+}
+
+async function saveNodeRateOverride() {
+    const node = currentNode();
+    if (!node || !nodeRateOverrideState.data?.can_edit || nodeRateOverrideState.saving) {
+        return;
+    }
+
+    const downloadRaw = document.getElementById("nodeOverrideDownload")?.value ?? "";
+    const uploadRaw = document.getElementById("nodeOverrideUpload")?.value ?? "";
+    const download = downloadRaw === "" ? null : Number.parseFloat(downloadRaw);
+    const upload = uploadRaw === "" ? null : Number.parseFloat(uploadRaw);
+    if ((download !== null && (!Number.isFinite(download) || download < 0))
+        || (upload !== null && (!Number.isFinite(upload) || upload < 0))
+        || (download === null && upload === null)) {
+        setNodeOverrideFlash("Enter valid non-negative download and upload rates before saving.", "danger");
+        return;
+    }
+
+    nodeRateOverrideState.saving = true;
+    nodeRateOverrideState.error = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("SetNodeRateOverrideResult", {
+            SetNodeRateOverride: {
+                update: {
+                    node_id: node.id,
+                    node_name: node.name,
+                    download_bandwidth_mbps: download,
+                    upload_bandwidth_mbps: upload,
+                },
+            },
+        });
+        if (!response.ok) {
+            setNodeOverrideFlash(response.message || "Unable to save override.", "danger");
+            nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
+        } else {
+            nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
+            setNodeOverrideFlash(response.message || "Override saved.", "success");
+            nodeOverrideInputsDirty = false;
+            nodeOverrideLastSeedSignature = null;
+            maybeSeedOverrideInputs(node, nodeRateOverrideState.data, true);
+        }
+    } catch (errorMsg) {
+        setNodeOverrideFlash(errorMsg?.message || "Unable to save override.", "danger");
+    } finally {
+        nodeRateOverrideState.saving = false;
+        renderNodeSettings();
+    }
+}
+
+async function clearNodeRateOverride() {
+    const node = currentNode();
+    if (!node || !nodeRateOverrideState.data?.can_edit || nodeRateOverrideState.saving) {
+        return;
+    }
+
+    nodeRateOverrideState.saving = true;
+    nodeRateOverrideState.error = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("ClearNodeRateOverrideResult", {
+            ClearNodeRateOverride: {
+                query: {
+                    node_id: node.id ?? null,
+                    node_name: node.name,
+                },
+            },
+        });
+        if (!response.ok) {
+            setNodeOverrideFlash(response.message || "Unable to clear override.", "danger");
+            nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
+        } else {
+            nodeRateOverrideState.data = response.data || nodeRateOverrideState.data;
+            nodeOverrideInputsDirty = false;
+            nodeOverrideLastSeedSignature = null;
+            maybeSeedOverrideInputs(node, nodeRateOverrideState.data, true);
+            setNodeOverrideFlash(response.message || "Override cleared.", "success");
+        }
+    } catch (errorMsg) {
+        setNodeOverrideFlash(errorMsg?.message || "Unable to clear override.", "danger");
+    } finally {
+        nodeRateOverrideState.saving = false;
+        renderNodeSettings();
+    }
 }
 
 function formatQooScore(score0to100, fallback = "-") {
@@ -215,19 +720,6 @@ function renderTree() {
         }
     });
 
-    if (parent !== 0) {
-        if (upParent === 0) {
-            upParent = tree[parent][1].immediate_parent;
-        }
-        const navWrap = document.createElement("div");
-        navWrap.classList.add("lqos-tree-nav");
-        navWrap.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'>" +
-            "<i class='fa fa-chevron-up'></i> Up One Level" +
-            "<span class='lqos-tree-nav-detail'>" + tree[upParent][1].name + "</span>" +
-            "</a>";
-        treeStack.appendChild(navWrap);
-    }
-
     treeTable.appendChild(tbody);
 
     // Clear and apply
@@ -236,7 +728,7 @@ function renderTree() {
     tableWrap.appendChild(treeTable);
     treeStack.appendChild(tableWrap);
     target.appendChild(treeStack);
-    initTooltipsWithin(treeTable);
+    enableTooltipsWithin(treeTable);
 }
 
 // This runs first and builds the initial structure on the page
@@ -247,11 +739,12 @@ function getInitialTree() {
         buildChildrenMap();
         if (tree[parent] !== undefined) {
             fillHeader(tree[parent][1]);
+            loadNodeRateOverrideState();
         }
         renderTree();
 
         if (!subscribed) {
-            subscribeWS(["NetworkTree", "NetworkTreeClients"], onMessage);
+            subscribeWS(["NetworkTree", "NetworkTreeClients", "StormguardStatus"], onMessage);
             subscribed = true;
         }
     });
@@ -259,8 +752,13 @@ function getInitialTree() {
 }
 
 function fillHeader(node) {
-    //console.log("Header");
     $("#nodeName").text(node.name);
+    renderHeaderStatusIcons(node);
+    const summaryTarget = document.getElementById("treeHeaderSummary");
+    if (summaryTarget) {
+        summaryTarget.textContent = nodeDetailParts(node).join(" / ");
+    }
+    renderBreadcrumb();
     const configured = configuredMax(node);
     const effective = effectiveMax(node);
     const configuredDown = formatLimitValue(configured[0]);
@@ -279,7 +777,6 @@ function fillHeader(node) {
     $("#parentConfiguredU").text(configuredUp).removeClass("lqos-limit-secondary is-match").addClass(matchClassUp);
     $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effective[0]));
     $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effective[1]));
-    //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
     $("#parentQooD").html(formatQooScore(node.qoo ? node.qoo[0] : null));
@@ -296,6 +793,7 @@ function fillHeader(node) {
         retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
     }
     $("#parentRxmitU").html(formatRetransmit(retr));
+    renderNodeSettings();
 }
 
 function iterateChildren(idx, tBody, depth) {
@@ -347,23 +845,25 @@ function buildRow(i, depth=0) {
         nameWrap.appendChild(spacer);
     }
     if (node.virtual === true) {
-        let virtualIcon = document.createElement("i");
-        virtualIcon.classList.add("fa", "fa-fw", "fa-ghost", "text-secondary");
-        virtualIcon.setAttribute("data-bs-toggle", "tooltip");
-        virtualIcon.setAttribute("data-bs-placement", "top");
-        virtualIcon.setAttribute("title", "Virtual node (logical only; not shaped in HTB).");
-        nameWrap.appendChild(virtualIcon);
+        nameWrap.appendChild(buildStatusIcon(
+            "fa-ghost",
+            "text-secondary",
+            "Virtual node (logical only; not shaped in HTB)."
+        ));
+    }
+    if (isStormguardNode(node)) {
+        nameWrap.appendChild(buildStatusIcon(
+            "fa-cloud-bolt",
+            "text-primary",
+            "StormGuard-managed node (dynamic queue limits active)."
+        ));
     }
     let link = document.createElement("a");
-    link.href = "/tree.html?parent=" + nodeId + "&upParent=" + parent;
+    link.href = treeHref(nodeId);
     link.classList.add("redactable");
     link.textContent = node.name;
     nameWrap.appendChild(link);
-    if (node.type !== null) {
-        let typeText = document.createElement("span");
-        typeText.textContent = " (" + node.type + ")";
-        nameWrap.appendChild(typeText);
-    }
+    appendNodeDetailText(nameWrap, node);
     col.appendChild(nameWrap);
     row.appendChild(col);
 
@@ -493,7 +993,12 @@ function treeUpdate(msg) {
             tree[nodeId] = [nodeId, node];
             needsRebuild = true;
         } else {
-            if (tree[nodeId][1].immediate_parent !== node.immediate_parent) {
+            if (tree[nodeId][1].immediate_parent !== node.immediate_parent
+                || tree[nodeId][1].subtree_site_count !== node.subtree_site_count
+                || tree[nodeId][1].subtree_circuit_count !== node.subtree_circuit_count
+                || tree[nodeId][1].type !== node.type
+                || tree[nodeId][1].virtual !== node.virtual
+                || tree[nodeId][1].name !== node.name) {
                 needsRebuild = true;
             }
             tree[nodeId][1] = node;
@@ -741,11 +1246,31 @@ function clientsUpdate(msg) {
     target.appendChild(tableWrap);
 }
 
+function stormguardUpdate(msg) {
+    const nextNodes = new Set();
+    msg.data.forEach((entry) => {
+        if (!Array.isArray(entry) || typeof entry[0] !== "string" || entry[0].length === 0) {
+            return;
+        }
+        nextNodes.add(entry[0]);
+    });
+    if (sameStringSet(stormguardNodes, nextNodes)) {
+        return;
+    }
+    stormguardNodes = nextNodes;
+    if (tree && tree[parent] !== undefined) {
+        fillHeader(tree[parent][1]);
+        renderTree();
+    }
+}
+
 function onMessage(msg) {
     if (msg.event === "NetworkTree") {
         treeUpdate(msg);
     } else if (msg.event === "NetworkTreeClients") {
         clientsUpdate(msg);
+    } else if (msg.event === "StormguardStatus") {
+        stormguardUpdate(msg);
     }
 }
 
@@ -762,5 +1287,18 @@ if (params.parent !== null) {
 if (params.upParent !== null) {
     upParent = parseInt(params.upParent);
 }
+
+document.getElementById("nodeOverrideDownload")?.addEventListener("input", () => {
+    nodeOverrideInputsDirty = true;
+});
+document.getElementById("nodeOverrideUpload")?.addEventListener("input", () => {
+    nodeOverrideInputsDirty = true;
+});
+document.getElementById("nodeOverrideSave")?.addEventListener("click", () => {
+    saveNodeRateOverride();
+});
+document.getElementById("nodeOverrideClear")?.addEventListener("click", () => {
+    clearNodeRateOverride();
+});
 
 getInitialTree();

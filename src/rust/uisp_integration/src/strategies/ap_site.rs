@@ -209,10 +209,16 @@ impl Layer {
                         root.insert("parent_site".to_string(), name.to_string().into());
                         if let (Some(latitude), Some(longitude)) = (site.latitude, site.longitude) {
                             if let Some(number) = serde_json::Number::from_f64(latitude as f64) {
-                                root.insert("latitude".to_string(), serde_json::Value::Number(number));
+                                root.insert(
+                                    "latitude".to_string(),
+                                    serde_json::Value::Number(number),
+                                );
                             }
                             if let Some(number) = serde_json::Number::from_f64(longitude as f64) {
-                                root.insert("longitude".to_string(), serde_json::Value::Number(number));
+                                root.insert(
+                                    "longitude".to_string(),
+                                    serde_json::Value::Number(number),
+                                );
                             }
                         }
                     }
@@ -224,7 +230,10 @@ impl Layer {
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
-                        root.insert("id".to_string(), format!("uisp:device:{}", device.id).into());
+                        root.insert(
+                            "id".to_string(),
+                            format!("uisp:device:{}", device.id).into(),
+                        );
                         root.insert("uisp_device".to_string(), device.id.clone().into());
                     }
                 }

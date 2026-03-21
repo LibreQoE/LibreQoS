@@ -143,6 +143,9 @@ impl NetworkJsonNode {
             node_type: self.node_type.clone(),
             latitude: self.latitude,
             longitude: self.longitude,
+            subtree_site_count: 0,
+            subtree_circuit_count: 0,
+            subtree_device_count: 0,
         }
     }
 }

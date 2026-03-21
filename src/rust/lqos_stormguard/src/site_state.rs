@@ -836,9 +836,9 @@ impl SiteStateTracker {
         SiteOverrideUpdate {
             site_name: site.config.name.clone(),
             download_bandwidth_mbps: (site.queue_download_mbps != site.config.max_download_mbps)
-                .then_some(site.queue_download_mbps as u32),
+                .then_some(site.queue_download_mbps as f32),
             upload_bandwidth_mbps: (site.queue_upload_mbps != site.config.max_upload_mbps)
-                .then_some(site.queue_upload_mbps as u32),
+                .then_some(site.queue_upload_mbps as f32),
         }
     }
 

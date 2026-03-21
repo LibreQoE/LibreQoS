@@ -304,11 +304,13 @@ struct AddDeviceSpeedArgs {
 #[derive(Args, Debug, Default)]
 struct AddSiteSpeedArgs {
     #[arg(long)]
+    node_id: Option<String>,
+    #[arg(long)]
     site_name: String,
     #[arg(long)]
-    download_bandwidth_mbps: Option<u32>,
+    download_bandwidth_mbps: Option<f32>,
     #[arg(long)]
-    upload_bandwidth_mbps: Option<u32>,
+    upload_bandwidth_mbps: Option<f32>,
 }
 
 fn main() -> Result<()> {
@@ -419,6 +421,7 @@ fn main() -> Result<()> {
         Commands::NetworkAdjustments { command: cmd } => match cmd {
             NetworkAdjustmentsCommand::AddSiteSpeed(args) => {
                 let adj = NetworkAdjustment::AdjustSiteSpeed {
+                    node_id: args.node_id,
                     site_name: args.site_name,
                     download_bandwidth_mbps: args.download_bandwidth_mbps,
                     upload_bandwidth_mbps: args.upload_bandwidth_mbps,

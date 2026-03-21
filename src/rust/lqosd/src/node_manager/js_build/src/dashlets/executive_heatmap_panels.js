@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
 import {getSiteIdMap, linkToCircuit, linkToSite} from "../executive_utils";
 import {
@@ -39,19 +40,6 @@ function escapeHtml(value) {
 function qooInfoIconHtml() {
     const title = escapeAttr(QOO_TOOLTIP_HTML);
     return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoO information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
-}
-
-function initTooltipsWithin(rootEl) {
-    if (!rootEl) return;
-    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
-    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
-    elements.forEach((element) => {
-        if (bootstrap.Tooltip.getOrCreateInstance) {
-            bootstrap.Tooltip.getOrCreateInstance(element);
-        } else {
-            new bootstrap.Tooltip(element);
-        }
-    });
 }
 
 function qoqHeatmapRow(blocks, colorFn) {
@@ -260,6 +248,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 return heatRow(row.label, row.badge, row.values, row.color, row.format);
             })
             .join("");
+        disposeTooltipsWithin(target);
         target.innerHTML = `
                 <div class="card shadow-sm border-0">
                 <div class="card-body py-3">
@@ -271,7 +260,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
-        initTooltipsWithin(target);
+        enableTooltipsWithin(target);
     }
 }
 
@@ -367,6 +356,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             const titleHtml = this.config.link
                 ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
                 : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
+            disposeTooltipsWithin(activeTarget);
             activeTarget.innerHTML = `
                 <div class="card shadow-sm border-0 h-100">
                     <div class="card-body py-3">
@@ -377,7 +367,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                     </div>
                 </div>
             `;
-            initTooltipsWithin(activeTarget);
+            enableTooltipsWithin(activeTarget);
         });
     }
 

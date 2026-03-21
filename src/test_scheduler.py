@@ -295,9 +295,51 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
                         "children": {},
                     },
                     "NodeB": {
+                        "id": "node-b",
                         "downloadBandwidthMbps": 200,
                         "uploadBandwidthMbps": 100,
                         "virtual": False,
+                        "children": {},
+                    },
+                },
+            }
+        }
+
+        with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[
+                {
+                    "type": "adjust_site_speed",
+                    "node_id": "node-b",
+                    "site_name": "NodeB",
+                    "download_bandwidth_mbps": 80.5,
+                    "upload_bandwidth_mbps": 40.25,
+                },
+                {
+                    "type": "set_node_virtual",
+                    "node_name": "NodeB",
+                    "virtual": True,
+                },
+            ],
+        ):
+            changed = scheduler.apply_network_adjustments(network)
+
+        self.assertTrue(changed)
+        node = network["Root"]["children"]["NodeB"]
+        self.assertEqual(node["downloadBandwidthMbps"], 80.5)
+        self.assertEqual(node["uploadBandwidthMbps"], 40.25)
+        self.assertTrue(network["Root"]["children"]["NodeB"]["virtual"])
+
+    def test_apply_network_adjustments_keeps_legacy_name_based_matching(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "SiteA": {
+                        "downloadBandwidthMbps": 100,
+                        "uploadBandwidthMbps": 50,
                         "children": {},
                     },
                 },
@@ -314,11 +356,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
                     "download_bandwidth_mbps": 80,
                     "upload_bandwidth_mbps": 40,
                 },
-                {
-                    "type": "set_node_virtual",
-                    "node_name": "NodeB",
-                    "virtual": True,
-                },
             ],
         ):
             changed = scheduler.apply_network_adjustments(network)
@@ -327,7 +364,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         site = network["Root"]["children"]["SiteA"]
         self.assertEqual(site["downloadBandwidthMbps"], 80)
         self.assertEqual(site["uploadBandwidthMbps"], 40)
-        self.assertTrue(network["Root"]["children"]["NodeB"]["virtual"])
 
     def test_apply_network_adjustments_does_not_use_effective_stormguard_speeds(self):
         network = {

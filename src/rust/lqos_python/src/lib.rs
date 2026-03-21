@@ -1283,11 +1283,15 @@ fn network_adjustments_to_py(
         let d = PyDict::new(py);
         match adj {
             lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                node_id,
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
             } => {
                 d.set_item("type", "adjust_site_speed")?;
+                if let Some(node_id) = node_id {
+                    d.set_item("node_id", node_id.clone())?;
+                }
                 d.set_item("site_name", site_name.clone())?;
                 if let Some(v) = download_bandwidth_mbps {
                     d.set_item("download_bandwidth_mbps", *v)?;

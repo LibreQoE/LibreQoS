@@ -1,6 +1,7 @@
 import {formatRetransmit, formatRtt, formatThroughput} from "./scaling";
 import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
+import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
@@ -51,17 +52,14 @@ export function clearDashDiv(id, target) {
 }
 
 export function clearDiv(target, targetLength=0) {
+    disposeTooltipsWithin(target);
     while (target.children.length > targetLength) {
         target.removeChild(target.lastChild);
     }
 }
 
 export function enableTooltips() {
-    // Tooltips everywhere!
-    let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    let tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    })
+    enableTooltipsWithin(document);
 }
 
 let pendingTooltips = [];
@@ -73,7 +71,7 @@ export function tooltipsNextFrame(id) {
             pendingTooltips.forEach((id) => {
                 let tooltipTriggerEl = document.getElementById(id);
                 if (tooltipTriggerEl !== null) {
-                    new bootstrap.Tooltip(tooltipTriggerEl);
+                    enableTooltipsWithin(tooltipTriggerEl);
                 }
             });
             pendingTooltips = [];

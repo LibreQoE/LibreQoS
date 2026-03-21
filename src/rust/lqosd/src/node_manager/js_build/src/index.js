@@ -1,5 +1,4 @@
 import {Dashboard} from "./lq_js_common/dashboard/dashboard";
-import {checkForUpgrades} from "./toasts/version_check";
 import {sponsorTag} from "./toasts/sponsor_us";
 import {globalWarningToasts} from "./toasts/global_warnings";
 import {showTimeControls} from "./components/timescale";
@@ -85,7 +84,6 @@ const defaultLayout = {
 
 window.timeGraphs = [];
 showTimeControls("timescale");
-checkForUpgrades();
 sponsorTag("toasts");
 globalWarningToasts();
 const dashboard = new Dashboard("dashboard", "mainDashboard", defaultLayout, widgetFactory, DashletMenu, false, "");
