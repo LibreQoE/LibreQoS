@@ -781,7 +781,6 @@ class SiteMapPage {
                     siteLatLonPairs.push([lat + 0.0001, lon + 0.0001]);
                 }
                 const center = await requestOsmCenterFromBbox(siteLatLonPairs, 4000);
-                this.hasFitOnce = true;
                 this.initMap([center.lon, center.lat], center.zoom);
             } catch (err) {
                 console.error("Site map bbox request failed; map not initialized.", err);
@@ -1056,7 +1055,7 @@ class SiteMapPage {
         this.updateSelection();
         this.renderUnmapped(aggregate.unmappedSites, aggregate.unmappedAps);
         if (!this.hasFitOnce) {
-            this.fitToData(aggregate.siteFeatures, aggregate.apFeatures);
+            this.fitToDataIfNeeded(aggregate.siteFeatures, aggregate.apFeatures);
         }
     }
 
@@ -1178,16 +1177,40 @@ class SiteMapPage {
         });
     }
 
-    fitToData(siteFeatures, apFeatures) {
-        const features = [...siteFeatures, ...apFeatures];
-        if (!features.length) {
+    fitToDataIfNeeded(siteFeatures, apFeatures) {
+        if (!this.map) {
             return;
         }
+
+        const features = [
+            ...siteFeatures,
+            // Include only APs with their own coordinates so a bad parent/duplicate doesn't pull the view out.
+            ...apFeatures.filter((feature) => feature?.properties?.inheritedCoords !== 1),
+        ];
+        if (!features.length) {
+            this.hasFitOnce = true;
+            return;
+        }
+
+        let viewBounds;
+        try {
+            viewBounds = this.map.getBounds();
+        } catch (_) {
+            viewBounds = null;
+        }
+
+        if (viewBounds) {
+            const allInside = features.every((feature) => viewBounds.contains(feature.geometry.coordinates));
+            if (allInside) {
+                this.hasFitOnce = true;
+                return;
+            }
+        }
+
         const bounds = new window.maplibregl.LngLatBounds();
         features.forEach((feature) => bounds.extend(feature.geometry.coordinates));
         this.map.fitBounds(bounds, {
             padding: 70,
-            maxZoom: 7.5,
             duration: 0,
         });
         this.hasFitOnce = true;
