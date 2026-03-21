@@ -6,6 +6,8 @@ import {
     formatThroughput,
 } from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
+import {BitsPerSecondGauge} from "./graphs/bits_gauge";
+import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
@@ -17,6 +19,15 @@ var subscribed = false;
 var expandedNodes = new Set();
 var childrenByParentId = new Map();
 var stormguardNodes = new Set();
+var treeBitsGauge = null;
+var treeQooGauge = null;
+var lastClientsMessage = null;
+var currentSelectionIdentity = null;
+var selectionLocator = {
+    nodeId: null,
+    nodePath: null,
+    lastKnownIndex: 0,
+};
 var nodeRateOverrideState = {
     loading: false,
     saving: false,
@@ -114,6 +125,28 @@ function formatIpBytes(bytes) {
     return list.join(".");
 }
 
+function abbreviateIpForTable(ipText) {
+    if (typeof ipText !== "string") {
+        return String(ipText ?? "");
+    }
+    if (!ipText.includes(":")) {
+        return ipText;
+    }
+    const groups = ipText.split(":").filter((group) => group.length > 0);
+    if (groups.length <= 3) {
+        return ipText;
+    }
+    return `${groups.slice(0, 3).join(":")}:...`;
+}
+
+function summarizeIpListForTable(ipList) {
+    const displayList = ipList.map((entry) => abbreviateIpForTable(entry));
+    if (displayList.length > 2) {
+        return `${displayList[0]}, ${displayList[1]} +${displayList.length - 2}`;
+    }
+    return displayList.join(", ");
+}
+
 function configuredMax(node) {
     return node.configured_max_throughput || node.max_throughput || [0, 0];
 }
@@ -151,6 +184,13 @@ function ratesApproximatelyEqual(left, right) {
 
 function formatRatePair(downMbps, upMbps) {
     return `${formatLimitValue(downMbps)} / ${formatLimitValue(upMbps)}`;
+}
+
+function isSyntheticRootNode(node) {
+    return !!node
+        && (node.id === null || node.id === undefined)
+        && node.immediate_parent === null
+        && node.name === "Root";
 }
 
 function currentNode() {
@@ -204,31 +244,25 @@ function subtreeCircuitCount(node) {
     return toNumber(node.subtree_circuit_count, 0);
 }
 
-function nodeDetailParts(node) {
+function branchSizeParts(node) {
     const parts = [];
-    if (node.type !== null && node.type !== undefined && node.type !== "") {
-        parts.push(node.type);
-    }
     const circuitCount = subtreeCircuitCount(node);
     if (circuitCount > 0) {
-        parts.push(`Circuits ${circuitCount}`);
+        parts.push(`${circuitCount} ${circuitCount === 1 ? "circuit" : "circuits"}`);
     }
     const siteCount = subtreeSiteCount(node);
     if (siteCount > 0) {
-        parts.push(`Sites ${siteCount}`);
+        parts.push(`${siteCount} ${siteCount === 1 ? "site" : "sites"}`);
     }
     return parts;
 }
 
-function appendNodeDetailText(target, node) {
-    const parts = nodeDetailParts(node);
+function formatBranchSize(node) {
+    const parts = branchSizeParts(node);
     if (parts.length === 0) {
-        return;
+        return "No descendant sites or circuits";
     }
-    const detail = document.createElement("span");
-    detail.classList.add("text-body-secondary");
-    detail.textContent = ` (${parts.join(", ")})`;
-    target.appendChild(detail);
+    return parts.join(" / ");
 }
 
 function buildStatusIcon(iconName, textClass, title) {
@@ -245,7 +279,7 @@ function isStormguardNode(node) {
 }
 
 function renderHeaderStatusIcons(node) {
-    const target = document.getElementById("nodeNameIcons");
+    const target = document.getElementById("nodeStateBadges");
     if (!target) {
         return;
     }
@@ -282,8 +316,206 @@ function sameStringSet(a, b) {
     return true;
 }
 
-function treeHref(nodeId) {
-    return `/tree.html?parent=${nodeId}`;
+function normalizeNodePath(path) {
+    if (!Array.isArray(path)) {
+        return null;
+    }
+    const normalized = path
+        .map((entry) => typeof entry === "string" ? entry : String(entry ?? ""))
+        .filter((entry) => entry.length > 0);
+    return normalized.length > 0 ? normalized : null;
+}
+
+function parseNodePathParam(rawPath) {
+    if (typeof rawPath !== "string" || rawPath.length === 0) {
+        return null;
+    }
+    try {
+        return normalizeNodePath(JSON.parse(rawPath));
+    } catch (_error) {
+        return null;
+    }
+}
+
+function pathEquals(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+    for (let i = 0; i < left.length; i++) {
+        if (left[i] !== right[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function getNodePathNames(nodeId, node = tree?.[nodeId]?.[1]) {
+    if (!node) {
+        return null;
+    }
+    if (isSyntheticRootNode(node)) {
+        return ["Root"];
+    }
+    const parentIndexes = Array.isArray(node.parents) && node.parents.length > 0
+        ? node.parents
+        : [nodeId];
+    const names = [];
+    for (const idx of parentIndexes) {
+        const entry = tree?.[idx];
+        if (!entry || !entry[1] || typeof entry[1].name !== "string" || entry[1].name.length === 0) {
+            return normalizeNodePath([node.name]);
+        }
+        names.push(entry[1].name);
+    }
+    if (names.length === 0 || names[names.length - 1] !== node.name) {
+        names.push(node.name);
+    }
+    return normalizeNodePath(names);
+}
+
+function selectionIdentityForNode(nodeId, node = tree?.[nodeId]?.[1]) {
+    if (!node) {
+        return null;
+    }
+    if (typeof node.id === "string" && node.id.length > 0) {
+        return `id:${node.id}`;
+    }
+    const nodePath = getNodePathNames(nodeId, node);
+    if (nodePath) {
+        return `path:${JSON.stringify(nodePath)}`;
+    }
+    return `index:${nodeId}`;
+}
+
+function syncBrowserUrlToSelection() {
+    if (typeof window === "undefined" || typeof history === "undefined") {
+        return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("parent", String(parent));
+    if (selectionLocator.nodeId) {
+        url.searchParams.set("nodeId", selectionLocator.nodeId);
+    } else {
+        url.searchParams.delete("nodeId");
+    }
+    if (selectionLocator.nodePath) {
+        url.searchParams.set("nodePath", JSON.stringify(selectionLocator.nodePath));
+    } else {
+        url.searchParams.delete("nodePath");
+    }
+    const nextUrl = `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+        history.replaceState(null, "", nextUrl);
+    }
+}
+
+function rememberSelection(nodeId, node = tree?.[nodeId]?.[1]) {
+    if (!node) {
+        return false;
+    }
+    const nextIdentity = selectionIdentityForNode(nodeId, node);
+    const identityChanged = currentSelectionIdentity !== nextIdentity;
+    currentSelectionIdentity = nextIdentity;
+    selectionLocator.nodeId = typeof node.id === "string" && node.id.length > 0 ? node.id : null;
+    selectionLocator.nodePath = getNodePathNames(nodeId, node);
+    selectionLocator.lastKnownIndex = nodeId;
+    syncBrowserUrlToSelection();
+    return identityChanged;
+}
+
+function findNodeIndexByStableId(nodeId) {
+    if (!tree || typeof nodeId !== "string" || nodeId.length === 0) {
+        return null;
+    }
+    for (let i = 0; i < tree.length; i++) {
+        const node = tree[i]?.[1];
+        if (node?.id === nodeId) {
+            return i;
+        }
+    }
+    return null;
+}
+
+function findNodeIndexByPath(nodePath) {
+    if (!tree || !Array.isArray(nodePath) || nodePath.length === 0) {
+        return null;
+    }
+    for (let i = 0; i < tree.length; i++) {
+        const node = tree[i]?.[1];
+        if (!node) {
+            continue;
+        }
+        if (pathEquals(getNodePathNames(i, node), nodePath)) {
+            return i;
+        }
+    }
+    return null;
+}
+
+function resolveSelectedParentIndex() {
+    const byStableId = findNodeIndexByStableId(selectionLocator.nodeId);
+    if (byStableId !== null) {
+        return byStableId;
+    }
+    const byPath = findNodeIndexByPath(selectionLocator.nodePath);
+    if (byPath !== null) {
+        return byPath;
+    }
+    if (Number.isInteger(selectionLocator.lastKnownIndex) && tree?.[selectionLocator.lastKnownIndex] !== undefined) {
+        return selectionLocator.lastKnownIndex;
+    }
+    if (tree?.[parent] !== undefined) {
+        return parent;
+    }
+    if (tree?.[0] !== undefined) {
+        return 0;
+    }
+    return null;
+}
+
+function reconcileSelection() {
+    const resolvedParent = resolveSelectedParentIndex();
+    if (resolvedParent === null) {
+        return {parentChanged: false, identityChanged: false};
+    }
+    const previousParent = parent;
+    parent = resolvedParent;
+    const identityChanged = rememberSelection(parent);
+    return {
+        parentChanged: previousParent !== parent,
+        identityChanged,
+    };
+}
+
+function treeHref(nodeId, node = tree?.[nodeId]?.[1]) {
+    const params = new URLSearchParams();
+    params.set("parent", String(nodeId));
+    if (node?.id) {
+        params.set("nodeId", node.id);
+    }
+    const nodePath = getNodePathNames(nodeId, node);
+    if (nodePath) {
+        params.set("nodePath", JSON.stringify(nodePath));
+    }
+    return `/tree.html?${params.toString()}`;
+}
+
+function formatTreeCount(value) {
+    const numeric = toNumber(value, 0);
+    return numeric > 0 ? String(numeric) : "-";
+}
+
+function buildTreeRowStatusIcon(iconName, isActive, activeTitle, inactiveTitle) {
+    const icon = document.createElement("i");
+    icon.classList.add("fa", "fa-fw", iconName, "lqos-tree-row-status-icon");
+    if (!isActive) {
+        icon.classList.add("is-inactive");
+    }
+    icon.setAttribute("data-bs-toggle", "tooltip");
+    icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("title", isActive ? activeTitle : inactiveTitle);
+    return icon;
 }
 
 function renderBreadcrumb() {
@@ -300,12 +532,13 @@ function renderBreadcrumb() {
     const path = Array.isArray(current.parents) && current.parents.length > 0
         ? current.parents
         : [parent];
+    const ancestors = path.slice(0, -1);
     const navWrap = document.createElement("div");
     navWrap.classList.add("lqos-tree-nav");
     const trail = document.createElement("div");
     trail.classList.add("lqos-tree-breadcrumb");
 
-    path.forEach((nodeId, index) => {
+    ancestors.forEach((nodeId, index) => {
         const entry = tree[nodeId];
         if (!entry || !entry[1]) {
             return;
@@ -316,23 +549,55 @@ function renderBreadcrumb() {
             separator.innerHTML = "<i class='fa fa-chevron-right'></i>";
             trail.appendChild(separator);
         }
-
-        if (index === path.length - 1) {
-            const currentNode = document.createElement("span");
-            currentNode.classList.add("lqos-tree-breadcrumb-current", "redactable");
-            currentNode.textContent = entry[1].name;
-            trail.appendChild(currentNode);
-        } else {
-            const link = document.createElement("a");
-            link.href = treeHref(nodeId);
-            link.classList.add("lqos-tree-breadcrumb-link", "redactable");
-            link.textContent = entry[1].name;
-            trail.appendChild(link);
-        }
+        const link = document.createElement("a");
+        link.href = treeHref(nodeId, entry[1]);
+        link.classList.add("lqos-tree-breadcrumb-link", "redactable");
+        link.textContent = entry[1].name;
+        trail.appendChild(link);
     });
+
+    if (ancestors.length > 0) {
+        const separator = document.createElement("span");
+        separator.classList.add("lqos-tree-breadcrumb-separator");
+        separator.innerHTML = "<i class='fa fa-chevron-right'></i>";
+        trail.appendChild(separator);
+    }
+
+    const currentNode = document.createElement("span");
+    currentNode.classList.add("lqos-tree-breadcrumb-current", "redactable");
+    currentNode.textContent = current.name;
+    trail.appendChild(currentNode);
 
     navWrap.appendChild(trail);
     target.appendChild(navWrap);
+}
+
+function renderContextMeta(node) {
+    const target = document.getElementById("treeContextMeta");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    if (!node) {
+        return;
+    }
+
+    const metaItems = [];
+    if (node.type) {
+        metaItems.push(node.type);
+    }
+    const branchSize = formatBranchSize(node);
+    if (branchSize) {
+        metaItems.push(branchSize);
+    }
+    metaItems.push(`Max ${formatRatePair(...effectiveMax(node))}`);
+
+    metaItems.forEach((text) => {
+        const pill = document.createElement("span");
+        pill.classList.add("lqos-tree-context-pill");
+        pill.textContent = text;
+        target.appendChild(pill);
+    });
 }
 
 function setNodeOverrideFlash(message, variant = "success") {
@@ -355,6 +620,44 @@ function renderAlertMessages(targetId, messages, variant) {
         alert.textContent = message;
         target.appendChild(alert);
     });
+}
+
+function escapeHtml(text) {
+    return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+function renderCompatibilityWarningsIndicator(messages) {
+    const target = document.getElementById("nodeOverrideCompatibilityIndicator");
+    if (!target) {
+        return;
+    }
+    const visibleMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+    const nextSignature = JSON.stringify(visibleMessages);
+    if (target.dataset.warningSignature === nextSignature) {
+        return;
+    }
+    target.dataset.warningSignature = nextSignature;
+    clearDiv(target);
+    if (visibleMessages.length === 0) {
+        return;
+    }
+    const tooltipHtml = visibleMessages
+        .map((message) => `<div>${escapeHtml(message)}</div>`)
+        .join("");
+    const icon = document.createElement("span");
+    icon.classList.add("lqos-tree-compat-indicator");
+    icon.setAttribute("data-bs-toggle", "tooltip");
+    icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("data-bs-html", "true");
+    icon.setAttribute("title", tooltipHtml);
+    icon.setAttribute("aria-label", `Compatibility warnings: ${visibleMessages.length}`);
+    icon.innerHTML = `<i class="fa fa-triangle-exclamation"></i><span class="lqos-tree-compat-count">${visibleMessages.length}</span>`;
+    target.appendChild(icon);
 }
 
 function currentOverridePair(node, overrideData) {
@@ -428,13 +731,14 @@ function renderOverrideValue(node, overrideData) {
     if (!target) {
         return;
     }
+    target.textContent = "";
     clearDiv(target);
     const wrap = document.createElement("span");
-    wrap.classList.add("lqos-tree-settings-value");
+    wrap.classList.add("lqos-tree-detail-value");
 
     const value = document.createElement("span");
     if (!overrideData || !overrideData.has_override) {
-        value.textContent = "None";
+        value.textContent = "- / -";
         wrap.appendChild(value);
         target.appendChild(wrap);
         return;
@@ -470,6 +774,7 @@ function renderNodeSettings() {
     if (!node) {
         return;
     }
+    const syntheticRoot = isSyntheticRootNode(node);
 
     const statusTarget = document.getElementById("nodeOverrideStatus");
     if (statusTarget) {
@@ -488,9 +793,9 @@ function renderNodeSettings() {
     if (typeTarget) {
         typeTarget.textContent = node.type ?? "-";
     }
-    const nodeIdTarget = document.getElementById("nodeSettingsNodeId");
-    if (nodeIdTarget) {
-        nodeIdTarget.textContent = node.id ?? "Unavailable";
+    const branchSizeTarget = document.getElementById("nodeSettingsBranchSize");
+    if (branchSizeTarget) {
+        branchSizeTarget.textContent = formatBranchSize(node);
     }
     const baseConfiguredTarget = document.getElementById("nodeSettingsBaseConfigured");
     if (baseConfiguredTarget) {
@@ -510,14 +815,11 @@ function renderNodeSettings() {
         nodeRateOverrideState.flash ? [nodeRateOverrideState.flash.message] : [],
         nodeRateOverrideState.flash ? nodeRateOverrideState.flash.variant : "success",
     );
-    renderAlertMessages(
-        "nodeOverrideLegacyWarnings",
-        nodeRateOverrideState.data?.legacy_warnings || [],
-        "warning",
-    );
+    renderCompatibilityWarningsIndicator(nodeRateOverrideState.data?.legacy_warnings || []);
+    const disabledReason = syntheticRoot ? null : nodeRateOverrideState.data?.disabled_reason;
     renderAlertMessages(
         "nodeOverrideDisabledReason",
-        nodeRateOverrideState.data?.disabled_reason ? [nodeRateOverrideState.data.disabled_reason] : [],
+        disabledReason ? [disabledReason] : [],
         "secondary",
     );
 
@@ -525,14 +827,18 @@ function renderNodeSettings() {
 
     const canEdit = !!nodeRateOverrideState.data?.can_edit && !nodeRateOverrideState.loading && !nodeRateOverrideState.saving;
     setNodeOverrideInputsDisabled(!canEdit);
+    const editorSection = document.getElementById("nodeOverrideEditorSection");
+    if (editorSection) {
+        editorSection.hidden = !canEdit;
+    }
     const clearButton = document.getElementById("nodeOverrideClear");
     if (clearButton) {
         clearButton.disabled = !canEdit || !nodeRateOverrideState.data?.has_override;
     }
 
-    const settingsCard = document.querySelector(".lqos-tree-settings-card");
-    if (settingsCard) {
-        enableTooltipsWithin(settingsCard);
+    const detailsPanel = document.querySelector(".lqos-tree-details-panel");
+    if (detailsPanel) {
+        enableTooltipsWithin(detailsPanel);
     }
 }
 
@@ -658,9 +964,49 @@ function formatQooScore(score0to100, fallback = "-") {
     return "<span class='muted' style='color: " + color + "'>■</span>" + clamped;
 }
 
+function representativeNodeQoo(node) {
+    if (!node || !node.qoo) {
+        return null;
+    }
+    const values = [node.qoo[0], node.qoo[1]]
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry) && entry !== 255);
+    if (values.length === 0) {
+        return null;
+    }
+    return values.reduce((sum, entry) => sum + entry, 0) / values.length;
+}
+
+function ensureTreeGauges() {
+    if (!treeBitsGauge) {
+        treeBitsGauge = new BitsPerSecondGauge("treeBitsGauge", "Max");
+    }
+    if (!treeQooGauge) {
+        treeQooGauge = new QooScoreGauge("treeQooGauge");
+    }
+}
+
+function updateTreeGauges(node) {
+    if (!node) {
+        return;
+    }
+    ensureTreeGauges();
+    const effective = effectiveMax(node);
+    treeBitsGauge.update(
+        toNumber(node.current_throughput?.[0], 0) * 8,
+        toNumber(node.current_throughput?.[1], 0) * 8,
+        effective[0],
+        effective[1],
+    );
+    treeQooGauge.update(representativeNodeQoo(node));
+}
+
 function buildChildrenMap() {
     childrenByParentId = new Map();
     for (let i=0; i<tree.length; i++) {
+        if (!tree[i] || !tree[i][1]) {
+            continue;
+        }
         let node = tree[i][1];
         if (node.immediate_parent !== null) {
             if (!childrenByParentId.has(node.immediate_parent)) {
@@ -696,7 +1042,9 @@ function renderTree() {
     let treeTable = document.createElement("table");
     treeTable.classList.add("lqos-table", "lqos-table-tight");
     let thead = document.createElement("thead");
-    thead.appendChild(theading("Name"));
+    thead.appendChild(theading("Node"));
+    thead.appendChild(theading("Circuits"));
+    thead.appendChild(theading("Nodes"));
     thead.appendChild(theading("Effective"));
     thead.appendChild(theading("Configured"));
     thead.appendChild(theading("⬇️"));
@@ -737,11 +1085,15 @@ function getInitialTree() {
         const data = msg && msg.data ? msg.data : [];
         tree = data;
         buildChildrenMap();
+        const selectionState = reconcileSelection();
         if (tree[parent] !== undefined) {
             fillHeader(tree[parent][1]);
             loadNodeRateOverrideState();
         }
         renderTree();
+        if (selectionState.parentChanged && lastClientsMessage) {
+            clientsUpdate(lastClientsMessage);
+        }
 
         if (!subscribed) {
             subscribeWS(["NetworkTree", "NetworkTreeClients", "StormguardStatus"], onMessage);
@@ -752,13 +1104,10 @@ function getInitialTree() {
 }
 
 function fillHeader(node) {
-    $("#nodeName").text(node.name);
     renderHeaderStatusIcons(node);
-    const summaryTarget = document.getElementById("treeHeaderSummary");
-    if (summaryTarget) {
-        summaryTarget.textContent = nodeDetailParts(node).join(" / ");
-    }
     renderBreadcrumb();
+    renderContextMeta(node);
+    updateTreeGauges(node);
     const configured = configuredMax(node);
     const effective = effectiveMax(node);
     const configuredDown = formatLimitValue(configured[0]);
@@ -815,18 +1164,20 @@ function buildRow(i, depth=0) {
     let row = document.createElement("tr");
     row.classList.add("small");
     let col = document.createElement("td");
-    col.style.textOverflow = "ellipsis";
-    col.classList.add("small");
-    if (depth > 0) {
-        col.style.paddingLeft = (depth * 1.25) + "rem";
-    }
+    col.classList.add("small", "lqos-tree-node-cell");
     let nameWrap = document.createElement("div");
-    nameWrap.classList.add("d-flex", "align-items-center", "gap-1");
+    nameWrap.classList.add("lqos-tree-node-wrap");
+    if (depth > 0) {
+        nameWrap.style.paddingLeft = (depth * 1.25) + "rem";
+    }
+    const lead = document.createElement("div");
+    lead.classList.add("lqos-tree-node-lead");
+    const toggleSlot = document.createElement("div");
+    toggleSlot.classList.add("lqos-tree-toggle-slot");
     if (hasChildren(nodeId)) {
         let toggle = document.createElement("button");
         toggle.type = "button";
-        toggle.classList.add("btn", "btn-link", "btn-sm", "p-0", "text-decoration-none");
-        toggle.style.lineHeight = "1";
+        toggle.classList.add("btn", "btn-link", "btn-sm", "p-0", "text-decoration-none", "lqos-tree-toggle");
         let icon = document.createElement("i");
         icon.classList.add("fa", "fa-fw", expandedNodes.has(nodeId) ? "fa-minus" : "fa-plus");
         toggle.appendChild(icon);
@@ -837,34 +1188,41 @@ function buildRow(i, depth=0) {
             event.stopPropagation();
             toggleNode(nodeId);
         });
-        nameWrap.appendChild(toggle);
-    } else {
-        let spacer = document.createElement("i");
-        spacer.classList.add("fa", "fa-fw", "fa-plus");
-        spacer.style.visibility = "hidden";
-        nameWrap.appendChild(spacer);
+        toggleSlot.appendChild(toggle);
     }
-    if (node.virtual === true) {
-        nameWrap.appendChild(buildStatusIcon(
-            "fa-ghost",
-            "text-secondary",
-            "Virtual node (logical only; not shaped in HTB)."
-        ));
-    }
-    if (isStormguardNode(node)) {
-        nameWrap.appendChild(buildStatusIcon(
-            "fa-cloud-bolt",
-            "text-primary",
-            "StormGuard-managed node (dynamic queue limits active)."
-        ));
-    }
+    lead.appendChild(toggleSlot);
     let link = document.createElement("a");
-    link.href = treeHref(nodeId);
-    link.classList.add("redactable");
+    link.href = treeHref(nodeId, node);
+    link.classList.add("redactable", "lqos-tree-node-link");
     link.textContent = node.name;
-    nameWrap.appendChild(link);
-    appendNodeDetailText(nameWrap, node);
+    lead.appendChild(link);
+    nameWrap.appendChild(lead);
+    const statusWrap = document.createElement("div");
+    statusWrap.classList.add("lqos-tree-row-statuses");
+    statusWrap.appendChild(buildTreeRowStatusIcon(
+        "fa-ghost",
+        node.virtual === true,
+        "Virtual node: Active",
+        "Virtual node: Inactive",
+    ));
+    statusWrap.appendChild(buildTreeRowStatusIcon(
+        "fa-cloud-bolt",
+        isStormguardNode(node),
+        "StormGuard: Active",
+        "StormGuard: Inactive",
+    ));
+    nameWrap.appendChild(statusWrap);
     col.appendChild(nameWrap);
+    row.appendChild(col);
+
+    col = document.createElement("td");
+    col.classList.add("small");
+    col.textContent = formatTreeCount(subtreeCircuitCount(node));
+    row.appendChild(col);
+
+    col = document.createElement("td");
+    col.classList.add("small");
+    col.textContent = formatTreeCount(subtreeSiteCount(node));
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -985,9 +1343,11 @@ function buildRow(i, depth=0) {
 function treeUpdate(msg) {
     //console.log(msg);
     let needsRebuild = false;
+    const seenNodeIds = new Set();
     msg.data.forEach((n) => {
         let nodeId = n[0];
         let node = n[1];
+        seenNodeIds.add(nodeId);
 
         if (tree[nodeId] === undefined) {
             tree[nodeId] = [nodeId, node];
@@ -1002,10 +1362,6 @@ function treeUpdate(msg) {
                 needsRebuild = true;
             }
             tree[nodeId][1] = node;
-        }
-
-        if (nodeId === parent) {
-            fillHeader(node);
         }
 
         let col = document.getElementById("limit-" + nodeId);
@@ -1100,13 +1456,36 @@ function treeUpdate(msg) {
             }
         }
     });
+    for (let i = 0; i < tree.length; i++) {
+        if (tree[i] === undefined || seenNodeIds.has(i)) {
+            continue;
+        }
+        delete tree[i];
+        needsRebuild = true;
+    }
     if (needsRebuild) {
         buildChildrenMap();
+    }
+    const selectionState = reconcileSelection();
+    if (selectionState.identityChanged) {
+        loadNodeRateOverrideState();
+    }
+    if (tree[parent] !== undefined) {
+        fillHeader(tree[parent][1]);
+    }
+    if (needsRebuild || selectionState.parentChanged) {
         renderTree();
+    }
+    if (selectionState.parentChanged && lastClientsMessage) {
+        clientsUpdate(lastClientsMessage);
     }
 }
 
 function clientsUpdate(msg) {
+    lastClientsMessage = msg;
+    if (!tree || tree[parent] === undefined) {
+        return;
+    }
     let myName = tree[parent][1].name;
 
     let target = document.getElementById("clients");
@@ -1180,6 +1559,8 @@ function clientsUpdate(msg) {
             circuitLink.href = "/circuit.html?id=" + circuit.circuit_id;
             circuitLink.innerText = circuit.circuit_name;
             circuitLink.classList.add("redactable");
+            circuitLink.classList.add("lqos-tree-circuit-name");
+            circuitLink.title = circuit.circuit_name;
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
 
@@ -1197,10 +1578,7 @@ function clientsUpdate(msg) {
             tr.appendChild(simpleRow(circuit.parent_node, true));
 
             const ipList = Array.from(circuit.ips);
-            const ipCell = simpleRow(
-                ipList.length > 2 ? `${ipList[0]}, ${ipList[1]} +${ipList.length - 2}` : ipList.join(", "),
-                true
-            );
+            const ipCell = simpleRow(summarizeIpListForTable(ipList), true);
             if (ipList.length > 0) {
                 ipCell.title = ipList.join(", ");
             }
@@ -1258,6 +1636,10 @@ function stormguardUpdate(msg) {
         return;
     }
     stormguardNodes = nextNodes;
+    const selectionState = reconcileSelection();
+    if ((selectionState.parentChanged || selectionState.identityChanged) && lastClientsMessage) {
+        clientsUpdate(lastClientsMessage);
+    }
     if (tree && tree[parent] !== undefined) {
         fillHeader(tree[parent][1]);
         renderTree();
@@ -1279,14 +1661,20 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 });
 
 if (params.parent !== null) {
-    parent = parseInt(params.parent);
+    const parsedParent = parseInt(params.parent, 10);
+    parent = Number.isFinite(parsedParent) ? parsedParent : 0;
 } else {
     parent = 0;
 }
 
 if (params.upParent !== null) {
-    upParent = parseInt(params.upParent);
+    const parsedUpParent = parseInt(params.upParent, 10);
+    upParent = Number.isFinite(parsedUpParent) ? parsedUpParent : 0;
 }
+
+selectionLocator.nodeId = typeof params.nodeId === "string" && params.nodeId.length > 0 ? params.nodeId : null;
+selectionLocator.nodePath = parseNodePathParam(params.nodePath);
+selectionLocator.lastKnownIndex = parent;
 
 document.getElementById("nodeOverrideDownload")?.addEventListener("input", () => {
     nodeOverrideInputsDirty = true;

@@ -14,12 +14,16 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Tree detail pages now show a breadcrumb path to the selected node, so drilling down does not require repeated resets back to root.
 - Tree rows include subtree summaries for descendant `Sites` plus attached/descendant `Circuits`, which helps estimate branch size before expanding further.
 - Tree rows and the selected-node header can show small status icons for special handling, including virtual nodes and nodes currently managed by StormGuard.
-- Tree detail pages include a `Node Settings` inspector that shows:
+- Tree detail pages include a `Node Details` card that shows:
+  - node type and branch size for the selected tree node
   - base configured rate from generated `network.json`
   - any operator-owned rate override from `lqos_overrides.json`
   - current effective configured rate
-- Administrators can save or clear node rate overrides from that inspector. Read-only users can still inspect the values, but the controls remain disabled.
-- Tree node rate overrides require a stable node ID and intentionally refuse generated nodes. When an override has been saved but not yet materialized into generated `network.json`, the inspector shows a `⟳ Pending` indicator explaining that the change will apply on the next scheduler run.
+- Tree detail pages also include a compact context bar, a `Node Snapshot` gauge panel, and a compatibility warning indicator beside `Operator Override` when integration-related override compatibility notices are present.
+- Tree detail pages now carry a stable node locator in the URL when available and re-resolve the selected node across live tree reindexing, so staying on a node page continues to follow the same logical node after `network.json` regenerates.
+- Administrators can save or clear node rate overrides from the `Operator Override` editor when the selected node is editable. Read-only users and non-editable nodes still see the current values in the details card.
+- The synthetic `Root` node is shown as a read-only aggregate and does not expose the `Operator Override` editor.
+- Tree node rate overrides require a stable node ID and intentionally refuse generated nodes. When an override has been saved but not yet materialized into generated `network.json`, the details card shows a `⟳ Pending` indicator explaining that the change will apply on the next scheduler run.
 - The full-tree Sankey pause control now freezes polling only; local drill-down, reset, and max-depth changes continue to rerender from the cached snapshot while paused.
 
 ### Site Map

@@ -14,12 +14,16 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Las páginas de detalle del árbol ahora muestran una ruta tipo breadcrumb hasta el nodo seleccionado, para navegar hacia abajo sin depender de volver siempre a la raíz.
 - Las filas del árbol ahora incluyen resúmenes del subárbol para `Sites` descendientes y `Circuits` adjuntos/descendientes, lo que ayuda a estimar el tamaño de cada rama antes de expandirla.
 - Las filas del árbol y el encabezado del nodo seleccionado pueden mostrar pequeños íconos de estado para manejo especial, incluyendo nodos virtuales y nodos administrados actualmente por StormGuard.
-- Las páginas de detalle del árbol incluyen un inspector de `Node Settings` que muestra:
+- Las páginas de detalle del árbol incluyen una tarjeta de `Node Details` que muestra:
+  - el tipo de nodo y el tamaño de la rama del nodo seleccionado
   - la velocidad configurada base desde el `network.json` generado
   - cualquier override de velocidad del operador almacenado en `lqos_overrides.json`
   - la velocidad configurada efectiva actual
-- Los administradores pueden guardar o limpiar overrides de velocidad del nodo desde ese inspector. Los usuarios de solo lectura siguen pudiendo inspeccionar los valores, pero los controles permanecen deshabilitados.
-- Los overrides de velocidad desde el árbol requieren un ID estable del nodo y rechazan intencionalmente nodos generados. Cuando un override ya fue guardado pero todavía no fue materializado en el `network.json` generado, el inspector muestra un indicador `⟳ Pending` explicando que el cambio se aplicará en la siguiente ejecución del scheduler.
+- Las páginas de detalle del árbol también incluyen una barra de contexto compacta, un panel de medidores `Node Snapshot` y un indicador de advertencia de compatibilidad junto a `Operator Override` cuando existen avisos de compatibilidad relacionados con overrides de integraciones.
+- Las páginas de detalle del árbol ahora incluyen un localizador estable del nodo en la URL cuando está disponible y vuelven a resolver el nodo seleccionado ante reindexaciones en vivo del árbol, para que permanecer en una página siga el mismo nodo lógico después de regenerar `network.json`.
+- Los administradores pueden guardar o limpiar overrides de velocidad del nodo desde el editor `Operator Override` cuando el nodo seleccionado es editable. Los usuarios de solo lectura y los nodos no editables siguen viendo los valores actuales en la tarjeta de detalles.
+- El nodo sintético `Root` se muestra como un agregado de solo lectura y no expone el editor `Operator Override`.
+- Los overrides de velocidad desde el árbol requieren un ID estable del nodo y rechazan intencionalmente nodos generados. Cuando un override ya fue guardado pero todavía no fue materializado en el `network.json` generado, la tarjeta de detalles muestra un indicador `⟳ Pending` explicando que el cambio se aplicará en la siguiente ejecución del scheduler.
 - El control de pausa del Sankey de árbol completo ahora solo detiene el polling; el drill-down local, el reset y los cambios de profundidad máxima siguen renderizando desde el snapshot en caché mientras está en pausa.
 
 ### Site Map
