@@ -13,6 +13,7 @@ const TILE_BBOX_URL = "https://insight.libreqos.com/tiles/api/bbox";
 // NOTE: This key is intentionally non-secret. The remote OSM cache uses it as a lightweight gate.
 // It must match both the bbox Authorization token and the tile `key=` query param.
 const OSM_CACHE_KEY = "LibreQoSRocks";
+const WEB_MERCATOR_MAX_LAT = 85.05112878;
 const INSIGHT_TILE_PROTOCOL = "insight";
 // Insight OSM cache tiles: `z/y/x` (no `.png` suffix). See `src/lts2/rust/osm_cache/src/http.rs`.
 // The Insight tile server returns `503 + Retry-After` while it fetches missing tiles, so we route
@@ -20,9 +21,6 @@ const INSIGHT_TILE_PROTOCOL = "insight";
 const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles/{z}/{y}/{x}?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 const TILE_MAX_ZOOM = 17;
-
-const FALLBACK_CENTER = [-101.5, 39.8];
-const FALLBACK_ZOOM = 3.15;
 
 const OSM_RASTER_SOURCE_ID = "site-map-osm";
 const OSM_RASTER_LAYER_ID = "site-map-osm-tiles";
@@ -127,6 +125,14 @@ function worstRtt(rttDownMs, rttUpMs) {
     return Math.max(...values);
 }
 
+function configuredMaxThroughput(node) {
+    return node?.configured_max_throughput || node?.max_throughput || [0, 0];
+}
+
+function effectiveMaxThroughput(node) {
+    return node?.effective_max_throughput || configuredMaxThroughput(node);
+}
+
 function averageOrNull(sum, count) {
     return count > 0 ? (sum / count) : null;
 }
@@ -136,7 +142,16 @@ function hasMeaningfulLatLon(lat, lon) {
         return false;
     }
     // Many integrations default to (0,0) when coordinates are unknown.
-    return !(lat === 0 && lon === 0);
+    if (lat === 0 && lon === 0) {
+        return false;
+    }
+    if (lat < -WEB_MERCATOR_MAX_LAT || lat > WEB_MERCATOR_MAX_LAT) {
+        return false;
+    }
+    if (lon < -180 || lon > 180) {
+        return false;
+    }
+    return true;
 }
 
 function stableNodeKey(index, node) {
@@ -383,7 +398,7 @@ async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
             const [lat, lon] = pair;
             const latN = Number(lat);
             const lonN = Number(lon);
-            if (!Number.isFinite(latN) || !Number.isFinite(lonN)) {
+            if (!hasMeaningfulLatLon(latN, lonN)) {
                 return null;
             }
             return { lat: latN, lon: lonN };
@@ -496,7 +511,15 @@ class SiteMapPage {
         });
     }
 
-    initMap(center = FALLBACK_CENTER, zoom = FALLBACK_ZOOM) {
+    initMap(center, zoom) {
+        if (!Array.isArray(center)
+            || center.length < 2
+            || !Number.isFinite(center[0])
+            || !Number.isFinite(center[1])
+            || !Number.isFinite(zoom)) {
+            throw new Error("Invalid map center/zoom");
+        }
+
         installInsightTileProtocolOnce();
         if (typeof window.maplibregl?.setMaxParallelImageRequests === "function") {
             window.maplibregl.setMaxParallelImageRequests(6);
@@ -608,15 +631,15 @@ class SiteMapPage {
                     "line-color": linkColorExpression(),
                     "line-width": [
                         "interpolate", ["linear"], ["zoom"],
-                        2, 0.6,
-                        6, 1.2,
-                        10, 2.0,
+                        2, 0.9,
+                        6, 1.6,
+                        10, 2.6,
                     ],
                     "line-opacity": [
                         "interpolate", ["linear"], ["zoom"],
-                        2, 0.25,
-                        6, 0.45,
-                        10, 0.6,
+                        2, 0.35,
+                        6, 0.55,
+                        10, 0.72,
                     ],
                 },
             });
@@ -854,6 +877,9 @@ class SiteMapPage {
             const qooUp = averageOrNull(value.qooUpSum, value.qooUpCount);
             const rttDownMs = averageOrNull(value.rttDownSum, value.rttDownCount);
             const rttUpMs = averageOrNull(value.rttUpSum, value.rttUpCount);
+            const maxMbps = effectiveMaxThroughput(node);
+            const limitDownMbps = toNumber(maxMbps?.[0], 0);
+            const limitUpMbps = toNumber(maxMbps?.[1], 0);
 
             const normalized = {
                 key: value.key,
@@ -861,7 +887,7 @@ class SiteMapPage {
                 name: node.name,
                 id: node.id || null,
                 type: nodeType,
-                immediateParent: node.immediate_parent,
+                immediateParent: immediateParentIndex(node),
                 latitude: null,
                 longitude: null,
                 throughputDown: avgDown,
@@ -875,6 +901,8 @@ class SiteMapPage {
                 rttWorst: worstRtt(rttDownMs, rttUpMs),
                 parentName: null,
                 inheritedCoords: false,
+                limitDownMbps,
+                limitUpMbps,
             };
             const lat = Number(node.latitude);
             const lon = Number(node.longitude);
@@ -968,7 +996,13 @@ class SiteMapPage {
                 return;
             }
             emittedLinks.add(key);
-            const utilizationRatio = maxBitsPerSecond > 0 ? Math.max(0, Math.min(1, node.throughputCombined / maxBitsPerSecond)) : 0;
+            const downLimitBits = node.limitDownMbps > 0 ? node.limitDownMbps * 1000 * 1000 : 0;
+            const upLimitBits = node.limitUpMbps > 0 ? node.limitUpMbps * 1000 * 1000 : 0;
+            const downRatio = downLimitBits > 0 ? (node.throughputDown / downLimitBits) : null;
+            const upRatio = upLimitBits > 0 ? (node.throughputUp / upLimitBits) : null;
+            const utilizationRatio = (downRatio === null && upRatio === null)
+                ? null
+                : Math.max(0, Math.min(1, Math.max(downRatio ?? 0, upRatio ?? 0)));
             siteLinkFeatures.push({
                 type: "Feature",
                 geometry: {
