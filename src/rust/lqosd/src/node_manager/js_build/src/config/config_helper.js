@@ -46,6 +46,34 @@ function ensureOptionalConfigSections(config) {
     return config;
 }
 
+const TOPOLOGY_SOURCE_INTEGRATIONS = [
+    { name: "UISP", enabled: (config) => !!config?.uisp_integration?.enable_uisp },
+    { name: "Splynx", enabled: (config) => !!config?.splynx_integration?.enable_splynx },
+    { name: "Powercode", enabled: (config) => !!config?.powercode_integration?.enable_powercode },
+    { name: "Sonar", enabled: (config) => !!config?.sonar_integration?.enable_sonar },
+    { name: "Netzur", enabled: (config) => !!config?.netzur_integration?.enable_netzur },
+    { name: "VISP", enabled: (config) => !!config?.visp_integration?.enable_visp },
+    { name: "WispGate", enabled: (config) => !!config?.wispgate_integration?.enable_wispgate },
+];
+
+export function activeTopologySourceIntegrations(config) {
+    return TOPOLOGY_SOURCE_INTEGRATIONS.filter((entry) => entry.enabled(config)).map(
+        (entry) => entry.name,
+    );
+}
+
+export function topologyEditorsLocked(config) {
+    return activeTopologySourceIntegrations(config).length > 0;
+}
+
+export function topologyEditorsLockMessage(config) {
+    const active = activeTopologySourceIntegrations(config);
+    if (active.length === 0) {
+        return "";
+    }
+    return `Editing is disabled because these integrations are the source of truth: ${active.join(", ")}.`;
+}
+
 export function loadConfig(onComplete, onError) {
     sendWsRequest(
         "GetConfig",
@@ -156,6 +184,30 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
     );
 }
 
+export function saveNetworkJsonOnly(network_json, onComplete, onError) {
+    if (!network_json || typeof network_json !== "object") {
+        alert("Invalid network configuration");
+        return;
+    }
+
+    sendWsRequest(
+        "UpdateNetworkJsonOnlyResult",
+        { UpdateNetworkJsonOnly: { network_json } },
+        (msg) => {
+            if (onComplete) onComplete(!!msg.ok, msg.message);
+        },
+        (msg) => {
+            const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+            if (onComplete) onComplete(false, errorMsg);
+            if (onError) {
+                onError(msg);
+            } else {
+                alert("Error saving network configuration: " + errorMsg);
+            }
+        },
+    );
+}
+
 export function adminCheck(onComplete, onError) {
     sendWsRequest(
         "AdminCheck",
@@ -201,11 +253,142 @@ export function loadNetworkJson(onComplete, onError) {
 }
 
 export function loadAllShapedDevices(onComplete, onError) {
+    const pageSize = 250;
+    const rows = [];
+
+    const loadPage = (page) => {
+        sendWsRequest(
+            "ShapedDevicesPage",
+            { ShapedDevicesPage: { query: { page, page_size: pageSize } } },
+            (msg) => {
+                const data = msg && msg.data ? msg.data : {};
+                const pageRows = Array.isArray(data.rows) ? data.rows : [];
+                rows.push(...pageRows);
+                const totalRows = Number.isFinite(Number(data.total_rows))
+                    ? Math.max(0, Math.trunc(Number(data.total_rows)))
+                    : rows.length;
+                if (rows.length >= totalRows || pageRows.length < pageSize) {
+                    if (onComplete) onComplete(rows);
+                    return;
+                }
+                loadPage(page + 1);
+            },
+            onError,
+        );
+    };
+
+    loadPage(0);
+}
+
+export function loadShapedDevicesPage(query, onComplete, onError) {
     sendWsRequest(
-        "AllShapedDevices",
-        { AllShapedDevices: {} },
+        "ShapedDevicesPage",
+        { ShapedDevicesPage: { query } },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || null);
+        },
+        onError,
+    );
+}
+
+export function getShapedDevice(deviceId, onComplete, onError) {
+    sendWsRequest(
+        "GetShapedDeviceResult",
+        { GetShapedDevice: { device_id: deviceId } },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function createShapedDevice(device, onComplete, onError) {
+    sendWsRequest(
+        "CreateShapedDeviceResult",
+        { CreateShapedDevice: { device } },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function updateShapedDevice(originalDeviceId, device, onComplete, onError) {
+    sendWsRequest(
+        "UpdateShapedDeviceResult",
+        { UpdateShapedDevice: { original_device_id: originalDeviceId, device } },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function deleteShapedDevice(deviceId, onComplete, onError) {
+    sendWsRequest(
+        "DeleteShapedDeviceResult",
+        { DeleteShapedDevice: { device_id: deviceId } },
+        (msg) => {
+            if (onComplete) onComplete(msg);
+        },
+        onError,
+    );
+}
+
+export function loadCircuitDirectoryPage(query, onComplete, onError) {
+    sendWsRequest(
+        "CircuitDirectoryPage",
+        { CircuitDirectoryPage: { query } },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || null);
+        },
+        onError,
+    );
+}
+
+export function loadAllCircuitDirectoryRows(onComplete, onError) {
+    const pageSize = 250;
+    const rows = [];
+
+    const loadPage = (page) => {
+        loadCircuitDirectoryPage(
+            { page, page_size: pageSize },
+            (data) => {
+                const pageRows = Array.isArray(data?.rows) ? data.rows : [];
+                rows.push(...pageRows);
+                const totalRows = Number.isFinite(Number(data?.total_rows))
+                    ? Math.max(0, Math.trunc(Number(data.total_rows)))
+                    : rows.length;
+                if (rows.length >= totalRows || pageRows.length < pageSize) {
+                    if (onComplete) onComplete(rows);
+                    return;
+                }
+                loadPage(page + 1);
+            },
+            onError,
+        );
+    };
+
+    loadPage(0);
+}
+
+export function loadNodeDirectory(onComplete, onError) {
+    sendWsRequest(
+        "NodeDirectory",
+        { NodeDirectory: {} },
         (msg) => {
             if (onComplete) onComplete(msg.data || []);
+        },
+        onError,
+    );
+}
+
+export function loadTreeGuardMetadataSummary(onComplete, onError) {
+    sendWsRequest(
+        "TreeGuardMetadataSummary",
+        { TreeGuardMetadataSummary: {} },
+        (msg) => {
+            if (onComplete) onComplete(msg.data || null);
         },
         onError,
     );

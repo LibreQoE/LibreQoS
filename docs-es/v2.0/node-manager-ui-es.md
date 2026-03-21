@@ -7,30 +7,24 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ### Dashboard
 - Resumen por widgets de throughput, retransmisiones, RTT, flujos y actividad de colas.
 - El contenido puede variar según versión y funciones habilitadas.
+- Executive Summary ofrece una vista operativa compacta para redes grandes, con páginas de detalle para heatmaps y rankings ejecutivos.
+- Algunos gráficos pueden tardar un poco en poblarse al abrir una pestaña por primera vez, especialmente en sistemas ocupados o inmediatamente después de reiniciar servicios.
 
 ### Vista de árbol de red
 - Vista jerárquica de nodos/circuitos desde la perspectiva del shaper.
 - Útil para identificar cuellos de botella y patrones de utilización padre/hijo.
-- Las páginas de detalle del árbol ahora muestran una ruta tipo breadcrumb hasta el nodo seleccionado, para navegar hacia abajo sin depender de volver siempre a la raíz.
-- Las filas del árbol ahora incluyen resúmenes del subárbol para `Sites` descendientes y `Circuits` adjuntos/descendientes, lo que ayuda a estimar el tamaño de cada rama antes de expandirla.
-- Las filas del árbol y el encabezado del nodo seleccionado pueden mostrar pequeños íconos de estado para manejo especial, incluyendo nodos virtuales y nodos administrados actualmente por StormGuard.
-- Las páginas de detalle del árbol incluyen una tarjeta de `Node Details` que muestra:
-  - el tipo de nodo y el tamaño de la rama del nodo seleccionado
-  - la velocidad configurada base desde el `network.json` generado
-  - cualquier override de velocidad del operador almacenado en `lqos_overrides.json`
-  - la velocidad configurada efectiva actual
-- Las páginas de detalle del árbol también incluyen una barra de contexto compacta, un panel de medidores `Node Snapshot` y un indicador de advertencia de compatibilidad junto a `Operator Override` cuando existen avisos de compatibilidad relacionados con overrides de integraciones.
-- Las páginas de detalle del árbol ahora incluyen un localizador estable del nodo en la URL cuando está disponible y vuelven a resolver el nodo seleccionado ante reindexaciones en vivo del árbol, para que permanecer en una página siga el mismo nodo lógico después de regenerar `network.json`.
-- Los administradores pueden guardar o limpiar overrides de velocidad del nodo desde el editor `Operator Override` cuando el nodo seleccionado es editable. Los usuarios de solo lectura y los nodos no editables siguen viendo los valores actuales en la tarjeta de detalles.
-- El nodo sintético `Root` se muestra como un agregado de solo lectura y no expone el editor `Operator Override`.
-- Los overrides de velocidad desde el árbol requieren un ID estable del nodo y rechazan intencionalmente nodos generados. Cuando un override ya fue guardado pero todavía no fue materializado en el `network.json` generado, la tarjeta de detalles muestra un indicador `⟳ Pending` explicando que el cambio se aplicará en la siguiente ejecución del scheduler.
-- El control de pausa del Sankey de árbol completo ahora solo detiene el polling; el drill-down local, el reset y los cambios de profundidad máxima siguen renderizando desde el snapshot en caché mientras está en pausa.
+- Las páginas de detalle del árbol muestran una ruta tipo breadcrumb, conteos de rama e indicadores de estado para el nodo seleccionado.
+- `Node Details` resume el tipo de nodo seleccionado, el tamaño de la rama, las velocidades configuradas y la velocidad efectiva actual.
+- `Node Snapshot` ofrece un resumen visual rápido del throughput actual y el QoO del nodo seleccionado.
+- Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
+- Los administradores pueden guardar o limpiar valores de `Operator Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
 
 ### Site Map
 - Mapa operativo plano de sitios y APs usando geodatos importados de nodos.
 - Usa QoO por defecto con un selector alternativo para RTT, mientras el tamaño del marcador refleja el throughput combinado reciente.
 - Usa un promedio del lado cliente de 30 segundos a partir de `NetworkTree`, sin agregar trabajo de rollup en el backend.
 - Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
+- El encuadre inicial del mapa ahora prioriza las coordenadas de los sitios para una vista inicial más cercana, usando coordenadas de AP solo cuando todavía no hay sitios mapeados.
 - Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.
 - Site Map utiliza una capa local de carreteras derivada de Natural Earth para ayudar con la orientación, manteniendo el resto del mapa base discreto y operativo.
 
@@ -45,8 +39,19 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ### ASN Analysis
 - Página operativa ASN en vivo que combina un ranking top-20 de ASN, gráfico de burbujas latencia-vs-tráfico, franja mínima de KPIs del ASN seleccionado, gráfico de tendencia ASN de 15 minutos y la sección integrada de Flow Evidence.
 - Soporta modos de ranking `Impact` y `Throughput`, manteniendo la evidencia de flujos ASN en la misma página.
+- Las versiones actuales obtienen el contexto ejecutivo ASN mediante requests paginados y acotados solo a ASN, en lugar de suscribirse a un feed completo de heatmaps ejecutivos.
 - La ruta heredada `ASN Explorer` ahora redirige aquí para conservar compatibilidad con marcadores antiguos.
 - Resultados vacíos suelen indicar poco dato reciente, no necesariamente falla.
+
+### Página de circuito
+- Las páginas de circuito combinan comportamiento de colas, throughput en vivo, RTT, retransmisiones y troubleshooting por flujo para un suscriptor/circuito individual.
+- `Queue Dynamics` muestra el comportamiento del throughput y RTT del circuito a lo largo del tiempo, incluyendo un KPI de `Active Flows` basado en la misma ventana reciente usada por la tabla `Traffic Flows`.
+- `Queue Stats` muestra los 3 minutos más recientes del historial en vivo de la cola del circuito como muestras scatter crudas de 1 segundo, incluyendo backlog, delay, longitud de cola, tráfico, marcas ECN y drops.
+- Los gráficos de Queue Stats ahora usan hover sincronizado para inspeccionar el mismo segundo en todos los gráficos de cola al mismo tiempo.
+- `Queue Tree` ahora presenta la ruta ascendente de colas del circuito en tarjetas de ancestros con estilo, incluyendo un resumen de ruta y paneles de throughput, retransmisiones y latencia de igual ancho para cada nodo aguas arriba.
+- `Traffic Flows` es una tabla operativa de flujos recientes, no una vista de historial a largo plazo.
+- `Traffic Flows` incluye paginación y un filtro `Hide Small Flows` para que los circuitos grandes y ocupados sigan siendo utilizables sin intentar renderizar cada fila.
+- `Flow Sankey` enfatiza los flujos recientes más activos en lugar de todos los flujos retenidos más antiguos.
 
 ### Árbol/ponderación de CPU
 - Muestra distribución de colas/circuitos por núcleo de CPU.
@@ -55,6 +60,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ### Editor de Shaped Devices
 - Editor CRUD para `ShapedDevices.csv`.
 - Incluye paginación y filtros en versiones actuales.
+- En el editor dedicado, las acciones de agregar, editar y eliminar se guardan de inmediato.
 
 ### Problemas urgentes
 - WebUI puede mostrar problemas operativos urgentes emitidos por servicios backend.

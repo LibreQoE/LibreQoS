@@ -306,14 +306,17 @@ function fetchCircuits() {
         }
         renderCircuits(msg.data);
     });
+    const request = {
+        cpu: cpu,
+        direction: dir,
+        page: state.page,
+        page_size: state.pageSize,
+    };
+    if (state.searchTerm && state.searchTerm.trim() !== "") {
+        request.search = state.searchTerm.trim();
+    }
     wsClient.send({
-        CpuAffinityCircuits: {
-            cpu: cpu,
-            direction: dir,
-            page: state.page,
-            page_size: state.pageSize,
-            search: null,
-        }
+        CpuAffinityCircuits: request
     });
 }
 

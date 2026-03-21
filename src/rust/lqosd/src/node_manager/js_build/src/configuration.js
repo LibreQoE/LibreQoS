@@ -1,12 +1,23 @@
 // Mostly ported from the original node manager
 import { get_ws_client } from "./pubsub/ws";
+import {
+    activeTopologySourceIntegrations,
+    loadAllShapedDevices,
+    topologyEditorsLockMessage,
+    topologyEditorsLocked,
+} from "./config/config_helper";
 
 let nics = null;
 let lqosd_config = null;
 let shaped_devices = null;
 let network_json = null;
 let qoo_profiles = null;
+let shaped_devices_loaded = false;
+let shaped_devices_loading = false;
+let shaped_devices_dirty = false;
 const MIN_NODE_MBPS = 0.1;
+let topology_editor_locked = false;
+let topology_editor_lock_message = "";
 
 const wsClient = get_ws_client();
 
@@ -191,6 +202,33 @@ function ensureSplynxSection(config) {
     }
 
     return config;
+}
+
+function topologyEditDisabledAttr() {
+    return topology_editor_locked ? " disabled aria-disabled='true'" : "";
+}
+
+function applyTopologyEditorLockState() {
+    $("#btnSaveNetDevices").prop("disabled", topology_editor_locked);
+    $("#btnFlattenNetwork").prop("disabled", topology_editor_locked);
+    $("#btnAddNetworkNode").prop("disabled", topology_editor_locked);
+    $("#btnAddShapedDeviceRow").prop("disabled", topology_editor_locked || !shaped_devices_loaded);
+    $("#njsNewNodeName, #njsNewNodeDown, #njsNewNodeUp").prop("disabled", topology_editor_locked);
+    $("#netjson, #shapedDeviceTable").toggleClass("opacity-75", topology_editor_locked);
+
+    const targets = [
+        "#legacyTopologyEditorLockSummary",
+        "#legacyNetworkEditorLock",
+        "#legacyDevicesEditorLock",
+    ];
+    for (const selector of targets) {
+        const element = $(selector);
+        if (topology_editor_locked && topology_editor_lock_message) {
+            element.removeClass("d-none").text(topology_editor_lock_message);
+        } else {
+            element.addClass("d-none").text("");
+        }
+    }
 }
 
 function doBindings() {
@@ -485,23 +523,25 @@ function saveConfig() {
 
 function iterateNetJson(level, depth) {
     let html = "<div style='margin-left: " + depth * 30 + "px; margin-top: 4px;'>";
+    const devices = Array.isArray(shaped_devices) ? shaped_devices : [];
+    const disabledAttr = topologyEditDisabledAttr();
     for (const [key, value] of Object.entries(level)) {
         const isVirtual = value && value.virtual === true;
         html += "<div>";
         html += "<strong>" + key + "</strong>";
         if (depth > 0) {
-            html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.promoteNode(\"" + key + "\") '><i class='fa fa-arrow-left'></i> Promote</button>";
+            html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.promoteNode(\"" + key + "\") '" + disabledAttr + "><i class='fa fa-arrow-left'></i> Promote</button>";
         }
-        html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.renameNode(\"" + key + "\") '><i class='fa fa-pencil'></i> Rename</button>";
-        html += "  <button class='btn btn-sm btn-outline-warning' onclick='window.deleteNode(\"" + key + "\") '><i class='fa fa-trash'></i> Delete</button>";
+        html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.renameNode(\"" + key + "\") '" + disabledAttr + "><i class='fa fa-pencil'></i> Rename</button>";
+        html += "  <button class='btn btn-sm btn-outline-warning' onclick='window.deleteNode(\"" + key + "\") '" + disabledAttr + "><i class='fa fa-trash'></i> Delete</button>";
         html += "<br />";
-        html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
-        html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
+        html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'" + disabledAttr + "><i class='fa fa-pencil'></i></button><br />";
+        html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'" + disabledAttr + "><i class='fa fa-pencil'></i></button><br />";
         html += "Virtual: " + (isVirtual ? "<span class='badge bg-secondary'><i class='fa fa-ghost'></i> Yes</span>" : "<span class='badge bg-light text-dark'>No</span>") +
-            " <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.toggleVirtualNode(\"" + key + "\")'><i class='fa " + (isVirtual ? "fa-toggle-on" : "fa-toggle-off") + "'></i> Toggle</button><br />";
+            " <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.toggleVirtualNode(\"" + key + "\")'" + disabledAttr + "><i class='fa " + (isVirtual ? "fa-toggle-on" : "fa-toggle-off") + "'></i> Toggle</button><br />";
         let num_children = 0;
-        for (let i=0; i<shaped_devices.length; i++) {
-            if (shaped_devices[i].parent_node === key) {
+        for (let i=0; i<devices.length; i++) {
+            if (devices[i].parent_node === key) {
                 num_children++;
             }
         }
@@ -524,17 +564,22 @@ function RenderNetworkJson() {
 }
 
 function flattenNetwork() {
+    if (topology_editor_locked) return;
     if (confirm("Are you sure you wish to flatten your network? All topology will be removed, giving a flat network. All Shaped Devices will be reparented to the single node.")) {
         network_json = {};
         RenderNetworkJson();
-        for (let i=0; i<shaped_devices.length; i++) {
-            shaped_devices[i].parent_node = "";
+        if (Array.isArray(shaped_devices)) {
+            for (let i=0; i<shaped_devices.length; i++) {
+                shaped_devices[i].parent_node = "";
+            }
+            shaped_devices_dirty = true;
+            shapedDevices();
         }
-        shapedDevices();
     }
 }
 
 function addNetworkNode() {
+    if (topology_editor_locked) return;
     let newName = $("#njsNewNodeName").val();
     let newDown = parseFloat($("#njsNewNodeDown").val());
     let newUp = parseFloat($("#njsNewNodeUp").val());
@@ -550,6 +595,7 @@ function addNetworkNode() {
 }
 
 function promoteNode(nodeId) {
+    if (topology_editor_locked) return;
     console.log("Promoting ", nodeId);
     let previousParent = null;
 
@@ -575,6 +621,7 @@ function promoteNode(nodeId) {
 }
 
 function nodeSpeedChange(nodeId, direction) {
+    if (topology_editor_locked) return;
     let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
     newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
@@ -609,6 +656,7 @@ function nodeSpeedChange(nodeId, direction) {
 }
 
 function toggleVirtualNode(nodeId) {
+    if (topology_editor_locked) return;
     function iterate(tree) {
         for (const [key, value] of Object.entries(tree)) {
             if (key === nodeId) {
@@ -625,6 +673,7 @@ function toggleVirtualNode(nodeId) {
 }
 
 function deleteNode(nodeId) {
+    if (topology_editor_locked) return;
     if (!confirm("Are you sure you want to delete " + nodeId + "? All child nodes will also be deleted.")) {
         return;
     }
@@ -665,6 +714,11 @@ function deleteNode(nodeId) {
     // Now we have a list in deleteList of all the nodes that were deleted
     // We need to go through ShapedDevices and re-parent devices
     console.log(deleteParent);
+    if (!Array.isArray(shaped_devices)) {
+        RenderNetworkJson();
+        return;
+    }
+
     if (deleteParent == null) {
         // We deleted something at the top of the tree, so there's no
         // natural parent! So we'll set them to be at the root. That's
@@ -688,12 +742,17 @@ function deleteNode(nodeId) {
     }
 
     // Update the display
+    shaped_devices_dirty = true;
     RenderNetworkJson();
     shapedDevices();
 }
 
 function renameNode(nodeId) {
+    if (topology_editor_locked) return;
     let newName = prompt("New node name?");
+    if (!newName || newName.length === 0) {
+        return;
+    }
 
     function iterate(tree, depth) {
         for (const [key, value] of Object.entries(tree)) {
@@ -713,13 +772,18 @@ function renameNode(nodeId) {
 
     iterate(network_json);
 
-    for (let i=0; i<shaped_devices.length; i++) {
-        let sd = shaped_devices[i];
-        if (sd.parent_node === nodeId) sd.parent_node = newName;
+    if (Array.isArray(shaped_devices)) {
+        for (let i=0; i<shaped_devices.length; i++) {
+            let sd = shaped_devices[i];
+            if (sd.parent_node === nodeId) sd.parent_node = newName;
+        }
+        shaped_devices_dirty = true;
     }
 
     RenderNetworkJson();
-    shapedDevices();
+    if (Array.isArray(shaped_devices)) {
+        shapedDevices();
+    }
 }
 
 function rowPrefix(rowId, boxId) {
@@ -728,16 +792,17 @@ function rowPrefix(rowId, boxId) {
 
 function makeSheetBox(rowId, boxId, value, small=false) {
     let html = "";
+    const disabled = topologyEditDisabledAttr();
     if (!small) {
-        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\"></input></td>"
+        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\"" + disabled + "></input></td>"
     } else {
-        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'></input></td>"
+        html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'" + disabled + "></input></td>"
     }
     return html;
 }
 
 function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" step=\"any\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" step=\"any\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'" + topologyEditDisabledAttr() + "></input></td>"
     return html;
 }
 
@@ -753,14 +818,14 @@ function separatedIpArray(rowId, boxId, value) {
     if (val.length > 0) {
         val = val.substring(0, val.length-2);
     }
-    html += "<input id='" + rowPrefix(rowId, boxId) + "' type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'></input>";
+    html += "<input id='" + rowPrefix(rowId, boxId) + "' type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'" + topologyEditDisabledAttr() + "></input>";
     html += "</td>";
     return html;
 }
 
 function nodeDropDown(rowId, boxId, selectedNode) {
     let html = "<td style='padding: 0px'>";
-    html += "<select id='" + rowPrefix(rowId, boxId) + "' style='font-size: 8pt; width: 150px;'>";
+    html += "<select id='" + rowPrefix(rowId, boxId) + "' style='font-size: 8pt; width: 150px;'" + topologyEditDisabledAttr() + ">";
 
     function iterate(data, level) {
         let html = "";
@@ -800,7 +865,70 @@ function validNodeList() {
     return nodes;
 }
 
+function renderShapedDevicesPlaceholder(message, tone="secondary") {
+    $("#shapedDeviceTable").html(
+        "<div class='alert alert-" + tone + " mb-0'>" + message + "</div>",
+    );
+}
+
+function setShapedDevicesControlsEnabled(enabled) {
+    $("#btnAddShapedDeviceRow").prop("disabled", !enabled || topology_editor_locked);
+}
+
+function ensureShapedDevicesLoaded(onReady) {
+    if (shaped_devices_loaded) {
+        if (onReady) onReady();
+        return;
+    }
+    if (shaped_devices_loading) {
+        if (onReady) {
+            const waitForLoad = () => {
+                if (shaped_devices_loaded) {
+                    onReady();
+                } else if (shaped_devices_loading) {
+                    window.setTimeout(waitForLoad, 100);
+                }
+            };
+            waitForLoad();
+        }
+        return;
+    }
+
+    shaped_devices_loading = true;
+    setShapedDevicesControlsEnabled(false);
+    renderShapedDevicesPlaceholder(
+        "<div class='d-flex align-items-center gap-2'><div class='spinner-border spinner-border-sm' role='status' aria-hidden='true'></div><span>Loading shaped devices...</span></div>",
+        "info",
+    );
+    loadAllShapedDevices(
+        (data) => {
+            shaped_devices = data;
+            shaped_devices_loaded = true;
+            shaped_devices_loading = false;
+            shaped_devices_dirty = false;
+            setShapedDevicesControlsEnabled(true);
+            shapedDevices();
+            RenderNetworkJson();
+            applyTopologyEditorLockState();
+            if (onReady) onReady();
+        },
+        () => {
+            shaped_devices_loading = false;
+            setShapedDevicesControlsEnabled(false);
+            renderShapedDevicesPlaceholder("Unable to load shaped devices.", "danger");
+            applyTopologyEditorLockState();
+        },
+    );
+}
+
 function newSdRow() {
+    if (topology_editor_locked) return;
+    if (!shaped_devices_loaded) {
+        ensureShapedDevicesLoaded(() => {
+            newSdRow();
+        });
+        return;
+    }
     shaped_devices.unshift({
         circuit_id: "new_circuit",
         circuit_name: "new circuit",
@@ -815,11 +943,17 @@ function newSdRow() {
         upload_max_mbps: 100,
         comment: "",
     });
+    shaped_devices_dirty = true;
     shapedDevices();
 }
 
 function deleteSdRow(id) {
+    if (topology_editor_locked) return;
+    if (!shaped_devices_loaded) {
+        return;
+    }
     shaped_devices.splice(id, 1);
+    shaped_devices_dirty = true;
     shapedDevices();
 }
 
@@ -1127,6 +1261,29 @@ function ipAddressesToTuple(ip) {
 }
 
 function saveNetAndDevices() {
+    if (topology_editor_locked) {
+        alert(topology_editor_lock_message);
+        return;
+    }
+    if (!shaped_devices_loaded || !shaped_devices_dirty) {
+        sendWsRequest(
+            "UpdateNetworkJsonOnlyResult",
+            { UpdateNetworkJsonOnly: { network_json: network_json } },
+            (msg) => {
+                if (msg && msg.ok) {
+                    alert("Configuration saved");
+                } else {
+                    const message = msg && msg.message ? msg.message : "Error";
+                    alert("Configuration not saved: " + message);
+                }
+            },
+            () => {
+                alert("Configuration not saved: Error");
+            },
+        );
+        return;
+    }
+
     let isValid = validateSd().valid;
     if (!isValid) {
         alert("Validation errors in ShapedDevices. Not Saving");
@@ -1162,6 +1319,7 @@ function saveNetAndDevices() {
         { UpdateNetworkAndDevices: submission },
         (msg) => {
             if (msg && msg.ok) {
+                shaped_devices_dirty = false;
                 alert("Configuration saved");
             } else {
                 const message = msg && msg.message ? msg.message : "Error";
@@ -1175,6 +1333,10 @@ function saveNetAndDevices() {
 }
 
 function shapedDevices() {
+    if (!shaped_devices_loaded) {
+        renderShapedDevicesPlaceholder("Open the Shaped Devices tab to load and edit device rows.");
+        return;
+    }
     let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
     html += "<thead style='position: sticky; top: 0; height: 50px; background: navy; color: white;'>";
     html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
@@ -1195,7 +1357,7 @@ function shapedDevices() {
         html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
         html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
         html += makeSheetBox(i, "comment", row.comment, true);
-        html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
+        html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'" + topologyEditDisabledAttr() + "><i class='fa fa-trash'></i></button></td>";
 
         html += "</tr>";
     }
@@ -1301,6 +1463,15 @@ function start() {
     window.nodeSpeedChange = nodeSpeedChange;
     window.toggleVirtualNode = toggleVirtualNode;
     window.deleteSdRow = deleteSdRow;
+    renderShapedDevicesPlaceholder("Open the Shaped Devices tab to load and edit device rows.");
+    $("#v-pills-shapeddevs-tab").on("shown.bs.tab", () => {
+        ensureShapedDevicesLoaded();
+    });
+    $("#shapedDeviceTable").on("input change", "input, select, textarea", () => {
+        if (shaped_devices_loaded) {
+            shaped_devices_dirty = true;
+        }
+    });
 
     // Old
     display();
@@ -1327,6 +1498,13 @@ function start() {
                 { GetConfig: {} },
                 (cfgMsg) => {
                     lqosd_config = ensureSplynxSection(cfgMsg.data);
+                    topology_editor_locked = topologyEditorsLocked(lqosd_config);
+                    topology_editor_lock_message = topologyEditorsLockMessage(lqosd_config);
+                    const activeIntegrations = activeTopologySourceIntegrations(lqosd_config);
+                    if (!topology_editor_lock_message && activeIntegrations.length > 0) {
+                        topology_editor_lock_message = `Editing is disabled because these integrations are the source of truth: ${activeIntegrations.join(", ")}.`;
+                    }
+                    applyTopologyEditorLockState();
                     console.log("Bindings Done");
                     sendWsRequest(
                         "ListNics",
@@ -1352,18 +1530,9 @@ function start() {
                                         { NetworkJson: {} },
                                         (netMsg) => {
                                             network_json = netMsg.data;
-                                            sendWsRequest(
-                                                "AllShapedDevices",
-                                                { AllShapedDevices: {} },
-                                                (sdMsg) => {
-                                                    shaped_devices = sdMsg.data;
-                                                    shapedDevices();
-                                                    RenderNetworkJson();
-                                                },
-                                                () => {
-                                                    alert("Unable to load shaped devices");
-                                                },
-                                            );
+                                            shapedDevices();
+                                            RenderNetworkJson();
+                                            applyTopologyEditorLockState();
                                         },
                                         () => {
                                             alert("Unable to load network.json");

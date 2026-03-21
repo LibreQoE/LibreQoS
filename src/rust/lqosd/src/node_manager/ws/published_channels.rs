@@ -39,6 +39,7 @@ pub enum PublishedChannels {
     TreeSummaryL2,
     QueueStatsTotal,
     NetworkTree,
+    NetworkTreeLite,
     NetworkTreeClients,
     CircuitCapacity,
     TreeCapacity,
@@ -50,5 +51,5 @@ pub enum PublishedChannels {
     EndpointLatLon,
     AsnTopDownload,
     AsnTopUpload,
-    ExecutiveHeatmaps,
+    ExecutiveDashboardSummary,
 }

@@ -29,8 +29,11 @@ La mayoría de cambios operativos diarios se realizan en la WebUI (`http://tu_ip
 
 - Ajustes generales: `Configuration -> General`
 - Ajustes de integración: `Configuration -> Integrations`
+- Editor de layout de red: `Configuration -> Network Layout`
 - Editor de dispositivos regulados: `Configuration -> Shaped Devices`
 - Validación operativa: páginas de `WebUI (Node Manager)` (dashboard/tree/flow/scheduler)
+
+Cuando una integración está habilitada y actúa como fuente de verdad, los editores `Network Layout` y `Shaped Devices` siguen siendo visibles pero pasan a modo de solo lectura en la WebUI.
 
 ## Modos de operación y fuente de verdad
 

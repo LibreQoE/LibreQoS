@@ -619,6 +619,246 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 .lqos-circuit-activity-kpi-value.is-active {
     color: #3fd279;
 }
+.lqos-cake-panel {
+    margin-top: 1rem;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
+    border-radius: var(--lqos-radius-md);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--lqos-surface-2) 88%, transparent) 0%,
+        var(--lqos-surface-solid) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 12px 24px rgba(6, 12, 20, 0.12);
+    padding: 0.95rem;
+}
+.lqos-cake-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+.lqos-cake-header-copy {
+    min-width: 0;
+}
+.lqos-cake-header-copy h5 {
+    margin-bottom: 0.25rem;
+}
+.lqos-cake-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.lqos-cake-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 84%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+    color: var(--bs-secondary-color);
+    font-size: 0.76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lqos-cake-chart-panel {
+    height: 100%;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 66%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.35rem;
+}
+.lqos-cake-chart-panel.is-primary {
+    background: color-mix(in srgb, var(--lqos-surface-2) 78%, transparent);
+}
+.lqos-cake-info-card {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 62%, transparent);
+    padding: 0.8rem 0.9rem;
+}
+.lqos-cake-info-label {
+    color: var(--bs-secondary-color);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 0.28rem;
+}
+.lqos-cake-info-value {
+    color: var(--bs-emphasis-color);
+    font-size: 0.96rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+.lqos-funnel-panel {
+    margin-top: 1rem;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
+    border-radius: var(--lqos-radius-md);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--lqos-surface-2) 88%, transparent) 0%,
+        var(--lqos-surface-solid) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 12px 24px rgba(6, 12, 20, 0.12);
+    padding: 0.95rem;
+}
+.lqos-funnel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+.lqos-funnel-header-copy {
+    min-width: 0;
+}
+.lqos-funnel-header-copy h5 {
+    margin-bottom: 0.25rem;
+}
+.lqos-funnel-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.lqos-funnel-meta-pill,
+.lqos-funnel-path-pill,
+.lqos-funnel-node-step {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 84%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+    color: var(--bs-secondary-color);
+    font-size: 0.76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lqos-funnel-stack {
+    display: grid;
+    gap: 0.95rem;
+}
+.lqos-funnel-path-card,
+.lqos-funnel-node-card,
+.lqos-funnel-empty-state {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 64%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.lqos-funnel-path-card {
+    padding: 0.9rem;
+}
+.lqos-funnel-path-top,
+.lqos-funnel-node-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.85rem;
+}
+.lqos-funnel-path-title {
+    color: var(--bs-emphasis-color);
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+.lqos-funnel-path-meta,
+.lqos-funnel-node-badges {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+.lqos-funnel-path-chain {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0.72rem 0 0.55rem;
+}
+.lqos-funnel-path-node {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.34rem 0.78rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 82%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface) 86%, transparent);
+    color: var(--bs-emphasis-color);
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+.lqos-funnel-path-node.is-origin {
+    background: color-mix(in srgb, #198754 18%, var(--lqos-surface) 82%);
+    border-color: color-mix(in srgb, #198754 34%, var(--lqos-border));
+}
+.lqos-funnel-path-separator {
+    color: var(--bs-secondary-color);
+    font-size: 0.92rem;
+}
+.lqos-funnel-empty-state {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.05rem;
+    color: var(--bs-secondary-color);
+}
+.lqos-funnel-empty-state i {
+    color: color-mix(in srgb, var(--bs-warning) 70%, var(--bs-secondary-color));
+}
+.lqos-funnel-node-card {
+    padding: 0.9rem;
+}
+.lqos-funnel-node-title h5 {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.25rem;
+}
+.lqos-funnel-node-title h5 .fa {
+    flex: 0 0 auto;
+}
+.lqos-funnel-node-badges .badge {
+    padding: 0.42rem 0.7rem;
+    font-weight: 600;
+}
+.lqos-funnel-node-type {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 82%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface) 84%, transparent);
+    color: var(--bs-emphasis-color);
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lqos-funnel-node-type.is-virtual {
+    background: color-mix(in srgb, #6c757d 22%, var(--lqos-surface) 80%);
+    border-color: color-mix(in srgb, #6c757d 40%, var(--lqos-border));
+}
+.lqos-funnel-chart-panel {
+    height: 100%;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 68%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.35rem;
+}
 @media (max-width: 991.98px) {
     .lqos-circuit-activity-header {
         flex-direction: column;
@@ -632,6 +872,25 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     }
     .lqos-circuit-activity-chart {
         height: 296px;
+    }
+    .lqos-cake-header {
+        flex-direction: column;
+    }
+    .lqos-cake-meta {
+        justify-content: flex-start;
+    }
+    .lqos-cake-info-card {
+        grid-template-columns: 1fr;
+    }
+    .lqos-funnel-header,
+    .lqos-funnel-path-top,
+    .lqos-funnel-node-header {
+        flex-direction: column;
+    }
+    .lqos-funnel-meta,
+    .lqos-funnel-path-meta,
+    .lqos-funnel-node-badges {
+        justify-content: flex-start;
     }
 }
 @media (max-width: 575.98px) {
@@ -647,6 +906,14 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     }
     .lqos-circuit-activity-kpi-value {
         font-size: 1.05rem;
+    }
+    .lqos-cake-panel {
+        padding: 0.8rem;
+    }
+    .lqos-funnel-panel,
+    .lqos-funnel-node-card,
+    .lqos-funnel-path-card {
+        padding: 0.8rem;
     }
 }
 .tiny {

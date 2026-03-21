@@ -19,6 +19,8 @@ const MARINE_AREAS_GEOJSON_PATH = "vendor/site_map_marine_areas.geojson";
 const MAJOR_ROADS_10M_GEOJSON_PATH = "vendor/site_map_major_roads_10m.geojson";
 const INITIAL_CENTER = [-101.5, 39.8];
 const INITIAL_ZOOM = 3.15;
+const INITIAL_FIT_PADDING = 48;
+const INITIAL_FIT_MAX_ZOOM = 8.35;
 const SITE_SOURCE_ID = "site-map-sites";
 const AP_SOURCE_ID = "site-map-aps";
 const COUNTRIES_SOURCE_ID = "site-map-countries";
@@ -888,18 +890,18 @@ class SiteMapPage {
     requestInitialTree() {
         this.setStatus("Waiting for data", "spinner");
         if (!this.subscription) {
-            this.subscription = subscribeWS(["NetworkTree"], (liveMsg) => {
-                if (liveMsg.event === "NetworkTree") {
+            this.subscription = subscribeWS(["NetworkTreeLite"], (liveMsg) => {
+                if (liveMsg.event === "NetworkTreeLite") {
                     this.processTreeMessage(liveMsg);
                 }
             });
         }
-        listenOnceWithTimeout("NetworkTree", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
+        listenOnceWithTimeout("NetworkTreeLite", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
             this.processTreeMessage(msg);
         }, () => {
             this.setStatus("No data received yet", "warning");
         });
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
     }
 
     processTreeMessage(msg) {
@@ -1147,15 +1149,15 @@ class SiteMapPage {
     }
 
     fitToData(siteFeatures, apFeatures) {
-        const features = [...siteFeatures, ...apFeatures];
+        const features = siteFeatures.length > 0 ? [...siteFeatures] : [...apFeatures];
         if (!features.length) {
             return;
         }
         const bounds = new window.maplibregl.LngLatBounds();
         features.forEach((feature) => bounds.extend(feature.geometry.coordinates));
         this.map.fitBounds(bounds, {
-            padding: 70,
-            maxZoom: 7.5,
+            padding: INITIAL_FIT_PADDING,
+            maxZoom: INITIAL_FIT_MAX_ZOOM,
             duration: 0,
         });
         this.hasFitOnce = true;

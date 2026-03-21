@@ -1,6 +1,8 @@
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
+const DEFAULT_EXECUTIVE_REFRESH_MS = 5000;
+
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
         wsClient.off(eventName, wrapped);
@@ -9,12 +11,125 @@ const listenOnce = (eventName, handler) => {
     wsClient.on(eventName, wrapped);
 };
 
-export function listenExecutiveHeatmaps(onData) {
-    subscribeWS(["ExecutiveHeatmaps"], (msg) => {
-        if (msg.event === "ExecutiveHeatmaps") {
+function normalizeEntityKinds(entityKinds) {
+    return [...new Set((entityKinds || []).map((kind) => String(kind)))].sort();
+}
+
+function matchesExecutiveHeatmapQuery(responseQuery, requestQuery) {
+    if (!responseQuery || !requestQuery) return false;
+    return String(responseQuery.metric || "") === String(requestQuery.metric || "")
+        && Number(responseQuery.page ?? 0) === Number(requestQuery.page ?? 0)
+        && Number(responseQuery.page_size ?? 0) === Number(requestQuery.page_size ?? 0)
+        && String(responseQuery.sort || "LatestValue") === String(requestQuery.sort || "LatestValue")
+        && Boolean(responseQuery.descending ?? true) === Boolean(requestQuery.descending ?? true)
+        && String(responseQuery.search || "") === String(requestQuery.search || "")
+        && JSON.stringify(normalizeEntityKinds(responseQuery.entity_kinds)) === JSON.stringify(normalizeEntityKinds(requestQuery.entity_kinds));
+}
+
+function matchesExecutiveLeaderboardQuery(responseQuery, requestQuery) {
+    if (!responseQuery || !requestQuery) return false;
+    return String(responseQuery.kind || "") === String(requestQuery.kind || "")
+        && Number(responseQuery.page ?? 0) === Number(requestQuery.page ?? 0)
+        && Number(responseQuery.page_size ?? 0) === Number(requestQuery.page_size ?? 0)
+        && String(responseQuery.search || "") === String(requestQuery.search || "");
+}
+
+function requestMatchingResponse(eventName, request, matcher, onData, onError = null) {
+    let disposed = false;
+    const cleanup = wsClient.on(eventName, (msg) => {
+        if (disposed) return;
+        const data = msg?.data || {};
+        if (!matcher(data)) return;
+        disposed = true;
+        cleanup();
+        onData(data);
+    });
+    try {
+        wsClient.send(request);
+    } catch (err) {
+        disposed = true;
+        cleanup();
+        if (onError) {
+            onError(err);
+        } else {
+            console.error(err);
+        }
+    }
+    return () => {
+        if (disposed) return;
+        disposed = true;
+        cleanup();
+    };
+}
+
+function pollMatchingResponse(eventName, buildRequest, matcher, onData, intervalMs = DEFAULT_EXECUTIVE_REFRESH_MS) {
+    const handlerDisposer = wsClient.on(eventName, (msg) => {
+        const data = msg?.data || {};
+        if (!matcher(data)) return;
+        onData(data);
+    });
+    const sendRequest = () => {
+        wsClient.send(buildRequest());
+    };
+    sendRequest();
+    const timer = window.setInterval(sendRequest, intervalMs);
+    return {
+        dispose() {
+            window.clearInterval(timer);
+            handlerDisposer();
+        },
+        refresh() {
+            sendRequest();
+        },
+    };
+}
+
+export function listenExecutiveDashboardSummary(onData) {
+    return subscribeWS(["ExecutiveDashboardSummary"], (msg) => {
+        if (msg.event === "ExecutiveDashboardSummary") {
             onData(msg.data || {});
         }
     });
+}
+
+export function requestExecutiveHeatmapPage(query, onData, onError = null) {
+    return requestMatchingResponse(
+        "ExecutiveHeatmapPage",
+        { ExecutiveHeatmapPage: { query } },
+        (data) => matchesExecutiveHeatmapQuery(data.query, query),
+        onData,
+        onError,
+    );
+}
+
+export function pollExecutiveHeatmapPage(query, onData, intervalMs = DEFAULT_EXECUTIVE_REFRESH_MS) {
+    return pollMatchingResponse(
+        "ExecutiveHeatmapPage",
+        () => ({ ExecutiveHeatmapPage: { query } }),
+        (data) => matchesExecutiveHeatmapQuery(data.query, query),
+        onData,
+        intervalMs,
+    );
+}
+
+export function requestExecutiveLeaderboardPage(query, onData, onError = null) {
+    return requestMatchingResponse(
+        "ExecutiveLeaderboardPage",
+        { ExecutiveLeaderboardPage: { query } },
+        (data) => matchesExecutiveLeaderboardQuery(data.query, query),
+        onData,
+        onError,
+    );
+}
+
+export function pollExecutiveLeaderboardPage(query, onData, intervalMs = DEFAULT_EXECUTIVE_REFRESH_MS) {
+    return pollMatchingResponse(
+        "ExecutiveLeaderboardPage",
+        () => ({ ExecutiveLeaderboardPage: { query } }),
+        (data) => matchesExecutiveLeaderboardQuery(data.query, query),
+        onData,
+        intervalMs,
+    );
 }
 
 let siteIdMap = null;
@@ -31,7 +146,7 @@ export function getNodeIdMap() {
             siteIdMap = map;
             resolve(map);
         };
-        listenOnce("NetworkTree", (msg) => {
+        listenOnce("NetworkTreeLite", (msg) => {
             const data = msg && msg.data ? msg.data : [];
             const map = new Map();
             (data || []).forEach((entry) => {
@@ -44,7 +159,7 @@ export function getNodeIdMap() {
             });
             resolveOnce(map);
         });
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
         setTimeout(() => {
             resolveOnce(new Map());
         }, 5000);
@@ -61,6 +176,22 @@ export function linkToCircuit(circuitId) {
     return `circuit.html?id=${encodeURIComponent(circuitId)}`;
 }
 
+export function linkToTreeLocator(locator) {
+    if (!locator) return null;
+    const params = new URLSearchParams();
+    if (locator.parent_index !== undefined && locator.parent_index !== null) {
+        params.set("parent", String(locator.parent_index));
+    }
+    if (locator.node_id) {
+        params.set("nodeId", locator.node_id);
+    }
+    if (Array.isArray(locator.node_path) && locator.node_path.length > 0) {
+        params.set("nodePath", JSON.stringify(locator.node_path));
+    }
+    const query = params.toString();
+    return query ? `tree.html?${query}` : null;
+}
+
 export function linkToSite(siteName, siteIdLookup) {
     if (!siteName || !siteIdLookup) return null;
     const siteId = siteIdLookup.get(siteName);
@@ -73,6 +204,41 @@ export function linkToTreeNode(nodeName, nodeIdLookup) {
     const nodeId = nodeIdLookup.get(nodeName);
     if (nodeId === undefined || nodeId === null) return null;
     return `tree.html?parent=${encodeURIComponent(nodeId)}`;
+}
+
+export function badgeForEntityKind(entityKind) {
+    switch (String(entityKind || "")) {
+    case "Site":
+        return "Site";
+    case "Circuit":
+        return "Circuit";
+    case "Asn":
+        return "ASN";
+    default:
+        return "";
+    }
+}
+
+export function linkToExecutiveMetricRow(row) {
+    if (!row) return null;
+    if (row.circuit_id) {
+        return linkToCircuit(row.circuit_id);
+    }
+    return linkToTreeLocator(row.tree);
+}
+
+export function linkToExecutiveLeaderboardRow(row) {
+    if (!row || !row.kind) return null;
+    switch (row.kind) {
+    case "WorstSiteByRtt":
+    case "OversubscribedSite":
+    case "SiteDueUpgrade":
+        return linkToTreeLocator(row.tree);
+    case "CircuitDueUpgrade":
+        return linkToCircuit(row.circuit_id);
+    default:
+        return null;
+    }
 }
 
 export function renderCircuitLink(name, circuitId) {

@@ -171,8 +171,8 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 12;
-        this.circuitNameById = new Map();
         this.nodeIdByName = new Map();
+        this.lastEntries = [];
     }
 
     title() {
@@ -189,37 +189,21 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
 
     setup() {
         const wsClient = get_ws_client();
-        const shapedWrapped = (msg) => {
-            wsClient.off("AllShapedDevices", shapedWrapped);
-            const devices = msg && Array.isArray(msg.data) ? msg.data : [];
-            devices.forEach((d) => {
-                const id = (d && d.circuit_id ? String(d.circuit_id) : "").trim();
-                const name = (d && d.circuit_name ? String(d.circuit_name) : "").trim();
-                if (!id || !name) return;
-                if (!this.circuitNameById.has(id)) {
-                    this.circuitNameById.set(id, name);
-                }
-            });
-        };
-        wsClient.on("AllShapedDevices", shapedWrapped);
-        wsClient.send({ AllShapedDevices: {} });
-
-        const treeWrapped = (msg) => {
-            wsClient.off("NetworkTree", treeWrapped);
+        const nodeWrapped = (msg) => {
+            wsClient.off("NodeDirectory", nodeWrapped);
             const data = msg && Array.isArray(msg.data) ? msg.data : [];
             data.forEach((entry) => {
-                if (!Array.isArray(entry) || entry.length < 2) return;
-                const id = entry[0];
-                const node = entry[1];
-                const name = (node && node.name ? String(node.name) : "").trim();
+                const id = entry?.tree_index;
+                const name = (entry?.node_name ?? "").trim();
                 if (!name) return;
                 if (!this.nodeIdByName.has(name)) {
                     this.nodeIdByName.set(name, id);
                 }
             });
+            this.rerenderWithMetadata();
         };
-        wsClient.on("NetworkTree", treeWrapped);
-        wsClient.send({ NetworkTree: {} });
+        wsClient.on("NodeDirectory", nodeWrapped);
+        wsClient.send({ NodeDirectory: {} });
     }
 
     buildContainer() {
@@ -258,6 +242,17 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         }
 
         const entries = Array.isArray(msg.data) ? msg.data : [];
+        this.lastEntries = entries;
+        this.renderEntries(entries);
+    }
+
+    rerenderWithMetadata() {
+        if (this.lastEntries.length > 0) {
+            this.renderEntries(this.lastEntries);
+        }
+    }
+
+    renderEntries(entries) {
         this.tbody.innerHTML = "";
 
         if (entries.length === 0) {
@@ -303,13 +298,6 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
                 const circuitId = parsed.circuitId;
                 let display = parsed.display;
                 let title = parsed.hasName ? circuitId : "";
-                if (!parsed.hasName && circuitId) {
-                    const name = this.circuitNameById.get(circuitId);
-                    if (name) {
-                        display = name;
-                        title = circuitId;
-                    }
-                }
                 tdEntity.appendChild(
                     mkLink(`circuit.html?id=${encodeURIComponent(circuitId)}`, display, title),
                 );

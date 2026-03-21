@@ -18,7 +18,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     canBeSlowedDown() { return true; }
     title() { return "Network Snapshot"; }
     tooltip() { return "Headline health metrics for the executive view."; }
-    subscribeTo() { return ["ExecutiveHeatmaps", "Throughput"]; }
+    subscribeTo() { return ["ExecutiveDashboardSummary", "Throughput"]; }
 
     buildContainer() {
         const container = super.buildContainer();
@@ -36,14 +36,14 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     setup() {
-        if (window.executiveHeatmapData) {
+        if (window.executiveDashboardSummary) {
             this.render();
         }
     }
 
     onMessage(msg) {
-        if (msg.event === "ExecutiveHeatmaps") {
-            window.executiveHeatmapData = msg.data;
+        if (msg.event === "ExecutiveDashboardSummary") {
+            window.executiveDashboardSummary = msg.data;
             this.render();
             return;
         }
@@ -54,7 +54,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     render() {
-        const header = window.executiveHeatmapData?.header;
+        const header = window.executiveDashboardSummary?.header;
         const target = document.getElementById(this._contentId);
         if (!target) return;
         if (!header) {
@@ -90,6 +90,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         const items = [
             { label: "HTB", value: formatCount(header.htb_queue_count) },
             { label: "CAKE", value: formatCount(header.cake_queue_count) },
+            { label: "fq-codel", value: formatCount(header.fq_codel_queue_count) },
         ];
         return this.groupCard("Queues", "fa-stream", "text-secondary", items, false, true);
     }

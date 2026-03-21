@@ -2,15 +2,26 @@ use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::node_manager::WarningLevel;
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
+use crate::node_manager::local_api::directories::{
+    CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry, TreeGuardMetadataSummary,
+};
+use crate::node_manager::local_api::executive::{
+    ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
+    ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
+};
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
 };
+use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
+use crate::node_manager::local_api::shaped_devices_page::{ShapedDevicesPage, ShapedDevicesPageQuery};
+use crate::node_manager::local_api::tree_attached_circuits::{TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery};
 use crate::node_manager::local_api::unknown_ips::{ClearUnknownIpsResponse, UnknownIp};
 use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
 use crate::node_manager::local_api::{
+    circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
     circuit_count::CircuitCount,
     cpu_affinity::{
         CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySiteTreeNode, CpuAffinitySummaryEntry,
@@ -31,13 +42,10 @@ use crate::throughput_tracker::flow_data::{
 };
 use crate::throughput_tracker::flow_data::{FlowAnalysis, FlowbeeLocalData};
 use lqos_bus::{
-    AsnHeatmapData, Circuit, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeSummaryData,
-    QueueStoreTransit, SiteHeatmapData, StormguardDebugEntry,
+    Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry,
 };
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
-use lqos_utils::qoq_heatmap::QoqHeatmapBlocks;
-use lqos_utils::temporal_heatmap::HeatmapBlocks;
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -65,6 +73,10 @@ pub enum PrivateRequest {
     CakeWatcher { circuit: String },
     Chatbot { browser_ts_ms: Option<f64> },
     ChatbotUserInput { text: String },
+    WatchTreeAttachedCircuits { query: TreeAttachedCircuitsQuery },
+    StopTreeAttachedCircuitsWatch,
+    WatchCircuitMetrics { query: CircuitMetricsQuery },
+    StopCircuitMetricsWatch,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -93,7 +105,17 @@ pub enum WsRequest {
     SchedulerDetails,
     DeviceCount,
     DevicesAll,
+    ShapedDevicesPage {
+        query: ShapedDevicesPageQuery,
+    },
+    ExecutiveHeatmapPage {
+        query: ExecutiveHeatmapPageQuery,
+    },
+    ExecutiveLeaderboardPage {
+        query: ExecutiveLeaderboardPageQuery,
+    },
     NetworkTree,
+    NetworkTreeLite,
     FlowMap,
     GlobalWarnings,
     Search {
@@ -143,6 +165,9 @@ pub enum WsRequest {
     UpdateConfig {
         config: Config,
     },
+    UpdateNetworkJsonOnly {
+        network_json: Value,
+    },
     UpdateNetworkAndDevices {
         network_json: Value,
         shaped_devices: Vec<ShapedDevice>,
@@ -159,6 +184,24 @@ pub enum WsRequest {
     ListNics,
     NetworkJson,
     AllShapedDevices,
+    GetShapedDevice {
+        device_id: String,
+    },
+    CreateShapedDevice {
+        device: ShapedDevice,
+    },
+    UpdateShapedDevice {
+        original_device_id: String,
+        device: ShapedDevice,
+    },
+    DeleteShapedDevice {
+        device_id: String,
+    },
+    CircuitDirectoryPage {
+        query: CircuitDirectoryQuery,
+    },
+    NodeDirectory,
+    TreeGuardMetadataSummary,
     GetUsers,
     AddUser {
         username: String,
@@ -335,29 +378,6 @@ pub struct NodeCapacity {
 }
 
 #[derive(Debug, Serialize)]
-pub struct OversubscribedSite {
-    pub site_name: String,
-    pub cap_down: f32,
-    pub cap_up: f32,
-    pub sub_down: f32,
-    pub sub_up: f32,
-    pub ratio_down: Option<f32>,
-    pub ratio_up: Option<f32>,
-    pub ratio_max: Option<f32>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ExecutiveHeatmapsData {
-    pub header: ExecutiveSummaryHeader,
-    pub global: HeatmapBlocks,
-    pub global_qoq: QoqHeatmapBlocks,
-    pub circuits: Vec<CircuitHeatmapData>,
-    pub sites: Vec<SiteHeatmapData>,
-    pub asns: Vec<AsnHeatmapData>,
-    pub oversubscribed_sites: Vec<OversubscribedSite>,
-}
-
-#[derive(Debug, Serialize)]
 pub struct FlowbeeKeyTransit {
     pub remote_ip: String,
     pub local_ip: String,
@@ -463,9 +483,42 @@ pub enum WsResponse {
         ok: bool,
         message: String,
     },
+    UpdateNetworkJsonOnlyResult {
+        ok: bool,
+        message: String,
+    },
     UpdateNetworkAndDevicesResult {
         ok: bool,
         message: String,
+    },
+    GetShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    CreateShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    UpdateShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    DeleteShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device_id: String,
+    },
+    CircuitDirectoryPage {
+        data: CircuitDirectoryPage,
+    },
+    NodeDirectory {
+        data: Vec<NodeDirectoryEntry>,
+    },
+    TreeGuardMetadataSummary {
+        data: TreeGuardMetadataSummary,
     },
     GetNodeRateOverride {
         data: NodeRateOverrideData,
@@ -553,6 +606,18 @@ pub enum WsResponse {
     },
     DevicesAll {
         data: Vec<ShapedDevice>,
+    },
+    ShapedDevicesPage {
+        data: ShapedDevicesPage,
+    },
+    ExecutiveDashboardSummary {
+        data: ExecutiveDashboardSummary,
+    },
+    ExecutiveHeatmapPage {
+        data: ExecutiveHeatmapPage,
+    },
+    ExecutiveLeaderboardPage {
+        data: ExecutiveLeaderboardPage,
     },
     FlowMap {
         data: Vec<(f64, f64, String, u64, f32)>,
@@ -667,8 +732,23 @@ pub enum WsResponse {
     NetworkTree {
         data: Vec<(usize, NetworkJsonTransport)>,
     },
+    NetworkTreeLite {
+        data: Vec<(usize, NetworkTreeLiteNode)>,
+    },
     NetworkTreeClients {
         data: Vec<Circuit>,
+    },
+    TreeAttachedCircuitsSnapshot {
+        data: TreeAttachedCircuitsPage,
+    },
+    TreeAttachedCircuitsUpdate {
+        data: TreeAttachedCircuitsPage,
+    },
+    CircuitMetricsSnapshot {
+        data: Vec<CircuitLiveMetrics>,
+    },
+    CircuitMetricsUpdate {
+        data: Vec<CircuitLiveMetrics>,
     },
     QueueStatsTotal {
         marks: DownUpOrder<u64>,
@@ -703,9 +783,6 @@ pub enum WsResponse {
     },
     TreeGuardActivity {
         data: Vec<TreeguardActivityEntry>,
-    },
-    ExecutiveHeatmaps {
-        data: ExecutiveHeatmapsData,
     },
     CircuitWatcher {
         circuit_id: String,

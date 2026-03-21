@@ -61,7 +61,12 @@ export class ShaperChildrenDown extends BaseDashlet {
     tooltip(){ return "<h5>Child Throughput</h5><p>Top child nodes by download throughput."; }
     subscribeTo(){ return ["TreeSummary", "TreeSummaryL2"]; }
     buildContainer(){ let b = super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
-    setup(){ this.graph = new ChildrenSankeyGraph(this.graphDivId(), 'down'); if (this.last) this.graph.update(this.last); }
+    setup(){
+        this.traceRender("setup-start");
+        this.graph = new ChildrenSankeyGraph(this.graphDivId(), 'down');
+        this.traceRender("setup-complete", { graphId: this.graphDivId() });
+        if (this.last) this.graph.update(this.last);
+    }
     _showEmpty(show, msg = "No recent data"){
         const card = document.getElementById(this.id);
         if (!card) return;
@@ -144,8 +149,15 @@ export class ShaperChildrenDown extends BaseDashlet {
 
         this._showEmpty(!hasData);
         if (hasData) {
-            this.graph.update({ nodes, links });
-            return true;
+            this.traceRender("onMessage", { eventName: "TreeSummaryL2", nodeCount: nodes.length, linkCount: links.length });
+            try {
+                this.graph.update({ nodes, links });
+                this.traceRender("update-ok", { eventName: "TreeSummaryL2", nodeCount: nodes.length, linkCount: links.length });
+                return true;
+            } catch (err) {
+                this.traceRender("update-error", { eventName: "TreeSummaryL2", error: err && err.message ? err.message : String(err) });
+                throw err;
+            }
         }
         return false;
     }
@@ -177,7 +189,14 @@ export class ShaperChildrenDown extends BaseDashlet {
         this._showEmpty(!hasData);
         if (hasData) {
             this.last = rows;
-            this.graph.update(rows);
+            this.traceRender("onMessage", { eventName: msg.event, rowCount: rows.length });
+            try {
+                this.graph.update(rows);
+                this.traceRender("update-ok", { eventName: msg.event, rowCount: rows.length });
+            } catch (err) {
+                this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
+                throw err;
+            }
         }
     }
 }

@@ -293,7 +293,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
         this.pending = true;
 
         const self = this;
-        this.pendingCancel = listenOnceWithTimeout("NetworkTree", REQUEST_TIMEOUT_MS, (msg) => {
+        this.pendingCancel = listenOnceWithTimeout("NetworkTreeLite", REQUEST_TIMEOUT_MS, (msg) => {
             self.pending = false;
             self.pendingCancel = null;
 
@@ -312,12 +312,12 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 return;
             }
             if (sankeyOverlay) {
-                sankeyOverlay.show("Waiting for data", "No NetworkTree websocket response received yet.");
+                sankeyOverlay.show("Waiting for data", "No NetworkTreeLite websocket response received yet.");
             }
             graph.update([], []);
         });
 
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
     }
 
     rerender(graph) {

@@ -494,6 +494,82 @@ function resolveFunnelState(msg, parentNode) {
     };
 }
 
+function buildFunnelPathCard(state, displayParents) {
+    const pathCard = document.createElement("div");
+    pathCard.classList.add("lqos-funnel-path-card");
+
+    const topRow = document.createElement("div");
+    topRow.classList.add("lqos-funnel-path-top");
+
+    const title = document.createElement("div");
+    title.classList.add("lqos-funnel-path-title");
+    title.textContent = "Queue Path";
+    topRow.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.classList.add("lqos-funnel-path-meta");
+
+    const parentPill = document.createElement("span");
+    parentPill.classList.add("lqos-funnel-path-pill");
+    parentPill.textContent = "Circuit parent";
+    meta.appendChild(parentPill);
+
+    const countPill = document.createElement("span");
+    countPill.classList.add("lqos-funnel-path-pill");
+    countPill.textContent = `${displayParents.length} upstream node${displayParents.length === 1 ? "" : "s"}`;
+    meta.appendChild(countPill);
+
+    topRow.appendChild(meta);
+    pathCard.appendChild(topRow);
+
+    const chain = document.createElement("div");
+    chain.classList.add("lqos-funnel-path-chain");
+
+    const origin = document.createElement("span");
+    origin.classList.add("lqos-funnel-path-node", "is-origin", "redactable");
+    origin.textContent = state.immediateParent.name || "Unknown";
+    chain.appendChild(origin);
+
+    displayParents.forEach(({ node }) => {
+        const separator = document.createElement("span");
+        separator.classList.add("lqos-funnel-path-separator");
+        separator.textContent = "→";
+        chain.appendChild(separator);
+
+        const ancestor = document.createElement("span");
+        ancestor.classList.add("lqos-funnel-path-node", "redactable");
+        ancestor.textContent = node.name || "Unknown";
+        chain.appendChild(ancestor);
+    });
+
+    pathCard.appendChild(chain);
+
+    const note = document.createElement("p");
+    note.classList.add("text-muted", "small", "mb-0");
+    note.textContent =
+        displayParents.length > 0
+            ? "Live upstream queue ancestors for this circuit, shown with the same order used below."
+            : "This circuit parent does not currently have additional upstream queue ancestors.";
+    pathCard.appendChild(note);
+
+    return pathCard;
+}
+
+function buildFunnelEmptyState(message) {
+    const empty = document.createElement("div");
+    empty.classList.add("lqos-funnel-empty-state");
+
+    const icon = document.createElement("i");
+    icon.classList.add("fa", "fa-circle-info");
+    empty.appendChild(icon);
+
+    const text = document.createElement("span");
+    text.textContent = message;
+    empty.appendChild(text);
+
+    return empty;
+}
+
 function renderFunnel(state) {
     const target = document.getElementById("theFunnel");
     if (!target) {
@@ -505,51 +581,106 @@ function renderFunnel(state) {
         funnelParents = [];
         funnelParentSignature = [];
         clearDiv(target);
-        target.appendChild(document.createTextNode("No parent node found"));
+        target.appendChild(buildFunnelEmptyState("No parent node found for this circuit."));
         return;
     }
 
-    const parentIndexes = [...state.parentIndexes].reverse();
-    let parentDiv = document.createElement("div");
-    parentIndexes.forEach((parent) => {
-        const node = state.data[parent] && state.data[parent][1] ? state.data[parent][1] : null;
-        if (!node) {
-            return;
+    const displayParents = [...state.parentIndexes]
+        .reverse()
+        .map((parent, index) => {
+            const node = state.data[parent] && state.data[parent][1] ? state.data[parent][1] : null;
+            if (!node) {
+                return null;
+            }
+            return {
+                parent,
+                node,
+                position: index + 1,
+            };
+        })
+        .filter(Boolean);
+
+    const parentDiv = document.createElement("div");
+    parentDiv.classList.add("lqos-funnel-stack");
+    parentDiv.appendChild(buildFunnelPathCard(state, displayParents));
+
+    if (displayParents.length === 0) {
+        parentDiv.appendChild(buildFunnelEmptyState("No upstream queue ancestors are currently available beyond the circuit parent."));
+    }
+
+    displayParents.forEach(({ parent, node, position }) => {
+        const card = document.createElement("section");
+        card.classList.add("lqos-funnel-node-card");
+
+        const header = document.createElement("div");
+        header.classList.add("lqos-funnel-node-header");
+
+        const titleWrap = document.createElement("div");
+        titleWrap.classList.add("lqos-funnel-node-title");
+
+        const heading = document.createElement("h5");
+        const icon = document.createElement("i");
+        icon.classList.add("fa", "fa-sitemap");
+        heading.appendChild(icon);
+
+        const name = document.createElement("span");
+        name.classList.add("redactable");
+        name.textContent = node.name || "Unknown";
+        heading.appendChild(name);
+        titleWrap.appendChild(heading);
+
+        const subtitle = document.createElement("p");
+        subtitle.classList.add("text-muted", "small", "mb-0");
+        subtitle.textContent = "Live queue telemetry for this upstream node.";
+        titleWrap.appendChild(subtitle);
+
+        header.appendChild(titleWrap);
+
+        const badges = document.createElement("div");
+        badges.classList.add("lqos-funnel-node-badges");
+
+        const typeBadge = document.createElement("span");
+        typeBadge.classList.add("lqos-funnel-node-type");
+        if (node.is_virtual === true) {
+            typeBadge.classList.add("is-virtual");
         }
+        typeBadge.textContent = node.is_virtual === true ? "Virtual" : "Physical";
+        badges.appendChild(typeBadge);
 
-        let row = document.createElement("div");
-        row.classList.add("row");
+        const stepBadge = document.createElement("span");
+        stepBadge.classList.add("lqos-funnel-node-step");
+        stepBadge.textContent = `Ancestor ${position} / ${displayParents.length}`;
+        badges.appendChild(stepBadge);
 
-        let col = document.createElement("div");
-        col.classList.add("col-12");
-        let heading = document.createElement("h5");
-        heading.classList.add("redactable");
-        const virtualLabel = node.is_virtual === true ? " <span class='badge text-bg-secondary ms-2'>Virtual</span>" : "";
-        heading.innerHTML = "<i class='fa fa-sitemap'></i> " + node.name + virtualLabel;
-        col.appendChild(heading);
-        row.appendChild(col);
-        parentDiv.appendChild(row);
+        header.appendChild(badges);
+        card.appendChild(header);
 
-        row = document.createElement("div");
-        row.classList.add("row");
+        const row = document.createElement("div");
+        row.classList.add("row", "g-3");
 
-        let col_tp = document.createElement("div");
-        col_tp.classList.add("col-4");
-        col_tp.id = "funnel_tp_" + parent;
-        col_tp.style.height = "250px";
-        row.appendChild(col_tp);
+        const chartSpecs = [
+            { id: "funnel_tp_" + parent, height: "250px" },
+            { id: "funnel_rxmit_" + parent, height: "250px" },
+            { id: "funnel_rtt_" + parent, height: "250px" },
+        ];
 
-        let col_rxmit = document.createElement("div");
-        col_rxmit.classList.add("col-4");
-        col_rxmit.id = "funnel_rxmit_" + parent;
-        row.appendChild(col_rxmit);
+        chartSpecs.forEach((chart) => {
+            const col = document.createElement("div");
+            col.classList.add("col-12", "col-xl-4");
 
-        let col_rtt = document.createElement("div");
-        col_rtt.classList.add("col-4");
-        col_rtt.id = "funnel_rtt_" + parent;
-        row.appendChild(col_rtt);
+            const panel = document.createElement("div");
+            panel.classList.add("lqos-funnel-chart-panel");
 
-        parentDiv.appendChild(row);
+            const graph = document.createElement("div");
+            graph.id = chart.id;
+            graph.style.height = chart.height;
+            panel.appendChild(graph);
+            col.appendChild(panel);
+            row.appendChild(col);
+        });
+
+        card.appendChild(row);
+        parentDiv.appendChild(card);
     });
 
     funnelGraphs = {};
@@ -558,7 +689,7 @@ function renderFunnel(state) {
 
     requestAnimationFrame(() => {
         setTimeout(() => {
-            parentIndexes.forEach((parent) => {
+            displayParents.forEach(({ parent }) => {
                 if (!document.getElementById("funnel_tp_" + parent)) {
                     return;
                 }
@@ -615,28 +746,65 @@ function renderCakeGraphShell() {
         return;
     }
     cakeTab.innerHTML = `
-        <div class="row">
-            <div class="col-4">
-                <div id="cakeBacklog" style="height: 250px"></div>
+        <div class="lqos-cake-panel">
+            <div class="lqos-cake-header">
+                <div class="lqos-cake-header-copy">
+                    <h5><i class="fa fa-birthday-cake"></i> Queue Stats</h5>
+                    <p class="text-muted small mb-0">Raw 1s scatter samples over the last 3 minutes. Hover any queue chart to inspect the same timestamp across all six charts.</p>
+                </div>
+                <div class="lqos-cake-meta">
+                    <span class="lqos-cake-meta-pill">Last 3 minutes</span>
+                    <span class="lqos-cake-meta-pill">1s samples</span>
+                    <span class="lqos-cake-meta-pill">Synchronized hover</span>
+                </div>
             </div>
-            <div class="col-4">
-                <div id="cakeDelays" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeQueueLength" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeTraffic" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeMarks" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeDrops" style="height: 250px"></div>
-            </div>
-            <div class="col-3">
-                Queue Memory: <span id="cakeQueueMemory">?</span>
-                <div class="text-muted small mt-1">Queue Type: <span id="cakeQueueType">?</span></div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeTraffic" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeDelays" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeBacklog" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeQueueLength" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeMarks" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeDrops" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="lqos-cake-info-card">
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Queue Memory</div>
+                            <div class="lqos-cake-info-value"><span id="cakeQueueMemory">?</span></div>
+                        </div>
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Queue Type</div>
+                            <div class="lqos-cake-info-value"><span id="cakeQueueType">?</span></div>
+                        </div>
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Interpretation</div>
+                            <div class="lqos-cake-info-value text-muted small">Download plots above zero, upload plots below zero. Tooltips always show absolute values with direction labels.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -680,6 +848,13 @@ function ensureCakeGraphs() {
             marks: new CakeMarks("cakeMarks"),
             drops: new CakeDrops("cakeDrops"),
         };
+        const cakeChartInstances = Object.values(cakeGraphs)
+            .map((graph) => graph?.chart)
+            .filter(Boolean);
+        cakeChartInstances.forEach((chart) => {
+            chart.group = "circuitCakeQueueStats";
+        });
+        echarts.connect("circuitCakeQueueStats");
         applyCakeMessage(latestCakeMsg);
     });
 }
@@ -1709,18 +1884,18 @@ function initialDevices(circuits) {
 
 function initialFunnel(parentNode) {
     funnelParentNodeName = parentNode;
-    listenOnce("NetworkTree", (msg) => {
+    listenOnce("NetworkTreeLite", (msg) => {
         renderFunnel(resolveFunnelState(msg, parentNode));
         if (funnelSubscription) {
             funnelSubscription.dispose();
         }
-        funnelSubscription = subscribeWS(["NetworkTree"], onTreeEvent);
+        funnelSubscription = subscribeWS(["NetworkTreeLite"], onTreeEvent);
     });
-    wsClient.send({ NetworkTree: {} });
+    wsClient.send({ NetworkTreeLite: {} });
 }
 
 function onTreeEvent(msg) {
-    if (msg.event !== "NetworkTree" || !funnelParentNodeName) {
+    if (msg.event !== "NetworkTreeLite" || !funnelParentNodeName) {
         return;
     }
 

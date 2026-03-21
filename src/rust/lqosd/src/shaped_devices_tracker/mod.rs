@@ -1,4 +1,5 @@
 use anyhow::Result;
+use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
@@ -10,14 +11,18 @@ use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 // Removed rate_for_plan() function - no longer needed with f32 plan structures
 
+pub mod circuit_live;
 mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
+pub use circuit_live::CircuitLiveSnapshot;
 pub use netjson::*;
 
 pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
@@ -86,6 +91,18 @@ impl ShapedDeviceHashCache {
 
 pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
+pub static CIRCUIT_LIVE_SNAPSHOT: Lazy<ArcSwap<CircuitLiveSnapshot>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(CircuitLiveSnapshot::default())));
+pub static CIRCUIT_LIVE_LAST_REFRESH_SECS: AtomicU64 = AtomicU64::new(0);
+pub static CIRCUIT_LIVE_REFRESH_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+pub(crate) fn invalidate_circuit_live_snapshot() {
+    CIRCUIT_LIVE_LAST_REFRESH_SECS.store(0, std::sync::atomic::Ordering::Release);
+}
+
+pub(crate) fn invalidate_executive_cache_snapshot() {
+    crate::node_manager::invalidate_executive_cache_snapshot();
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct NetworkTreeSummary {
@@ -166,6 +183,8 @@ fn load_shaped_devices() {
         let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
         SHAPED_DEVICES.store(Arc::new(new_file));
         SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
+        invalidate_circuit_live_snapshot();
+        invalidate_executive_cache_snapshot();
         let nj = NETWORK_JSON.read();
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
     } else {
@@ -174,6 +193,8 @@ fn load_shaped_devices() {
         );
         SHAPED_DEVICES.store(Arc::new(ConfigShapedDevices::default()));
         SHAPED_DEVICE_HASH_CACHE.store(Arc::new(ShapedDeviceHashCache::default()));
+        invalidate_circuit_live_snapshot();
+        invalidate_executive_cache_snapshot();
     }
 }
 
@@ -259,6 +280,70 @@ pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
                 node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
             )
         })
+        .collect()
+}
+
+fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
+    let download =
+        node.rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50);
+    let upload =
+        node.rtt_buffer
+            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50);
+
+    let rtts = match (download, upload) {
+        (None, None) => Vec::new(),
+        (Some(d), None) => vec![d.as_millis() as f32; 2],
+        (None, Some(u)) => vec![u.as_millis() as f32; 2],
+        (Some(d), Some(u)) => vec![d.as_millis() as f32, u.as_millis() as f32],
+    };
+
+    let qoo = node
+        .qoq_heatmap
+        .as_ref()
+        .map(|heatmap| {
+            let blocks = heatmap.blocks();
+            let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
+            (latest(&blocks.download_total), latest(&blocks.upload_total))
+        })
+        .unwrap_or((None, None));
+
+    NetworkTreeLiteNode {
+        name: node.name.clone(),
+        id: node.id.clone(),
+        is_virtual: node.virtual_node,
+        max_throughput: node.max_throughput,
+        current_throughput: (
+            node.current_throughput.get_down(),
+            node.current_throughput.get_up(),
+        ),
+        current_tcp_packets: (
+            node.current_tcp_packets.get_down(),
+            node.current_tcp_packets.get_up(),
+        ),
+        current_retransmits: (
+            node.current_tcp_retransmits.get_down(),
+            node.current_tcp_retransmits.get_up(),
+        ),
+        rtts,
+        qoo,
+        parents: node.parents.clone(),
+        immediate_parent: node.immediate_parent,
+        node_type: node.node_type.clone(),
+        latitude: node.latitude,
+        longitude: node.longitude,
+    }
+}
+
+/// Returns a lightweight live snapshot of the network tree for pages that do not need the full
+/// `NetworkJsonTransport` payload.
+pub fn full_network_map_lite_snapshot() -> Vec<(usize, NetworkTreeLiteNode)> {
+    let nj = NETWORK_JSON.read();
+    let nodes = nj.get_nodes_when_ready();
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (i, node_to_transport_lite(n)))
         .collect()
 }
 

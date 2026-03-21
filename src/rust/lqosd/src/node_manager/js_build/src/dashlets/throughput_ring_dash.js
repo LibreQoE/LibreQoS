@@ -2,10 +2,13 @@ import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 import {ThroughputRingBufferGraphTimescale} from "../graphs/throughput_ring_graph_timescale";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
+const LIVE_SAMPLE_LIMIT = 60 * 5;
+
 export class ThroughputRingDash extends DashletBaseInsight{
     constructor(slot) {
         super(slot);
         this.counter = 0;
+        this.backgroundSamples = [];
     }
 
     currentPeriod() {
@@ -49,6 +52,14 @@ export class ThroughputRingDash extends DashletBaseInsight{
         return [ "Throughput" ];
     }
 
+    keepAliveWhenHidden() {
+        return true;
+    }
+
+    keepSubscribedWhenHidden() {
+        return true;
+    }
+
     buildContainer() {
         let base = super.buildContainer();
         let graphs = this.graphDiv();
@@ -88,10 +99,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
 
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
-            this.graph.update(msg.data.shaped_bps, msg.data.bps);
-            if (this.zoomGraph) {
-                this.zoomGraph.update(msg.data.shaped_bps, msg.data.bps);
-            }
+            this.#applyLiveSample(msg.data.shaped_bps, msg.data.bps);
 
             this.counter++;
             if (this.counter > 120) {
@@ -100,6 +108,32 @@ export class ThroughputRingDash extends DashletBaseInsight{
                 this.ltsLoaded = false;
             }
         }
+    }
+
+    onBackgroundMessage(msg) {
+        if (msg.event !== "Throughput" || window.timePeriods.activePeriod !== "Live") {
+            return;
+        }
+        this.backgroundSamples.push({
+            shaped: msg.data.shaped_bps,
+            unshaped: msg.data.bps,
+        });
+        if (this.backgroundSamples.length > LIVE_SAMPLE_LIMIT) {
+            this.backgroundSamples.shift();
+        }
+    }
+
+    flushBackgroundMessages() {
+        if (window.timePeriods.activePeriod !== "Live" || this.backgroundSamples.length === 0) {
+            this.backgroundSamples = [];
+            return false;
+        }
+        for (let i = 0; i < this.backgroundSamples.length; i++) {
+            const sample = this.backgroundSamples[i];
+            this.#applyLiveSample(sample.shaped, sample.unshaped);
+        }
+        this.backgroundSamples = [];
+        return true;
     }
 
     supportsZoom() {
@@ -155,6 +189,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
 
     onTimeChange() {
         super.onTimeChange();
+        this.backgroundSamples = [];
         this.updateTitlesAndTooltip();
         this.graph.chart.clear();
         this.graph.chart.showLoading();
@@ -166,6 +201,13 @@ export class ThroughputRingDash extends DashletBaseInsight{
         if (this.zoomed) {
             this.teardownZoomed();
             this.setupZoomed();
+        }
+    }
+
+    #applyLiveSample(shaped, unshaped) {
+        this.graph.update(shaped, unshaped);
+        if (this.zoomGraph) {
+            this.zoomGraph.update(shaped, unshaped);
         }
     }
 }

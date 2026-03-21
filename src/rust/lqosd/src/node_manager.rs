@@ -1,5 +1,5 @@
 mod auth;
-mod local_api;
+pub(crate) mod local_api;
 mod run;
 mod shaper_queries_actor;
 mod static_pages;
@@ -9,6 +9,7 @@ pub(crate) mod ws;
 
 pub use local_api::circuit_count::circuit_count_data;
 pub use local_api::device_counts::device_count;
+pub(crate) use local_api::executive_cache::invalidate_executive_cache_snapshot;
 pub use local_api::flow_explorer::{
     FlowTimeline, asn_list_data, country_list_data, country_timeline_data, flow_timeline_data,
     protocol_list_data, protocol_timeline_data,

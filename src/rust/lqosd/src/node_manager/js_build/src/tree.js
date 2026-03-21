@@ -21,7 +21,8 @@ var childrenByParentId = new Map();
 var stormguardNodes = new Set();
 var treeBitsGauge = null;
 var treeQooGauge = null;
-var lastClientsMessage = null;
+var lastAttachedCircuitsPage = null;
+var attachedCircuitsWatchSignature = null;
 var currentSelectionIdentity = null;
 var selectionLocator = {
     nodeId: null,
@@ -74,6 +75,10 @@ function sendWsRequest(responseEvent, request) {
         wsClient.on("Error", errorHandler);
         wsClient.send(request);
     });
+}
+
+function sendPrivateRequest(command) {
+    wsClient.send({Private: command});
 }
 
 function formatDeviceIp(ip) {
@@ -202,10 +207,13 @@ function currentNodeRateQuery() {
     if (!node) {
         return null;
     }
-    return {
-        node_id: node.id ?? null,
+    const query = {
         node_name: node.name,
     };
+    if (node.id) {
+        query.node_id = node.id;
+    }
+    return query;
 }
 
 function buildEffectiveLimitCellHtml(node) {
@@ -842,6 +850,45 @@ function renderNodeSettings() {
     }
 }
 
+function currentTreeAttachedCircuitsQuery() {
+    const node = currentNode();
+    if (!node) {
+        return null;
+    }
+    const query = {
+        page: 0,
+        page_size: 100,
+        sort: "CircuitName",
+        descending: false,
+    };
+    const nodeId = selectionLocator.nodeId || node.id;
+    const nodePath = selectionLocator.nodePath || getNodePathNames(parent, node);
+    if (nodeId) {
+        query.node_id = nodeId;
+    }
+    if (nodePath) {
+        query.node_path = nodePath;
+    }
+    return query;
+}
+
+function requestTreeAttachedCircuitsWatch(force = false) {
+    const query = currentTreeAttachedCircuitsQuery();
+    if (!query) {
+        return;
+    }
+    const signature = JSON.stringify(query);
+    if (!force && attachedCircuitsWatchSignature === signature) {
+        return;
+    }
+    attachedCircuitsWatchSignature = signature;
+    sendPrivateRequest({
+        WatchTreeAttachedCircuits: {
+            query,
+        },
+    });
+}
+
 async function loadNodeRateOverrideState() {
     const query = currentNodeRateQuery();
     if (!query) {
@@ -927,10 +974,7 @@ async function clearNodeRateOverride() {
     try {
         const response = await sendWsRequest("ClearNodeRateOverrideResult", {
             ClearNodeRateOverride: {
-                query: {
-                    node_id: node.id ?? null,
-                    node_name: node.name,
-                },
+                query: currentNodeRateQuery(),
             },
         });
         if (!response.ok) {
@@ -1091,12 +1135,10 @@ function getInitialTree() {
             loadNodeRateOverrideState();
         }
         renderTree();
-        if (selectionState.parentChanged && lastClientsMessage) {
-            clientsUpdate(lastClientsMessage);
-        }
+        requestTreeAttachedCircuitsWatch(true);
 
         if (!subscribed) {
-            subscribeWS(["NetworkTree", "NetworkTreeClients", "StormguardStatus"], onMessage);
+            subscribeWS(["NetworkTree", "StormguardStatus"], onMessage);
             subscribed = true;
         }
     });
@@ -1476,17 +1518,15 @@ function treeUpdate(msg) {
     if (needsRebuild || selectionState.parentChanged) {
         renderTree();
     }
-    if (selectionState.parentChanged && lastClientsMessage) {
-        clientsUpdate(lastClientsMessage);
+    if (selectionState.parentChanged || selectionState.identityChanged) {
+        requestTreeAttachedCircuitsWatch(true);
     }
 }
 
-function clientsUpdate(msg) {
-    lastClientsMessage = msg;
-    if (!tree || tree[parent] === undefined) {
+function renderAttachedCircuitsRows(rows) {
+    if (!Array.isArray(rows)) {
         return;
     }
-    let myName = tree[parent][1].name;
 
     let target = document.getElementById("clients");
     let table = document.createElement("table");
@@ -1494,63 +1534,7 @@ function clientsUpdate(msg) {
     table.appendChild(clientTableHeader());
     let tbody = document.createElement("tbody");
     clearDiv(target);
-
-    const circuits = new Map();
-    msg.data.forEach((device) => {
-        if (device.parent_node !== myName) {
-            return;
-        }
-
-        const circuitId = device.circuit_id || `${device.parent_node || ""}:${device.circuit_name || ""}`;
-        if (!circuits.has(circuitId)) {
-            circuits.set(circuitId, {
-                circuit_id: circuitId,
-                circuit_name: device.circuit_name || "(Unknown circuit)",
-                parent_node: device.parent_node || "",
-                plan: {
-                    down: toNumber(device.plan?.down, 0),
-                    up: toNumber(device.plan?.up, 0),
-                },
-                device_names: new Set(),
-                ips: new Set(),
-                last_seen_nanos: toNumber(device.last_seen_nanos, 0),
-                bytes_per_second: {down: 0, up: 0},
-                median_latency: {down: null, up: null},
-                tcp_packets: {down: 0, up: 0},
-                tcp_retransmits: {down: 0, up: 0},
-            });
-        }
-
-        const circuit = circuits.get(circuitId);
-        if (device.device_name) {
-            circuit.device_names.add(device.device_name);
-        }
-        const ipText = formatDeviceIp(device.ip);
-        if (ipText && ipText !== "-") {
-            circuit.ips.add(ipText);
-        }
-
-        circuit.last_seen_nanos = Math.min(circuit.last_seen_nanos, toNumber(device.last_seen_nanos, 0));
-        circuit.bytes_per_second.down += toNumber(device.bytes_per_second?.down, 0);
-        circuit.bytes_per_second.up += toNumber(device.bytes_per_second?.up, 0);
-        circuit.tcp_packets.down += toNumber(device.tcp_packets?.down, 0);
-        circuit.tcp_packets.up += toNumber(device.tcp_packets?.up, 0);
-        circuit.tcp_retransmits.down += toNumber(device.tcp_retransmits?.down, 0);
-        circuit.tcp_retransmits.up += toNumber(device.tcp_retransmits?.up, 0);
-
-        const downLatency = toNumber(device.median_latency?.down, 0);
-        if (downLatency > 0 && (circuit.median_latency.down === null || downLatency > circuit.median_latency.down)) {
-            circuit.median_latency.down = downLatency;
-        }
-        const upLatency = toNumber(device.median_latency?.up, 0);
-        if (upLatency > 0 && (circuit.median_latency.up === null || upLatency > circuit.median_latency.up)) {
-            circuit.median_latency.up = upLatency;
-        }
-    });
-
-    Array.from(circuits.values())
-        .sort((a, b) => a.circuit_name.localeCompare(b.circuit_name))
-        .forEach((circuit) => {
+    rows.forEach((circuit) => {
             let tr = document.createElement("tr");
             tr.classList.add("small");
 
@@ -1564,7 +1548,7 @@ function clientsUpdate(msg) {
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
 
-            const deviceNames = Array.from(circuit.device_names);
+            const deviceNames = Array.isArray(circuit.device_names) ? circuit.device_names : [];
             const deviceCell = simpleRow(
                 deviceNames.length > 2 ? `${deviceNames[0]}, ${deviceNames[1]} +${deviceNames.length - 2}` : deviceNames.join(", "),
                 true
@@ -1574,45 +1558,45 @@ function clientsUpdate(msg) {
             }
             tr.appendChild(deviceCell);
 
-            tr.appendChild(simpleRow(circuit.plan.down + " / " + circuit.plan.up));
+            tr.appendChild(simpleRow(`${toNumber(circuit.plan_mbps?.down, 0)} / ${toNumber(circuit.plan_mbps?.up, 0)}`));
             tr.appendChild(simpleRow(circuit.parent_node, true));
 
-            const ipList = Array.from(circuit.ips);
+            const ipList = Array.isArray(circuit.ip_addrs) ? circuit.ip_addrs : [];
             const ipCell = simpleRow(summarizeIpListForTable(ipList), true);
             if (ipList.length > 0) {
                 ipCell.title = ipList.join(", ");
             }
             tr.appendChild(ipCell);
 
-            tr.appendChild(simpleRow(formatLastSeen(circuit.last_seen_nanos)));
-            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.down * 8, circuit.plan.down)));
-            tr.appendChild(simpleRowHtml(formatThroughput(circuit.bytes_per_second.up * 8, circuit.plan.up)));
+            tr.appendChild(simpleRow(formatLastSeen(toNumber(circuit.last_seen_nanos, 0))));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
 
-            if (circuit.median_latency.down !== null) {
-                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.down)));
+            if (toNumber(circuit.rtt_current_p50_nanos?.down, 0) > 0) {
+                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
-            if (circuit.median_latency.up !== null) {
-                tr.appendChild(simpleRowHtml(formatRtt(circuit.median_latency.up)));
+            if (toNumber(circuit.rtt_current_p50_nanos?.up, 0) > 0) {
+                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.up, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
 
             let retr = 0;
-            if (circuit.tcp_packets.down > 0) {
-                retr = circuit.tcp_retransmits.down / circuit.tcp_packets.down;
+            if (toNumber(circuit.tcp_packets?.down, 0) > 0) {
+                retr = toNumber(circuit.tcp_retransmits?.down, 0) / toNumber(circuit.tcp_packets?.down, 0);
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
             retr = 0;
-            if (circuit.tcp_packets.up > 0) {
-                retr = circuit.tcp_retransmits.up / circuit.tcp_packets.up;
+            if (toNumber(circuit.tcp_packets?.up, 0) > 0) {
+                retr = toNumber(circuit.tcp_retransmits?.up, 0) / toNumber(circuit.tcp_packets?.up, 0);
             }
             tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
             tbody.appendChild(tr);
-        });
+    });
     table.appendChild(tbody);
     const sectionLabel = document.createElement("div");
     sectionLabel.classList.add("lqos-tree-section-label");
@@ -1622,6 +1606,11 @@ function clientsUpdate(msg) {
     tableWrap.appendChild(table);
     target.appendChild(sectionLabel);
     target.appendChild(tableWrap);
+}
+
+function attachedCircuitsUpdate(msg) {
+    lastAttachedCircuitsPage = msg?.data || null;
+    renderAttachedCircuitsRows(lastAttachedCircuitsPage?.rows || []);
 }
 
 function stormguardUpdate(msg) {
@@ -1637,8 +1626,8 @@ function stormguardUpdate(msg) {
     }
     stormguardNodes = nextNodes;
     const selectionState = reconcileSelection();
-    if ((selectionState.parentChanged || selectionState.identityChanged) && lastClientsMessage) {
-        clientsUpdate(lastClientsMessage);
+    if (selectionState.parentChanged || selectionState.identityChanged) {
+        requestTreeAttachedCircuitsWatch(true);
     }
     if (tree && tree[parent] !== undefined) {
         fillHeader(tree[parent][1]);
@@ -1649,8 +1638,6 @@ function stormguardUpdate(msg) {
 function onMessage(msg) {
     if (msg.event === "NetworkTree") {
         treeUpdate(msg);
-    } else if (msg.event === "NetworkTreeClients") {
-        clientsUpdate(msg);
     } else if (msg.event === "StormguardStatus") {
         stormguardUpdate(msg);
     }
@@ -1687,6 +1674,15 @@ document.getElementById("nodeOverrideSave")?.addEventListener("click", () => {
 });
 document.getElementById("nodeOverrideClear")?.addEventListener("click", () => {
     clearNodeRateOverride();
+});
+wsClient.on("TreeAttachedCircuitsSnapshot", attachedCircuitsUpdate);
+wsClient.on("TreeAttachedCircuitsUpdate", attachedCircuitsUpdate);
+wsClient.on("join", () => {
+    if (!tree) {
+        return;
+    }
+    requestTreeAttachedCircuitsWatch(true);
+    loadNodeRateOverrideState();
 });
 
 getInitialTree();

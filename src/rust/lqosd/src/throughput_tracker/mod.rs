@@ -886,6 +886,7 @@ pub fn executive_summary_header() -> BusResponse {
         unmapped_ip_count,
         htb_queue_count: queue_counts.htb as u64,
         cake_queue_count: queue_counts.cake as u64,
+        fq_codel_queue_count: queue_counts.fq_codel as u64,
         insight_connected,
     })
 }

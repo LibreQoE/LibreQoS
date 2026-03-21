@@ -1,5 +1,5 @@
 import {
-    loadAllShapedDevices,
+    loadAllCircuitDirectoryRows,
     loadConfig,
     loadNetworkJson,
     renderConfigMenu,
@@ -8,7 +8,7 @@ import {
 import {defaultTreeguardConfig, ensureTreeguardConfig} from "./config/treeguard_defaults";
 
 let networkData = null;
-let shapedDevices = null;
+let circuitRows = null;
 let selectedNodes = [];
 let selectedCircuits = [];
 
@@ -53,19 +53,19 @@ function loadNetworkData() {
 
 function loadCircuitsData() {
     return new Promise((resolve, reject) => {
-        loadAllShapedDevices(
+        loadAllCircuitDirectoryRows(
             (data) => {
                 if (!Array.isArray(data)) {
-                    console.warn("Shaped devices response was not an array:", data);
-                    shapedDevices = [];
+                    console.warn("Circuit directory response was not an array:", data);
+                    circuitRows = [];
                 } else {
-                    shapedDevices = data;
+                    circuitRows = data;
                 }
                 populateCircuitSelector();
                 resolve();
             },
             (err) => {
-                console.error("Error loading shaped devices:", err);
+                console.error("Error loading circuit directory:", err);
                 alert("Failed to load circuit list. You can still add circuits manually.");
                 reject(err);
             },
@@ -108,23 +108,24 @@ function populateCircuitSelector() {
     const selector = document.getElementById("circuitSelector");
     selector.innerHTML = '<option value="">Select a circuit...</option>';
 
-    const circuits = new Set();
-    if (Array.isArray(shapedDevices)) {
-        shapedDevices.forEach((device) => {
-            if (device && typeof device.circuit_id === "string" && device.circuit_id.trim() !== "") {
-                circuits.add(device.circuit_id.trim());
-            }
-        });
+    if (!Array.isArray(circuitRows)) {
+        return;
     }
 
-    Array.from(circuits)
-        .sort((a, b) => a.localeCompare(b))
-        .forEach((circuitId) => {
-            const option = document.createElement("option");
-            option.value = circuitId;
-            option.textContent = circuitId;
-            selector.appendChild(option);
-        });
+    circuitRows.forEach((row) => {
+        const circuitId = (row?.circuit_id ?? "").trim();
+        if (!circuitId) {
+            return;
+        }
+        const circuitName = (row?.circuit_name ?? "").trim();
+        const display = circuitName && circuitName !== circuitId
+            ? `${circuitName} (${circuitId})`
+            : circuitId;
+        const option = document.createElement("option");
+        option.value = circuitId;
+        option.textContent = display;
+        selector.appendChild(option);
+    });
 }
 
 function addNode() {

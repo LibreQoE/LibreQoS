@@ -162,10 +162,7 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 6;
-        this.totalNodes = null;
-        this.totalCircuits = null;
-        this.estimatedVirtualizedNodes = null;
-        this.estimatedFqCodelCircuits = null;
+        this.metadataSummary = null;
         this.lastStatusData = null;
     }
 
@@ -183,59 +180,15 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
 
     setup() {
         const wsClient = get_ws_client();
-
-        const treeWrapped = (msg) => {
-            wsClient.off("NetworkTree", treeWrapped);
-            const data = msg && Array.isArray(msg.data) ? msg.data : [];
-            let count = 0;
-            let virtualCount = 0;
-            data.forEach((entry) => {
-                if (!Array.isArray(entry) || entry.length < 2) return;
-                const node = entry[1];
-                const name = (node && node.name ? String(node.name) : "").trim();
-                if (!name || name === "Root") return;
-                count += 1;
-                if (node && (node.virtual === true || node.is_virtual === true)) {
-                    virtualCount += 1;
-                }
-            });
-            this.totalNodes = count;
-            this.estimatedVirtualizedNodes = virtualCount;
-            this.rerenderWithEstimates();
+        const metadataWrapped = (msg) => {
+            wsClient.off("TreeGuardMetadataSummary", metadataWrapped);
+            this.metadataSummary = msg?.data || null;
+            if (this.lastStatusData) {
+                this.renderStatus(this.lastStatusData);
+            }
         };
-        wsClient.on("NetworkTree", treeWrapped);
-        wsClient.send({ NetworkTree: {} });
-
-        const shapedWrapped = (msg) => {
-            wsClient.off("AllShapedDevices", shapedWrapped);
-            const devices = msg && Array.isArray(msg.data) ? msg.data : [];
-            const circuits = new Set();
-            const fqCodelCircuits = new Set();
-            devices.forEach((d) => {
-                const id = (d && d.circuit_id ? String(d.circuit_id) : "").trim();
-                if (id) circuits.add(id);
-
-                const override = (d && d.sqm_override !== undefined ? String(d.sqm_override) : "").trim();
-                if (!override || !id) return;
-                const { down, up } = parseDirectionalSqmToken(override);
-                const downLower = (down ?? "").toString().trim().toLowerCase();
-                const upLower = (up ?? "").toString().trim().toLowerCase();
-                if (downLower === "fq_codel" || upLower === "fq_codel") {
-                    fqCodelCircuits.add(id);
-                }
-            });
-            this.totalCircuits = circuits.size;
-            this.estimatedFqCodelCircuits = fqCodelCircuits.size;
-            this.rerenderWithEstimates();
-        };
-        wsClient.on("AllShapedDevices", shapedWrapped);
-        wsClient.send({ AllShapedDevices: {} });
-    }
-
-    rerenderWithEstimates() {
-        if (this.lastStatusData) {
-            this.renderStatus(this.lastStatusData);
-        }
+        wsClient.on("TreeGuardMetadataSummary", metadataWrapped);
+        wsClient.send({ TreeGuardMetadataSummary: {} });
     }
 
     buildContainer() {
@@ -339,17 +292,7 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         const managedCircuits = Math.max(0, Math.trunc(Number(data.managed_circuits ?? 0) || 0));
         const virtualizedNodesExact = Math.max(0, Math.trunc(Number(data.virtualized_nodes ?? 0) || 0));
         const fqCodelCircuitsExact = Math.max(0, Math.trunc(Number(data.fq_codel_circuits ?? 0) || 0));
-
-        const virtualizedEstimate = Math.max(0, Math.trunc(Number(this.estimatedVirtualizedNodes ?? 0) || 0));
-        const fqCodelEstimate = Math.max(0, Math.trunc(Number(this.estimatedFqCodelCircuits ?? 0) || 0));
-
-        const usingVirtualEstimate = virtualizedNodesExact === 0 && virtualizedEstimate > 0;
-        const usingFqCodelEstimate = fqCodelCircuitsExact === 0 && fqCodelEstimate > 0;
-
-        const virtualizedNodes = usingVirtualEstimate ? virtualizedEstimate : virtualizedNodesExact;
-        const fqCodelCircuits = usingFqCodelEstimate ? fqCodelEstimate : fqCodelCircuitsExact;
-
-        const totalNodes = Number(this.totalNodes ?? 0);
+        const totalNodes = Number(this.metadataSummary?.total_nodes ?? 0);
         const nodesMax = totalNodes > 0 ? totalNodes : Math.max(1, managedNodes);
         const nodesPct = nodesMax ? clamp((managedNodes / nodesMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.nodesMetric, {
@@ -357,10 +300,10 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
             max: nodesMax,
             text: managedNodes.toString(),
             bgClass: "bg-info",
-            title: totalNodes > 0 ? `${managedNodes} / ${totalNodes} (${nodesPct.toFixed(0)}%)` : `${managedNodes}`,
+                title: totalNodes > 0 ? `${managedNodes} / ${totalNodes} (${nodesPct.toFixed(0)}%)` : `${managedNodes}`,
         });
 
-        const totalCircuits = Number(this.totalCircuits ?? 0);
+        const totalCircuits = Number(this.metadataSummary?.total_circuits ?? 0);
         const circuitsMax = totalCircuits > 0 ? totalCircuits : Math.max(1, managedCircuits);
         const circuitsPct = circuitsMax ? clamp((managedCircuits / circuitsMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.circuitsMetric, {
@@ -373,34 +316,30 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
                 : `${managedCircuits}`,
         });
 
+        const virtualizedNodes = virtualizedNodesExact;
         const virtMax = Math.max(1, managedNodes);
         const virtPct = managedNodes > 0 ? clamp((virtualizedNodes / virtMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.virtualizedMetric, {
             value: virtualizedNodes,
             max: virtMax,
-            text: usingVirtualEstimate ? `≈${virtualizedNodes}` : virtualizedNodes.toString(),
+            text: virtualizedNodes.toString(),
             bgClass: "bg-primary",
-            title: (() => {
-                const core = managedNodes > 0
-                    ? `${virtualizedNodes} / ${managedNodes} (${virtPct.toFixed(0)}%)`
-                    : `${virtualizedNodes}`;
-                return usingVirtualEstimate ? `Estimated from NetworkTree snapshot: ${core}` : core;
-            })(),
+            title: managedNodes > 0
+                ? `${virtualizedNodes} / ${managedNodes} (${virtPct.toFixed(0)}%)`
+                : `${virtualizedNodes}`,
         });
 
+        const fqCodelCircuits = fqCodelCircuitsExact;
         const fqMax = Math.max(1, managedCircuits);
         const fqPct = managedCircuits > 0 ? clamp((fqCodelCircuits / fqMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.fqCodelMetric, {
             value: fqCodelCircuits,
             max: fqMax,
-            text: usingFqCodelEstimate ? `≈${fqCodelCircuits}` : fqCodelCircuits.toString(),
+            text: fqCodelCircuits.toString(),
             bgClass: "bg-warning",
-            title: (() => {
-                const core = managedCircuits > 0
-                    ? `${fqCodelCircuits} / ${managedCircuits} (${fqPct.toFixed(0)}%)`
-                    : `${fqCodelCircuits}`;
-                return usingFqCodelEstimate ? `Estimated from ShapedDevices SQM overrides: ${core}` : core;
-            })(),
+            title: managedCircuits > 0
+                ? `${fqCodelCircuits} / ${managedCircuits} (${fqPct.toFixed(0)}%)`
+                : `${fqCodelCircuits}`,
         });
 
         this.lastActionEl.innerHTML = "";

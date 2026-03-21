@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use crate::node_manager::auth::{LoginResult, login_from_token};
 use crate::node_manager::local_api::{
-    circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, flow_explorer,
-    flow_map, lts, network_tree, node_rate_overrides, packet_analysis, reload_libreqos, scheduler,
-    search, shaped_device_api, unknown_ips, urgent, warnings,
+    circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
+    executive, flow_explorer, flow_map, lts, network_tree, node_rate_overrides, packet_analysis,
+    network_tree_lite, reload_libreqos, scheduler, search, shaped_device_api,
+    shaped_devices_page, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -355,9 +356,41 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::ShapedDevicesPage { query } => {
+            let response = WsResponse::ShapedDevicesPage {
+                data: shaped_devices_page::shaped_devices_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::ExecutiveHeatmapPage { query } => {
+            let response = WsResponse::ExecutiveHeatmapPage {
+                data: executive::executive_heatmap_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::ExecutiveLeaderboardPage { query } => {
+            let response = WsResponse::ExecutiveLeaderboardPage {
+                data: executive::executive_leaderboard_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::NetworkTree => {
             let response = WsResponse::NetworkTree {
                 data: network_tree::network_tree_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::NetworkTreeLite => {
+            let response = WsResponse::NetworkTreeLite {
+                data: network_tree_lite::network_tree_lite_data(),
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -1351,6 +1384,17 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::UpdateNetworkJsonOnly { network_json } => {
+            let result = config::update_network_json_only_data(*request_state.login, network_json);
+            let (ok, message) = match result {
+                Ok(()) => (true, "Ok".to_string()),
+                Err(message) => (false, message),
+            };
+            let response = WsResponse::UpdateNetworkJsonOnlyResult { ok, message };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::UpdateNetworkAndDevices {
             network_json,
             shaped_devices,
@@ -1362,8 +1406,7 @@ async fn receive_channel_message(
             );
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
-                Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
-                Err(_) => (false, "Error".to_string()),
+                Err(message) => (false, message),
             };
             let response = WsResponse::UpdateNetworkAndDevicesResult { ok, message };
             if send_ws_response(&tx, response).await {
@@ -1545,6 +1588,145 @@ async fn receive_channel_message(
         WsRequest::AllShapedDevices => {
             let response = WsResponse::AllShapedDevices {
                 data: config::all_shaped_devices_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::GetShapedDevice { device_id } => match config::get_shaped_device_data(
+            *request_state.login,
+            device_id,
+        ) {
+            Ok(device) => {
+                let response = WsResponse::GetShapedDeviceResult {
+                    ok: device.is_some(),
+                    message: if device.is_some() {
+                        "Ok".to_string()
+                    } else {
+                        "Not found".to_string()
+                    },
+                    device,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::GetShapedDeviceResult {
+                    ok: false,
+                    message: "Unauthorized".to_string(),
+                    device: None,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::GetShapedDeviceResult {
+                    ok: false,
+                    message: "Error".to_string(),
+                    device: None,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::CreateShapedDevice { device } => match config::create_shaped_device_data(
+            *request_state.login,
+            device,
+        ) {
+            Ok(device) => {
+                let response = WsResponse::CreateShapedDeviceResult {
+                    ok: true,
+                    message: "Ok".to_string(),
+                    device: Some(device),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(message) => {
+                let response = WsResponse::CreateShapedDeviceResult {
+                    ok: false,
+                    message,
+                    device: None,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::UpdateShapedDevice {
+            original_device_id,
+            device,
+        } => match config::update_shaped_device_data(*request_state.login, original_device_id, device)
+        {
+            Ok(device) => {
+                let response = WsResponse::UpdateShapedDeviceResult {
+                    ok: true,
+                    message: "Ok".to_string(),
+                    device: Some(device),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(message) => {
+                let response = WsResponse::UpdateShapedDeviceResult {
+                    ok: false,
+                    message,
+                    device: None,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::DeleteShapedDevice { device_id } => {
+            let device_id_clone = device_id.clone();
+            match config::delete_shaped_device_data(*request_state.login, device_id) {
+                Ok(()) => {
+                    let response = WsResponse::DeleteShapedDeviceResult {
+                        ok: true,
+                        message: "Ok".to_string(),
+                        device_id: device_id_clone,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(message) => {
+                    let response = WsResponse::DeleteShapedDeviceResult {
+                        ok: false,
+                        message,
+                        device_id: device_id_clone,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::CircuitDirectoryPage { query } => {
+            let response = WsResponse::CircuitDirectoryPage {
+                data: directories::circuit_directory_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::NodeDirectory => {
+            let response = WsResponse::NodeDirectory {
+                data: directories::node_directory_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::TreeGuardMetadataSummary => {
+            let response = WsResponse::TreeGuardMetadataSummary {
+                data: directories::treeguard_metadata_summary(),
             };
             if send_ws_response(&tx, response).await {
                 return true;
