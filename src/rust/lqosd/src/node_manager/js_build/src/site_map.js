@@ -10,8 +10,14 @@ const INITIAL_REQUEST_TIMEOUT_MS = 2500;
 const HISTORY_WINDOW_MS = 30_000;
 
 const TILE_BBOX_URL = "https://insight.libreqos.com/tiles/api/bbox";
-const TILE_BBOX_BEARER_VALUE = "LibreQoSRocks";
-const TILE_URL_TEMPLATE = "https://insight.libreqos.com/tiles/{z}/{y}/{x}.png?key=LibreQosRocks";
+// NOTE: This key is intentionally non-secret. The remote OSM cache uses it as a lightweight gate.
+// It must match both the bbox Authorization token and the tile `key=` query param.
+const OSM_CACHE_KEY = "LibreQoSRocks";
+const INSIGHT_TILE_PROTOCOL = "insight";
+// Insight OSM cache tiles: `z/y/x` (no `.png` suffix). See `src/lts2/rust/osm_cache/src/http.rs`.
+// The Insight tile server returns `503 + Retry-After` while it fetches missing tiles, so we route
+// requests through a custom MapLibre protocol handler that retries before surfacing errors.
+const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles/{z}/{y}/{x}?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 const TILE_MAX_ZOOM = 17;
 
@@ -26,6 +32,26 @@ const SITE_LINK_SOURCE_ID = "site-map-site-links";
 const SITE_POINTS_LAYER_ID = "site-map-site-points";
 const AP_POINTS_LAYER_ID = "site-map-ap-points";
 const SITE_LINK_LAYER_ID = "site-map-site-links-line";
+
+const INSIGHT_TILE_MAX_PARALLEL_FETCHES = 6;
+let insightTileFetchActive = 0;
+const insightTileFetchWaiters = [];
+
+async function withInsightTileFetchSlot(fn) {
+    if (insightTileFetchActive >= INSIGHT_TILE_MAX_PARALLEL_FETCHES) {
+        await new Promise((resolve) => insightTileFetchWaiters.push(resolve));
+    }
+    insightTileFetchActive += 1;
+    try {
+        return await fn();
+    } finally {
+        insightTileFetchActive = Math.max(0, insightTileFetchActive - 1);
+        const next = insightTileFetchWaiters.shift();
+        if (next) {
+            next();
+        }
+    }
+}
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -105,6 +131,14 @@ function averageOrNull(sum, count) {
     return count > 0 ? (sum / count) : null;
 }
 
+function hasMeaningfulLatLon(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return false;
+    }
+    // Many integrations default to (0,0) when coordinates are unknown.
+    return !(lat === 0 && lon === 0);
+}
+
 function stableNodeKey(index, node) {
     return node.id || `${index}:${node.name}`;
 }
@@ -161,6 +195,26 @@ function markerPalette() {
     };
 }
 
+function linkColorExpression() {
+    const stops = isDarkMode()
+        ? [
+            0.0, "rgba(76, 164, 255, 0.40)",
+            0.55, "rgba(245, 184, 79, 0.52)",
+            1.0, "rgba(217, 75, 91, 0.62)",
+        ]
+        : [
+            0.0, "rgba(76, 164, 255, 0.32)",
+            0.55, "rgba(245, 184, 79, 0.44)",
+            1.0, "rgba(217, 75, 91, 0.54)",
+        ];
+    return [
+        "interpolate",
+        ["linear"],
+        ["coalesce", ["get", "utilizationRatio"], 0],
+        ...stops,
+    ];
+}
+
 function buildOsmRasterStyle() {
     return {
         version: 8,
@@ -192,6 +246,109 @@ function buildOsmRasterStyle() {
     };
 }
 
+function sleepMs(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function installInsightTileProtocolOnce() {
+    if (!window.maplibregl?.addProtocol) {
+        return;
+    }
+    if (window.__lqosInsightTileProtocolInstalled) {
+        return;
+    }
+    window.__lqosInsightTileProtocolInstalled = true;
+
+    window.maplibregl.addProtocol(INSIGHT_TILE_PROTOCOL, (params, abortControllerOrCallback) => {
+        const url = String(params?.url ?? "").replace(`${INSIGHT_TILE_PROTOCOL}://`, "https://");
+        const responseType = String(params?.type || "arrayBuffer");
+        const method = params?.method || "GET";
+        const body = params?.body;
+
+        const makeHeaders = () => {
+            try {
+                return new Headers(params?.headers ?? {});
+            } catch (_) {
+                return new Headers();
+            }
+        };
+
+        const fetchWithRetries = async (signal) => {
+            const deadlineMs = Date.now() + 90_000;
+            while (Date.now() < deadlineMs) {
+                if (signal?.aborted) {
+                    throw new Error("AbortError");
+                }
+                const headers = makeHeaders();
+                if (responseType === "json" && !headers.has("Accept")) {
+                    headers.set("Accept", "application/json");
+                }
+                const resp = await withInsightTileFetchSlot(() => fetch(url, {
+                    method,
+                    body,
+                    headers,
+                    credentials: "omit",
+                    cache: params?.cache,
+                    signal,
+                }));
+
+                if (resp.status === 503 || resp.status === 429) {
+                    const retryAfter = Number(resp.headers.get("retry-after"));
+                    const baseDelayMs = Number.isFinite(retryAfter) ? (retryAfter * 1000) : 1000;
+                    const delayMs = Math.min(Math.max(baseDelayMs, 250), 15_000) + Math.round(Math.random() * 250);
+                    await sleepMs(delayMs);
+                    if (signal?.aborted) {
+                        throw new Error("AbortError");
+                    }
+                    continue;
+                }
+
+                if (!resp.ok) {
+                    throw new Error(`tile request failed: ${resp.status}`);
+                }
+
+                let data;
+                if (responseType === "json") {
+                    data = await resp.json();
+                } else if (responseType === "text") {
+                    data = await resp.text();
+                } else {
+                    data = await resp.arrayBuffer();
+                }
+
+                if (signal?.aborted) {
+                    throw new Error("AbortError");
+                }
+
+                return {
+                    data,
+                    cacheControl: resp.headers.get("cache-control") ?? undefined,
+                    expires: resp.headers.get("expires") ?? undefined,
+                };
+            }
+            throw new Error("tile request retries exhausted");
+        };
+
+        // MapLibre's protocol handler signature differs by version:
+        // - newer: (params, abortController) => Promise<{data, cacheControl, expires}>
+        // - older: (params, callback) => { cancel() }
+        if (typeof abortControllerOrCallback === "function") {
+            const callback = abortControllerOrCallback;
+            const controller = new AbortController();
+            fetchWithRetries(controller.signal)
+                .then((result) => callback(null, result.data, result.cacheControl, result.expires))
+                .catch((err) => {
+                    if (controller.signal.aborted) return;
+                    callback(err);
+                });
+            return { cancel: () => controller.abort() };
+        }
+
+        const signal = abortControllerOrCallback?.signal;
+        return fetchWithRetries(signal);
+    });
+}
+
 function normalizeBboxResponse(data) {
     // Newer/expected shape (see osm_cache): { center: { lat, lon }, zoom }
     if (data && typeof data === "object" && data.center && typeof data.center === "object") {
@@ -218,6 +375,25 @@ async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
         throw new Error("No site coordinates supplied");
     }
 
+    const points = siteLatLonPairs
+        .map((pair) => {
+            if (!Array.isArray(pair) || pair.length < 2) {
+                return null;
+            }
+            const [lat, lon] = pair;
+            const latN = Number(lat);
+            const lonN = Number(lon);
+            if (!Number.isFinite(latN) || !Number.isFinite(lonN)) {
+                return null;
+            }
+            return { lat: latN, lon: lonN };
+        })
+        .filter((item) => item !== null);
+
+    if (points.length === 0) {
+        throw new Error("No valid site coordinates supplied");
+    }
+
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -226,9 +402,9 @@ async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Bearer: TILE_BBOX_BEARER_VALUE,
+                Authorization: `Bearer ${OSM_CACHE_KEY}`,
             },
-            body: JSON.stringify(siteLatLonPairs),
+            body: JSON.stringify(points),
             signal: controller.signal,
         });
         if (!resp.ok) {
@@ -262,6 +438,7 @@ class SiteMapPage {
         this.latestRender = null;
         this.unmappedOpen = false;
         this.mapInitPromise = null;
+        this.mapBootstrapped = false;
         this.siteLabelMarkers = new Map();
         this.lastBboxAttemptAt = 0;
 
@@ -320,6 +497,10 @@ class SiteMapPage {
     }
 
     initMap(center = FALLBACK_CENTER, zoom = FALLBACK_ZOOM) {
+        installInsightTileProtocolOnce();
+        if (typeof window.maplibregl?.setMaxParallelImageRequests === "function") {
+            window.maplibregl.setMaxParallelImageRequests(6);
+        }
         this.map = new window.maplibregl.Map({
             container: this.canvas,
             style: buildOsmRasterStyle(),
@@ -340,12 +521,30 @@ class SiteMapPage {
             className: "site-map-popup",
         });
 
-        this.map.on("load", () => {
-            this.installSourcesAndLayers();
-            this.installInteractions();
+        const bootstrapOverlays = () => {
+            if (!this.map) {
+                return;
+            }
+            try {
+                this.installSourcesAndLayers();
+            } catch (err) {
+                return;
+            }
+            if (!this.map.getSource(SITE_SOURCE_ID) || !this.map.getLayer(SITE_POINTS_LAYER_ID)) {
+                return;
+            }
+            if (!this.mapBootstrapped) {
+                this.installInteractions();
+                this.mapBootstrapped = true;
+            }
             this.applyTheme();
             this.renderFromHistory();
-        });
+        };
+
+        // `load` can be delayed while raster tiles are still coming in; `styledata` fires earlier.
+        this.map.on("load", bootstrapOverlays);
+        this.map.on("styledata", bootstrapOverlays);
+        bootstrapOverlays();
     }
 
     observeThemeChanges() {
@@ -366,7 +565,7 @@ class SiteMapPage {
         const palette = markerPalette();
         this.map.setPaintProperty("site-map-background", "background-color", isDarkMode() ? "#0b1220" : "#ffffff");
         if (this.map.getLayer(SITE_LINK_LAYER_ID)) {
-            this.map.setPaintProperty(SITE_LINK_LAYER_ID, "line-color", palette.link);
+            this.map.setPaintProperty(SITE_LINK_LAYER_ID, "line-color", linkColorExpression());
         }
         if (this.map.getLayer(SITE_POINTS_LAYER_ID)) {
             this.map.setPaintProperty(SITE_POINTS_LAYER_ID, "circle-stroke-color", palette.siteStroke);
@@ -377,82 +576,94 @@ class SiteMapPage {
     }
 
     installSourcesAndLayers() {
-        this.map.addSource(SITE_LINK_SOURCE_ID, {
-            type: "geojson",
-            data: { type: "FeatureCollection", features: [] },
-        });
-        this.map.addSource(SITE_SOURCE_ID, {
-            type: "geojson",
-            data: { type: "FeatureCollection", features: [] },
-        });
-        this.map.addSource(AP_SOURCE_ID, {
-            type: "geojson",
-            data: { type: "FeatureCollection", features: [] },
-        });
+        if (!this.map.getSource(SITE_LINK_SOURCE_ID)) {
+            this.map.addSource(SITE_LINK_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
+        if (!this.map.getSource(SITE_SOURCE_ID)) {
+            this.map.addSource(SITE_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
+        if (!this.map.getSource(AP_SOURCE_ID)) {
+            this.map.addSource(AP_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
 
-        this.map.addLayer({
-            id: SITE_LINK_LAYER_ID,
-            type: "line",
-            source: SITE_LINK_SOURCE_ID,
-            layout: {
-                "line-join": "round",
-                "line-cap": "round",
-            },
-            paint: {
-                "line-color": markerPalette().link,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.6,
-                    6, 1.2,
-                    10, 2.0,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.25,
-                    6, 0.45,
-                    10, 0.6,
-                ],
-            },
-        });
+        if (!this.map.getLayer(SITE_LINK_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_LINK_LAYER_ID,
+                type: "line",
+                source: SITE_LINK_SOURCE_ID,
+                layout: {
+                    "line-join": "round",
+                    "line-cap": "round",
+                },
+                paint: {
+                    "line-color": linkColorExpression(),
+                    "line-width": [
+                        "interpolate", ["linear"], ["zoom"],
+                        2, 0.6,
+                        6, 1.2,
+                        10, 2.0,
+                    ],
+                    "line-opacity": [
+                        "interpolate", ["linear"], ["zoom"],
+                        2, 0.25,
+                        6, 0.45,
+                        10, 0.6,
+                    ],
+                },
+            });
+        }
 
-        this.map.addLayer({
-            id: SITE_POINTS_LAYER_ID,
-            type: "circle",
-            source: SITE_SOURCE_ID,
-            paint: {
-                "circle-color": ["get", "metricColor"],
-                "circle-radius": ["get", "markerRadius"],
-                "circle-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.86,
-                    6, 0.76,
-                    10, 0.62,
-                ],
-                "circle-stroke-color": markerPalette().siteStroke,
-                "circle-stroke-width": 1.15,
-                "circle-blur": 0.06,
-            },
-        });
+        if (!this.map.getLayer(SITE_POINTS_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_POINTS_LAYER_ID,
+                type: "circle",
+                source: SITE_SOURCE_ID,
+                paint: {
+                    "circle-color": ["get", "metricColor"],
+                    "circle-radius": ["get", "markerRadius"],
+                    "circle-opacity": [
+                        "interpolate", ["linear"], ["zoom"],
+                        0, 0.86,
+                        6, 0.76,
+                        10, 0.62,
+                    ],
+                    "circle-stroke-color": markerPalette().siteStroke,
+                    "circle-stroke-width": 1.15,
+                    "circle-blur": 0.06,
+                },
+            });
+        }
 
-        this.map.addLayer({
-            id: AP_POINTS_LAYER_ID,
-            type: "circle",
-            source: AP_SOURCE_ID,
-            paint: {
-                "circle-color": ["get", "metricColor"],
-                "circle-radius": ["get", "markerRadius"],
-                "circle-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.0,
-                    5, 0.08,
-                    7, 0.55,
-                    9, 0.86,
-                ],
-                "circle-stroke-color": markerPalette().apStroke,
-                "circle-stroke-width": 1.0,
-                "circle-blur": 0.05,
-            },
-        });
+        if (!this.map.getLayer(AP_POINTS_LAYER_ID)) {
+            this.map.addLayer({
+                id: AP_POINTS_LAYER_ID,
+                type: "circle",
+                source: AP_SOURCE_ID,
+                paint: {
+                    "circle-color": ["get", "metricColor"],
+                    "circle-radius": ["get", "markerRadius"],
+                    "circle-opacity": [
+                        "interpolate", ["linear"], ["zoom"],
+                        0, 0.0,
+                        5, 0.08,
+                        7, 0.55,
+                        9, 0.86,
+                    ],
+                    "circle-stroke-color": markerPalette().apStroke,
+                    "circle-stroke-width": 1.0,
+                    "circle-blur": 0.05,
+                },
+            });
+        }
     }
 
     installInteractions() {
@@ -528,9 +739,14 @@ class SiteMapPage {
             .map((node) => {
                 const lat = Number(node.latitude);
                 const lon = Number(node.longitude);
-                return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+                return hasMeaningfulLatLon(lat, lon) ? [lat, lon] : null;
             })
             .filter((pair) => Array.isArray(pair));
+
+        if (siteLatLonPairs.length === 0) {
+            this.setStatus("No mapped sites", "warning");
+            return;
+        }
 
         this.mapInitPromise = (async () => {
             try {
@@ -646,8 +862,8 @@ class SiteMapPage {
                 id: node.id || null,
                 type: nodeType,
                 immediateParent: node.immediate_parent,
-                latitude: Number.isFinite(node.latitude) ? node.latitude : null,
-                longitude: Number.isFinite(node.longitude) ? node.longitude : null,
+                latitude: null,
+                longitude: null,
                 throughputDown: avgDown,
                 throughputUp: avgUp,
                 throughputCombined,
@@ -660,6 +876,12 @@ class SiteMapPage {
                 parentName: null,
                 inheritedCoords: false,
             };
+            const lat = Number(node.latitude);
+            const lon = Number(node.longitude);
+            if (hasMeaningfulLatLon(lat, lon)) {
+                normalized.latitude = lat;
+                normalized.longitude = lon;
+            }
             byIndex.set(value.latestIndex, normalized);
         });
 
@@ -746,6 +968,7 @@ class SiteMapPage {
                 return;
             }
             emittedLinks.add(key);
+            const utilizationRatio = maxBitsPerSecond > 0 ? Math.max(0, Math.min(1, node.throughputCombined / maxBitsPerSecond)) : 0;
             siteLinkFeatures.push({
                 type: "Feature",
                 geometry: {
@@ -759,6 +982,7 @@ class SiteMapPage {
                     key,
                     fromName: node.name,
                     toName: parent.name,
+                    utilizationRatio,
                 },
             });
         });
@@ -776,7 +1000,14 @@ class SiteMapPage {
     }
 
     renderFromHistory() {
-        if (!this.map || !this.map.isStyleLoaded()) {
+        if (!this.map) {
+            return;
+        }
+        // MapLibre may report the style as not-yet-loaded while raster tiles are still fetching
+        // (503/429). The overlays only require the GeoJSON sources/layers to exist.
+        if (!this.map.getSource(SITE_SOURCE_ID)
+            || !this.map.getSource(AP_SOURCE_ID)
+            || !this.map.getSource(SITE_LINK_SOURCE_ID)) {
             return;
         }
         const aggregate = this.buildAggregates();
