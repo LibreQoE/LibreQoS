@@ -247,6 +247,42 @@
     min-width: 220px;
 }
 
+.site-map-site-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 7px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 72%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 86%, transparent);
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    user-select: none;
+}
+
+.site-map-site-label-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.22);
+    flex: 0 0 auto;
+}
+
+.site-map-site-label-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .maplibregl-popup-content {
     border-radius: 14px;
     border: 1px solid var(--lqos-border);

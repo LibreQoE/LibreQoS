@@ -8,44 +8,25 @@ const wsClient = get_ws_client();
 
 const INITIAL_REQUEST_TIMEOUT_MS = 2500;
 const HISTORY_WINDOW_MS = 30_000;
-const COUNTRIES_GEOJSON_PATH = "vendor/countries.geojson";
-const ADMIN1_BOUNDARIES_GEOJSON_PATH = "vendor/site_map_admin1_boundaries.geojson";
-const COASTLINES_GEOJSON_PATH = "vendor/site_map_coastlines.geojson";
-const LAKES_GEOJSON_PATH = "vendor/site_map_lakes.geojson";
-const RIVERS_GEOJSON_PATH = "vendor/site_map_rivers.geojson";
-const PHYSICAL_REGIONS_GEOJSON_PATH = "vendor/site_map_physical_regions.geojson";
-const PHYSICAL_REGIONS_10M_GEOJSON_PATH = "vendor/site_map_physical_regions_10m.geojson";
-const MARINE_AREAS_GEOJSON_PATH = "vendor/site_map_marine_areas.geojson";
-const MAJOR_ROADS_10M_GEOJSON_PATH = "vendor/site_map_major_roads_10m.geojson";
-const INITIAL_CENTER = [-101.5, 39.8];
-const INITIAL_ZOOM = 3.15;
+
+const TILE_BBOX_URL = "https://insight.librqos.com/tiles/api/bbox";
+const TILE_BBOX_URL_FALLBACK = "https://insight.libreqos.com/tiles/api/bbox";
+const TILE_BBOX_BEARER_VALUE = "LibreQoSRocks";
+const TILE_URL_TEMPLATE = "https://insight.libreqos.com/tiles/{z}/{y}/{x}.png?key=LibreQosRocks";
+const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
+const TILE_MAX_ZOOM = 19;
+
+const FALLBACK_CENTER = [-101.5, 39.8];
+const FALLBACK_ZOOM = 3.15;
+
+const OSM_RASTER_SOURCE_ID = "site-map-osm";
+const OSM_RASTER_LAYER_ID = "site-map-osm-tiles";
 const SITE_SOURCE_ID = "site-map-sites";
 const AP_SOURCE_ID = "site-map-aps";
-const COUNTRIES_SOURCE_ID = "site-map-countries";
-const ADMIN1_SOURCE_ID = "site-map-admin1";
-const COASTLINE_SOURCE_ID = "site-map-coastlines";
-const LAKES_SOURCE_ID = "site-map-lakes";
-const RIVERS_SOURCE_ID = "site-map-rivers";
-const PHYSICAL_REGIONS_SOURCE_ID = "site-map-physical-regions";
-const PHYSICAL_REGIONS_10M_SOURCE_ID = "site-map-physical-regions-10m";
-const MARINE_AREAS_SOURCE_ID = "site-map-marine-areas";
-const MAJOR_ROADS_10M_SOURCE_ID = "site-map-major-roads-10m";
-const SITE_CLUSTER_LAYER_ID = "site-map-site-clusters";
+const SITE_LINK_SOURCE_ID = "site-map-site-links";
 const SITE_POINTS_LAYER_ID = "site-map-site-points";
-const AP_CLUSTER_LAYER_ID = "site-map-ap-clusters";
 const AP_POINTS_LAYER_ID = "site-map-ap-points";
-const COUNTRY_FILL_LAYER_ID = "site-map-country-fill";
-const COUNTRY_LINE_LAYER_ID = "site-map-country-line";
-const ADMIN1_LINE_LAYER_ID = "site-map-admin1-line";
-const COASTLINE_LAYER_ID = "site-map-coastline-line";
-const LAKES_FILL_LAYER_ID = "site-map-lakes-fill";
-const RIVERS_LINE_LAYER_ID = "site-map-rivers-line";
-const PHYSICAL_REGIONS_FILL_LAYER_ID = "site-map-physical-regions-fill";
-const PHYSICAL_REGIONS_LINE_LAYER_ID = "site-map-physical-regions-line";
-const PHYSICAL_REGIONS_10M_FILL_LAYER_ID = "site-map-physical-regions-10m-fill";
-const PHYSICAL_REGIONS_10M_LINE_LAYER_ID = "site-map-physical-regions-10m-line";
-const MARINE_AREAS_FILL_LAYER_ID = "site-map-marine-areas-fill";
-const MAJOR_ROADS_10M_LAYER_ID = "site-map-major-roads-10m-line";
+const SITE_LINK_LAYER_ID = "site-map-site-links-line";
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -133,103 +114,115 @@ function asNodeType(node) {
     return String(node?.type || node?.node_type || "").toLowerCase();
 }
 
-function countryPalette() {
+function markerPalette() {
     if (isDarkMode()) {
         return {
-            background: "#09111d",
-            land: "#132339",
-            water: "#102945",
-            marine: "rgba(16, 34, 56, 0.42)",
-            terrain: "rgba(94, 118, 148, 0.12)",
-            roads: "rgba(147, 180, 226, 0.34)",
-            coast: "rgba(170, 203, 255, 0.56)",
-            admin1: "rgba(125, 155, 198, 0.22)",
-            rivers: "rgba(122, 174, 240, 0.36)",
-            borders: "rgba(160, 194, 255, 0.82)",
             siteStroke: "rgba(244, 248, 255, 0.68)",
             apStroke: "rgba(244, 248, 255, 0.54)",
-            popupBg: "rgba(11, 18, 30, 0.96)",
-            popupBorder: "rgba(148, 163, 184, 0.3)",
+            link: "rgba(15, 23, 42, 0.35)",
         };
     }
     return {
-        background: "#d8e5f1",
-        land: "#eef4fb",
-        water: "#ccdeee",
-        marine: "rgba(194, 214, 234, 0.46)",
-        terrain: "rgba(118, 136, 158, 0.08)",
-        roads: "rgba(109, 135, 171, 0.28)",
-        coast: "rgba(71, 101, 141, 0.44)",
-        admin1: "rgba(77, 102, 135, 0.18)",
-        rivers: "rgba(83, 128, 185, 0.30)",
-        borders: "rgba(61, 90, 130, 0.72)",
         siteStroke: "rgba(15, 23, 42, 0.36)",
         apStroke: "rgba(15, 23, 42, 0.28)",
-        popupBg: "rgba(255, 255, 255, 0.96)",
-        popupBorder: "rgba(15, 23, 42, 0.12)",
+        link: "rgba(15, 23, 42, 0.35)",
     };
 }
 
-function buildMapStyle() {
-    const palette = countryPalette();
+function buildOsmRasterStyle() {
     return {
         version: 8,
-        sources: {},
+        sources: {
+            [OSM_RASTER_SOURCE_ID]: {
+                type: "raster",
+                tiles: [TILE_URL_TEMPLATE],
+                tileSize: 256,
+                attribution: TILE_ATTRIBUTION,
+                maxzoom: TILE_MAX_ZOOM,
+            },
+        },
         layers: [
             {
                 id: "site-map-background",
                 type: "background",
                 paint: {
-                    "background-color": palette.background,
+                    "background-color": isDarkMode() ? "#0b1220" : "#ffffff",
                 },
+            },
+            {
+                id: OSM_RASTER_LAYER_ID,
+                type: "raster",
+                source: OSM_RASTER_SOURCE_ID,
+                minzoom: 0,
+                maxzoom: TILE_MAX_ZOOM,
             },
         ],
     };
 }
 
-function qooClusterColorExpression() {
-    return [
-        "case",
-        [">", ["get", "qooCount"], 0],
-        [
-            "step",
-            ["/", ["get", "qooSum"], ["get", "qooCount"]],
-            "#d94b5b",
-            45, "#f5b84f",
-            75, "#6ecc84",
-            90, "#4ca4ff",
-        ],
-        "#8893a5",
-    ];
+function normalizeBboxResponse(data) {
+    if (Array.isArray(data) && data.length >= 3) {
+        const [lat, lon, zoom] = data;
+        return { lat: Number(lat), lon: Number(lon), zoom: Number(zoom) };
+    }
+    if (data && typeof data === "object") {
+        const lat = Number(data.lat ?? data.latitude);
+        const lon = Number(data.lon ?? data.lng ?? data.longitude);
+        const zoom = Number(data.zoom);
+        return { lat, lon, zoom };
+    }
+    return null;
 }
 
-function rttClusterColorExpression() {
-    return [
-        "case",
-        [">", ["get", "rttCount"], 0],
-        [
-            "step",
-            ["/", ["get", "rttSum"], ["get", "rttCount"]],
-            "#61d26f",
-            40, "#d7d86b",
-            90, "#f0a44d",
-            160, "#d94b5b",
-        ],
-        "#8893a5",
-    ];
-}
+async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
+    if (!Array.isArray(siteLatLonPairs) || siteLatLonPairs.length === 0) {
+        return null;
+    }
 
-function clusterRadiusExpression() {
-    return [
-        "step",
-        ["get", "throughputSum"],
-        18,
-        5_000_000, 22,
-        25_000_000, 28,
-        100_000_000, 36,
-        500_000_000, 46,
-        1_000_000_000, 56,
-    ];
+    const startedAt = Date.now();
+    const urls = [TILE_BBOX_URL, TILE_BBOX_URL_FALLBACK]
+        .filter((url) => typeof url === "string" && url.length > 0);
+
+    let lastError = null;
+    // Try the documented URL first, but fall back to the tile domain if DNS/method mismatches occur.
+    for (const url of urls) {
+        const elapsed = Date.now() - startedAt;
+        const remainingMs = Math.max(250, timeoutMs - elapsed);
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), remainingMs);
+
+        try {
+            const resp = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Bearer: TILE_BBOX_BEARER_VALUE,
+                },
+                body: JSON.stringify(siteLatLonPairs),
+                signal: controller.signal,
+            });
+            if (!resp.ok) {
+                throw new Error(`bbox request failed: ${resp.status}`);
+            }
+            const json = await resp.json();
+            const normalized = normalizeBboxResponse(json);
+            if (!normalized
+                || !Number.isFinite(normalized.lat)
+                || !Number.isFinite(normalized.lon)
+                || !Number.isFinite(normalized.zoom)) {
+                throw new Error("bbox returned invalid center");
+            }
+            return normalized;
+        } catch (err) {
+            lastError = err;
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
+    }
+
+    console.warn("Site map bbox request failed; falling back to local fit.", lastError);
+    return null;
 }
 
 class SiteMapPage {
@@ -245,9 +238,8 @@ class SiteMapPage {
         this.lastUpdateAt = 0;
         this.latestRender = null;
         this.unmappedOpen = false;
-        this.heavyLayersInstalled = false;
-        this.heavyLayersInstallQueued = false;
-        this.heavyLayersFallbackTimer = null;
+        this.mapInitPromise = null;
+        this.siteLabelMarkers = new Map();
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -268,7 +260,6 @@ class SiteMapPage {
     init() {
         this.bindControls();
         this.refreshLegend();
-        this.initMap();
         this.requestInitialTree();
         this.startUpdatedClock();
         this.observeThemeChanges();
@@ -304,14 +295,15 @@ class SiteMapPage {
         });
     }
 
-    initMap() {
+    initMap(center = FALLBACK_CENTER, zoom = FALLBACK_ZOOM) {
         this.map = new window.maplibregl.Map({
             container: this.canvas,
-            style: buildMapStyle(),
-            center: INITIAL_CENTER,
-            zoom: INITIAL_ZOOM,
+            style: buildOsmRasterStyle(),
+            center,
+            zoom,
+            maxZoom: TILE_MAX_ZOOM,
             attributionControl: false,
-            customAttribution: "Natural Earth",
+            customAttribution: "LibreQoS Insight tile cache",
         });
         this.map.addControl(new window.maplibregl.NavigationControl({ visualizePitch: false }), "bottom-left");
         this.map.addControl(new window.maplibregl.AttributionControl({ compact: true }), "bottom-left");
@@ -325,11 +317,10 @@ class SiteMapPage {
         });
 
         this.map.on("load", () => {
-            this.installPointSourcesAndLayers();
+            this.installSourcesAndLayers();
             this.installInteractions();
             this.applyTheme();
             this.renderFromHistory();
-            this.queueHeavyLayersInstall();
         });
     }
 
@@ -348,43 +339,10 @@ class SiteMapPage {
         if (!this.map || !this.map.isStyleLoaded()) {
             return;
         }
-        const palette = countryPalette();
-        this.map.setPaintProperty("site-map-background", "background-color", palette.background);
-        if (this.map.getLayer(COUNTRY_FILL_LAYER_ID)) {
-            this.map.setPaintProperty(COUNTRY_FILL_LAYER_ID, "fill-color", palette.land);
-        }
-        if (this.map.getLayer(MARINE_AREAS_FILL_LAYER_ID)) {
-            this.map.setPaintProperty(MARINE_AREAS_FILL_LAYER_ID, "fill-color", palette.marine);
-        }
-        if (this.map.getLayer(PHYSICAL_REGIONS_FILL_LAYER_ID)) {
-            this.map.setPaintProperty(PHYSICAL_REGIONS_FILL_LAYER_ID, "fill-color", palette.terrain);
-        }
-        if (this.map.getLayer(PHYSICAL_REGIONS_LINE_LAYER_ID)) {
-            this.map.setPaintProperty(PHYSICAL_REGIONS_LINE_LAYER_ID, "line-color", palette.terrain);
-        }
-        if (this.map.getLayer(PHYSICAL_REGIONS_10M_FILL_LAYER_ID)) {
-            this.map.setPaintProperty(PHYSICAL_REGIONS_10M_FILL_LAYER_ID, "fill-color", palette.terrain);
-        }
-        if (this.map.getLayer(PHYSICAL_REGIONS_10M_LINE_LAYER_ID)) {
-            this.map.setPaintProperty(PHYSICAL_REGIONS_10M_LINE_LAYER_ID, "line-color", palette.terrain);
-        }
-        if (this.map.getLayer(MAJOR_ROADS_10M_LAYER_ID)) {
-            this.map.setPaintProperty(MAJOR_ROADS_10M_LAYER_ID, "line-color", palette.roads);
-        }
-        if (this.map.getLayer(LAKES_FILL_LAYER_ID)) {
-            this.map.setPaintProperty(LAKES_FILL_LAYER_ID, "fill-color", palette.water);
-        }
-        if (this.map.getLayer(RIVERS_LINE_LAYER_ID)) {
-            this.map.setPaintProperty(RIVERS_LINE_LAYER_ID, "line-color", palette.rivers);
-        }
-        if (this.map.getLayer(ADMIN1_LINE_LAYER_ID)) {
-            this.map.setPaintProperty(ADMIN1_LINE_LAYER_ID, "line-color", palette.admin1);
-        }
-        if (this.map.getLayer(COUNTRY_LINE_LAYER_ID)) {
-            this.map.setPaintProperty(COUNTRY_LINE_LAYER_ID, "line-color", palette.borders);
-        }
-        if (this.map.getLayer(COASTLINE_LAYER_ID)) {
-            this.map.setPaintProperty(COASTLINE_LAYER_ID, "line-color", palette.coast);
+        const palette = markerPalette();
+        this.map.setPaintProperty("site-map-background", "background-color", isDarkMode() ? "#0b1220" : "#ffffff");
+        if (this.map.getLayer(SITE_LINK_LAYER_ID)) {
+            this.map.setPaintProperty(SITE_LINK_LAYER_ID, "line-color", palette.link);
         }
         if (this.map.getLayer(SITE_POINTS_LAYER_ID)) {
             this.map.setPaintProperty(SITE_POINTS_LAYER_ID, "circle-stroke-color", palette.siteStroke);
@@ -394,430 +352,87 @@ class SiteMapPage {
         }
     }
 
-    installPointSourcesAndLayers() {
+    installSourcesAndLayers() {
+        this.map.addSource(SITE_LINK_SOURCE_ID, {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+        });
         this.map.addSource(SITE_SOURCE_ID, {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
-            cluster: true,
-            clusterRadius: 42,
-            clusterMaxZoom: 7,
-            clusterProperties: {
-                throughputSum: ["+", ["get", "throughputCombined"]],
-                qooSum: ["+", ["coalesce", ["get", "qooWorst"], 0]],
-                qooCount: ["+", ["case", ["has", "qooWorst"], 1, 0]],
-                rttSum: ["+", ["coalesce", ["get", "rttWorst"], 0]],
-                rttCount: ["+", ["case", ["has", "rttWorst"], 1, 0]],
-            },
         });
         this.map.addSource(AP_SOURCE_ID, {
             type: "geojson",
             data: { type: "FeatureCollection", features: [] },
-            cluster: true,
-            clusterRadius: 40,
-            clusterMaxZoom: 11,
-            clusterProperties: {
-                throughputSum: ["+", ["get", "throughputCombined"]],
-                qooSum: ["+", ["coalesce", ["get", "qooWorst"], 0]],
-                qooCount: ["+", ["case", ["has", "qooWorst"], 1, 0]],
-                rttSum: ["+", ["coalesce", ["get", "rttWorst"], 0]],
-                rttCount: ["+", ["case", ["has", "rttWorst"], 1, 0]],
-            },
         });
 
         this.map.addLayer({
-            id: SITE_CLUSTER_LAYER_ID,
-            type: "circle",
-            source: SITE_SOURCE_ID,
-            filter: ["has", "point_count"],
+            id: SITE_LINK_LAYER_ID,
+            type: "line",
+            source: SITE_LINK_SOURCE_ID,
+            layout: {
+                "line-join": "round",
+                "line-cap": "round",
+            },
             paint: {
-                "circle-color": qooClusterColorExpression(),
-                "circle-radius": clusterRadiusExpression(),
-                "circle-opacity": 0.88,
-                "circle-stroke-color": countryPalette().siteStroke,
-                "circle-stroke-width": 1.1,
+                "line-color": markerPalette().link,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.6,
+                    6, 1.2,
+                    10, 2.0,
+                ],
+                "line-opacity": [
+                    "interpolate", ["linear"], ["zoom"],
+                    2, 0.25,
+                    6, 0.45,
+                    10, 0.6,
+                ],
             },
         });
+
         this.map.addLayer({
             id: SITE_POINTS_LAYER_ID,
             type: "circle",
             source: SITE_SOURCE_ID,
-            filter: ["!", ["has", "point_count"]],
             paint: {
                 "circle-color": ["get", "metricColor"],
                 "circle-radius": ["get", "markerRadius"],
                 "circle-opacity": [
                     "interpolate", ["linear"], ["zoom"],
-                    0, 0.92,
-                    5, 0.62,
-                    8, 0.18,
+                    0, 0.86,
+                    6, 0.76,
+                    10, 0.62,
                 ],
-                "circle-stroke-color": countryPalette().siteStroke,
-                "circle-stroke-width": 1.0,
-                "circle-blur": 0.08,
+                "circle-stroke-color": markerPalette().siteStroke,
+                "circle-stroke-width": 1.15,
+                "circle-blur": 0.06,
             },
         });
 
         this.map.addLayer({
-            id: AP_CLUSTER_LAYER_ID,
-            type: "circle",
-            source: AP_SOURCE_ID,
-            filter: ["has", "point_count"],
-            paint: {
-                "circle-color": qooClusterColorExpression(),
-                "circle-radius": clusterRadiusExpression(),
-                "circle-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.18,
-                    4, 0.44,
-                    6, 0.82,
-                    8, 0.9,
-                ],
-                "circle-stroke-color": countryPalette().apStroke,
-                "circle-stroke-width": 1.0,
-            },
-        });
-        this.map.addLayer({
             id: AP_POINTS_LAYER_ID,
             type: "circle",
             source: AP_SOURCE_ID,
-            filter: ["!", ["has", "point_count"]],
             paint: {
                 "circle-color": ["get", "metricColor"],
                 "circle-radius": ["get", "markerRadius"],
                 "circle-opacity": [
                     "interpolate", ["linear"], ["zoom"],
-                    0, 0.06,
-                    4, 0.18,
-                    6, 0.76,
-                    8, 0.96,
+                    0, 0.0,
+                    5, 0.08,
+                    7, 0.55,
+                    9, 0.86,
                 ],
-                "circle-stroke-color": countryPalette().apStroke,
+                "circle-stroke-color": markerPalette().apStroke,
                 "circle-stroke-width": 1.0,
                 "circle-blur": 0.05,
             },
         });
     }
 
-    installHeavyGeographyLayers() {
-        if (this.heavyLayersInstalled || !this.map?.isStyleLoaded()) {
-            return;
-        }
-
-        const addLayerBelowPoints = (layer) => this.map.addLayer(layer, SITE_CLUSTER_LAYER_ID);
-
-        this.map.addSource(COUNTRIES_SOURCE_ID, {
-            type: "geojson",
-            data: COUNTRIES_GEOJSON_PATH,
-        });
-        this.map.addSource(MARINE_AREAS_SOURCE_ID, {
-            type: "geojson",
-            data: MARINE_AREAS_GEOJSON_PATH,
-        });
-        this.map.addSource(PHYSICAL_REGIONS_SOURCE_ID, {
-            type: "geojson",
-            data: PHYSICAL_REGIONS_GEOJSON_PATH,
-        });
-        this.map.addSource(PHYSICAL_REGIONS_10M_SOURCE_ID, {
-            type: "geojson",
-            data: PHYSICAL_REGIONS_10M_GEOJSON_PATH,
-        });
-        this.map.addSource(MAJOR_ROADS_10M_SOURCE_ID, {
-            type: "geojson",
-            data: MAJOR_ROADS_10M_GEOJSON_PATH,
-        });
-        this.map.addSource(LAKES_SOURCE_ID, {
-            type: "geojson",
-            data: LAKES_GEOJSON_PATH,
-        });
-        this.map.addSource(RIVERS_SOURCE_ID, {
-            type: "geojson",
-            data: RIVERS_GEOJSON_PATH,
-        });
-        this.map.addSource(ADMIN1_SOURCE_ID, {
-            type: "geojson",
-            data: ADMIN1_BOUNDARIES_GEOJSON_PATH,
-        });
-        this.map.addSource(COASTLINE_SOURCE_ID, {
-            type: "geojson",
-            data: COASTLINES_GEOJSON_PATH,
-        });
-
-        addLayerBelowPoints({
-            id: MARINE_AREAS_FILL_LAYER_ID,
-            type: "fill",
-            source: MARINE_AREAS_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().marine,
-                "fill-opacity": 0.9,
-            },
-        });
-        addLayerBelowPoints({
-            id: COUNTRY_FILL_LAYER_ID,
-            type: "fill",
-            source: COUNTRIES_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().land,
-                "fill-opacity": isDarkMode() ? 0.8 : 0.76,
-            },
-        });
-        addLayerBelowPoints({
-            id: PHYSICAL_REGIONS_FILL_LAYER_ID,
-            type: "fill",
-            source: PHYSICAL_REGIONS_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().terrain,
-                "fill-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.22 : 0.15,
-                        "mountain", isDarkMode() ? 0.18 : 0.12,
-                        "plateau", isDarkMode() ? 0.12 : 0.08,
-                        "basin", isDarkMode() ? 0.09 : 0.06,
-                        "plain", isDarkMode() ? 0.06 : 0.04,
-                        "desert", isDarkMode() ? 0.08 : 0.05,
-                        isDarkMode() ? 0.08 : 0.05,
-                    ],
-                    4.5,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.18 : 0.11,
-                        "mountain", isDarkMode() ? 0.15 : 0.09,
-                        "plateau", isDarkMode() ? 0.08 : 0.05,
-                        "basin", isDarkMode() ? 0.06 : 0.04,
-                        "plain", isDarkMode() ? 0.04 : 0.02,
-                        "desert", isDarkMode() ? 0.05 : 0.03,
-                        isDarkMode() ? 0.05 : 0.03,
-                    ],
-                    6,
-                    0,
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: PHYSICAL_REGIONS_LINE_LAYER_ID,
-            type: "line",
-            source: PHYSICAL_REGIONS_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().terrain,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.18,
-                    5, 0.3,
-                    8, 0.46,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.05,
-                    4.5, 0.08,
-                    6, 0.03,
-                    7, 0,
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: PHYSICAL_REGIONS_10M_FILL_LAYER_ID,
-            type: "fill",
-            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
-            minzoom: 4.5,
-            paint: {
-                "fill-color": countryPalette().terrain,
-                "fill-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5,
-                    0,
-                    5.5,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.24 : 0.16,
-                        "mountain", isDarkMode() ? 0.2 : 0.13,
-                        "plateau", isDarkMode() ? 0.12 : 0.08,
-                        "basin", isDarkMode() ? 0.09 : 0.06,
-                        "plain", isDarkMode() ? 0.05 : 0.03,
-                        "desert", isDarkMode() ? 0.07 : 0.05,
-                        isDarkMode() ? 0.07 : 0.05,
-                    ],
-                    8,
-                    [
-                        "match", ["get", "featurecla"],
-                        "mountain range", isDarkMode() ? 0.28 : 0.19,
-                        "mountain", isDarkMode() ? 0.24 : 0.16,
-                        "plateau", isDarkMode() ? 0.15 : 0.1,
-                        "basin", isDarkMode() ? 0.11 : 0.08,
-                        "plain", isDarkMode() ? 0.07 : 0.05,
-                        "desert", isDarkMode() ? 0.09 : 0.06,
-                        isDarkMode() ? 0.09 : 0.06,
-                    ],
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: PHYSICAL_REGIONS_10M_LINE_LAYER_ID,
-            type: "line",
-            source: PHYSICAL_REGIONS_10M_SOURCE_ID,
-            minzoom: 4.5,
-            paint: {
-                "line-color": countryPalette().terrain,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5, 0.18,
-                    6, 0.34,
-                    8, 0.5,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    4.5, 0,
-                    5.5, 0.05,
-                    8, 0.1,
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: MAJOR_ROADS_10M_LAYER_ID,
-            type: "line",
-            source: MAJOR_ROADS_10M_SOURCE_ID,
-            minzoom: 5.5,
-            paint: {
-                "line-color": countryPalette().roads,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0.3,
-                    7, 0.55,
-                    9, 0.95,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    5.5, 0,
-                    6.5, isDarkMode() ? 0.18 : 0.14,
-                    9, isDarkMode() ? 0.28 : 0.22,
-                ],
-            },
-        });
-        this.map.setPaintProperty(MAJOR_ROADS_10M_LAYER_ID, "line-opacity", [
-            "interpolate", ["linear"], ["zoom"],
-            0, 0,
-            4.5, isDarkMode() ? 0.1 : 0.08,
-            5.5, isDarkMode() ? 0.14 : 0.1,
-            6.25, 0,
-        ]);
-        addLayerBelowPoints({
-            id: LAKES_FILL_LAYER_ID,
-            type: "fill",
-            source: LAKES_SOURCE_ID,
-            paint: {
-                "fill-color": countryPalette().water,
-                "fill-opacity": 0.92,
-            },
-        });
-        addLayerBelowPoints({
-            id: RIVERS_LINE_LAYER_ID,
-            type: "line",
-            source: RIVERS_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().rivers,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.22,
-                    5, 0.4,
-                    8, 0.62,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.42,
-                    5, 0.34,
-                    8, 0.28,
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: ADMIN1_LINE_LAYER_ID,
-            type: "line",
-            source: ADMIN1_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().admin1,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.34,
-                    5, 0.58,
-                    8, 0.95,
-                ],
-                "line-opacity": [
-                    "interpolate", ["linear"], ["zoom"],
-                    0, 0.3,
-                    3, 0.46,
-                    5.5, 0.6,
-                    7, 0.52,
-                    9, 0.42,
-                ],
-            },
-        });
-        addLayerBelowPoints({
-            id: COUNTRY_LINE_LAYER_ID,
-            type: "line",
-            source: COUNTRIES_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().borders,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.5,
-                    5, 0.8,
-                    8, 1.2,
-                ],
-                "line-opacity": 0.9,
-            },
-        });
-        addLayerBelowPoints({
-            id: COASTLINE_LAYER_ID,
-            type: "line",
-            source: COASTLINE_SOURCE_ID,
-            paint: {
-                "line-color": countryPalette().coast,
-                "line-width": [
-                    "interpolate", ["linear"], ["zoom"],
-                    2, 0.45,
-                    5, 0.8,
-                    8, 1.25,
-                ],
-                "line-opacity": 0.82,
-            },
-        });
-
-        this.heavyLayersInstalled = true;
-        this.applyTheme();
-    }
-
-    queueHeavyLayersInstall() {
-        if (this.heavyLayersInstalled || this.heavyLayersInstallQueued) {
-            return;
-        }
-        this.heavyLayersInstallQueued = true;
-        const install = () => {
-            if (this.heavyLayersFallbackTimer !== null) {
-                window.clearTimeout(this.heavyLayersFallbackTimer);
-                this.heavyLayersFallbackTimer = null;
-            }
-            this.heavyLayersInstallQueued = false;
-            this.installHeavyGeographyLayers();
-        };
-        const installWhenReady = () => {
-            if (this.heavyLayersInstalled) {
-                return;
-            }
-            if (this.map?.isStyleLoaded()) {
-                install();
-                return;
-            }
-            this.map?.once("idle", install);
-        };
-
-        this.map?.once("idle", installWhenReady);
-        this.heavyLayersFallbackTimer = window.setTimeout(installWhenReady, 1200);
-    }
-
     installInteractions() {
         const pointLayers = [SITE_POINTS_LAYER_ID, AP_POINTS_LAYER_ID];
-        const clusterLayers = [SITE_CLUSTER_LAYER_ID, AP_CLUSTER_LAYER_ID];
 
         pointLayers.forEach((layerId) => {
             this.map.on("mouseenter", layerId, () => {
@@ -840,47 +455,6 @@ class SiteMapPage {
                 if (!feature) return;
                 this.selectedFeature = feature.properties;
                 this.renderDetails(feature.properties);
-            });
-        });
-
-        clusterLayers.forEach((layerId) => {
-            this.map.on("mouseenter", layerId, () => {
-                this.map.getCanvas().style.cursor = "pointer";
-            });
-            this.map.on("mouseleave", layerId, () => {
-                this.map.getCanvas().style.cursor = "";
-                this.popup.remove();
-            });
-            this.map.on("mousemove", layerId, (event) => {
-                const feature = event.features?.[0];
-                if (!feature) return;
-                const props = feature.properties || {};
-                const count = toNumber(props.point_count, 0);
-                const typeLabel = layerId === SITE_CLUSTER_LAYER_ID ? "Site" : "AP";
-                this.popup
-                    .setLngLat(event.lngLat)
-                    .setHTML(`
-                        <div class="small">
-                            <div class="fw-semibold">${typeLabel} cluster</div>
-                            <div class="text-muted">${count} grouped nodes at this zoom level.</div>
-                        </div>`)
-                    .addTo(this.map);
-            });
-            this.map.on("click", layerId, async (event) => {
-                const feature = event.features?.[0];
-                if (!feature) return;
-                const sourceId = layerId === SITE_CLUSTER_LAYER_ID ? SITE_SOURCE_ID : AP_SOURCE_ID;
-                const clusterId = feature.properties?.cluster_id;
-                const source = this.map.getSource(sourceId);
-                if (!source || clusterId === undefined || clusterId === null) return;
-                source.getClusterExpansionZoom(clusterId, (err, zoom) => {
-                    if (err) return;
-                    this.map.easeTo({
-                        center: feature.geometry.coordinates,
-                        zoom,
-                        duration: 400,
-                    });
-                });
             });
         });
     }
@@ -910,7 +484,34 @@ class SiteMapPage {
         this.latestSnapshot = data;
         this.lastUpdateAt = Date.now();
         this.setStatus("Live", "success");
+        this.ensureMapInitialized();
         this.renderFromHistory();
+    }
+
+    ensureMapInitialized() {
+        if (this.map || this.mapInitPromise) {
+            return;
+        }
+        const siteLatLonPairs = this.latestSnapshot
+            .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+            .map(([, node]) => node)
+            .filter((node) => asNodeType(node) === "site")
+            .map((node) => {
+                const lat = Number(node.latitude);
+                const lon = Number(node.longitude);
+                return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
+            })
+            .filter((pair) => Array.isArray(pair));
+
+        this.mapInitPromise = (async () => {
+            const center = await requestOsmCenterFromBbox(siteLatLonPairs, 2500);
+            if (center) {
+                this.hasFitOnce = true;
+                this.initMap([center.lon, center.lat], center.zoom);
+                return;
+            }
+            this.initMap(FALLBACK_CENTER, FALLBACK_ZOOM);
+        })();
     }
 
     buildAggregates() {
@@ -1087,11 +688,44 @@ class SiteMapPage {
             features.push(feature);
         });
 
+        const siteLinkFeatures = [];
+        byIndex.forEach((node) => {
+            if (node.type !== "site") {
+                return;
+            }
+            if (node.latitude === null || node.longitude === null) {
+                return;
+            }
+            if (node.immediateParent === null || node.immediateParent === undefined) {
+                return;
+            }
+            const parent = byIndex.get(node.immediateParent);
+            if (!parent || parent.type !== "site" || parent.latitude === null || parent.longitude === null) {
+                return;
+            }
+            siteLinkFeatures.push({
+                type: "Feature",
+                geometry: {
+                    type: "LineString",
+                    coordinates: [
+                        [node.longitude, node.latitude],
+                        [parent.longitude, parent.latitude],
+                    ],
+                },
+                properties: {
+                    key: `${node.key}:${parent.key}`,
+                    fromName: node.name,
+                    toName: parent.name,
+                },
+            });
+        });
+
         const siteFeatures = features.filter((feature) => feature.properties.nodeType === "site");
         const apFeatures = features.filter((feature) => feature.properties.nodeType === "ap");
         return {
             siteFeatures,
             apFeatures,
+            siteLinkFeatures,
             unmappedSites,
             unmappedAps,
             maxBitsPerSecond,
@@ -1118,7 +752,8 @@ class SiteMapPage {
     updateSources(aggregate) {
         const siteSource = this.map.getSource(SITE_SOURCE_ID);
         const apSource = this.map.getSource(AP_SOURCE_ID);
-        if (!siteSource || !apSource) {
+        const linkSource = this.map.getSource(SITE_LINK_SOURCE_ID);
+        if (!siteSource || !apSource || !linkSource) {
             return;
         }
         siteSource.setData({
@@ -1129,21 +764,84 @@ class SiteMapPage {
             type: "FeatureCollection",
             features: aggregate.apFeatures,
         });
+        linkSource.setData({
+            type: "FeatureCollection",
+            features: aggregate.siteLinkFeatures ?? [],
+        });
 
         const sparseApCoverage = aggregate.apFeatures.length < 24;
         const siteOpacity = sparseApCoverage
-            ? ["interpolate", ["linear"], ["zoom"], 0, 0.92, 5, 0.7, 8, 0.42]
-            : ["interpolate", ["linear"], ["zoom"], 0, 0.92, 5, 0.54, 7, 0.12, 8, 0.02];
-        const siteClusterOpacity = sparseApCoverage
-            ? ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.76, 8, 0.38]
-            : ["interpolate", ["linear"], ["zoom"], 0, 0.9, 5, 0.6, 7, 0.2, 8, 0.06];
+            ? ["interpolate", ["linear"], ["zoom"], 0, 0.86, 6, 0.76, 10, 0.62]
+            : ["interpolate", ["linear"], ["zoom"], 0, 0.86, 6, 0.72, 8, 0.28, 10, 0.12];
+        const apOpacity = sparseApCoverage
+            ? ["interpolate", ["linear"], ["zoom"], 0, 0.02, 6, 0.22, 8, 0.78, 10, 0.92]
+            : ["interpolate", ["linear"], ["zoom"], 0, 0.0, 6, 0.18, 8, 0.82, 10, 0.96];
 
         this.map.setPaintProperty(SITE_POINTS_LAYER_ID, "circle-opacity", siteOpacity);
-        this.map.setPaintProperty(SITE_CLUSTER_LAYER_ID, "circle-opacity", siteClusterOpacity);
+        this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-opacity", apOpacity);
 
-        const clusterColor = this.mode === "qoo" ? qooClusterColorExpression() : rttClusterColorExpression();
-        this.map.setPaintProperty(SITE_CLUSTER_LAYER_ID, "circle-color", clusterColor);
-        this.map.setPaintProperty(AP_CLUSTER_LAYER_ID, "circle-color", clusterColor);
+        this.syncSiteLabels(aggregate.siteFeatures);
+    }
+
+    syncSiteLabels(siteFeatures) {
+        if (!this.map) {
+            return;
+        }
+
+        const wanted = new Set();
+        siteFeatures.forEach((feature) => {
+            const key = feature?.properties?.key;
+            const name = feature?.properties?.name;
+            const metricColor = feature?.properties?.metricColor;
+            const coordinates = feature?.geometry?.coordinates;
+            if (!key || !name || !Array.isArray(coordinates) || coordinates.length < 2) {
+                return;
+            }
+            wanted.add(key);
+
+            const existing = this.siteLabelMarkers.get(key);
+            if (!existing) {
+                const el = document.createElement("div");
+                el.className = "site-map-site-label";
+                el.innerHTML = `<span class="site-map-site-label-dot"></span><span class="site-map-site-label-text"></span>`;
+                const dot = el.querySelector(".site-map-site-label-dot");
+                const text = el.querySelector(".site-map-site-label-text");
+                if (text) {
+                    text.textContent = name;
+                }
+                if (dot && metricColor) {
+                    dot.style.backgroundColor = metricColor;
+                    dot.style.opacity = "0.82";
+                }
+
+                const marker = new window.maplibregl.Marker({
+                    element: el,
+                    anchor: "bottom",
+                    offset: [0, -14],
+                })
+                    .setLngLat(coordinates)
+                    .addTo(this.map);
+
+                this.siteLabelMarkers.set(key, { marker, dot, text });
+                return;
+            }
+
+            existing.marker.setLngLat(coordinates);
+            if (existing.text) {
+                existing.text.textContent = name;
+            }
+            if (existing.dot && metricColor) {
+                existing.dot.style.backgroundColor = metricColor;
+            }
+        });
+
+        Array.from(this.siteLabelMarkers.entries()).forEach(([key, value]) => {
+            if (wanted.has(key)) {
+                return;
+            }
+            value.marker.remove();
+            this.siteLabelMarkers.delete(key);
+        });
     }
 
     fitToData(siteFeatures, apFeatures) {
