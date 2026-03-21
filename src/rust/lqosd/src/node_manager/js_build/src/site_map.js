@@ -9,12 +9,11 @@ const wsClient = get_ws_client();
 const INITIAL_REQUEST_TIMEOUT_MS = 2500;
 const HISTORY_WINDOW_MS = 30_000;
 
-const TILE_BBOX_URL = "https://insight.librqos.com/tiles/api/bbox";
-const TILE_BBOX_URL_FALLBACK = "https://insight.libreqos.com/tiles/api/bbox";
+const TILE_BBOX_URL = "https://insight.libreqos.com/tiles/api/bbox";
 const TILE_BBOX_BEARER_VALUE = "LibreQoSRocks";
 const TILE_URL_TEMPLATE = "https://insight.libreqos.com/tiles/{z}/{y}/{x}.png?key=LibreQosRocks";
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
-const TILE_MAX_ZOOM = 19;
+const TILE_MAX_ZOOM = 17;
 
 const FALLBACK_CENTER = [-101.5, 39.8];
 const FALLBACK_ZOOM = 3.15;
@@ -114,6 +113,39 @@ function asNodeType(node) {
     return String(node?.type || node?.node_type || "").toLowerCase();
 }
 
+function immediateParentIndex(node) {
+    const raw = node?.immediate_parent ?? node?.immediateParent;
+    if (raw === null || raw === undefined) {
+        return null;
+    }
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function findNearestAncestorSiteIndex(indexMap, startIndex) {
+    let currentIndex = startIndex;
+    const visited = new Set();
+    while (currentIndex !== null && currentIndex !== undefined) {
+        const numeric = Number(currentIndex);
+        if (!Number.isFinite(numeric)) {
+            return null;
+        }
+        if (visited.has(numeric)) {
+            return null;
+        }
+        visited.add(numeric);
+        const node = indexMap.get(numeric);
+        if (!node) {
+            return null;
+        }
+        if (asNodeType(node) === "site") {
+            return numeric;
+        }
+        currentIndex = immediateParentIndex(node);
+    }
+    return null;
+}
+
 function markerPalette() {
     if (isDarkMode()) {
         return {
@@ -161,6 +193,13 @@ function buildOsmRasterStyle() {
 }
 
 function normalizeBboxResponse(data) {
+    // Newer/expected shape (see osm_cache): { center: { lat, lon }, zoom }
+    if (data && typeof data === "object" && data.center && typeof data.center === "object") {
+        const lat = Number(data.center.lat ?? data.center.latitude);
+        const lon = Number(data.center.lon ?? data.center.lng ?? data.center.longitude);
+        const zoom = Number(data.zoom);
+        return { lat, lon, zoom };
+    }
     if (Array.isArray(data) && data.length >= 3) {
         const [lat, lon, zoom] = data;
         return { lat: Number(lat), lon: Number(lon), zoom: Number(zoom) };
@@ -176,53 +215,37 @@ function normalizeBboxResponse(data) {
 
 async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
     if (!Array.isArray(siteLatLonPairs) || siteLatLonPairs.length === 0) {
-        return null;
+        throw new Error("No site coordinates supplied");
     }
 
-    const startedAt = Date.now();
-    const urls = [TILE_BBOX_URL, TILE_BBOX_URL_FALLBACK]
-        .filter((url) => typeof url === "string" && url.length > 0);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
-    let lastError = null;
-    // Try the documented URL first, but fall back to the tile domain if DNS/method mismatches occur.
-    for (const url of urls) {
-        const elapsed = Date.now() - startedAt;
-        const remainingMs = Math.max(250, timeoutMs - elapsed);
-
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), remainingMs);
-
-        try {
-            const resp = await fetch(url, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Bearer: TILE_BBOX_BEARER_VALUE,
-                },
-                body: JSON.stringify(siteLatLonPairs),
-                signal: controller.signal,
-            });
-            if (!resp.ok) {
-                throw new Error(`bbox request failed: ${resp.status}`);
-            }
-            const json = await resp.json();
-            const normalized = normalizeBboxResponse(json);
-            if (!normalized
-                || !Number.isFinite(normalized.lat)
-                || !Number.isFinite(normalized.lon)
-                || !Number.isFinite(normalized.zoom)) {
-                throw new Error("bbox returned invalid center");
-            }
-            return normalized;
-        } catch (err) {
-            lastError = err;
-        } finally {
-            window.clearTimeout(timeoutId);
+    try {
+        const resp = await fetch(TILE_BBOX_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Bearer: TILE_BBOX_BEARER_VALUE,
+            },
+            body: JSON.stringify(siteLatLonPairs),
+            signal: controller.signal,
+        });
+        if (!resp.ok) {
+            throw new Error(`bbox request failed: ${resp.status}`);
         }
+        const json = await resp.json();
+        const normalized = normalizeBboxResponse(json);
+        if (!normalized
+            || !Number.isFinite(normalized.lat)
+            || !Number.isFinite(normalized.lon)
+            || !Number.isFinite(normalized.zoom)) {
+            throw new Error("bbox returned invalid center");
+        }
+        return normalized;
+    } finally {
+        window.clearTimeout(timeoutId);
     }
-
-    console.warn("Site map bbox request failed; falling back to local fit.", lastError);
-    return null;
 }
 
 class SiteMapPage {
@@ -240,6 +263,7 @@ class SiteMapPage {
         this.unmappedOpen = false;
         this.mapInitPromise = null;
         this.siteLabelMarkers = new Map();
+        this.lastBboxAttemptAt = 0;
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -492,6 +516,11 @@ class SiteMapPage {
         if (this.map || this.mapInitPromise) {
             return;
         }
+        const now = Date.now();
+        if (this.lastBboxAttemptAt && (now - this.lastBboxAttemptAt) < 15_000) {
+            return;
+        }
+        this.lastBboxAttemptAt = now;
         const siteLatLonPairs = this.latestSnapshot
             .filter((entry) => Array.isArray(entry) && entry.length >= 2)
             .map(([, node]) => node)
@@ -504,13 +533,20 @@ class SiteMapPage {
             .filter((pair) => Array.isArray(pair));
 
         this.mapInitPromise = (async () => {
-            const center = await requestOsmCenterFromBbox(siteLatLonPairs, 2500);
-            if (center) {
+            try {
+                if (siteLatLonPairs.length === 1) {
+                    const [lat, lon] = siteLatLonPairs[0];
+                    siteLatLonPairs.push([lat + 0.0001, lon + 0.0001]);
+                }
+                const center = await requestOsmCenterFromBbox(siteLatLonPairs, 4000);
                 this.hasFitOnce = true;
                 this.initMap([center.lon, center.lat], center.zoom);
-                return;
+            } catch (err) {
+                console.error("Site map bbox request failed; map not initialized.", err);
+                this.setStatus("Waiting for Insight map location", "warning");
+            } finally {
+                this.mapInitPromise = null;
             }
-            this.initMap(FALLBACK_CENTER, FALLBACK_ZOOM);
         })();
     }
 
@@ -689,6 +725,7 @@ class SiteMapPage {
         });
 
         const siteLinkFeatures = [];
+        const emittedLinks = new Set();
         byIndex.forEach((node) => {
             if (node.type !== "site") {
                 return;
@@ -696,13 +733,19 @@ class SiteMapPage {
             if (node.latitude === null || node.longitude === null) {
                 return;
             }
-            if (node.immediateParent === null || node.immediateParent === undefined) {
+            const parentSiteIndex = findNearestAncestorSiteIndex(latestIndexMap, node.immediateParent);
+            if (parentSiteIndex === null) {
                 return;
             }
-            const parent = byIndex.get(node.immediateParent);
+            const parent = byIndex.get(parentSiteIndex);
             if (!parent || parent.type !== "site" || parent.latitude === null || parent.longitude === null) {
                 return;
             }
+            const key = `${node.key}->${parent.key}`;
+            if (emittedLinks.has(key)) {
+                return;
+            }
+            emittedLinks.add(key);
             siteLinkFeatures.push({
                 type: "Feature",
                 geometry: {
@@ -713,7 +756,7 @@ class SiteMapPage {
                     ],
                 },
                 properties: {
-                    key: `${node.key}:${parent.key}`,
+                    key,
                     fromName: node.name,
                     toName: parent.name,
                 },
