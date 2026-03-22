@@ -1,11 +1,16 @@
 mod offloads;
+use crate::sandwich;
 use anyhow::Result;
 use lqos_bus::{BusRequest, BusResponse};
+use lqos_config::Config;
 use lqos_queue_tracker::set_queue_refresh_interval;
 
 pub fn tune_lqosd_from_config_file() -> Result<()> {
     let config = lqos_config::load_config()?;
+    tune_lqosd_from_config(&config)
+}
 
+pub fn tune_lqosd_from_config(config: &Config) -> Result<()> {
     // Disable offloading
     offloads::bpf_sysctls();
     if config.tuning.stop_irq_balance {
@@ -15,8 +20,15 @@ pub fn tune_lqosd_from_config_file() -> Result<()> {
         config.tuning.netdev_budget_usecs,
         config.tuning.netdev_budget_packets,
     );
-    offloads::ethtool_tweaks(&config.internet_interface(), &config.tuning);
-    offloads::ethtool_tweaks(&config.isp_interface(), &config.tuning);
+    if let Some(topology) = sandwich::topology_from_config(config) {
+        for interface in topology.tuning_interfaces() {
+            offloads::sandwich_ethtool_tweaks(interface, &config.tuning);
+        }
+    } else {
+        offloads::ethtool_tweaks(&config.internet_interface(), &config.tuning);
+        offloads::ethtool_tweaks(&config.isp_interface(), &config.tuning);
+    }
+
     let interval = config.queue_check_period_ms;
     set_queue_refresh_interval(interval);
     Ok(())
@@ -31,8 +43,14 @@ pub fn tune_lqosd_from_bus(request: &BusRequest) -> BusResponse {
                     offloads::stop_irq_balance();
                 }
                 offloads::netdev_budget(tuning.netdev_budget_usecs, tuning.netdev_budget_packets);
-                offloads::ethtool_tweaks(&config.internet_interface(), &config.tuning);
-                offloads::ethtool_tweaks(&config.isp_interface(), &config.tuning);
+                if let Some(topology) = sandwich::topology_from_config(&config) {
+                    for interface in topology.tuning_interfaces() {
+                        offloads::sandwich_ethtool_tweaks(interface, tuning);
+                    }
+                } else {
+                    offloads::ethtool_tweaks(&config.internet_interface(), tuning);
+                    offloads::ethtool_tweaks(&config.isp_interface(), tuning);
+                }
             }
             set_queue_refresh_interval(*interval);
             lqos_bus::BusResponse::Ack

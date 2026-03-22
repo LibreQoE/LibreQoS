@@ -55,6 +55,7 @@ fn run_command(command: RemoteCommand) {
                     let _ = lqos_sys::unload_xdp_from_interface(&cfg.internet_interface());
                     let _ = lqos_sys::unload_xdp_from_interface(&cfg.isp_interface());
                 }
+                let _ = crate::sandwich::cleanup_my_sandwich(&cfg);
             }
             std::process::exit(0);
         }

@@ -16,6 +16,50 @@ pub struct BridgeConfig {
 
     /// The name of the second interface, facing the LAN
     pub to_network: String,
+
+    /// The sandwich mode, if any. Sandwich mode enables a veth bridge pair,
+    /// both for compatibility (e.g. if one interface doesn't support XDP),
+    /// and for attaching an absolute rate limiter to the bridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandwich: Option<SandwichMode>,
+}
+
+/// The sandwich mode to use, if any.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+pub enum SandwichMode {
+    /// No sandwich mode - direct interfaces
+    None,
+    /// Use a veth pair as the LibreQoS interface set, and attach a bridge
+    /// on each end to the physical interfaces.
+    Full {
+        /// Whether to attach an absolute rate limiter to the bridge
+        with_rate_limiter: SandwichRateLimiter,
+        /// Normally, the rate limiter is set to the bandwidth of the
+        /// connection. This allows overriding that for download traffic.
+        rate_override_mbps_down: Option<u64>,
+        /// Normally, the rate limiter is set to the bandwidth of the
+        /// connection. This allows overriding that for upload traffic.
+        rate_override_mbps_up: Option<u64>,
+        /// Number of TX queues to use on the veth interfaces
+        /// (Defaults to the available CPU cores)
+        queue_override: Option<usize>,
+        /// Attach an fq_codel child qdisc under the HTB class for better queueing behavior
+        #[serde(default)]
+        use_fq_codel: bool,
+    },
+}
+
+/// The type of rate limiting to apply in sandwich mode
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+pub enum SandwichRateLimiter {
+    /// No rate limiter
+    None,
+    /// Rate limit only download traffic
+    Download,
+    /// Rate limit only upload traffic
+    Upload,
+    /// Rate limit both download and upload traffic
+    Both,
 }
 
 impl Default for BridgeConfig {
@@ -24,6 +68,29 @@ impl Default for BridgeConfig {
             use_xdp_bridge: true,
             to_internet: "eth0".to_string(),
             to_network: "eth1".to_string(),
+            sandwich: None,
+        }
+    }
+}
+
+impl BridgeConfig {
+    /// Returns the active sandwich mode, filtering out legacy explicit `None`.
+    pub fn sandwich_mode(&self) -> Option<&SandwichMode> {
+        self.sandwich.as_ref().and_then(SandwichMode::as_active)
+    }
+
+    /// Returns `true` when sandwich mode is actively enabled.
+    pub fn sandwich_enabled(&self) -> bool {
+        self.sandwich_mode().is_some()
+    }
+}
+
+impl SandwichMode {
+    /// Treats the legacy explicit `None` variant the same as an absent sandwich config.
+    pub fn as_active(&self) -> Option<&Self> {
+        match self {
+            Self::None => None,
+            Self::Full { .. } => Some(self),
         }
     }
 }

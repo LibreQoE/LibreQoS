@@ -87,3 +87,21 @@ sudo netplan apply
 ```
 
 To use the XDP bridge, please be sure to set `use_xdp_bridge` to `true` in lqos.conf in the [Configuration](configuration.md) section.
+
+## Sandwich Mode (Optional)
+
+Sandwich mode inserts a lightweight veth+bridge pair between your two physical shaping ports. It is useful when you need a compatibility layer or a hard/accurate rate cap.
+
+When to use
+- Unsupported NICs or environments where the standard Linux or XDP bridge has quirks (handy for testing and evaluation).
+- Bonded NICs/LACP on the physical ports where the extra bridge hop simplifies attach points.
+- A hard/accurate limiter in one or both directions (for metered bandwidth or strict caps). The limiter uses HTB with an optional fq_codel child.
+
+How to enable
+- Web UI: Configuration → Network Mode → Bridge Mode → Enable “Sandwich Bridge (veth pair)”.
+- Then choose limiter direction (None / Download / Upload / Both). Optionally set per‑direction Mbps overrides and enable “Use fq_codel under HTB”.
+- Or set it in `/etc/lqos.conf` (see details in [Configuration → Sandwich Mode Settings](configuration.md#sandwich-mode-settings)).
+
+Notes
+- This adds a small amount of overhead versus a direct bridge/XDP path, but is generally fine for testing and many production needs.
+- `to_internet` remains the ISP‑facing physical interface; `to_network` remains the LAN‑facing physical interface. Sandwich wiring is handled automatically by LibreQoS.

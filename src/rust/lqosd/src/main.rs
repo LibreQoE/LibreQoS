@@ -15,6 +15,7 @@ mod program_control;
 mod reload_lock;
 mod remote_commands;
 mod rtt_exclusions;
+mod sandwich;
 mod scheduler_control;
 mod shaped_devices_tracker;
 mod stats;
@@ -195,8 +196,15 @@ fn main() -> Result<()> {
         warn!("Failed to initialize Insight license storage: {e:?}");
     }
 
+    // Create sandwich devices before tuning so per-interface ethtool changes
+    // can reach the veth interfaces on first startup.
+    if !config.on_a_stick_mode() {
+        let is_sandwich = sandwich::make_me_a_sandwich(&config)?;
+        tracing::debug!("Sandwich mode: {is_sandwich}");
+    }
+
     // Apply Tunings
-    tuning::tune_lqosd_from_config_file()?;
+    tuning::tune_lqosd_from_config(&config)?;
 
     // Start the flow tracking actor. This has to happen
     // before the ringbuffer goes live.
@@ -280,6 +288,9 @@ fn main() -> Result<()> {
                         std::mem::drop(kernels);
                         // Give kernel/driver a moment to finalize detach
                         thread::sleep(Duration::from_millis(50));
+                        if let Ok(config) = lqos_config::load_config() {
+                            let _ = sandwich::cleanup_my_sandwich(&config);
+                        }
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);

@@ -1,8 +1,8 @@
 //! Top-level configuration file for LibreQoS.
 
 use super::tuning::Tunables;
-use crate::etc::v15::stormguard;
-use crate::etc::v15::treeguard;
+use crate::etc::v15::{stormguard, treeguard};
+use crate::{SANDWICH_TO_INTERNET, SANDWICH_TO_NETWORK};
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -211,6 +211,32 @@ impl Config {
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
         }
+        if let Some(bridge) = &self.bridge {
+            if let Some(super::bridge::SandwichMode::Full {
+                rate_override_mbps_down,
+                rate_override_mbps_up,
+                queue_override,
+                ..
+            }) = bridge.sandwich_mode()
+            {
+                if !bridge.use_xdp_bridge {
+                    return Err("Sandwich mode requires bridge.use_xdp_bridge = true.".to_string());
+                }
+                if rate_override_mbps_down.is_some_and(|rate| rate == 0) {
+                    return Err(
+                        "bridge.sandwich.Full.rate_override_mbps_down must be > 0".to_string()
+                    );
+                }
+                if rate_override_mbps_up.is_some_and(|rate| rate == 0) {
+                    return Err(
+                        "bridge.sandwich.Full.rate_override_mbps_up must be > 0".to_string()
+                    );
+                }
+                if queue_override.is_some_and(|queues| queues == 0) {
+                    return Err("bridge.sandwich.Full.queue_override must be > 0".to_string());
+                }
+            }
+        }
         if let Some(rtt) = &self.rtt_thresholds {
             if rtt.red_ms == 0 {
                 return Err("rtt_thresholds.red_ms must be > 0".to_string());
@@ -330,6 +356,22 @@ impl Config {
     /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
+            if bridge.sandwich_enabled() {
+                // In sandwich mode, the internet interface is the veth pair
+                SANDWICH_TO_INTERNET.to_string()
+            } else {
+                bridge.to_internet.clone()
+            }
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No internet interface configured")
+        }
+    }
+
+    /// Calculate the physical interface facing the Internet (ignoring sandwich mode)
+    pub fn internet_interface_physical(&self) -> String {
+        if let Some(bridge) = &self.bridge {
             bridge.to_internet.clone()
         } else if let Some(single_interface) = &self.single_interface {
             single_interface.interface.clone()
@@ -340,6 +382,22 @@ impl Config {
 
     /// Calculate the interface facing the ISP
     pub fn isp_interface(&self) -> String {
+        if let Some(bridge) = &self.bridge {
+            if bridge.sandwich_enabled() {
+                // In sandwich mode, the ISP interface is the veth pair
+                SANDWICH_TO_NETWORK.to_string()
+            } else {
+                bridge.to_network.clone()
+            }
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No ISP interface configured")
+        }
+    }
+
+    /// Calculate the physical interface facing the ISP (ignoring sandwich mode)
+    pub fn isp_interface_physical(&self) -> String {
         if let Some(bridge) = &self.bridge {
             bridge.to_network.clone()
         } else if let Some(single_interface) = &self.single_interface {
@@ -537,6 +595,65 @@ mod test {
         let config = Config::load_from_string(&stripped)
             .expect("Config without stormguard should still deserialize");
         assert!(config.stormguard.is_none());
+    }
+
+    #[test]
+    fn load_example_without_sandwich_section_uses_physical_bridge_interfaces() {
+        let config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        assert_eq!(config.internet_interface(), "eth0");
+        assert_eq!(config.isp_interface(), "eth1");
+    }
+
+    #[test]
+    fn sandwich_mode_switches_effective_interfaces() {
+        let mut raw = include_str!("example.toml").to_string();
+        raw.push_str(
+            r#"
+
+[bridge.sandwich.Full]
+with_rate_limiter = "Both"
+rate_override_mbps_down = 500
+rate_override_mbps_up = 100
+queue_override = 8
+use_fq_codel = true
+"#,
+        );
+
+        let config = Config::load_from_string(&raw).expect("Sandwich config should deserialize");
+        assert_eq!(config.internet_interface(), crate::SANDWICH_TO_INTERNET);
+        assert_eq!(config.isp_interface(), crate::SANDWICH_TO_NETWORK);
+        assert_eq!(config.internet_interface_physical(), "eth0");
+        assert_eq!(config.isp_interface_physical(), "eth1");
+    }
+
+    #[test]
+    fn sandwich_mode_requires_xdp_bridge() {
+        let mut raw =
+            include_str!("example.toml").replace("use_xdp_bridge = true", "use_xdp_bridge = false");
+        raw.push_str(
+            r#"
+
+[bridge.sandwich.Full]
+with_rate_limiter = "None"
+"#,
+        );
+
+        let err = Config::load_from_string(&raw).expect_err("Sandwich mode should require XDP");
+        assert!(err.contains("bridge.use_xdp_bridge = true"));
+    }
+
+    #[test]
+    fn explicit_legacy_sandwich_none_is_treated_as_disabled() {
+        let raw = include_str!("example.toml").replace(
+            "[bridge]\nuse_xdp_bridge = true\nto_internet = \"eth0\"\nto_network = \"eth1\"\n",
+            "[bridge]\nuse_xdp_bridge = true\nto_internet = \"eth0\"\nto_network = \"eth1\"\nsandwich = \"None\"\n",
+        );
+
+        let config = Config::load_from_string(&raw)
+            .expect("Legacy explicit sandwich none should deserialize");
+        assert_eq!(config.internet_interface(), "eth0");
+        assert_eq!(config.isp_interface(), "eth1");
     }
 
     #[test]

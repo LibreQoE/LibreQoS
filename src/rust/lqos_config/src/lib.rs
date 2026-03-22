@@ -20,10 +20,11 @@ pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
-    BridgeConfig, Config, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig,
-    TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables, disable_xdp_bridge,
-    enable_long_term_stats, load_config, update_config,
+    BridgeConfig, Config, LazyQueueMode, RttThresholds, SandwichMode, SandwichRateLimiter,
+    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TreeguardCircuitsConfig,
+    TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
+    TreeguardQooConfig, Tunables, disable_xdp_bridge, enable_long_term_stats, load_config,
+    update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;
@@ -35,3 +36,21 @@ pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 
 /// Used as a constant in determining buffer preallocation
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;
+
+/// The name of the veth interface facing the Internet in sandwich mode
+pub const SANDWICH_TO_INTERNET: &str = "v_inet_lq";
+
+/// The name of the other half of the veth facing the Internet in sandwich mode
+pub const SANDWICH_TO_INTERNET2: &str = "v_inet_phy";
+
+/// The name of the veth interface facing the ISP in sandwich mode
+pub const SANDWICH_TO_NETWORK: &str = "v_isp_lq";
+
+/// The name of the other half of veth interface facing the ISP in sandwich mode
+pub const SANDWICH_TO_NETWORK2: &str = "v_isp_phy";
+
+/// The name of the bridge facing the Internet in sandwich mode
+pub const BRIDGE_TO_INTERNET: &str = "br_lq_inet";
+
+/// The name of the bridge facing the ISP in sandwich mode
+pub const BRIDGE_TO_NETWORK: &str = "br_lq_isp";

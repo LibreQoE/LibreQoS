@@ -78,6 +78,5 @@ pub async fn treeguard_activity_snapshot() -> Vec<TreeguardActivityEntry> {
     if let Some(snapshot) = actor::cached_activity_snapshot() {
         return snapshot;
     }
-
     actor::request_activity_snapshot().await.unwrap_or_default()
 }

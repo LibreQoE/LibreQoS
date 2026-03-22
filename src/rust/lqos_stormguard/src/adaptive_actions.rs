@@ -393,6 +393,37 @@ fn group_circuit_fallbacks(
         if entry
             .devices
             .iter()
+            .any(|existing| existing.device_id == device.device_id)
+        {
+            continue;
+        }
+        entry.devices.push((*device).clone());
+    }
+
+    for device in overrides.persistent_devices() {
+        let Some(token) = device.sqm_override.as_deref().map(str::trim) else {
+            continue;
+        };
+        let Some(current_device) = devices_by_id.get(device.device_id.as_str()) else {
+            continue;
+        };
+        if token.is_empty() || current_device.circuit_id.trim().is_empty() {
+            continue;
+        }
+
+        let entry = grouped
+            .entry(current_device.circuit_id.clone())
+            .or_insert_with(|| PersistedCircuitFallback {
+                sqm_override: token.to_string(),
+                devices: Vec::new(),
+            });
+
+        if entry.sqm_override != token {
+            continue;
+        }
+        if entry
+            .devices
+            .iter()
             .any(|existing| existing.device_id == current_device.device_id)
         {
             continue;
