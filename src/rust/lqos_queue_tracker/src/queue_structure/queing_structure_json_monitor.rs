@@ -30,7 +30,9 @@ pub static EFFECTIVE_NODE_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> = La
 /// to avoid circular dependencies.
 pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);
 
+#[allow(missing_docs)]
 #[derive(Clone)]
+/// Snapshot of the current flattened queue tree loaded from `queuingStructure.json`.
 pub struct QueueStructure {
     pub maybe_queues: Option<Vec<QueueNode>>,
 }

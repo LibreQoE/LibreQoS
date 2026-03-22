@@ -711,6 +711,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         upload_bandwidth_max: *upload_bandwidth_max,
                         class_major: *class_major,
                         up_class_major: *up_class_major,
+                        down_qdisc_handle: None,
+                        up_qdisc_handle: None,
                         ip_addresses: ip_addresses.clone(),
                         sqm_override: sqm_override.clone(),
                     });
@@ -736,6 +738,30 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
             ),
+            BusRequest::BakeryReportPreflight {
+                ok,
+                message,
+                safe_budget,
+                hard_limit,
+                interfaces,
+            } => {
+                lqos_bakery::record_qdisc_preflight_snapshot(
+                    lqos_bakery::BakeryPreflightSnapshot {
+                        ok: *ok,
+                        message: message.clone(),
+                        safe_budget: *safe_budget,
+                        hard_limit: *hard_limit,
+                        interfaces: interfaces
+                            .iter()
+                            .map(|entry| lqos_bakery::BakeryCapacityInterfaceSnapshot {
+                                name: entry.name.clone(),
+                                planned_qdiscs: entry.planned_qdiscs,
+                            })
+                            .collect(),
+                    },
+                );
+                BusResponse::Ack
+            },
             BusRequest::ApiReady => {
                 tool_status::api_seen();
                 BusResponse::Ack

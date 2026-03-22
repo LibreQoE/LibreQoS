@@ -1,4 +1,5 @@
 use crate::MQ_CREATED;
+use crate::qdisc_handles::{InfraQdiscSlot, infra_qdisc_handle};
 use crate::queue_math::{
     format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_tokens_for,
 };
@@ -33,6 +34,8 @@ struct AddCircuitParams {
     upload_bandwidth_max: f32,
     class_major: u16,
     up_class_major: u16,
+    down_qdisc_handle: Option<u16>,
+    up_qdisc_handle: Option<u16>,
     // Optional per-circuit SQM override: "cake" or "fq_codel"
     sqm_override: Option<String>,
 }
@@ -149,6 +152,10 @@ pub enum BakeryCommands {
         class_major: u16,
         /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// Explicit qdisc handle major for the downlink leaf qdisc, if assigned.
+        down_qdisc_handle: Option<u16>,
+        /// Explicit qdisc handle major for the uplink leaf qdisc, if assigned.
+        up_qdisc_handle: Option<u16>,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
         /// Optional per-circuit SQM override: "cake" or "fq_codel"
@@ -226,6 +233,8 @@ impl BakeryCommands {
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                down_qdisc_handle,
+                up_qdisc_handle,
                 ip_addresses: _,
                 sqm_override,
             } => Self::add_circuit(
@@ -242,6 +251,8 @@ impl BakeryCommands {
                     upload_bandwidth_max: *upload_bandwidth_max,
                     class_major: *class_major,
                     up_class_major: *up_class_major,
+                    down_qdisc_handle: *down_qdisc_handle,
+                    up_qdisc_handle: *up_qdisc_handle,
                     sqm_override: sqm_override.clone(),
                 },
             ),
@@ -364,6 +375,11 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -401,6 +417,11 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
@@ -478,6 +499,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -514,6 +540,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
@@ -718,6 +749,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
+            if let Some(handle) = params.down_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.download_bandwidth_max,
                 config,
@@ -766,6 +801,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
+            if let Some(handle) = params.up_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.upload_bandwidth_max,
                 config,

@@ -86,6 +86,10 @@ When enabled and not dry-run, TreeGuard may persist decisions to:
 
 TreeGuard is designed to avoid fighting operator-owned overrides. If operator overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
 
+TreeGuard virtual-node decisions are runtime overrides. They are not materialized back into the
+base `network.json` by the scheduler, so disabling or clearing TreeGuard does not permanently
+rewrite operator-authored topology.
+
 TreeGuard also refuses to manage nodes that are already marked `"virtual": true` in the base `network.json`. If stale TreeGuard-owned node-virtualization overrides exist for those nodes, TreeGuard clears its own override layer and falls back to the base topology definition.
 
 For circuit SQM management, TreeGuard treats duplicate `device_id` values as unsafe identity collisions. If the same `device_id` appears in more than one circuit in `ShapedDevices.csv`, TreeGuard skips those affected circuits and clears any TreeGuard-owned SQM overrides for those duplicate device IDs.

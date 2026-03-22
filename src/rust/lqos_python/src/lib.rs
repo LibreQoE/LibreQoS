@@ -3,7 +3,10 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
-use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle, UrgentSeverity, UrgentSource};
+use lqos_bus::{
+    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse, TcHandle,
+    UrgentSeverity, UrgentSource,
+};
 use lqos_utils::hex_string::read_hex_string;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use nix::libc::getpid;
@@ -1333,15 +1336,14 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
 
 /// Returns the list of network adjustments that should be materialized into `network.json`.
 ///
-/// This includes operator-owned network adjustments and TreeGuard virtual-node changes, but
-/// intentionally excludes StormGuard site-speed adjustments so adaptive runtime rates do not
-/// overwrite the operator-authored topology/source-of-truth file.
+/// This includes only operator-owned network adjustments.
+///
+/// TreeGuard virtual-node decisions and StormGuard adaptive site-speed decisions are intentionally
+/// excluded so runtime automation does not overwrite the operator-authored topology/source-of-truth
+/// file.
 #[pyfunction]
 fn overrides_network_adjustments_materialized(py: Python<'_>) -> PyResult<Vec<PyObject>> {
-    let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    let apply_treeguard = config.treeguard.enabled;
-
-    let overrides = match lqos_overrides::OverrideStore::load_effective(false, apply_treeguard) {
+    let overrides = match lqos_overrides::OverrideStore::load_effective(false, false) {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
@@ -2203,6 +2205,8 @@ impl BakeryCommands {
                 upload_bandwidth_max: *upload_bandwidth_max,
                 class_major: *class_major,
                 up_class_major: *up_class_major,
+                down_qdisc_handle: None,
+                up_qdisc_handle: None,
                 ip_addresses: ip_addresses.clone(),
                 sqm_override: sqm_override.clone(),
             },
@@ -2340,10 +2344,43 @@ impl Bakery {
             .map(BakeryCommands::as_runtime_command)
             .collect();
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
+        let is_ok = estimate.ok();
+        let interface_reports = estimate
+            .interfaces
+            .iter()
+            .map(|(name, planned_qdiscs)| BakeryCapacityReportInterface {
+                name: name.clone(),
+                planned_qdiscs: *planned_qdiscs,
+            })
+            .collect::<Vec<_>>();
+        let summary = if interface_reports.is_empty() {
+            format!(
+                "Planned queue model {} qdisc budget. No shaping interfaces were queued.",
+                if is_ok { "fits" } else { "exceeds" }
+            )
+        } else {
+            let interface_summary = interface_reports
+                .iter()
+                .map(|entry| format!("{} estimated {} qdiscs", entry.name, entry.planned_qdiscs))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Planned queue model {} qdisc budget. {interface_summary}; safe budget {}, kernel limit {}.",
+                if is_ok { "fits" } else { "exceeds" },
+                estimate.safe_budget,
+                estimate.hard_limit,
+            )
+        };
+        let _ = run_query(vec![BusRequest::BakeryReportPreflight {
+            ok: is_ok,
+            message: summary,
+            safe_budget: estimate.safe_budget,
+            hard_limit: estimate.hard_limit,
+            interfaces: interface_reports,
+        }]);
 
         let result = PyDict::new(py);
         let interfaces = PyDict::new(py);
-        let is_ok = estimate.ok();
 
         for (interface, count) in estimate.interfaces {
             interfaces.set_item(interface, count)?;

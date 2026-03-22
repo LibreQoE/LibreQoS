@@ -28,6 +28,10 @@ import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
 import {StormguardStatusDashlet} from "./stormguard_status";
 import {BakeryStatusDashlet} from "./bakery_status";
+import {BakeryStatusSummaryDashlet} from "./bakery_status_summary";
+import {BakeryApplySummaryDashlet} from "./bakery_apply_summary";
+import {BakeryCapacityDashlet} from "./bakery_capacity";
+import {BakeryActivityDashlet} from "./bakery_activity";
 import {TreeGuardStatusDashlet} from "./treeguard_status";
 import {TreeGuardActivityDashlet} from "./treeguard_activity";
 import {TreeguardControlsDashlet} from "./treeguard_controls";
@@ -83,6 +87,10 @@ export const DashletMenu = [
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
     { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
+    { name: "Bakery Status", tag: "bakeryStatusSummary", size: 4, category: "Bakery" },
+    { name: "Bakery Apply Summary", tag: "bakeryApplySummary", size: 4, category: "Bakery" },
+    { name: "Bakery Capacity / Safety", tag: "bakeryCapacity", size: 4, category: "Bakery" },
+    { name: "Bakery Recent Activity", tag: "bakeryActivity", size: 12, category: "Bakery" },
     { name: "TreeGuard Controls", tag: "treeguardControls", size: 6, category: "TreeGuard" },
     { name: "TreeGuard Status", tag: "treeguardStatus", size: 6, category: "TreeGuard" },
     { name: "TreeGuard Activity", tag: "treeguardActivity", size: 12, category: "TreeGuard" },
@@ -137,6 +145,10 @@ export function widgetFactory(widgetName, count) {
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
+        case "bakeryStatusSummary": widget = new BakeryStatusSummaryDashlet(count); break;
+        case "bakeryApplySummary": widget = new BakeryApplySummaryDashlet(count); break;
+        case "bakeryCapacity": widget = new BakeryCapacityDashlet(count); break;
+        case "bakeryActivity": widget = new BakeryActivityDashlet(count); break;
         case "treeguardControls": widget = new TreeguardControlsDashlet(count); break;
         case "treeguardStatus"  : widget = new TreeGuardStatusDashlet(count); break;
         case "treeguardActivity": widget = new TreeGuardActivityDashlet(count); break;

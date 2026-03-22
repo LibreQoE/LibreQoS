@@ -21,10 +21,13 @@
 
 mod commands;
 mod diff;
+mod qdisc_handles;
 mod queue_math;
 mod utils;
 
 use crossbeam_channel::{Receiver, Sender};
+use parking_lot::RwLock;
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
@@ -35,14 +38,16 @@ use utils::current_timestamp;
 pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 use crate::commands::ExecutionMode;
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
-use crate::queue_math::format_rate_for_tc_f32;
-use crate::utils::{execute_in_memory, write_command_file};
+use crate::qdisc_handles::QdiscHandleState;
+use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32};
+use crate::utils::{ExecuteResult, execute_in_memory, write_command_file};
 pub use commands::BakeryCommands;
 use lqos_bus::{
     BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
     UrgentSource,
 };
 use lqos_config::{Config, LazyQueueMode};
+use qdisc_handles::MqDeviceLayout;
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +68,8 @@ struct Migration {
     up_parent_class_id: TcHandle,
     class_major: u16,
     up_class_major: u16,
+    down_qdisc_handle: Option<u16>,
+    up_qdisc_handle: Option<u16>,
     // Old and new rates
     old_down_min: f32,
     old_down_max: f32,
@@ -161,6 +168,7 @@ fn build_temp_add_cmd(
     down_max: f32,
     up_min: f32,
     up_max: f32,
+    preserve_qdisc_handles: bool,
 ) -> Option<BakeryCommands> {
     if let BakeryCommands::AddCircuit {
         circuit_hash,
@@ -168,6 +176,8 @@ fn build_temp_add_cmd(
         up_parent_class_id,
         class_major,
         up_class_major,
+        down_qdisc_handle,
+        up_qdisc_handle,
         ip_addresses,
         sqm_override,
         ..
@@ -184,6 +194,10 @@ fn build_temp_add_cmd(
             upload_bandwidth_max: up_max,
             class_major: *class_major,
             up_class_major: *up_class_major,
+            down_qdisc_handle: preserve_qdisc_handles
+                .then_some(*down_qdisc_handle)
+                .flatten(),
+            up_qdisc_handle: preserve_qdisc_handles.then_some(*up_qdisc_handle).flatten(),
             ip_addresses: ip_addresses.clone(),
             sqm_override: sqm_override.clone(),
         })
@@ -197,15 +211,157 @@ pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// True while Bakery is applying a full reload batch to `tc`.
 static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 /// Hard kernel limit for auto-allocated qdisc handles on a single network interface.
-pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 32_768;
-/// Conservative operational limit used to fail a full reload before the kernel limit is reached.
-pub const SAFE_AUTO_QDISC_BUDGET_PER_INTERFACE: usize = 32_000;
+pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 65_534;
+/// Conservative operational limit used to fail a full reload before qdisc handle exhaustion.
+pub const SAFE_QDISC_BUDGET_PER_INTERFACE: usize = 65_000;
 /// Maximum number of mapped circuits allowed without Insight.
 const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
 /// Minimum interval between repeated mapped-circuit-limit urgent issues.
 const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
 /// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
 static LAST_CIRCUIT_LIMIT_URGENT_TS: AtomicU64 = AtomicU64::new(0);
+const BAKERY_EVENT_LIMIT: usize = 50;
+
+/// High-level Bakery execution mode for operator-facing status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BakeryMode {
+    /// Bakery is not currently applying queue changes.
+    Idle,
+    /// Bakery is applying a structural full reload.
+    ApplyingFullReload,
+    /// Bakery is applying an incremental or live change.
+    ApplyingLiveChange,
+}
+
+/// Type of the most recent apply action recorded by Bakery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BakeryApplyType {
+    /// No apply has been recorded yet.
+    None,
+    /// A full reload apply.
+    FullReload,
+    /// A live/incremental apply.
+    LiveChange,
+}
+
+/// Per-interface qdisc budget usage snapshot for Bakery UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryCapacityInterfaceSnapshot {
+    /// Interface name, e.g. `ens19`.
+    pub name: String,
+    /// Planned qdisc count for that interface.
+    pub planned_qdiscs: usize,
+}
+
+/// Last qdisc preflight result retained for Bakery UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryPreflightSnapshot {
+    /// Whether the last preflight was within budget.
+    pub ok: bool,
+    /// Short operator-facing summary.
+    pub message: String,
+    /// Safe operational budget used during the preflight.
+    pub safe_budget: usize,
+    /// Hard kernel limit used for reference.
+    pub hard_limit: usize,
+    /// Per-interface planned qdisc counts.
+    pub interfaces: Vec<BakeryCapacityInterfaceSnapshot>,
+}
+
+/// Operator-facing Bakery status snapshot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryStatusSnapshot {
+    /// Current Bakery mode.
+    pub mode: BakeryMode,
+    /// Unix timestamp when the current action started, if any.
+    pub current_action_started_unix: Option<u64>,
+    /// Currently active circuit count.
+    pub active_circuits: usize,
+    /// Unix timestamp of the last successful apply, if any.
+    pub last_success_unix: Option<u64>,
+    /// Unix timestamp of the last failed apply, if any.
+    pub last_failure_unix: Option<u64>,
+    /// Summary of the last failure, if any.
+    pub last_failure_summary: Option<String>,
+    /// Type of the last apply recorded by Bakery.
+    pub last_apply_type: BakeryApplyType,
+    /// Number of `tc` commands in the last apply.
+    pub last_total_tc_commands: usize,
+    /// Number of `class` commands in the last apply.
+    pub last_class_commands: usize,
+    /// Number of `qdisc` commands in the last apply.
+    pub last_qdisc_commands: usize,
+    /// Time spent expanding/building the last apply command list.
+    pub last_build_duration_ms: u64,
+    /// Time spent running the last apply through `tc`.
+    pub last_apply_duration_ms: u64,
+    /// Last qdisc preflight summary known to Bakery.
+    pub preflight: Option<BakeryPreflightSnapshot>,
+}
+
+/// Recent operator-facing Bakery activity event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryActivityEntry {
+    /// Unix timestamp in seconds.
+    pub ts: u64,
+    /// Stable short event code.
+    pub event: String,
+    /// `info`, `warning`, or `error`.
+    pub status: String,
+    /// Human-readable summary.
+    pub summary: String,
+}
+
+#[derive(Clone, Debug)]
+struct BakeryTelemetryState {
+    mode: BakeryMode,
+    current_action_started_unix: Option<u64>,
+    last_success_unix: Option<u64>,
+    last_failure_unix: Option<u64>,
+    last_failure_summary: Option<String>,
+    last_apply_type: BakeryApplyType,
+    last_total_tc_commands: usize,
+    last_class_commands: usize,
+    last_qdisc_commands: usize,
+    last_build_duration_ms: u64,
+    last_apply_duration_ms: u64,
+    preflight: Option<BakeryPreflightSnapshot>,
+    activity: VecDeque<BakeryActivityEntry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BakeryApplyMetrics<'a> {
+    apply_type: BakeryApplyType,
+    summary: &'a str,
+    build_duration_ms: u64,
+    apply_duration_ms: u64,
+    total_tc_commands: usize,
+    class_commands: usize,
+    qdisc_commands: usize,
+    ok: bool,
+}
+
+impl Default for BakeryTelemetryState {
+    fn default() -> Self {
+        Self {
+            mode: BakeryMode::Idle,
+            current_action_started_unix: None,
+            last_success_unix: None,
+            last_failure_unix: None,
+            last_failure_summary: None,
+            last_apply_type: BakeryApplyType::None,
+            last_total_tc_commands: 0,
+            last_class_commands: 0,
+            last_qdisc_commands: 0,
+            last_build_duration_ms: 0,
+            last_apply_duration_ms: 0,
+            preflight: None,
+            activity: VecDeque::with_capacity(BAKERY_EVENT_LIMIT),
+        }
+    }
+}
+
+static BAKERY_TELEMETRY: OnceLock<RwLock<BakeryTelemetryState>> = OnceLock::new();
 
 /// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
@@ -219,17 +375,177 @@ struct FullReloadScope;
 impl Drop for FullReloadScope {
     fn drop(&mut self) {
         FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
+        let mut state = telemetry_state().write();
+        if state.mode == BakeryMode::ApplyingFullReload {
+            state.mode = BakeryMode::Idle;
+            state.current_action_started_unix = None;
+        }
     }
 }
 
-/// Estimated auto-allocated qdisc usage for a planned full reload.
+fn telemetry_state() -> &'static RwLock<BakeryTelemetryState> {
+    BAKERY_TELEMETRY.get_or_init(|| RwLock::new(BakeryTelemetryState::default()))
+}
+
+fn count_tc_command_types(commands: &[Vec<String>]) -> (usize, usize, usize) {
+    let total = commands.len();
+    let mut class_count = 0usize;
+    let mut qdisc_count = 0usize;
+    for argv in commands {
+        if let Some(kind) = argv.first() {
+            match kind.as_str() {
+                "class" => class_count += 1,
+                "qdisc" => qdisc_count += 1,
+                _ => {}
+            }
+        }
+    }
+    (total, class_count, qdisc_count)
+}
+
+fn push_bakery_event(event: &str, status: &str, summary: String) {
+    let entry = BakeryActivityEntry {
+        ts: current_timestamp(),
+        event: event.to_string(),
+        status: status.to_string(),
+        summary,
+    };
+    let mut state = telemetry_state().write();
+    state.activity.push_front(entry);
+    while state.activity.len() > BAKERY_EVENT_LIMIT {
+        state.activity.pop_back();
+    }
+}
+
+fn mark_bakery_action_started(mode: BakeryMode, event: &str, summary: String) {
+    let ts = current_timestamp();
+    {
+        let mut state = telemetry_state().write();
+        state.mode = mode;
+        state.current_action_started_unix = Some(ts);
+    }
+    push_bakery_event(event, "info", summary);
+}
+
+fn mark_bakery_action_finished(metrics: BakeryApplyMetrics<'_>) {
+    let ts = current_timestamp();
+    {
+        let mut state = telemetry_state().write();
+        state.last_apply_type = metrics.apply_type;
+        state.last_total_tc_commands = metrics.total_tc_commands;
+        state.last_class_commands = metrics.class_commands;
+        state.last_qdisc_commands = metrics.qdisc_commands;
+        state.last_build_duration_ms = metrics.build_duration_ms;
+        state.last_apply_duration_ms = metrics.apply_duration_ms;
+        if metrics.ok {
+            state.last_success_unix = Some(ts);
+        } else {
+            state.last_failure_unix = Some(ts);
+            state.last_failure_summary = Some(metrics.summary.to_string());
+        }
+        if state.mode != BakeryMode::ApplyingFullReload {
+            state.mode = BakeryMode::Idle;
+            state.current_action_started_unix = None;
+        }
+    }
+    push_bakery_event(
+        if metrics.ok {
+            "apply_finished"
+        } else {
+            "apply_failed"
+        },
+        if metrics.ok { "info" } else { "error" },
+        metrics.summary.to_string(),
+    );
+}
+
+/// Returns the latest Bakery status snapshot for UI/status consumers.
+pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
+    let state = telemetry_state().read().clone();
+    BakeryStatusSnapshot {
+        mode: state.mode,
+        current_action_started_unix: state.current_action_started_unix,
+        active_circuits: ACTIVE_CIRCUITS.load(Ordering::Relaxed),
+        last_success_unix: state.last_success_unix,
+        last_failure_unix: state.last_failure_unix,
+        last_failure_summary: state.last_failure_summary,
+        last_apply_type: state.last_apply_type,
+        last_total_tc_commands: state.last_total_tc_commands,
+        last_class_commands: state.last_class_commands,
+        last_qdisc_commands: state.last_qdisc_commands,
+        last_build_duration_ms: state.last_build_duration_ms,
+        last_apply_duration_ms: state.last_apply_duration_ms,
+        preflight: state.preflight,
+    }
+}
+
+/// Returns recent Bakery activity entries for UI/status consumers.
+pub fn bakery_activity_snapshot() -> Vec<BakeryActivityEntry> {
+    telemetry_state().read().activity.iter().cloned().collect()
+}
+
+/// Stores the latest qdisc-budget preflight result for UI/status consumers.
+///
+/// This function is not pure: it updates retained in-memory Bakery telemetry state.
+pub fn record_qdisc_preflight_snapshot(snapshot: BakeryPreflightSnapshot) {
+    let ok = snapshot.ok;
+    let summary = snapshot.message.clone();
+    {
+        let mut state = telemetry_state().write();
+        state.preflight = Some(snapshot);
+    }
+    push_bakery_event(
+        if ok {
+            "preflight_ok"
+        } else {
+            "preflight_blocked"
+        },
+        if ok { "info" } else { "warning" },
+        summary,
+    );
+}
+
+fn summarize_apply_result(purpose: &str, result: &ExecuteResult) -> String {
+    match &result.failure_summary {
+        Some(summary) if !summary.is_empty() => format!("{purpose}: {summary}"),
+        _ if result.ok => format!("{purpose}: completed"),
+        _ => format!("{purpose}: failed"),
+    }
+}
+
+fn execute_and_record_live_change(
+    command_buffer: &Vec<Vec<String>>,
+    purpose: &str,
+) -> ExecuteResult {
+    let (total, class_commands, qdisc_commands) = count_tc_command_types(command_buffer);
+    mark_bakery_action_started(
+        BakeryMode::ApplyingLiveChange,
+        "live_change_started",
+        format!("{purpose}: started"),
+    );
+    let result = execute_in_memory(command_buffer, purpose);
+    let summary = summarize_apply_result(purpose, &result);
+    mark_bakery_action_finished(BakeryApplyMetrics {
+        apply_type: BakeryApplyType::LiveChange,
+        summary: &summary,
+        build_duration_ms: 0,
+        apply_duration_ms: result.duration_ms,
+        total_tc_commands: total,
+        class_commands,
+        qdisc_commands,
+        ok: result.ok,
+    });
+    result
+}
+
+/// Estimated qdisc-handle usage for a planned full reload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QdiscBudgetEstimate {
-    /// Estimated auto-allocated qdisc count grouped by network interface name.
+    /// Estimated total qdisc count grouped by network interface name.
     pub interfaces: BTreeMap<String, usize>,
     /// Conservative operational limit enforced before a full reload is committed.
     pub safe_budget: usize,
-    /// Kernel hard limit for the auto-allocated qdisc handle pool on one interface.
+    /// Kernel hard limit for the per-device qdisc-handle namespace.
     pub hard_limit: usize,
 }
 
@@ -247,29 +563,29 @@ fn find_arg_value<'a>(argv: &'a [String], key: &str) -> Option<&'a str> {
         .find_map(|pair| (pair[0] == key).then_some(pair[1].as_str()))
 }
 
-fn auto_allocated_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
+fn planned_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
     if argv.len() < 2 || argv[0] != "qdisc" {
         return None;
     }
     if !matches!(argv[1].as_str(), "add" | "replace") {
         return None;
     }
-    if argv.iter().any(|token| token == "handle") {
-        return None;
-    }
 
     let dev = find_arg_value(argv, "dev")?.to_string();
+    if let Some(handle) = find_arg_value(argv, "handle") {
+        return Some((dev, format!("handle:{handle}")));
+    }
     let parent = find_arg_value(argv, "parent")?.to_string();
-    Some((dev, parent))
+    Some((dev, format!("parent:{parent}")))
 }
 
-/// Estimates auto-allocated qdisc usage for the current full-reload builder queue.
+/// Estimates total qdisc usage for the current full-reload builder queue.
 ///
 /// This expands the queued Bakery commands through the same builder-path `tc`
-/// argv generation used by a structural full reload, then counts only the
-/// resulting qdiscs that do not specify an explicit `handle`. The estimate is
-/// tracked per interface because Linux enforces qdisc auto-handle exhaustion on
-/// a per-device basis.
+/// argv generation used by a structural full reload, then counts the resulting
+/// qdiscs per device. Explicit qdisc handles are deduplicated by `handle`,
+/// while any remaining auto-handled paths are conservatively deduplicated by
+/// `parent`.
 pub fn estimate_full_reload_auto_qdisc_budget(
     config: &Arc<Config>,
     queue: &[BakeryCommands],
@@ -282,10 +598,10 @@ pub fn estimate_full_reload_auto_qdisc_budget(
             continue;
         };
         for argv in builder_commands {
-            let Some((dev, parent)) = auto_allocated_qdisc_identity(&argv) else {
+            let Some((dev, identity)) = planned_qdisc_identity(&argv) else {
                 continue;
             };
-            if seen_qdiscs.insert((dev.clone(), parent)) {
+            if seen_qdiscs.insert((dev.clone(), identity)) {
                 *interfaces.entry(dev).or_insert(0) += 1;
             }
         }
@@ -293,9 +609,210 @@ pub fn estimate_full_reload_auto_qdisc_budget(
 
     QdiscBudgetEstimate {
         interfaces,
-        safe_budget: SAFE_AUTO_QDISC_BUDGET_PER_INTERFACE,
+        safe_budget: SAFE_QDISC_BUDGET_PER_INTERFACE,
         hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
     }
+}
+
+fn current_mq_layout(
+    batch: &[Arc<BakeryCommands>],
+    config: &Arc<Config>,
+    existing: &Option<MqDeviceLayout>,
+) -> Option<MqDeviceLayout> {
+    let mut latest = existing.clone();
+    for command in batch {
+        if let BakeryCommands::MqSetup {
+            queues_available,
+            stick_offset,
+        } = command.as_ref()
+        {
+            latest = Some(MqDeviceLayout::from_setup(
+                config,
+                *queues_available,
+                *stick_offset,
+            ));
+        }
+    }
+    latest
+}
+
+fn with_assigned_qdisc_handles(
+    command: &Arc<BakeryCommands>,
+    config: &Arc<Config>,
+    mq_layout: &MqDeviceLayout,
+    qdisc_handles: &mut QdiscHandleState,
+) -> Arc<BakeryCommands> {
+    let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() else {
+        return Arc::clone(command);
+    };
+
+    if config.queues.monitor_only {
+        return Arc::clone(command);
+    }
+
+    let mut enriched = command.as_ref().clone();
+    let isp_interface = config.isp_interface();
+    let internet_interface = config.internet_interface();
+    let isp_reserved = mq_layout.reserved_handles(&isp_interface);
+    let up_reserved = mq_layout.reserved_handles(&internet_interface);
+
+    if let BakeryCommands::AddCircuit {
+        down_qdisc_handle,
+        up_qdisc_handle,
+        ..
+    } = &mut enriched
+    {
+        if down_qdisc_handle.is_none() {
+            *down_qdisc_handle =
+                qdisc_handles.assign_circuit_handle(&isp_interface, *circuit_hash, &isp_reserved);
+        }
+        if !config.on_a_stick_mode() && up_qdisc_handle.is_none() {
+            *up_qdisc_handle = qdisc_handles.assign_circuit_handle(
+                &internet_interface,
+                *circuit_hash,
+                &up_reserved,
+            );
+        }
+    }
+
+    Arc::new(enriched)
+}
+
+fn parse_directional_sqm_override(
+    sqm_override: &Option<String>,
+) -> (Option<String>, Option<String>) {
+    match sqm_override {
+        None => (None, None),
+        Some(s) => {
+            if s.contains('/') {
+                let mut it = s.splitn(2, '/');
+                let down = it.next().unwrap_or("").trim();
+                let up = it.next().unwrap_or("").trim();
+                let map = |t: &str| -> Option<String> {
+                    if t.is_empty() {
+                        None
+                    } else {
+                        Some(t.to_string())
+                    }
+                };
+                (map(down), map(up))
+            } else {
+                (Some(s.clone()), Some(s.clone()))
+            }
+        }
+    }
+}
+
+fn effective_directional_sqm_kinds(
+    command: &BakeryCommands,
+    config: &Arc<Config>,
+) -> (Option<SqmKind>, Option<SqmKind>) {
+    let BakeryCommands::AddCircuit {
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        sqm_override,
+        ..
+    } = command
+    else {
+        return (None, None);
+    };
+
+    if config.queues.monitor_only {
+        return (None, None);
+    }
+
+    let (down_override_opt, up_override_opt) = parse_directional_sqm_override(sqm_override);
+
+    let down_kind =
+        (!matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")))
+            .then(|| effective_sqm_kind(*download_bandwidth_max, config, &down_override_opt));
+    let up_kind = (!config.on_a_stick_mode()
+        && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")))
+    .then(|| effective_sqm_kind(*upload_bandwidth_max, config, &up_override_opt));
+
+    (down_kind, up_kind)
+}
+
+fn effective_directional_qdisc_parents(
+    command: &BakeryCommands,
+    config: &Arc<Config>,
+) -> (Option<TcHandle>, Option<TcHandle>) {
+    let BakeryCommands::AddCircuit {
+        class_minor,
+        class_major,
+        up_class_major,
+        sqm_override,
+        ..
+    } = command
+    else {
+        return (None, None);
+    };
+
+    if config.queues.monitor_only {
+        return (None, None);
+    }
+
+    let (down_override_opt, up_override_opt) = parse_directional_sqm_override(sqm_override);
+
+    let down_parent =
+        (!matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")))
+            .then(|| TcHandle::from_u32(((*class_major as u32) << 16) | (*class_minor as u32)));
+    let up_parent = (!config.on_a_stick_mode()
+        && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none")))
+    .then(|| TcHandle::from_u32(((*up_class_major as u32) << 16) | (*class_minor as u32)));
+
+    (down_parent, up_parent)
+}
+
+fn rotate_changed_qdisc_handles(
+    previous: &BakeryCommands,
+    command: &Arc<BakeryCommands>,
+    config: &Arc<Config>,
+    mq_layout: &MqDeviceLayout,
+    qdisc_handles: &mut QdiscHandleState,
+) -> Arc<BakeryCommands> {
+    let (old_down_kind, old_up_kind) = effective_directional_sqm_kinds(previous, config);
+    let (new_down_kind, new_up_kind) = effective_directional_sqm_kinds(command.as_ref(), config);
+    let (old_down_parent, old_up_parent) = effective_directional_qdisc_parents(previous, config);
+    let (new_down_parent, new_up_parent) =
+        effective_directional_qdisc_parents(command.as_ref(), config);
+
+    let mut rotated = command.as_ref().clone();
+    let isp_interface = config.isp_interface();
+    let internet_interface = config.internet_interface();
+    let isp_reserved = mq_layout.reserved_handles(&isp_interface);
+    let up_reserved = mq_layout.reserved_handles(&internet_interface);
+
+    if let BakeryCommands::AddCircuit {
+        circuit_hash,
+        down_qdisc_handle,
+        up_qdisc_handle,
+        ..
+    } = &mut rotated
+    {
+        let down_kind_changed =
+            old_down_kind.is_some() && new_down_kind.is_some() && old_down_kind != new_down_kind;
+        let down_parent_changed = old_down_parent.is_some()
+            && new_down_parent.is_some()
+            && old_down_parent != new_down_parent;
+        if down_kind_changed || down_parent_changed {
+            *down_qdisc_handle =
+                qdisc_handles.rotate_circuit_handle(&isp_interface, *circuit_hash, &isp_reserved);
+        }
+        let up_kind_changed =
+            old_up_kind.is_some() && new_up_kind.is_some() && old_up_kind != new_up_kind;
+        let up_parent_changed =
+            old_up_parent.is_some() && new_up_parent.is_some() && old_up_parent != new_up_parent;
+        if up_kind_changed || up_parent_changed {
+            *up_qdisc_handle = qdisc_handles.rotate_circuit_handle(
+                &internet_interface,
+                *circuit_hash,
+                &up_reserved,
+            );
+        }
+    }
+
+    Arc::new(rotated)
 }
 
 /// Returns `true` while Bakery is applying a full reload batch to Linux `tc`.
@@ -545,6 +1062,23 @@ fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
     });
 }
 
+fn log_mapped_limit_decision(
+    context: &str,
+    mapped_limit: ResolvedMappedLimit,
+    stats: MappedLimitStats,
+) {
+    warn!(
+        "Bakery mapped circuit decision ({}): requested={}, allowed={}, dropped={}, effective_limit={}, licensed={}, max_circuits={:?}",
+        context,
+        stats.requested_mapped,
+        stats.allowed_mapped,
+        stats.dropped_mapped,
+        format_mapped_limit(stats.enforced_limit),
+        mapped_limit.licensed,
+        mapped_limit.max_circuits
+    );
+}
+
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
 pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
     let (tx, rx) = crossbeam_channel::bounded(CHANNEL_CAPACITY);
@@ -567,6 +1101,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut sites: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut circuits: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
     let mut live_circuits: HashMap<i64, u64> = HashMap::new();
+    let mut mq_layout: Option<MqDeviceLayout> = None;
+    let mut qdisc_handles = lqos_config::load_config()
+        .ok()
+        .map(|config| QdiscHandleState::load(&config))
+        .unwrap_or_default();
     // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
     let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
 
@@ -837,11 +1376,18 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 batch = Some(Vec::new());
             }
             BakeryCommands::CommitBatch => {
+                push_bakery_event(
+                    "commit_received",
+                    "info",
+                    "Bakery commit received.".to_string(),
+                );
                 handle_commit_batch(
                     &mut batch,
                     &mut sites,
                     &mut circuits,
                     &mut live_circuits,
+                    &mut mq_layout,
+                    &mut qdisc_handles,
                     &tx,
                     &mut migrations,
                     &stormguard_overrides,
@@ -895,6 +1441,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     upload_bandwidth_max: mig.old_up_max,
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
+                                    down_qdisc_handle: mig.down_qdisc_handle,
+                                    up_qdisc_handle: mig.up_qdisc_handle,
                                     ip_addresses: "".to_string(),
                                     sqm_override: mig.sqm_override.clone(),
                                 },
@@ -903,6 +1451,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mig.old_down_max,
                                 mig.old_up_min,
                                 mig.old_up_max,
+                                false,
                             ) {
                                 let mut cmds = Vec::new();
                                 match config.queues.lazy_queues.as_ref() {
@@ -942,7 +1491,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     }
                                 }
                                 if !cmds.is_empty() {
-                                    execute_in_memory(&cmds, "live-move: create shadow");
+                                    execute_and_record_live_change(
+                                        &cmds,
+                                        "live-move: create shadow",
+                                    );
                                 }
                                 mig.stage = MigrationStage::SwapToShadow;
                                 advanced += 1;
@@ -990,6 +1542,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     upload_bandwidth_max: mig.old_up_max,
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
+                                    down_qdisc_handle: None,
+                                    up_qdisc_handle: None,
                                     ip_addresses: "".to_string(),
                                     sqm_override: mig.sqm_override.clone(),
                                 },
@@ -998,6 +1552,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mig.old_down_max,
                                 mig.old_up_min,
                                 mig.old_up_max,
+                                true,
                             ) {
                                 let mut cmds = Vec::new();
                                 if let Some(prune) = old_cmd.to_prune(&config, true) {
@@ -1011,6 +1566,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     mig.new_down_max,
                                     mig.new_up_min,
                                     mig.new_up_max,
+                                    true,
                                 ) {
                                     match config.queues.lazy_queues.as_ref() {
                                         None | Some(LazyQueueMode::No) => {
@@ -1050,7 +1606,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     }
                                 }
                                 if !cmds.is_empty() {
-                                    execute_in_memory(&cmds, "live-move: build final");
+                                    execute_and_record_live_change(&cmds, "live-move: build final");
                                 }
                                 mig.stage = MigrationStage::SwapToFinal;
                                 advanced += 1;
@@ -1094,6 +1650,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                     upload_bandwidth_max: mig.old_up_max,
                                     class_major: mig.class_major,
                                     up_class_major: mig.up_class_major,
+                                    down_qdisc_handle: None,
+                                    up_qdisc_handle: None,
                                     ip_addresses: "".to_string(),
                                     sqm_override: mig.sqm_override.clone(),
                                 },
@@ -1102,9 +1660,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 mig.old_down_max,
                                 mig.old_up_min,
                                 mig.old_up_max,
+                                false,
                             ) && let Some(prune) = shadow_cmd.to_prune(&config, true)
                             {
-                                execute_in_memory(&prune, "live-move: prune shadow");
+                                execute_and_record_live_change(&prune, "live-move: prune shadow");
                             }
                             mig.stage = MigrationStage::Done;
                             advanced += 1;
@@ -1203,11 +1762,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     error!("Bakery thread exited unexpectedly.");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_commit_batch(
     batch: &mut Option<Vec<Arc<BakeryCommands>>>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &mut HashMap<i64, u64>,
+    mq_layout: &mut Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
@@ -1216,11 +1778,13 @@ fn handle_commit_batch(
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
+    qdisc_handles.clear_retired_handles();
 
     let Some(new_batch) = batch.take() else {
         debug!("CommitBatch received without a batch to commit.");
         return;
     };
+    let resolved_mq_layout = current_mq_layout(&new_batch, &config, mq_layout);
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
@@ -1230,6 +1794,7 @@ fn handle_commit_batch(
     if !has_mq_been_setup {
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        log_mapped_limit_decision("full reload", mapped_limit, mapped_limit_stats);
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
                 "Bakery mapped circuit cap enforced (full reload): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
@@ -1249,8 +1814,11 @@ fn handle_commit_batch(
             sites,
             circuits,
             live_circuits,
+            mq_layout,
+            qdisc_handles,
             &config,
             new_batch,
+            resolved_mq_layout,
             stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1261,6 +1829,7 @@ fn handle_commit_batch(
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        log_mapped_limit_decision("site-structure rebuild", mapped_limit, mapped_limit_stats);
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
                 "Bakery mapped circuit cap enforced (site-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
@@ -1280,8 +1849,11 @@ fn handle_commit_batch(
             sites,
             circuits,
             live_circuits,
+            mq_layout,
+            qdisc_handles,
             &config,
             new_batch,
+            resolved_mq_layout,
             stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1305,6 +1877,11 @@ fn handle_commit_batch(
     {
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch.clone(), circuits, effective_limit);
+        log_mapped_limit_decision(
+            "circuit-structure rebuild",
+            mapped_limit,
+            mapped_limit_stats,
+        );
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
                 "Bakery mapped circuit cap enforced (circuit-structure rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
@@ -1326,8 +1903,11 @@ fn handle_commit_batch(
             sites,
             circuits,
             live_circuits,
+            mq_layout,
+            qdisc_handles,
             &config,
             new_batch,
+            resolved_mq_layout,
             stormguard_overrides,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1369,8 +1949,11 @@ fn handle_commit_batch(
                     sites,
                     circuits,
                     live_circuits,
+                    mq_layout,
+                    qdisc_handles,
                     &config,
                     new_batch.clone(),
+                    resolved_mq_layout.clone(),
                     stormguard_overrides,
                 );
                 return; // Skip the rest of this CommitBatch processing
@@ -1413,9 +1996,13 @@ fn handle_commit_batch(
                         }
                     };
                     if let Some(cmd) = commands {
-                        execute_in_memory(&cmd, "removing circuit");
+                        execute_and_record_live_change(&cmd, "removing circuit");
                     }
                     live_circuits.remove(&circuit_hash);
+                    qdisc_handles.release_circuit(&config.isp_interface(), circuit_hash);
+                    if !config.on_a_stick_mode() {
+                        qdisc_handles.release_circuit(&config.internet_interface(), circuit_hash);
+                    }
                 } else {
                     debug!(
                         "RemoveCircuit received for unknown circuit: {}",
@@ -1427,8 +2014,25 @@ fn handle_commit_batch(
 
         // 2) Speed changes (avoid linux TC deadlock by removing qdisc first)
         if !categories.speed_changed.is_empty() {
+            let Some(layout) = resolved_mq_layout.as_ref() else {
+                warn!("Bakery: missing MQ layout during circuit speed updates");
+                return;
+            };
             let mut immediate_commands = Vec::new();
             for cmd in &categories.speed_changed {
+                let mut enriched_cmd =
+                    with_assigned_qdisc_handles(cmd, &config, layout, qdisc_handles);
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref()
+                    && let Some(old_cmd) = circuits.get(circuit_hash)
+                {
+                    enriched_cmd = rotate_changed_qdisc_handles(
+                        old_cmd.as_ref(),
+                        &enriched_cmd,
+                        &config,
+                        layout,
+                        qdisc_handles,
+                    );
+                }
                 if let BakeryCommands::AddCircuit {
                     circuit_hash,
                     parent_class_id,
@@ -1442,7 +2046,8 @@ fn handle_commit_batch(
                     up_class_major,
                     ip_addresses,
                     sqm_override,
-                } = cmd.as_ref()
+                    ..
+                } = enriched_cmd.as_ref()
                 {
                     let was_activated = live_circuits.contains_key(circuit_hash);
                     if was_activated {
@@ -1457,6 +2062,8 @@ fn handle_commit_batch(
                                     upload_bandwidth_min: old_up_min,
                                     download_bandwidth_max: old_down_max,
                                     upload_bandwidth_max: old_up_max,
+                                    down_qdisc_handle,
+                                    up_qdisc_handle,
                                     ..
                                 } = old_cmd.as_ref()
                             {
@@ -1466,6 +2073,8 @@ fn handle_commit_batch(
                                     up_parent_class_id: *up_parent_class_id,
                                     class_major: *class_major,
                                     up_class_major: *up_class_major,
+                                    down_qdisc_handle: *down_qdisc_handle,
+                                    up_qdisc_handle: *up_qdisc_handle,
                                     old_down_min: *old_down_min,
                                     old_down_max: *old_down_max,
                                     old_up_min: *old_up_min,
@@ -1483,7 +2092,7 @@ fn handle_commit_batch(
                                 };
                                 migrations.insert(*circuit_hash, mig);
                                 // Update desired circuit definition now
-                                circuits.insert(*circuit_hash, Arc::clone(cmd));
+                                circuits.insert(*circuit_hash, Arc::clone(&enriched_cmd));
                                 continue; // skip immediate path
                             }
                         }
@@ -1491,41 +2100,43 @@ fn handle_commit_batch(
                     // Fallback: immediate safe update
                     match config.queues.lazy_queues.as_ref() {
                         None | Some(LazyQueueMode::No) => {
-                            if let Some(prune) = cmd.to_prune(&config, true) {
+                            if let Some(prune) = enriched_cmd.to_prune(&config, true) {
                                 immediate_commands.extend(prune);
                             }
-                            if let Some(add) = cmd.to_commands(&config, ExecutionMode::Builder) {
+                            if let Some(add) =
+                                enriched_cmd.to_commands(&config, ExecutionMode::Builder)
+                            {
                                 immediate_commands.extend(add);
                             }
                         }
                         Some(LazyQueueMode::Htb) => {
                             if was_activated {
-                                if let Some(prune) = cmd.to_prune(&config, false) {
+                                if let Some(prune) = enriched_cmd.to_prune(&config, false) {
                                     immediate_commands.extend(prune);
                                 }
                                 if let Some(add_htb) =
-                                    cmd.to_commands(&config, ExecutionMode::Builder)
+                                    enriched_cmd.to_commands(&config, ExecutionMode::Builder)
                                 {
                                     immediate_commands.extend(add_htb);
                                 }
                                 if let Some(add_qdisc) =
-                                    cmd.to_commands(&config, ExecutionMode::LiveUpdate)
+                                    enriched_cmd.to_commands(&config, ExecutionMode::LiveUpdate)
                                 {
                                     immediate_commands.extend(add_qdisc);
                                 }
                             } else if let Some(add_htb) =
-                                cmd.to_commands(&config, ExecutionMode::Builder)
+                                enriched_cmd.to_commands(&config, ExecutionMode::Builder)
                             {
                                 immediate_commands.extend(add_htb);
                             }
                         }
                         Some(LazyQueueMode::Full) => {
                             if was_activated {
-                                if let Some(prune) = cmd.to_prune(&config, true) {
+                                if let Some(prune) = enriched_cmd.to_prune(&config, true) {
                                     immediate_commands.extend(prune);
                                 }
                                 if let Some(add_all) =
-                                    cmd.to_commands(&config, ExecutionMode::LiveUpdate)
+                                    enriched_cmd.to_commands(&config, ExecutionMode::LiveUpdate)
                                 {
                                     immediate_commands.extend(add_all);
                                 }
@@ -1534,11 +2145,14 @@ fn handle_commit_batch(
                             }
                         }
                     }
-                    circuits.insert(*circuit_hash, Arc::clone(cmd));
+                    circuits.insert(*circuit_hash, enriched_cmd);
                 }
             }
             if !immediate_commands.is_empty() {
-                execute_in_memory(&immediate_commands, "updating circuit speeds (fallback)");
+                execute_and_record_live_change(
+                    &immediate_commands,
+                    "updating circuit speeds (fallback)",
+                );
             }
         }
 
@@ -1586,18 +2200,39 @@ fn handle_commit_batch(
                 );
                 maybe_emit_mapped_circuit_limit_urgent(&stats);
             }
+            log_mapped_limit_decision(
+                "incremental additions",
+                mapped_limit,
+                MappedLimitStats {
+                    enforced_limit: effective_limit,
+                    requested_mapped: requested_mapped_additions,
+                    allowed_mapped: requested_mapped_additions
+                        .saturating_sub(dropped_mapped_additions),
+                    dropped_mapped: dropped_mapped_additions,
+                },
+            );
 
-            let commands: Vec<Vec<String>> = accepted_additions
+            let Some(layout) = resolved_mq_layout.as_ref() else {
+                warn!(
+                    "Bakery: missing MQ layout during incremental additions; skipping TC changes"
+                );
+                return;
+            };
+            let enriched_additions: Vec<Arc<BakeryCommands>> = accepted_additions
+                .iter()
+                .map(|command| with_assigned_qdisc_handles(command, &config, layout, qdisc_handles))
+                .collect();
+            let commands: Vec<Vec<String>> = enriched_additions
                 .iter()
                 .filter_map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
                 .collect();
             if !commands.is_empty() {
-                execute_in_memory(&commands, "adding new circuits");
+                execute_and_record_live_change(&commands, "adding new circuits");
             }
-            for command in accepted_additions {
+            for command in enriched_additions {
                 if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
-                    circuits.insert(*circuit_hash, Arc::clone(command));
+                    circuits.insert(*circuit_hash, command);
                 }
             }
         }
@@ -1605,13 +2240,21 @@ fn handle_commit_batch(
         // 4) IP-only changes require no TC commands; mappings already handled by mapping engine
         // We still refresh the stored circuit snapshot for those entries
         if !categories.ip_changed.is_empty() {
+            let Some(layout) = resolved_mq_layout.as_ref() else {
+                warn!("Bakery: missing MQ layout during IP-only circuit updates");
+                return;
+            };
             for command in categories.ip_changed {
-                if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
-                    circuits.insert(*circuit_hash, Arc::clone(command));
+                let enriched = with_assigned_qdisc_handles(command, &config, layout, qdisc_handles);
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched.as_ref() {
+                    circuits.insert(*circuit_hash, enriched);
                 }
             }
         }
     }
+
+    *mq_layout = resolved_mq_layout;
+    qdisc_handles.save(&config);
 }
 
 fn handle_circuit_activity(
@@ -1680,7 +2323,7 @@ fn handle_circuit_activity(
     if commands.is_empty() {
         return; // No commands to write
     }
-    execute_in_memory(&commands, "enabling live circuits");
+    execute_and_record_live_change(&commands, "enabling live circuits");
 }
 
 fn handle_tick(
@@ -1772,7 +2415,7 @@ fn handle_tick(
     if commands.is_empty() {
         return; // No commands to write
     }
-    execute_in_memory(&commands, "pruning lazy queues");
+    execute_and_record_live_change(&commands, "pruning lazy queues");
 }
 
 fn handle_change_site_speed_live(
@@ -1852,7 +2495,7 @@ fn handle_change_site_speed_live(
                 format_rate_for_tc_f32(download_bandwidth_max),
             ],
         ];
-        execute_in_memory(&commands, "changing site speed live");
+        execute_and_record_live_change(&commands, "changing site speed live");
         // Update the site speeds in the site map - create a new Arc with updated values
         let new_site = Arc::new(BakeryCommands::AddSite {
             site_hash,
@@ -1873,22 +2516,59 @@ fn handle_change_site_speed_live(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn full_reload(
     batch: &mut Option<Vec<Arc<BakeryCommands>>>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &mut HashMap<i64, u64>,
+    mq_layout: &mut Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
     config: &Arc<Config>,
     new_batch: Vec<Arc<BakeryCommands>>,
+    resolved_mq_layout: Option<MqDeviceLayout>,
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
     FULL_RELOAD_IN_PROGRESS.store(true, Ordering::Relaxed);
+    mark_bakery_action_started(
+        BakeryMode::ApplyingFullReload,
+        "full_reload_started",
+        "Full reload triggered due to site or circuit changes.".to_string(),
+    );
     let _reload_scope = FullReloadScope;
     sites.clear();
-    circuits.clear();
+    let previous_circuits = std::mem::take(circuits);
     live_circuits.clear();
-    process_batch(new_batch, config, sites, circuits);
+    if let Some(layout) = resolved_mq_layout.as_ref() {
+        process_batch(
+            new_batch,
+            config,
+            sites,
+            circuits,
+            &previous_circuits,
+            layout,
+            qdisc_handles,
+        );
+        let active_hashes = circuits.keys().copied().collect::<HashSet<_>>();
+        qdisc_handles.retain_circuits(&config.isp_interface(), &active_hashes);
+        if !config.on_a_stick_mode() {
+            qdisc_handles.retain_circuits(&config.internet_interface(), &active_hashes);
+        }
+        qdisc_handles.save(config);
+        *mq_layout = resolved_mq_layout;
+    } else {
+        warn!("Bakery: full reload skipped qdisc-handle assignment because MQ layout is unknown");
+        process_batch(
+            new_batch,
+            config,
+            sites,
+            circuits,
+            &previous_circuits,
+            &MqDeviceLayout::default(),
+            qdisc_handles,
+        );
+    }
     *batch = None;
     apply_stormguard_overrides(stormguard_overrides, config);
 }
@@ -1898,11 +2578,31 @@ fn process_batch(
     config: &Arc<lqos_config::Config>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    previous_circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    mq_layout: &MqDeviceLayout,
+    qdisc_handles: &mut QdiscHandleState,
 ) {
     info!("Bakery: Processing batch of {} commands", batch.len());
+    let build_started = std::time::Instant::now();
     let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
+        .map(|b| {
+            let enriched = with_assigned_qdisc_handles(&b, config, mq_layout, qdisc_handles);
+            let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched.as_ref() else {
+                return enriched;
+            };
+            let Some(previous) = previous_circuits.get(circuit_hash) else {
+                return enriched;
+            };
+            rotate_changed_qdisc_handles(
+                previous.as_ref(),
+                &enriched,
+                config,
+                mq_layout,
+                qdisc_handles,
+            )
+        })
         .filter_map(|b| {
             // Ensure that our state map is up to date with the latest commands
             match b.as_ref() {
@@ -1922,7 +2622,20 @@ fn process_batch(
 
     let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
     write_command_file(&path, &commands);
-    execute_in_memory(&commands, "processing batch");
+    let build_duration_ms = build_started.elapsed().as_millis() as u64;
+    let (total_tc_commands, class_commands, qdisc_commands) = count_tc_command_types(&commands);
+    let result = execute_in_memory(&commands, "processing batch");
+    let summary = summarize_apply_result("processing batch", &result);
+    mark_bakery_action_finished(BakeryApplyMetrics {
+        apply_type: BakeryApplyType::FullReload,
+        summary: &summary,
+        build_duration_ms,
+        apply_duration_ms: result.duration_ms,
+        total_tc_commands,
+        class_commands,
+        qdisc_commands,
+        ok: result.ok,
+    });
 
     // Mark that at least one batch has been applied, unblocking live activation.
     FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
@@ -1952,13 +2665,21 @@ fn apply_stormguard_overrides(
             format!("{}mbit", rate),
         ]);
     }
-    execute_in_memory(&commands, "replaying StormGuard overrides");
+    let result = execute_in_memory(&commands, "replaying StormGuard overrides");
+    if !result.ok {
+        push_bakery_event(
+            "stormguard_override_replay_failed",
+            "error",
+            summarize_apply_result("replaying StormGuard overrides", &result),
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use lqos_config::Config;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
@@ -1972,9 +2693,23 @@ mod tests {
             upload_bandwidth_max: 100.0,
             class_major: 0x100,
             up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
             ip_addresses: ip_addresses.to_string(),
             sqm_override: None,
         })
+    }
+
+    fn test_config_with_runtime_dir(name: &str) -> Arc<Config> {
+        let mut cfg = Config::default();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lqos-bakery-{name}-{ts}"));
+        std::fs::create_dir_all(&dir).expect("temp runtime dir");
+        cfg.lqos_directory = dir.display().to_string();
+        Arc::new(cfg)
     }
 
     fn has_hash(batch: &[Arc<BakeryCommands>], hash: i64) -> bool {
@@ -2084,7 +2819,7 @@ mod tests {
     }
 
     #[test]
-    fn qdisc_budget_estimate_counts_auto_allocated_qdiscs_per_interface() {
+    fn qdisc_budget_estimate_counts_total_qdiscs_per_interface() {
         let config = Arc::new(Config::default());
         let queue = vec![
             BakeryCommands::StartBatch,
@@ -2113,6 +2848,8 @@ mod tests {
                 upload_bandwidth_max: 100.0,
                 class_major: 0x100,
                 up_class_major: 0x200,
+                down_qdisc_handle: Some(0x9000),
+                up_qdisc_handle: Some(0x9001),
                 ip_addresses: "192.0.2.1/32".to_string(),
                 sqm_override: None,
             },
@@ -2120,8 +2857,8 @@ mod tests {
         ];
 
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
-        assert_eq!(estimate.interfaces.get("eth1"), Some(&5));
-        assert_eq!(estimate.interfaces.get("eth0"), Some(&5));
+        assert_eq!(estimate.interfaces.get("eth1"), Some(&8));
+        assert_eq!(estimate.interfaces.get("eth0"), Some(&8));
         assert!(estimate.ok());
     }
 
@@ -2146,13 +2883,226 @@ mod tests {
                 upload_bandwidth_max: 100.0,
                 class_major: 0x100,
                 up_class_major: 0x200,
+                down_qdisc_handle: Some(0x9000),
+                up_qdisc_handle: Some(0x9001),
                 ip_addresses: "192.0.2.1/32".to_string(),
                 sqm_override: None,
             },
         ];
 
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
-        assert_eq!(estimate.interfaces.get("eth1"), Some(&2));
-        assert_eq!(estimate.interfaces.get("eth0"), Some(&2));
+        assert_eq!(estimate.interfaces.get("eth1"), Some(&4));
+        assert_eq!(estimate.interfaces.get("eth0"), Some(&4));
+    }
+
+    #[test]
+    fn kind_switch_rotates_only_changed_direction_and_reuses_old_handle() {
+        let config = test_config_with_runtime_dir("kind-switch");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut handles = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 101,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.1/32".to_string(),
+            sqm_override: None,
+        });
+
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut handles);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected assigned handles");
+        };
+
+        handles.save(&config);
+        let mut reloaded = QdiscHandleState::load(&config);
+
+        let switched = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 101,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.1/32".to_string(),
+            sqm_override: Some("fq_codel/cake".to_string()),
+        });
+
+        let switched = with_assigned_qdisc_handles(&switched, &config, &layout, &mut reloaded);
+        let rotated = rotate_changed_qdisc_handles(
+            original.as_ref(),
+            &switched,
+            &config,
+            &layout,
+            &mut reloaded,
+        );
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(rotated_down),
+            up_qdisc_handle: Some(rotated_up),
+            ..
+        } = rotated.as_ref()
+        else {
+            panic!("expected rotated handles");
+        };
+
+        assert_ne!(*rotated_down, *original_down);
+        assert_eq!(*rotated_up, *original_up);
+
+        reloaded.save(&config);
+        let mut persisted = QdiscHandleState::load(&config);
+        let new_circuit = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 202,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.2/32".to_string(),
+            sqm_override: None,
+        });
+        let new_circuit =
+            with_assigned_qdisc_handles(&new_circuit, &config, &layout, &mut persisted);
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(new_down),
+            ..
+        } = new_circuit.as_ref()
+        else {
+            panic!("expected new circuit handle");
+        };
+
+        assert_eq!(*new_down, *original_down);
+    }
+
+    #[test]
+    fn parent_change_rotates_only_changed_direction_and_reuses_old_handle() {
+        let config = test_config_with_runtime_dir("parent-change");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut handles = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 303,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.3/32".to_string(),
+            sqm_override: None,
+        });
+
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut handles);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected assigned handles");
+        };
+
+        handles.save(&config);
+        let mut reloaded = QdiscHandleState::load(&config);
+
+        let moved = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 303,
+            parent_class_id: TcHandle::from_u32(0x10002),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x101,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.3/32".to_string(),
+            sqm_override: None,
+        });
+
+        let moved = with_assigned_qdisc_handles(&moved, &config, &layout, &mut reloaded);
+        let rotated = rotate_changed_qdisc_handles(
+            original.as_ref(),
+            &moved,
+            &config,
+            &layout,
+            &mut reloaded,
+        );
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(rotated_down),
+            up_qdisc_handle: Some(rotated_up),
+            ..
+        } = rotated.as_ref()
+        else {
+            panic!("expected rotated handles");
+        };
+
+        assert_ne!(*rotated_down, *original_down);
+        assert_eq!(*rotated_up, *original_up);
+
+        reloaded.save(&config);
+        let mut persisted = QdiscHandleState::load(&config);
+        let new_circuit = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 404,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.4/32".to_string(),
+            sqm_override: None,
+        });
+        let new_circuit =
+            with_assigned_qdisc_handles(&new_circuit, &config, &layout, &mut persisted);
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(new_down),
+            ..
+        } = new_circuit.as_ref()
+        else {
+            panic!("expected new circuit handle");
+        };
+        assert_eq!(*new_down, *original_down);
     }
 }

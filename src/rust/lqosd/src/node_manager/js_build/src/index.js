@@ -78,6 +78,16 @@ const defaultLayout = {
                 { tag: "treeguardStatus", size: 6 },
                 { tag: "treeguardActivity", size: 12 }
             ]
+        },
+        {
+            name: "Bakery",
+            dashlets: [
+                { tag: "bakeryStatusSummary", size: 4 },
+                { tag: "bakeryApplySummary", size: 4 },
+                { tag: "bakeryCapacity", size: 4 },
+                { tag: "bakeryStatus", size: 12 },
+                { tag: "bakeryActivity", size: 12 }
+            ]
         }
     ]
 };

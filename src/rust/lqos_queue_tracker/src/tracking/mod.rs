@@ -297,3 +297,63 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::connect_queues_to_circuit;
+    use crate::{QueueNode, deserialize_tc_tree};
+    use lqos_bus::TcHandle;
+    use lqos_utils::hash_to_i64;
+
+    fn test_structure() -> Vec<QueueNode> {
+        vec![QueueNode {
+            class_id: TcHandle::from_string("3:14af").expect("valid class id"),
+            up_class_id: TcHandle::from_string("43:14af").expect("valid up class id"),
+            parent_class_id: TcHandle::from_string("3:20").expect("valid parent"),
+            up_parent_class_id: TcHandle::from_string("43:20").expect("valid up parent"),
+            class_major: 0x0003,
+            up_class_major: 0x0043,
+            class_minor: 0x14af,
+            circuit_id: Some("circuit-1".to_string()),
+            circuit_hash: Some(hash_to_i64("circuit-1")),
+            ..QueueNode::default()
+        }]
+    }
+
+    #[test]
+    fn cake_queue_matching_uses_parent_not_leaf_handle() {
+        let structure = test_structure();
+        let old_handle_queues = deserialize_tc_tree(
+            r#"[{
+                "kind":"cake",
+                "handle":"9000:",
+                "parent":"3:14af",
+                "options":{},
+                "tins":[],
+                "drops":7
+            }]"#,
+        )
+        .expect("old-handle cake should parse");
+        let rotated_handle_queues = deserialize_tc_tree(
+            r#"[{
+                "kind":"cake",
+                "handle":"9002:",
+                "parent":"3:14af",
+                "options":{},
+                "tins":[],
+                "drops":11
+            }]"#,
+        )
+        .expect("rotated-handle cake should parse");
+
+        let old_matches = connect_queues_to_circuit(&structure, &old_handle_queues);
+        let rotated_matches = connect_queues_to_circuit(&structure, &rotated_handle_queues);
+
+        assert_eq!(old_matches.len(), 1);
+        assert_eq!(rotated_matches.len(), 1);
+        assert_eq!(old_matches[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(rotated_matches[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(old_matches[0].drops, 7);
+        assert_eq!(rotated_matches[0].drops, 11);
+    }
+}

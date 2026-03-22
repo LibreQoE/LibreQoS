@@ -39,6 +39,14 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     Ok(config)
 }
 
+/// Clears the in-process cached configuration so the next `load_config()` reads from disk again.
+///
+/// This function has side effects: it mutates the process-global config cache.
+#[doc(hidden)]
+pub fn clear_cached_config() {
+    CONFIG.store(None.into());
+}
+
 fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");

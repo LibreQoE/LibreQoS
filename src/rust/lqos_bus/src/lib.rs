@@ -32,9 +32,10 @@ pub use bus::response::{
     StormguardDebugDirection, StormguardDebugEntry, UrgentIssue, WarningLevel,
 };
 pub use bus::{
-    BUS_SOCKET_PATH, BlackboardSystem, BusClientError, BusReply, BusRequest, BusResponse,
-    BusSession, CakeDiffTinTransit, CakeDiffTransit, CakeTransit, LibreqosBusClient,
-    QueueStoreTransit, TopFlowType, UnixSocketServer, UrgentSeverity, UrgentSource, bus_request,
+    BUS_SOCKET_PATH, BakeryCapacityReportInterface, BlackboardSystem, BusClientError, BusReply,
+    BusRequest, BusResponse, BusSession, CakeDiffTinTransit, CakeDiffTransit, CakeTransit,
+    LibreqosBusClient, QueueStoreTransit, TopFlowType, UnixSocketServer, UrgentSeverity,
+    UrgentSource, bus_request,
 };
 pub use tc_handle::TcHandle;
 

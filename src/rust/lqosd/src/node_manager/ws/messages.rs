@@ -317,16 +317,54 @@ pub struct RamData {
     pub used: u64,
 }
 
-#[derive(Debug, Serialize)]
-pub struct BakeryStatusState {
-    #[serde(rename = "activeCircuits")]
-    pub active_circuits: usize,
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryCapacityInterfaceData {
+    pub name: String,
+    pub planned_qdiscs: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryPreflightData {
+    pub ok: bool,
+    pub message: String,
+    pub safe_budget: usize,
+    pub hard_limit: usize,
+    pub interfaces: Vec<BakeryCapacityInterfaceData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryStatusState {
+    pub active_circuits: usize,
+    pub mode: String,
+    pub current_action_started_unix: Option<u64>,
+    pub last_success_unix: Option<u64>,
+    pub last_failure_unix: Option<u64>,
+    pub last_failure_summary: Option<String>,
+    pub last_apply_type: String,
+    pub last_total_tc_commands: usize,
+    pub last_class_commands: usize,
+    pub last_qdisc_commands: usize,
+    pub last_build_duration_ms: u64,
+    pub last_apply_duration_ms: u64,
+    pub preflight: Option<BakeryPreflightData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BakeryStatusData {
-    #[serde(rename = "currentState")]
     pub current_state: BakeryStatusState,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryActivityEntry {
+    pub ts: u64,
+    pub event: String,
+    pub status: String,
+    pub summary: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -779,6 +817,9 @@ pub enum WsResponse {
     },
     BakeryStatus {
         data: BakeryStatusData,
+    },
+    BakeryActivity {
+        data: Vec<BakeryActivityEntry>,
     },
     TreeGuardStatus {
         data: TreeguardStatusData,

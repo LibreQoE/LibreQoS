@@ -86,6 +86,10 @@ Cuando está habilitado y no está en dry-run, TreeGuard puede persistir decisio
 
 TreeGuard está diseñado para no pelear con overrides del operador. Si existen overrides del operador para entidades enroladas, TreeGuard omite esas entidades y reporta advertencias.
 
+Las decisiones de virtualización de nodos de TreeGuard son overrides de tiempo de ejecución. El
+scheduler no las materializa de vuelta en el `network.json` base, por lo que deshabilitar o limpiar
+TreeGuard no reescribe permanentemente la topología definida por el operador.
+
 TreeGuard también se niega a gestionar nodos que ya estén marcados con `"virtual": true` en el `network.json` base. Si existen overrides viejos de TreeGuard para esos nodos, TreeGuard limpia su propia capa de overrides y vuelve a respetar la definición base de la topología.
 
 Para la gestión SQM por circuito, TreeGuard trata los valores duplicados de `device_id` como colisiones de identidad inseguras. Si el mismo `device_id` aparece en más de un circuito dentro de `ShapedDevices.csv`, TreeGuard omite esos circuitos afectados y limpia cualquier override SQM de TreeGuard asociado a esos `device_id` duplicados.

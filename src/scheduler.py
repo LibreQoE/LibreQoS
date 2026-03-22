@@ -456,11 +456,13 @@ def apply_network_adjustments(network: dict) -> bool:
     Currently supports: adjust_site_speed (preferring node_id, with legacy
     site_name fallback) updating downloadBandwidthMbps and
     uploadBandwidthMbps at the matching node, and set_node_virtual (by
-    node_name) updating the boolean 'virtual' flag.
+    node_name) updating the boolean 'virtual' flag for operator-authored
+    topology overrides.
 
-    This path intentionally excludes StormGuard adaptive site-speed overrides so
-    runtime StormGuard decisions do not overwrite the operator-authored
-    `network.json` source of truth.
+    This path intentionally excludes runtime automation changes such as
+    StormGuard adaptive site-speed overrides and TreeGuard virtual-node
+    decisions so they do not overwrite the operator-authored `network.json`
+    source of truth.
     Returns True if any changes were applied.
     """
     try:

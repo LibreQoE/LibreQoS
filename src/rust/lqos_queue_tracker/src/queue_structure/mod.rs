@@ -2,11 +2,13 @@ mod queing_structure_json_monitor;
 mod queue_network;
 mod queue_node;
 pub use queing_structure_json_monitor::spawn_queue_structure_monitor;
+#[doc(hidden)]
 pub use queing_structure_json_monitor::{
-    EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED_STORMGUARD,
+    EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED_STORMGUARD, QueueStructure,
 };
 use queue_network::QueueNetwork;
-pub(crate) use queue_node::QueueNode;
+#[doc(hidden)]
+pub use queue_node::QueueNode;
 use thiserror::Error;
 
 pub(crate) fn read_queueing_structure() -> Result<Vec<QueueNode>, QueueStructureError> {

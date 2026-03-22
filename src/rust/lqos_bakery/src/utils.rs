@@ -14,7 +14,15 @@ pub(crate) fn current_timestamp() -> u64 {
 
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 
-pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
+#[derive(Clone, Debug)]
+pub(crate) struct ExecuteResult {
+    pub(crate) ok: bool,
+    pub(crate) duration_ms: u64,
+    pub(crate) failure_summary: Option<String>,
+}
+
+pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) -> ExecuteResult {
+    let started = std::time::Instant::now();
     let lock = FILE_LOCK.lock();
     info!(
         "Bakery: Executing in-memory commands: {} lines, for {purpose}",
@@ -24,7 +32,12 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     let path = Path::new("/tmp/lqos_bakery_commands.txt");
     let Some(lines) = write_command_file(path, command_buffer) else {
         error!("Failed to write commands to file for {purpose}");
-        return;
+        drop(lock);
+        return ExecuteResult {
+            ok: false,
+            duration_ms: started.elapsed().as_millis() as u64,
+            failure_summary: Some(format!("Failed to write commands to file for {purpose}")),
+        };
     };
 
     let Ok(output) = std::process::Command::new("/sbin/tc")
@@ -33,7 +46,12 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     else {
         let message = format!("Failed to execute tc batch command for {purpose}.");
         error!(message);
-        return;
+        drop(lock);
+        return ExecuteResult {
+            ok: false,
+            duration_ms: started.elapsed().as_millis() as u64,
+            failure_summary: Some(message),
+        };
     };
 
     let output_str = String::from_utf8_lossy(&output.stdout)
@@ -80,9 +98,20 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
             let _ = f.write_all(detailed.as_bytes());
             let _ = f.flush();
         }
+        drop(lock);
+        return ExecuteResult {
+            ok: false,
+            duration_ms: started.elapsed().as_millis() as u64,
+            failure_summary: Some(error_str.trim().to_string()),
+        };
     }
 
     drop(lock); // Explicitly drop the lock to release it. This happens automatically at the end of the scope, but it's good to be explicit.
+    ExecuteResult {
+        ok: true,
+        duration_ms: started.elapsed().as_millis() as u64,
+        failure_summary: None,
+    }
 }
 
 pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> Option<String> {

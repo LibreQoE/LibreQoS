@@ -309,6 +309,8 @@ fn apply_circuit_sqm_override_live(
         upload_bandwidth_max: node.upload_bandwidth_mbps as f32,
         class_major,
         up_class_major,
+        down_qdisc_handle: None,
+        up_qdisc_handle: None,
         ip_addresses: ip_list(devices),
         sqm_override: sqm_override.map(|value| value.to_string()),
     })?;

@@ -11,7 +11,10 @@ export class DashboardLayout {
             // Check if it's the new format with version
             if (parsed.version >= 2) {
                 this.version = parsed.version;
-                this.tabs = Array.isArray(parsed.tabs) ? parsed.tabs : [];
+                this.tabs = DashboardLayout.mergeMissingDefaultTabs(
+                    Array.isArray(parsed.tabs) ? parsed.tabs : [],
+                    this._defaultTabs
+                );
                 this.activeTab = parsed.activeTab || 0;
             } else {
                 // Old format saved in localStorage (pre-tabs)
@@ -125,4 +128,26 @@ DashboardLayout.tabsEqual = function(tabsA, tabsB) {
         }
     }
     return true;
+};
+
+DashboardLayout.mergeMissingDefaultTabs = function(existingTabs, defaultTabs) {
+    if (!Array.isArray(existingTabs) || !Array.isArray(defaultTabs) || defaultTabs.length === 0) {
+        return Array.isArray(existingTabs) ? existingTabs : [];
+    }
+    const knownNames = new Set(existingTabs.map((tab) => tab?.name || ""));
+    const merged = existingTabs.slice();
+    defaultTabs.forEach((tab) => {
+        const name = tab?.name || "";
+        if (!name || knownNames.has(name)) {
+            return;
+        }
+        knownNames.add(name);
+        merged.push({
+            name,
+            dashlets: Array.isArray(tab?.dashlets)
+                ? tab.dashlets.map((dashlet) => ({ tag: dashlet.tag, size: dashlet.size }))
+                : []
+        });
+    });
+    return merged;
 };

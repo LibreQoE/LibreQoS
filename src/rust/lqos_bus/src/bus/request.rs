@@ -6,6 +6,15 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Per-interface Bakery qdisc-budget report entry.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
+pub struct BakeryCapacityReportInterface {
+    /// Interface name, e.g. `ens19`.
+    pub name: String,
+    /// Planned qdisc count for the interface.
+    pub planned_qdiscs: usize,
+}
+
 /// Source system for an urgent issue
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum UrgentSource {
@@ -359,6 +368,20 @@ pub enum BusRequest {
 
     /// Get current Bakery statistics
     GetBakeryStats,
+
+    /// Report the most recent Bakery qdisc-budget preflight result.
+    BakeryReportPreflight {
+        /// Whether the planned full reload fits within the current safe budget.
+        ok: bool,
+        /// Operator-facing summary of the preflight result.
+        message: String,
+        /// Safe operational budget used for the preflight.
+        safe_budget: usize,
+        /// Hard kernel limit for reference.
+        hard_limit: usize,
+        /// Per-interface planned qdisc counts.
+        interfaces: Vec<BakeryCapacityReportInterface>,
+    },
 
     /// Announce that the API is ready
     ApiReady,
