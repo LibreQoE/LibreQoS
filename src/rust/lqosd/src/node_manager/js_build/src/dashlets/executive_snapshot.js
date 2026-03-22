@@ -201,7 +201,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     renderValueWithAlert(value, showAlert) {
         const isZero = this.isZero(value);
-        const valueClass = isZero ? "text-danger" : "text-secondary";
+        const valueClass = isZero && showAlert ? "text-danger" : "text-secondary";
         if (!showAlert || !isZero) {
             return `<span class="exec-metric-value ${valueClass}">${value}</span>`;
         }
