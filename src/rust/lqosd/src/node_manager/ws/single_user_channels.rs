@@ -1,15 +1,15 @@
 mod cake_watcher;
 mod chatbot;
-mod circuit_metrics;
 mod circuit;
+mod circuit_metrics;
 mod flows_by_circuit;
 mod ping_monitor;
 mod tree_attached_circuits;
 
 use crate::node_manager::ws::messages::{PrivateRequest, WsResponse, encode_ws_message};
-use crate::node_manager::ws::single_user_channels::circuit_metrics::watch_circuit_metrics;
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
+use crate::node_manager::ws::single_user_channels::circuit_metrics::watch_circuit_metrics;
 use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 use crate::node_manager::ws::single_user_channels::tree_attached_circuits::watch_tree_attached_circuits;
@@ -104,10 +104,8 @@ impl PrivateState {
         query: crate::node_manager::local_api::tree_attached_circuits::TreeAttachedCircuitsQuery,
     ) {
         self.abort_tree_attached_circuits_watch();
-        self.tree_attached_circuits_watch = Some(spawn(watch_tree_attached_circuits(
-            query,
-            self.tx.clone(),
-        )));
+        self.tree_attached_circuits_watch =
+            Some(spawn(watch_tree_attached_circuits(query, self.tx.clone())));
     }
 
     fn abort_tree_attached_circuits_watch(&mut self) {

@@ -35,15 +35,18 @@ pub fn circuit_live_metrics(query: &CircuitMetricsQuery) -> Vec<CircuitLiveMetri
             if trimmed.is_empty() || !seen.insert(trimmed.to_string()) {
                 return None;
             }
-            snapshot.by_circuit_id.get(trimmed).map(|row| CircuitLiveMetrics {
-                circuit_id: row.circuit_id.clone(),
-                bytes_per_second: row.bytes_per_second,
-                rtt_current_p50_nanos: row.rtt_current_p50_nanos,
-                qoo: row.qoo,
-                tcp_packets: row.tcp_packets,
-                tcp_retransmits: row.tcp_retransmits,
-                last_seen_nanos: row.last_seen_nanos,
-            })
+            snapshot
+                .by_circuit_id
+                .get(trimmed)
+                .map(|row| CircuitLiveMetrics {
+                    circuit_id: row.circuit_id.clone(),
+                    bytes_per_second: row.bytes_per_second,
+                    rtt_current_p50_nanos: row.rtt_current_p50_nanos,
+                    qoo: row.qoo,
+                    tcp_packets: row.tcp_packets,
+                    tcp_retransmits: row.tcp_retransmits,
+                    last_seen_nanos: row.last_seen_nanos,
+                })
         })
         .take(MAX_CIRCUIT_METRICS_IDS)
         .collect()

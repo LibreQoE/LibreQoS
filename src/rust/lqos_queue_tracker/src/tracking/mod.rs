@@ -2,7 +2,9 @@ use crate::{
     circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL, queue_store::QueueStore,
     tracking::reader::read_named_queue_from_interface,
 };
+use lqos_bakery::full_reload_in_progress;
 use lqos_utils::fdtimer::periodic;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, error, warn};
@@ -17,6 +19,16 @@ use crate::queue_types::QueueType;
 use crate::tracking::reader::read_all_queues_from_interface;
 use watched_queues::WATCHED_QUEUES;
 pub use watched_queues::{add_watched_queue, still_watching};
+
+static QUEUE_STATS_STALE: AtomicBool = AtomicBool::new(false);
+
+/// Returns `true` when queue counts are intentionally held at their last-known values.
+///
+/// This is currently used during Bakery full reloads, where shelling out to `tc`
+/// for full-queue snapshots is too expensive to provide reliable live counts.
+pub fn queue_stats_stale() -> bool {
+    QUEUE_STATS_STALE.load(Ordering::Relaxed)
+}
 
 fn track_queues() {
     if WATCHED_QUEUES.is_empty() {
@@ -154,6 +166,12 @@ fn connect_queues_to_circuit_up(
 
 fn all_queue_reader() {
     let start = Instant::now();
+    if full_reload_in_progress() {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+        debug!("(TC monitor) Skipping full queue read during Bakery full reload");
+        return;
+    }
+
     let structure = QUEUE_STRUCTURE.load();
     if let Some(structure) = &structure.maybe_queues {
         if let Ok(config) = lqos_config::load_config() {
@@ -200,10 +218,13 @@ fn all_queue_reader() {
 
             //println!("{}", download.len() + upload.len());
             ALL_QUEUE_SUMMARY.ingest_batch(download, upload, queue_counts);
+            QUEUE_STATS_STALE.store(false, Ordering::Relaxed);
         } else {
+            QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
             warn!("(TC monitor) Unable to read configuration");
         }
     } else {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
         warn!("(TC monitor) Not reading queues due to structure not yet ready");
     }
     let elapsed = start.elapsed();

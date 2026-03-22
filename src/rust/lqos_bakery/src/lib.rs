@@ -25,7 +25,7 @@ mod queue_math;
 mod utils;
 
 use crossbeam_channel::{Receiver, Sender};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -194,6 +194,12 @@ fn build_temp_add_cmd(
 
 /// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
+/// True while Bakery is applying a full reload batch to `tc`.
+static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+/// Hard kernel limit for auto-allocated qdisc handles on a single network interface.
+pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 32_768;
+/// Conservative operational limit used to fail a full reload before the kernel limit is reached.
+pub const SAFE_AUTO_QDISC_BUDGET_PER_INTERFACE: usize = 32_000;
 /// Maximum number of mapped circuits allowed without Insight.
 const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
 /// Minimum interval between repeated mapped-circuit-limit urgent issues.
@@ -207,6 +213,95 @@ static MQ_CREATED: AtomicBool = AtomicBool::new(false);
 /// Indicates that at least one command batch has been processed and applied.
 /// Used to avoid racing live activation against initial class creation.
 static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
+
+struct FullReloadScope;
+
+impl Drop for FullReloadScope {
+    fn drop(&mut self) {
+        FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Estimated auto-allocated qdisc usage for a planned full reload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QdiscBudgetEstimate {
+    /// Estimated auto-allocated qdisc count grouped by network interface name.
+    pub interfaces: BTreeMap<String, usize>,
+    /// Conservative operational limit enforced before a full reload is committed.
+    pub safe_budget: usize,
+    /// Kernel hard limit for the auto-allocated qdisc handle pool on one interface.
+    pub hard_limit: usize,
+}
+
+impl QdiscBudgetEstimate {
+    /// Returns `true` when all planned per-interface counts fit within the safe budget.
+    pub fn ok(&self) -> bool {
+        self.interfaces
+            .values()
+            .all(|count| *count <= self.safe_budget)
+    }
+}
+
+fn find_arg_value<'a>(argv: &'a [String], key: &str) -> Option<&'a str> {
+    argv.windows(2)
+        .find_map(|pair| (pair[0] == key).then_some(pair[1].as_str()))
+}
+
+fn auto_allocated_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
+    if argv.len() < 2 || argv[0] != "qdisc" {
+        return None;
+    }
+    if !matches!(argv[1].as_str(), "add" | "replace") {
+        return None;
+    }
+    if argv.iter().any(|token| token == "handle") {
+        return None;
+    }
+
+    let dev = find_arg_value(argv, "dev")?.to_string();
+    let parent = find_arg_value(argv, "parent")?.to_string();
+    Some((dev, parent))
+}
+
+/// Estimates auto-allocated qdisc usage for the current full-reload builder queue.
+///
+/// This expands the queued Bakery commands through the same builder-path `tc`
+/// argv generation used by a structural full reload, then counts only the
+/// resulting qdiscs that do not specify an explicit `handle`. The estimate is
+/// tracked per interface because Linux enforces qdisc auto-handle exhaustion on
+/// a per-device basis.
+pub fn estimate_full_reload_auto_qdisc_budget(
+    config: &Arc<Config>,
+    queue: &[BakeryCommands],
+) -> QdiscBudgetEstimate {
+    let mut interfaces = BTreeMap::new();
+    let mut seen_qdiscs = HashSet::new();
+
+    for command in queue {
+        let Some(builder_commands) = command.to_commands(config, ExecutionMode::Builder) else {
+            continue;
+        };
+        for argv in builder_commands {
+            let Some((dev, parent)) = auto_allocated_qdisc_identity(&argv) else {
+                continue;
+            };
+            if seen_qdiscs.insert((dev.clone(), parent)) {
+                *interfaces.entry(dev).or_insert(0) += 1;
+            }
+        }
+    }
+
+    QdiscBudgetEstimate {
+        interfaces,
+        safe_budget: SAFE_AUTO_QDISC_BUDGET_PER_INTERFACE,
+        hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
+    }
+}
+
+/// Returns `true` while Bakery is applying a full reload batch to Linux `tc`.
+pub fn full_reload_in_progress() -> bool {
+    FULL_RELOAD_IN_PROGRESS.load(Ordering::Relaxed)
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct MappedLimitStats {
@@ -1788,6 +1883,8 @@ fn full_reload(
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
 ) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
+    FULL_RELOAD_IN_PROGRESS.store(true, Ordering::Relaxed);
+    let _reload_scope = FullReloadScope;
     sites.clear();
     circuits.clear();
     live_circuits.clear();
@@ -1861,6 +1958,7 @@ fn apply_stormguard_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lqos_config::Config;
 
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
@@ -1983,5 +2081,78 @@ mod tests {
         assert_eq!(stats.allowed_mapped, 3);
         assert_eq!(stats.dropped_mapped, 0);
         assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn qdisc_budget_estimate_counts_auto_allocated_qdiscs_per_interface() {
+        let config = Arc::new(Config::default());
+        let queue = vec![
+            BakeryCommands::StartBatch,
+            BakeryCommands::MqSetup {
+                queues_available: 2,
+                stick_offset: 0,
+            },
+            BakeryCommands::AddSite {
+                site_hash: 1,
+                parent_class_id: TcHandle::from_u32(0x1),
+                up_parent_class_id: TcHandle::from_u32(0x2),
+                class_minor: 0x10,
+                download_bandwidth_min: 50.0,
+                upload_bandwidth_min: 50.0,
+                download_bandwidth_max: 100.0,
+                upload_bandwidth_max: 100.0,
+            },
+            BakeryCommands::AddCircuit {
+                circuit_hash: 2,
+                parent_class_id: TcHandle::from_u32(0x10001),
+                up_parent_class_id: TcHandle::from_u32(0x20001),
+                class_minor: 0x20,
+                download_bandwidth_min: 10.0,
+                upload_bandwidth_min: 10.0,
+                download_bandwidth_max: 100.0,
+                upload_bandwidth_max: 100.0,
+                class_major: 0x100,
+                up_class_major: 0x200,
+                ip_addresses: "192.0.2.1/32".to_string(),
+                sqm_override: None,
+            },
+            BakeryCommands::CommitBatch,
+        ];
+
+        let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
+        assert_eq!(estimate.interfaces.get("eth1"), Some(&5));
+        assert_eq!(estimate.interfaces.get("eth0"), Some(&5));
+        assert!(estimate.ok());
+    }
+
+    #[test]
+    fn qdisc_budget_estimate_skips_circuit_leaf_qdiscs_in_monitor_only_mode() {
+        let mut cfg = Config::default();
+        cfg.queues.monitor_only = true;
+        let config = Arc::new(cfg);
+        let queue = vec![
+            BakeryCommands::MqSetup {
+                queues_available: 1,
+                stick_offset: 0,
+            },
+            BakeryCommands::AddCircuit {
+                circuit_hash: 2,
+                parent_class_id: TcHandle::from_u32(0x10001),
+                up_parent_class_id: TcHandle::from_u32(0x20001),
+                class_minor: 0x20,
+                download_bandwidth_min: 10.0,
+                upload_bandwidth_min: 10.0,
+                download_bandwidth_max: 100.0,
+                upload_bandwidth_max: 100.0,
+                class_major: 0x100,
+                up_class_major: 0x200,
+                ip_addresses: "192.0.2.1/32".to_string(),
+                sqm_override: None,
+            },
+        ];
+
+        let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
+        assert_eq!(estimate.interfaces.get("eth1"), Some(&2));
+        assert_eq!(estimate.interfaces.get("eth0"), Some(&2));
     }
 }

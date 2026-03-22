@@ -31,6 +31,7 @@ def install_scheduler_stubs():
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
     lqlib.scheduler_output = Mock()
+    lqlib.wait_for_bus_ready = Mock(return_value=True)
     lqlib.overrides_persistent_devices_effective = lambda: []
     lqlib.overrides_circuit_adjustments_effective = lambda: []
     lqlib.overrides_network_adjustments_effective = lambda: []

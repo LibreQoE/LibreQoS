@@ -129,6 +129,8 @@ sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_lo
 ```
 This exports a log file to lqos_sched_log.txt. You can review this file to see what caused the scheduler to error out.
 
+If the scheduler fails immediately after a restart with a message like `Socket (typically /run/lqos/bus) not found`, that indicates `lqosd` had not finished binding the local bus yet. Current builds wait briefly for bus readiness at scheduler startup instead of crashing immediately, so repeated startup panics after restart should no longer be expected.
+
 ### Scheduler status in WebUI looks unhealthy
 
 Recent builds expose scheduler readiness/state in the WebUI (Node Manager).
@@ -234,6 +236,9 @@ WebUI urgent issues include machine-readable codes. Use them to triage quickly.
 |---|---|---|---|
 | `MAPPED_CIRCUIT_LIMIT` | Bakery is enforcing a mapped-circuit limit. | Insight license status, `journalctl -u lqosd` for requested/allowed/dropped counts. | Reduce mapped circuits immediately or update license/limits. |
 | `TC_U16_OVERFLOW` | Queue/class minor IDs exceeded the Linux tc u16 range on a CPU queue. | `journalctl -u lqos_scheduler -u lqosd`, topology depth/queue distribution. | Increase queue count and/or simplify/rebalance hierarchy (for example with integration strategy or root promotion changes). |
+| `TC_QDISC_CAPACITY` | Planned auto-allocated qdiscs exceed the per-interface safe budget before apply. | Estimated per-interface qdisc counts in the urgent issue context, `journalctl -u lqos_scheduler -u lqosd`, `on_a_stick` and `monitor_only` config. | Reduce the planned qdisc load for this run (for example fewer circuits/devices in the test shape) before retrying; do not trust partial apply. |
+| `XDP_IP_MAPPING_CAPACITY` | Required IP mappings exceed the current XDP kernel map capacity. | `ShapedDevices.csv` row shape, IPv4/IPv6 mix, one-device-vs-many-device assumptions, `journalctl -u lqos_scheduler -u lqosd`. | Reduce required mappings immediately (for example fewer devices or IPv4-only test shape), or raise kernel map capacity in a coordinated change. |
+| `XDP_IP_MAPPING_APPLY_FAILED` | One or more IP mapping inserts failed during apply. | `journalctl -u lqos_scheduler -u lqosd` for summarized failure examples and counts. | Fix the underlying mapping failure, then rerun; do not trust partial shaping. |
 
 Operational pattern:
 1. Open urgent issue details in WebUI (code/message/context).

@@ -14,7 +14,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
     overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, \
     overrides_network_adjustments_materialized, \
-    scheduler_output
+    scheduler_output, wait_for_bus_ready
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -579,8 +579,14 @@ def not_dead_yet():
     #print(f"Scheduler alive at {datetime.datetime.now()}")
     scheduler_alive()
 
+
+def ensure_bus_ready():
+    """Wait briefly for lqosd to finish binding the local bus socket."""
+    wait_for_bus_ready(5000)
+
 if __name__ == '__main__':
     try:
+        ensure_bus_ready()
         importAndShapeFullReload()
         network_hash = calculate_hash()
 

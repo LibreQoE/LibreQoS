@@ -83,7 +83,9 @@ fn resolve_node_name(query: &TreeAttachedCircuitsQuery) -> Option<String> {
     let nodes = reader.get_nodes_when_ready();
 
     if let Some(node_id) = query.node_id.as_deref()
-        && let Some(node) = nodes.iter().find(|node| node.id.as_deref() == Some(node_id))
+        && let Some(node) = nodes
+            .iter()
+            .find(|node| node.id.as_deref() == Some(node_id))
     {
         return Some(node.name.clone());
     }
@@ -124,7 +126,10 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
     let page = query.page.unwrap_or(0);
     let page_size = normalized_page_size(&query);
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
-    let sort = query.sort.clone().unwrap_or(TreeAttachedCircuitsSort::CircuitName);
+    let sort = query
+        .sort
+        .clone()
+        .unwrap_or(TreeAttachedCircuitsSort::CircuitName);
     let descending = query.descending.unwrap_or(false);
     let node_name = resolve_node_name(&query);
 
@@ -159,8 +164,14 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
             row.circuit_name.to_lowercase().contains(&search)
                 || row.circuit_id.to_lowercase().contains(&search)
                 || row.parent_node.to_lowercase().contains(&search)
-                || row.device_names.iter().any(|name| name.to_lowercase().contains(&search))
-                || row.ip_addrs.iter().any(|ip| ip.to_lowercase().contains(&search))
+                || row
+                    .device_names
+                    .iter()
+                    .any(|name| name.to_lowercase().contains(&search))
+                || row
+                    .ip_addrs
+                    .iter()
+                    .any(|ip| ip.to_lowercase().contains(&search))
         });
     }
 
@@ -203,7 +214,11 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
             node_path: query.node_path,
             page: Some(page),
             page_size: Some(page_size),
-            search: if search.is_empty() { None } else { query.search },
+            search: if search.is_empty() {
+                None
+            } else {
+                query.search
+            },
             sort: Some(sort),
             descending: Some(descending),
         },

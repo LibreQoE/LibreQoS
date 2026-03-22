@@ -9,20 +9,24 @@ use crate::node_manager::local_api::executive::{
     ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
     ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
 };
+use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
 };
-use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
-use crate::node_manager::local_api::shaped_devices_page::{ShapedDevicesPage, ShapedDevicesPageQuery};
-use crate::node_manager::local_api::tree_attached_circuits::{TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery};
+use crate::node_manager::local_api::shaped_devices_page::{
+    ShapedDevicesPage, ShapedDevicesPageQuery,
+};
+use crate::node_manager::local_api::tree_attached_circuits::{
+    TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
+};
 use crate::node_manager::local_api::unknown_ips::{ClearUnknownIpsResponse, UnknownIp};
 use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
 use crate::node_manager::local_api::{
-    circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
     circuit_count::CircuitCount,
+    circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
     cpu_affinity::{
         CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySiteTreeNode, CpuAffinitySummaryEntry,
         PreviewWeightItem,
@@ -41,9 +45,7 @@ use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
 use crate::throughput_tracker::flow_data::{FlowAnalysis, FlowbeeLocalData};
-use lqos_bus::{
-    Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry,
-};
+use lqos_bus::{Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry};
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
 use lqos_utils::units::DownUpOrder;

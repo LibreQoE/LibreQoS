@@ -246,11 +246,7 @@ fn normalize_page_size(requested: Option<usize>, default_size: usize) -> usize {
 
 fn normalized_search(search: &Option<String>) -> Option<String> {
     let value = search.as_deref().unwrap_or("").trim().to_lowercase();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn normalized_entity_kinds(mut kinds: Vec<ExecutiveEntityKind>) -> Vec<ExecutiveEntityKind> {
@@ -340,11 +336,7 @@ fn leaderboard_matches_search(row: &ExecutiveLeaderboardRow, search: &Option<Str
             circuit_id.to_lowercase().contains(search)
                 || circuit_name.to_lowercase().contains(search)
         }
-        ExecutiveLeaderboardRow::TopAsnByTraffic {
-            asn,
-            asn_name,
-            ..
-        } => {
+        ExecutiveLeaderboardRow::TopAsnByTraffic { asn, asn_name, .. } => {
             asn.to_string().contains(search)
                 || asn_name
                     .as_ref()
@@ -386,7 +378,10 @@ pub fn executive_heatmap_page(query: ExecutiveHeatmapPageQuery) -> ExecutiveHeat
                     .as_ref()
                     .map(|id| id.to_lowercase().contains(search))
                     .unwrap_or(false)
-                || row.asn.map(|asn| asn.to_string().contains(search)).unwrap_or(false)
+                || row
+                    .asn
+                    .map(|asn| asn.to_string().contains(search))
+                    .unwrap_or(false)
         })
         .collect::<Vec<_>>();
 
@@ -434,7 +429,9 @@ pub fn executive_heatmap_page(query: ExecutiveHeatmapPageQuery) -> ExecutiveHeat
 }
 
 /// Returns one filtered executive leaderboard page.
-pub fn executive_leaderboard_page(query: ExecutiveLeaderboardPageQuery) -> ExecutiveLeaderboardPage {
+pub fn executive_leaderboard_page(
+    query: ExecutiveLeaderboardPageQuery,
+) -> ExecutiveLeaderboardPage {
     let snapshot = fresh_executive_cache_snapshot();
     let page = query.page.unwrap_or(0);
     let page_size = normalize_page_size(query.page_size, DEFAULT_EXECUTIVE_LEADERBOARD_PAGE_SIZE);

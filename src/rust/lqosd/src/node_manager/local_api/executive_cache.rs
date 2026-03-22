@@ -100,10 +100,12 @@ impl ExecutiveCacheSnapshot {
                         upload: array_to_vec(&entity.heatmap.retransmit_up),
                     }),
                     ExecutiveMetric::Qoo => entity.qoq_blocks.as_ref().map(qoq_to_split_blocks),
-                    ExecutiveMetric::Download | ExecutiveMetric::Upload => Some(ExecutiveSplitBlocks {
-                        download: array_to_vec(&entity.heatmap.download),
-                        upload: array_to_vec(&entity.heatmap.upload),
-                    }),
+                    ExecutiveMetric::Download | ExecutiveMetric::Upload => {
+                        Some(ExecutiveSplitBlocks {
+                            download: array_to_vec(&entity.heatmap.download),
+                            upload: array_to_vec(&entity.heatmap.upload),
+                        })
+                    }
                     ExecutiveMetric::Rtt => None,
                 },
                 rtt_blocks: match metric {
@@ -202,24 +204,40 @@ fn qoo_sample_count(blocks: Option<&QoqHeatmapBlocks>) -> usize {
 
 fn sort_score_for_metric(entity: &ExecutiveEntitySnapshot, metric: &ExecutiveMetric) -> f32 {
     match metric {
-        ExecutiveMetric::Download => latest_value(&entity.heatmap.download).unwrap_or(f32::NEG_INFINITY),
-        ExecutiveMetric::Upload => latest_value(&entity.heatmap.upload).unwrap_or(f32::NEG_INFINITY),
+        ExecutiveMetric::Download => {
+            latest_value(&entity.heatmap.download).unwrap_or(f32::NEG_INFINITY)
+        }
+        ExecutiveMetric::Upload => {
+            latest_value(&entity.heatmap.upload).unwrap_or(f32::NEG_INFINITY)
+        }
         ExecutiveMetric::Retransmit => {
             let latest = latest_value(&entity.heatmap.retransmit).unwrap_or(f32::NEG_INFINITY);
             let count = non_null_count(&entity.heatmap.retransmit);
-            let penalty = if count < MIN_HEATMAP_SAMPLES { 1000.0 } else { 0.0 };
+            let penalty = if count < MIN_HEATMAP_SAMPLES {
+                1000.0
+            } else {
+                0.0
+            };
             latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
         }
         ExecutiveMetric::Rtt => {
             let latest = latest_value(&entity.heatmap.rtt).unwrap_or(f32::NEG_INFINITY);
             let count = non_null_count(&entity.heatmap.rtt);
-            let penalty = if count < MIN_HEATMAP_SAMPLES { 1000.0 } else { 0.0 };
+            let penalty = if count < MIN_HEATMAP_SAMPLES {
+                1000.0
+            } else {
+                0.0
+            };
             latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
         }
         ExecutiveMetric::Qoo => {
             let latest = latest_qoo(entity.qoq_blocks.as_ref()).unwrap_or(f32::INFINITY);
             let count = qoo_sample_count(entity.qoq_blocks.as_ref());
-            let penalty = if count < MIN_HEATMAP_SAMPLES { 1000.0 } else { 0.0 };
+            let penalty = if count < MIN_HEATMAP_SAMPLES {
+                1000.0
+            } else {
+                0.0
+            };
             -latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
         }
     }
@@ -264,7 +282,12 @@ fn top_metric_rows(
 ) -> Vec<ExecutiveDashboardMetricRow> {
     let mut ranked = entities
         .iter()
-        .filter(|entity| matches!(entity.entity_kind, ExecutiveEntityKind::Site | ExecutiveEntityKind::Circuit))
+        .filter(|entity| {
+            matches!(
+                entity.entity_kind,
+                ExecutiveEntityKind::Site | ExecutiveEntityKind::Circuit
+            )
+        })
         .cloned()
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
@@ -360,7 +383,10 @@ fn build_leaderboard_rows(
         .collect::<Vec<_>>();
     worst_sites.sort_by(|left, right| match (left, right) {
         (
-            ExecutiveLeaderboardRow::WorstSiteByRtt { median_rtt_ms: left, .. },
+            ExecutiveLeaderboardRow::WorstSiteByRtt {
+                median_rtt_ms: left,
+                ..
+            },
             ExecutiveLeaderboardRow::WorstSiteByRtt {
                 median_rtt_ms: right,
                 ..
@@ -548,10 +574,7 @@ fn asn_heatmap_rows() -> Vec<AsnHeatmapData> {
     }
 }
 
-fn node_path_names(
-    idx: usize,
-    nodes: &[lqos_config::NetworkJsonNode],
-) -> Option<Vec<String>> {
+fn node_path_names(idx: usize, nodes: &[lqos_config::NetworkJsonNode]) -> Option<Vec<String>> {
     let node = nodes.get(idx)?;
     if node.name == "Root" {
         return Some(vec!["Root".to_string()]);
@@ -787,7 +810,11 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
     let header = header_from_response(executive_summary_header());
     let global = heatmap_blocks_from_response(global_heatmap());
     let global_qoq = THROUGHPUT_TRACKER.global_qoq_heatmap.lock().blocks();
-    let entities = entity_snapshots(circuit_heatmap_rows(), site_heatmap_rows(), asn_heatmap_rows());
+    let entities = entity_snapshots(
+        circuit_heatmap_rows(),
+        site_heatmap_rows(),
+        asn_heatmap_rows(),
+    );
     let oversubscribed_sites = build_oversubscribed_sites(&entities);
     let top_download = top_metric_rows(&entities, ExecutiveMetric::Download, EXECUTIVE_TOP_LIMIT);
     let top_upload = top_metric_rows(&entities, ExecutiveMetric::Upload, EXECUTIVE_TOP_LIMIT);

@@ -9,6 +9,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - El contenido puede variar según versión y funciones habilitadas.
 - Executive Summary ofrece una vista operativa compacta para redes grandes, con páginas de detalle para heatmaps y rankings ejecutivos.
 - Algunos gráficos pueden tardar un poco en poblarse al abrir una pestaña por primera vez, especialmente en sistemas ocupados o inmediatamente después de reiniciar servicios.
+- Durante un full reload de Bakery, las tarjetas de conteo de colas mantienen los últimos valores conocidos de HTB/CAKE/fq-codel y los marcan como `Reloading` en lugar de mostrar ceros momentáneamente.
 
 ### Vista de árbol de red
 - Vista jerárquica de nodos/circuitos desde la perspectiva del shaper.

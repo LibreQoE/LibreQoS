@@ -15,5 +15,7 @@ pub async fn network_tree_lite(channels: Arc<PubSub>) {
     let message = WsResponse::NetworkTreeLite {
         data: network_tree_lite_data(),
     };
-    channels.send(PublishedChannels::NetworkTreeLite, message).await;
+    channels
+        .send(PublishedChannels::NetworkTreeLite, message)
+        .await;
 }

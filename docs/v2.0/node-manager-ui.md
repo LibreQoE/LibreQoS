@@ -9,6 +9,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Dashboard content can vary by version and enabled features.
 - Executive Summary provides a compact operational view for large networks, with drilldown pages for executive heatmaps and leaderboards.
 - Some charts may take a short time to populate after first opening a tab, especially on busy systems or immediately after a service restart.
+- During a Bakery full reload, queue-count cards keep showing the last known HTB/CAKE/fq-codel values and mark them as `Reloading` instead of briefly zeroing them.
 
 ### Network Tree Overview
 - Hierarchical topology view of nodes/circuits from the shaper perspective.

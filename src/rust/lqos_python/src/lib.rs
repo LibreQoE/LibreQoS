@@ -17,7 +17,8 @@ use std::{
 };
 mod blocking;
 use anyhow::{Error, Result};
-use blocking::run_query;
+use blocking::{run_query, run_query_wait_for_bus};
+use lqos_bakery::estimate_full_reload_auto_qdisc_budget;
 use sysinfo::System;
 mod device_weights;
 use base64::Engine as _;
@@ -583,6 +584,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(delete_ip_mapping, m)?)?;
     m.add_function(wrap_pyfunction!(add_ip_mapping, m)?)?;
     m.add_function(wrap_pyfunction!(validate_shaped_devices, m)?)?;
+    m.add_function(wrap_pyfunction!(wait_for_bus_ready, m)?)?;
     m.add_function(wrap_pyfunction!(is_libre_already_running, m)?)?;
     m.add_function(wrap_pyfunction!(create_lock_file, m)?)?;
     m.add_function(wrap_pyfunction!(free_lock_file, m)?)?;
@@ -696,6 +698,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
     m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
+    m.add_function(wrap_pyfunction!(xdp_ip_mapping_capacity, m)?)?;
     m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
     m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
@@ -837,11 +840,32 @@ fn add_ip_mapping(
 ) -> PyResult<()> {
     let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
     if let Ok(request) = request {
-        run_query(vec![request]).unwrap();
+        let responses = run_query(vec![request]).map_err(|e| PyOSError::new_err(e.to_string()))?;
+        for response in responses {
+            if let BusResponse::Fail(message) = response {
+                return Err(PyOSError::new_err(message));
+            }
+        }
         Ok(())
     } else {
         Err(PyOSError::new_err(request.err().unwrap().to_string()))
     }
+}
+
+fn summarize_failure_examples(failures: &BTreeMap<String, usize>) -> String {
+    const MAX_EXAMPLES: usize = 3;
+    failures
+        .iter()
+        .take(MAX_EXAMPLES)
+        .map(|(message, count)| {
+            if *count > 1 {
+                format!("{message} (x{count})")
+            } else {
+                message.clone()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("; ")
 }
 
 #[pyclass]
@@ -899,22 +923,50 @@ impl BatchedCommands {
     /// Sends queued requests to `lqosd` in chunks and returns how many were submitted.
     pub fn submit(&mut self) -> PyResult<usize> {
         const MAX_BATH_SIZE: usize = 512;
-        // We're draining the request list out, which is a move that
-        // *should* be elided by the optimizing compiler.
         let len = self.batch.len();
+        let mut failed_requests = 0usize;
+        let mut failure_examples: BTreeMap<String, usize> = BTreeMap::new();
         while !self.batch.is_empty() {
             let batch_size = usize::min(MAX_BATH_SIZE, self.batch.len());
             let batch: Vec<BusRequest> = self.batch.drain(0..batch_size).collect();
-            run_query(batch).unwrap();
+            let responses = run_query(batch).map_err(|e| {
+                PyOSError::new_err(format!("IP mapping batch transport failed: {e}"))
+            })?;
+            responses.into_iter().for_each(|response| {
+                if let BusResponse::Fail(message) = response {
+                    failed_requests += 1;
+                    *failure_examples.entry(message).or_insert(0) += 1;
+                }
+            });
+        }
+        if failed_requests > 0 {
+            let example_text = summarize_failure_examples(&failure_examples);
+            return Err(PyOSError::new_err(format!(
+                "IP mapping apply failed for {failed_requests} of {len} queued requests. Examples: {example_text}"
+            )));
         }
         Ok(len)
     }
 }
 
+/// Returns the current XDP IP-mapping capacity.
+///
+/// If the live pinned map exists, this reflects its `max_entries`; otherwise it
+/// falls back to the compiled default capacity.
+#[pyfunction]
+fn xdp_ip_mapping_capacity() -> PyResult<usize> {
+    Ok(lqos_sys::ip_mapping_capacity())
+}
+
 /// Requests Rust-side validation of `ShapedDevices.csv`
 #[pyfunction]
 fn validate_shaped_devices() -> PyResult<String> {
-    let result = run_query(vec![BusRequest::ValidateShapedDevicesCsv]).unwrap();
+    let result = run_query_wait_for_bus(
+        vec![BusRequest::ValidateShapedDevicesCsv],
+        Duration::from_secs(5),
+        Duration::from_millis(100),
+    )
+    .map_err(|e| PyOSError::new_err(format!("Unable to validate shaped devices: {e}")))?;
     for response in result.iter() {
         match response {
             BusResponse::Ack => return Ok("OK".to_string()),
@@ -923,6 +975,29 @@ fn validate_shaped_devices() -> PyResult<String> {
         }
     }
     Ok("".to_string())
+}
+
+/// Waits until the local `lqosd` bus is ready to answer requests.
+///
+/// This is intended for scheduler startup sequencing. It retries only for
+/// short-lived socket or handshake errors while `lqosd` is still binding the
+/// bus socket.
+#[pyfunction(signature = (timeout_ms = 5000))]
+fn wait_for_bus_ready(timeout_ms: u64) -> PyResult<bool> {
+    let replies = run_query_wait_for_bus(
+        vec![BusRequest::Ping],
+        Duration::from_millis(timeout_ms),
+        Duration::from_millis(100),
+    )
+    .map_err(|e| PyOSError::new_err(format!("Timed out waiting for lqosd bus readiness: {e}")))?;
+    for response in replies {
+        if let BusResponse::Ack = response {
+            return Ok(true);
+        }
+    }
+    Err(PyOSError::new_err(
+        "Timed out waiting for lqosd bus readiness: bus did not acknowledge ping",
+    ))
 }
 
 /// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
@@ -2073,6 +2148,68 @@ enum BakeryCommands {
     },
 }
 
+impl BakeryCommands {
+    fn as_runtime_command(&self) -> lqos_bakery::BakeryCommands {
+        match self {
+            BakeryCommands::StartBatch => lqos_bakery::BakeryCommands::StartBatch,
+            BakeryCommands::Commit => lqos_bakery::BakeryCommands::CommitBatch,
+            BakeryCommands::MqSetup {
+                queues_available,
+                stick_offset,
+            } => lqos_bakery::BakeryCommands::MqSetup {
+                queues_available: *queues_available,
+                stick_offset: *stick_offset,
+            },
+            BakeryCommands::AddSite {
+                site_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+            } => lqos_bakery::BakeryCommands::AddSite {
+                site_hash: *site_hash,
+                parent_class_id: *parent_class_id,
+                up_parent_class_id: *up_parent_class_id,
+                class_minor: *class_minor,
+                download_bandwidth_min: *download_bandwidth_min,
+                upload_bandwidth_min: *upload_bandwidth_min,
+                download_bandwidth_max: *download_bandwidth_max,
+                upload_bandwidth_max: *upload_bandwidth_max,
+            },
+            BakeryCommands::AddCircuit {
+                circuit_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                class_major,
+                up_class_major,
+                ip_addresses,
+                sqm_override,
+            } => lqos_bakery::BakeryCommands::AddCircuit {
+                circuit_hash: *circuit_hash,
+                parent_class_id: *parent_class_id,
+                up_parent_class_id: *up_parent_class_id,
+                class_minor: *class_minor,
+                download_bandwidth_min: *download_bandwidth_min,
+                upload_bandwidth_min: *upload_bandwidth_min,
+                download_bandwidth_max: *download_bandwidth_max,
+                upload_bandwidth_max: *upload_bandwidth_max,
+                class_major: *class_major,
+                up_class_major: *up_class_major,
+                ip_addresses: ip_addresses.clone(),
+                sqm_override: sqm_override.clone(),
+            },
+        }
+    }
+}
+
 #[pyclass]
 /// Queues Bakery operations for batched submission to the LibreQoS daemon.
 pub struct Bakery {
@@ -2105,7 +2242,10 @@ impl Bakery {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let mut bus = lqos_bus::LibreqosBusClient::new().await.unwrap();
+                    let Ok(mut bus) = lqos_bus::LibreqosBusClient::new().await else {
+                        eprintln!("Failed to connect to lqosd bus for Bakery commit");
+                        return;
+                    };
                     let chunks = queue.chunks(1024);
                     for chunk in chunks {
                         let mut requests = Vec::new();
@@ -2189,6 +2329,31 @@ impl Bakery {
         let _ = handle.join();
 
         Ok(())
+    }
+
+    /// Estimates whether the queued full-reload batch fits within the per-interface qdisc budget.
+    pub fn estimate_qdisc_budget(&self, py: Python) -> PyResult<PyObject> {
+        let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+        let queue: Vec<lqos_bakery::BakeryCommands> = self
+            .queue
+            .iter()
+            .map(BakeryCommands::as_runtime_command)
+            .collect();
+        let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
+
+        let result = PyDict::new(py);
+        let interfaces = PyDict::new(py);
+        let is_ok = estimate.ok();
+
+        for (interface, count) in estimate.interfaces {
+            interfaces.set_item(interface, count)?;
+        }
+
+        result.set_item("interfaces", interfaces)?;
+        result.set_item("safe_budget", estimate.safe_budget)?;
+        result.set_item("hard_limit", estimate.hard_limit)?;
+        result.set_item("ok", is_ok)?;
+        Ok(result.into())
     }
 
     /// Queues multi-queue setup for the target shaper.
@@ -2382,4 +2547,24 @@ pub fn is_insight_enabled() -> PyResult<bool> {
 /// Hashes an arbitrary string into the signed 64-bit identifier format used by LibreQoS.
 pub fn hash_to_i64(text: String) -> PyResult<i64> {
     Ok(lqos_utils::hash_to_i64(&text))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summarize_failure_examples;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn summarize_failure_examples_limits_output() {
+        let mut failures = BTreeMap::new();
+        failures.insert("alpha".to_string(), 2);
+        failures.insert("beta".to_string(), 1);
+        failures.insert("delta".to_string(), 1);
+        failures.insert("gamma".to_string(), 1);
+
+        assert_eq!(
+            summarize_failure_examples(&failures),
+            "alpha (x2); beta; delta"
+        );
+    }
 }

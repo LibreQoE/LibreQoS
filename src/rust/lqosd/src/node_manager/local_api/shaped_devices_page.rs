@@ -75,14 +75,12 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
                     .unwrap_or("")
                     .to_lowercase()
                     .contains(&search)
-                || device
-                    .ipv4
-                    .iter()
-                    .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
-                || device
-                    .ipv6
-                    .iter()
-                    .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
+                || device.ipv4.iter().any(|(addr, prefix)| {
+                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
+                })
+                || device.ipv6.iter().any(|(addr, prefix)| {
+                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
+                })
         })
         .cloned()
         .collect();

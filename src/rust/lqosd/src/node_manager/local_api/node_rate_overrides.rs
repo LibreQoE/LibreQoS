@@ -284,6 +284,9 @@ mod tests {
             download_bandwidth_mbps: Some(-1.0),
             upload_bandwidth_mbps: Some(10.0),
         };
-        assert_eq!(validate_update_payload(&update), Err(StatusCode::BAD_REQUEST));
+        assert_eq!(
+            validate_update_payload(&update),
+            Err(StatusCode::BAD_REQUEST)
+        );
     }
 }

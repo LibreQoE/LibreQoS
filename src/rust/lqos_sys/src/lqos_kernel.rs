@@ -37,6 +37,49 @@ pub fn max_tracked_ips() -> usize {
     (unsafe { bpf::max_tracker_ips() }) as usize
 }
 
+fn pinned_map_max_entries(path: &str) -> Result<Option<u32>> {
+    if !Path::new(path).exists() {
+        return Ok(None);
+    }
+
+    let path_c = CString::new(path)?;
+    let fd = unsafe { bpf_obj_get(path_c.as_ptr()) };
+    if fd < 0 {
+        warn!("Unable to open pinned BPF map '{path}' for capacity check (fd={fd})");
+        return Ok(None);
+    }
+
+    let mut info = MaybeUninit::<bpf_map_info>::zeroed();
+    let mut len: u32 = std::mem::size_of::<bpf_map_info>() as u32;
+    let err = unsafe { bpf_obj_get_info_by_fd(fd, info.as_mut_ptr() as *mut c_void, &mut len) };
+    unsafe {
+        close(fd);
+    }
+    if err != 0 {
+        return Err(Error::msg(format!(
+            "Unable to query pinned BPF map '{path}' capacity (err={err})."
+        )));
+    }
+
+    let info = unsafe { info.assume_init() };
+    Ok(Some(info.max_entries))
+}
+
+/// Returns the currently available IP-mapping capacity.
+///
+/// If the live pinned map exists, this returns its `max_entries` value.
+/// Otherwise, it falls back to the compiled `MAX_TRACKED_IPS` constant.
+pub fn ip_mapping_capacity() -> usize {
+    match pinned_map_max_entries("/sys/fs/bpf/map_ip_to_cpu_and_tc") {
+        Ok(Some(entries)) => entries as usize,
+        Ok(None) => max_tracked_ips(),
+        Err(e) => {
+            warn!("Unable to determine live IP-mapping capacity: {e:?}");
+            max_tracked_ips()
+        }
+    }
+}
+
 pub fn check_root() -> Result<()> {
     unsafe {
         if geteuid() == 0 {

@@ -114,8 +114,9 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             .device_hash
             .and_then(|device_hash| cache.index_by_device_hash(&shaped_devices, device_hash))
             .or_else(|| {
-                data.circuit_hash
-                    .and_then(|circuit_hash| cache.index_by_circuit_hash(&shaped_devices, circuit_hash))
+                data.circuit_hash.and_then(|circuit_hash| {
+                    cache.index_by_circuit_hash(&shaped_devices, circuit_hash)
+                })
             })
             .and_then(|idx| shaped_devices.devices.get(idx));
         let Some(device) = device else {
@@ -125,9 +126,7 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             continue;
         }
 
-        let entry = by_circuit_id
-            .entry(device.circuit_id.clone())
-            .or_default();
+        let entry = by_circuit_id.entry(device.circuit_id.clone()).or_default();
         if entry.circuit_name.is_empty() {
             entry.circuit_name = device.circuit_name.clone();
         }
@@ -142,7 +141,10 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps.round());
         entry.bytes_per_second.down += data.bytes_per_second.down;
         entry.bytes_per_second.up += data.bytes_per_second.up;
-        entry.tcp_packets.down += data.tcp_packets.down.saturating_sub(data.prev_tcp_packets.down);
+        entry.tcp_packets.down += data
+            .tcp_packets
+            .down
+            .saturating_sub(data.prev_tcp_packets.down);
         entry.tcp_packets.up += data.tcp_packets.up.saturating_sub(data.prev_tcp_packets.up);
         entry.tcp_retransmits.down += data.tcp_retransmits.down;
         entry.tcp_retransmits.up += data.tcp_retransmits.up;
@@ -202,7 +204,8 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         circuit_ids_by_parent_node,
     });
     CIRCUIT_LIVE_SNAPSHOT.store(snapshot.clone());
-    CIRCUIT_LIVE_LAST_REFRESH_SECS.store(current_epoch_secs(), std::sync::atomic::Ordering::Release);
+    CIRCUIT_LIVE_LAST_REFRESH_SECS
+        .store(current_epoch_secs(), std::sync::atomic::Ordering::Release);
     snapshot
 }
 

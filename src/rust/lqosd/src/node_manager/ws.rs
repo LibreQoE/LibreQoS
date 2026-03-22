@@ -11,9 +11,9 @@ use std::sync::Arc;
 use crate::node_manager::auth::{LoginResult, login_from_token};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
-    executive, flow_explorer, flow_map, lts, network_tree, node_rate_overrides, packet_analysis,
-    network_tree_lite, reload_libreqos, scheduler, search, shaped_device_api,
-    shaped_devices_page, unknown_ips, urgent, warnings,
+    executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite, node_rate_overrides,
+    packet_analysis, reload_libreqos, scheduler, search, shaped_device_api, shaped_devices_page,
+    unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -1593,75 +1593,76 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::GetShapedDevice { device_id } => match config::get_shaped_device_data(
-            *request_state.login,
-            device_id,
-        ) {
-            Ok(device) => {
-                let response = WsResponse::GetShapedDeviceResult {
-                    ok: device.is_some(),
-                    message: if device.is_some() {
-                        "Ok".to_string()
-                    } else {
-                        "Not found".to_string()
-                    },
-                    device,
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
+        WsRequest::GetShapedDevice { device_id } => {
+            match config::get_shaped_device_data(*request_state.login, device_id) {
+                Ok(device) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: device.is_some(),
+                        message: if device.is_some() {
+                            "Ok".to_string()
+                        } else {
+                            "Not found".to_string()
+                        },
+                        device,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: false,
+                        message: "Unauthorized".to_string(),
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: false,
+                        message: "Error".to_string(),
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
                 }
             }
-            Err(StatusCode::FORBIDDEN) => {
-                let response = WsResponse::GetShapedDeviceResult {
-                    ok: false,
-                    message: "Unauthorized".to_string(),
-                    device: None,
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
+        }
+        WsRequest::CreateShapedDevice { device } => {
+            match config::create_shaped_device_data(*request_state.login, device) {
+                Ok(device) => {
+                    let response = WsResponse::CreateShapedDeviceResult {
+                        ok: true,
+                        message: "Ok".to_string(),
+                        device: Some(device),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(message) => {
+                    let response = WsResponse::CreateShapedDeviceResult {
+                        ok: false,
+                        message,
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
                 }
             }
-            Err(_) => {
-                let response = WsResponse::GetShapedDeviceResult {
-                    ok: false,
-                    message: "Error".to_string(),
-                    device: None,
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
-                }
-            }
-        },
-        WsRequest::CreateShapedDevice { device } => match config::create_shaped_device_data(
-            *request_state.login,
-            device,
-        ) {
-            Ok(device) => {
-                let response = WsResponse::CreateShapedDeviceResult {
-                    ok: true,
-                    message: "Ok".to_string(),
-                    device: Some(device),
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
-                }
-            }
-            Err(message) => {
-                let response = WsResponse::CreateShapedDeviceResult {
-                    ok: false,
-                    message,
-                    device: None,
-                };
-                if send_ws_response(&tx, response).await {
-                    return true;
-                }
-            }
-        },
+        }
         WsRequest::UpdateShapedDevice {
             original_device_id,
             device,
-        } => match config::update_shaped_device_data(*request_state.login, original_device_id, device)
-        {
+        } => match config::update_shaped_device_data(
+            *request_state.login,
+            original_device_id,
+            device,
+        ) {
             Ok(device) => {
                 let response = WsResponse::UpdateShapedDeviceResult {
                     ok: true,

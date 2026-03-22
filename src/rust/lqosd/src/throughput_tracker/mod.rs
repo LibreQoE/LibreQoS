@@ -18,12 +18,12 @@ use crate::{
 use arc_swap::ArcSwap;
 pub(crate) use flow_data::RttBuffer;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_bakery::BakeryCommands;
+use lqos_bakery::{BakeryCommands, full_reload_in_progress};
 use lqos_bus::{
     AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
     IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
 };
-use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
+use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, queue_stats_stale};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
@@ -873,6 +873,8 @@ pub fn executive_summary_header() -> BusResponse {
     let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
 
     let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
+    let bakery_reload_in_progress = full_reload_in_progress();
+    let queue_stats_stale = queue_stats_stale() || bakery_reload_in_progress;
     let insight_connected = !matches!(
         get_lts_license_status().0,
         LtsStatus::Invalid | LtsStatus::NotChecked
@@ -887,6 +889,8 @@ pub fn executive_summary_header() -> BusResponse {
         htb_queue_count: queue_counts.htb as u64,
         cake_queue_count: queue_counts.cake as u64,
         fq_codel_queue_count: queue_counts.fq_codel as u64,
+        queue_stats_stale,
+        bakery_reload_in_progress,
         insight_connected,
     })
 }

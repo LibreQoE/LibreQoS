@@ -113,6 +113,12 @@ pub struct ExecutiveSummaryHeader {
     pub cake_queue_count: u64,
     /// Number of fq_codel queues being tracked.
     pub fq_codel_queue_count: u64,
+    /// Whether the displayed queue counts are intentionally held at their last-known values.
+    #[serde(default)]
+    pub queue_stats_stale: bool,
+    /// Whether Bakery is currently applying a full reload batch.
+    #[serde(default)]
+    pub bakery_reload_in_progress: bool,
     /// Whether Insight is connected.
     pub insight_connected: bool,
 }

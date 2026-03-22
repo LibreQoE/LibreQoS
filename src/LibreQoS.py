@@ -39,7 +39,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
-    is_insight_enabled, \
+    is_insight_enabled, scheduler_error, xdp_ip_mapping_capacity, \
     fast_queues_fq_codel, \
     shaping_cpu_count, \
     Bakery
@@ -50,6 +50,31 @@ try:
 except Exception:
     def submit_urgent_issue(*_args, **_kwargs):
         return False
+
+
+class RefreshFailure(Exception):
+    pass
+
+
+def report_refresh_failure(code, message, context=None, dedupe_key=None):
+    logging.error(message)
+    print("ERROR: " + message)
+    try:
+        scheduler_error(message)
+    except Exception:
+        pass
+    try:
+        submit_urgent_issue(
+            "LibreQoS",
+            "Error",
+            code,
+            message,
+            json.dumps(context) if context is not None else None,
+            dedupe_key,
+        )
+    except Exception:
+        pass
+    raise RefreshFailure(message)
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -282,15 +307,16 @@ def validateNetworkAndDevices():
     # And read from the sanitized byte stream
     with io.StringIO(text_content) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        #Remove comments if any
-        commentsRemoved = []
+        header_consumed = False
+        seenTheseIPsAlready = set()
         for row in csv_reader:
-            if not row[0].startswith('#'):
-                commentsRemoved.append(row)
-        #Remove header
-        commentsRemoved.pop(0)
-        seenTheseIPsAlready = []
-        for row in commentsRemoved:
+            if not row:
+                continue
+            if row[0].startswith('#'):
+                continue
+            if not header_consumed:
+                header_consumed = True
+                continue
             # Accept optional 14th column 'sqm' but ignore here (validation focuses on core fields)
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
             # Must have circuitID, it's a unique identifier required for stateful changes to queue structure
@@ -311,14 +337,14 @@ def validateNetworkAndDevices():
                         if ipEntry in seenTheseIPsAlready:
                             warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
                             #devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                         else:
                             if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv4Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv4Address):
                                 ipv4_subnets_and_hosts.extend(ipEntry)
                             else:
                                 warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                                 devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                 except:
                         warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                         devicesValidatedOrNot = False
@@ -333,14 +359,14 @@ def validateNetworkAndDevices():
                         if ipEntry in seenTheseIPsAlready:
                             warnings.warn("Provided IPv6 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
                             devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                         else:
                             if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
                                 ipv6_subnets_and_hosts.extend(ipEntry)
                             else:
                                 warnings.warn("Provided IPv6 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                                 devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                 except:
                         warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                         devicesValidatedOrNot = False
@@ -404,19 +430,20 @@ def validateNetworkAndDevices():
 def loadSubscriberCircuits(shapedDevicesFile):
     # Load Subscriber Circuits & Devices
     subscriberCircuits = []
-    knownCircuitIDs = []
+    circuitsById = {}
     counterForCircuitsWithoutParentNodes = 0
     dictForCircuitsWithoutParentNodes = {}
     with open(shapedDevicesFile) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        # Remove comments if any
-        commentsRemoved = []
+        header_consumed = False
         for row in csv_reader:
-            if not row[0].startswith('#'):
-                commentsRemoved.append(row)
-        # Remove header
-        commentsRemoved.pop(0)
-        for row in commentsRemoved:
+            if not row:
+                continue
+            if row[0].startswith('#'):
+                continue
+            if not header_consumed:
+                header_consumed = True
+                continue
             # Optional per-circuit SQM override in last column
             sqm_override_token = ''
             if len(row) > 13:
@@ -458,41 +485,39 @@ def loadSubscriberCircuits(shapedDevicesFile):
             # If there is something in the circuit ID field
             if circuitID != "":
                 # Seen circuit before
-                if circuitID in knownCircuitIDs:
-                    for circuit in subscriberCircuits:
-                        if circuit['circuitID'] == circuitID:
-                            if circuit['ParentNode'] != "none":
-                                if circuit['ParentNode'] != ParentNode:
-                                    errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
-                                    raise ValueError(errorMessageString)
-                            # Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
-                            if monitor_mode_only() == False:
-                                if ((circuit['minDownload'] != float(downloadMin))
-                                    or (circuit['minUpload'] != float(uploadMin))
-                                    or (circuit['maxDownload'] != float(downloadMax))
-                                    or (circuit['maxUpload'] != float(uploadMax))):
-                                    warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
-                            # If this row specifies an SQM override, but the circuit already has a different one, warn and keep the first.
-                            if sqm_override_token != '':
-                                if 'sqm' in circuit:
-                                    if circuit['sqm'] != sqm_override_token:
-                                        warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different SQM override than other devices on this circuit. Will instead use the SQM defined by the first device added to its circuit.", stacklevel=2)
-                                else:
-                                    circuit['sqm'] = sqm_override_token
-                            devicesListForCircuit = circuit['devices']
-                            thisDevice = 	{
-                                              "deviceID": deviceID,
-                                              "deviceName": deviceName,
-                                              "mac": mac,
-                                              "ipv4s": ipv4_subnets_and_hosts,
-                                              "ipv6s": ipv6_subnets_and_hosts,
-                                              "comment": comment
-                                            }
-                            devicesListForCircuit.append(thisDevice)
-                            circuit['devices'] = devicesListForCircuit
+                circuit = circuitsById.get(circuitID)
+                if circuit is not None:
+                    if circuit['ParentNode'] != "none":
+                        if circuit['ParentNode'] != ParentNode:
+                            errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
+                            raise ValueError(errorMessageString)
+                    # Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
+                    if monitor_mode_only() == False:
+                        if ((circuit['minDownload'] != float(downloadMin))
+                            or (circuit['minUpload'] != float(uploadMin))
+                            or (circuit['maxDownload'] != float(downloadMax))
+                            or (circuit['maxUpload'] != float(uploadMax))):
+                            warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
+                    # If this row specifies an SQM override, but the circuit already has a different one, warn and keep the first.
+                    if sqm_override_token != '':
+                        if 'sqm' in circuit:
+                            if circuit['sqm'] != sqm_override_token:
+                                warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different SQM override than other devices on this circuit. Will instead use the SQM defined by the first device added to its circuit.", stacklevel=2)
+                        else:
+                            circuit['sqm'] = sqm_override_token
+                    devicesListForCircuit = circuit['devices']
+                    thisDevice = 	{
+                                      "deviceID": deviceID,
+                                      "deviceName": deviceName,
+                                      "mac": mac,
+                                      "ipv4s": ipv4_subnets_and_hosts,
+                                      "ipv6s": ipv6_subnets_and_hosts,
+                                      "comment": comment
+                                    }
+                    devicesListForCircuit.append(thisDevice)
+                    circuit['devices'] = devicesListForCircuit
                 # Have not seen circuit before
                 else:
-                    knownCircuitIDs.append(circuitID)
                     if ParentNode == "":
                         ParentNode = "none"
                     #ParentNode = ParentNode.strip()
@@ -525,6 +550,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
                         dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
                         counterForCircuitsWithoutParentNodes += 1
                     subscriberCircuits.append(thisCircuit)
+                    circuitsById[circuitID] = thisCircuit
             # If there is nothing in the circuit ID field
             else:
                 # Copy deviceName to circuitName if none defined already
@@ -569,6 +595,7 @@ def refreshShapers():
     print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
     # Create a single batch of xdp update commands to execute together
     ipMapBatch = BatchedCommands()
+    requiredIpMappings = 0
 
     # Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
     if enable_actual_shell_commands() == False:
@@ -1611,6 +1638,7 @@ def refreshShapers():
         # Define lists for hash filters
         print("Preparing TC commands")
         def traverseNetwork(data):
+            nonlocal requiredIpMappings
 
             # Cake needs help handling rates lower than 5 Mbps
             def sqmFixupRate(rate:int, sqm:str) -> str:
@@ -1783,6 +1811,7 @@ def refreshShapers():
                                         circuit.get('circuitID', ''),
                                         device.get('deviceID', ''),
                                     )
+                                    requiredIpMappings += 1
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(
@@ -1804,6 +1833,7 @@ def refreshShapers():
                                         circuit.get('circuitID', ''),
                                         device.get('deviceID', ''),
                                     )
+                                    requiredIpMappings += 1
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(
@@ -1823,6 +1853,62 @@ def refreshShapers():
                     traverseNetwork(sorted_children)
         # Here is the actual call to the recursive traverseNetwork() function.
         traverseNetwork(network)
+
+        if enable_actual_shell_commands():
+            ipMappingCapacity = xdp_ip_mapping_capacity()
+            print(
+                "Prepared "
+                + str(requiredIpMappings)
+                + " unique XDP IP mappings against capacity "
+                + str(ipMappingCapacity)
+            )
+            if requiredIpMappings > ipMappingCapacity:
+                report_refresh_failure(
+                    "XDP_IP_MAPPING_CAPACITY",
+                    "Required XDP IP mappings ("
+                    + str(requiredIpMappings)
+                    + ") exceed current kernel map capacity ("
+                    + str(ipMappingCapacity)
+                    + "). Aborting refresh before apply.",
+                    {
+                        "required_ip_mappings": requiredIpMappings,
+                        "kernel_map_capacity": ipMappingCapacity,
+                        "queued_requests": ipMapBatch.length(),
+                        "on_a_stick": on_a_stick(),
+                        "shaped_devices_file": shapedDevicesFile,
+                        "network_json_file": networkJSONfile,
+                    },
+                    "XDP_IP_MAPPING_CAPACITY",
+                )
+
+            qdiscBudgetEstimate = bakery.estimate_qdisc_budget()
+            if not qdiscBudgetEstimate["ok"]:
+                interfaceCounts = qdiscBudgetEstimate["interfaces"]
+                sortedInterfaces = sorted(interfaceCounts.items())
+                interfaceSummary = ", ".join(
+                    f"{interface} estimated {count} qdiscs"
+                    for interface, count in sortedInterfaces
+                )
+                report_refresh_failure(
+                    "TC_QDISC_CAPACITY",
+                    "Planned queue model exceeds qdisc budget. "
+                    + interfaceSummary
+                    + "; safe budget "
+                    + str(qdiscBudgetEstimate["safe_budget"])
+                    + ", kernel limit "
+                    + str(qdiscBudgetEstimate["hard_limit"])
+                    + ". Aborting refresh before apply.",
+                    {
+                        "interfaces": dict(sortedInterfaces),
+                        "safe_budget": qdiscBudgetEstimate["safe_budget"],
+                        "hard_limit": qdiscBudgetEstimate["hard_limit"],
+                        "on_a_stick": on_a_stick(),
+                        "monitor_only": monitor_mode_only(),
+                        "shaped_devices_file": shapedDevicesFile,
+                        "network_json_file": networkJSONfile,
+                    },
+                    "TC_QDISC_CAPACITY",
+                )
 
         # Save queuingStructure
         queuingStructure = {}
@@ -1882,7 +1968,19 @@ def refreshShapers():
         numXdpCommands = ipMapBatch.length()
         if enable_actual_shell_commands():
             ipMapBatch.finish_ip_mappings()
-            ipMapBatch.submit()
+            try:
+                ipMapBatch.submit()
+            except Exception as e:
+                report_refresh_failure(
+                    "XDP_IP_MAPPING_APPLY_FAILED",
+                    "Failed to apply XDP IP mappings: " + str(e),
+                    {
+                        "required_ip_mappings": requiredIpMappings,
+                        "queued_requests": numXdpCommands,
+                        "on_a_stick": on_a_stick(),
+                    },
+                    "XDP_IP_MAPPING_APPLY_FAILED",
+                )
             #for command in xdpCPUmapCommands:
             #	logging.info(command)
             #	commands = command.split(' ')
@@ -2093,19 +2191,26 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Warning: could not remove planner state: {e}")
 
-    if args.validate:
-        status = validateNetworkAndDevices()
-    elif args.clearrules:
-        tearDown(interface_a(), interface_b())
-    elif args.updateonly:
-        # Single-interface updates don't work at all right now.
-        if on_a_stick():
-            print("--updateonly is not supported for single-interface configurations")
-            os._exit(-1)
-        refreshShapersUpdateOnly()
-    else:
-        # Refresh and/or set up queues
-        refreshShapers()
+    exit_code = 0
+    try:
+        if args.validate:
+            status = validateNetworkAndDevices()
+        elif args.clearrules:
+            tearDown(interface_a(), interface_b())
+        elif args.updateonly:
+            # Single-interface updates don't work at all right now.
+            if on_a_stick():
+                print("--updateonly is not supported for single-interface configurations")
+                exit_code = -1
+            else:
+                refreshShapersUpdateOnly()
+        else:
+            # Refresh and/or set up queues
+            refreshShapers()
+    except RefreshFailure:
+        exit_code = 1
+    finally:
+        free_lock_file()
 
-    # Free the lock file
-    free_lock_file()
+    if exit_code != 0:
+        os._exit(exit_code)

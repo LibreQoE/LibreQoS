@@ -15,7 +15,9 @@ type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
 const TOPOLOGY_SOURCE_INTEGRATIONS: [TopologySourceIntegration; 7] = [
     ("UISP", |config| config.uisp_integration.enable_uisp),
     ("Splynx", |config| config.splynx_integration.enable_splynx),
-    ("Powercode", |config| config.powercode_integration.enable_powercode),
+    ("Powercode", |config| {
+        config.powercode_integration.enable_powercode
+    }),
     ("Sonar", |config| config.sonar_integration.enable_sonar),
     ("Netzur", |config| {
         config
@@ -112,8 +114,8 @@ pub fn active_topology_source_integrations(config: &Config) -> Vec<&'static str>
 }
 
 fn topology_editor_lock_message() -> Result<Option<String>, String> {
-    let config = lqos_config::load_config()
-        .map_err(|e| format!("Unable to load LibreQoS config: {e}"))?;
+    let config =
+        lqos_config::load_config().map_err(|e| format!("Unable to load LibreQoS config: {e}"))?;
     let integrations = active_topology_source_integrations(config.as_ref());
     if integrations.is_empty() {
         return Ok(None);
@@ -147,11 +149,7 @@ fn persist_network_json(network_json: &Value) {
 
 fn normalize_sqm_override(raw: &Option<String>) -> Option<String> {
     let token = raw.as_deref().unwrap_or("").trim().to_lowercase();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
+    if token.is_empty() { None } else { Some(token) }
 }
 
 fn normalize_shaped_device(device: &mut ShapedDevice) {
@@ -244,10 +242,15 @@ fn validate_shaped_devices(devices: &[ShapedDevice]) -> Result<(), String> {
                 ));
             }
         } else if !device.parent_node.is_empty() && !nodes.contains(&device.parent_node) {
-            return Err(format!("{label}: Parent node '{}' does not exist", device.parent_node));
+            return Err(format!(
+                "{label}: Parent node '{}' does not exist",
+                device.parent_node
+            ));
         }
         if device.ipv4.is_empty() && device.ipv6.is_empty() {
-            return Err(format!("{label}: At least one IPv4 or IPv6 address is required"));
+            return Err(format!(
+                "{label}: At least one IPv4 or IPv6 address is required"
+            ));
         }
         for (addr, prefix) in &device.ipv4 {
             let key = format!("{addr}/{prefix}");
@@ -342,7 +345,10 @@ pub fn update_network_and_devices_data(
 ///
 /// Returns an error string when the caller is unauthorized, when integration-
 /// managed topology editing is locked, or when persistence fails.
-pub fn update_network_json_only_data(login: LoginResult, network_json: Value) -> Result<(), String> {
+pub fn update_network_json_only_data(
+    login: LoginResult,
+    network_json: Value,
+) -> Result<(), String> {
     if login != LoginResult::Admin {
         return Err("Unauthorized".to_string());
     }
@@ -355,7 +361,10 @@ pub fn update_network_json_only_data(login: LoginResult, network_json: Value) ->
 
 /// Returns one shaped device row by device identifier for administrative
 /// callers.
-pub fn get_shaped_device_data(login: LoginResult, device_id: String) -> Result<Option<ShapedDevice>, StatusCode> {
+pub fn get_shaped_device_data(
+    login: LoginResult,
+    device_id: String,
+) -> Result<Option<ShapedDevice>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -372,7 +381,10 @@ pub fn get_shaped_device_data(login: LoginResult, device_id: String) -> Result<O
 ///
 /// Returns an error string when the caller is unauthorized, when integration-
 /// managed topology editing is locked, or when validation/persistence fails.
-pub fn create_shaped_device_data(login: LoginResult, device: ShapedDevice) -> Result<ShapedDevice, String> {
+pub fn create_shaped_device_data(
+    login: LoginResult,
+    device: ShapedDevice,
+) -> Result<ShapedDevice, String> {
     if login != LoginResult::Admin {
         return Err("Unauthorized".to_string());
     }
