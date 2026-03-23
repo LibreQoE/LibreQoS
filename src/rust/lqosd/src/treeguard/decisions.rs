@@ -44,6 +44,17 @@ pub struct LinkVirtualizationInput<'a> {
     pub state: &'a LinkState,
 }
 
+/// Input to top-level link virtualization decisions.
+#[derive(Clone, Copy, Debug)]
+pub struct TopLevelLinkVirtualizationInput<'a> {
+    pub cpu_max_pct: Option<u8>,
+    pub cpu_cfg: &'a TreeguardCpuConfig,
+    pub util_ewma_pct: DownUpOrder<f64>,
+    pub safe_util_pct: f64,
+    pub sustained_safe: bool,
+    pub state: &'a LinkState,
+}
+
 /// Input to per-circuit SQM decisions.
 #[derive(Clone, Copy, Debug)]
 pub struct CircuitSqmInput<'a> {
@@ -173,6 +184,41 @@ pub fn decide_link_virtualization(input: LinkVirtualizationInput<'_>) -> LinkVir
     }
 }
 
+/// Decide whether to virtualize/unvirtualize a managed top-level node.
+///
+/// This function is pure: it has no side effects.
+pub fn decide_top_level_link_virtualization(
+    input: TopLevelLinkVirtualizationInput<'_>,
+) -> LinkVirtualDecision {
+    let TopLevelLinkVirtualizationInput {
+        cpu_max_pct,
+        cpu_cfg,
+        util_ewma_pct,
+        safe_util_pct,
+        sustained_safe,
+        state,
+    } = input;
+
+    let util_high = util_ewma_pct.down >= safe_util_pct || util_ewma_pct.up >= safe_util_pct;
+
+    match state.desired {
+        LinkVirtualState::Physical => {
+            if cpu_allows_saving(cpu_cfg, cpu_max_pct) && sustained_safe {
+                LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+            } else {
+                LinkVirtualDecision::NoChange
+            }
+        }
+        LinkVirtualState::Virtual => {
+            if util_high {
+                LinkVirtualDecision::Set(LinkVirtualState::Physical)
+            } else {
+                LinkVirtualDecision::NoChange
+            }
+        }
+    }
+}
+
 /// Decide whether to switch a managed circuit's SQM profile per direction.
 ///
 /// This function is pure: it has no side effects.
@@ -184,7 +230,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
         cpu_cfg,
         circuits_cfg,
         qoo_cfg,
-        rtt_missing,
+        rtt_missing: _rtt_missing,
         qoo,
         state,
     } = input;
@@ -242,11 +288,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -300,11 +342,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -465,7 +503,10 @@ mod tests {
 
     #[test]
     fn link_virtualizes_when_cpu_low_in_traffic_rtt_only_mode() {
-        let cpu = TreeguardCpuConfig::default();
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::TrafficRttOnly,
+            ..TreeguardCpuConfig::default()
+        };
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
@@ -488,6 +529,81 @@ mod tests {
         assert_eq!(
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
+    }
+
+    #[test]
+    fn top_level_link_does_not_virtualize_when_cpu_low_in_cpu_aware_mode() {
+        let state = LinkState {
+            desired: LinkVirtualState::Physical,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: true,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn top_level_link_virtualizes_when_cpu_high_and_safe() {
+        let state = LinkState {
+            desired: LinkVirtualState::Physical,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            cpu_max_pct: Some(90),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: true,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
+    }
+
+    #[test]
+    fn top_level_link_restores_on_util_spike_even_when_cpu_low() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 90.0,
+                up: 5.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Physical)
         );
     }
 
@@ -763,7 +879,10 @@ mod tests {
 
     #[test]
     fn circuit_does_not_revert_when_cpu_low_in_traffic_rtt_only_mode() {
-        let cpu = TreeguardCpuConfig::default();
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::TrafficRttOnly,
+            ..TreeguardCpuConfig::default()
+        };
         let circuits = TreeguardCircuitsConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = CircuitState {

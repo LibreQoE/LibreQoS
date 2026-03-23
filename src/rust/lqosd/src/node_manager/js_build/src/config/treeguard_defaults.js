@@ -4,7 +4,7 @@ export function defaultTreeguardConfig() {
         dry_run: false,
         tick_seconds: 1,
         cpu: {
-            mode: "traffic_rtt_only",
+            mode: "cpu_aware",
             cpu_high_pct: 75,
             cpu_low_pct: 55,
         },

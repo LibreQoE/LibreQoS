@@ -511,7 +511,7 @@ mod test {
         assert!(!cfg.treeguard.dry_run);
         assert_eq!(
             cfg.treeguard.cpu.mode,
-            crate::etc::v15::treeguard::TreeguardCpuMode::TrafficRttOnly
+            crate::etc::v15::treeguard::TreeguardCpuMode::CpuAware
         );
         assert!(cfg.treeguard.links.enabled);
         assert!(cfg.treeguard.links.all_nodes);

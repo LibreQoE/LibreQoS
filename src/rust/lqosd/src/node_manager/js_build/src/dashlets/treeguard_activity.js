@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {get_ws_client} from "../pubsub/ws";
+import {mkBadge} from "./bakery_shared";
 
 function formatUnixSecondsToLocalTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
@@ -78,6 +79,68 @@ function formatReason(reasonRaw) {
     }
 
     return { label: raw.replace(m[0], `next allowed ${next}`), title: raw };
+}
+
+function classifyOutcome(entry, action) {
+    const rawAction = (entry?.action ?? "").toString().trim().toLowerCase();
+    const reasonRaw = (entry?.reason ?? "").toString().trim();
+    const reasonLower = reasonRaw.toLowerCase();
+
+    if (rawAction.startsWith("would_")) {
+        return {
+            label: "Dry Run",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction === "reload_skipped") {
+        return {
+            label: "Skipped",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction.endsWith("_failed") || rawAction.includes("failed")) {
+        return {
+            label: "Failed",
+            className: "bg-danger-subtle text-danger border border-danger-subtle",
+            detail: null,
+        };
+    }
+
+    if (reasonLower.includes("cleanup pending") || reasonLower.includes("awaiting cleanup")) {
+        return {
+            label: "Cleanup Pending",
+            className: "bg-warning-subtle text-warning border border-warning-subtle",
+            detail: mkBadge("Live", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
+    if (rawAction === "dry_run_toggled") {
+        return {
+            label: "Updated",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: null,
+        };
+    }
+
+    const actionLower = (action?.label ?? "").toLowerCase();
+    const isLiveIntent = actionLower.includes("virtualize")
+        || actionLower.includes("sqm live")
+        || actionLower.includes("reload");
+    const detail = isLiveIntent
+        ? mkBadge("Live", "bg-info-subtle text-info border border-info-subtle")
+        : (entry?.persisted
+            ? mkBadge("Stored", "bg-primary-subtle text-primary border border-primary-subtle")
+            : null);
+
+    return {
+        label: "Applied",
+        className: "bg-success-subtle text-success border border-success-subtle",
+        detail,
+    };
 }
 
 function renderAction(actionRaw) {
@@ -180,7 +243,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard actions, including dry-run entries and persisted changes.</p>";
+        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard intents with explicit outcomes so operators can distinguish dry-runs, successful applies, cleanup-pending actions, skips, and failures.</p>";
     }
 
     subscribeTo() {
@@ -220,7 +283,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         const thead = document.createElement("thead");
         thead.classList.add("small");
         const headRow = document.createElement("tr");
-        ["Local Time", "Entity", "Action", "Persisted", "Reason"].forEach((header) => {
+        ["Local Time", "Target", "Intent", "Outcome", "Why"].forEach((header) => {
             const th = document.createElement("th");
             th.textContent = header;
             headRow.appendChild(th);
@@ -332,15 +395,13 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             actionText.textContent = ` ${action.label}`;
             tdAction.appendChild(actionText);
 
-            const tdPersisted = document.createElement("td");
-            tdPersisted.classList.add("text-center");
-            const persisted = !!entry.persisted;
-            const persistedIcon = persisted
-                ? mkIcon("fa-check", ["text-success"])
-                : mkIcon("fa-times", ["text-muted"]);
-            persistedIcon.setAttribute("aria-label", persisted ? "Persisted" : "Not persisted");
-            persistedIcon.title = persisted ? "Persisted" : "Not persisted";
-            tdPersisted.appendChild(persistedIcon);
+            const tdOutcome = document.createElement("td");
+            const outcome = classifyOutcome(entry, action);
+            tdOutcome.appendChild(mkBadge(outcome.label, outcome.className, entry.reason || ""));
+            if (outcome.detail) {
+                tdOutcome.appendChild(document.createTextNode(" "));
+                tdOutcome.appendChild(outcome.detail);
+            }
 
             const tdReason = document.createElement("td");
             const reason = formatReason(entry.reason);
@@ -350,7 +411,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             tr.appendChild(tdTime);
             tr.appendChild(tdEntity);
             tr.appendChild(tdAction);
-            tr.appendChild(tdPersisted);
+            tr.appendChild(tdOutcome);
             tr.appendChild(tdReason);
             this.tbody.appendChild(tr);
         });

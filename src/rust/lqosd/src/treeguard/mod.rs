@@ -10,7 +10,6 @@ pub(crate) mod bakery;
 pub(crate) mod decisions;
 pub(crate) mod errors;
 pub(crate) mod overrides;
-pub(crate) mod reload;
 pub(crate) mod state;
 pub(crate) mod status;
 

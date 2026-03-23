@@ -48,13 +48,16 @@ And include:
 
 ### User password not working
 
-Delete the lqusers file:
+Current builds will:
+- migrate older auth files automatically
+- redirect `/login.html` to `/first-run.html` when no users exist
+
+If the correct username/password still fails, first restart `lqosd` and try again:
+```bash
+sudo systemctl restart lqosd
 ```
-sudo rm /opt/libreqos/src/lqusers.toml
-sudo systemctl restart lqosd lqos_scheduler
-```
-Then visit: BOX_IP:9123/index.html
-This will allow you to set up the user again from scratch using the WebUI.
+
+Only remove `lqusers.toml` if you are intentionally resetting access or if the file is corrupt and cannot be repaired. After removing it, restart `lqosd` and open `BOX_IP:9123/login.html`; the WebUI should redirect you to first-run setup automatically.
 
 ### No WebUI at x.x.x.x:9123
 
@@ -236,7 +239,8 @@ WebUI urgent issues include machine-readable codes. Use them to triage quickly.
 |---|---|---|---|
 | `MAPPED_CIRCUIT_LIMIT` | Bakery is enforcing a mapped-circuit limit. | Insight license status, `journalctl -u lqosd` for requested/allowed/dropped counts. | Reduce mapped circuits immediately or update license/limits. |
 | `TC_U16_OVERFLOW` | Queue/class minor IDs exceeded the Linux tc u16 range on a CPU queue. | `journalctl -u lqos_scheduler -u lqosd`, topology depth/queue distribution. | Increase queue count and/or simplify/rebalance hierarchy (for example with integration strategy or root promotion changes). |
-| `TC_QDISC_CAPACITY` | Planned auto-allocated qdiscs exceed the per-interface safe budget before apply. | Estimated per-interface qdisc counts in the urgent issue context, `journalctl -u lqos_scheduler -u lqosd`, `on_a_stick` and `monitor_only` config. | Reduce the planned qdisc load for this run (for example fewer circuits/devices in the test shape) before retrying; do not trust partial apply. |
+| `TC_QDISC_CAPACITY` | Planned auto-allocated qdiscs exceed the per-interface safe budget or Bakery's conservative memory-safety preflight before apply. | Estimated per-interface qdisc counts, qdisc-kind breakdown, and memory fields in the urgent issue context, `journalctl -u lqos_scheduler -u lqosd`, `on_a_stick` and `monitor_only` config. | Reduce the planned qdisc load for this run (for example fewer circuits/devices in the test shape) before retrying; do not trust partial apply. |
+| `BAKERY_MEMORY_GUARD` | A chunked Bakery full reload was stopped mid-apply because available host memory fell below the safety floor. | `journalctl -u lqosd`, available/total memory in the urgent issue context, and recent Bakery apply progress. | Treat the run as failed, reduce memory pressure or queue footprint, and retry only after the host is stable. |
 | `XDP_IP_MAPPING_CAPACITY` | Required IP mappings exceed the current XDP kernel map capacity. | `ShapedDevices.csv` row shape, IPv4/IPv6 mix, one-device-vs-many-device assumptions, `journalctl -u lqos_scheduler -u lqosd`. | Reduce required mappings immediately (for example fewer devices or IPv4-only test shape), or raise kernel map capacity in a coordinated change. |
 | `XDP_IP_MAPPING_APPLY_FAILED` | One or more IP mapping inserts failed during apply. | `journalctl -u lqos_scheduler -u lqosd` for summarized failure examples and counts. | Fix the underlying mapping failure, then rerun; do not trust partial shaping. |
 

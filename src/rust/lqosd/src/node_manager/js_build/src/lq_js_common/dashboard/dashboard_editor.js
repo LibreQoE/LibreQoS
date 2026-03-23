@@ -1,3 +1,5 @@
+import {DashboardLayout} from "./layout";
+
 /**
  * Opens a full screen modal that lets the user edit dashboard items with tab support.
  * @param {Object} layout - The current dashboard layout object with tabs
@@ -8,7 +10,13 @@
 export function openDashboardEditor(layout, availableElements, callback, cookieName) {
     // Keep track of current tab and layout state
     let currentLayout = JSON.parse(JSON.stringify(layout)); // Deep copy
-    let activeTabIndex = currentLayout.activeTab || 0;
+    currentLayout.tabs = DashboardLayout.normalizeTabs(currentLayout.tabs || []);
+    let activeTabIndex = DashboardLayout.resolveActiveTabIndex(
+        currentLayout.tabs,
+        currentLayout.activeTab,
+        currentLayout.tabs[currentLayout.activeTab || 0]?.id || null
+    );
+    currentLayout.activeTab = activeTabIndex;
     const sortableInstances = [];
     let committedLayout = null;
     
@@ -301,10 +309,12 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
     $('#addTabButton').on('click', function() {
         let newTabName = `Tab ${currentLayout.tabs.length + 1}`;
         currentLayout.tabs.push({
+            id: DashboardLayout.makeTabId(newTabName),
             name: newTabName,
             dashlets: []
         });
         activeTabIndex = currentLayout.tabs.length - 1;
+        currentLayout.activeTab = activeTabIndex;
         renderTabs();
         renderDashboard();
     });
@@ -516,8 +526,12 @@ export function openDashboardEditor(layout, availableElements, callback, cookieN
                 // Apply the layout
                 currentLayout = {
                     version: imported.version || 2,
-                    tabs: imported.tabs,
-                    activeTab: imported.activeTab || 0
+                    tabs: DashboardLayout.normalizeTabs(imported.tabs),
+                    activeTab: DashboardLayout.resolveActiveTabIndex(
+                        DashboardLayout.normalizeTabs(imported.tabs),
+                        imported.activeTab,
+                        imported.tabs?.[imported.activeTab || 0]?.id || null
+                    )
                 };
                 
                 // Re-render

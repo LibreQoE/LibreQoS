@@ -48,7 +48,7 @@ dry_run = false
 tick_seconds = 1
 
 [treeguard.cpu]
-mode = "traffic_rtt_only"
+mode = "cpu_aware"
 cpu_high_pct = 75
 cpu_low_pct = 55
 

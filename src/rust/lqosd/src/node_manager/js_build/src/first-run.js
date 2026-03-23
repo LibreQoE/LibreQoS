@@ -1,5 +1,5 @@
 $("#btnCreateUser").on('click', () => {
-    let username = $("#username").val();
+    let username = ($("#username").val() || "").trim();
     let password = $("#password").val();
     let anon = document.getElementById("allowAnonymous").checked;
     if (username === "") {
@@ -21,11 +21,22 @@ $("#btnCreateUser").on('click', () => {
         url: "/firstLogin",
         data: JSON.stringify(login),
         contentType: 'application/json',
+        beforeSend: () => {
+            $("#firstRunError").removeClass("show").addClass("d-none");
+        },
         success: () => {
             window.location.href = "/index.html";
         },
-        error: () => {
-            alert("Something went wrong");
+        error: (xhr) => {
+            const response = xhr && xhr.responseJSON ? xhr.responseJSON : {};
+            const reason = response.reason || "";
+            if (reason === "already_configured") {
+                window.location.href = "/login.html";
+                return;
+            }
+
+            $("#firstRunErrorText").text(response.message || "Something went wrong");
+            $("#firstRunError").removeClass("d-none").addClass("show");
         }
     })
 });

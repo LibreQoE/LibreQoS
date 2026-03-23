@@ -107,6 +107,7 @@ impl NetworkJsonNode {
             name: self.name.clone(),
             id: self.id.clone(),
             is_virtual: self.virtual_node,
+            runtime_virtualized: false,
             max_throughput: self.max_throughput,
             configured_max_throughput: self.max_throughput,
             effective_max_throughput: None,

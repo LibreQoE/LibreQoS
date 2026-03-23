@@ -7,6 +7,7 @@ mod template;
 mod warnings;
 pub(crate) mod ws;
 
+pub(crate) use auth::invalidate_auth_cache;
 pub use local_api::circuit_count::circuit_count_data;
 pub use local_api::device_counts::device_count;
 pub(crate) use local_api::executive_cache::invalidate_executive_cache_snapshot;

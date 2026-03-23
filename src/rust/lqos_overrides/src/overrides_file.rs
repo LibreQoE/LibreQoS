@@ -371,7 +371,7 @@ fn merge_circuit_adjustments_owned(
 fn merge_network_adjustments_owned(
     operator_adjustments: &[NetworkAdjustment],
     stormguard_adjustments: &[NetworkAdjustment],
-    treeguard_adjustments: &[NetworkAdjustment],
+    _treeguard_adjustments: &[NetworkAdjustment],
 ) -> Vec<NetworkAdjustment> {
     use std::collections::{HashMap, HashSet};
 
@@ -403,27 +403,7 @@ fn merge_network_adjustments_owned(
         }
     }
 
-    let mut treeguard_virtual: HashMap<&str, bool> = HashMap::new();
-    let mut treeguard_virtual_order: Vec<&str> = Vec::new();
-    let mut treeguard_virtual_seen: HashSet<&str> = HashSet::new();
-
-    for adj in treeguard_adjustments {
-        if let NetworkAdjustment::SetNodeVirtual {
-            node_name,
-            virtual_node,
-        } = adj
-        {
-            let name = node_name.as_str();
-            treeguard_virtual.insert(name, *virtual_node);
-            if !treeguard_virtual_seen.contains(name) {
-                treeguard_virtual_order.push(name);
-                treeguard_virtual_seen.insert(name);
-            }
-        }
-    }
-
     let mut out = Vec::new();
-    let mut used_treeguard_virtual: HashSet<&str> = HashSet::new();
     let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
     let mut operator_site_speed_seen: HashSet<String> = HashSet::new();
     let mut operator_site_name_seen: HashSet<String> = HashSet::new();
@@ -439,19 +419,10 @@ fn merge_network_adjustments_owned(
                     continue;
                 }
                 operator_virtual_seen.insert(name);
-
-                if let Some(v) = treeguard_virtual.get(name) {
-                    out.push(NetworkAdjustment::SetNodeVirtual {
-                        node_name: node_name.clone(),
-                        virtual_node: *v,
-                    });
-                    used_treeguard_virtual.insert(name);
-                } else {
-                    out.push(NetworkAdjustment::SetNodeVirtual {
-                        node_name: node_name.clone(),
-                        virtual_node: *virtual_node,
-                    });
-                }
+                out.push(NetworkAdjustment::SetNodeVirtual {
+                    node_name: node_name.clone(),
+                    virtual_node: *virtual_node,
+                });
             }
             NetworkAdjustment::AdjustSiteSpeed {
                 node_id,
@@ -496,20 +467,6 @@ fn merge_network_adjustments_owned(
             site_name: site_name.clone(),
             download_bandwidth_mbps: *download_bandwidth_mbps,
             upload_bandwidth_mbps: *upload_bandwidth_mbps,
-        });
-    }
-
-    // Append TreeGuard-only virtual-node entries (ignore other network adjustments).
-    for name in treeguard_virtual_order {
-        if used_treeguard_virtual.contains(name) {
-            continue;
-        }
-        let Some(v) = treeguard_virtual.get(name) else {
-            continue;
-        };
-        out.push(NetworkAdjustment::SetNodeVirtual {
-            node_name: name.to_string(),
-            virtual_node: *v,
         });
     }
 
@@ -1130,7 +1087,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_merge_treeguard_wins_for_node_virtual_only() {
+    fn effective_merge_keeps_operator_node_virtual_and_ignores_treeguard_runtime_virtualization() {
         let mut operator = OverrideFile::default();
         operator.set_network_node_virtual("NodeA".to_string(), false);
         operator.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
@@ -1165,7 +1122,19 @@ mod tests {
                 } if node_name == "NodeA" => Some(*virtual_node),
                 _ => None,
             });
-        assert_eq!(node_a_virtual, Some(true));
+        assert_eq!(node_a_virtual, Some(false));
+
+        let node_three_virtual = merged
+            .network_adjustments()
+            .iter()
+            .find_map(|adj| match adj {
+                NetworkAdjustment::SetNodeVirtual {
+                    node_name,
+                    virtual_node,
+                } if node_name == "Node3" => Some(*virtual_node),
+                _ => None,
+            });
+        assert_eq!(node_three_virtual, None);
 
         // Operator site speed should beat StormGuard; TreeGuard site speed should be ignored.
         let site_speed_names: Vec<&str> = merged

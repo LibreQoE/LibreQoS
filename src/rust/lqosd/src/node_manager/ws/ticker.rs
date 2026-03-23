@@ -194,10 +194,8 @@ async fn one_second_cadence(
                 "stormguard",
                 stormguard::stormguard_ticker(channels.clone(), bus_tx.clone())
             ),
-            ticker_with_timeout(
-                "bakery",
-                bakery::bakery_ticker(channels.clone(), bus_tx.clone())
-            ),
+            ticker_with_timeout("bakery_status", bakery::bakery_status(channels.clone())),
+            ticker_with_timeout("bakery_activity", bakery::bakery_activity(channels.clone())),
             ticker_with_timeout(
                 "treeguard_status",
                 treeguard::treeguard_status(channels.clone())

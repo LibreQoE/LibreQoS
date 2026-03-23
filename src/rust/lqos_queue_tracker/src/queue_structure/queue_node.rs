@@ -5,6 +5,7 @@ use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
 use tracing::{debug, error, warn};
 
+#[allow(missing_docs)]
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
     pub name: Option<String>,

@@ -1,4 +1,5 @@
 use crate::MQ_CREATED;
+use crate::qdisc_handles::{InfraQdiscSlot, infra_qdisc_handle};
 use crate::queue_math::{
     format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_tokens_for,
 };
@@ -7,7 +8,59 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::mpsc::Sender as ReplySender;
 use tracing::{debug, info};
+
+/// Runtime TreeGuard node-operation action tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationAction {
+    /// Virtualize the target node/subtree.
+    Virtualize,
+    /// Restore the target node/subtree to the physical tree.
+    Restore,
+}
+
+/// Runtime TreeGuard node-operation status tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationStatus {
+    /// Operation was accepted but has not started applying yet.
+    Submitted,
+    /// Operation was not started because Bakery runtime-node capacity is currently saturated.
+    Deferred,
+    /// Operation is currently applying reparent/restore work.
+    Applying,
+    /// Traffic-carrying work succeeded; cleanup is still pending.
+    AppliedAwaitingCleanup,
+    /// Operation completed successfully.
+    Completed,
+    /// Operation failed and can be retried.
+    Failed,
+    /// Operation could not be reconciled safely and the subtree is now frozen.
+    Dirty,
+}
+
+/// Snapshot of a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, PartialEq, Eq, Allocative)]
+pub struct RuntimeNodeOperationSnapshot {
+    /// Monotonic Bakery-local operation identifier.
+    pub operation_id: u64,
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Requested runtime action.
+    pub action: RuntimeNodeOperationAction,
+    /// Current operation status.
+    pub status: RuntimeNodeOperationStatus,
+    /// Number of retry/apply attempts performed so far.
+    pub attempt_count: u32,
+    /// Unix timestamp when the operation was submitted.
+    pub submitted_at_unix: u64,
+    /// Unix timestamp when the operation last changed state.
+    pub updated_at_unix: u64,
+    /// Optional unix timestamp for the next retry, if waiting.
+    pub next_retry_at_unix: Option<u64>,
+    /// Last error observed by Bakery for this operation, if any.
+    pub last_error: Option<String>,
+}
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -33,6 +86,8 @@ struct AddCircuitParams {
     upload_bandwidth_max: f32,
     class_major: u16,
     up_class_major: u16,
+    down_qdisc_handle: Option<u16>,
+    up_qdisc_handle: Option<u16>,
     // Optional per-circuit SQM override: "cake" or "fq_codel"
     sqm_override: Option<String>,
 }
@@ -149,6 +204,10 @@ pub enum BakeryCommands {
         class_major: u16,
         /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// Explicit qdisc handle major for the downlink leaf qdisc, if assigned.
+        down_qdisc_handle: Option<u16>,
+        /// Explicit qdisc handle major for the uplink leaf qdisc, if assigned.
+        up_qdisc_handle: Option<u16>,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
         /// Optional per-circuit SQM override: "cake" or "fq_codel"
@@ -164,6 +223,16 @@ pub enum BakeryCommands {
         class_id: String,
         /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
+    },
+    /// Runtime TreeGuard request to virtualize or restore a non-top-level site without a full reload.
+    TreeGuardSetNodeVirtual {
+        /// Stable Bakery site hash derived from the node name.
+        site_hash: i64,
+        /// Whether the site should be virtualized (`true`) or restored (`false`).
+        virtualized: bool,
+        /// Optional synchronous reply channel for immediate operation-state reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<RuntimeNodeOperationSnapshot>>,
     },
 }
 
@@ -226,6 +295,8 @@ impl BakeryCommands {
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                down_qdisc_handle,
+                up_qdisc_handle,
                 ip_addresses: _,
                 sqm_override,
             } => Self::add_circuit(
@@ -242,6 +313,8 @@ impl BakeryCommands {
                     upload_bandwidth_max: *upload_bandwidth_max,
                     class_major: *class_major,
                     up_class_major: *up_class_major,
+                    down_qdisc_handle: *down_qdisc_handle,
+                    up_qdisc_handle: *up_qdisc_handle,
                     sqm_override: sqm_override.clone(),
                 },
             ),
@@ -255,9 +328,8 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        info!("Clearing prior settings");
+        info!("Clearing prior root qdiscs before MQ setup");
         if config.on_a_stick_mode() {
-            // Clear just the MQ on the ISP-facing interface
             result.push(vec![
                 "qdisc".to_string(),
                 "del".to_string(),
@@ -364,6 +436,11 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -401,6 +478,11 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
@@ -478,6 +560,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -514,6 +601,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
@@ -718,6 +810,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
+            if let Some(handle) = params.down_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.download_bandwidth_max,
                 config,
@@ -766,6 +862,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
+            if let Some(handle) = params.up_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.upload_bandwidth_max,
                 config,
@@ -921,5 +1021,90 @@ impl BakeryCommands {
         }
 
         Some(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BakeryCommands, ExecutionMode};
+    use lqos_config::{Config, SingleInterfaceConfig};
+    use std::sync::Arc;
+
+    fn is_root_delete(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 5
+            && cmd[0] == "qdisc"
+            && cmd[1] == "del"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+    }
+
+    fn is_root_replace_mq(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 8
+            && cmd[0] == "qdisc"
+            && cmd[1] == "replace"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+            && cmd[5] == "handle"
+            && cmd[6] == "7FFF:"
+            && cmd[7] == "mq"
+    }
+
+    #[test]
+    fn mq_setup_bridge_mode_emits_root_delete_before_replace() {
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_delete(&commands[0], &config.isp_interface()));
+        assert!(is_root_delete(&commands[1], &config.internet_interface()));
+        assert!(is_root_replace_mq(&commands[2], &config.isp_interface()));
+        let internet_replace_idx = commands
+            .iter()
+            .position(|cmd| is_root_replace_mq(cmd, &config.internet_interface()))
+            .expect("expected internet-interface root replace");
+        assert!(
+            internet_replace_idx > 1,
+            "internet-interface root replace should occur after both deletes"
+        );
+    }
+
+    #[test]
+    fn mq_setup_on_a_stick_emits_single_root_delete_before_replace() {
+        let mut cfg = Config::default();
+        cfg.bridge = None;
+        cfg.single_interface = Some(SingleInterfaceConfig::default());
+        let config = Arc::new(cfg);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 3,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_delete(&commands[0], &config.isp_interface()));
+        assert!(is_root_replace_mq(&commands[1], &config.isp_interface()));
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| is_root_delete(cmd, &config.isp_interface()))
+                .count(),
+            1,
+            "expected a single root delete on the shared interface"
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| is_root_replace_mq(cmd, &config.isp_interface()))
+                .count(),
+            1,
+            "expected a single root replace on the shared interface"
+        );
     }
 }

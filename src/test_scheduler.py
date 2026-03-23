@@ -408,6 +408,42 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertEqual(site["downloadBandwidthMbps"], 940)
         self.assertEqual(site["uploadBandwidthMbps"], 500)
 
+    def test_apply_network_adjustments_does_not_materialize_runtime_treeguard_virtual_state(self):
+        network = {
+            "Root": {
+                "children": {
+                    "REGION_01": {
+                        "virtual": False,
+                        "children": {},
+                    }
+                },
+            }
+        }
+
+        effective_adjustments = [
+            {
+                "type": "set_node_virtual",
+                "node_name": "REGION_01",
+                "virtual": True,
+            }
+        ]
+
+        with patch.dict(
+            scheduler.apply_network_adjustments.__globals__,
+            {"overrides_network_adjustments_effective": lambda: effective_adjustments},
+            clear=False,
+        ):
+            with patch.object(
+                scheduler,
+                "overrides_network_adjustments_materialized",
+                return_value=[],
+            ) as mock_materialized:
+                changed = scheduler.apply_network_adjustments(network)
+
+        mock_materialized.assert_called_once_with()
+        self.assertFalse(changed)
+        self.assertFalse(network["Root"]["children"]["REGION_01"]["virtual"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -92,13 +92,14 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
             { label: "CAKE", value: formatCount(header.cake_queue_count) },
             { label: "fq-codel", value: formatCount(header.fq_codel_queue_count) },
         ];
+        const allowQueueAlerts = !header?.bakery_reload_in_progress;
         return this.groupCard(
             "Queues",
             "fa-stream",
             "text-secondary",
             items,
             false,
-            true,
+            allowQueueAlerts,
             this.queueStatusBadge(header),
             this.queueStatusMessage(header),
         );
@@ -164,6 +165,9 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     queueStatusMessage(header) {
         if (!header?.queue_stats_stale) {
+            return "";
+        }
+        if (header?.bakery_reload_in_progress) {
             return "";
         }
         const text = header?.bakery_reload_in_progress

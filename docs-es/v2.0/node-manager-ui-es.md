@@ -8,6 +8,14 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Resumen por widgets de throughput, retransmisiones, RTT, flujos y actividad de colas.
 - El contenido puede variar según versión y funciones habilitadas.
 - Executive Summary ofrece una vista operativa compacta para redes grandes, con páginas de detalle para heatmaps y rankings ejecutivos.
+- Bakery ofrece una pestaña dedicada para el estado de aplicación de colas, eventos recientes de Bakery paginados, resultados de seguridad/preflight de qdisc y el gráfico existente de actividad de circuitos.
+- Las pestañas de Bakery y TreeGuard ahora comienzan con una fila visual de modelo del sistema para que el operador entienda el comportamiento del pipeline/control loop de un vistazo antes de bajar a tablas.
+- El widget `Pipeline` de Bakery ahora incluye la barra de progreso activa dentro de la misma tarjeta, con `%`, `completado / total de comandos tc` y avance por chunk durante full reloads grandes.
+- La fila superior de Bakery ahora incluye `Runtime Operations`, que muestra mutaciones en vivo de topología entre TreeGuard y Bakery, trabajo de limpieza diferida, fallos, subárboles marcados como `Dirty` y si Bakery ha congelado más cambios incrementales hasta hacer un full reload.
+- `Recent Bakery Events` ahora separa cada evento en etapa, resultado y alcance para que el operador pueda ver rápidamente si Bakery está planificando, bloqueado en preflight, aplicando, limpiando trabajo de TreeGuard o si ya terminó.
+- `TreeGuard Activity` ahora prioriza intención y resultado en lugar de una columna cruda de `persisted`, haciendo mucho más fácil interpretar dry-runs, cambios aplicados, acciones con limpieza pendiente, skips y fallos.
+- `TreeGuard Decision Impact` ahora separa advertencias operativas de errores reales, usa ámbar en lugar de rojo para advertencias no fatales y expone el texto actual de advertencias/errores directamente en el resumen del widget y en el tooltip al pasar el cursor.
+- El preflight de qdisc de Bakery ahora presenta los qdisc planificados por interfaz como barras compactas de uso con badges del tipo de qdisc, además de una tabla separada de límites/memoria para presupuesto seguro, límite del kernel, memoria estimada de qdisc, memoria disponible actual y margen sobre el piso de seguridad.
 - Algunos gráficos pueden tardar un poco en poblarse al abrir una pestaña por primera vez, especialmente en sistemas ocupados o inmediatamente después de reiniciar servicios.
 - Durante un full reload de Bakery, las tarjetas de conteo de colas mantienen los últimos valores conocidos de HTB/CAKE/fq-codel y los marcan como `Reloading` en lugar de mostrar ceros momentáneamente.
 

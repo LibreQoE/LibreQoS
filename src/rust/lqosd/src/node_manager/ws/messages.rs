@@ -317,22 +317,116 @@ pub struct RamData {
     pub used: u64,
 }
 
-#[derive(Debug, Serialize)]
-pub struct BakeryStatusState {
-    #[serde(rename = "activeCircuits")]
-    pub active_circuits: usize,
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryCapacityInterfaceData {
+    pub name: String,
+    pub planned_qdiscs: usize,
+    pub infra_qdiscs: usize,
+    pub cake_qdiscs: usize,
+    pub fq_codel_qdiscs: usize,
+    pub estimated_memory_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryPreflightData {
+    pub ok: bool,
+    pub message: String,
+    pub safe_budget: usize,
+    pub hard_limit: usize,
+    pub estimated_total_memory_bytes: u64,
+    pub memory_available_bytes: Option<u64>,
+    pub memory_guard_min_available_bytes: u64,
+    pub memory_ok: bool,
+    pub interfaces: Vec<BakeryCapacityInterfaceData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryStatusState {
+    pub active_circuits: usize,
+    pub mode: String,
+    pub current_action_started_unix: Option<u64>,
+    pub current_apply_phase: Option<String>,
+    pub current_apply_total_tc_commands: usize,
+    pub current_apply_completed_tc_commands: usize,
+    pub current_apply_total_chunks: usize,
+    pub current_apply_completed_chunks: usize,
+    pub last_success_unix: Option<u64>,
+    pub last_failure_unix: Option<u64>,
+    pub last_failure_summary: Option<String>,
+    pub last_apply_type: String,
+    pub last_total_tc_commands: usize,
+    pub last_class_commands: usize,
+    pub last_qdisc_commands: usize,
+    pub last_build_duration_ms: u64,
+    pub last_apply_duration_ms: u64,
+    pub runtime_operations: BakeryRuntimeOperationsData,
+    pub queue_distribution: Vec<BakeryQueueDistributionData>,
+    pub preflight: Option<BakeryPreflightData>,
+    pub reload_required: bool,
+    pub reload_required_reason: Option<String>,
+    pub dirty_subtree_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BakeryStatusData {
-    #[serde(rename = "currentState")]
     pub current_state: BakeryStatusState,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryQueueDistributionData {
+    pub queue: u32,
+    pub top_level_site_count: usize,
+    pub site_count: usize,
+    pub circuit_count: usize,
+    pub download_mbps: u64,
+    pub upload_mbps: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationsData {
+    pub submitted_count: usize,
+    pub deferred_count: usize,
+    pub applying_count: usize,
+    pub awaiting_cleanup_count: usize,
+    pub failed_count: usize,
+    pub dirty_count: usize,
+    pub latest: Option<BakeryRuntimeOperationHeadlineData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationHeadlineData {
+    pub operation_id: u64,
+    pub site_hash: i64,
+    pub action: String,
+    pub status: String,
+    pub attempt_count: u32,
+    pub updated_at_unix: u64,
+    pub next_retry_at_unix: Option<u64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryActivityEntry {
+    pub ts: u64,
+    pub event: String,
+    pub status: String,
+    pub summary: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TreeguardStatusData {
     pub enabled: bool,
     pub dry_run: bool,
+    pub paused_for_bakery_reload: bool,
+    pub pause_reason: Option<String>,
     pub cpu_max_pct: Option<u8>,
     pub managed_nodes: usize,
     pub managed_circuits: usize,
@@ -779,6 +873,9 @@ pub enum WsResponse {
     },
     BakeryStatus {
         data: BakeryStatusData,
+    },
+    BakeryActivity {
+        data: Vec<BakeryActivityEntry>,
     },
     TreeGuardStatus {
         data: TreeguardStatusData,

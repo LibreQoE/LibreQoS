@@ -11,21 +11,29 @@ pub mod authentication;
 mod cpu_topology;
 mod etc;
 mod network_json;
+mod planner;
 mod program_control;
 mod qoo_profiles;
 mod shaped_devices;
 
-pub use authentication::{UserRole, WebUser, WebUsers};
+pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
     BridgeConfig, Config, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
     StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig,
-    TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables, disable_xdp_bridge,
-    enable_long_term_stats, load_config, update_config,
+    TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config,
+    disable_xdp_bridge, enable_long_term_stats, load_config, treeguard_cpu_mode_migration_notice,
+    update_config,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
+pub use planner::{
+    CircuitIdentityAssignment, CircuitIdentityGroupInput, ClassIdentityPlannerOutput,
+    PlannerCircuitIdentityState, PlannerSiteIdentityState, SiteIdentityAssignment,
+    SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode, TopLevelPlannerOutput,
+    TopLevelPlannerParams, plan_class_identities, plan_top_level_assignments,
+};
 pub use program_control::load_libreqos;
 pub use qoo_profiles::{
     DEFAULT_QOO_PROFILE_ID, QooProfileInfo, QooProfilesError, active_qoo_profile,

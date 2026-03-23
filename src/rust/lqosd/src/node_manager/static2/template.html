@@ -262,7 +262,7 @@
 
     <script src="template.js%CACHEBUSTERS%"></script>
     <script>
-    // Remove scheduler tooltip (keep click-to-see only)
+    // Keep the native browser title for scheduler status, but do not attach Bootstrap tooltips.
     (function(){
         const container = document.getElementById('schedulerStatus');
         if (!container || !('MutationObserver' in window)) return;
@@ -273,7 +273,6 @@
             if (tip) tip.dispose();
             el.removeAttribute('data-bs-toggle');
             el.removeAttribute('data-bs-placement');
-            el.removeAttribute('title');
         });
         obs.observe(container, { childList: true, subtree: true });
     })();
