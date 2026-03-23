@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Get the current Unix timestamp in seconds
 pub(crate) fn current_timestamp() -> u64 {
@@ -55,12 +55,12 @@ fn run_tc_batch(path: &Path, purpose: &str) -> Result<std::process::Output, Stri
 }
 
 fn summarize_tc_batch_failure(output: &std::process::Output) -> Option<String> {
+    if output.status.success() {
+        return None;
+    }
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stderr = stderr.trim();
-
-    if output.status.success() {
-        return (!stderr.is_empty()).then(|| stderr.to_string());
-    }
 
     let status_summary = match output.status.code() {
         Some(code) => format!("tc batch exited with status {code}"),
@@ -367,6 +367,10 @@ where
         if !output_str.is_empty() {
             error!("Command output for ({purpose}): {:?}", output_str.trim());
         }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if output.status.success() && !stderr.trim().is_empty() {
+            warn!("Command stderr for ({purpose}): {:?}", stderr.trim());
+        }
 
         if let Some(failure_summary) = summarize_tc_batch_failure(&output) {
             let numbered = format_numbered_lines(&lines, global_line_start);
@@ -601,6 +605,12 @@ MemFree:         1024000 kB
     #[test]
     fn summarize_tc_batch_failure_accepts_clean_success() {
         let output = mock_tc_output(0, "", "");
+        assert!(summarize_tc_batch_failure(&output).is_none());
+    }
+
+    #[test]
+    fn summarize_tc_batch_failure_accepts_success_with_stderr_warning() {
+        let output = mock_tc_output(0, "", "Warning: sch_htb: quantum of class 10134 is big.\n");
         assert!(summarize_tc_batch_failure(&output).is_none());
     }
 }

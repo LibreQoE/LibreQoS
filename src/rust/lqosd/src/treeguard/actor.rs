@@ -23,7 +23,7 @@ use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use parking_lot::RwLock;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
@@ -47,6 +47,55 @@ const TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES_LOW_THROUGHPUT: usize = 16;
 const TREEGUARD_LOW_VALUE_THROUGHPUT_MBPS: f64 = 1.0;
 const TREEGUARD_MAX_AUTO_VIRTUALIZED_NODES: usize = 64;
 const TREEGUARD_TOP_LEVEL_VIRTUALIZATION_VALUE_BONUS: u64 = 1_000_000_000;
+const TREEGUARD_WARNING_DETAIL_LIMIT_PER_GROUP: usize = 3;
+
+struct TreeguardWarningGroupState {
+    emitted: usize,
+    suppressed: usize,
+    suppression_summary: String,
+}
+
+#[derive(Default)]
+struct TreeguardWarningLimiter {
+    groups: BTreeMap<String, TreeguardWarningGroupState>,
+}
+
+impl TreeguardWarningLimiter {
+    fn push(
+        &mut self,
+        status: &mut TreeguardStatusData,
+        group_key: impl Into<String>,
+        warning: String,
+        suppression_summary: String,
+    ) {
+        let state =
+            self.groups
+                .entry(group_key.into())
+                .or_insert_with(|| TreeguardWarningGroupState {
+                    emitted: 0,
+                    suppressed: 0,
+                    suppression_summary,
+                });
+        if state.emitted < TREEGUARD_WARNING_DETAIL_LIMIT_PER_GROUP {
+            status.warnings.push(warning);
+            state.emitted += 1;
+        } else {
+            state.suppressed += 1;
+        }
+    }
+
+    fn flush(self, status: &mut TreeguardStatusData) {
+        for state in self.groups.into_values() {
+            if state.suppressed == 0 {
+                continue;
+            }
+            status.warnings.push(format!(
+                "Suppressed {} additional {} this tick.",
+                state.suppressed, state.suppression_summary
+            ));
+        }
+    }
+}
 
 /// A message sent to the TreeGuard actor.
 #[derive(Debug)]
@@ -603,6 +652,7 @@ fn run_tick(
         .map(|d| d.as_nanos() as u64);
 
     let mut warnings = Vec::new();
+    let mut warning_limiter = TreeguardWarningLimiter::default();
 
     let Ok(config) = load_config() else {
         status.enabled = false;
@@ -746,6 +796,7 @@ fn run_tick(
         status,
         activity,
         now_unix,
+        &mut warning_limiter,
         pending_link_operations,
         runtime_virtualized_nodes,
         link_virtualization_backoff_until_unix,
@@ -1644,6 +1695,7 @@ fn run_tick(
                 || state.up.desired == CircuitSqmState::FqCodel
         })
         .count();
+    warning_limiter.flush(status);
 }
 
 /// Applies TreeGuard backoff while Bakery is performing a structural full reload.
@@ -1770,6 +1822,7 @@ fn reconcile_pending_link_operations(
     status: &mut TreeguardStatusData,
     activity: &mut VecDeque<TreeguardActivityEntry>,
     now_unix: u64,
+    warning_limiter: &mut TreeguardWarningLimiter,
     pending_link_operations: &mut FxHashMap<String, PendingLinkOperation>,
     runtime_virtualized_nodes: &mut FxHashSet<String>,
     link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
@@ -1833,15 +1886,20 @@ fn reconcile_pending_link_operations(
                     }
                 });
                 if snapshot.status == BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' runtime {} applied in Bakery operation {} and is awaiting cleanup.",
-                        if pending.target == LinkVirtualState::Virtual {
-                            "virtualization"
-                        } else {
-                            "restore"
-                        },
-                        snapshot.operation_id
-                    ));
+                    let target_label = if pending.target == LinkVirtualState::Virtual {
+                        "virtualization"
+                    } else {
+                        "restore"
+                    };
+                    warning_limiter.push(
+                        status,
+                        format!("runtime_cleanup_pending|{target_label}"),
+                        format!(
+                            "TreeGuard links: node '{node_name}' runtime {target_label} applied in Bakery operation {} and is awaiting cleanup.",
+                            snapshot.operation_id
+                        ),
+                        format!("TreeGuard runtime {target_label} cleanup-pending warnings"),
+                    );
                 }
             }
             BakeryRuntimeNodeOperationStatus::Deferred => {
@@ -1860,14 +1918,19 @@ fn reconcile_pending_link_operations(
                         snapshot.operation_id
                     )
                 });
-                status.warnings.push(format!(
-                    "TreeGuard links: deferred runtime {} for node '{node_name}': {details}. Retrying after {until}.",
-                    if pending.target == LinkVirtualState::Virtual {
-                        "virtualization"
-                    } else {
-                        "restore"
-                    }
-                ));
+                let target_label = if pending.target == LinkVirtualState::Virtual {
+                    "virtualization"
+                } else {
+                    "restore"
+                };
+                warning_limiter.push(
+                    status,
+                    format!("runtime_deferred|{target_label}|{details}"),
+                    format!(
+                        "TreeGuard links: deferred runtime {target_label} for node '{node_name}': {details}. Retrying after {until}."
+                    ),
+                    format!("TreeGuard deferred runtime {target_label} warnings for reason={details}"),
+                );
                 push_activity(
                     activity,
                     TreeguardActivityEntry {
@@ -1897,14 +1960,19 @@ fn reconcile_pending_link_operations(
                 let details = snapshot.last_error.unwrap_or_else(|| {
                     format!("Bakery operation {} failed", snapshot.operation_id)
                 });
-                status.warnings.push(format!(
-                    "TreeGuard links: failed to apply runtime {} for node '{node_name}': {details}. Backing off until {until}.",
-                    if pending.target == LinkVirtualState::Virtual {
-                        "virtualization"
-                    } else {
-                        "restore"
-                    }
-                ));
+                let target_label = if pending.target == LinkVirtualState::Virtual {
+                    "virtualization"
+                } else {
+                    "restore"
+                };
+                warning_limiter.push(
+                    status,
+                    format!("runtime_failed|{target_label}|{details}"),
+                    format!(
+                        "TreeGuard links: failed to apply runtime {target_label} for node '{node_name}': {details}. Backing off until {until}."
+                    ),
+                    format!("TreeGuard failed runtime {target_label} warnings for reason={details}"),
+                );
                 push_activity(
                     activity,
                     TreeguardActivityEntry {
@@ -1978,6 +2046,18 @@ fn restore_runtime_virtualization_if_needed(
             if let Some(state) = link_states.get_mut(node_name) {
                 state.desired = LinkVirtualState::Physical;
             }
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "node".to_string(),
+                    entity_id: node_name.to_string(),
+                    action: "unvirtualize_requested".to_string(),
+                    persisted: false,
+                    reason: format!("{reason}. Queued in Bakery for live restore."),
+                },
+            );
+            status.last_action_summary = Some(format!("Queued restore for node '{node_name}'"));
         }
         Err(e) => {
             let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
@@ -2059,6 +2139,40 @@ fn apply_link_virtualization_decision(
                     PendingLinkOperation { target, reason },
                 );
                 state.desired = target;
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.to_string(),
+                        action: match target {
+                            LinkVirtualState::Physical => "unvirtualize_requested".to_string(),
+                            LinkVirtualState::Virtual => "virtualize_requested".to_string(),
+                        },
+                        persisted: false,
+                        reason: format!(
+                            "{}. Queued in Bakery for live {}.",
+                            pending_link_operations
+                                .get(node_name)
+                                .map(|pending| pending.reason.as_str())
+                                .unwrap_or("TreeGuard queued a runtime topology change"),
+                            if target == LinkVirtualState::Virtual {
+                                "virtualization"
+                            } else {
+                                "restore"
+                            }
+                        ),
+                    },
+                );
+                status.last_action_summary = Some(format!(
+                    "Queued {} for node '{}'",
+                    if target == LinkVirtualState::Virtual {
+                        "virtualization"
+                    } else {
+                        "restore"
+                    },
+                    node_name
+                ));
                 return;
             }
             Err(e) => {
@@ -2281,7 +2395,7 @@ fn push_activity(activity: &mut VecDeque<TreeguardActivityEntry>, entry: Treegua
             entry.entity_type, entry.entity_id, entry.action, entry.persisted, entry.reason
         );
     } else {
-        info!(
+        debug!(
             "TreeGuard activity: entity_type={} entity_id={} action={} persisted={} reason={}",
             entry.entity_type, entry.entity_id, entry.action, entry.persisted, entry.reason
         );
@@ -2772,7 +2886,7 @@ mod tests {
     use super::{
         CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, LinkVirtualState,
         PendingLinkVirtualizationDecision, TreeguardRuntimeState, apply_circuit_sqm_change,
-        base_circuit_sqm_state, circuit_evaluation_batch_size,
+        apply_link_virtualization_decision, base_circuit_sqm_state, circuit_evaluation_batch_size,
         circuit_sqm_transition_from_decision, collect_circuit_batch, empty_status_snapshot,
         pause_for_bakery_reload_with_flag, process_circuit_tick, run_tick,
         select_link_virtualization_candidates, treeguard_manages_circuit_direction,
@@ -2783,7 +2897,7 @@ mod tests {
     use crate::system_stats::SystemStats;
     use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
     use crate::treeguard::decisions;
-    use crate::treeguard::{bakery, state::CircuitSqmState};
+    use crate::treeguard::{bakery, state::CircuitSqmState, state::LinkState};
     use crossbeam_channel::bounded;
     use fxhash::{FxHashMap, FxHashSet};
     use lqos_bakery::BakeryCommands;
@@ -2797,7 +2911,7 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use std::sync::Once;
+    use std::sync::{Once, OnceLock};
 
     #[allow(clippy::too_many_arguments)]
     fn pending_link_decision(
@@ -3476,11 +3590,16 @@ mod tests {
 
     fn install_test_bakery_sender() -> crossbeam_channel::Receiver<BakeryCommands> {
         static INIT: Once = Once::new();
-        let (tx, rx) = bounded(8);
+        static RECEIVER: OnceLock<crossbeam_channel::Receiver<BakeryCommands>> = OnceLock::new();
         INIT.call_once(|| {
+            let (tx, rx) = bounded(8);
             let _ = lqos_bakery::BAKERY_SENDER.set(tx);
+            let _ = RECEIVER.set(rx);
         });
-        rx
+        RECEIVER
+            .get()
+            .expect("test bakery receiver should be installed")
+            .clone()
     }
 
     #[test]
@@ -3637,5 +3756,61 @@ mod tests {
             None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
         }
         lqos_config::clear_cached_config();
+    }
+
+    #[test]
+    fn apply_link_virtualization_decision_emits_requested_activity_when_bakery_accepts_submit() {
+        let rx = install_test_bakery_sender();
+        while rx.try_recv().is_ok() {}
+
+        let mut status = empty_status_snapshot();
+        let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+        let mut pending_link_operations = FxHashMap::default();
+        let mut link_virtualization_backoff_until_unix = FxHashMap::default();
+        let mut state = LinkState::default();
+
+        apply_link_virtualization_decision(
+            &mut status,
+            &mut activity,
+            1_000,
+            "Node Requested",
+            LinkVirtualState::Virtual,
+            "High utilization".to_string(),
+            false,
+            &mut state,
+            &mut pending_link_operations,
+            &mut link_virtualization_backoff_until_unix,
+        );
+
+        assert_eq!(state.desired, LinkVirtualState::Virtual);
+        let pending = pending_link_operations
+            .get("Node Requested")
+            .expect("pending operation should be tracked");
+        assert_eq!(pending.target, LinkVirtualState::Virtual);
+        assert_eq!(pending.reason, "High utilization");
+        assert_eq!(
+            status.last_action_summary.as_deref(),
+            Some("Queued virtualization for node 'Node Requested'")
+        );
+
+        let last_activity = activity
+            .back()
+            .expect("requested activity should be recorded");
+        assert_eq!(last_activity.action, "virtualize_requested");
+        assert!(!last_activity.persisted);
+        assert!(last_activity.reason.contains("High utilization"));
+        assert!(last_activity.reason.contains("Queued in Bakery"));
+
+        let command = rx.try_recv().expect("bakery command should be sent");
+        let BakeryCommands::TreeGuardSetNodeVirtual {
+            site_hash,
+            virtualized,
+            ..
+        } = command
+        else {
+            panic!("expected TreeGuardSetNodeVirtual");
+        };
+        assert_eq!(site_hash, lqos_utils::hash_to_i64("Node Requested"));
+        assert!(virtualized);
     }
 }

@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
 
@@ -292,11 +292,11 @@ pub async fn build_full_network_v2(
                     if !bandwidth_overrides.is_empty()
                         && let Some(bw_override) = bandwidth_overrides.get(name)
                     {
-                        info!("Applying bandwidth override for {}", name);
-                        info!("Capacity was: {} / {}", download_capacity, upload_capacity);
+                        debug!("Applying bandwidth override for {}", name);
+                        debug!("Capacity was: {} / {}", download_capacity, upload_capacity);
                         download_capacity = bw_override.0 as u64;
                         upload_capacity = bw_override.1 as u64;
-                        info!(
+                        debug!(
                             "Capacity is now: {} / {}",
                             download_capacity, upload_capacity
                         );
@@ -373,6 +373,8 @@ pub async fn build_full_network_v2(
     // Shaped Devices
     let mut shaped_devices = Vec::new();
     let mut seen_pairs = HashSet::new();
+    let mut processed_site_pairs = 0usize;
+    let mut shaped_device_count = 0usize;
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
@@ -382,7 +384,8 @@ pub async fn build_full_network_v2(
             let Some(site) = uisp_data.sites.iter().find(|s| s.id == *site_id) else {
                 continue;
             };
-            info!(
+            processed_site_pairs = processed_site_pairs.saturating_add(1);
+            debug!(
                 "Processing site: {} (ID: {}) with AP: {} (ID: {})",
                 site.name, site.id, ap_device.name, ap_device.id
             );
@@ -459,14 +462,19 @@ pub async fn build_full_network_v2(
                     upload_max,
                     comment: "".to_string(),
                 };
-                info!(
+                debug!(
                     "Created shaped device for '{}' in site '{}' with parent '{}'",
                     device.name, site.name, parent_node
                 );
+                shaped_device_count = shaped_device_count.saturating_add(1);
                 shaped_devices.push(shaped_device);
             }
         }
     }
+    info!(
+        "UISP shaped devices: processed {} site/AP pair(s) and produced {} shaped device row(s).",
+        processed_site_pairs, shaped_device_count
+    );
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
@@ -925,7 +933,7 @@ fn find_point_to_point_squash_candidates(
         candidates.len()
     );
     for candidate in &candidates {
-        info!(
+        debug!(
             "  {} -> {} -> {} -> {}",
             candidate.endpoint_a_name,
             candidate.relay_a_name,
@@ -1055,7 +1063,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     info!("Performing squashing on {} candidates...", candidates.len());
 
     for candidate in candidates {
-        info!(
+        debug!(
             "Squashing: {} -> {} -> {} -> {}",
             candidate.endpoint_a_name,
             candidate.relay_a_name,
@@ -1076,7 +1084,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
         if graph.node_weight(candidate.endpoint_a).is_none()
             || graph.node_weight(candidate.endpoint_b).is_none()
         {
-            info!("  Skipping - endpoints no longer exist");
+            debug!("  Skipping - endpoints no longer exist");
             continue;
         }
 
@@ -1085,7 +1093,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
             .find_edge(candidate.endpoint_a, candidate.endpoint_b)
             .is_some()
         {
-            info!("  Skipping - direct edge already exists");
+            debug!("  Skipping - direct edge already exists");
             continue;
         }
 
@@ -1105,7 +1113,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
         nodes_to_remove.insert(candidate.relay_a);
         nodes_to_remove.insert(candidate.relay_b);
 
-        info!(
+        debug!(
             "  Created direct link with {}/{}Mbps capacity (forward/reverse)",
             forward_capacity, reverse_capacity
         );
@@ -1119,7 +1127,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
         if graph.node_weight(node_to_remove).is_some() {
             let node_name = graph[node_to_remove].name();
             graph.remove_node(node_to_remove);
-            info!("Removed relay node: {}", node_name);
+            debug!("Removed relay node: {}", node_name);
         }
     }
 

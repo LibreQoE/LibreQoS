@@ -2,6 +2,15 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 
 const BAKERY_ACTIVITY_PAGE_SIZE = 10;
+const BAKERY_ACTIVITY_SUMMARY_MAX_CHARS = 220;
+
+function truncateSummary(summary) {
+    const normalized = (summary ?? "").toString().trim();
+    if (normalized.length <= BAKERY_ACTIVITY_SUMMARY_MAX_CHARS) {
+        return normalized;
+    }
+    return normalized.slice(0, BAKERY_ACTIVITY_SUMMARY_MAX_CHARS - 3).trimEnd() + "...";
+}
 
 function classifyEvent(entry) {
     const event = (entry?.event ?? "").toString().trim().toLowerCase();
@@ -222,8 +231,9 @@ export class BakeryActivityDashlet extends BaseDashlet {
             tdScope.appendChild(
                 mkBadge(meta.scope, "bg-info-subtle text-info border border-info-subtle", entry?.event || ""),
             );
-            tdSummary.textContent = entry?.summary || "—";
-            tdSummary.title = entry?.event || "";
+            const fullSummary = (entry?.summary || "—").toString();
+            tdSummary.textContent = truncateSummary(fullSummary);
+            tdSummary.title = fullSummary;
 
             tr.appendChild(tdTime);
             tr.appendChild(tdStage);

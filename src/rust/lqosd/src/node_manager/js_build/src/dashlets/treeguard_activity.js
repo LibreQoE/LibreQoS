@@ -94,6 +94,14 @@ function classifyOutcome(entry, action) {
         };
     }
 
+    if (rawAction.endsWith("_requested")) {
+        return {
+            label: "Queued",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: mkBadge("Bakery", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
     if (rawAction === "reload_skipped") {
         return {
             label: "Skipped",
@@ -160,10 +168,18 @@ function renderAction(actionRaw) {
         iconClass = "fa-compress";
         iconExtra = [];
         label = "Virtualize";
+    } else if (lowerVerb === "virtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued virtualization";
     } else if (lowerVerb === "unvirtualize") {
         iconClass = "fa-expand";
         iconExtra = [];
         label = "Unvirtualize";
+    } else if (lowerVerb === "unvirtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued restore";
     } else if (lowerVerb === "dry_run_toggled") {
         iconClass = "fa-toggle-on";
         iconExtra = ["text-muted"];
@@ -243,7 +259,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard intents with explicit outcomes so operators can distinguish dry-runs, successful applies, cleanup-pending actions, skips, and failures.</p>";
+        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard intents with explicit outcomes so operators can distinguish queued requests, dry-runs, successful applies, cleanup-pending actions, skips, and failures.</p>";
     }
 
     subscribeTo() {

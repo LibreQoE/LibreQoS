@@ -797,7 +797,7 @@ function renderCakeGraphShell() {
                             <div class="lqos-cake-info-value"><span id="cakeQueueMemory">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
-                            <div class="lqos-cake-info-label">Queue Type</div>
+                            <div class="lqos-cake-info-label">Live Queue Type</div>
                             <div class="lqos-cake-info-value"><span id="cakeQueueType">?</span></div>
                         </div>
                         <div class="lqos-cake-info-item">
@@ -813,11 +813,14 @@ function renderCakeGraphShell() {
 }
 
 function applyCakeMessage(msg) {
-    if (!cakeGraphs || !msg) {
+    if (!msg) {
+        return;
+    }
+    setQueueTypeDisplayFromKinds(msg.kind_down, msg.kind_up, circuitSqmOverride);
+    if (!cakeGraphs) {
         return;
     }
     $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
-    setQueueTypeDisplayFromKinds(msg.kind_down, msg.kind_up, circuitSqmOverride);
     cakeGraphs.backlog.update(msg);
     resizeGraphIfVisible(cakeGraphs.backlog);
     cakeGraphs.delays.update(msg);
@@ -1982,6 +1985,7 @@ function subscribeToCake() {
     }, (msg) => {
         //console.log(msg);
         latestCakeMsg = msg;
+        setQueueTypeDisplayFromKinds(msg?.kind_down, msg?.kind_up, circuitSqmOverride);
         
         // Clear the timeout and set flag that we've received data
         if (noDataTimeout) {
@@ -2095,7 +2099,7 @@ function loadInitial() {
         };
         latestCircuitDevices = circuits;
         circuitSqmOverride = circuit.sqm_override || "";
-        setQueueTypeDisplay(circuitSqmOverride);
+        setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up, circuitSqmOverride);
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
         qooGauge = new QooScoreGauge("qooGauge");

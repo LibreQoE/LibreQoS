@@ -123,6 +123,13 @@ function renderLastAction(summaryRaw) {
         label = `${m[1]} node: ${m[2]}`;
     }
 
+    m = raw.match(/^Queued (virtualization|restore) for node '(.+)'$/);
+    if (m) {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = `Queued ${m[1]}: ${m[2]}`;
+    }
+
     m = raw.match(/^Would set SQM override for circuit '(.+)' -> (.+)$/);
     if (m) {
         iconClass = "fa-eye";

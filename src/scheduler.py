@@ -23,6 +23,8 @@ import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
+INTEGRATION_FAILURE_PREVIEW_LINES = 30
+INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 
 
 def clear_scheduler_error():
@@ -33,6 +35,79 @@ def clear_scheduler_error():
 def clear_scheduler_output():
     """Clear the scheduler output shown in the Web UI."""
     scheduler_output("")
+
+
+def _integration_output_lines(output):
+    normalized = (output or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+    return normalized.split("\n")
+
+
+def _summarize_output_preview(output, *, max_lines, max_chars):
+    lines = _integration_output_lines(output)
+    if not lines:
+        return ""
+
+    preview_lines = lines[:max_lines]
+    preview = "\n".join(preview_lines)
+    truncated = len(lines) > max_lines
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rstrip()
+        truncated = True
+    if truncated:
+        preview += "\n..."
+    return preview
+
+
+def _sanitize_label_for_filename(label):
+    token = "".join(ch.lower() if ch.isalnum() else "_" for ch in (label or "integration"))
+    token = token.strip("_")
+    return token or "integration"
+
+
+def _write_integration_output_artifact(label, output):
+    normalized = (output or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return None
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    artifact = f"/tmp/lqos_scheduler_{_sanitize_label_for_filename(label)}_{timestamp}.log"
+    try:
+        with open(artifact, "w", encoding="utf-8") as handle:
+            handle.write(normalized)
+            handle.write("\n")
+        return artifact
+    except Exception as e:
+        print(f"Failed to write {label} output artifact: {e}")
+        return None
+
+
+def _publish_integration_result(label, result):
+    output = ((result.stdout or "") + (result.stderr or "")).replace("\r\n", "\n").strip()
+    if result.returncode == 0:
+        line_count = len(_integration_output_lines(output))
+        summary = (
+            f"{label} completed successfully."
+            if line_count == 0
+            else f"{label} completed successfully. Captured {line_count} line(s) of output."
+        )
+        print(summary)
+        scheduler_output(summary)
+        return
+
+    preview = _summarize_output_preview(
+        output,
+        max_lines=INTEGRATION_FAILURE_PREVIEW_LINES,
+        max_chars=INTEGRATION_FAILURE_PREVIEW_CHARS,
+    )
+    artifact = _write_integration_output_artifact(label, output)
+    message = f"{label} exited with code {result.returncode}. Continuing."
+    if preview:
+        message += f"\nOutput preview:\n{preview}"
+    if artifact is not None:
+        message += f"\nFull output saved to {artifact}"
+    print(message)
+    scheduler_error(message)
 
 
 def get_integration_affinity_cpus():
@@ -119,8 +194,19 @@ def capture_output_and_run(func):
         sys.stderr = old_stderr
         output = captured_output.getvalue()
         if output:
-            print(output)
-            scheduler_output(output)
+            preview = _summarize_output_preview(
+                output,
+                max_lines=INTEGRATION_FAILURE_PREVIEW_LINES,
+                max_chars=INTEGRATION_FAILURE_PREVIEW_CHARS,
+            )
+            artifact = _write_integration_output_artifact("captured_integration", output)
+            message = "Captured integration output."
+            if preview:
+                message += f"\nOutput preview:\n{preview}"
+            if artifact is not None:
+                message += f"\nFull output saved to {artifact}"
+            print(message)
+            scheduler_output(message)
 
 
 def run_python_integration(module_name: str, func_name: str, label: str = ""):
@@ -138,15 +224,7 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
             text=True,
             label=friendly,
         )
-        output = (result.stdout or "") + (result.stderr or "")
-        if output:
-            print(output)
-            scheduler_output(output)
-        if result.returncode != 0:
-            # Non-zero exit shouldn't stop scheduling; log and continue
-            msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
-            print(msg)
-            scheduler_error(msg)
+        _publish_integration_result(friendly, result)
     except Exception as e:
         err = f"Failed to invoke integration {label or (module_name + '.' + func_name)}: {e}"
         print(err)
@@ -166,14 +244,7 @@ def importFromCRM():
                 text=True,
                 label="UISP integration",
             )
-            output = (result.stdout or "") + (result.stderr or "")
-            if output:
-                print(output)
-                scheduler_output(output)
-            if result.returncode != 0:
-                msg = f"UISP integration exited with code {result.returncode}. Continuing."
-                print(msg)
-                scheduler_error(msg)
+            _publish_integration_result("UISP integration", result)
             blackboard_finish()
         except Exception as e:
             error_msg = f"Failed to run UISP integration: {str(e)}"
@@ -603,8 +674,6 @@ def importAndShapePartialReload():
     if new_hash != shaping_runtime_hash:
         refreshShapers()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
-    else:
-        print("No runtime shaping changes detected, skipping shaper refresh.")
 
 
 def not_dead_yet():

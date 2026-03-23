@@ -43,7 +43,7 @@ use crate::commands::{
 };
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::qdisc_handles::QdiscHandleState;
-use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32};
+use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32, quantum, r2q};
 use crate::utils::{
     ExecuteResult, LiveTcClassEntry, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
     read_live_class_snapshot, read_live_qdisc_handle_majors, read_memory_snapshot,
@@ -148,6 +148,7 @@ const BAKERY_BACKGROUND_INTERVAL_MS: u64 = 250;
 const RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD: usize = 3;
 const RUNTIME_NODE_OPERATION_CAPACITY: usize = 32;
 const RUNTIME_NODE_OPERATION_DEFERRED_RETRY_SECONDS: u64 = 60;
+const BAKERY_GROUPED_EVENT_DETAIL_LIMIT: usize = 3;
 
 #[derive(Clone, Debug)]
 struct RuntimeNodeOperation {
@@ -273,23 +274,56 @@ fn used_minors_for_parent(
     set
 }
 
-fn used_site_minors_for_parent(
+fn used_site_minors_for_majors(
     sites: &HashMap<i64, Arc<BakeryCommands>>,
-    parent: &TcHandle,
-) -> HashSet<u16> {
-    let mut set = HashSet::new();
+    down_major: u16,
+    up_major: u16,
+) -> (HashSet<u16>, HashSet<u16>) {
+    let mut used_down = HashSet::new();
+    let mut used_up = HashSet::new();
     for site in sites.values() {
         if let BakeryCommands::AddSite {
             parent_class_id,
+            up_parent_class_id,
             class_minor,
             ..
         } = site.as_ref()
-            && parent_class_id == parent
         {
-            set.insert(*class_minor);
+            if parent_class_id.get_major_minor().0 == down_major {
+                used_down.insert(*class_minor);
+            }
+            if up_parent_class_id.get_major_minor().0 == up_major {
+                used_up.insert(*class_minor);
+            }
         }
     }
-    set
+    (used_down, used_up)
+}
+
+fn used_circuit_minors_for_majors(
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    down_major: u16,
+    up_major: u16,
+) -> (HashSet<u16>, HashSet<u16>) {
+    let mut used_down = HashSet::new();
+    let mut used_up = HashSet::new();
+    for circuit in circuits.values() {
+        if let BakeryCommands::AddCircuit {
+            class_minor,
+            class_major,
+            up_class_major,
+            ..
+        } = circuit.as_ref()
+        {
+            if *class_major == down_major {
+                used_down.insert(*class_minor);
+            }
+            if *up_class_major == up_major {
+                used_up.insert(*class_minor);
+            }
+        }
+    }
+    (used_down, used_up)
 }
 
 fn find_free_minor(
@@ -318,10 +352,13 @@ fn find_free_site_shadow_minor(
     down_parent: &TcHandle,
     up_parent: &TcHandle,
 ) -> Option<u16> {
-    let mut used_down = used_site_minors_for_parent(sites, down_parent);
-    let mut used_up = used_site_minors_for_parent(sites, up_parent);
-    used_down.extend(used_minors_for_parent(circuits, down_parent));
-    used_up.extend(used_minors_for_parent(circuits, up_parent));
+    let down_major = down_parent.get_major_minor().0;
+    let up_major = up_parent.get_major_minor().0;
+    let (mut used_down, mut used_up) = used_site_minors_for_majors(sites, down_major, up_major);
+    let (used_circuit_down, used_circuit_up) =
+        used_circuit_minors_for_majors(circuits, down_major, up_major);
+    used_down.extend(used_circuit_down);
+    used_up.extend(used_circuit_up);
 
     for update in planned_sites.values() {
         if let BakeryCommands::AddSite {
@@ -331,10 +368,10 @@ fn find_free_site_shadow_minor(
             ..
         } = update.command.as_ref()
         {
-            if parent_class_id == down_parent {
+            if parent_class_id.get_major_minor().0 == down_major {
                 used_down.insert(*class_minor);
             }
-            if up_parent_class_id == up_parent {
+            if up_parent_class_id.get_major_minor().0 == up_major {
                 used_up.insert(*class_minor);
             }
         }
@@ -342,16 +379,16 @@ fn find_free_site_shadow_minor(
 
     for update in planned_circuits.values() {
         if let BakeryCommands::AddCircuit {
-            parent_class_id,
-            up_parent_class_id,
             class_minor,
+            class_major,
+            up_class_major,
             ..
         } = update.command.as_ref()
         {
-            if parent_class_id == down_parent {
+            if *class_major == down_major {
                 used_down.insert(*class_minor);
             }
-            if up_parent_class_id == up_parent {
+            if *up_class_major == up_major {
                 used_up.insert(*class_minor);
             }
         }
@@ -783,6 +820,63 @@ struct BakeryTelemetryState {
     dirty_subtree_count: usize,
     runtime_operations_by_site: HashMap<i64, RuntimeNodeOperationSnapshot>,
     activity: VecDeque<BakeryActivityEntry>,
+}
+
+struct GroupedBakeryEventState {
+    event: String,
+    status: String,
+    emitted: usize,
+    suppressed: usize,
+    suppression_summary: String,
+}
+
+#[derive(Default)]
+struct GroupedBakeryEventLimiter {
+    groups: BTreeMap<String, GroupedBakeryEventState>,
+}
+
+impl GroupedBakeryEventLimiter {
+    fn emit(
+        &mut self,
+        group_key: impl Into<String>,
+        event: &str,
+        status: &str,
+        summary: String,
+        suppression_summary: String,
+    ) {
+        let state =
+            self.groups
+                .entry(group_key.into())
+                .or_insert_with(|| GroupedBakeryEventState {
+                    event: event.to_string(),
+                    status: status.to_string(),
+                    emitted: 0,
+                    suppressed: 0,
+                    suppression_summary,
+                });
+        if state.emitted < BAKERY_GROUPED_EVENT_DETAIL_LIMIT {
+            push_bakery_event(event, status, summary);
+            state.emitted += 1;
+        } else {
+            state.suppressed += 1;
+        }
+    }
+
+    fn flush(self) {
+        for state in self.groups.into_values() {
+            if state.suppressed == 0 {
+                continue;
+            }
+            push_bakery_event(
+                &state.event,
+                &state.status,
+                format!(
+                    "Suppressed {} additional {} this batch.",
+                    state.suppressed, state.suppression_summary
+                ),
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3614,6 +3708,13 @@ fn handle_change_site_speed_live(
                 format_rate_for_tc_f32(upload_bandwidth_min),
                 "ceil".to_string(),
                 format_rate_for_tc_f32(upload_bandwidth_max),
+                "prio".to_string(),
+                "3".to_string(),
+                "quantum".to_string(),
+                quantum(
+                    upload_bandwidth_max as u64,
+                    r2q(config.queues.uplink_bandwidth_mbps),
+                ),
             ],
             vec![
                 "class".to_string(),
@@ -3627,6 +3728,13 @@ fn handle_change_site_speed_live(
                 format_rate_for_tc_f32(download_bandwidth_min),
                 "ceil".to_string(),
                 format_rate_for_tc_f32(download_bandwidth_max),
+                "prio".to_string(),
+                "3".to_string(),
+                "quantum".to_string(),
+                quantum(
+                    download_bandwidth_max as u64,
+                    r2q(config.queues.downlink_bandwidth_mbps),
+                ),
             ],
         ];
         execute_and_record_live_change(&commands, "changing site speed live");
@@ -5846,6 +5954,7 @@ fn flush_deferred_runtime_site_prunes(
         return;
     }
     let now_unix = unix_now();
+    let mut grouped_events = GroupedBakeryEventLimiter::default();
     let pending_site_hashes: Vec<i64> = virtualized_sites
         .iter()
         .filter_map(|(site_hash, state)| {
@@ -5878,12 +5987,17 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 None,
                             );
-                            push_bakery_event(
+                            grouped_events.emit(
+                                format!("runtime_site_prune_dirty|down_snapshot|{summary}"),
                                 "runtime_site_prune_dirty",
                                 "error",
                                 format!(
                                     "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
                                     site_hash, summary
+                                ),
+                                format!(
+                                    "runtime site prune Dirty events due to downlink snapshot failure: {}",
+                                    summary
                                 ),
                             );
                         } else {
@@ -5893,7 +6007,8 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            push_bakery_event(
+                            grouped_events.emit(
+                                format!("runtime_site_prune_retry|down_snapshot|{summary}"),
                                 "runtime_site_prune_retry",
                                 "warning",
                                 format!(
@@ -5903,11 +6018,16 @@ fn flush_deferred_runtime_site_prunes(
                                     site_hash,
                                     summary
                                 ),
+                                format!(
+                                    "runtime site prune retry events due to downlink snapshot failure: {}",
+                                    summary
+                                ),
                             );
                         }
                     }
                 }
             }
+            grouped_events.flush();
             return;
         }
     };
@@ -5932,12 +6052,17 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 None,
                             );
-                            push_bakery_event(
+                            grouped_events.emit(
+                                format!("runtime_site_prune_dirty|up_snapshot|{summary}"),
                                 "runtime_site_prune_dirty",
                                 "error",
                                 format!(
                                     "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
                                     site_hash, summary
+                                ),
+                                format!(
+                                    "runtime site prune Dirty events due to uplink snapshot failure: {}",
+                                    summary
                                 ),
                             );
                         } else {
@@ -5947,7 +6072,8 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            push_bakery_event(
+                            grouped_events.emit(
+                                format!("runtime_site_prune_retry|up_snapshot|{summary}"),
                                 "runtime_site_prune_retry",
                                 "warning",
                                 format!(
@@ -5957,11 +6083,16 @@ fn flush_deferred_runtime_site_prunes(
                                     site_hash,
                                     summary
                                 ),
+                                format!(
+                                    "runtime site prune retry events due to uplink snapshot failure: {}",
+                                    summary
+                                ),
                             );
                         }
                     }
                 }
             }
+            grouped_events.flush();
             return;
         }
     };
@@ -5989,13 +6120,15 @@ fn flush_deferred_runtime_site_prunes(
                         None,
                     );
                 }
-                push_bakery_event(
+                grouped_events.emit(
+                    "runtime_site_prune_completed|completed",
                     "runtime_site_prune_completed",
                     "info",
                     format!(
                         "Deferred runtime site prune completed for site {}.",
                         site_hash
                     ),
+                    "runtime site prune completion events".to_string(),
                 );
                 if !state.hide_site_in_overlay {
                     completed_restore_cleanup.push(site_hash);
@@ -6025,12 +6158,17 @@ fn flush_deferred_runtime_site_prunes(
                             Some(summary.clone()),
                             None,
                         );
-                        push_bakery_event(
+                        grouped_events.emit(
+                            format!("runtime_site_prune_dirty|execute_failed|{summary}"),
                             "runtime_site_prune_dirty",
                             "error",
                             format!(
                                 "Deferred runtime site prune for site {} marked Dirty after {} attempts: {}",
                                 site_hash, operation.attempt_count, summary
+                            ),
+                            format!(
+                                "runtime site prune Dirty events due to execution failure: {}",
+                                summary
                             ),
                         );
                     } else {
@@ -6042,7 +6180,8 @@ fn flush_deferred_runtime_site_prunes(
                             Some(summary.clone()),
                             Some(retry_at),
                         );
-                        push_bakery_event(
+                        grouped_events.emit(
+                            format!("runtime_site_prune_retry|execute_failed|{summary}"),
                             "runtime_site_prune_retry",
                             "warning",
                             format!(
@@ -6052,21 +6191,30 @@ fn flush_deferred_runtime_site_prunes(
                                 site_hash,
                                 summary
                             ),
+                            format!(
+                                "runtime site prune retry events due to execution failure: {}",
+                                summary
+                            ),
                         );
                     }
                 } else {
                     state.next_prune_attempt_unix =
                         now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
-                    push_bakery_event(
+                    grouped_events.emit(
+                        format!("runtime_site_prune_retry|outside_tracking|{summary}"),
                         "runtime_site_prune_retry",
                         "warning",
                         format!(
                             "Deferred runtime site prune for site {} failed outside operation tracking: {}",
                             site_hash, summary
                         ),
+                        format!(
+                            "runtime site prune retry events outside operation tracking: {}",
+                            summary
+                        ),
                     );
                 }
-                warn!(
+                debug!(
                     "Bakery: deferred runtime site prune for {} failed again: {}",
                     site_hash, summary
                 );
@@ -6076,6 +6224,7 @@ fn flush_deferred_runtime_site_prunes(
     for site_hash in completed_restore_cleanup {
         virtualized_sites.remove(&site_hash);
     }
+    grouped_events.flush();
     update_desync_state_from_runtime_operations(runtime_node_operations);
 }
 
@@ -7387,6 +7536,45 @@ mod tests {
     }
 
     #[test]
+    fn non_top_level_virtualization_plan_uses_shadow_minor_unique_within_major_domain() {
+        let parent_site = mk_add_site(10, 0x10003, 0x20003, 0x2002);
+        let target_site = mk_add_site(20, 0x10003, 0x20003, 0x2003);
+        let child_site = mk_add_site(30, 0x12003, 0x22003, 0x2000);
+
+        let mut sites = HashMap::new();
+        sites.insert(10, parent_site);
+        sites.insert(20, Arc::clone(&target_site));
+        sites.insert(30, Arc::clone(&child_site));
+
+        let circuits = HashMap::new();
+
+        let plan =
+            build_non_top_level_virtualization_plan(Arc::clone(&target_site), &sites, &circuits)
+                .expect("non-top-level plan should build");
+
+        let rewritten_child = plan
+            .active_sites
+            .get(&30)
+            .expect("child site should be shadowed");
+        let BakeryCommands::AddSite {
+            parent_class_id,
+            up_parent_class_id,
+            class_minor,
+            ..
+        } = rewritten_child.command.as_ref()
+        else {
+            panic!("expected AddSite");
+        };
+
+        assert_eq!(*parent_class_id, TcHandle::from_u32(0x10003));
+        assert_eq!(*up_parent_class_id, TcHandle::from_u32(0x20003));
+        assert_ne!(
+            *class_minor, 0x2000,
+            "shadow child site minor must not reuse an existing classid in the same major domain"
+        );
+    }
+
+    #[test]
     fn site_runtime_virtualization_rejects_top_level_sites() {
         let site = mk_add_site(99, 0x10000, 0x20000, 0x21);
         let reason = site_runtime_virtualization_eligibility_error(site.as_ref())
@@ -8139,6 +8327,7 @@ mod tests {
 
     #[test]
     fn migration_stage_failure_marks_reload_required_and_stops_migration() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
         clear_reload_required(
             "reset before migration_stage_failure_marks_reload_required_and_stops_migration",
         );
@@ -8195,6 +8384,7 @@ mod tests {
 
     #[test]
     fn migration_stage_success_advances_without_reload_required() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
         clear_reload_required(
             "reset before migration_stage_success_advances_without_reload_required",
         );

@@ -26,8 +26,12 @@ function formatUntil(unixSeconds) {
 
 function statusTone(status) {
     switch (status) {
+        case "Submitted":
+            return "text-primary";
         case "Applying":
             return "text-info";
+        case "Deferred":
+            return "text-warning";
         case "AppliedAwaitingCleanup":
             return "text-warning";
         case "Dirty":
@@ -69,7 +73,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>Bakery Runtime Operations</h5><p>Shows live TreeGuard/Bakery runtime mutations, including active virtualization work, deferred cleanup, failures, and whether incremental topology changes are currently frozen.</p>";
+        return "<h5>Bakery Runtime Operations</h5><p>Shows live TreeGuard/Bakery runtime mutations, including queued requests, active virtualization work, deferred/backed-off operations, deferred cleanup, failures, and whether incremental topology changes are currently frozen.</p>";
     }
 
     subscribeTo() {
@@ -119,6 +123,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
 
     render(status, runtime) {
         const submitted = runtime?.submittedCount || 0;
+        const deferred = runtime?.deferredCount || 0;
         const applying = runtime?.applyingCount || 0;
         const cleanup = runtime?.awaitingCleanupCount || 0;
         const failed = runtime?.failedCount || 0;
@@ -127,7 +132,9 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
 
         this.summaryGrid.innerHTML = "";
         [
+            statCard("Submitted", compactCount(submitted), submitted > 0 ? "text-primary" : "text-body"),
             statCard("Applying", compactCount(applying), applying > 0 ? "text-info" : "text-body"),
+            statCard("Deferred", compactCount(deferred), deferred > 0 ? "text-warning" : "text-body"),
             statCard("Cleanup", compactCount(cleanup), cleanup > 0 ? "text-warning" : "text-body"),
             statCard("Failed", compactCount(failed), failed > 0 ? "text-danger" : "text-body"),
             statCard("Dirty", compactCount(dirty), dirty > 0 ? "text-danger" : "text-body"),
@@ -139,14 +146,11 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
         });
 
         this.badgeWrap.innerHTML = "";
-        if (submitted > 0) {
-            this.badgeWrap.appendChild(mkBadge(`${compactCount(submitted)} Submitted`, "bg-light text-secondary border"));
-        }
         if (status?.reloadRequired) {
             this.badgeWrap.appendChild(
                 mkBadge("Reload Required", "bg-danger-subtle text-danger border border-danger-subtle", status?.reloadRequiredReason || ""),
             );
-        } else if (applying + cleanup + failed + dirty + submitted === 0) {
+        } else if (applying + cleanup + failed + dirty + deferred + submitted === 0) {
             this.badgeWrap.appendChild(mkBadge("Idle", "bg-light text-secondary border"));
         }
 
@@ -177,6 +181,10 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             this.footerEl.textContent = status.reloadRequiredReason;
         } else if (dirty > 0) {
             this.footerEl.textContent = `${compactCount(dirty)} runtime subtree operations are marked dirty.`;
+        } else if (failed > 0) {
+            this.footerEl.textContent = `${compactCount(failed)} runtime operations failed and may need operator attention or a full reload.`;
+        } else if (deferred > 0) {
+            this.footerEl.textContent = `${compactCount(deferred)} runtime operations were deferred and will retry later.`;
         } else if (cleanup > 0) {
             this.footerEl.textContent = `${compactCount(cleanup)} runtime operations are waiting for deferred Bakery cleanup.`;
         } else if (applying > 0 || submitted > 0) {

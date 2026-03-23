@@ -16,8 +16,14 @@ function parseAction(actionRaw) {
     if (verb === "virtualize") {
         return { icon: "fa-compress", tone: "text-warning", title: "Virtualize node", detail: payload || "TreeGuard virtualized a node" };
     }
+    if (verb === "virtualize_requested") {
+        return { icon: "fa-hourglass-half", tone: "text-primary", title: "Queued virtualization", detail: payload || "TreeGuard queued a node virtualization" };
+    }
     if (verb === "unvirtualize") {
         return { icon: "fa-expand", tone: "text-success", title: "Restore node", detail: payload || "TreeGuard restored a node" };
+    }
+    if (verb === "unvirtualize_requested") {
+        return { icon: "fa-hourglass-half", tone: "text-primary", title: "Queued restore", detail: payload || "TreeGuard queued a node restore" };
     }
     if (verb === "reload_success") {
         return { icon: "fa-refresh", tone: "text-success", title: "Reload success", detail: payload || "LibreQoS reload completed" };
@@ -43,6 +49,9 @@ function classifyOutcome(entry) {
     }
     if (action.startsWith("would_")) {
         return { label: "Dry Run", className: "bg-light text-secondary border" };
+    }
+    if (action.endsWith("_requested")) {
+        return { label: "Queued", className: "bg-primary-subtle text-primary border border-primary-subtle" };
     }
     if (action === "reload_skipped") {
         return { label: "Skipped", className: "bg-light text-secondary border" };
@@ -129,7 +138,7 @@ export class TreeGuardDecisionImpactDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>TreeGuard Decision Impact</h5><p>Highlights the latest TreeGuard intent plus its outcome, so operators can see whether the action was applied, is awaiting cleanup, was skipped, or failed.</p>";
+        return "<h5>TreeGuard Decision Impact</h5><p>Highlights the latest TreeGuard intent plus its outcome, so operators can see whether the action was queued, applied, is awaiting cleanup, was skipped, or failed.</p>";
     }
 
     subscribeTo() {
