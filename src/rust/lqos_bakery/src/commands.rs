@@ -1076,10 +1076,11 @@ mod tests {
 
     #[test]
     fn mq_setup_on_a_stick_emits_single_root_delete_before_replace() {
-        let mut cfg = Config::default();
-        cfg.bridge = None;
-        cfg.single_interface = Some(SingleInterfaceConfig::default());
-        let config = Arc::new(cfg);
+        let config = Arc::new(Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig::default()),
+            ..Config::default()
+        });
 
         let commands = BakeryCommands::MqSetup {
             queues_available: 1,

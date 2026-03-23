@@ -54,6 +54,26 @@ fn run_tc_batch(path: &Path, purpose: &str) -> Result<std::process::Output, Stri
         .map_err(|_| format!("Failed to execute tc batch command for {purpose}."))
 }
 
+fn summarize_tc_batch_failure(output: &std::process::Output) -> Option<String> {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+
+    if output.status.success() {
+        return (!stderr.is_empty()).then(|| stderr.to_string());
+    }
+
+    let status_summary = match output.status.code() {
+        Some(code) => format!("tc batch exited with status {code}"),
+        None => "tc batch terminated by signal".to_string(),
+    };
+
+    if stderr.is_empty() {
+        Some(status_summary)
+    } else {
+        Some(format!("{status_summary}: {stderr}"))
+    }
+}
+
 pub(crate) fn read_memory_snapshot() -> Result<MemorySnapshot, String> {
     let raw = std::fs::read_to_string("/proc/meminfo")
         .map_err(|e| format!("Failed to read /proc/meminfo: {e}"))?;
@@ -348,13 +368,12 @@ where
             error!("Command output for ({purpose}): {:?}", output_str.trim());
         }
 
-        let error_str = String::from_utf8_lossy(&output.stderr);
-        if !error_str.is_empty() {
+        if let Some(failure_summary) = summarize_tc_batch_failure(&output) {
             let numbered = format_numbered_lines(&lines, global_line_start);
             let chunk_line_end = global_line_start + chunk.len().saturating_sub(1);
             let detailed = format!(
                 "Command error for ({purpose}): {}\nFailed chunk {}/{} (global lines {}-{})\nFull batch: {}\nChunk batch: {}\nChunk commands with global line numbers:\n{}",
-                error_str.trim(),
+                failure_summary,
                 completed_chunks + 1,
                 total_chunks,
                 global_line_start,
@@ -388,7 +407,7 @@ where
             return ExecuteResult {
                 ok: false,
                 duration_ms: started.elapsed().as_millis() as u64,
-                failure_summary: Some(error_str.trim().to_string()),
+                failure_summary: Some(failure_summary),
             };
         }
 
@@ -483,6 +502,15 @@ pub(crate) fn write_command_file(path: &Path, commands: &[Vec<String>]) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    fn mock_tc_output(status: i32, stdout: &str, stderr: &str) -> std::process::Output {
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(status << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
 
     #[test]
     fn parse_live_qdisc_handle_majors_collects_non_zero_handles() {
@@ -553,5 +581,26 @@ MemFree:         1024000 kB
 ";
         let err = parse_memory_snapshot(raw).expect_err("memavailable should be required");
         assert!(err.contains("MemAvailable"));
+    }
+
+    #[test]
+    fn summarize_tc_batch_failure_rejects_nonzero_exit_without_stderr() {
+        let output = mock_tc_output(1, "", "");
+        let summary = summarize_tc_batch_failure(&output).expect("nonzero exit should fail");
+        assert!(summary.contains("status 1"));
+    }
+
+    #[test]
+    fn summarize_tc_batch_failure_includes_stderr_with_exit_status() {
+        let output = mock_tc_output(2, "", "RTNETLINK answers: Invalid argument\n");
+        let summary = summarize_tc_batch_failure(&output).expect("stderr failure should be kept");
+        assert!(summary.contains("status 2"));
+        assert!(summary.contains("Invalid argument"));
+    }
+
+    #[test]
+    fn summarize_tc_batch_failure_accepts_clean_success() {
+        let output = mock_tc_output(0, "", "");
+        assert!(summarize_tc_batch_failure(&output).is_none());
     }
 }

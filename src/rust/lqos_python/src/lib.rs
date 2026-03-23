@@ -127,6 +127,7 @@ fn get_bool(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: bool) 
         hysteresis_threshold=None
     )
 )]
+#[allow(clippy::too_many_arguments)]
 fn plan_top_level_cpu_bins(
     py: Python,
     items: PyObject,

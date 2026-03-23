@@ -2805,6 +2805,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Once;
 
+    #[allow(clippy::too_many_arguments)]
     fn pending_link_decision(
         node_name: &str,
         node_index: usize,
@@ -2846,8 +2847,8 @@ mod tests {
 
         assert!(paused);
         assert_eq!(tick_seconds, 5);
-        assert_eq!(status.enabled, true);
-        assert_eq!(status.dry_run, false);
+        assert!(status.enabled);
+        assert!(!status.dry_run);
         assert_eq!(
             status.last_action_summary.as_deref(),
             Some("Paused while Bakery full reload in progress")
@@ -3288,8 +3289,10 @@ mod tests {
         state.down.idle_since_unix = Some(0);
         state.up.idle_since_unix = Some(0);
 
-        let mut circuits_cfg = lqos_config::TreeguardCircuitsConfig::default();
-        circuits_cfg.persist_sqm_overrides = false;
+        let circuits_cfg = lqos_config::TreeguardCircuitsConfig {
+            persist_sqm_overrides: false,
+            ..lqos_config::TreeguardCircuitsConfig::default()
+        };
         let mut circuit_change_budget_remaining = 1usize;
         let mut deferred_circuit_sqm_changes = 0usize;
 
@@ -3593,8 +3596,8 @@ mod tests {
             .join()
             .expect("system stats responder should join");
 
-        assert_eq!(status.enabled, true);
-        assert_eq!(status.dry_run, false);
+        assert!(status.enabled);
+        assert!(!status.dry_run);
         assert_eq!(status.managed_circuits, 1);
         assert_eq!(status.fq_codel_circuits, 1);
         assert_eq!(

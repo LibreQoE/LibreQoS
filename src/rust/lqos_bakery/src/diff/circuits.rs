@@ -172,6 +172,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    #[allow(clippy::too_many_arguments)]
     fn add_circuit(
         circuit_hash: i64,
         parent_class_id: u32,

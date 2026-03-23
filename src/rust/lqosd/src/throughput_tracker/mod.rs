@@ -1358,6 +1358,7 @@ mod compatibility_tests {
     use super::Lts2Circuit;
     use serde::Deserialize;
 
+    #[allow(dead_code)]
     #[derive(Debug, Deserialize)]
     struct OldLts2Device {
         device_id: String,
@@ -1369,6 +1370,7 @@ mod compatibility_tests {
         comment: String,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Deserialize)]
     struct OldLts2Circuit {
         circuit_id: String,

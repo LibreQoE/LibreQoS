@@ -16,20 +16,15 @@ pub struct TopLevelPlannerItem {
 }
 
 /// Supported planner strategies.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TopLevelPlannerMode {
     /// Deterministic round-robin assignment by item id.
     RoundRobin,
     /// Deterministic greedy balancing with no hysteresis or cooldown.
     Greedy,
     /// Greedy balancing that prefers to keep prior assignments unless a move is worthwhile.
+    #[default]
     StableGreedy,
-}
-
-impl Default for TopLevelPlannerMode {
-    fn default() -> Self {
-        Self::StableGreedy
-    }
 }
 
 /// Tunables for top-level queue planning.
