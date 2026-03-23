@@ -4008,6 +4008,7 @@ fn collect_direct_circuit_hashes(
 struct PlannedSiteUpdate {
     queue: u32,
     parent_site: Option<i64>,
+    stage_depth: usize,
     command: Arc<BakeryCommands>,
 }
 
@@ -4024,6 +4025,7 @@ struct TopLevelVirtualizationPlan {
     saved_circuits: HashMap<i64, Arc<BakeryCommands>>,
     active_sites: HashMap<i64, PlannedSiteUpdate>,
     active_circuits: HashMap<i64, PlannedCircuitUpdate>,
+    site_stages: Vec<Vec<i64>>,
 }
 
 fn site_hash_from_command(site: &BakeryCommands) -> Option<i64> {
@@ -4935,6 +4937,7 @@ fn build_top_level_virtualization_plan(
             PlannedSiteUpdate {
                 queue: identity_entry.queue,
                 parent_site: future_parent_by_site.get(site_hash).copied().flatten(),
+                stage_depth: 0,
                 command: Arc::new(BakeryCommands::AddSite {
                     site_hash: *site_hash,
                     parent_class_id: parent_handles.0,
@@ -5046,6 +5049,7 @@ fn build_top_level_virtualization_plan(
         saved_circuits,
         active_sites,
         active_circuits,
+        site_stages: vec![planner_site_hashes],
     })
 }
 
@@ -5105,14 +5109,17 @@ fn build_non_top_level_virtualization_plan(
     ordered_sites.sort_by_key(|hash| (site_descendant_depth(*hash, &site_parents), *hash));
 
     let mut active_sites = HashMap::new();
+    let mut stage_depth_by_site: HashMap<i64, usize> = HashMap::new();
     let mut shadow_handles_by_site: HashMap<i64, (TcHandle, TcHandle)> = HashMap::new();
     for child_hash in &ordered_sites {
         let Some(child_site) = sites.get(child_hash).cloned() else {
             continue;
         };
         let parent_hash = site_parents.get(child_hash).copied().flatten();
-        let (new_parent_down, new_parent_up, planner_parent_site) = match parent_hash {
-            Some(parent) if parent == site_hash => (*parent_class_id, *up_parent_class_id, None),
+        let (new_parent_down, new_parent_up, planner_parent_site, stage_depth) = match parent_hash {
+            Some(parent) if parent == site_hash => {
+                (*parent_class_id, *up_parent_class_id, None, 0usize)
+            }
             Some(parent) => {
                 let Some(handles) = shadow_handles_by_site.get(&parent).copied() else {
                     return Err(format!(
@@ -5120,9 +5127,15 @@ fn build_non_top_level_virtualization_plan(
                         child_hash
                     ));
                 };
-                (handles.0, handles.1, Some(parent))
+                let parent_depth = stage_depth_by_site.get(&parent).copied().ok_or_else(|| {
+                    format!(
+                        "Missing shadow stage depth while planning runtime virtualization for child site {}",
+                        child_hash
+                    )
+                })?;
+                (handles.0, handles.1, Some(parent), parent_depth + 1)
             }
-            None => (*parent_class_id, *up_parent_class_id, None),
+            None => (*parent_class_id, *up_parent_class_id, None, 0usize),
         };
         let Some(shadow_minor) = find_free_site_shadow_minor(
             sites,
@@ -5148,15 +5161,38 @@ fn build_non_top_level_virtualization_plan(
                 child_hash
             ));
         };
+        stage_depth_by_site.insert(*child_hash, stage_depth);
         shadow_handles_by_site.insert(*child_hash, shadow_handles);
         active_sites.insert(
             *child_hash,
             PlannedSiteUpdate {
                 queue: current_site_queue(shadow_site.as_ref()).unwrap_or(1),
                 parent_site: planner_parent_site,
+                stage_depth,
                 command: shadow_site,
             },
         );
+    }
+
+    let mut site_stages_map: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+    for (site_hash, update) in &active_sites {
+        site_stages_map
+            .entry(update.stage_depth)
+            .or_default()
+            .push(*site_hash);
+    }
+    let mut site_stages: Vec<Vec<i64>> = site_stages_map
+        .into_iter()
+        .map(|(_, mut hashes)| {
+            hashes.sort_by_key(|hash| {
+                let update = active_sites.get(hash).expect("planned site update");
+                (update.queue, update.parent_site.unwrap_or_default(), *hash)
+            });
+            hashes
+        })
+        .collect();
+    if site_stages.is_empty() && !active_sites.is_empty() {
+        site_stages.push(active_sites.keys().copied().collect());
     }
 
     let mut active_circuits = HashMap::new();
@@ -5217,6 +5253,7 @@ fn build_non_top_level_virtualization_plan(
         saved_circuits,
         active_sites,
         active_circuits,
+        site_stages,
     })
 }
 
@@ -5323,33 +5360,99 @@ fn apply_site_command_updates(
     updates: &HashMap<i64, PlannedSiteUpdate>,
     action_label: &str,
 ) -> Result<(), String> {
+    let mut single_stage: Vec<i64> = updates.keys().copied().collect();
+    single_stage.sort_unstable();
+    apply_site_command_update_stages(config, sites, updates, &[single_stage], action_label, false)
+}
+
+fn apply_site_command_update_stages(
+    config: &Arc<Config>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    updates: &HashMap<i64, PlannedSiteUpdate>,
+    site_stages: &[Vec<i64>],
+    action_label: &str,
+    verify_each_stage: bool,
+) -> Result<(), String> {
     if updates.is_empty() {
         return Ok(());
     }
-    let mut ordered: Vec<_> = updates.iter().collect();
-    ordered.sort_by_key(|(_, update)| {
-        (
-            update.parent_site.is_some(),
-            update.queue,
-            update.parent_site.unwrap_or_default(),
-            site_hash_from_command(update.command.as_ref()).unwrap_or_default(),
-        )
-    });
-    let mut commands = Vec::new();
-    for (_, update) in &ordered {
-        if let Some(cmds) = update.command.to_commands(config, ExecutionMode::Builder) {
-            commands.extend(cmds);
+
+    let mut remaining: BTreeSet<i64> = updates.keys().copied().collect();
+    let mut effective_stages: Vec<Vec<i64>> = site_stages
+        .iter()
+        .filter_map(|stage| {
+            let filtered: Vec<i64> = stage
+                .iter()
+                .copied()
+                .filter(|site_hash| updates.contains_key(site_hash))
+                .collect();
+            (!filtered.is_empty()).then_some(filtered)
+        })
+        .collect();
+    if effective_stages.is_empty() {
+        effective_stages.push(remaining.iter().copied().collect());
+    }
+
+    for (stage_index, stage_hashes) in effective_stages.iter().enumerate() {
+        let mut ordered: Vec<_> = stage_hashes
+            .iter()
+            .filter_map(|site_hash| updates.get(site_hash).map(|update| (site_hash, update)))
+            .collect();
+        ordered.sort_by_key(|(site_hash, update)| {
+            (
+                update.parent_site.is_some(),
+                update.queue,
+                update.parent_site.unwrap_or_default(),
+                **site_hash,
+            )
+        });
+
+        let mut commands = Vec::new();
+        for (_, update) in &ordered {
+            if let Some(cmds) = update.command.to_commands(config, ExecutionMode::Builder) {
+                commands.extend(cmds);
+            }
+        }
+
+        let stage_label = if verify_each_stage {
+            format!("{action_label} [stage {}]", stage_index + 1)
+        } else {
+            action_label.to_string()
+        };
+
+        if !commands.is_empty() {
+            let result = execute_and_record_live_change(&commands, &stage_label);
+            if !result.ok {
+                return Err(summarize_apply_result(&stage_label, &result));
+            }
+        }
+
+        let mut stage_updates = HashMap::new();
+        for (site_hash, update) in ordered {
+            remaining.remove(site_hash);
+            if verify_each_stage {
+                stage_updates.insert(*site_hash, update.clone());
+            }
+            sites.insert(*site_hash, Arc::clone(&update.command));
+        }
+
+        if verify_each_stage && !stage_updates.is_empty() {
+            verify_site_updates_live(config, &stage_updates)?;
         }
     }
-    if !commands.is_empty() {
-        let result = execute_and_record_live_change(&commands, action_label);
-        if !result.ok {
-            return Err(summarize_apply_result(action_label, &result));
-        }
+
+    if !remaining.is_empty() {
+        let fallback_stage: Vec<i64> = remaining.into_iter().collect();
+        apply_site_command_update_stages(
+            config,
+            sites,
+            updates,
+            &[fallback_stage],
+            action_label,
+            verify_each_stage,
+        )?;
     }
-    for (site_hash, update) in ordered {
-        sites.insert(*site_hash, Arc::clone(&update.command));
-    }
+
     Ok(())
 }
 
@@ -6411,13 +6514,14 @@ fn handle_treeguard_set_node_virtual_live(
 
             let plan =
                 build_non_top_level_virtualization_plan(Arc::clone(&target_site), sites, circuits)?;
-            apply_site_command_updates(
+            apply_site_command_update_stages(
                 &config,
                 sites,
                 &plan.active_sites,
+                &plan.site_stages,
                 "TreeGuard runtime child-site shadow create",
+                true,
             )?;
-            verify_site_updates_live(&config, &plan.active_sites)?;
             apply_circuit_command_updates(
                 &config,
                 circuits,
@@ -6495,6 +6599,7 @@ fn handle_treeguard_set_node_virtual_live(
                     PlannedSiteUpdate {
                         queue: current_site_queue(command.as_ref()).unwrap_or(1),
                         parent_site: None,
+                        stage_depth: 0,
                         command: Arc::clone(command),
                     },
                 )
@@ -7533,6 +7638,7 @@ mod tests {
         };
         assert_eq!(parent_class_id.get_major_minor().1, 0);
         assert_eq!(up_parent_class_id.get_major_minor().1, 0);
+        assert_eq!(plan.site_stages.len(), 1);
     }
 
     #[test]
@@ -7571,6 +7677,40 @@ mod tests {
         assert_ne!(
             *class_minor, 0x2000,
             "shadow child site minor must not reuse an existing classid in the same major domain"
+        );
+        assert_eq!(plan.site_stages, vec![vec![30]]);
+    }
+
+    #[test]
+    fn non_top_level_virtualization_plan_stages_shadow_sites_by_depth() {
+        let parent_site = mk_add_site(10, 0x10003, 0x20003, 0x2002);
+        let target_site = mk_add_site(20, 0x10003, 0x20003, 0x2003);
+        let child_site = mk_add_site(30, 0x12003, 0x22003, 0x2000);
+        let grandchild_site = mk_add_site(40, 0x12000, 0x22000, 0x2001);
+
+        let mut sites = HashMap::new();
+        sites.insert(10, parent_site);
+        sites.insert(20, Arc::clone(&target_site));
+        sites.insert(30, Arc::clone(&child_site));
+        sites.insert(40, Arc::clone(&grandchild_site));
+
+        let circuits = HashMap::new();
+
+        let plan =
+            build_non_top_level_virtualization_plan(Arc::clone(&target_site), &sites, &circuits)
+                .expect("non-top-level plan should build");
+
+        assert_eq!(plan.site_stages, vec![vec![30], vec![40]]);
+        assert_eq!(
+            plan.active_sites.get(&30).expect("child site").stage_depth,
+            0
+        );
+        assert_eq!(
+            plan.active_sites
+                .get(&40)
+                .expect("grandchild site")
+                .stage_depth,
+            1
         );
     }
 
