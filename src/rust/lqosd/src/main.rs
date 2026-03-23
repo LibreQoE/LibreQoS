@@ -38,7 +38,10 @@ use crate::{
     throughput_tracker::flow_data::{FlowActor, flowbee_handle_events, setup_netflow_tracker},
 };
 use anyhow::Result;
-use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
+use lqos_bus::{
+    BusRequest, BusResponse, InsightLicenseSummary, TreeGuardRuntimeNodeOperationSnapshot,
+    UnixSocketServer,
+};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
@@ -769,6 +772,62 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 );
                 BusResponse::Ack
             },
+            BusRequest::TreeGuardSetNodeVirtual {
+                node_name,
+                virtualized,
+            } => match crate::treeguard::bakery::submit_node_virtualization_live(
+                node_name,
+                *virtualized,
+            ) {
+                Ok(()) => BusResponse::Ack,
+                Err(err) => BusResponse::Fail(err.to_string()),
+            },
+            BusRequest::TreeGuardGetNodeVirtualStatus { node_name } => {
+                let snapshot = crate::treeguard::bakery::node_virtualization_operation_status(
+                    node_name,
+                )
+                .map(|snapshot| TreeGuardRuntimeNodeOperationSnapshot {
+                    operation_id: snapshot.operation_id,
+                    site_hash: snapshot.site_hash,
+                    action: match snapshot.action {
+                        lqos_bakery::BakeryRuntimeNodeOperationAction::Virtualize => {
+                            "virtualize".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationAction::Restore => {
+                            "restore".to_string()
+                        }
+                    },
+                    status: match snapshot.status {
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Submitted => {
+                            "submitted".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Deferred => {
+                            "deferred".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Applying => {
+                            "applying".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup => {
+                            "applied_awaiting_cleanup".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Completed => {
+                            "completed".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Failed => {
+                            "failed".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Dirty => {
+                            "dirty".to_string()
+                        }
+                    },
+                    attempt_count: snapshot.attempt_count,
+                    submitted_at_unix: snapshot.submitted_at_unix,
+                    updated_at_unix: snapshot.updated_at_unix,
+                    next_retry_at_unix: snapshot.next_retry_at_unix,
+                    last_error: snapshot.last_error,
+                });
+                BusResponse::TreeGuardRuntimeNodeOperation(snapshot)
+            }
             BusRequest::ApiReady => {
                 tool_status::api_seen();
                 BusResponse::Ack

@@ -29,7 +29,8 @@ pub use bus::response::{
     CircuitHeatmapData, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader, FlowMapPoint,
     FlowTimelineEntry, InsightLicenseSummary, NodeCapacity, ProtocolListEntry, QueueStatsTotal,
     RetransmitSummary, SchedulerDetails, SearchResultEntry, SiteHeatmapData,
-    StormguardDebugDirection, StormguardDebugEntry, UrgentIssue, WarningLevel,
+    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeOperationSnapshot,
+    UrgentIssue, WarningLevel,
 };
 pub use bus::{
     BUS_SOCKET_PATH, BakeryCapacityReportInterface, BlackboardSystem, BusClientError, BusReply,

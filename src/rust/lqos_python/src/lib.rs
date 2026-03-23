@@ -982,6 +982,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(xdp_ip_mapping_capacity, m)?)?;
     m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
+    m.add_function(wrap_pyfunction!(treeguard_set_node_virtual_live, m)?)?;
+    m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_status, m)?)?;
     m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
     // Planner remote fetch/store for Insight integration
     m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;
@@ -3122,6 +3124,58 @@ fn log_info(_py: Python, message: String) -> PyResult<bool> {
         }
     }
     Ok(false)
+}
+
+/// Submit a live Bakery runtime node virtualization or restore intent for a named node.
+#[pyfunction]
+fn treeguard_set_node_virtual_live(
+    _py: Python,
+    node_name: String,
+    virtualized: bool,
+) -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::TreeGuardSetNodeVirtual {
+        node_name,
+        virtualized,
+    }]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Fetch the latest Bakery runtime node-operation snapshot for a named node, if any.
+#[pyfunction]
+fn treeguard_get_node_virtual_status(
+    py: Python,
+    node_name: String,
+) -> PyResult<Option<Py<PyDict>>> {
+    let Ok(reply) = run_query(vec![BusRequest::TreeGuardGetNodeVirtualStatus {
+        node_name,
+    }]) else {
+        return Ok(None);
+    };
+    for resp in reply {
+        if let BusResponse::TreeGuardRuntimeNodeOperation(snapshot) = resp {
+            let Some(snapshot) = snapshot else {
+                return Ok(None);
+            };
+            let d = PyDict::new(py);
+            d.set_item("operation_id", snapshot.operation_id)?;
+            d.set_item("site_hash", snapshot.site_hash)?;
+            d.set_item("action", snapshot.action)?;
+            d.set_item("status", snapshot.status)?;
+            d.set_item("attempt_count", snapshot.attempt_count)?;
+            d.set_item("submitted_at_unix", snapshot.submitted_at_unix)?;
+            d.set_item("updated_at_unix", snapshot.updated_at_unix)?;
+            d.set_item("next_retry_at_unix", snapshot.next_retry_at_unix)?;
+            d.set_item("last_error", snapshot.last_error)?;
+            return Ok(Some(d.unbind()));
+        }
+    }
+    Ok(None)
 }
 
 #[pyfunction]

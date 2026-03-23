@@ -402,6 +402,26 @@ pub enum BusRequest {
         interfaces: Vec<BakeryCapacityReportInterface>,
     },
 
+    /// Request a live Bakery runtime node virtualization or restore for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need a deterministic
+    /// runtime node operation without waiting for TreeGuard policy to fire.
+    TreeGuardSetNodeVirtual {
+        /// Exact node name from `network.json`.
+        node_name: String,
+        /// `true` to runtime-virtualize, `false` to restore.
+        virtualized: bool,
+    },
+
+    /// Request the latest Bakery runtime node-operation snapshot for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need to observe whether
+    /// a runtime node operation was deferred, is still applying, or failed after acceptance.
+    TreeGuardGetNodeVirtualStatus {
+        /// Exact node name from `network.json`.
+        node_name: String,
+    },
+
     /// Announce that the API is ready
     ApiReady,
 

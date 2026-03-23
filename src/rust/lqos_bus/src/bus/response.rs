@@ -48,6 +48,29 @@ pub struct BakeryStatsSnapshot {
     pub active_circuits: u64,
 }
 
+/// Serializable snapshot of a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct TreeGuardRuntimeNodeOperationSnapshot {
+    /// Monotonic Bakery-local operation identifier.
+    pub operation_id: u64,
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Requested runtime action (`virtualize` or `restore`).
+    pub action: String,
+    /// Current operation status.
+    pub status: String,
+    /// Number of retry/apply attempts performed so far.
+    pub attempt_count: u32,
+    /// Unix timestamp when the operation was submitted.
+    pub submitted_at_unix: u64,
+    /// Unix timestamp when the operation last changed state.
+    pub updated_at_unix: u64,
+    /// Optional unix timestamp for the next retry, if waiting.
+    pub next_retry_at_unix: Option<u64>,
+    /// Last error observed by Bakery for this operation, if any.
+    pub last_error: Option<String>,
+}
+
 /// Circuit-level TemporalHeatmap data for the executive summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct CircuitHeatmapData {
@@ -633,4 +656,7 @@ pub enum BusResponse {
 
     /// Insight license summary (licensed + optional max circuits).
     InsightLicenseSummary(InsightLicenseSummary),
+
+    /// Latest Bakery runtime node-operation snapshot for a named TreeGuard node, if any.
+    TreeGuardRuntimeNodeOperation(Option<TreeGuardRuntimeNodeOperationSnapshot>),
 }
