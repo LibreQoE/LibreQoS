@@ -18,7 +18,8 @@ Manual steps (run in two terminals)
        sudo systemctl stop lqosd lqos_scheduler lqos_api
 2) In another terminal from this directory (LibreQoS/src), run the tests:
      python3 bakery_integration_test.py --log-file /tmp/lqosd.log
-   - You can limit scope with --tiered-only, --flat-only, or --treeguard-only.
+   - The default run is the quicker tiered suite.
+   - Use --full-suite for the whole harness, or --flat-only/--treeguard-only/etc. for a focused run.
 
 What this script does
 - Backs up `network.json` and `ShapedDevices.csv` in the current directory.
@@ -30,10 +31,14 @@ Notes
 - The first commit after (re)starting lqosd will do a full reload (MQ init). The
   test allows that and asserts the subsequent expected behaviors.
 - Flat networks do not have explicit sites, so site add/remove checks are skipped there.
+- Newer Bakery builds log incremental completion as `Bakery mapped circuit decision (...)`
+  rather than only the older `Bakery changes: ...` line. This harness accepts both.
 
 Usage examples
-- Tiered + Flat (default):
+- Quick default run (tiered only):
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log
+- Full suite:
+    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --full-suite
 - Tiered only:
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log --tiered-only
 - TreeGuard runtime suite only:
@@ -124,6 +129,9 @@ MQ_INIT_PAT = re.compile(r"MQ not created, performing full reload\.")
 CHANGES_PAT = re.compile(
     r"Bakery changes: sites_speed=(\d+), circuits_added=(\d+), removed=(\d+), speed=(\d+), ip=(\d+)"
 )
+MAPPED_DECISION_PAT = re.compile(
+    r"Bakery mapped circuit decision \(([^)]+)\): requested=(\d+), allowed=(\d+), dropped=(\d+),"
+)
 NO_CHANGES_PAT = re.compile(r"No changes detected in batch, skipping processing\.")
 
 
@@ -132,6 +140,7 @@ class LogResult:
     full_reload: bool
     mq_init: bool
     changes: Optional[Dict[str, int]]
+    incremental_event: Optional[str]
     raw_lines: List[str]
 
 
@@ -163,6 +172,7 @@ class LogReader:
         full_reload = False
         mq_init = False
         changes: Optional[Dict[str, int]] = None
+        incremental_event: Optional[str] = None
         printed_sleep_note = False
 
         while time.time() < deadline:
@@ -187,6 +197,16 @@ class LogReader:
                             "speed": int(m.group(4)),
                             "ip": int(m.group(5)),
                         }
+                    mapped = MAPPED_DECISION_PAT.search(ln)
+                    if mapped:
+                        incremental_event = mapped.group(1)
+                        changes = {
+                            "requested": int(mapped.group(2)),
+                            "allowed": int(mapped.group(3)),
+                            "dropped": int(mapped.group(4)),
+                        }
+                        if "full reload" in incremental_event.lower():
+                            full_reload = True
                 # Heuristic: stop when we saw an outcome (changes or full reload or no changes)
                 if changes or full_reload or any(NO_CHANGES_PAT.search(x) for x in new_lines):
                     break
@@ -196,7 +216,13 @@ class LogReader:
                 printed_sleep_note = True
             time.sleep(0.4)
 
-        return LogResult(full_reload=full_reload, mq_init=mq_init, changes=changes, raw_lines=collected)
+        return LogResult(
+            full_reload=full_reload,
+            mq_init=mq_init,
+            changes=changes,
+            incremental_event=incremental_event,
+            raw_lines=collected,
+        )
 
 
 # -----------------------
@@ -2558,7 +2584,7 @@ def run_flat_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool
 def main() -> int:
     ap = argparse.ArgumentParser(description="LibreQoS/Bakery integration tests")
     ap.add_argument("--log-file", required=True, help="Path to lqosd log file (stdout/tee capture)")
-    ap.add_argument("--timeout", type=float, default=25.0, help="Wait time per step (seconds)")
+    ap.add_argument("--timeout", type=float, default=8.0, help="Wait time per step (seconds)")
     ap.add_argument(
         "--treeguard-timeout",
         type=float,
@@ -2566,6 +2592,7 @@ def main() -> int:
         help="Max wait time for TreeGuard runtime virtualization in the dedicated TreeGuard suite",
     )
     g = ap.add_mutually_exclusive_group()
+    g.add_argument("--full-suite", action="store_true", help="Run the full harness (slower)")
     g.add_argument("--tiered-only", action="store_true", help="Run tiered cases only")
     g.add_argument("--flat-only", action="store_true", help="Run flat cases only")
     g.add_argument("--realistic-only", action="store_true", help="Run realistic tiered cases only")
@@ -2612,7 +2639,7 @@ def main() -> int:
                 log, args.timeout, args.treeguard_timeout, results
             )
             overall_ok &= ok
-        else:
+        elif args.full_suite:
             ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
 
@@ -2623,6 +2650,9 @@ def main() -> int:
             overall_ok &= ok
 
             ok = run_realistic_tiered_suite(log, args.timeout, results)
+            overall_ok &= ok
+        else:
+            ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
 
     print("Results:")
