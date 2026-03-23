@@ -16,6 +16,7 @@ use crate::treeguard::state::{
 use crate::treeguard::{bakery, decisions, overrides};
 use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
+use lqos_bakery::BakeryRuntimeNodeOperationStatus;
 use lqos_config::load_config;
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_utils::hash_to_i64;
@@ -35,10 +36,17 @@ static TREEGUARD_RUNTIME_VIRTUALIZED_NODES: OnceLock<RwLock<FxHashSet<String>>> 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
 const TOP_LEVEL_SAFE_SUSTAIN_MINUTES: u32 = 15;
+const TREEGUARD_LINK_CHANGE_BUDGET_PER_TICK: usize = 4;
 const TREEGUARD_CIRCUIT_CHANGE_BUDGET_PER_TICK: usize = 512;
 const TREEGUARD_CIRCUIT_TARGET_SWEEP_SECONDS: usize = 15;
 const TREEGUARD_CIRCUIT_MIN_BATCH_SIZE: usize = 128;
 const TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS: u64 = 15 * 60;
+const TREEGUARD_LINK_VIRTUALIZATION_DEFERRED_BACKOFF_SECONDS: u64 = 60;
+const TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES: usize = 8;
+const TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES_LOW_THROUGHPUT: usize = 16;
+const TREEGUARD_LOW_VALUE_THROUGHPUT_MBPS: f64 = 1.0;
+const TREEGUARD_MAX_AUTO_VIRTUALIZED_NODES: usize = 64;
+const TREEGUARD_TOP_LEVEL_VIRTUALIZATION_VALUE_BONUS: u64 = 1_000_000_000;
 
 /// A message sent to the TreeGuard actor.
 #[derive(Debug)]
@@ -229,12 +237,19 @@ struct TreeguardRuntimeState {
     circuit_inventory: CircuitInventory,
     circuit_batch_cursor: usize,
     runtime_virtualized_nodes: FxHashSet<String>,
+    pending_link_operations: FxHashMap<String, PendingLinkOperation>,
     link_virtualization_backoff_until_unix: FxHashMap<String, u64>,
     managed_nodes: FxHashSet<String>,
     managed_device_ids: FxHashSet<String>,
     duplicate_device_conflict_circuits: FxHashSet<String>,
     last_dry_run: Option<bool>,
     paused_for_bakery_reload: bool,
+}
+
+#[derive(Clone, Debug)]
+struct PendingLinkOperation {
+    target: LinkVirtualState,
+    reason: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -255,6 +270,152 @@ struct CircuitInventory {
     circuit_ids: Vec<String>,
     entries: FxHashMap<String, CircuitInventoryEntry>,
     all_device_ids: FxHashSet<String>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingLinkVirtualizationDecision {
+    node_name: String,
+    node_index: usize,
+    target: LinkVirtualState,
+    reason: String,
+    subtree_nodes: usize,
+    current_subtree_throughput_mbps: f64,
+    explicit_allowlist: bool,
+    is_top_level: bool,
+    value_score: u64,
+}
+
+fn build_subtree_node_counts(parent_by_index: &[Option<usize>]) -> Vec<usize> {
+    fn dfs(index: usize, children: &[Vec<usize>], memo: &mut [usize]) -> usize {
+        if memo[index] != 0 {
+            return memo[index];
+        }
+        let total = 1usize
+            + children[index]
+                .iter()
+                .map(|child| dfs(*child, children, memo))
+                .sum::<usize>();
+        memo[index] = total;
+        total
+    }
+
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); parent_by_index.len()];
+    for (index, parent) in parent_by_index.iter().enumerate() {
+        if let Some(parent) = *parent
+            && parent < children.len()
+        {
+            children[parent].push(index);
+        }
+    }
+
+    let mut memo = vec![0usize; parent_by_index.len()];
+    for index in 0..parent_by_index.len() {
+        let _ = dfs(index, &children, &mut memo);
+    }
+    memo
+}
+
+fn link_virtualization_value_score(
+    is_top_level: bool,
+    subtree_nodes: usize,
+    cap_down_mbps: f64,
+    cap_up_mbps: f64,
+) -> u64 {
+    let top_level_bonus = if is_top_level {
+        TREEGUARD_TOP_LEVEL_VIRTUALIZATION_VALUE_BONUS
+    } else {
+        0
+    };
+    let subtree_score = subtree_nodes as u64 * 1_000_000;
+    let capacity_score = ((cap_down_mbps.max(0.0) + cap_up_mbps.max(0.0)) * 100.0) as u64;
+    top_level_bonus
+        .saturating_add(subtree_score)
+        .saturating_add(capacity_score)
+}
+
+fn has_ancestor_in_set(
+    node_index: usize,
+    parent_by_index: &[Option<usize>],
+    selected_ancestors: &FxHashSet<usize>,
+) -> bool {
+    let mut current = parent_by_index.get(node_index).copied().flatten();
+    while let Some(parent) = current {
+        if selected_ancestors.contains(&parent) {
+            return true;
+        }
+        current = parent_by_index.get(parent).copied().flatten();
+    }
+    false
+}
+
+fn select_link_virtualization_candidates(
+    mut candidates: Vec<PendingLinkVirtualizationDecision>,
+    parent_by_index: &[Option<usize>],
+    existing_virtualized_indices: &FxHashSet<usize>,
+    current_virtualized_nodes: usize,
+) -> (Vec<PendingLinkVirtualizationDecision>, usize, usize) {
+    candidates.sort_by(|left, right| {
+        let left_restore = matches!(left.target, LinkVirtualState::Physical);
+        let right_restore = matches!(right.target, LinkVirtualState::Physical);
+        right_restore
+            .cmp(&left_restore)
+            .then_with(|| right.value_score.cmp(&left.value_score))
+            .then_with(|| right.subtree_nodes.cmp(&left.subtree_nodes))
+            .then_with(|| left.node_name.cmp(&right.node_name))
+    });
+
+    let mut selected = Vec::new();
+    let mut deferred = 0usize;
+    let mut skipped_low_value = 0usize;
+    let mut selected_virtualized_indices: FxHashSet<usize> = FxHashSet::default();
+    let mut virtualized_nodes_total = current_virtualized_nodes;
+
+    for candidate in candidates {
+        if selected.len() >= TREEGUARD_LINK_CHANGE_BUDGET_PER_TICK {
+            deferred += 1;
+            continue;
+        }
+
+        if matches!(candidate.target, LinkVirtualState::Virtual) {
+            if has_ancestor_in_set(
+                candidate.node_index,
+                parent_by_index,
+                existing_virtualized_indices,
+            ) || has_ancestor_in_set(
+                candidate.node_index,
+                parent_by_index,
+                &selected_virtualized_indices,
+            ) {
+                deferred += 1;
+                continue;
+            }
+
+            if !candidate.explicit_allowlist {
+                let required_subtree_nodes = if candidate.current_subtree_throughput_mbps
+                    < TREEGUARD_LOW_VALUE_THROUGHPUT_MBPS
+                {
+                    TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES_LOW_THROUGHPUT
+                } else {
+                    TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES
+                };
+                if !candidate.is_top_level && candidate.subtree_nodes < required_subtree_nodes {
+                    skipped_low_value += 1;
+                    continue;
+                }
+                if virtualized_nodes_total >= TREEGUARD_MAX_AUTO_VIRTUALIZED_NODES {
+                    deferred += 1;
+                    continue;
+                }
+            }
+
+            selected_virtualized_indices.insert(candidate.node_index);
+            virtualized_nodes_total = virtualized_nodes_total.saturating_add(1);
+        }
+
+        selected.push(candidate);
+    }
+
+    (selected, deferred, skipped_low_value)
 }
 
 fn ensure_circuit_inventory(
@@ -467,6 +628,7 @@ fn run_tick(
     {
         runtime_state.link_states.clear();
         runtime_state.circuit_states.clear();
+        runtime_state.pending_link_operations.clear();
         push_activity(
             activity,
             TreeguardActivityEntry {
@@ -491,6 +653,7 @@ fn run_tick(
     let link_states = &mut runtime_state.link_states;
     let circuit_states = &mut runtime_state.circuit_states;
     let runtime_virtualized_nodes = &mut runtime_state.runtime_virtualized_nodes;
+    let pending_link_operations = &mut runtime_state.pending_link_operations;
     let link_virtualization_backoff_until_unix =
         &mut runtime_state.link_virtualization_backoff_until_unix;
     let managed_nodes = &mut runtime_state.managed_nodes;
@@ -534,6 +697,9 @@ fn run_tick(
         warnings
             .push("Unable to sample CPU usage; CPU-aware behavior may be degraded.".to_string());
     }
+    if let Some(notice) = lqos_config::treeguard_cpu_mode_migration_notice() {
+        warnings.push(notice);
+    }
 
     let managed_nodes_count: usize = if tg.links.all_nodes {
         let reader = NETWORK_JSON.read();
@@ -575,6 +741,16 @@ fn run_tick(
     status.managed_nodes = managed_nodes_count;
     status.managed_circuits = managed_circuits_count;
     status.warnings = warnings;
+
+    reconcile_pending_link_operations(
+        status,
+        activity,
+        now_unix,
+        pending_link_operations,
+        runtime_virtualized_nodes,
+        link_virtualization_backoff_until_unix,
+        link_states,
+    );
 
     let (operator_overrides_snapshot, treeguard_overrides_snapshot) =
         if tg.enabled && (tg.links.enabled || tg.circuits.enabled) {
@@ -663,6 +839,7 @@ fn run_tick(
                 "TreeGuard disabled or links disabled",
                 tg.dry_run,
                 runtime_virtualized_nodes,
+                pending_link_operations,
                 link_virtualization_backoff_until_unix,
                 link_states,
             );
@@ -755,578 +932,376 @@ fn run_tick(
                 "Node removed from allowlist",
                 tg.dry_run,
                 runtime_virtualized_nodes,
+                pending_link_operations,
                 link_virtualization_backoff_until_unix,
                 link_states,
             );
             managed_nodes.remove(&node_name);
             link_states.remove(&node_name);
         }
-        if tg.links.all_nodes {
-            for node in reader.get_nodes_when_ready().iter() {
-                let node_name = node.name.as_str();
-                if node_name == "Root" {
-                    continue;
-                }
+        let nodes = reader.get_nodes_when_ready();
+        let parent_by_index: Vec<Option<usize>> =
+            nodes.iter().map(|node| node.immediate_parent).collect();
+        let subtree_node_counts = build_subtree_node_counts(&parent_by_index);
+        let existing_virtualized_indices: FxHashSet<usize> = runtime_virtualized_nodes
+            .iter()
+            .filter_map(|node_name| reader.get_index_for_name(node_name))
+            .collect();
 
-                if operator_virtual_node_overrides.contains(node_name) {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Operator override present; TreeGuard will not manage this node.",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Operator override present; TreeGuard will not manage this node.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                }
-
-                if node.virtual_node {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                }
-
-                let cap_down = node.max_throughput.0;
-                let cap_up = node.max_throughput.1;
-                if cap_down <= 0.0 || cap_up <= 0.0 {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' has unknown capacity; no changes will be made."
-                    ));
-                    continue;
-                }
-
-                let bytes_down = node.current_throughput.get_down() as f64;
-                let bytes_up = node.current_throughput.get_up() as f64;
-                let mbps_down = (bytes_down * 8.0) / 1_000_000.0;
-                let mbps_up = (bytes_up * 8.0) / 1_000_000.0;
-                let util_down_pct = (mbps_down / cap_down) * 100.0;
-                let util_up_pct = (mbps_up / cap_up) * 100.0;
-
-                let state = link_states.entry(node_name.to_string()).or_insert_with(|| {
-                    let mut state = LinkState::default();
-                    if runtime_virtualized_nodes.contains(node_name) {
-                        state.desired = LinkVirtualState::Virtual;
-                    }
-                    state
-                });
-                prune_recent_changes(&mut state.recent_changes_unix, now_unix);
-
-                let ewma_down = state
-                    .down
-                    .util_ewma_pct
-                    .update(util_down_pct, UTIL_EWMA_ALPHA);
-                let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
-
-                // Per-direction idle tracking (sustained-idle is evaluated across both directions).
-                update_idle_since(
-                    &mut state.down.idle_since_unix,
-                    now_unix,
-                    ewma_down,
-                    tg.links.idle_util_pct as f64,
-                );
-                update_idle_since(
-                    &mut state.up.idle_since_unix,
-                    now_unix,
-                    ewma_up,
-                    tg.links.idle_util_pct as f64,
-                );
-
-                let sustained_idle = is_sustained_idle(
-                    now_unix,
-                    state.down.idle_since_unix,
-                    state.up.idle_since_unix,
-                    tg.links.idle_min_minutes,
-                );
-
-                let is_top_level = top_level_auto_virtualize && node.immediate_parent == Some(0);
-                let top_level_safe_util_pct =
-                    tg.links.top_level_safe_util_pct.clamp(0.0, 100.0) as f64;
-                if is_top_level {
-                    update_below_since(
-                        &mut state.down.top_level_safe_since_unix,
-                        now_unix,
-                        ewma_down,
-                        top_level_safe_util_pct,
-                    );
-                    update_below_since(
-                        &mut state.up.top_level_safe_since_unix,
-                        now_unix,
-                        ewma_up,
-                        top_level_safe_util_pct,
-                    );
-                }
-
-                let rtt_missing = match now_nanos_since_boot {
-                    None => true,
-                    Some(now_nanos) => {
-                        if node.rtt_buffer.last_seen == 0 {
-                            true
-                        } else {
-                            let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
-                            age_nanos
-                                >= u64::from(tg.links.rtt_missing_seconds)
-                                    .saturating_mul(1_000_000_000)
-                        }
-                    }
-                };
-
-                // QoO (when available) from the node heatmap blocks (latest non-None sample).
-                let qoo = node
-                    .qoq_heatmap
-                    .as_ref()
-                    .map(|heatmap| {
-                        let blocks = heatmap.blocks();
-                        let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
-                        DownUpOrder {
-                            down: latest(&blocks.download_total),
-                            up: latest(&blocks.upload_total),
-                        }
-                    })
-                    .unwrap_or(DownUpOrder {
-                        down: None,
-                        up: None,
-                    });
-
-                let util_ewma_pct = DownUpOrder {
-                    down: ewma_down,
-                    up: ewma_up,
-                };
-
-                let decision = if is_top_level {
-                    let dwell_secs = u64::from(tg.links.min_state_dwell_minutes).saturating_mul(60);
-                    let in_dwell_window = state
-                        .last_change_unix
-                        .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
-                    let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
-                        true
-                    } else {
-                        state.recent_changes_unix.len()
-                            >= tg.links.max_link_changes_per_hour as usize
-                    };
-                    if in_dwell_window || rate_limited {
-                        decisions::LinkVirtualDecision::NoChange
-                    } else {
-                        let sustained_safe = is_sustained_window(
-                            now_unix,
-                            state.down.top_level_safe_since_unix,
-                            state.up.top_level_safe_since_unix,
-                            TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
-                        );
-                        let util_high = util_ewma_pct.down >= top_level_safe_util_pct
-                            || util_ewma_pct.up >= top_level_safe_util_pct;
-                        match state.desired {
-                            LinkVirtualState::Physical => {
-                                if sustained_safe {
-                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Virtual)
-                                } else {
-                                    decisions::LinkVirtualDecision::NoChange
-                                }
-                            }
-                            LinkVirtualState::Virtual => {
-                                if util_high {
-                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Physical)
-                                } else {
-                                    decisions::LinkVirtualDecision::NoChange
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
-                        now_unix,
-                        allowlisted: true,
-                        cpu_max_pct,
-                        cpu_cfg: &tg.cpu,
-                        links_cfg: &tg.links,
-                        qoo_cfg: &tg.qoo,
-                        rtt_missing,
-                        qoo,
-                        util_ewma_pct,
-                        sustained_idle,
-                        state,
-                    })
-                };
-
-                if let decisions::LinkVirtualDecision::Set(target) = decision {
-                    if target == state.desired {
-                        continue;
-                    }
-                    apply_link_virtualization_decision(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        target,
-                        if is_top_level {
-                            match target {
-                                LinkVirtualState::Virtual => format!(
-                                    "Top-level safe: sustained utilization below {:.1}% for {} minutes",
-                                    top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
-                                ),
-                                LinkVirtualState::Physical => format!(
-                                    "Top-level unsafe: utilization above {:.1}%",
-                                    top_level_safe_util_pct
-                                ),
-                            }
-                        } else {
-                            "Decision policy matched".to_string()
-                        },
-                        tg.dry_run,
-                        state,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                    );
-                    managed_nodes.insert(node_name.to_string());
-                } else {
-                    managed_nodes.insert(node_name.to_string());
-                }
-            }
+        let mut enrolled_nodes: Vec<String> = if tg.links.all_nodes {
+            nodes
+                .iter()
+                .filter(|node| node.name != "Root")
+                .map(|node| node.name.clone())
+                .collect()
         } else {
-            let mut enrolled_nodes: Vec<String> = tg.links.nodes.clone();
+            let mut enrolled = tg.links.nodes.clone();
             if top_level_auto_virtualize {
-                enrolled_nodes.extend(top_level_nodes.iter().cloned());
+                enrolled.extend(top_level_nodes.iter().cloned());
             }
+            enrolled.sort();
+            enrolled.dedup();
+            enrolled
+        };
+
+        if tg.links.all_nodes {
             enrolled_nodes.sort();
-            enrolled_nodes.dedup();
+        }
 
-            for node_name in enrolled_nodes.iter() {
-                if operator_virtual_node_overrides.contains(node_name) {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Operator override present; TreeGuard will not manage this node.",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Operator override present; TreeGuard will not manage this node.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                }
-                let Some(index) = reader.get_index_for_name(node_name) else {
-                    status.warnings.push(format!(
-                        "TreeGuard links allowlist: node '{node_name}' not found in network.json."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node no longer exists in network.json",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node no longer exists in network.json",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                };
-                let Some(node) = reader.get_nodes_when_ready().get(index) else {
-                    status.warnings.push(format!(
-                        "TreeGuard links allowlist: node '{node_name}' index not present."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node index no longer exists in network.json",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node index no longer exists in network.json",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                };
+        let mut pending_link_decisions = Vec::new();
 
-                if node.virtual_node {
-                    status.warnings.push(format!(
-                        "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
-                    ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
-                    );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
-                    continue;
-                }
+        for node_name in enrolled_nodes.iter() {
+            if operator_virtual_node_overrides.contains(node_name) {
+                status.warnings.push(format!(
+                    "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
+                ));
+                clear_legacy_treeguard_virtual_override(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Operator override present; TreeGuard will not manage this node.",
+                );
+                restore_runtime_virtualization_if_needed(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Operator override present; TreeGuard will not manage this node.",
+                    tg.dry_run,
+                    runtime_virtualized_nodes,
+                    pending_link_operations,
+                    link_virtualization_backoff_until_unix,
+                    link_states,
+                );
+                managed_nodes.remove(node_name);
+                link_states.remove(node_name);
+                continue;
+            }
 
-                let cap_down = node.max_throughput.0;
-                let cap_up = node.max_throughput.1;
-                if cap_down <= 0.0 || cap_up <= 0.0 {
-                    status.warnings.push(format!(
+            let Some(index) = reader.get_index_for_name(node_name) else {
+                status.warnings.push(format!(
+                    "TreeGuard links allowlist: node '{node_name}' not found in network.json."
+                ));
+                clear_legacy_treeguard_virtual_override(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node no longer exists in network.json",
+                );
+                restore_runtime_virtualization_if_needed(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node no longer exists in network.json",
+                    tg.dry_run,
+                    runtime_virtualized_nodes,
+                    pending_link_operations,
+                    link_virtualization_backoff_until_unix,
+                    link_states,
+                );
+                managed_nodes.remove(node_name);
+                link_states.remove(node_name);
+                continue;
+            };
+            let Some(node) = nodes.get(index) else {
+                status.warnings.push(format!(
+                    "TreeGuard links allowlist: node '{node_name}' index not present."
+                ));
+                clear_legacy_treeguard_virtual_override(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node index no longer exists in network.json",
+                );
+                restore_runtime_virtualization_if_needed(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node index no longer exists in network.json",
+                    tg.dry_run,
+                    runtime_virtualized_nodes,
+                    pending_link_operations,
+                    link_virtualization_backoff_until_unix,
+                    link_states,
+                );
+                managed_nodes.remove(node_name);
+                link_states.remove(node_name);
+                continue;
+            };
+
+            if node.virtual_node {
+                status.warnings.push(format!(
+                    "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
+                ));
+                clear_legacy_treeguard_virtual_override(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                );
+                restore_runtime_virtualization_if_needed(
+                    status,
+                    activity,
+                    now_unix,
+                    node_name,
+                    "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                    tg.dry_run,
+                    runtime_virtualized_nodes,
+                    pending_link_operations,
+                    link_virtualization_backoff_until_unix,
+                    link_states,
+                );
+                managed_nodes.remove(node_name);
+                link_states.remove(node_name);
+                continue;
+            }
+
+            let cap_down = node.max_throughput.0;
+            let cap_up = node.max_throughput.1;
+            if cap_down <= 0.0 || cap_up <= 0.0 {
+                status.warnings.push(format!(
                     "TreeGuard links: node '{node_name}' has unknown capacity; no changes will be made."
                 ));
-                    continue;
+                continue;
+            }
+
+            let bytes_down = node.current_throughput.get_down() as f64;
+            let bytes_up = node.current_throughput.get_up() as f64;
+            let mbps_down = (bytes_down * 8.0) / 1_000_000.0;
+            let mbps_up = (bytes_up * 8.0) / 1_000_000.0;
+            let util_down_pct = (mbps_down / cap_down) * 100.0;
+            let util_up_pct = (mbps_up / cap_up) * 100.0;
+
+            let state = link_states.entry(node_name.clone()).or_insert_with(|| {
+                let mut state = LinkState::default();
+                if runtime_virtualized_nodes.contains(node_name) {
+                    state.desired = LinkVirtualState::Virtual;
                 }
+                state
+            });
+            prune_recent_changes(&mut state.recent_changes_unix, now_unix);
 
-                let bytes_down = node.current_throughput.get_down() as f64;
-                let bytes_up = node.current_throughput.get_up() as f64;
-                let mbps_down = (bytes_down * 8.0) / 1_000_000.0;
-                let mbps_up = (bytes_up * 8.0) / 1_000_000.0;
-                let util_down_pct = (mbps_down / cap_down) * 100.0;
-                let util_up_pct = (mbps_up / cap_up) * 100.0;
+            let ewma_down = state
+                .down
+                .util_ewma_pct
+                .update(util_down_pct, UTIL_EWMA_ALPHA);
+            let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
 
-                let state = link_states.entry(node_name.clone()).or_insert_with(|| {
-                    let mut state = LinkState::default();
-                    if runtime_virtualized_nodes.contains(node_name) {
-                        state.desired = LinkVirtualState::Virtual;
-                    }
-                    state
-                });
-                prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+            update_idle_since(
+                &mut state.down.idle_since_unix,
+                now_unix,
+                ewma_down,
+                tg.links.idle_util_pct as f64,
+            );
+            update_idle_since(
+                &mut state.up.idle_since_unix,
+                now_unix,
+                ewma_up,
+                tg.links.idle_util_pct as f64,
+            );
 
-                let ewma_down = state
-                    .down
-                    .util_ewma_pct
-                    .update(util_down_pct, UTIL_EWMA_ALPHA);
-                let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
+            let sustained_idle = is_sustained_idle(
+                now_unix,
+                state.down.idle_since_unix,
+                state.up.idle_since_unix,
+                tg.links.idle_min_minutes,
+            );
 
-                // Per-direction idle tracking (sustained-idle is evaluated across both directions).
-                update_idle_since(
-                    &mut state.down.idle_since_unix,
+            let is_top_level = top_level_auto_virtualize && node.immediate_parent == Some(0);
+            let top_level_safe_util_pct = tg.links.top_level_safe_util_pct.clamp(0.0, 100.0) as f64;
+            if is_top_level {
+                update_below_since(
+                    &mut state.down.top_level_safe_since_unix,
                     now_unix,
                     ewma_down,
-                    tg.links.idle_util_pct as f64,
+                    top_level_safe_util_pct,
                 );
-                update_idle_since(
-                    &mut state.up.idle_since_unix,
+                update_below_since(
+                    &mut state.up.top_level_safe_since_unix,
                     now_unix,
                     ewma_up,
-                    tg.links.idle_util_pct as f64,
+                    top_level_safe_util_pct,
                 );
+            }
 
-                let sustained_idle = is_sustained_idle(
-                    now_unix,
-                    state.down.idle_since_unix,
-                    state.up.idle_since_unix,
-                    tg.links.idle_min_minutes,
-                );
-
-                let is_top_level = top_level_auto_virtualize && node.immediate_parent == Some(0);
-                let top_level_safe_util_pct =
-                    tg.links.top_level_safe_util_pct.clamp(0.0, 100.0) as f64;
-                if is_top_level {
-                    update_below_since(
-                        &mut state.down.top_level_safe_since_unix,
-                        now_unix,
-                        ewma_down,
-                        top_level_safe_util_pct,
-                    );
-                    update_below_since(
-                        &mut state.up.top_level_safe_since_unix,
-                        now_unix,
-                        ewma_up,
-                        top_level_safe_util_pct,
-                    );
-                }
-
-                let rtt_missing = match now_nanos_since_boot {
-                    None => true,
-                    Some(now_nanos) => {
-                        if node.rtt_buffer.last_seen == 0 {
-                            true
-                        } else {
-                            let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
-                            age_nanos
-                                >= u64::from(tg.links.rtt_missing_seconds)
-                                    .saturating_mul(1_000_000_000)
-                        }
-                    }
-                };
-
-                // QoO (when available) from the node heatmap blocks (latest non-None sample).
-                let qoo = node
-                    .qoq_heatmap
-                    .as_ref()
-                    .map(|heatmap| {
-                        let blocks = heatmap.blocks();
-                        let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
-                        DownUpOrder {
-                            down: latest(&blocks.download_total),
-                            up: latest(&blocks.upload_total),
-                        }
-                    })
-                    .unwrap_or(DownUpOrder {
-                        down: None,
-                        up: None,
-                    });
-
-                let util_ewma_pct = DownUpOrder {
-                    down: ewma_down,
-                    up: ewma_up,
-                };
-
-                let decision = if is_top_level {
-                    let dwell_secs = u64::from(tg.links.min_state_dwell_minutes).saturating_mul(60);
-                    let in_dwell_window = state
-                        .last_change_unix
-                        .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
-                    let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
+            let rtt_missing = match now_nanos_since_boot {
+                None => true,
+                Some(now_nanos) => {
+                    if node.rtt_buffer.last_seen == 0 {
                         true
                     } else {
-                        state.recent_changes_unix.len()
-                            >= tg.links.max_link_changes_per_hour as usize
-                    };
-                    if in_dwell_window || rate_limited {
-                        decisions::LinkVirtualDecision::NoChange
-                    } else {
-                        let sustained_safe = is_sustained_window(
-                            now_unix,
-                            state.down.top_level_safe_since_unix,
-                            state.up.top_level_safe_since_unix,
-                            TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
-                        );
-                        let util_high = util_ewma_pct.down >= top_level_safe_util_pct
-                            || util_ewma_pct.up >= top_level_safe_util_pct;
-                        match state.desired {
-                            LinkVirtualState::Physical => {
-                                if sustained_safe {
-                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Virtual)
-                                } else {
-                                    decisions::LinkVirtualDecision::NoChange
-                                }
-                            }
-                            LinkVirtualState::Virtual => {
-                                if util_high {
-                                    decisions::LinkVirtualDecision::Set(LinkVirtualState::Physical)
-                                } else {
-                                    decisions::LinkVirtualDecision::NoChange
-                                }
-                            }
-                        }
+                        let age_nanos = now_nanos.saturating_sub(node.rtt_buffer.last_seen);
+                        age_nanos
+                            >= u64::from(tg.links.rtt_missing_seconds).saturating_mul(1_000_000_000)
                     }
-                } else {
-                    decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
-                        now_unix,
-                        allowlisted: allowlisted_nodes.contains(node_name),
-                        cpu_max_pct,
-                        cpu_cfg: &tg.cpu,
-                        links_cfg: &tg.links,
-                        qoo_cfg: &tg.qoo,
-                        rtt_missing,
-                        qoo,
-                        util_ewma_pct,
-                        sustained_idle,
-                        state,
-                    })
-                };
-
-                if let decisions::LinkVirtualDecision::Set(target) = decision {
-                    if target == state.desired {
-                        continue;
-                    }
-                    apply_link_virtualization_decision(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        target,
-                        if is_top_level {
-                            match target {
-                                LinkVirtualState::Virtual => format!(
-                                    "Top-level safe: sustained utilization below {:.1}% for {} minutes",
-                                    top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
-                                ),
-                                LinkVirtualState::Physical => format!(
-                                    "Top-level unsafe: utilization above {:.1}%",
-                                    top_level_safe_util_pct
-                                ),
-                            }
-                        } else {
-                            "Decision policy matched".to_string()
-                        },
-                        tg.dry_run,
-                        state,
-                        runtime_virtualized_nodes,
-                        link_virtualization_backoff_until_unix,
-                    );
-                    managed_nodes.insert(node_name.clone());
-                } else {
-                    managed_nodes.insert(node_name.clone());
                 }
+            };
+
+            let qoo = node
+                .qoq_heatmap
+                .as_ref()
+                .map(|heatmap| {
+                    let blocks = heatmap.blocks();
+                    let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
+                    DownUpOrder {
+                        down: latest(&blocks.download_total),
+                        up: latest(&blocks.upload_total),
+                    }
+                })
+                .unwrap_or(DownUpOrder {
+                    down: None,
+                    up: None,
+                });
+
+            let util_ewma_pct = DownUpOrder {
+                down: ewma_down,
+                up: ewma_up,
+            };
+
+            let decision = if is_top_level {
+                let dwell_secs = u64::from(tg.links.min_state_dwell_minutes).saturating_mul(60);
+                let in_dwell_window = state
+                    .last_change_unix
+                    .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
+                let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
+                    true
+                } else {
+                    state.recent_changes_unix.len() >= tg.links.max_link_changes_per_hour as usize
+                };
+                if in_dwell_window || rate_limited {
+                    decisions::LinkVirtualDecision::NoChange
+                } else {
+                    let sustained_safe = is_sustained_window(
+                        now_unix,
+                        state.down.top_level_safe_since_unix,
+                        state.up.top_level_safe_since_unix,
+                        TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
+                    );
+                    decisions::decide_top_level_link_virtualization(
+                        decisions::TopLevelLinkVirtualizationInput {
+                            cpu_max_pct,
+                            cpu_cfg: &tg.cpu,
+                            util_ewma_pct,
+                            safe_util_pct: top_level_safe_util_pct,
+                            sustained_safe,
+                            state,
+                        },
+                    )
+                }
+            } else {
+                decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
+                    now_unix,
+                    allowlisted: tg.links.all_nodes || allowlisted_nodes.contains(node_name),
+                    cpu_max_pct,
+                    cpu_cfg: &tg.cpu,
+                    links_cfg: &tg.links,
+                    qoo_cfg: &tg.qoo,
+                    rtt_missing,
+                    qoo,
+                    util_ewma_pct,
+                    sustained_idle,
+                    state,
+                })
+            };
+
+            if let decisions::LinkVirtualDecision::Set(target) = decision
+                && target != state.desired
+            {
+                let reason = if is_top_level {
+                    match target {
+                        LinkVirtualState::Virtual => format!(
+                            "Top-level safe: sustained utilization below {:.1}% for {} minutes",
+                            top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
+                        ),
+                        LinkVirtualState::Physical => format!(
+                            "Top-level unsafe: utilization above {:.1}%",
+                            top_level_safe_util_pct
+                        ),
+                    }
+                } else {
+                    "Decision policy matched".to_string()
+                };
+                pending_link_decisions.push(PendingLinkVirtualizationDecision {
+                    node_name: node_name.clone(),
+                    node_index: index,
+                    target,
+                    reason,
+                    subtree_nodes: subtree_node_counts[index],
+                    current_subtree_throughput_mbps: mbps_down.max(mbps_up),
+                    explicit_allowlist: allowlisted_nodes.contains(node_name),
+                    is_top_level,
+                    value_score: link_virtualization_value_score(
+                        is_top_level,
+                        subtree_node_counts[index],
+                        cap_down,
+                        cap_up,
+                    ),
+                });
             }
+
+            managed_nodes.insert(node_name.clone());
+        }
+
+        let (selected_link_decisions, deferred_link_decisions, skipped_low_value_decisions) =
+            select_link_virtualization_candidates(
+                pending_link_decisions,
+                &parent_by_index,
+                &existing_virtualized_indices,
+                runtime_virtualized_nodes.len(),
+            );
+        if deferred_link_decisions > 0 {
+            status.warnings.push(format!(
+                "TreeGuard links: deferred {deferred_link_decisions} lower-value or over-budget node virtualization changes this tick."
+            ));
+        }
+        if skipped_low_value_decisions > 0 {
+            status.warnings.push(format!(
+                "TreeGuard links: skipped {skipped_low_value_decisions} low-value automatic node virtualization candidates this tick because the subtree was too small for its current throughput."
+            ));
+        }
+
+        for decision in selected_link_decisions {
+            let Some(state) = link_states.get_mut(&decision.node_name) else {
+                continue;
+            };
+            apply_link_virtualization_decision(
+                status,
+                activity,
+                now_unix,
+                &decision.node_name,
+                decision.target,
+                decision.reason,
+                tg.dry_run,
+                state,
+                pending_link_operations,
+                link_virtualization_backoff_until_unix,
+            );
         }
     }
 
@@ -1688,6 +1663,7 @@ fn pause_for_bakery_reload(
         enabled,
         dry_run,
         lqos_bakery::full_reload_in_progress(),
+        lqos_bakery::bakery_reload_required_reason(),
     )
 }
 
@@ -1698,29 +1674,36 @@ fn pause_for_bakery_reload_with_flag(
     enabled: bool,
     dry_run: bool,
     bakery_reload_in_progress: bool,
+    bakery_reload_required_reason: Option<String>,
 ) -> bool {
-    let paused = enabled && bakery_reload_in_progress;
+    let pause_reason = if bakery_reload_in_progress {
+        Some("Bakery full reload in progress".to_string())
+    } else {
+        bakery_reload_required_reason
+    };
+    let paused = enabled && pause_reason.is_some();
     if paused {
+        let pause_reason =
+            pause_reason.unwrap_or_else(|| "Bakery full reload in progress".to_string());
         if !runtime_state.paused_for_bakery_reload {
-            info!("TreeGuard: pausing while Bakery full reload is in progress");
+            info!("TreeGuard: pausing because {}", pause_reason);
             runtime_state.paused_for_bakery_reload = true;
         }
         *tick_seconds = (*tick_seconds).max(5);
         status.enabled = enabled;
         status.dry_run = dry_run;
         status.paused_for_bakery_reload = true;
-        status.pause_reason = Some("Bakery full reload in progress".to_string());
+        status.pause_reason = Some(pause_reason.clone());
         status.cpu_max_pct = None;
-        status.last_action_summary =
-            Some("Paused while Bakery full reload is in progress".to_string());
+        status.last_action_summary = Some(format!("Paused while {}", pause_reason));
         status
             .warnings
-            .push("TreeGuard paused while Bakery full reload is in progress.".to_string());
+            .push(format!("TreeGuard paused while {}.", pause_reason));
         return true;
     }
 
     if runtime_state.paused_for_bakery_reload {
-        info!("TreeGuard: resuming after Bakery full reload");
+        info!("TreeGuard: resuming after Bakery pause");
         runtime_state.paused_for_bakery_reload = false;
     }
     status.paused_for_bakery_reload = false;
@@ -1771,6 +1754,179 @@ fn clear_legacy_treeguard_virtual_override(
     }
 }
 
+fn current_link_virtual_state(
+    runtime_virtualized_nodes: &FxHashSet<String>,
+    node_name: &str,
+) -> LinkVirtualState {
+    if runtime_virtualized_nodes.contains(node_name) {
+        LinkVirtualState::Virtual
+    } else {
+        LinkVirtualState::Physical
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconcile_pending_link_operations(
+    status: &mut TreeguardStatusData,
+    activity: &mut VecDeque<TreeguardActivityEntry>,
+    now_unix: u64,
+    pending_link_operations: &mut FxHashMap<String, PendingLinkOperation>,
+    runtime_virtualized_nodes: &mut FxHashSet<String>,
+    link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
+    link_states: &mut FxHashMap<String, LinkState>,
+) {
+    let pending_nodes: Vec<String> = pending_link_operations.keys().cloned().collect();
+    for node_name in pending_nodes {
+        let Some(pending) = pending_link_operations.get(&node_name).cloned() else {
+            continue;
+        };
+        let Some(snapshot) = bakery::node_virtualization_operation_status(&node_name) else {
+            continue;
+        };
+        match snapshot.status {
+            BakeryRuntimeNodeOperationStatus::Submitted
+            | BakeryRuntimeNodeOperationStatus::Applying => {}
+            BakeryRuntimeNodeOperationStatus::Completed
+            | BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup => {
+                if pending.target == LinkVirtualState::Virtual {
+                    runtime_virtualized_nodes.insert(node_name.clone());
+                } else {
+                    runtime_virtualized_nodes.remove(&node_name);
+                }
+                link_virtualization_backoff_until_unix.remove(&node_name);
+                pending_link_operations.remove(&node_name);
+                if let Some(state) = link_states.get_mut(&node_name) {
+                    state.desired = pending.target;
+                    state.last_change_unix = Some(now_unix);
+                    state.recent_changes_unix.push_back(now_unix);
+                    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+                }
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.clone(),
+                        action: match pending.target {
+                            LinkVirtualState::Physical => "unvirtualize".to_string(),
+                            LinkVirtualState::Virtual => "virtualize".to_string(),
+                        },
+                        persisted: true,
+                        reason: if snapshot.status
+                            == BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup
+                        {
+                            format!(
+                                "{}. Bakery operation {} applied; cleanup pending.",
+                                pending.reason, snapshot.operation_id
+                            )
+                        } else {
+                            pending.reason
+                        },
+                    },
+                );
+                status.last_action_summary = Some(match pending.target {
+                    LinkVirtualState::Physical => {
+                        format!("Unvirtualized node '{node_name}'")
+                    }
+                    LinkVirtualState::Virtual => {
+                        format!("Virtualized node '{node_name}'")
+                    }
+                });
+                if snapshot.status == BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup {
+                    status.warnings.push(format!(
+                        "TreeGuard links: node '{node_name}' runtime {} applied in Bakery operation {} and is awaiting cleanup.",
+                        if pending.target == LinkVirtualState::Virtual {
+                            "virtualization"
+                        } else {
+                            "restore"
+                        },
+                        snapshot.operation_id
+                    ));
+                }
+            }
+            BakeryRuntimeNodeOperationStatus::Deferred => {
+                let until = snapshot.next_retry_at_unix.unwrap_or_else(|| {
+                    now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_DEFERRED_BACKOFF_SECONDS)
+                });
+                link_virtualization_backoff_until_unix.insert(node_name.clone(), until);
+                pending_link_operations.remove(&node_name);
+                if let Some(state) = link_states.get_mut(&node_name) {
+                    state.desired =
+                        current_link_virtual_state(runtime_virtualized_nodes, &node_name);
+                }
+                let details = snapshot.last_error.unwrap_or_else(|| {
+                    format!(
+                        "Bakery operation {} deferred by capacity",
+                        snapshot.operation_id
+                    )
+                });
+                status.warnings.push(format!(
+                    "TreeGuard links: deferred runtime {} for node '{node_name}': {details}. Retrying after {until}.",
+                    if pending.target == LinkVirtualState::Virtual {
+                        "virtualization"
+                    } else {
+                        "restore"
+                    }
+                ));
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.clone(),
+                        action: match pending.target {
+                            LinkVirtualState::Physical => "unvirtualize_deferred".to_string(),
+                            LinkVirtualState::Virtual => "virtualize_deferred".to_string(),
+                        },
+                        persisted: false,
+                        reason: format!(
+                            "{}. Bakery deferred the operation: {details}",
+                            pending.reason
+                        ),
+                    },
+                );
+            }
+            BakeryRuntimeNodeOperationStatus::Failed | BakeryRuntimeNodeOperationStatus::Dirty => {
+                let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
+                link_virtualization_backoff_until_unix.insert(node_name.clone(), until);
+                pending_link_operations.remove(&node_name);
+                if let Some(state) = link_states.get_mut(&node_name) {
+                    state.desired =
+                        current_link_virtual_state(runtime_virtualized_nodes, &node_name);
+                }
+                let details = snapshot.last_error.unwrap_or_else(|| {
+                    format!("Bakery operation {} failed", snapshot.operation_id)
+                });
+                status.warnings.push(format!(
+                    "TreeGuard links: failed to apply runtime {} for node '{node_name}': {details}. Backing off until {until}.",
+                    if pending.target == LinkVirtualState::Virtual {
+                        "virtualization"
+                    } else {
+                        "restore"
+                    }
+                ));
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.clone(),
+                        action: match pending.target {
+                            LinkVirtualState::Physical => "unvirtualize_failed".to_string(),
+                            LinkVirtualState::Virtual => "virtualize_failed".to_string(),
+                        },
+                        persisted: false,
+                        reason: format!(
+                            "{}. Bakery runtime operation failed: {details}",
+                            pending.reason
+                        ),
+                    },
+                );
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn restore_runtime_virtualization_if_needed(
     status: &mut TreeguardStatusData,
@@ -1780,6 +1936,7 @@ fn restore_runtime_virtualization_if_needed(
     reason: &str,
     dry_run: bool,
     runtime_virtualized_nodes: &mut FxHashSet<String>,
+    pending_link_operations: &mut FxHashMap<String, PendingLinkOperation>,
     link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
     link_states: &mut FxHashMap<String, LinkState>,
 ) {
@@ -1787,6 +1944,7 @@ fn restore_runtime_virtualization_if_needed(
         if let Some(state) = link_states.get_mut(node_name) {
             state.desired = LinkVirtualState::Physical;
         }
+        pending_link_operations.remove(node_name);
         link_virtualization_backoff_until_unix.remove(node_name);
         return;
     }
@@ -1798,34 +1956,34 @@ fn restore_runtime_virtualization_if_needed(
         return;
     }
 
-    match bakery::apply_node_virtualization_live(node_name, false) {
+    if pending_link_operations
+        .get(node_name)
+        .is_some_and(|pending| pending.target == LinkVirtualState::Physical)
+    {
+        status.warnings.push(format!(
+            "TreeGuard links: restore for node '{node_name}' is already queued in Bakery."
+        ));
+        return;
+    }
+
+    match bakery::submit_node_virtualization_live(node_name, false) {
         Ok(()) => {
-            runtime_virtualized_nodes.remove(node_name);
-            link_virtualization_backoff_until_unix.remove(node_name);
-            if let Some(state) = link_states.get_mut(node_name) {
-                state.desired = LinkVirtualState::Physical;
-                state.last_change_unix = Some(now_unix);
-                state.recent_changes_unix.push_back(now_unix);
-                prune_recent_changes(&mut state.recent_changes_unix, now_unix);
-            }
-            push_activity(
-                activity,
-                TreeguardActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "node".to_string(),
-                    entity_id: node_name.to_string(),
-                    action: "unvirtualize".to_string(),
-                    persisted: true,
+            pending_link_operations.insert(
+                node_name.to_string(),
+                PendingLinkOperation {
+                    target: LinkVirtualState::Physical,
                     reason: reason.to_string(),
                 },
             );
-            status.last_action_summary = Some(format!("Unvirtualized node '{node_name}'"));
+            if let Some(state) = link_states.get_mut(node_name) {
+                state.desired = LinkVirtualState::Physical;
+            }
         }
         Err(e) => {
             let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
             link_virtualization_backoff_until_unix.insert(node_name.to_string(), until);
             status.warnings.push(format!(
-                "TreeGuard links: failed to restore runtime-virtualized node '{node_name}': {e}. Backing off until {until}."
+                "TreeGuard links: failed to submit restore for runtime-virtualized node '{node_name}': {e}. Backing off until {until}."
             ));
             push_activity(
                 activity,
@@ -1835,7 +1993,7 @@ fn restore_runtime_virtualization_if_needed(
                     entity_id: node_name.to_string(),
                     action: "unvirtualize_failed".to_string(),
                     persisted: false,
-                    reason: format!("{reason}. Bakery live restore failed: {e}"),
+                    reason: format!("{reason}. Bakery restore submission failed: {e}"),
                 },
             );
         }
@@ -1852,10 +2010,14 @@ fn apply_link_virtualization_decision(
     reason: String,
     dry_run: bool,
     state: &mut LinkState,
-    runtime_virtualized_nodes: &mut FxHashSet<String>,
+    pending_link_operations: &mut FxHashMap<String, PendingLinkOperation>,
     link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
 ) {
-    if target == state.desired {
+    if target == state.desired
+        && pending_link_operations
+            .get(node_name)
+            .is_none_or(|pending| pending.target == target)
+    {
         return;
     }
 
@@ -1872,21 +2034,44 @@ fn apply_link_virtualization_decision(
             return;
         }
 
-        match bakery::apply_node_virtualization_live(node_name, target == LinkVirtualState::Virtual)
+        if pending_link_operations
+            .get(node_name)
+            .is_some_and(|pending| pending.target == target)
         {
-            Ok(()) => {
+            status.warnings.push(format!(
+                "TreeGuard links: node '{node_name}' runtime {} is already queued in Bakery.",
                 if target == LinkVirtualState::Virtual {
-                    runtime_virtualized_nodes.insert(node_name.to_string());
+                    "virtualization"
                 } else {
-                    runtime_virtualized_nodes.remove(node_name);
+                    "restore"
                 }
-                link_virtualization_backoff_until_unix.remove(node_name);
+            ));
+            return;
+        }
+
+        match bakery::submit_node_virtualization_live(
+            node_name,
+            target == LinkVirtualState::Virtual,
+        ) {
+            Ok(()) => {
+                pending_link_operations.insert(
+                    node_name.to_string(),
+                    PendingLinkOperation { target, reason },
+                );
+                state.desired = target;
+                return;
             }
             Err(e) => {
                 let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
                 link_virtualization_backoff_until_unix.insert(node_name.to_string(), until);
                 status.warnings.push(format!(
-                    "TreeGuard links: failed to apply runtime virtualization for node '{node_name}': {e}. Backing off until {until}."
+                    "TreeGuard links: failed to submit runtime {} for node '{node_name}': {e}. Backing off until {until}."
+                    ,
+                    if target == LinkVirtualState::Virtual {
+                        "virtualization"
+                    } else {
+                        "restore"
+                    }
                 ));
                 push_activity(
                     activity,
@@ -1899,7 +2084,7 @@ fn apply_link_virtualization_decision(
                             LinkVirtualState::Virtual => "virtualize_failed".to_string(),
                         },
                         persisted: false,
-                        reason: format!("Bakery runtime virtualization failed: {e}"),
+                        reason: format!("Bakery runtime virtualization submission failed: {e}"),
                     },
                 );
                 return;
@@ -1908,9 +2093,6 @@ fn apply_link_virtualization_decision(
     }
 
     state.desired = target;
-    state.last_change_unix = Some(now_unix);
-    state.recent_changes_unix.push_back(now_unix);
-    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
 
     push_activity(
         activity,
@@ -2594,11 +2776,13 @@ fn update_below_since(
 #[cfg(test)]
 mod tests {
     use super::{
-        CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, TreeguardRuntimeState,
-        apply_circuit_sqm_change, base_circuit_sqm_state, circuit_evaluation_batch_size,
+        CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, LinkVirtualState,
+        PendingLinkVirtualizationDecision, TreeguardRuntimeState, apply_circuit_sqm_change,
+        base_circuit_sqm_state, circuit_evaluation_batch_size,
         circuit_sqm_transition_from_decision, collect_circuit_batch, empty_status_snapshot,
         pause_for_bakery_reload_with_flag, process_circuit_tick, run_tick,
-        treeguard_manages_circuit_direction, try_consume_circuit_change_budget,
+        select_link_virtualization_candidates, treeguard_manages_circuit_direction,
+        try_consume_circuit_change_budget,
     };
     use crate::node_manager::ws::messages::TreeguardActivityEntry;
     use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
@@ -2621,6 +2805,29 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Once;
 
+    fn pending_link_decision(
+        node_name: &str,
+        node_index: usize,
+        target: LinkVirtualState,
+        subtree_nodes: usize,
+        current_subtree_throughput_mbps: f64,
+        explicit_allowlist: bool,
+        is_top_level: bool,
+        value_score: u64,
+    ) -> PendingLinkVirtualizationDecision {
+        PendingLinkVirtualizationDecision {
+            node_name: node_name.to_string(),
+            node_index,
+            target,
+            reason: "test".to_string(),
+            subtree_nodes,
+            current_subtree_throughput_mbps,
+            explicit_allowlist,
+            is_top_level,
+            value_score,
+        }
+    }
+
     #[test]
     fn bakery_reload_pause_updates_status_and_tick_backoff() {
         let mut status = empty_status_snapshot();
@@ -2634,6 +2841,7 @@ mod tests {
             true,
             false,
             true,
+            None,
         );
 
         assert!(paused);
@@ -2642,7 +2850,7 @@ mod tests {
         assert_eq!(status.dry_run, false);
         assert_eq!(
             status.last_action_summary.as_deref(),
-            Some("Paused while Bakery full reload is in progress")
+            Some("Paused while Bakery full reload in progress")
         );
         assert!(
             status
@@ -2659,9 +2867,236 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
         assert!(!resumed);
         assert!(!runtime_state.paused_for_bakery_reload);
+    }
+
+    #[test]
+    fn bakery_reload_required_pause_sets_reason() {
+        let mut status = empty_status_snapshot();
+        let mut tick_seconds = 1;
+        let mut runtime_state = TreeguardRuntimeState::default();
+
+        let paused = pause_for_bakery_reload_with_flag(
+            &mut status,
+            &mut tick_seconds,
+            &mut runtime_state,
+            true,
+            false,
+            false,
+            Some("Bakery requires full reload".to_string()),
+        );
+
+        assert!(paused);
+        assert_eq!(
+            status.pause_reason.as_deref(),
+            Some("Bakery requires full reload")
+        );
+        assert_eq!(
+            status.last_action_summary.as_deref(),
+            Some("Paused while Bakery requires full reload")
+        );
+    }
+
+    #[test]
+    fn link_candidate_selection_prefers_larger_ancestor_and_budget() {
+        let parent_by_index = vec![None, Some(0), Some(1), Some(1), Some(0)];
+        let existing_virtualized = FxHashSet::default();
+        let candidates = vec![
+            pending_link_decision(
+                "region",
+                0,
+                LinkVirtualState::Virtual,
+                5,
+                10.0,
+                false,
+                true,
+                500,
+            ),
+            pending_link_decision(
+                "pop-a",
+                1,
+                LinkVirtualState::Virtual,
+                3,
+                10.0,
+                false,
+                false,
+                300,
+            ),
+            pending_link_decision(
+                "ap-a1",
+                2,
+                LinkVirtualState::Virtual,
+                1,
+                10.0,
+                false,
+                false,
+                100,
+            ),
+            pending_link_decision(
+                "ap-a2",
+                3,
+                LinkVirtualState::Virtual,
+                1,
+                10.0,
+                false,
+                false,
+                90,
+            ),
+            pending_link_decision(
+                "pop-b",
+                4,
+                LinkVirtualState::Virtual,
+                1,
+                10.0,
+                false,
+                false,
+                80,
+            ),
+        ];
+
+        let (selected, deferred, skipped_low_value) = select_link_virtualization_candidates(
+            candidates,
+            &parent_by_index,
+            &existing_virtualized,
+            0,
+        );
+
+        let selected_names: Vec<&str> = selected
+            .iter()
+            .map(|candidate| candidate.node_name.as_str())
+            .collect();
+        assert_eq!(selected_names, vec!["region"]);
+        assert_eq!(deferred, 4);
+        assert_eq!(skipped_low_value, 0);
+    }
+
+    #[test]
+    fn link_candidate_selection_allows_small_explicit_allowlist_node() {
+        let parent_by_index = vec![None];
+        let existing_virtualized = FxHashSet::default();
+        let candidates = vec![pending_link_decision(
+            "small-explicit",
+            0,
+            LinkVirtualState::Virtual,
+            1,
+            0.2,
+            true,
+            false,
+            1,
+        )];
+
+        let (selected, deferred, skipped_low_value) = select_link_virtualization_candidates(
+            candidates,
+            &parent_by_index,
+            &existing_virtualized,
+            0,
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].node_name, "small-explicit");
+        assert_eq!(deferred, 0);
+        assert_eq!(skipped_low_value, 0);
+    }
+
+    #[test]
+    fn link_candidate_selection_prioritizes_restore_before_new_virtualization() {
+        let parent_by_index = vec![None, None];
+        let existing_virtualized = FxHashSet::default();
+        let candidates = vec![
+            pending_link_decision(
+                "virtualize-me",
+                0,
+                LinkVirtualState::Virtual,
+                10,
+                10.0,
+                false,
+                true,
+                1_000,
+            ),
+            pending_link_decision(
+                "restore-me",
+                1,
+                LinkVirtualState::Physical,
+                1,
+                0.2,
+                false,
+                false,
+                1,
+            ),
+        ];
+
+        let (selected, _deferred, skipped_low_value) = select_link_virtualization_candidates(
+            candidates,
+            &parent_by_index,
+            &existing_virtualized,
+            0,
+        );
+
+        assert_eq!(
+            selected
+                .first()
+                .map(|candidate| candidate.node_name.as_str()),
+            Some("restore-me")
+        );
+        assert_eq!(skipped_low_value, 0);
+    }
+
+    #[test]
+    fn link_candidate_selection_skips_small_low_throughput_automatic_nodes() {
+        let parent_by_index = vec![None];
+        let existing_virtualized = FxHashSet::default();
+        let candidates = vec![pending_link_decision(
+            "small-auto",
+            0,
+            LinkVirtualState::Virtual,
+            8,
+            0.4,
+            false,
+            false,
+            10,
+        )];
+
+        let (selected, deferred, skipped_low_value) = select_link_virtualization_candidates(
+            candidates,
+            &parent_by_index,
+            &existing_virtualized,
+            0,
+        );
+
+        assert!(selected.is_empty());
+        assert_eq!(deferred, 0);
+        assert_eq!(skipped_low_value, 1);
+    }
+
+    #[test]
+    fn link_candidate_selection_allows_large_low_throughput_automatic_nodes() {
+        let parent_by_index = vec![None];
+        let existing_virtualized = FxHashSet::default();
+        let candidates = vec![pending_link_decision(
+            "large-auto",
+            0,
+            LinkVirtualState::Virtual,
+            16,
+            0.4,
+            false,
+            false,
+            10,
+        )];
+
+        let (selected, deferred, skipped_low_value) = select_link_virtualization_candidates(
+            candidates,
+            &parent_by_index,
+            &existing_virtualized,
+            0,
+        );
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].node_name, "large-auto");
+        assert_eq!(deferred, 0);
+        assert_eq!(skipped_low_value, 0);
     }
 
     #[test]

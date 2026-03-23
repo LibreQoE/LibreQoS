@@ -18,7 +18,7 @@ Manual steps (run in two terminals)
        sudo systemctl stop lqosd lqos_scheduler lqos_api
 2) In another terminal from this directory (LibreQoS/src), run the tests:
      python3 bakery_integration_test.py --log-file /tmp/lqosd.log
-   - You can limit scope with --tiered-only or --flat-only.
+   - You can limit scope with --tiered-only, --flat-only, or --treeguard-only.
 
 What this script does
 - Backs up `network.json` and `ShapedDevices.csv` in the current directory.
@@ -36,6 +36,8 @@ Usage examples
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log
 - Tiered only:
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log --tiered-only
+- TreeGuard runtime suite only:
+    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --treeguard-only --treeguard-timeout 90
 - Flat only:
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log --flat-only
 
@@ -217,6 +219,78 @@ TIERED_NETWORK_BASE = {
 }
 
 
+VIRTUALIZED_TIERED_NETWORK_BASE = {
+    "Site_A": {
+        "downloadBandwidthMbps": 120,
+        "uploadBandwidthMbps": 120,
+        "type": "Site",
+        "children": {
+            "Town_V": {
+                "downloadBandwidthMbps": 80,
+                "uploadBandwidthMbps": 80,
+                "type": "Site",
+                "virtual": True,
+                "children": {
+                    "AP_V": {
+                        "downloadBandwidthMbps": 40,
+                        "uploadBandwidthMbps": 40,
+                        "type": "AP",
+                    }
+                },
+            },
+            "AP_A": {
+                "downloadBandwidthMbps": 50,
+                "uploadBandwidthMbps": 50,
+                "type": "AP",
+            },
+        },
+    },
+}
+
+
+def treeguard_runtime_network_base() -> dict:
+    large_children = {
+        f"AP_TG_{index:02d}": {
+            "downloadBandwidthMbps": 25,
+            "uploadBandwidthMbps": 25,
+            "type": "AP",
+        }
+        for index in range(1, 17)
+    }
+    return {
+        "Site_A": {
+            "downloadBandwidthMbps": 200,
+            "uploadBandwidthMbps": 200,
+            "type": "Site",
+            "children": {
+                "Town_TG": {
+                    "downloadBandwidthMbps": 120,
+                    "uploadBandwidthMbps": 120,
+                    "type": "Site",
+                    "children": large_children,
+                },
+                "Small_TG": {
+                    "downloadBandwidthMbps": 30,
+                    "uploadBandwidthMbps": 30,
+                    "type": "Site",
+                    "children": {
+                        "AP_SMALL": {
+                            "downloadBandwidthMbps": 20,
+                            "uploadBandwidthMbps": 20,
+                            "type": "AP",
+                        }
+                    },
+                },
+                "AP_SIB": {
+                    "downloadBandwidthMbps": 40,
+                    "uploadBandwidthMbps": 40,
+                    "type": "AP",
+                },
+            },
+        },
+    }
+
+
 def write_network_json(obj: dict) -> None:
     with open("network.json", "w") as f:
         json.dump(obj, f, indent=2)
@@ -284,6 +358,148 @@ def tiered_circuits_base() -> List[Dict[str, str | int | float]]:
             "sqm": "",
         },
     ]
+
+
+def virtualized_tiered_circuits_base() -> List[Dict[str, str | int | float]]:
+    return [
+        {
+            "Circuit ID": "501",
+            "Circuit Name": "VIRTUAL_DIRECT",
+            "Device ID": "501",
+            "Device Name": "VD1",
+            "Parent Node": "Town_V",
+            "MAC": "",
+            "IPv4": "100.64.2.1",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 20,
+            "Upload Max Mbps": 10,
+            "Comment": "",
+            "sqm": "",
+        },
+        {
+            "Circuit ID": "502",
+            "Circuit Name": "VIRTUAL_CHILD",
+            "Device ID": "502",
+            "Device Name": "VD2",
+            "Parent Node": "AP_V",
+            "MAC": "",
+            "IPv4": "100.64.2.2",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 15,
+            "Upload Max Mbps": 8,
+            "Comment": "",
+            "sqm": "",
+        },
+        {
+            "Circuit ID": "503",
+            "Circuit Name": "SIBLING_REAL",
+            "Device ID": "503",
+            "Device Name": "VD3",
+            "Parent Node": "AP_A",
+            "MAC": "",
+            "IPv4": "100.64.2.3",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 12,
+            "Upload Max Mbps": 6,
+            "Comment": "",
+            "sqm": "",
+        },
+    ]
+
+
+def treeguard_runtime_circuits_base() -> List[Dict[str, str | int | float]]:
+    rows: List[Dict[str, str | int | float]] = [
+        {
+            "Circuit ID": "701",
+            "Circuit Name": "TG_DIRECT",
+            "Device ID": "701",
+            "Device Name": "TG-DIRECT",
+            "Parent Node": "Town_TG",
+            "MAC": "",
+            "IPv4": "100.64.70.1",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 20,
+            "Upload Max Mbps": 10,
+            "Comment": "",
+            "sqm": "",
+        },
+        {
+            "Circuit ID": "702",
+            "Circuit Name": "TG_CHILD_01",
+            "Device ID": "702",
+            "Device Name": "TG-CHILD-01",
+            "Parent Node": "AP_TG_01",
+            "MAC": "",
+            "IPv4": "100.64.70.2",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 15,
+            "Upload Max Mbps": 8,
+            "Comment": "",
+            "sqm": "",
+        },
+        {
+            "Circuit ID": "799",
+            "Circuit Name": "TG_SMALL",
+            "Device ID": "799",
+            "Device Name": "TG-SMALL",
+            "Parent Node": "AP_SMALL",
+            "MAC": "",
+            "IPv4": "100.64.70.99",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 8,
+            "Upload Max Mbps": 4,
+            "Comment": "",
+            "sqm": "",
+        },
+        {
+            "Circuit ID": "750",
+            "Circuit Name": "TG_SIBLING",
+            "Device ID": "750",
+            "Device Name": "TG-SIB",
+            "Parent Node": "AP_SIB",
+            "MAC": "",
+            "IPv4": "100.64.70.50",
+            "IPv6": "",
+            "Download Min Mbps": 1,
+            "Upload Min Mbps": 1,
+            "Download Max Mbps": 10,
+            "Upload Max Mbps": 5,
+            "Comment": "",
+            "sqm": "",
+        },
+    ]
+    for index in range(2, 9):
+        rows.append(
+            {
+                "Circuit ID": f"72{index:02d}",
+                "Circuit Name": f"TG_CHILD_{index:02d}",
+                "Device ID": f"72{index:02d}",
+                "Device Name": f"TG-CHILD-{index:02d}",
+                "Parent Node": f"AP_TG_{index:02d}",
+                "MAC": "",
+                "IPv4": f"100.64.71.{index}",
+                "IPv6": "",
+                "Download Min Mbps": 1,
+                "Upload Min Mbps": 1,
+                "Download Max Mbps": 12,
+                "Upload Max Mbps": 6,
+                "Comment": "",
+                "sqm": "",
+            }
+        )
+    return rows
 
 
 def flat_network_base() -> dict:
@@ -886,6 +1102,144 @@ def _find_parent_node(net: Dict[str, dict], name: str) -> Optional[dict]:
             if got is not None:
                 return got
     return None
+
+
+def check_virtualized_node_promotion(
+    virtual_node_name: str,
+    promoted_child_name: str,
+    expected_real_parent: str,
+    direct_circuit_id: str,
+    promoted_child_circuit_id: str,
+    *,
+    expect_virtual_node_listed: bool = True,
+) -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["virtualized node check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["virtualized node check: queuingStructure has no 'Network'"]
+
+    ok = True
+    if expect_virtual_node_listed:
+        virtual_nodes = qs.get("virtual_nodes")
+        if not isinstance(virtual_nodes, list) or virtual_node_name not in virtual_nodes:
+            msgs.append(f"virtualized node check: '{virtual_node_name}' missing from queuingStructure virtual_nodes")
+            ok = False
+        else:
+            msgs.append(f"virtualized node check: '{virtual_node_name}' listed in queuingStructure virtual_nodes")
+
+    virtual_node = _find_parent_node(net, virtual_node_name)
+    if virtual_node is not None:
+        msgs.append(f"virtualized node check: '{virtual_node_name}' still exists in physical queue tree")
+        ok = False
+    else:
+        msgs.append(f"virtualized node check: '{virtual_node_name}' absent from physical queue tree")
+
+    real_parent = _find_parent_node(net, expected_real_parent)
+    if not isinstance(real_parent, dict):
+        msgs.append(f"virtualized node check: expected real parent '{expected_real_parent}' not found")
+        ok = False
+    else:
+        children = real_parent.get("children")
+        if not isinstance(children, dict) or promoted_child_name not in children:
+            msgs.append(
+                f"virtualized node check: promoted child '{promoted_child_name}' not found under '{expected_real_parent}'"
+            )
+            ok = False
+        else:
+            msgs.append(
+                f"virtualized node check: promoted child '{promoted_child_name}' found under '{expected_real_parent}'"
+            )
+
+    found_direct = _walk_nodes_for_circuit(net, direct_circuit_id)
+    if not found_direct:
+        msgs.append(f"virtualized node check: direct circuit {direct_circuit_id} not found in structure")
+        ok = False
+    else:
+        parent_name, _ = found_direct
+        if parent_name != expected_real_parent:
+            msgs.append(
+                f"virtualized node check: direct circuit {direct_circuit_id} attached to '{parent_name}', expected '{expected_real_parent}'"
+            )
+            ok = False
+        else:
+            msgs.append(
+                f"virtualized node check: direct circuit {direct_circuit_id} attached to '{expected_real_parent}'"
+            )
+
+    found_child = _walk_nodes_for_circuit(net, promoted_child_circuit_id)
+    if not found_child:
+        msgs.append(
+            f"virtualized node check: promoted-child circuit {promoted_child_circuit_id} not found in structure"
+        )
+        ok = False
+    else:
+        parent_name, _ = found_child
+        if parent_name != promoted_child_name:
+            msgs.append(
+                f"virtualized node check: promoted-child circuit {promoted_child_circuit_id} attached to '{parent_name}', expected '{promoted_child_name}'"
+            )
+            ok = False
+        else:
+            msgs.append(
+                f"virtualized node check: promoted-child circuit {promoted_child_circuit_id} attached to '{promoted_child_name}'"
+            )
+
+    return ok, msgs
+
+
+def check_node_present_in_physical_tree(node_name: str) -> Tuple[bool, List[str]]:
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["treeguard node presence check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["treeguard node presence check: queuingStructure has no 'Network'"]
+    node = _find_parent_node(net, node_name)
+    if node is None:
+        return False, [f"treeguard node presence check: '{node_name}' absent from physical queue tree"]
+    return True, [f"treeguard node presence check: '{node_name}' still present in physical queue tree"]
+
+
+def _log_contains_unexpected_full_reload(lines: List[str]) -> bool:
+    full_reload = any(FULL_RELOAD_PAT.search(line) or FULL_RELOAD_SUMMARY_PAT.search(line) for line in lines)
+    mq_init = any(MQ_INIT_PAT.search(line) for line in lines)
+    return full_reload and not mq_init
+
+
+def wait_for_runtime_virtualized_node(
+    virtual_node_name: str,
+    promoted_child_name: str,
+    expected_real_parent: str,
+    direct_circuit_id: str,
+    promoted_child_circuit_id: str,
+    timeout_s: float,
+    poll_s: float = 1.0,
+) -> Tuple[bool, List[str]]:
+    deadline = time.time() + timeout_s
+    last_msgs: List[str] = []
+    while time.time() < deadline:
+        passed, msgs = check_virtualized_node_promotion(
+            virtual_node_name,
+            promoted_child_name,
+            expected_real_parent,
+            direct_circuit_id,
+            promoted_child_circuit_id,
+            expect_virtual_node_listed=False,
+        )
+        last_msgs = msgs
+        if passed:
+            last_msgs.append(
+                f"treeguard runtime check: '{virtual_node_name}' virtualized live within {timeout_s:.1f}s"
+            )
+            return True, last_msgs
+        time.sleep(poll_s)
+    last_msgs.append(
+        f"treeguard runtime check: timed out waiting {timeout_s:.1f}s for '{virtual_node_name}' runtime virtualization"
+    )
+    return False, last_msgs
 
 
 def check_ip_mappings_for_circuit(circuit_id: str) -> Tuple[bool, List[str]]:
@@ -1805,6 +2159,94 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     return ok
 
 
+def run_virtualized_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+    ok = True
+
+    write_network_json(VIRTUALIZED_TIERED_NETWORK_BASE)
+    rows = virtualized_tiered_circuits_base()
+    write_circuits(rows)
+    _ = run_refresh_and_wait(log, timeout_s)
+    results.append("virtualized: baseline: ok (initial run)")
+
+    _mark_step("virtualized: operator-authored virtual node promotion")
+    passed, msgs = check_virtualized_node_promotion(
+        "Town_V",
+        "AP_V",
+        "Site_A",
+        "501",
+        "502",
+    )
+    results.extend(msgs)
+    ok &= passed
+
+    _mark_step("virtualized: direct circuit ip mappings")
+    passed_map_direct, msgs_map_direct = check_ip_mappings_for_circuit("501")
+    results.extend(msgs_map_direct)
+    ok &= passed_map_direct
+
+    _mark_step("virtualized: promoted child circuit ip mappings")
+    passed_map_child, msgs_map_child = check_ip_mappings_for_circuit("502")
+    results.extend(msgs_map_child)
+    ok &= passed_map_child
+
+    _mark_step("virtualized: promoted child circuit rate change")
+    rows2 = json.loads(json.dumps(rows))
+    rows2[1]["Download Max Mbps"] = 22
+    rows2[1]["Upload Max Mbps"] = 11
+    write_circuits(rows2)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("virtualized: promoted child circuit rate change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("virtualized: promoted child circuit direction mapping")
+    passed_dir, msgs_dir = check_circuit_direction_ceil("502")
+    results.extend(msgs_dir)
+    ok &= passed_dir
+
+    _mark_step("virtualized: promoted child circuit IP change")
+    rows3 = json.loads(json.dumps(rows2))
+    old_ip = str(rows3[1]["IPv4"])
+    rows3[1]["IPv4"] = "100.64.2.22"
+    write_circuits(rows3)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("virtualized: promoted child circuit IP change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    passed_map_new, msgs_map_new = check_ip_mappings_for_circuit("502")
+    results.extend(msgs_map_new)
+    ok &= passed_map_new
+
+    passed_map_old, msgs_map_old = check_ip_mapping_absent(old_ip)
+    results.extend(msgs_map_old)
+    ok &= passed_map_old
+
+    _mark_step("virtualized: promoted child circuit parent move")
+    rows4 = json.loads(json.dumps(rows3))
+    rows4[1]["Parent Node"] = "AP_A"
+    write_circuits(rows4)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("virtualized: promoted child circuit parent move", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("virtualized: parent-moved circuit direction mapping")
+    passed_parent_dir, msgs_parent_dir = check_circuit_direction_ceil("502")
+    results.extend(msgs_parent_dir)
+    ok &= passed_parent_dir
+
+    _mark_step("virtualized: parent-moved circuit ip mappings")
+    passed_parent_map, msgs_parent_map = check_ip_mappings_for_circuit("502")
+    results.extend(msgs_parent_map)
+    ok &= passed_parent_map
+
+    return ok
+
+
 def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
@@ -1989,6 +2431,57 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     return ok
 
 
+def run_treeguard_runtime_suite(
+    log: LogReader, timeout_s: float, treeguard_timeout_s: float, results: List[str]
+) -> bool:
+    ok = True
+
+    _mark_step("treeguard: baseline")
+    write_network_json(treeguard_runtime_network_base())
+    rows = treeguard_runtime_circuits_base()
+    write_circuits(rows)
+    _ = run_refresh_and_wait(log, timeout_s)
+    results.append("treeguard: baseline: ok (initial run)")
+
+    after_baseline_offset = log.snapshot()
+
+    _mark_step("treeguard: wait for runtime virtualization")
+    passed, msgs = wait_for_runtime_virtualized_node(
+        "Town_TG",
+        "AP_TG_01",
+        "Site_A",
+        "701",
+        "702",
+        treeguard_timeout_s,
+    )
+    results.extend(msgs)
+    ok &= passed
+
+    new_lines = log.read_since(after_baseline_offset)
+    if _log_contains_unexpected_full_reload(new_lines):
+        results.append("treeguard: runtime virtualization: unexpected full reload detected")
+        ok = False
+    else:
+        results.append("treeguard: runtime virtualization: OK (no full reload)")
+
+    _mark_step("treeguard: direct circuit ip mappings")
+    passed_map_direct, msgs_map_direct = check_ip_mappings_for_circuit("701")
+    results.extend(msgs_map_direct)
+    ok &= passed_map_direct
+
+    _mark_step("treeguard: promoted child circuit ip mappings")
+    passed_map_child, msgs_map_child = check_ip_mappings_for_circuit("702")
+    results.extend(msgs_map_child)
+    ok &= passed_map_child
+
+    _mark_step("treeguard: low-value sibling remains physical")
+    passed_small, msgs_small = check_node_present_in_physical_tree("Small_TG")
+    results.extend(msgs_small)
+    ok &= passed_small
+
+    return ok
+
+
 def run_flat_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
@@ -2066,10 +2559,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="LibreQoS/Bakery integration tests")
     ap.add_argument("--log-file", required=True, help="Path to lqosd log file (stdout/tee capture)")
     ap.add_argument("--timeout", type=float, default=25.0, help="Wait time per step (seconds)")
+    ap.add_argument(
+        "--treeguard-timeout",
+        type=float,
+        default=90.0,
+        help="Max wait time for TreeGuard runtime virtualization in the dedicated TreeGuard suite",
+    )
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--tiered-only", action="store_true", help="Run tiered cases only")
     g.add_argument("--flat-only", action="store_true", help="Run flat cases only")
     g.add_argument("--realistic-only", action="store_true", help="Run realistic tiered cases only")
+    g.add_argument("--virtualized-only", action="store_true", help="Run virtualized-node tiered cases only")
+    g.add_argument("--treeguard-only", action="store_true", help="Run live TreeGuard runtime cases only")
     ap.add_argument("--no-restore", action="store_true", help="Do not restore original files (debugging)")
 
     args = ap.parse_args()
@@ -2097,14 +2598,25 @@ def main() -> int:
         if args.tiered_only:
             ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
+        elif args.virtualized_only:
+            ok = run_virtualized_tiered_suite(log, args.timeout, results)
+            overall_ok &= ok
         elif args.flat_only:
             ok = run_flat_suite(log, args.timeout, results)
             overall_ok &= ok
         elif args.realistic_only:
             ok = run_realistic_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
+        elif args.treeguard_only:
+            ok = run_treeguard_runtime_suite(
+                log, args.timeout, args.treeguard_timeout, results
+            )
+            overall_ok &= ok
         else:
             ok = run_tiered_suite(log, args.timeout, results)
+            overall_ok &= ok
+
+            ok = run_virtualized_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
 
             ok = run_flat_suite(log, args.timeout, results)

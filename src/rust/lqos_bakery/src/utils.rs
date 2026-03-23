@@ -1,6 +1,6 @@
 use lqos_bus::TcHandle;
 use parking_lot::Mutex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -30,6 +30,13 @@ pub struct MemorySnapshot {
     pub total_bytes: u64,
     /// Currently available RAM in bytes.
     pub available_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LiveTcClassEntry {
+    pub(crate) class_id: TcHandle,
+    pub(crate) parent: Option<TcHandle>,
+    pub(crate) leaf_qdisc_major: Option<u16>,
 }
 
 fn format_numbered_lines(lines: &str, starting_line_number: usize) -> String {
@@ -121,6 +128,29 @@ pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u
         .map_err(|e| format!("Failed to parse live qdisc snapshot on {interface}: {e}"))
 }
 
+pub(crate) fn read_live_class_snapshot(
+    interface: &str,
+) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
+    let output = std::process::Command::new("/sbin/tc")
+        .args(["class", "show", "dev", interface])
+        .output()
+        .map_err(|e| format!("Failed to snapshot live classes on {interface}: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Failed to snapshot live classes on {interface}: {}",
+            stderr.trim()
+        ));
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Live class snapshot on {interface} was not UTF-8: {e}"))?;
+
+    parse_live_class_snapshot(&stdout)
+        .map_err(|e| format!("Failed to parse live class snapshot on {interface}: {e}"))
+}
+
 fn parse_live_qdisc_handle_majors(raw_json: &str) -> Result<HashSet<u16>, String> {
     let parsed = serde_json::from_str::<serde_json::Value>(raw_json)
         .map_err(|e| format!("invalid JSON: {e}"))?;
@@ -143,6 +173,64 @@ fn parse_live_qdisc_handle_majors(raw_json: &str) -> Result<HashSet<u16>, String
     }
 
     Ok(handles)
+}
+
+fn parse_live_class_snapshot(raw: &str) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
+    let mut snapshot = HashMap::new();
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.starts_with("class ") {
+            continue;
+        }
+
+        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+        if tokens.len() < 3 {
+            return Err(format!("Malformed tc class line: {trimmed}"));
+        }
+
+        let class_id = TcHandle::from_string(tokens[2]).map_err(|e| {
+            format!(
+                "Invalid tc class handle {:?} in line {:?}: {:?}",
+                tokens[2], trimmed, e
+            )
+        })?;
+
+        let mut parent = None;
+        let mut leaf_qdisc_major = None;
+        let mut idx = 3usize;
+        while idx < tokens.len() {
+            match tokens[idx] {
+                "parent" if idx + 1 < tokens.len() => {
+                    if let Ok(handle) = TcHandle::from_string(tokens[idx + 1]) {
+                        parent = Some(handle);
+                    }
+                    idx += 2;
+                }
+                "leaf" if idx + 1 < tokens.len() => {
+                    if let Ok(handle) = TcHandle::from_string(tokens[idx + 1]) {
+                        let (major, _) = handle.get_major_minor();
+                        if major != 0 {
+                            leaf_qdisc_major = Some(major);
+                        }
+                    }
+                    idx += 2;
+                }
+                _ => idx += 1,
+            }
+        }
+
+        snapshot.insert(
+            class_id,
+            LiveTcClassEntry {
+                class_id,
+                parent,
+                leaf_qdisc_major,
+            },
+        );
+    }
+
+    Ok(snapshot)
 }
 
 pub(crate) fn execute_in_memory(command_buffer: &[Vec<String>], purpose: &str) -> ExecuteResult {
@@ -420,6 +508,29 @@ mod tests {
         let err = parse_live_qdisc_handle_majors(r#"{"handle":"90f1:"}"#)
             .expect_err("non-array should fail");
         assert!(err.contains("expected JSON array"));
+    }
+
+    #[test]
+    fn parse_live_class_snapshot_extracts_parent_and_leaf() {
+        let raw = "\
+class htb 1:da parent 1:4 leaf ddad: prio 3 rate 20Mbit ceil 100Mbit burst 1600b cburst 1600b
+class htb 1:4 root rate 949Mbit ceil 950Mbit burst 1423b cburst 1425b
+";
+        let snapshot = parse_live_class_snapshot(raw).expect("snapshot parsed");
+        let class_da = snapshot
+            .get(&TcHandle::from_string("1:da").expect("valid class"))
+            .expect("class 1:da present");
+        assert_eq!(
+            class_da.parent,
+            Some(TcHandle::from_string("1:4").expect("valid parent"))
+        );
+        assert_eq!(class_da.leaf_qdisc_major, Some(0xddad));
+
+        let class_root = snapshot
+            .get(&TcHandle::from_string("1:4").expect("valid class"))
+            .expect("class 1:4 present");
+        assert_eq!(class_root.parent, None);
+        assert_eq!(class_root.leaf_qdisc_major, None);
     }
 
     #[test]

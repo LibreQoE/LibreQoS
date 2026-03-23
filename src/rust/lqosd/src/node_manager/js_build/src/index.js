@@ -81,8 +81,10 @@ const defaultLayout = {
             id: "treeguard",
             name: "TreeGuard",
             dashlets: [
-                { tag: "treeguardControls", size: 6 },
-                { tag: "treeguardStatus", size: 6 },
+                { tag: "treeguardControlLoop", size: 4 },
+                { tag: "treeguardStateMix", size: 4 },
+                { tag: "treeguardDecisionImpact", size: 4 },
+                { tag: "treeguardControls", size: 12 },
                 { tag: "treeguardActivity", size: 12 }
             ]
         },
@@ -90,8 +92,8 @@ const defaultLayout = {
             id: "bakery",
             name: "Bakery",
             dashlets: [
-                { tag: "bakeryStatusSummary", size: 4 },
-                { tag: "bakeryApplySummary", size: 4 },
+                { tag: "bakeryPipeline", size: 4 },
+                { tag: "bakeryChangeMix", size: 4 },
                 { tag: "bakeryCapacity", size: 4 },
                 { tag: "bakeryStatus", size: 12 },
                 { tag: "bakeryActivity", size: 12 }

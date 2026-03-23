@@ -63,6 +63,11 @@ enabled = true
 dry_run = false
 tick_seconds = 1
 
+[treeguard.cpu]
+mode = "cpu_aware"
+cpu_high_pct = 75
+cpu_low_pct = 55
+
 [treeguard.links]
 enabled = true
 all_nodes = true
@@ -77,6 +82,12 @@ independent_directions = true
 [treeguard.qoo]
 enabled = true
 ```
+
+La virtualización de nodos en TreeGuard está pensada para ser basada en CPU por defecto. El
+tráfico, RTT y QoO siguen siendo señales importantes de seguridad y restauración, pero la nueva
+virtualización automática debe ocurrir cuando la presión de CPU indica que el ahorro de HTB vale
+la pena. Las instalaciones actualizadas desde defaults antiguos se migran silenciosamente de
+`traffic_rtt_only` a `cpu_aware`, con un aviso visible en logs/UI.
 
 ## Patrón de Despliegue Seguro
 

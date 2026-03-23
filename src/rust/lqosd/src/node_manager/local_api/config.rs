@@ -7,7 +7,7 @@ use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, UserRole, WebUser, 
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
@@ -133,18 +133,61 @@ fn ensure_topology_editor_unlocked() -> Result<(), String> {
     Ok(())
 }
 
-fn persist_network_json(network_json: &Value) {
-    let config = lqos_config::load_config().expect("Unable to load LibreQoS config");
+fn validate_network_json(value: &Value) -> Result<(), String> {
+    let Some(map) = value.as_object() else {
+        return Err("network.json must be a JSON object".to_string());
+    };
+
+    let mut seen = HashSet::new();
+    let mut duplicates = BTreeSet::new();
+
+    fn walk(
+        map: &serde_json::Map<String, Value>,
+        seen: &mut HashSet<String>,
+        duplicates: &mut BTreeSet<String>,
+    ) {
+        for (name, node) in map {
+            if !seen.insert(name.clone()) {
+                duplicates.insert(name.clone());
+            }
+            let Some(node_map) = node.as_object() else {
+                continue;
+            };
+            let Some(children) = node_map.get("children").and_then(Value::as_object) else {
+                continue;
+            };
+            walk(children, seen, duplicates);
+        }
+    }
+
+    walk(map, &mut seen, &mut duplicates);
+
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "network.json contains duplicate node names: {}. Node names must be globally unique.",
+            duplicates.into_iter().collect::<Vec<_>>().join(", ")
+        ))
+    }
+}
+
+fn persist_network_json(network_json: &Value) -> Result<(), String> {
+    validate_network_json(network_json)?;
+    let config =
+        lqos_config::load_config().map_err(|e| format!("Unable to load LibreQoS config: {e}"))?;
     let serialized_string = serde_json::to_string_pretty(network_json)
-        .expect("Unable to serialize network.json payload");
+        .map_err(|e| format!("Unable to serialize network.json payload: {e}"))?;
     let net_json_path = std::path::Path::new(&config.lqos_directory).join("network.json");
     let net_json_backup_path =
         std::path::Path::new(&config.lqos_directory).join("network.json.backup");
     if net_json_path.exists() {
         std::fs::copy(&net_json_path, net_json_backup_path)
-            .expect("Unable to create network.json backup");
+            .map_err(|e| format!("Unable to create network.json backup: {e}"))?;
     }
-    std::fs::write(net_json_path, serialized_string).expect("Unable to write network.json");
+    std::fs::write(net_json_path, serialized_string)
+        .map_err(|e| format!("Unable to write network.json: {e}"))?;
+    Ok(())
 }
 
 fn normalize_sqm_override(raw: &Option<String>) -> Option<String> {
@@ -334,7 +377,7 @@ pub fn update_network_and_devices_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    persist_network_json(&network_json);
+    persist_network_json(&network_json)?;
     persist_shaped_devices(shaped_devices)?;
 
     Ok(())
@@ -354,7 +397,7 @@ pub fn update_network_json_only_data(
     }
     ensure_topology_editor_unlocked()?;
 
-    persist_network_json(&network_json);
+    persist_network_json(&network_json)?;
 
     Ok(())
 }
@@ -531,4 +574,61 @@ pub struct UserRequest {
     pub username: String,
     pub password: Option<String>,
     pub role: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_network_json;
+    use serde_json::json;
+
+    #[test]
+    fn accepts_unique_node_names() {
+        let network = json!({
+            "Site A": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "Site B": {
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500
+                    }
+                }
+            },
+            "Site C": {
+                "downloadBandwidthMbps": 750,
+                "uploadBandwidthMbps": 750
+            }
+        });
+
+        assert!(validate_network_json(&network).is_ok());
+    }
+
+    #[test]
+    fn rejects_duplicate_node_names_anywhere_in_tree() {
+        let network = json!({
+            "Site A": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "Duplicate": {
+                        "downloadBandwidthMbps": 500,
+                        "uploadBandwidthMbps": 500
+                    }
+                }
+            },
+            "Site B": {
+                "downloadBandwidthMbps": 750,
+                "uploadBandwidthMbps": 750,
+                "children": {
+                    "Duplicate": {
+                        "downloadBandwidthMbps": 300,
+                        "uploadBandwidthMbps": 300
+                    }
+                }
+            }
+        });
+
+        let err = validate_network_json(&network).expect_err("duplicate names must fail");
+        assert!(err.contains("Duplicate"));
+    }
 }

@@ -11,6 +11,57 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender as ReplySender;
 use tracing::{debug, info};
 
+/// Runtime TreeGuard node-operation action tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationAction {
+    /// Virtualize the target node/subtree.
+    Virtualize,
+    /// Restore the target node/subtree to the physical tree.
+    Restore,
+}
+
+/// Runtime TreeGuard node-operation status tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationStatus {
+    /// Operation was accepted but has not started applying yet.
+    Submitted,
+    /// Operation was not started because Bakery runtime-node capacity is currently saturated.
+    Deferred,
+    /// Operation is currently applying reparent/restore work.
+    Applying,
+    /// Traffic-carrying work succeeded; cleanup is still pending.
+    AppliedAwaitingCleanup,
+    /// Operation completed successfully.
+    Completed,
+    /// Operation failed and can be retried.
+    Failed,
+    /// Operation could not be reconciled safely and the subtree is now frozen.
+    Dirty,
+}
+
+/// Snapshot of a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, PartialEq, Eq, Allocative)]
+pub struct RuntimeNodeOperationSnapshot {
+    /// Monotonic Bakery-local operation identifier.
+    pub operation_id: u64,
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Requested runtime action.
+    pub action: RuntimeNodeOperationAction,
+    /// Current operation status.
+    pub status: RuntimeNodeOperationStatus,
+    /// Number of retry/apply attempts performed so far.
+    pub attempt_count: u32,
+    /// Unix timestamp when the operation was submitted.
+    pub submitted_at_unix: u64,
+    /// Unix timestamp when the operation last changed state.
+    pub updated_at_unix: u64,
+    /// Optional unix timestamp for the next retry, if waiting.
+    pub next_retry_at_unix: Option<u64>,
+    /// Last error observed by Bakery for this operation, if any.
+    pub last_error: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
     site_hash: i64,
@@ -179,9 +230,9 @@ pub enum BakeryCommands {
         site_hash: i64,
         /// Whether the site should be virtualized (`true`) or restored (`false`).
         virtualized: bool,
-        /// Optional synchronous reply channel for immediate success/failure reporting.
+        /// Optional synchronous reply channel for immediate operation-state reporting.
         #[allocative(skip)]
-        reply: Option<ReplySender<Result<(), String>>>,
+        reply: Option<ReplySender<RuntimeNodeOperationSnapshot>>,
     },
 }
 

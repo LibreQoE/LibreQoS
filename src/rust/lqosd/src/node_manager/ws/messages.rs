@@ -362,13 +362,54 @@ pub struct BakeryStatusState {
     pub last_qdisc_commands: usize,
     pub last_build_duration_ms: u64,
     pub last_apply_duration_ms: u64,
+    pub runtime_operations: BakeryRuntimeOperationsData,
+    pub queue_distribution: Vec<BakeryQueueDistributionData>,
     pub preflight: Option<BakeryPreflightData>,
+    pub reload_required: bool,
+    pub reload_required_reason: Option<String>,
+    pub dirty_subtree_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BakeryStatusData {
     pub current_state: BakeryStatusState,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryQueueDistributionData {
+    pub queue: u32,
+    pub top_level_site_count: usize,
+    pub site_count: usize,
+    pub circuit_count: usize,
+    pub download_mbps: u64,
+    pub upload_mbps: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationsData {
+    pub submitted_count: usize,
+    pub deferred_count: usize,
+    pub applying_count: usize,
+    pub awaiting_cleanup_count: usize,
+    pub failed_count: usize,
+    pub dirty_count: usize,
+    pub latest: Option<BakeryRuntimeOperationHeadlineData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationHeadlineData {
+    pub operation_id: u64,
+    pub site_hash: i64,
+    pub action: String,
+    pub status: String,
+    pub attempt_count: u32,
+    pub updated_at_unix: u64,
+    pub next_retry_at_unix: Option<u64>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

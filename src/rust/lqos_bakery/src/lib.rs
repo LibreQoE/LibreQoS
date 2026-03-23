@@ -36,15 +36,23 @@ use std::sync::{Arc, OnceLock};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
 pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
-use crate::commands::ExecutionMode;
+use crate::commands::{
+    ExecutionMode, RuntimeNodeOperationAction, RuntimeNodeOperationSnapshot,
+    RuntimeNodeOperationStatus,
+};
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::qdisc_handles::QdiscHandleState;
 use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32};
 use crate::utils::{
-    ExecuteResult, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
-    read_live_qdisc_handle_majors, read_memory_snapshot, write_command_file,
+    ExecuteResult, LiveTcClassEntry, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
+    read_live_class_snapshot, read_live_qdisc_handle_majors, read_memory_snapshot,
+    write_command_file,
 };
-pub use commands::BakeryCommands;
+pub use commands::{
+    BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
+    RuntimeNodeOperationSnapshot as BakeryRuntimeNodeOperationSnapshot,
+    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus,
+};
 use lqos_bus::{
     BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
     UrgentSource,
@@ -109,12 +117,88 @@ struct StormguardOverrideKey {
 }
 
 #[derive(Clone, Debug)]
+struct VirtualizedSiteQdiscHandles {
+    down: Option<u16>,
+    up: Option<u16>,
+}
+
+#[derive(Clone, Debug)]
 struct VirtualizedSiteState {
     site: Arc<BakeryCommands>,
     saved_sites: HashMap<i64, Arc<BakeryCommands>>,
     saved_circuits: HashMap<i64, Arc<BakeryCommands>>,
     active_sites: HashMap<i64, Arc<BakeryCommands>>,
     active_circuits: HashMap<i64, Arc<BakeryCommands>>,
+    qdisc_handles: VirtualizedSiteQdiscHandles,
+    pending_prune: bool,
+    next_prune_attempt_unix: u64,
+}
+
+const RUNTIME_SITE_PRUNE_RETRY_SECONDS: u64 = 30;
+const RUNTIME_SITE_PRUNE_MAX_ATTEMPTS: u32 = 5;
+const RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD: usize = 3;
+const RUNTIME_NODE_OPERATION_CAPACITY: usize = 32;
+const RUNTIME_NODE_OPERATION_DEFERRED_RETRY_SECONDS: u64 = 60;
+
+#[derive(Clone, Debug)]
+struct RuntimeNodeOperation {
+    operation_id: u64,
+    site_hash: i64,
+    action: RuntimeNodeOperationAction,
+    status: RuntimeNodeOperationStatus,
+    attempt_count: u32,
+    submitted_at_unix: u64,
+    updated_at_unix: u64,
+    next_retry_at_unix: Option<u64>,
+    last_error: Option<String>,
+}
+
+impl RuntimeNodeOperation {
+    fn new(
+        operation_id: u64,
+        site_hash: i64,
+        action: RuntimeNodeOperationAction,
+        now_unix: u64,
+    ) -> Self {
+        Self {
+            operation_id,
+            site_hash,
+            action,
+            status: RuntimeNodeOperationStatus::Submitted,
+            attempt_count: 0,
+            submitted_at_unix: now_unix,
+            updated_at_unix: now_unix,
+            next_retry_at_unix: None,
+            last_error: None,
+        }
+    }
+
+    fn snapshot(&self) -> RuntimeNodeOperationSnapshot {
+        RuntimeNodeOperationSnapshot {
+            operation_id: self.operation_id,
+            site_hash: self.site_hash,
+            action: self.action,
+            status: self.status,
+            attempt_count: self.attempt_count,
+            submitted_at_unix: self.submitted_at_unix,
+            updated_at_unix: self.updated_at_unix,
+            next_retry_at_unix: self.next_retry_at_unix,
+            last_error: self.last_error.clone(),
+        }
+    }
+
+    fn update_status(
+        &mut self,
+        status: RuntimeNodeOperationStatus,
+        now_unix: u64,
+        last_error: Option<String>,
+        next_retry_at_unix: Option<u64>,
+    ) {
+        self.status = status;
+        self.updated_at_unix = now_unix;
+        self.last_error = last_error;
+        self.next_retry_at_unix = next_retry_at_unix;
+    }
 }
 
 fn parse_ip_list(s: &str) -> Vec<String> {
@@ -227,12 +311,13 @@ fn build_temp_add_cmd(
     }
 }
 
-fn queue_live_migration(
+fn queue_runtime_migration(
     old_cmd: &BakeryCommands,
     new_cmd: &Arc<BakeryCommands>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &HashMap<i64, u64>,
     migrations: &mut HashMap<i64, Migration>,
+    require_live_circuit: bool,
 ) -> bool {
     let BakeryCommands::AddCircuit {
         circuit_hash,
@@ -255,9 +340,9 @@ fn queue_live_migration(
         return false;
     };
 
-    let Some(_) = live_circuits.get(circuit_hash) else {
+    if require_live_circuit && !live_circuits.contains_key(circuit_hash) {
         return false;
-    };
+    }
 
     let BakeryCommands::AddCircuit {
         parent_class_id: old_parent_class_id,
@@ -310,6 +395,26 @@ fn queue_live_migration(
     migrations.insert(*circuit_hash, mig);
     circuits.insert(*circuit_hash, Arc::clone(new_cmd));
     true
+}
+
+fn queue_live_migration(
+    old_cmd: &BakeryCommands,
+    new_cmd: &Arc<BakeryCommands>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &HashMap<i64, u64>,
+    migrations: &mut HashMap<i64, Migration>,
+) -> bool {
+    queue_runtime_migration(old_cmd, new_cmd, circuits, live_circuits, migrations, true)
+}
+
+fn queue_top_level_runtime_migration(
+    old_cmd: &BakeryCommands,
+    new_cmd: &Arc<BakeryCommands>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &HashMap<i64, u64>,
+    migrations: &mut HashMap<i64, Migration>,
+) -> bool {
+    queue_runtime_migration(old_cmd, new_cmd, circuits, live_circuits, migrations, false)
 }
 
 /// Count of Bakery-Managed circuits that are currently active.
@@ -386,6 +491,63 @@ pub struct BakeryCapacityInterfaceSnapshot {
     pub estimated_memory_bytes: u64,
 }
 
+/// Per-queue-root queue layout summary for Bakery UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryQueueDistributionSnapshot {
+    /// Queue/root number, e.g. `1` for `Q1`.
+    pub queue: u32,
+    /// Number of top-level sites currently assigned to this queue.
+    pub top_level_site_count: usize,
+    /// Total sites currently assigned to this queue.
+    pub site_count: usize,
+    /// Total circuits currently assigned to this queue.
+    pub circuit_count: usize,
+    /// Aggregate configured downstream max Mbps for circuits on this queue.
+    pub download_mbps: u64,
+    /// Aggregate configured upstream max Mbps for circuits on this queue.
+    pub upload_mbps: u64,
+}
+
+/// Latest Bakery-tracked runtime node operation for UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryRuntimeOperationHeadlineSnapshot {
+    /// Monotonic Bakery-local operation identifier.
+    pub operation_id: u64,
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Requested runtime action.
+    pub action: RuntimeNodeOperationAction,
+    /// Current operation status.
+    pub status: RuntimeNodeOperationStatus,
+    /// Number of attempts performed so far.
+    pub attempt_count: u32,
+    /// Unix timestamp when the operation last changed state.
+    pub updated_at_unix: u64,
+    /// Optional unix timestamp for the next retry, if waiting.
+    pub next_retry_at_unix: Option<u64>,
+    /// Last error observed by Bakery for this operation, if any.
+    pub last_error: Option<String>,
+}
+
+/// Compact runtime-operation summary for Bakery UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryRuntimeOperationsSnapshot {
+    /// Number of submitted operations waiting to start.
+    pub submitted_count: usize,
+    /// Number of operations deferred because runtime-node capacity is currently saturated.
+    pub deferred_count: usize,
+    /// Number of operations currently applying.
+    pub applying_count: usize,
+    /// Number of operations awaiting deferred cleanup.
+    pub awaiting_cleanup_count: usize,
+    /// Number of failed operations that may be retried.
+    pub failed_count: usize,
+    /// Number of operations marked Dirty.
+    pub dirty_count: usize,
+    /// Most recently updated runtime operation, if any.
+    pub latest: Option<BakeryRuntimeOperationHeadlineSnapshot>,
+}
+
 /// Last qdisc preflight result retained for Bakery UI/status.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BakeryPreflightSnapshot {
@@ -446,8 +608,18 @@ pub struct BakeryStatusSnapshot {
     pub last_build_duration_ms: u64,
     /// Time spent running the last apply through `tc`.
     pub last_apply_duration_ms: u64,
+    /// Current runtime node-operation summary.
+    pub runtime_operations: BakeryRuntimeOperationsSnapshot,
+    /// Current queue-root distribution summary.
+    pub queue_distribution: Vec<BakeryQueueDistributionSnapshot>,
     /// Last qdisc preflight summary known to Bakery.
     pub preflight: Option<BakeryPreflightSnapshot>,
+    /// Whether Bakery has detected enough runtime drift to require a structural full reload.
+    pub reload_required: bool,
+    /// Operator-facing reason for why a full reload is now required, if any.
+    pub reload_required_reason: Option<String>,
+    /// Number of runtime node operations currently marked dirty.
+    pub dirty_subtree_count: usize,
 }
 
 /// Recent operator-facing Bakery activity event.
@@ -481,7 +653,13 @@ struct BakeryTelemetryState {
     last_qdisc_commands: usize,
     last_build_duration_ms: u64,
     last_apply_duration_ms: u64,
+    runtime_operations: BakeryRuntimeOperationsSnapshot,
+    queue_distribution: Vec<BakeryQueueDistributionSnapshot>,
     preflight: Option<BakeryPreflightSnapshot>,
+    reload_required: bool,
+    reload_required_reason: Option<String>,
+    dirty_subtree_count: usize,
+    runtime_operations_by_site: HashMap<i64, RuntimeNodeOperationSnapshot>,
     activity: VecDeque<BakeryActivityEntry>,
 }
 
@@ -516,7 +694,21 @@ impl Default for BakeryTelemetryState {
             last_qdisc_commands: 0,
             last_build_duration_ms: 0,
             last_apply_duration_ms: 0,
+            runtime_operations: BakeryRuntimeOperationsSnapshot {
+                submitted_count: 0,
+                deferred_count: 0,
+                applying_count: 0,
+                awaiting_cleanup_count: 0,
+                failed_count: 0,
+                dirty_count: 0,
+                latest: None,
+            },
+            queue_distribution: Vec::new(),
             preflight: None,
+            reload_required: false,
+            reload_required_reason: None,
+            dirty_subtree_count: 0,
+            runtime_operations_by_site: HashMap::new(),
             activity: VecDeque::with_capacity(BAKERY_EVENT_LIMIT),
         }
     }
@@ -585,6 +777,38 @@ fn clear_bakery_apply_progress(state: &mut BakeryTelemetryState) {
     state.current_apply_completed_tc_commands = 0;
     state.current_apply_total_chunks = 0;
     state.current_apply_completed_chunks = 0;
+}
+
+fn mark_reload_required(summary: String) {
+    let mut should_emit = false;
+    {
+        let mut state = telemetry_state().write();
+        if !state.reload_required
+            || state.reload_required_reason.as_deref() != Some(summary.as_str())
+        {
+            state.reload_required = true;
+            state.reload_required_reason = Some(summary.clone());
+            should_emit = true;
+        }
+    }
+    if should_emit {
+        push_bakery_event("reload_required", "error", summary);
+    }
+}
+
+fn clear_reload_required(summary: &str) {
+    let mut should_emit = false;
+    {
+        let mut state = telemetry_state().write();
+        if state.reload_required || state.reload_required_reason.is_some() {
+            state.reload_required = false;
+            state.reload_required_reason = None;
+            should_emit = true;
+        }
+    }
+    if should_emit {
+        push_bakery_event("reload_required_cleared", "info", summary.to_string());
+    }
 }
 
 fn mark_bakery_action_started(mode: BakeryMode, event: &str, summary: String) {
@@ -667,8 +891,34 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
         last_qdisc_commands: state.last_qdisc_commands,
         last_build_duration_ms: state.last_build_duration_ms,
         last_apply_duration_ms: state.last_apply_duration_ms,
+        runtime_operations: state.runtime_operations,
+        queue_distribution: state.queue_distribution,
         preflight: state.preflight,
+        reload_required: state.reload_required,
+        reload_required_reason: state.reload_required_reason,
+        dirty_subtree_count: state.dirty_subtree_count,
     }
+}
+
+/// Returns the latest Bakery-tracked runtime node-operation snapshot for a site, if any.
+pub fn bakery_runtime_node_operation_snapshot(
+    site_hash: i64,
+) -> Option<BakeryRuntimeNodeOperationSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_operations_by_site
+        .get(&site_hash)
+        .cloned()
+}
+
+/// Returns the current Bakery reload-required reason, if runtime drift has frozen incremental
+/// topology mutation.
+pub fn bakery_reload_required_reason() -> Option<String> {
+    let state = telemetry_state().read();
+    if state.reload_required {
+        return state.reload_required_reason.clone();
+    }
+    None
 }
 
 /// Returns recent Bakery activity entries for UI/status consumers.
@@ -1487,6 +1737,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
     let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
     let mut virtualized_sites: HashMap<i64, VirtualizedSiteState> = HashMap::new();
+    let mut runtime_node_operations: HashMap<i64, RuntimeNodeOperation> = HashMap::new();
+    let mut next_runtime_operation_id: u64 = 1;
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -1631,6 +1883,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             config.queues.lazy_queues,
             config.queues.lazy_expire_seconds.unwrap_or(600)
         );
+        push_bakery_event(
+            "baseline_rebuild_startup",
+            "info",
+            "Bakery started with empty runtime state; the first commit will rebuild the baseline queue tree.".to_string(),
+        );
     }
 
     while let Ok(command) = rx.recv() {
@@ -1770,7 +2027,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &tx,
                     &mut migrations,
                     &stormguard_overrides,
-                    &virtualized_sites,
+                    &mut virtualized_sites,
+                    &mut runtime_node_operations,
                 );
             }
             BakeryCommands::MqSetup { .. } => {
@@ -2071,6 +2329,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 for h in to_remove {
                     migrations.remove(&h);
                 }
+                flush_deferred_runtime_site_prunes(
+                    &config,
+                    &sites,
+                    &circuits,
+                    &mut virtualized_sites,
+                    &migrations,
+                    &mut runtime_node_operations,
+                );
             }
             BakeryCommands::ChangeSiteSpeedLive {
                 site_hash,
@@ -2167,7 +2433,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut qdisc_handles,
                     &mut migrations,
                     &mut virtualized_sites,
+                    &mut runtime_node_operations,
+                    &mut next_runtime_operation_id,
                 );
+                update_queue_distribution_snapshot(&sites, &circuits);
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
@@ -2188,7 +2457,8 @@ fn handle_commit_batch(
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
-    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+    virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
+    runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
@@ -2207,8 +2477,51 @@ fn handle_commit_batch(
     let effective_limit = mapped_limit.effective_limit;
     let limit_label = format_mapped_limit(effective_limit);
 
+    if let Some(reason) = bakery_reload_required_reason() {
+        let (new_batch, mapped_limit_stats) =
+            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        log_mapped_limit_decision("reload-required rebuild", mapped_limit, mapped_limit_stats);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (reload-required rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                limit_label,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
+        warn!(
+            "Bakery: full reload required before further incremental topology mutation: {}",
+            reason
+        );
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            &config,
+            new_batch,
+            resolved_mq_layout,
+            stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
+        );
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+        return;
+    }
+
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
+        push_bakery_event(
+            "baseline_rebuild_required",
+            "warning",
+            "Bakery runtime state was reset by restart/cold start; performing explicit baseline full reload.".to_string(),
+        );
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
         log_mapped_limit_decision("full reload", mapped_limit, mapped_limit_stats);
@@ -2225,7 +2538,7 @@ fn handle_commit_batch(
             maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
         }
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
-        info!("MQ not created, performing full reload.");
+        info!("Bakery baseline rebuild after restart/cold start: performing explicit full reload.");
         full_reload(
             batch,
             sites,
@@ -2237,6 +2550,8 @@ fn handle_commit_batch(
             new_batch,
             resolved_mq_layout,
             stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2272,6 +2587,8 @@ fn handle_commit_batch(
             new_batch,
             resolved_mq_layout,
             stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2326,6 +2643,8 @@ fn handle_commit_batch(
             new_batch,
             resolved_mq_layout,
             stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2372,6 +2691,8 @@ fn handle_commit_batch(
                     new_batch.clone(),
                     resolved_mq_layout.clone(),
                     stormguard_overrides,
+                    virtualized_sites,
+                    runtime_node_operations,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
@@ -2596,6 +2917,8 @@ fn handle_commit_batch(
                         new_batch,
                         resolved_mq_layout.clone(),
                         stormguard_overrides,
+                        virtualized_sites,
+                        runtime_node_operations,
                     );
                     MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
@@ -2732,6 +3055,7 @@ fn handle_commit_batch(
 
     *mq_layout = resolved_mq_layout;
     qdisc_handles.save(&config);
+    update_queue_distribution_snapshot(sites, circuits);
 }
 
 fn handle_circuit_activity(
@@ -3058,7 +3382,51 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
     None
 }
 
-fn site_prune_commands(config: &Arc<Config>, site: &BakeryCommands) -> Option<Vec<Vec<String>>> {
+fn site_prune_commands(
+    config: &Arc<Config>,
+    state: &VirtualizedSiteState,
+) -> Option<Vec<Vec<String>>> {
+    let mut commands = site_prune_qdisc_commands(config, &state.qdisc_handles).unwrap_or_default();
+    commands.extend(site_prune_class_commands(config, state.site.as_ref())?);
+    Some(commands)
+}
+
+fn site_prune_qdisc_commands(
+    config: &Arc<Config>,
+    handles: &VirtualizedSiteQdiscHandles,
+) -> Option<Vec<Vec<String>>> {
+    let mut commands = Vec::new();
+    if let Some(handle) = handles.down {
+        commands.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.isp_interface(),
+            "handle".to_string(),
+            format!("0x{:x}:", handle),
+        ]);
+    }
+    if let Some(handle) = handles.up {
+        commands.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.internet_interface(),
+            "handle".to_string(),
+            format!("0x{:x}:", handle),
+        ]);
+    }
+    if commands.is_empty() {
+        None
+    } else {
+        Some(commands)
+    }
+}
+
+fn site_prune_class_commands(
+    config: &Arc<Config>,
+    site: &BakeryCommands,
+) -> Option<Vec<Vec<String>>> {
     let BakeryCommands::AddSite {
         parent_class_id,
         up_parent_class_id,
@@ -3432,6 +3800,113 @@ fn current_circuit_queue(circuit: &BakeryCommands) -> Option<u32> {
     Some(u32::from(*class_major))
 }
 
+fn rebuild_queue_distribution_snapshot(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+) -> Vec<BakeryQueueDistributionSnapshot> {
+    #[derive(Default)]
+    struct QueueBucket {
+        top_level_site_count: usize,
+        site_count: usize,
+        circuit_count: usize,
+        download_mbps: f64,
+        upload_mbps: f64,
+    }
+
+    let mut buckets: BTreeMap<u32, QueueBucket> = BTreeMap::new();
+
+    for site in sites.values() {
+        let Some(queue) = current_site_queue(site.as_ref()) else {
+            continue;
+        };
+        let bucket = buckets.entry(queue).or_default();
+        bucket.site_count += 1;
+        if site_is_top_level(site.as_ref()) {
+            bucket.top_level_site_count += 1;
+        }
+    }
+
+    for circuit in circuits.values() {
+        let BakeryCommands::AddCircuit {
+            class_major,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+            ..
+        } = circuit.as_ref()
+        else {
+            continue;
+        };
+        let bucket = buckets.entry(u32::from(*class_major)).or_default();
+        bucket.circuit_count += 1;
+        bucket.download_mbps += f64::from(*download_bandwidth_max);
+        bucket.upload_mbps += f64::from(*upload_bandwidth_max);
+    }
+
+    buckets
+        .into_iter()
+        .map(|(queue, bucket)| BakeryQueueDistributionSnapshot {
+            queue,
+            top_level_site_count: bucket.top_level_site_count,
+            site_count: bucket.site_count,
+            circuit_count: bucket.circuit_count,
+            download_mbps: bucket.download_mbps.round().max(0.0) as u64,
+            upload_mbps: bucket.upload_mbps.round().max(0.0) as u64,
+        })
+        .collect()
+}
+
+fn update_queue_distribution_snapshot(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+) {
+    telemetry_state().write().queue_distribution =
+        rebuild_queue_distribution_snapshot(sites, circuits);
+}
+
+fn rebuild_runtime_operations_snapshot(
+    runtime_node_operations: &HashMap<i64, RuntimeNodeOperation>,
+) -> BakeryRuntimeOperationsSnapshot {
+    let mut submitted_count = 0usize;
+    let mut deferred_count = 0usize;
+    let mut applying_count = 0usize;
+    let mut awaiting_cleanup_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut dirty_count = 0usize;
+
+    let latest = runtime_node_operations
+        .values()
+        .inspect(|operation| match operation.status {
+            RuntimeNodeOperationStatus::Submitted => submitted_count += 1,
+            RuntimeNodeOperationStatus::Deferred => deferred_count += 1,
+            RuntimeNodeOperationStatus::Applying => applying_count += 1,
+            RuntimeNodeOperationStatus::AppliedAwaitingCleanup => awaiting_cleanup_count += 1,
+            RuntimeNodeOperationStatus::Failed => failed_count += 1,
+            RuntimeNodeOperationStatus::Dirty => dirty_count += 1,
+            RuntimeNodeOperationStatus::Completed => {}
+        })
+        .max_by_key(|operation| operation.updated_at_unix)
+        .map(|operation| BakeryRuntimeOperationHeadlineSnapshot {
+            operation_id: operation.operation_id,
+            site_hash: operation.site_hash,
+            action: operation.action,
+            status: operation.status,
+            attempt_count: operation.attempt_count,
+            updated_at_unix: operation.updated_at_unix,
+            next_retry_at_unix: operation.next_retry_at_unix,
+            last_error: operation.last_error.clone(),
+        });
+
+    BakeryRuntimeOperationsSnapshot {
+        submitted_count,
+        deferred_count,
+        applying_count,
+        awaiting_cleanup_count,
+        failed_count,
+        dirty_count,
+        latest,
+    }
+}
+
 fn site_parent_hash(
     site_hash: i64,
     sites: &HashMap<i64, Arc<BakeryCommands>>,
@@ -3579,7 +4054,8 @@ fn build_current_planner_state(
         let Some(queue) = current_site_queue(site.as_ref()) else {
             continue;
         };
-        let Some(class_minor) = (if let BakeryCommands::AddSite { class_minor, .. } = site.as_ref() {
+        let Some(class_minor) = (if let BakeryCommands::AddSite { class_minor, .. } = site.as_ref()
+        {
             Some(*class_minor)
         } else {
             None
@@ -3642,10 +4118,7 @@ fn top_level_site_hashes(sites: &HashMap<i64, Arc<BakeryCommands>>) -> Vec<i64> 
     hashes
 }
 
-fn site_descendant_depth(
-    site_hash: i64,
-    parents: &HashMap<i64, Option<i64>>,
-) -> usize {
+fn site_descendant_depth(site_hash: i64, parents: &HashMap<i64, Option<i64>>) -> usize {
     let mut depth = 0usize;
     let mut current = parents.get(&site_hash).copied().flatten();
     while let Some(parent) = current {
@@ -3672,21 +4145,27 @@ fn build_top_level_virtualization_plan(
     }
 
     let children_by_parent = direct_child_sites_by_parent(sites);
-    let Some((target_down_class, target_up_class)) = site_class_handles(target_site.as_ref()) else {
-        return Err(format!("Site {} is not a valid AddSite command", target_site_hash));
+    let Some((target_down_class, target_up_class)) = site_class_handles(target_site.as_ref())
+    else {
+        return Err(format!(
+            "Site {} is not a valid AddSite command",
+            target_site_hash
+        ));
     };
 
     let promoted_site_roots = children_by_parent
         .get(&target_site_hash)
         .cloned()
         .unwrap_or_default();
-    let direct_circuits = collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
+    let direct_circuits =
+        collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
     let top_level_sites = top_level_site_hashes(sites);
 
     let bins: Vec<String> = top_level_sites
         .iter()
         .filter_map(|site_hash| {
-            sites.get(site_hash)
+            sites
+                .get(site_hash)
                 .and_then(|site| current_site_queue(site.as_ref()))
                 .map(top_level_bin_name)
         })
@@ -3694,7 +4173,9 @@ fn build_top_level_virtualization_plan(
         .into_iter()
         .collect();
     if bins.is_empty() {
-        return Err("No top-level queues available for runtime top-level virtualization".to_string());
+        return Err(
+            "No top-level queues available for runtime top-level virtualization".to_string(),
+        );
     }
 
     let target_queue = current_site_queue(target_site.as_ref()).unwrap_or(1);
@@ -3809,7 +4290,9 @@ fn build_top_level_virtualization_plan(
         }
     }
     let affected_site_hashes_vec: Vec<i64> = affected_site_hashes.iter().copied().collect();
-    for circuit_hash in collect_circuits_attached_to_sites(circuits, sites, &affected_site_hashes_vec) {
+    for circuit_hash in
+        collect_circuits_attached_to_sites(circuits, sites, &affected_site_hashes_vec)
+    {
         if let Some(circuit) = circuits.get(&circuit_hash) {
             saved_circuits.insert(circuit_hash, Arc::clone(circuit));
         }
@@ -3843,13 +4326,13 @@ fn build_top_level_virtualization_plan(
     }
 
     let mut planner_site_inputs = Vec::new();
-    let mut planner_site_hashes: Vec<i64> = sites.keys().copied().filter(|hash| *hash != target_site_hash).collect();
-    planner_site_hashes.sort_by_key(|hash| {
-        (
-            site_descendant_depth(*hash, &future_parent_by_site),
-            *hash,
-        )
-    });
+    let mut planner_site_hashes: Vec<i64> = sites
+        .keys()
+        .copied()
+        .filter(|hash| *hash != target_site_hash)
+        .collect();
+    planner_site_hashes
+        .sort_by_key(|hash| (site_descendant_depth(*hash, &future_parent_by_site), *hash));
     for site_hash in &planner_site_hashes {
         let Some(site) = sites.get(site_hash) else {
             continue;
@@ -3910,7 +4393,12 @@ fn build_top_level_virtualization_plan(
         let parent = class_to_site
             .get(&(*parent_class_id, *up_parent_class_id))
             .map(|site_hash| planner_site_key(*site_hash))
-            .unwrap_or_else(|| format!("root:{}", current_circuit_queue(circuit.as_ref()).unwrap_or(1)));
+            .unwrap_or_else(|| {
+                format!(
+                    "root:{}",
+                    current_circuit_queue(circuit.as_ref()).unwrap_or(1)
+                )
+            });
         circuit_ids_by_parent
             .entry(parent)
             .or_default()
@@ -3936,7 +4424,10 @@ fn build_top_level_virtualization_plan(
         circuit_ids.sort();
         let queue = if let Some(root) = parent_node.strip_prefix("root:") {
             root.parse::<u32>().unwrap_or(1)
-        } else if let Some(site_hash) = parent_node.strip_prefix("site:").and_then(|s| s.parse::<i64>().ok()) {
+        } else if let Some(site_hash) = parent_node
+            .strip_prefix("site:")
+            .and_then(|s| s.parse::<i64>().ok())
+        {
             planner_site_inputs
                 .iter()
                 .find(|site| site.site_key == planner_site_key(site_hash))
@@ -3985,12 +4476,20 @@ fn build_top_level_virtualization_plan(
             .copied()
             .flatten()
             .and_then(|parent_hash| {
-                site_identity_by_key.get(&planner_site_key(parent_hash)).map(|parent_identity| {
-                    (
-                        tc_handle_from_major_minor(parent_identity.class_major, parent_identity.class_minor),
-                        tc_handle_from_major_minor(parent_identity.up_class_major, parent_identity.class_minor),
-                    )
-                })
+                site_identity_by_key
+                    .get(&planner_site_key(parent_hash))
+                    .map(|parent_identity| {
+                        (
+                            tc_handle_from_major_minor(
+                                parent_identity.class_major,
+                                parent_identity.class_minor,
+                            ),
+                            tc_handle_from_major_minor(
+                                parent_identity.up_class_major,
+                                parent_identity.class_minor,
+                            ),
+                        )
+                    })
             })
             .unwrap_or_else(|| {
                 (
@@ -4056,10 +4555,18 @@ fn build_top_level_virtualization_plan(
                 .copied()
         };
         let parent_handles = if let Some(parent_site_hash) = future_parent_site {
-            if let Some(parent_identity) = site_identity_by_key.get(&planner_site_key(parent_site_hash)) {
+            if let Some(parent_identity) =
+                site_identity_by_key.get(&planner_site_key(parent_site_hash))
+            {
                 (
-                    tc_handle_from_major_minor(parent_identity.class_major, parent_identity.class_minor),
-                    tc_handle_from_major_minor(parent_identity.up_class_major, parent_identity.class_minor),
+                    tc_handle_from_major_minor(
+                        parent_identity.class_major,
+                        parent_identity.class_minor,
+                    ),
+                    tc_handle_from_major_minor(
+                        parent_identity.up_class_major,
+                        parent_identity.class_minor,
+                    ),
                 )
             } else {
                 (
@@ -4249,6 +4756,145 @@ fn apply_circuit_command_updates(
     Ok(())
 }
 
+fn circuit_qdisc_parent_changed(
+    old_cmd: &BakeryCommands,
+    new_cmd: &BakeryCommands,
+    config: &Arc<Config>,
+) -> bool {
+    let (old_down_parent, old_up_parent) = effective_directional_qdisc_parents(old_cmd, config);
+    let (new_down_parent, new_up_parent) = effective_directional_qdisc_parents(new_cmd, config);
+    old_down_parent != new_down_parent || old_up_parent != new_up_parent
+}
+
+fn apply_top_level_circuit_command_updates(
+    config: &Arc<Config>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    updates: &HashMap<i64, PlannedCircuitUpdate>,
+    live_circuits: &HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &mut HashMap<i64, Migration>,
+    action_label: &str,
+) -> Result<(), String> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    let Some(layout) = mq_layout.as_ref() else {
+        return Err("Bakery runtime virtualization requires MQ layout to be available".to_string());
+    };
+
+    let mut ordered: Vec<_> = updates.iter().collect();
+    ordered.sort_by_key(|(_, update)| {
+        (
+            update.parent_site.is_none(),
+            update.queue,
+            update.parent_site.unwrap_or_default(),
+            circuit_hash_from_command(update.command.as_ref()).unwrap_or_default(),
+        )
+    });
+
+    for (circuit_hash, update) in &ordered {
+        let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
+            continue;
+        };
+        let enriched_cmd = rotate_changed_qdisc_handles(
+            old_cmd.as_ref(),
+            &update.command,
+            config,
+            layout,
+            qdisc_handles,
+        );
+        if circuit_qdisc_parent_changed(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
+            && let BakeryCommands::AddCircuit {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = enriched_cmd.as_ref()
+            && find_free_minor(circuits, parent_class_id, up_parent_class_id).is_none()
+        {
+            return Err(format!(
+                "Unable to queue top-level runtime migration for circuit {}: no shadow minor available",
+                circuit_hash
+            ));
+        }
+    }
+
+    let mut immediate_commands = Vec::new();
+    let mut updated_circuits = Vec::new();
+
+    for (circuit_hash, update) in ordered {
+        let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
+            continue;
+        };
+        let enriched_cmd = rotate_changed_qdisc_handles(
+            old_cmd.as_ref(),
+            &update.command,
+            config,
+            layout,
+            qdisc_handles,
+        );
+
+        if circuit_qdisc_parent_changed(old_cmd.as_ref(), enriched_cmd.as_ref(), config) {
+            if !queue_top_level_runtime_migration(
+                old_cmd.as_ref(),
+                &enriched_cmd,
+                circuits,
+                live_circuits,
+                migrations,
+            ) {
+                return Err(format!(
+                    "Bakery runtime top-level virtualization could not queue migration for circuit {}",
+                    circuit_hash
+                ));
+            }
+            continue;
+        }
+
+        if queue_live_migration(
+            old_cmd.as_ref(),
+            &enriched_cmd,
+            circuits,
+            live_circuits,
+            migrations,
+        ) {
+            continue;
+        }
+
+        if live_circuits.contains_key(circuit_hash) {
+            return Err(format!(
+                "Bakery runtime top-level virtualization could not live-migrate active circuit {}",
+                circuit_hash
+            ));
+        }
+
+        match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) | Some(LazyQueueMode::Htb) => {
+                if let Some(prune) = old_cmd.to_prune(config, true) {
+                    immediate_commands.extend(prune);
+                }
+                if let Some(add) = enriched_cmd.to_commands(config, ExecutionMode::Builder) {
+                    immediate_commands.extend(add);
+                }
+            }
+            Some(LazyQueueMode::Full) => {}
+        }
+        updated_circuits.push((*circuit_hash, enriched_cmd));
+    }
+
+    if !immediate_commands.is_empty() {
+        let result = execute_and_record_live_change(&immediate_commands, action_label);
+        if !result.ok {
+            return Err(summarize_apply_result(action_label, &result));
+        }
+    }
+
+    for (circuit_hash, command) in updated_circuits {
+        circuits.insert(circuit_hash, command);
+    }
+
+    Ok(())
+}
+
 fn apply_runtime_virtualization_overlay(
     batch: Vec<Arc<BakeryCommands>>,
     virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
@@ -4293,6 +4939,546 @@ fn apply_runtime_virtualization_overlay(
         .collect()
 }
 
+fn runtime_virtualized_site_has_pending_migrations(
+    state: &VirtualizedSiteState,
+    migrations: &HashMap<i64, Migration>,
+) -> bool {
+    state
+        .active_circuits
+        .keys()
+        .any(|circuit_hash| migrations.contains_key(circuit_hash))
+}
+
+fn runtime_virtualized_site_has_remaining_live_child_classes(
+    state: &VirtualizedSiteState,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+) -> bool {
+    let Some((target_down_class, target_up_class)) = site_class_handles(state.site.as_ref()) else {
+        return false;
+    };
+
+    let child_sites_remaining = sites.values().any(|site| {
+        let BakeryCommands::AddSite {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = site.as_ref()
+        else {
+            return false;
+        };
+        *parent_class_id == target_down_class && *up_parent_class_id == target_up_class
+    });
+    if child_sites_remaining {
+        return true;
+    }
+
+    circuits.values().any(|circuit| {
+        let BakeryCommands::AddCircuit {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = circuit.as_ref()
+        else {
+            return false;
+        };
+        *parent_class_id == target_down_class && *up_parent_class_id == target_up_class
+    })
+}
+
+fn runtime_virtualized_site_has_remaining_observed_child_classes(
+    state: &VirtualizedSiteState,
+    down_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    up_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+) -> bool {
+    let Some((target_down_class, target_up_class)) = site_class_handles(state.site.as_ref()) else {
+        return false;
+    };
+
+    down_snapshot
+        .values()
+        .any(|entry| entry.parent == Some(target_down_class))
+        || up_snapshot
+            .values()
+            .any(|entry| entry.parent == Some(target_up_class))
+}
+
+fn sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot(
+    state: &mut VirtualizedSiteState,
+    down_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    up_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+) {
+    let Some((target_down_class, target_up_class)) = site_class_handles(state.site.as_ref()) else {
+        return;
+    };
+
+    if state.qdisc_handles.down.is_none()
+        && let Some(entry) = down_snapshot.get(&target_down_class)
+    {
+        state.qdisc_handles.down = entry.leaf_qdisc_major;
+    }
+
+    if state.qdisc_handles.up.is_none()
+        && let Some(entry) = up_snapshot.get(&target_up_class)
+    {
+        state.qdisc_handles.up = entry.leaf_qdisc_major;
+    }
+}
+
+fn runtime_virtualized_site_prune_ready(
+    state: &VirtualizedSiteState,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    migrations: &HashMap<i64, Migration>,
+    now_unix: u64,
+) -> bool {
+    state.pending_prune
+        && state.next_prune_attempt_unix <= now_unix
+        && !runtime_virtualized_site_has_pending_migrations(state, migrations)
+        && !runtime_virtualized_site_has_remaining_live_child_classes(state, sites, circuits)
+}
+
+fn runtime_site_prune_missing_qdisc_is_harmless(summary: &str) -> bool {
+    summary
+        .to_ascii_lowercase()
+        .contains("cannot find specified qdisc on specified device")
+}
+
+fn site_prune_class_commands_for_observed_state(
+    config: &Arc<Config>,
+    site: &BakeryCommands,
+    down_exists: bool,
+    up_exists: bool,
+) -> Option<Vec<Vec<String>>> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    let mut commands = Vec::new();
+    if down_exists {
+        commands.push(vec![
+            "class".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.isp_interface(),
+            "parent".to_string(),
+            parent_class_id.as_tc_string(),
+            "classid".to_string(),
+            format!(
+                "0x{:x}:0x{:x}",
+                parent_class_id.get_major_minor().0,
+                class_minor
+            ),
+        ]);
+    }
+    if up_exists {
+        commands.push(vec![
+            "class".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.internet_interface(),
+            "parent".to_string(),
+            up_parent_class_id.as_tc_string(),
+            "classid".to_string(),
+            format!(
+                "0x{:x}:0x{:x}",
+                up_parent_class_id.get_major_minor().0,
+                class_minor
+            ),
+        ]);
+    }
+
+    (!commands.is_empty()).then_some(commands)
+}
+
+fn execute_runtime_site_prune(
+    config: &Arc<Config>,
+    state: &mut VirtualizedSiteState,
+    down_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    up_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+) -> Result<(), String> {
+    sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot(
+        state,
+        down_snapshot,
+        up_snapshot,
+    );
+
+    if let Some(qdisc_prune) = site_prune_qdisc_commands(config, &state.qdisc_handles) {
+        let qdisc_result =
+            execute_in_memory(&qdisc_prune, "TreeGuard runtime deferred site qdisc prune");
+        if !qdisc_result.ok {
+            let summary = summarize_apply_result(
+                "TreeGuard runtime deferred site qdisc prune",
+                &qdisc_result,
+            );
+            if !runtime_site_prune_missing_qdisc_is_harmless(&summary) {
+                return Err(summary);
+            }
+        }
+    }
+
+    let Some((target_down_class, target_up_class)) = site_class_handles(state.site.as_ref()) else {
+        return Ok(());
+    };
+    let down_exists = down_snapshot.contains_key(&target_down_class);
+    let up_exists = up_snapshot.contains_key(&target_up_class);
+    let Some(class_prune) = site_prune_class_commands_for_observed_state(
+        config,
+        state.site.as_ref(),
+        down_exists,
+        up_exists,
+    ) else {
+        return Ok(());
+    };
+    let class_result = execute_in_memory(&class_prune, "TreeGuard runtime deferred site prune");
+    if !class_result.ok {
+        return Err(summarize_apply_result(
+            "TreeGuard runtime deferred site prune",
+            &class_result,
+        ));
+    }
+
+    Ok(())
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn runtime_node_operation_action(virtualized: bool) -> RuntimeNodeOperationAction {
+    if virtualized {
+        RuntimeNodeOperationAction::Virtualize
+    } else {
+        RuntimeNodeOperationAction::Restore
+    }
+}
+
+fn runtime_node_operation_is_active(status: RuntimeNodeOperationStatus) -> bool {
+    matches!(
+        status,
+        RuntimeNodeOperationStatus::Submitted
+            | RuntimeNodeOperationStatus::Applying
+            | RuntimeNodeOperationStatus::AppliedAwaitingCleanup
+    )
+}
+
+fn runtime_node_operation_consumes_capacity(status: RuntimeNodeOperationStatus) -> bool {
+    matches!(
+        status,
+        RuntimeNodeOperationStatus::Submitted
+            | RuntimeNodeOperationStatus::Applying
+            | RuntimeNodeOperationStatus::AppliedAwaitingCleanup
+    )
+}
+
+fn active_runtime_node_operation_count(
+    runtime_node_operations: &HashMap<i64, RuntimeNodeOperation>,
+) -> usize {
+    runtime_node_operations
+        .values()
+        .filter(|operation| runtime_node_operation_consumes_capacity(operation.status))
+        .count()
+}
+
+fn runtime_error_suggests_material_desync(summary: &str) -> bool {
+    let lower = summary.to_ascii_lowercase();
+    lower.contains("rtnetlink")
+        || lower.contains("specified class not found")
+        || lower.contains("cannot find specified qdisc")
+        || lower.contains("cannot move an existing qdisc")
+        || lower.contains("device or resource busy")
+}
+
+fn update_desync_state_from_runtime_operations(
+    runtime_node_operations: &HashMap<i64, RuntimeNodeOperation>,
+) {
+    let snapshot = rebuild_runtime_operations_snapshot(runtime_node_operations);
+    let dirty_count = snapshot.dirty_count;
+    let runtime_operations_by_site = runtime_node_operations
+        .iter()
+        .map(|(site_hash, operation)| (*site_hash, operation.snapshot()))
+        .collect();
+    {
+        let mut state = telemetry_state().write();
+        state.runtime_operations = snapshot;
+        state.dirty_subtree_count = dirty_count;
+        state.runtime_operations_by_site = runtime_operations_by_site;
+    }
+    if dirty_count >= RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD
+        && bakery_reload_required_reason().is_none()
+    {
+        mark_reload_required(format!(
+            "Bakery detected {} dirty runtime subtree operations; a full reload is now required before further incremental topology mutations.",
+            dirty_count
+        ));
+    }
+}
+
+fn flush_deferred_runtime_site_prunes(
+    config: &Arc<Config>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
+    migrations: &HashMap<i64, Migration>,
+    runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
+) {
+    if bakery_reload_required_reason().is_some() {
+        return;
+    }
+    let now_unix = unix_now();
+    let pending_site_hashes: Vec<i64> = virtualized_sites
+        .iter()
+        .filter_map(|(site_hash, state)| {
+            runtime_virtualized_site_prune_ready(state, sites, circuits, migrations, now_unix)
+                .then_some(*site_hash)
+        })
+        .collect();
+
+    if pending_site_hashes.is_empty() {
+        return;
+    }
+
+    let down_snapshot = match read_live_class_snapshot(&config.isp_interface()) {
+        Ok(snapshot) => snapshot,
+        Err(summary) => {
+            warn!(
+                "Bakery: unable to snapshot live downlink classes for deferred prune pass: {summary}"
+            );
+            for site_hash in pending_site_hashes {
+                if let Some(state) = virtualized_sites.get_mut(&site_hash) {
+                    let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
+                    state.next_prune_attempt_unix = retry_at;
+                    if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                        operation.attempt_count = operation.attempt_count.saturating_add(1);
+                        if operation.attempt_count >= RUNTIME_SITE_PRUNE_MAX_ATTEMPTS {
+                            state.pending_prune = false;
+                            state.next_prune_attempt_unix = 0;
+                            operation.update_status(
+                                RuntimeNodeOperationStatus::Dirty,
+                                now_unix,
+                                Some(summary.clone()),
+                                None,
+                            );
+                            push_bakery_event(
+                                "runtime_site_prune_dirty",
+                                "error",
+                                format!(
+                                    "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
+                                    site_hash, summary
+                                ),
+                            );
+                        } else {
+                            operation.update_status(
+                                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                                now_unix,
+                                Some(summary.clone()),
+                                Some(retry_at),
+                            );
+                            push_bakery_event(
+                                "runtime_site_prune_retry",
+                                "warning",
+                                format!(
+                                    "Deferred runtime site prune retry {}/{} for site {} postponed: {}",
+                                    operation.attempt_count,
+                                    RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
+                                    site_hash,
+                                    summary
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    };
+    let up_snapshot = match read_live_class_snapshot(&config.internet_interface()) {
+        Ok(snapshot) => snapshot,
+        Err(summary) => {
+            warn!(
+                "Bakery: unable to snapshot live uplink classes for deferred prune pass: {summary}"
+            );
+            for site_hash in pending_site_hashes {
+                if let Some(state) = virtualized_sites.get_mut(&site_hash) {
+                    let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
+                    state.next_prune_attempt_unix = retry_at;
+                    if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                        operation.attempt_count = operation.attempt_count.saturating_add(1);
+                        if operation.attempt_count >= RUNTIME_SITE_PRUNE_MAX_ATTEMPTS {
+                            state.pending_prune = false;
+                            state.next_prune_attempt_unix = 0;
+                            operation.update_status(
+                                RuntimeNodeOperationStatus::Dirty,
+                                now_unix,
+                                Some(summary.clone()),
+                                None,
+                            );
+                            push_bakery_event(
+                                "runtime_site_prune_dirty",
+                                "error",
+                                format!(
+                                    "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
+                                    site_hash, summary
+                                ),
+                            );
+                        } else {
+                            operation.update_status(
+                                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                                now_unix,
+                                Some(summary.clone()),
+                                Some(retry_at),
+                            );
+                            push_bakery_event(
+                                "runtime_site_prune_retry",
+                                "warning",
+                                format!(
+                                    "Deferred runtime site prune retry {}/{} for site {} postponed: {}",
+                                    operation.attempt_count,
+                                    RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
+                                    site_hash,
+                                    summary
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    };
+
+    for site_hash in pending_site_hashes {
+        let Some(state) = virtualized_sites.get_mut(&site_hash) else {
+            continue;
+        };
+        sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot(
+            state,
+            &down_snapshot,
+            &up_snapshot,
+        );
+        if runtime_virtualized_site_has_remaining_observed_child_classes(
+            state,
+            &down_snapshot,
+            &up_snapshot,
+        ) {
+            let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
+            state.next_prune_attempt_unix = retry_at;
+            if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                operation.update_status(
+                    RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                    now_unix,
+                    Some("Observed live child classes still attached".to_string()),
+                    Some(retry_at),
+                );
+            }
+            continue;
+        }
+        if site_prune_commands(config, state).is_none() {
+            state.pending_prune = false;
+            if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                operation.update_status(
+                    RuntimeNodeOperationStatus::Completed,
+                    now_unix,
+                    None,
+                    None,
+                );
+            }
+            continue;
+        }
+
+        match execute_runtime_site_prune(config, state, &down_snapshot, &up_snapshot) {
+            Ok(()) => {
+                state.pending_prune = false;
+                state.next_prune_attempt_unix = 0;
+                if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                    operation.update_status(
+                        RuntimeNodeOperationStatus::Completed,
+                        now_unix,
+                        None,
+                        None,
+                    );
+                }
+                push_bakery_event(
+                    "runtime_site_prune_completed",
+                    "info",
+                    format!(
+                        "Deferred runtime site prune completed for site {}.",
+                        site_hash
+                    ),
+                );
+            }
+            Err(summary) => {
+                if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
+                    operation.attempt_count = operation.attempt_count.saturating_add(1);
+                    if operation.attempt_count >= RUNTIME_SITE_PRUNE_MAX_ATTEMPTS {
+                        state.pending_prune = false;
+                        state.next_prune_attempt_unix = 0;
+                        operation.update_status(
+                            RuntimeNodeOperationStatus::Dirty,
+                            now_unix,
+                            Some(summary.clone()),
+                            None,
+                        );
+                        push_bakery_event(
+                            "runtime_site_prune_dirty",
+                            "error",
+                            format!(
+                                "Deferred runtime site prune for site {} marked Dirty after {} attempts: {}",
+                                site_hash, operation.attempt_count, summary
+                            ),
+                        );
+                    } else {
+                        let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
+                        state.next_prune_attempt_unix = retry_at;
+                        operation.update_status(
+                            RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                            now_unix,
+                            Some(summary.clone()),
+                            Some(retry_at),
+                        );
+                        push_bakery_event(
+                            "runtime_site_prune_retry",
+                            "warning",
+                            format!(
+                                "Deferred runtime site prune retry {}/{} for site {} failed: {}",
+                                operation.attempt_count,
+                                RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
+                                site_hash,
+                                summary
+                            ),
+                        );
+                    }
+                } else {
+                    state.next_prune_attempt_unix =
+                        now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
+                    push_bakery_event(
+                        "runtime_site_prune_retry",
+                        "warning",
+                        format!(
+                            "Deferred runtime site prune for site {} failed outside operation tracking: {}",
+                            site_hash, summary
+                        ),
+                    );
+                }
+                warn!(
+                    "Bakery: deferred runtime site prune for {} failed again: {}",
+                    site_hash, summary
+                );
+            }
+        }
+    }
+    update_desync_state_from_runtime_operations(runtime_node_operations);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_treeguard_set_node_virtual_live(
     site_hash: i64,
@@ -4304,238 +5490,389 @@ fn handle_treeguard_set_node_virtual_live(
     qdisc_handles: &mut QdiscHandleState,
     migrations: &mut HashMap<i64, Migration>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
-) -> Result<(), String> {
+    runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
+    next_runtime_operation_id: &mut u64,
+) -> RuntimeNodeOperationSnapshot {
+    let now_unix = unix_now();
+    let action = runtime_node_operation_action(virtualized);
+    if let Some(reason) = bakery_reload_required_reason() {
+        let snapshot = if let Some(existing) = runtime_node_operations.get(&site_hash)
+            && existing.action == action
+        {
+            existing.snapshot()
+        } else {
+            let operation_id = *next_runtime_operation_id;
+            *next_runtime_operation_id = next_runtime_operation_id.saturating_add(1);
+            let mut operation =
+                RuntimeNodeOperation::new(operation_id, site_hash, action, now_unix);
+            operation.attempt_count = 1;
+            operation.update_status(
+                RuntimeNodeOperationStatus::Dirty,
+                now_unix,
+                Some(reason.clone()),
+                None,
+            );
+            runtime_node_operations.insert(site_hash, operation.clone());
+            update_desync_state_from_runtime_operations(runtime_node_operations);
+            operation.snapshot()
+        };
+        return snapshot;
+    }
+    if let Some(existing) = runtime_node_operations.get(&site_hash)
+        && runtime_node_operation_is_active(existing.status)
+    {
+        return existing.snapshot();
+    }
+
+    if active_runtime_node_operation_count(runtime_node_operations)
+        >= RUNTIME_NODE_OPERATION_CAPACITY
+    {
+        let operation_id = runtime_node_operations
+            .get(&site_hash)
+            .map(|operation| operation.operation_id)
+            .unwrap_or_else(|| {
+                let next = *next_runtime_operation_id;
+                *next_runtime_operation_id = next_runtime_operation_id.saturating_add(1);
+                next
+            });
+        let retry_at = now_unix.saturating_add(RUNTIME_NODE_OPERATION_DEFERRED_RETRY_SECONDS);
+        let mut operation = RuntimeNodeOperation::new(operation_id, site_hash, action, now_unix);
+        operation.attempt_count = runtime_node_operations
+            .get(&site_hash)
+            .map(|existing| existing.attempt_count.saturating_add(1))
+            .unwrap_or(1);
+        let summary = format!(
+            "Bakery runtime node operation capacity ({}) is saturated; deferring TreeGuard {} for site {}.",
+            RUNTIME_NODE_OPERATION_CAPACITY,
+            if virtualized {
+                "virtualization"
+            } else {
+                "restore"
+            },
+            site_hash
+        );
+        operation.update_status(
+            RuntimeNodeOperationStatus::Deferred,
+            now_unix,
+            Some(summary.clone()),
+            Some(retry_at),
+        );
+        runtime_node_operations.insert(site_hash, operation.clone());
+        update_desync_state_from_runtime_operations(runtime_node_operations);
+        push_bakery_event("runtime_node_op_deferred", "warning", summary);
+        return operation.snapshot();
+    }
+
+    let operation_id = *next_runtime_operation_id;
+    *next_runtime_operation_id = next_runtime_operation_id.saturating_add(1);
+    let runtime_ops_snapshot = runtime_node_operations.clone();
+    let sites_snapshot = sites.clone();
+    let circuits_snapshot = circuits.clone();
+    let qdisc_handles_snapshot = qdisc_handles.clone();
+    let migrations_snapshot = migrations.clone();
+    let virtualized_sites_snapshot = virtualized_sites.clone();
+
+    let mut operation = RuntimeNodeOperation::new(operation_id, site_hash, action, now_unix);
+    operation.attempt_count = 1;
+    operation.update_status(RuntimeNodeOperationStatus::Applying, now_unix, None, None);
+    runtime_node_operations.insert(site_hash, operation.clone());
+    update_desync_state_from_runtime_operations(runtime_node_operations);
+
     let Ok(config) = lqos_config::load_config() else {
-        return Err("Failed to load configuration".to_string());
+        operation.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            now_unix,
+            Some("Failed to load configuration".to_string()),
+            None,
+        );
+        runtime_node_operations.insert(site_hash, operation.clone());
+        update_desync_state_from_runtime_operations(runtime_node_operations);
+        return operation.snapshot();
     };
 
-    if virtualized {
-        if virtualized_sites.contains_key(&site_hash) {
-            return Ok(());
-        }
+    let result: Result<(), String> = (|| {
+        if virtualized {
+            if virtualized_sites.contains_key(&site_hash) {
+                return Ok(());
+            }
 
-        let Some(target_site) = sites.get(&site_hash).cloned() else {
-            return Err(format!("Unknown site hash {}", site_hash));
-        };
-        if site_is_top_level(target_site.as_ref()) {
-            let plan = build_top_level_virtualization_plan(
-                Arc::clone(&target_site),
+            let Some(target_site) = sites.get(&site_hash).cloned() else {
+                return Err(format!("Unknown site hash {}", site_hash));
+            };
+
+            if site_is_top_level(target_site.as_ref()) {
+                let plan = build_top_level_virtualization_plan(
+                    Arc::clone(&target_site),
+                    sites,
+                    circuits,
+                    site_stick_offset(target_site.as_ref()),
+                )?;
+                apply_site_command_updates(
+                    &config,
+                    sites,
+                    &plan.active_sites,
+                    "TreeGuard runtime top-level site reparent",
+                )?;
+                apply_top_level_circuit_command_updates(
+                    &config,
+                    circuits,
+                    &plan.active_circuits,
+                    live_circuits,
+                    mq_layout,
+                    qdisc_handles,
+                    migrations,
+                    "TreeGuard runtime top-level circuit reparent",
+                )?;
+                sites.remove(&site_hash);
+                virtualized_sites.insert(
+                    site_hash,
+                    VirtualizedSiteState {
+                        site: target_site,
+                        saved_sites: plan.saved_sites,
+                        saved_circuits: plan.saved_circuits,
+                        active_sites: plan
+                            .active_sites
+                            .into_iter()
+                            .map(|(hash, update)| (hash, update.command))
+                            .collect(),
+                        active_circuits: plan
+                            .active_circuits
+                            .into_iter()
+                            .map(|(hash, update)| (hash, update.command))
+                            .collect(),
+                        qdisc_handles: VirtualizedSiteQdiscHandles {
+                            down: None,
+                            up: None,
+                        },
+                        pending_prune: true,
+                        next_prune_attempt_unix: now_unix
+                            .saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS),
+                    },
+                );
+                return Ok(());
+            }
+
+            if let Some(reason) =
+                site_runtime_virtualization_eligibility_error(target_site.as_ref())
+            {
+                return Err(reason);
+            }
+
+            let Some((target_down_class, target_up_class)) =
+                site_class_handles(target_site.as_ref())
+            else {
+                return Err(format!("Site {} is not a valid AddSite command", site_hash));
+            };
+            let (parent_class_id, up_parent_class_id) = match target_site.as_ref() {
+                BakeryCommands::AddSite {
+                    parent_class_id,
+                    up_parent_class_id,
+                    ..
+                } => (parent_class_id, up_parent_class_id),
+                _ => unreachable!("site_class_handles succeeded for a non-site command"),
+            };
+
+            let child_sites = collect_direct_child_site_hashes(
                 sites,
-                circuits,
-                site_stick_offset(target_site.as_ref()),
-            )?;
+                target_down_class,
+                target_up_class,
+                site_hash,
+            );
+            let direct_circuits =
+                collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
+            let saved_sites: HashMap<i64, Arc<BakeryCommands>> = child_sites
+                .iter()
+                .filter_map(|hash| sites.get(hash).cloned().map(|cmd| (*hash, cmd)))
+                .collect();
+            let saved_circuits: HashMap<i64, Arc<BakeryCommands>> = direct_circuits
+                .iter()
+                .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
+                .collect();
+
+            let mut active_sites = HashMap::new();
+            for child_hash in &child_sites {
+                let Some(child_site) = sites.get(child_hash).cloned() else {
+                    continue;
+                };
+                let Some(updated_site) =
+                    reparent_site_command(&child_site, *parent_class_id, *up_parent_class_id)
+                else {
+                    continue;
+                };
+                active_sites.insert(
+                    *child_hash,
+                    PlannedSiteUpdate {
+                        queue: current_site_queue(updated_site.as_ref()).unwrap_or(1),
+                        parent_site: Some(site_hash),
+                        command: updated_site,
+                    },
+                );
+            }
             apply_site_command_updates(
                 &config,
                 sites,
-                &plan.active_sites,
-                "TreeGuard runtime top-level site reparent",
+                &active_sites,
+                "TreeGuard runtime site reparent",
             )?;
-            apply_circuit_command_updates(
+
+            apply_direct_circuit_reparents(
                 &config,
+                &direct_circuits,
+                *parent_class_id,
+                *up_parent_class_id,
                 circuits,
-                &plan.active_circuits,
                 live_circuits,
                 mq_layout,
                 qdisc_handles,
                 migrations,
-                "TreeGuard runtime top-level circuit reparent",
             )?;
-            if let Some(prune) = site_prune_commands(&config, target_site.as_ref()) {
-                let result =
-                    execute_and_record_live_change(&prune, "TreeGuard runtime top-level site prune");
-                if !result.ok {
-                    return Err(summarize_apply_result(
-                        "TreeGuard runtime top-level site prune",
-                        &result,
-                    ));
-                }
-            }
             sites.remove(&site_hash);
             virtualized_sites.insert(
                 site_hash,
                 VirtualizedSiteState {
                     site: target_site,
-                    saved_sites: plan.saved_sites,
-                    saved_circuits: plan.saved_circuits,
-                    active_sites: plan
-                        .active_sites
+                    saved_sites,
+                    saved_circuits,
+                    active_sites: active_sites
                         .into_iter()
                         .map(|(hash, update)| (hash, update.command))
                         .collect(),
-                    active_circuits: plan
-                        .active_circuits
-                        .into_iter()
-                        .map(|(hash, update)| (hash, update.command))
+                    active_circuits: direct_circuits
+                        .iter()
+                        .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
                         .collect(),
+                    qdisc_handles: VirtualizedSiteQdiscHandles {
+                        down: None,
+                        up: None,
+                    },
+                    pending_prune: true,
+                    next_prune_attempt_unix: now_unix
+                        .saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS),
                 },
             );
             return Ok(());
         }
 
-        if let Some(reason) = site_runtime_virtualization_eligibility_error(target_site.as_ref()) {
+        let Some(saved_state) = virtualized_sites.get(&site_hash).cloned() else {
+            return Ok(());
+        };
+
+        if !site_is_top_level(saved_state.site.as_ref())
+            && let Some(reason) =
+                site_runtime_virtualization_eligibility_error(saved_state.site.as_ref())
+        {
             return Err(reason);
         }
-        let Some((target_down_class, target_up_class)) = site_class_handles(target_site.as_ref())
-        else {
-            return Err(format!("Site {} is not a valid AddSite command", site_hash));
-        };
-        let BakeryCommands::AddSite {
-            parent_class_id,
-            up_parent_class_id,
-            ..
-        } = target_site.as_ref()
-        else {
-            return Err(format!("Site {} is not a valid AddSite command", site_hash));
-        };
 
-        let child_sites =
-            collect_direct_child_site_hashes(sites, target_down_class, target_up_class, site_hash);
-        let direct_circuits =
-            collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
-        let saved_sites: HashMap<i64, Arc<BakeryCommands>> = child_sites
-            .iter()
-            .filter_map(|hash| sites.get(hash).cloned().map(|cmd| (*hash, cmd)))
-            .collect();
-        let saved_circuits: HashMap<i64, Arc<BakeryCommands>> = direct_circuits
-            .iter()
-            .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
-            .collect();
-
-        let mut active_sites = HashMap::new();
-        for child_hash in &child_sites {
-            let Some(child_site) = sites.get(child_hash).cloned() else {
-                continue;
-            };
-            let Some(updated_site) =
-                reparent_site_command(&child_site, *parent_class_id, *up_parent_class_id)
-            else {
-                continue;
-            };
-            active_sites.insert(
-                *child_hash,
-                PlannedSiteUpdate {
-                    queue: current_site_queue(updated_site.as_ref()).unwrap_or(1),
-                    parent_site: Some(site_hash),
-                    command: updated_site,
-                },
-            );
-        }
-        apply_site_command_updates(
-            &config,
-            sites,
-            &active_sites,
-            "TreeGuard runtime site reparent",
-        )?;
-
-        apply_direct_circuit_reparents(
-            &config,
-            &direct_circuits,
-            *parent_class_id,
-            *up_parent_class_id,
-            circuits,
-            live_circuits,
-            mq_layout,
-            qdisc_handles,
-            migrations,
-        )?;
-
-        if let Some(prune) = site_prune_commands(&config, target_site.as_ref()) {
-            let result = execute_and_record_live_change(&prune, "TreeGuard runtime site prune");
+        if !saved_state.pending_prune
+            && let Some(cmds) = saved_state
+                .site
+                .to_commands(&config, ExecutionMode::Builder)
+        {
+            let result =
+                execute_and_record_live_change(&cmds, "TreeGuard runtime hidden site restore");
             if !result.ok {
                 return Err(summarize_apply_result(
-                    "TreeGuard runtime site prune",
+                    "TreeGuard runtime hidden site restore",
                     &result,
                 ));
             }
         }
-        sites.remove(&site_hash);
-        virtualized_sites.insert(
-            site_hash,
-            VirtualizedSiteState {
-                site: target_site,
-                saved_sites,
-                saved_circuits,
-                active_sites: active_sites
-                    .into_iter()
-                    .map(|(hash, update)| (hash, update.command))
-                    .collect(),
-                active_circuits: direct_circuits
-                    .iter()
-                    .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
-                    .collect(),
-            },
+        sites.insert(site_hash, saved_state.site.clone());
+
+        let restore_sites: HashMap<i64, PlannedSiteUpdate> = saved_state
+            .saved_sites
+            .iter()
+            .map(|(hash, command)| {
+                (
+                    *hash,
+                    PlannedSiteUpdate {
+                        queue: current_site_queue(command.as_ref()).unwrap_or(1),
+                        parent_site: None,
+                        command: Arc::clone(command),
+                    },
+                )
+            })
+            .collect();
+        apply_site_command_updates(
+            &config,
+            sites,
+            &restore_sites,
+            "TreeGuard runtime site restore",
+        )?;
+
+        let restore_circuits: HashMap<i64, PlannedCircuitUpdate> = saved_state
+            .saved_circuits
+            .iter()
+            .map(|(hash, command)| {
+                (
+                    *hash,
+                    PlannedCircuitUpdate {
+                        queue: current_circuit_queue(command.as_ref()).unwrap_or(1),
+                        parent_site: None,
+                        command: Arc::clone(command),
+                    },
+                )
+            })
+            .collect();
+        apply_circuit_command_updates(
+            &config,
+            circuits,
+            &restore_circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            migrations,
+            "TreeGuard runtime circuit restore",
+        )?;
+
+        virtualized_sites.remove(&site_hash);
+        Ok(())
+    })();
+
+    if let Err(error) = result {
+        *sites = sites_snapshot;
+        *circuits = circuits_snapshot;
+        *qdisc_handles = qdisc_handles_snapshot;
+        *migrations = migrations_snapshot;
+        *virtualized_sites = virtualized_sites_snapshot;
+        *runtime_node_operations = runtime_ops_snapshot;
+        operation.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            unix_now(),
+            Some(error.clone()),
+            None,
         );
-        return Ok(());
-    }
-
-    let Some(saved_state) = virtualized_sites.get(&site_hash).cloned() else {
-        return Ok(());
-    };
-    if !site_is_top_level(saved_state.site.as_ref())
-        && let Some(reason) = site_runtime_virtualization_eligibility_error(saved_state.site.as_ref())
-    {
-        return Err(reason);
-    }
-
-    if let Some(cmds) = saved_state.site.to_commands(&config, ExecutionMode::Builder) {
-        let result = execute_and_record_live_change(&cmds, "TreeGuard runtime hidden site restore");
-        if !result.ok {
-            return Err(summarize_apply_result(
-                "TreeGuard runtime hidden site restore",
-                &result,
+        runtime_node_operations.insert(site_hash, operation.clone());
+        if runtime_error_suggests_material_desync(&error) {
+            mark_reload_required(format!(
+                "Bakery detected material runtime drift while processing TreeGuard {} for site {}: {}",
+                if virtualized {
+                    "virtualization"
+                } else {
+                    "restore"
+                },
+                site_hash,
+                error
             ));
         }
+        update_desync_state_from_runtime_operations(runtime_node_operations);
+        return operation.snapshot();
     }
-    sites.insert(site_hash, saved_state.site.clone());
 
-    let restore_sites: HashMap<i64, PlannedSiteUpdate> = saved_state
-        .saved_sites
-        .iter()
-        .map(|(hash, command)| {
-            (
-                *hash,
-                PlannedSiteUpdate {
-                    queue: current_site_queue(command.as_ref()).unwrap_or(1),
-                    parent_site: None,
-                    command: Arc::clone(command),
-                },
-            )
-        })
-        .collect();
-    apply_site_command_updates(
-        &config,
-        sites,
-        &restore_sites,
-        "TreeGuard runtime site restore",
-    )?;
-
-    let restore_circuits: HashMap<i64, PlannedCircuitUpdate> = saved_state
-        .saved_circuits
-        .iter()
-        .map(|(hash, command)| {
-            (
-                *hash,
-                PlannedCircuitUpdate {
-                    queue: current_circuit_queue(command.as_ref()).unwrap_or(1),
-                    parent_site: None,
-                    command: Arc::clone(command),
-                },
-            )
-        })
-        .collect();
-    apply_circuit_command_updates(
-        &config,
-        circuits,
-        &restore_circuits,
-        live_circuits,
-        mq_layout,
-        qdisc_handles,
-        migrations,
-        "TreeGuard runtime circuit restore",
-    )?;
-
-    virtualized_sites.remove(&site_hash);
-    Ok(())
+    let finished_at = unix_now();
+    let next_retry = virtualized_sites
+        .get(&site_hash)
+        .and_then(|state| state.pending_prune.then_some(state.next_prune_attempt_unix));
+    let status = if virtualized && next_retry.is_some() {
+        RuntimeNodeOperationStatus::AppliedAwaitingCleanup
+    } else {
+        RuntimeNodeOperationStatus::Completed
+    };
+    operation.update_status(status, finished_at, None, next_retry);
+    runtime_node_operations.insert(site_hash, operation.clone());
+    update_desync_state_from_runtime_operations(runtime_node_operations);
+    operation.snapshot()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4550,6 +5887,8 @@ fn full_reload(
     new_batch: Vec<Arc<BakeryCommands>>,
     resolved_mq_layout: Option<MqDeviceLayout>,
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
+    virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
+    runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
 ) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
     FULL_RELOAD_IN_PROGRESS.store(true, Ordering::Relaxed);
@@ -4612,6 +5951,12 @@ fn full_reload(
         if resolved_mq_layout.is_some() {
             *mq_layout = resolved_mq_layout;
         }
+        virtualized_sites.clear();
+        runtime_node_operations.clear();
+        update_desync_state_from_runtime_operations(runtime_node_operations);
+        clear_reload_required(
+            "A successful Bakery full reload re-established baseline state; incremental topology mutations can resume.",
+        );
         FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
         apply_stormguard_overrides(stormguard_overrides, config);
     } else {
@@ -4620,6 +5965,7 @@ fn full_reload(
         *live_circuits = previous_live_circuits;
         *mq_layout = previous_mq_layout;
     }
+    update_queue_distribution_snapshot(sites, circuits);
     *batch = None;
 }
 
@@ -4749,7 +6095,20 @@ fn apply_stormguard_overrides(
 mod tests {
     use super::*;
     use lqos_config::Config;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn bakery_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn reset_bakery_test_state() {
+        *telemetry_state().write() = BakeryTelemetryState::default();
+        MQ_CREATED.store(false, Ordering::Relaxed);
+        FIRST_COMMIT_APPLIED.store(false, Ordering::Relaxed);
+        FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
+    }
 
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
@@ -4960,6 +6319,12 @@ mod tests {
                         sqm_override: None,
                     }),
                 )]),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                pending_prune: false,
+                next_prune_attempt_unix: 0,
             },
         );
 
@@ -5003,6 +6368,322 @@ mod tests {
             .expect("child circuit should remain in batch");
         assert_eq!(child_circuit.0, TcHandle::from_u32(0x10020));
         assert_eq!(child_circuit.1, TcHandle::from_u32(0x20020));
+    }
+
+    #[test]
+    fn runtime_virtualized_site_prune_ready_respects_backoff_and_migrations() {
+        let state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::from([(40, mk_add_circuit(40, "192.0.2.40/32"))]),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 120,
+        };
+
+        let mut migrations = HashMap::new();
+        migrations.insert(
+            40,
+            Migration {
+                circuit_hash: 40,
+                old_parent_class_id: TcHandle::from_u32(0x1),
+                old_up_parent_class_id: TcHandle::from_u32(0x2),
+                old_class_major: 0x100,
+                old_up_class_major: 0x200,
+                parent_class_id: TcHandle::from_u32(0x1),
+                up_parent_class_id: TcHandle::from_u32(0x2),
+                class_major: 0x100,
+                up_class_major: 0x200,
+                down_qdisc_handle: None,
+                up_qdisc_handle: None,
+                old_down_min: 1.0,
+                old_down_max: 1.0,
+                old_up_min: 1.0,
+                old_up_max: 1.0,
+                new_down_min: 1.0,
+                new_down_max: 1.0,
+                new_up_min: 1.0,
+                new_up_max: 1.0,
+                old_minor: 0x10,
+                shadow_minor: 0x31,
+                final_minor: 0x10,
+                ips: vec!["192.0.2.40/32".to_string()],
+                sqm_override: None,
+                stage: MigrationStage::PrepareShadow,
+            },
+        );
+
+        assert!(!runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &HashMap::new(),
+            &migrations,
+            119
+        ));
+        assert!(!runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &HashMap::new(),
+            &migrations,
+            120
+        ));
+
+        migrations.clear();
+        assert!(!runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &HashMap::new(),
+            &migrations,
+            119
+        ));
+        assert!(runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &HashMap::new(),
+            &migrations,
+            120
+        ));
+    }
+
+    #[test]
+    fn runtime_virtualized_site_prune_ready_requires_no_remaining_live_children() {
+        let state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 0,
+        };
+
+        let child_site = mk_add_site(30, 0x10021, 0x20021, 0x22);
+        let mut sites = HashMap::new();
+        sites.insert(30, child_site);
+        assert!(!runtime_virtualized_site_prune_ready(
+            &state,
+            &sites,
+            &HashMap::new(),
+            &HashMap::new(),
+            0
+        ));
+
+        sites.clear();
+        let mut circuits = HashMap::new();
+        circuits.insert(
+            40,
+            Arc::new(BakeryCommands::AddCircuit {
+                circuit_hash: 40,
+                parent_class_id: TcHandle::from_u32(0x10021),
+                up_parent_class_id: TcHandle::from_u32(0x20021),
+                class_minor: 0x30,
+                download_bandwidth_min: 10.0,
+                upload_bandwidth_min: 10.0,
+                download_bandwidth_max: 100.0,
+                upload_bandwidth_max: 100.0,
+                class_major: 0x110,
+                up_class_major: 0x210,
+                down_qdisc_handle: None,
+                up_qdisc_handle: None,
+                ip_addresses: "192.0.2.40/32".to_string(),
+                sqm_override: None,
+            }),
+        );
+        assert!(!runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &circuits,
+            &HashMap::new(),
+            0
+        ));
+
+        circuits.clear();
+        assert!(runtime_virtualized_site_prune_ready(
+            &state,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            0
+        ));
+    }
+
+    #[test]
+    fn site_prune_commands_delete_qdisc_by_handle_before_class() {
+        let config = Arc::new(lqos_config::Config::default());
+        let state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: Some(0x9000),
+                up: Some(0x9001),
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 0,
+        };
+        let commands = site_prune_commands(&config, &state).expect("site prune commands");
+
+        assert_eq!(commands.len(), 4);
+        assert_eq!(commands[0][0], "qdisc");
+        assert_eq!(commands[0][1], "del");
+        assert_eq!(commands[0][4], "handle");
+        assert_eq!(commands[0][5], "0x9000:");
+        assert_eq!(commands[1][0], "qdisc");
+        assert_eq!(commands[1][1], "del");
+        assert_eq!(commands[1][4], "handle");
+        assert_eq!(commands[1][5], "0x9001:");
+        assert_eq!(commands[2][0], "class");
+        assert_eq!(commands[2][1], "del");
+        assert_eq!(commands[3][0], "class");
+        assert_eq!(commands[3][1], "del");
+    }
+
+    #[test]
+    fn site_prune_commands_skip_qdisc_delete_without_tracked_handles() {
+        let config = Arc::new(lqos_config::Config::default());
+        let state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 0,
+        };
+
+        let commands = site_prune_commands(&config, &state).expect("site prune commands");
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0][0], "class");
+        assert_eq!(commands[1][0], "class");
+    }
+
+    #[test]
+    fn sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot_recovers_leaf_handles() {
+        let mut state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 0,
+        };
+
+        let mut down_snapshot = HashMap::new();
+        down_snapshot.insert(
+            TcHandle::from_u32(0x10021),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x10021),
+                parent: Some(TcHandle::from_u32(0x10020)),
+                leaf_qdisc_major: Some(0x9000),
+            },
+        );
+        let mut up_snapshot = HashMap::new();
+        up_snapshot.insert(
+            TcHandle::from_u32(0x20021),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x20021),
+                parent: Some(TcHandle::from_u32(0x20020)),
+                leaf_qdisc_major: Some(0x9001),
+            },
+        );
+
+        sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot(
+            &mut state,
+            &down_snapshot,
+            &up_snapshot,
+        );
+
+        assert_eq!(state.qdisc_handles.down, Some(0x9000));
+        assert_eq!(state.qdisc_handles.up, Some(0x9001));
+    }
+
+    #[test]
+    fn runtime_virtualized_site_observed_child_gate_blocks_prune() {
+        let state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10020, 0x20020, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            pending_prune: true,
+            next_prune_attempt_unix: 0,
+        };
+
+        let mut down_snapshot = HashMap::new();
+        down_snapshot.insert(
+            TcHandle::from_u32(0x10022),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x10022),
+                parent: Some(TcHandle::from_u32(0x10021)),
+                leaf_qdisc_major: Some(0x9000),
+            },
+        );
+        let mut up_snapshot = HashMap::new();
+        up_snapshot.insert(
+            TcHandle::from_u32(0x20022),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x20022),
+                parent: Some(TcHandle::from_u32(0x20021)),
+                leaf_qdisc_major: Some(0x9001),
+            },
+        );
+
+        assert!(
+            runtime_virtualized_site_has_remaining_observed_child_classes(
+                &state,
+                &down_snapshot,
+                &up_snapshot
+            )
+        );
+    }
+
+    #[test]
+    fn site_prune_class_commands_for_observed_state_only_emits_existing_directions() {
+        let config = Arc::new(lqos_config::Config::default());
+        let site = mk_add_site(20, 0x10020, 0x20020, 0x21);
+
+        let down_only =
+            site_prune_class_commands_for_observed_state(&config, site.as_ref(), true, false)
+                .expect("down-only commands");
+        assert_eq!(down_only.len(), 1);
+        assert_eq!(down_only[0][0], "class");
+        assert_eq!(down_only[0][3], config.isp_interface());
+
+        let up_only =
+            site_prune_class_commands_for_observed_state(&config, site.as_ref(), false, true)
+                .expect("up-only commands");
+        assert_eq!(up_only.len(), 1);
+        assert_eq!(up_only[0][0], "class");
+        assert_eq!(up_only[0][3], config.internet_interface());
+
+        assert!(
+            site_prune_class_commands_for_observed_state(&config, site.as_ref(), false, false)
+                .is_none()
+        );
     }
 
     #[test]
@@ -5096,6 +6777,136 @@ mod tests {
         let reason = site_runtime_virtualization_eligibility_error(circuit.as_ref())
             .expect("non-site commands should be rejected");
         assert!(reason.contains("AddSite command"));
+    }
+
+    #[test]
+    fn runtime_node_capacity_returns_deferred_status() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let mut runtime_node_operations = HashMap::new();
+        for index in 0..RUNTIME_NODE_OPERATION_CAPACITY {
+            let site_hash = index as i64 + 1;
+            let mut operation = RuntimeNodeOperation::new(
+                site_hash as u64,
+                site_hash,
+                RuntimeNodeOperationAction::Virtualize,
+                unix_now(),
+            );
+            operation.attempt_count = 1;
+            operation.update_status(RuntimeNodeOperationStatus::Applying, unix_now(), None, None);
+            runtime_node_operations.insert(site_hash, operation);
+        }
+        update_desync_state_from_runtime_operations(&runtime_node_operations);
+
+        let snapshot = handle_treeguard_set_node_virtual_live(
+            999,
+            true,
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &HashMap::new(),
+            &None,
+            &mut QdiscHandleState::default(),
+            &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut runtime_node_operations,
+            &mut 10_000,
+        );
+
+        assert_eq!(snapshot.status, RuntimeNodeOperationStatus::Deferred);
+        assert!(snapshot.next_retry_at_unix.is_some());
+        assert!(
+            snapshot
+                .last_error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("capacity")
+        );
+
+        let telemetry = bakery_status_snapshot();
+        assert_eq!(telemetry.runtime_operations.deferred_count, 1);
+        assert!(!telemetry.reload_required);
+    }
+
+    #[test]
+    fn dirty_runtime_subtrees_below_threshold_do_not_require_full_reload() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let mut runtime_node_operations = HashMap::new();
+        for index in 0..(RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD - 1) {
+            let site_hash = index as i64 + 1;
+            let mut operation = RuntimeNodeOperation::new(
+                site_hash as u64,
+                site_hash,
+                RuntimeNodeOperationAction::Virtualize,
+                unix_now(),
+            );
+            operation.attempt_count = 2;
+            operation.update_status(
+                RuntimeNodeOperationStatus::Dirty,
+                unix_now(),
+                Some("test dirty subtree".to_string()),
+                None,
+            );
+            runtime_node_operations.insert(site_hash, operation);
+        }
+
+        update_desync_state_from_runtime_operations(&runtime_node_operations);
+
+        let telemetry = bakery_status_snapshot();
+        assert_eq!(
+            telemetry.dirty_subtree_count,
+            RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD - 1
+        );
+        assert!(!telemetry.reload_required);
+        assert!(bakery_reload_required_reason().is_none());
+    }
+
+    #[test]
+    fn dirty_runtime_subtrees_at_threshold_require_full_reload() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let mut runtime_node_operations = HashMap::new();
+        for index in 0..RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD {
+            let site_hash = index as i64 + 1;
+            let mut operation = RuntimeNodeOperation::new(
+                site_hash as u64,
+                site_hash,
+                RuntimeNodeOperationAction::Virtualize,
+                unix_now(),
+            );
+            operation.attempt_count = 3;
+            operation.update_status(
+                RuntimeNodeOperationStatus::Dirty,
+                unix_now(),
+                Some("test dirty subtree".to_string()),
+                None,
+            );
+            runtime_node_operations.insert(site_hash, operation);
+        }
+
+        update_desync_state_from_runtime_operations(&runtime_node_operations);
+
+        let telemetry = bakery_status_snapshot();
+        assert_eq!(
+            telemetry.dirty_subtree_count,
+            RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD
+        );
+        assert!(telemetry.reload_required);
+        assert!(
+            telemetry
+                .reload_required_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("dirty runtime subtree operations")
+        );
+        assert!(
+            bakery_reload_required_reason()
+                .unwrap_or_default()
+                .contains("dirty runtime subtree operations")
+        );
     }
 
     #[test]
@@ -5579,6 +7390,36 @@ mod tests {
         assert!(matches!(
             circuits.get(&9100),
             Some(cmd) if Arc::ptr_eq(cmd, &old_cmd)
+        ));
+    }
+
+    #[test]
+    fn queue_top_level_runtime_migration_succeeds_for_inactive_parent_move() {
+        let old_cmd = mk_test_circuit(9200, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.92/32");
+        let new_cmd = mk_test_circuit(9200, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.92/32");
+
+        let mut circuits = HashMap::from([(9200, Arc::clone(&old_cmd))]);
+        let live_circuits = HashMap::new();
+        let mut migrations = HashMap::new();
+
+        let queued = queue_top_level_runtime_migration(
+            old_cmd.as_ref(),
+            &new_cmd,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        );
+
+        assert!(queued);
+        let migration = migrations.get(&9200).expect("migration should be queued");
+        assert_eq!(migration.stage, MigrationStage::PrepareShadow);
+        assert_eq!(migration.old_parent_class_id, TcHandle::from_u32(0x10020));
+        assert_eq!(migration.parent_class_id, TcHandle::from_u32(0x10034));
+        assert_eq!(migration.final_minor, 0x35);
+        assert_ne!(migration.shadow_minor, migration.old_minor);
+        assert!(matches!(
+            circuits.get(&9200),
+            Some(cmd) if Arc::ptr_eq(cmd, &new_cmd)
         ));
     }
 

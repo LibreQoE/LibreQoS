@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
+use toml_edit::{DocumentMut, value};
 use tracing::{debug, error, info};
 
 mod migration;
@@ -24,6 +25,8 @@ pub use v15::{
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
+static TREEGUARD_CPU_MODE_MIGRATION_NOTICE: Lazy<std::sync::Mutex<Option<String>>> =
+    Lazy::new(|| std::sync::Mutex::new(None));
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
@@ -45,6 +48,83 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
 #[doc(hidden)]
 pub fn clear_cached_config() {
     CONFIG.store(None.into());
+}
+
+/// Returns the current TreeGuard CPU-mode migration notice, if an automatic upgrade rewrite
+/// occurred during config load.
+pub fn treeguard_cpu_mode_migration_notice() -> Option<String> {
+    TREEGUARD_CPU_MODE_MIGRATION_NOTICE
+        .lock()
+        .ok()
+        .and_then(|notice| notice.clone())
+}
+
+fn treeguard_cpu_mode_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.treeguard_cpu_mode_migrated")
+}
+
+fn maybe_migrate_treeguard_cpu_mode(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    let mode_item = doc
+        .get("treeguard")
+        .and_then(|section| section.as_table_like())
+        .and_then(|treeguard| treeguard.get("cpu"))
+        .and_then(|cpu| cpu.as_table_like())
+        .and_then(|cpu| cpu.get("mode"))
+        .and_then(|mode| mode.as_str());
+    if mode_item != Some("traffic_rtt_only") {
+        return Ok(raw);
+    }
+
+    let stamp_path = treeguard_cpu_mode_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let Some(cpu_table) = doc
+        .get_mut("treeguard")
+        .and_then(|section| section.as_table_like_mut())
+        .and_then(|treeguard| treeguard.get_mut("cpu"))
+        .and_then(|cpu| cpu.as_table_like_mut())
+    else {
+        return Ok(raw);
+    };
+
+    cpu_table.insert("mode", value("cpu_aware"));
+    let migrated = doc.to_string();
+
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.treeguard_cpu_mode_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    std::fs::write(&stamp_path, b"cpu_aware\n").map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: stamp_path,
+        source: e,
+    })?;
+
+    let notice = "TreeGuard CPU mode was automatically migrated from traffic_rtt_only to cpu_aware during upgrade. CPU-aware mode is now the default and recommended virtualization policy.".to_string();
+    info!("{notice}");
+    if let Ok(mut slot) = TREEGUARD_CPU_MODE_MIGRATION_NOTICE.lock() {
+        *slot = Some(notice);
+    }
+
+    Ok(migrated)
 }
 
 fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
@@ -86,6 +166,8 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
             }
         }
     })?;
+
+    let raw = maybe_migrate_treeguard_cpu_mode(&config_location, raw)?;
 
     let mut final_config = Config::load_from_string(&raw).map_err(|e| {
         error!("Unable to parse {config_location}");

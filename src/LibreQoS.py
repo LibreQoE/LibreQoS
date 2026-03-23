@@ -384,19 +384,23 @@ def validateNetworkAndDevices():
             data = json.load(file) # put JSON-data to a variable
             if data != {}:
                 #Traverse
-                observedNodes = {} # Will not be used later
+                observedNodes = set()
+                duplicateNodes = set()
                 def traverseToVerifyValidity(data):
                     for elem in data:
                         if isinstance(elem, str):
                             if (isinstance(data[elem], dict)) and (elem != 'children'):
                                 if elem not in observedNodes:
-                                    observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps'], 'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+                                    observedNodes.add(elem)
                                     if 'children' in data[elem]:
                                         traverseToVerifyValidity(data[elem]['children'])
                                 else:
-                                    warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
-                                    networkValidatedOrNot = False
+                                    duplicateNodes.add(elem)
                 traverseToVerifyValidity(data)
+                if len(duplicateNodes) > 0:
+                    for elem in sorted(duplicateNodes):
+                        warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
+                    networkValidatedOrNot = False
                 if len(observedNodes) < 1:
                     warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
                     networkValidatedOrNot = False

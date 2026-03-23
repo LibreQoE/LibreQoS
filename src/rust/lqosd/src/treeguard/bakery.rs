@@ -4,12 +4,10 @@
 
 use crate::treeguard::TreeguardError;
 use crossbeam_channel::Sender;
-use lqos_bakery::BakeryCommands;
+use lqos_bakery::{BakeryCommands, BakeryRuntimeNodeOperationSnapshot};
 use lqos_config::ShapedDevice;
 use lqos_queue_tracker::{QUEUE_STRUCTURE, QueueNode};
 use lqos_utils::hash_to_i64;
-use std::sync::mpsc;
-use std::time::Duration;
 
 /// Applies a per-circuit SQM override token live via Bakery.
 ///
@@ -133,11 +131,10 @@ fn send_live_sqm_override(
     Ok(())
 }
 
-/// Requests Bakery to runtime-virtualize or restore a single node without a full reload.
+/// Submits a Bakery runtime-virtualization or restore intent for a single node without a full reload.
 ///
-/// This function has side effects: it sends a synchronous command to the Bakery thread and waits
-/// briefly for an immediate success/failure result.
-pub(crate) fn apply_node_virtualization_live(
+/// This function has side effects: it sends a command to the Bakery thread.
+pub(crate) fn submit_node_virtualization_live(
     node_name: &str,
     virtualized: bool,
 ) -> Result<(), TreeguardError> {
@@ -146,25 +143,23 @@ pub(crate) fn apply_node_virtualization_live(
     };
 
     let site_hash = hash_to_i64(node_name);
-    let (reply_tx, reply_rx) = mpsc::channel();
-
     sender
         .send(BakeryCommands::TreeGuardSetNodeVirtual {
             site_hash,
             virtualized,
-            reply: Some(reply_tx),
+            reply: None,
         })
         .map_err(|e| TreeguardError::BakerySend {
             details: e.to_string(),
-        })?;
+        })
+}
 
-    match reply_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(details)) => Err(TreeguardError::BakeryVirtualization { details }),
-        Err(e) => Err(TreeguardError::BakeryVirtualization {
-            details: format!("timed out waiting for Bakery runtime virtualization result: {e}"),
-        }),
-    }
+/// Returns the latest Bakery runtime-node operation snapshot for a node, if Bakery has processed one.
+pub(crate) fn node_virtualization_operation_status(
+    node_name: &str,
+) -> Option<BakeryRuntimeNodeOperationSnapshot> {
+    let site_hash = hash_to_i64(node_name);
+    lqos_bakery::bakery_runtime_node_operation_snapshot(site_hash)
 }
 
 /// Builds a comma-separated IP list string from a circuit's shaped devices.

@@ -32,9 +32,14 @@ import {BakeryStatusSummaryDashlet} from "./bakery_status_summary";
 import {BakeryApplySummaryDashlet} from "./bakery_apply_summary";
 import {BakeryCapacityDashlet} from "./bakery_capacity";
 import {BakeryActivityDashlet} from "./bakery_activity";
+import {BakeryPipelineDashlet} from "./bakery_pipeline";
+import {BakeryChangeMixDashlet} from "./bakery_change_mix";
 import {TreeGuardStatusDashlet} from "./treeguard_status";
 import {TreeGuardActivityDashlet} from "./treeguard_activity";
 import {TreeguardControlsDashlet} from "./treeguard_controls";
+import {TreeGuardControlLoopDashlet} from "./treeguard_control_loop";
+import {TreeGuardStateMixDashlet} from "./treeguard_state_mix";
+import {TreeGuardDecisionImpactDashlet} from "./treeguard_decision_impact";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
 // New Traffic Overview dashlets
@@ -89,10 +94,15 @@ export const DashletMenu = [
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Status", tag: "bakeryStatusSummary", size: 4, category: "Bakery" },
     { name: "Bakery Apply Summary", tag: "bakeryApplySummary", size: 4, category: "Bakery" },
+    { name: "Bakery Pipeline", tag: "bakeryPipeline", size: 4, category: "Bakery" },
+    { name: "Bakery Runtime Operations", tag: "bakeryChangeMix", size: 4, category: "Bakery" },
     { name: "Bakery Capacity / Safety", tag: "bakeryCapacity", size: 4, category: "Bakery" },
     { name: "Bakery Recent Activity", tag: "bakeryActivity", size: 12, category: "Bakery" },
     { name: "TreeGuard Controls", tag: "treeguardControls", size: 6, category: "TreeGuard" },
     { name: "TreeGuard Status", tag: "treeguardStatus", size: 6, category: "TreeGuard" },
+    { name: "TreeGuard Control Loop", tag: "treeguardControlLoop", size: 4, category: "TreeGuard" },
+    { name: "TreeGuard State Mix", tag: "treeguardStateMix", size: 4, category: "TreeGuard" },
+    { name: "TreeGuard Decision Impact", tag: "treeguardDecisionImpact", size: 4, category: "TreeGuard" },
     { name: "TreeGuard Activity", tag: "treeguardActivity", size: 12, category: "TreeGuard" },
     // Traffic Overview (Insight-like)
     { name: "Shaper Top ASN (Download)", tag: "shaperTopAsnDown", size: 6, category: "Traffic" },
@@ -147,10 +157,15 @@ export function widgetFactory(widgetName, count) {
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
         case "bakeryStatusSummary": widget = new BakeryStatusSummaryDashlet(count); break;
         case "bakeryApplySummary": widget = new BakeryApplySummaryDashlet(count); break;
+        case "bakeryPipeline": widget = new BakeryPipelineDashlet(count); break;
+        case "bakeryChangeMix": widget = new BakeryChangeMixDashlet(count); break;
         case "bakeryCapacity": widget = new BakeryCapacityDashlet(count); break;
         case "bakeryActivity": widget = new BakeryActivityDashlet(count); break;
         case "treeguardControls": widget = new TreeguardControlsDashlet(count); break;
         case "treeguardStatus"  : widget = new TreeGuardStatusDashlet(count); break;
+        case "treeguardControlLoop": widget = new TreeGuardControlLoopDashlet(count); break;
+        case "treeguardStateMix": widget = new TreeGuardStateMixDashlet(count); break;
+        case "treeguardDecisionImpact": widget = new TreeGuardDecisionImpactDashlet(count); break;
         case "treeguardActivity": widget = new TreeGuardActivityDashlet(count); break;
         // Traffic Overview
         case "shaperTopAsnDown"  : widget = new ShaperTopAsnDownload(count); break;

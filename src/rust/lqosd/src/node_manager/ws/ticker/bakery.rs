@@ -1,12 +1,14 @@
 use crate::node_manager::ws::messages::{
-    BakeryActivityEntry, BakeryCapacityInterfaceData, BakeryPreflightData, BakeryStatusData,
-    BakeryStatusState, WsResponse,
+    BakeryActivityEntry, BakeryCapacityInterfaceData, BakeryPreflightData,
+    BakeryQueueDistributionData, BakeryRuntimeOperationHeadlineData, BakeryRuntimeOperationsData,
+    BakeryStatusData, BakeryStatusState, WsResponse,
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use lqos_bakery::{
     BakeryActivityEntry as BakeryActivitySnapshot, BakeryApplyType, BakeryMode,
-    BakeryPreflightSnapshot, BakeryStatusSnapshot,
+    BakeryPreflightSnapshot, BakeryRuntimeNodeOperationAction, BakeryRuntimeNodeOperationStatus,
+    BakeryStatusSnapshot,
 };
 use std::sync::Arc;
 
@@ -24,6 +26,27 @@ fn apply_type_to_string(apply_type: BakeryApplyType) -> String {
         BakeryApplyType::None => "None",
         BakeryApplyType::FullReload => "FullReload",
         BakeryApplyType::LiveChange => "LiveChange",
+    }
+    .to_string()
+}
+
+fn runtime_action_to_string(action: BakeryRuntimeNodeOperationAction) -> String {
+    match action {
+        BakeryRuntimeNodeOperationAction::Virtualize => "Virtualize",
+        BakeryRuntimeNodeOperationAction::Restore => "Restore",
+    }
+    .to_string()
+}
+
+fn runtime_status_to_string(status: BakeryRuntimeNodeOperationStatus) -> String {
+    match status {
+        BakeryRuntimeNodeOperationStatus::Submitted => "Submitted",
+        BakeryRuntimeNodeOperationStatus::Deferred => "Deferred",
+        BakeryRuntimeNodeOperationStatus::Applying => "Applying",
+        BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup => "AppliedAwaitingCleanup",
+        BakeryRuntimeNodeOperationStatus::Completed => "Completed",
+        BakeryRuntimeNodeOperationStatus::Failed => "Failed",
+        BakeryRuntimeNodeOperationStatus::Dirty => "Dirty",
     }
     .to_string()
 }
@@ -73,6 +96,41 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
             last_qdisc_commands: snapshot.last_qdisc_commands,
             last_build_duration_ms: snapshot.last_build_duration_ms,
             last_apply_duration_ms: snapshot.last_apply_duration_ms,
+            runtime_operations: BakeryRuntimeOperationsData {
+                submitted_count: snapshot.runtime_operations.submitted_count,
+                deferred_count: snapshot.runtime_operations.deferred_count,
+                applying_count: snapshot.runtime_operations.applying_count,
+                awaiting_cleanup_count: snapshot.runtime_operations.awaiting_cleanup_count,
+                failed_count: snapshot.runtime_operations.failed_count,
+                dirty_count: snapshot.runtime_operations.dirty_count,
+                latest: snapshot.runtime_operations.latest.map(|entry| {
+                    BakeryRuntimeOperationHeadlineData {
+                        operation_id: entry.operation_id,
+                        site_hash: entry.site_hash,
+                        action: runtime_action_to_string(entry.action),
+                        status: runtime_status_to_string(entry.status),
+                        attempt_count: entry.attempt_count,
+                        updated_at_unix: entry.updated_at_unix,
+                        next_retry_at_unix: entry.next_retry_at_unix,
+                        last_error: entry.last_error,
+                    }
+                }),
+            },
+            reload_required: snapshot.reload_required,
+            reload_required_reason: snapshot.reload_required_reason,
+            dirty_subtree_count: snapshot.dirty_subtree_count,
+            queue_distribution: snapshot
+                .queue_distribution
+                .into_iter()
+                .map(|entry| BakeryQueueDistributionData {
+                    queue: entry.queue,
+                    top_level_site_count: entry.top_level_site_count,
+                    site_count: entry.site_count,
+                    circuit_count: entry.circuit_count,
+                    download_mbps: entry.download_mbps,
+                    upload_mbps: entry.upload_mbps,
+                })
+                .collect(),
             preflight: snapshot.preflight.map(map_preflight),
         },
     }
