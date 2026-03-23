@@ -1019,7 +1019,7 @@ mod tests {
     fn site_override_update_keeps_only_changed_directions() {
         let site = site_state(75, 50, 100, 50);
         let update = SiteStateTracker::site_override_update_from_state(&site);
-        assert_eq!(update.download_bandwidth_mbps, Some(75));
+        assert_eq!(update.download_bandwidth_mbps, Some(75.0));
         assert_eq!(update.upload_bandwidth_mbps, None);
     }
 

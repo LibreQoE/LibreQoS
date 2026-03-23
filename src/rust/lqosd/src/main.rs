@@ -37,8 +37,6 @@ use crate::{
     ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
     throughput_tracker::flow_data::{FlowActor, flowbee_handle_events, setup_netflow_tracker},
 };
-#[cfg(feature = "flamegraphs")]
-use allocative::Allocative;
 use anyhow::Result;
 use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
@@ -65,12 +63,6 @@ use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 use crate::lts2_sys::get_lts_license_status;
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::remote_commands::start_remote_commands;
-#[cfg(feature = "flamegraphs")]
-use crate::shaped_devices_tracker::NETWORK_JSON;
-#[cfg(feature = "flamegraphs")]
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
-#[cfg(feature = "flamegraphs")]
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
 // Use MiMalloc only on supported platforms

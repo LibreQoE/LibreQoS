@@ -11,13 +11,14 @@ Important
   maintenance window. It is NOT intended for production service units under systemd.
 
 Manual steps (run in two terminals)
-1) Start lqosd manually as root with logs to a file:
-     sudo RUST_LOG=info lqosd 2>&1 | tee /tmp/lqosd.log
+1) Either:
+   - Start lqosd manually as root with logs to a file:
+       sudo RUST_LOG=info lqosd 2>&1 | tee /tmp/lqosd.log
+     and run the harness with `--log-file /tmp/lqosd.log`, or
+   - Run against the systemd-managed daemon and let the harness read `journalctl -u lqosd`.
    - Ensure /etc/lqos.conf interfaces and bandwidths are set correctly for this host.
-   - Stop systemd units first if they are enabled (optional):
-       sudo systemctl stop lqosd lqos_scheduler lqos_api
 2) In another terminal from this directory (LibreQoS/src), run the tests:
-     python3 bakery_integration_test.py --log-file /tmp/lqosd.log
+     python3 bakery_integration_test.py
    - The default run is the quicker tiered suite.
    - Use --full-suite for the whole harness, or --flat-only/--treeguard-only/etc. for a focused run.
 
@@ -33,18 +34,25 @@ Notes
 - Flat networks do not have explicit sites, so site add/remove checks are skipped there.
 - Newer Bakery builds log incremental completion as `Bakery mapped circuit decision (...)`
   rather than only the older `Bakery changes: ...` line. This harness accepts both.
+- In `cpu_aware` TreeGuard mode, the live TreeGuard suite may legitimately report a
+  skip if no CPU pressure is induced on the box during the test window.
 
 Usage examples
 - Quick default run (tiered only):
+    python3 bakery_integration_test.py
+- Use a tee'd manual log file:
     python3 bakery_integration_test.py --log-file /tmp/lqosd.log
 - Full suite:
-    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --full-suite
+    python3 bakery_integration_test.py --full-suite
 - Tiered only:
-    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --tiered-only
+    python3 bakery_integration_test.py --tiered-only
 - TreeGuard runtime suite only:
-    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --treeguard-only --treeguard-timeout 90
+    python3 bakery_integration_test.py --treeguard-only --treeguard-timeout 90
+- Fault-injection reload escalation suite only:
+    python3 bakery_integration_test.py --fault-reload-only
+  This destructive safety-path test is opt-in and is not included in --full-suite.
 - Flat only:
-    python3 bakery_integration_test.py --log-file /tmp/lqosd.log --flat-only
+    python3 bakery_integration_test.py --flat-only
 
 Exit code
 - 0 on success, 1 on assertion failure or precondition failure.
@@ -62,7 +70,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 import subprocess
 
 
@@ -133,6 +141,7 @@ MAPPED_DECISION_PAT = re.compile(
     r"Bakery mapped circuit decision \(([^)]+)\): requested=(\d+), allowed=(\d+), dropped=(\d+),"
 )
 NO_CHANGES_PAT = re.compile(r"No changes detected in batch, skipping processing\.")
+TEST_FAULT_ONCE_PATH = "/tmp/lqos_bakery_fail_purpose_once.txt"
 
 
 @dataclass
@@ -144,28 +153,32 @@ class LogResult:
     raw_lines: List[str]
 
 
+SnapshotToken = Union[int, float]
+
+
 class LogReader:
     def __init__(self, path: str):
         self.path = path
 
-    def snapshot(self) -> int:
+    def snapshot(self) -> SnapshotToken:
         try:
             return os.path.getsize(self.path)
         except Exception:
             return 0
 
-    def read_since(self, offset: int) -> List[str]:
+    def read_since(self, offset: SnapshotToken) -> Tuple[SnapshotToken, List[str]]:
         lines: List[str] = []
         try:
             with open(self.path, "r", errors="replace") as f:
-                f.seek(offset)
+                f.seek(int(offset))
                 for line in f:
                     lines.append(line.rstrip("\n"))
         except Exception:
             pass
-        return lines
+        next_offset = int(offset) + sum(len(l) + 1 for l in lines)
+        return next_offset, lines
 
-    def wait_for_events(self, offset: int, timeout_s: float = 20.0) -> LogResult:
+    def wait_for_events(self, offset: SnapshotToken, timeout_s: float = 20.0) -> LogResult:
         deadline = time.time() + timeout_s
         print(f"Waiting for Bakery events (timeout {timeout_s:.1f}s)...")
         collected: List[str] = []
@@ -176,12 +189,9 @@ class LogReader:
         printed_sleep_note = False
 
         while time.time() < deadline:
-            new_lines = self.read_since(offset)
+            offset, new_lines = self.read_since(offset)
             if new_lines:
                 collected.extend(new_lines)
-                # Seek to last byte each time
-                offset += sum(len(l) + 1 for l in new_lines)
-
                 # Parse new chunk
                 for ln in new_lines:
                     if FULL_RELOAD_PAT.search(ln) or FULL_RELOAD_SUMMARY_PAT.search(ln):
@@ -223,6 +233,109 @@ class LogReader:
             incremental_event=incremental_event,
             raw_lines=collected,
         )
+
+
+class JournalctlLogReader:
+    def __init__(self, unit: str = "lqosd"):
+        self.unit = unit
+
+    def snapshot(self) -> SnapshotToken:
+        return time.time()
+
+    def _since_arg(self, token: SnapshotToken) -> str:
+        return f"@{float(token):.6f}"
+
+    def read_since(self, token: SnapshotToken) -> Tuple[SnapshotToken, List[str]]:
+        start = float(token)
+        proc = subprocess.run(
+            [
+                "journalctl",
+                "-u",
+                self.unit,
+                "--since",
+                self._since_arg(start),
+                "--no-pager",
+                "-o",
+                "short-unix",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return start, []
+
+        lines: List[str] = []
+        next_token = start
+        for raw_line in proc.stdout.splitlines():
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            lines.append(line)
+            timestamp_token = line.split(" ", 1)[0].strip()
+            try:
+                next_token = max(next_token, float(timestamp_token) + 0.000001)
+            except Exception:
+                next_token = max(next_token, time.time())
+
+        return next_token, lines
+
+    def wait_for_events(self, offset: SnapshotToken, timeout_s: float = 20.0) -> LogResult:
+        deadline = time.time() + timeout_s
+        print(f"Waiting for Bakery events from journalctl (timeout {timeout_s:.1f}s)...")
+        collected: List[str] = []
+        full_reload = False
+        mq_init = False
+        changes: Optional[Dict[str, int]] = None
+        incremental_event: Optional[str] = None
+        printed_sleep_note = False
+
+        while time.time() < deadline:
+            offset, new_lines = self.read_since(offset)
+            if new_lines:
+                collected.extend(new_lines)
+                for ln in new_lines:
+                    if FULL_RELOAD_PAT.search(ln) or FULL_RELOAD_SUMMARY_PAT.search(ln):
+                        full_reload = True
+                    if MQ_INIT_PAT.search(ln):
+                        mq_init = True
+                    m = CHANGES_PAT.search(ln)
+                    if m:
+                        changes = {
+                            "sites_speed": int(m.group(1)),
+                            "circuits_added": int(m.group(2)),
+                            "removed": int(m.group(3)),
+                            "speed": int(m.group(4)),
+                            "ip": int(m.group(5)),
+                        }
+                    mapped = MAPPED_DECISION_PAT.search(ln)
+                    if mapped:
+                        incremental_event = mapped.group(1)
+                        changes = {
+                            "requested": int(mapped.group(2)),
+                            "allowed": int(mapped.group(3)),
+                            "dropped": int(mapped.group(4)),
+                        }
+                        if "full reload" in incremental_event.lower():
+                            full_reload = True
+                if changes or full_reload or any(NO_CHANGES_PAT.search(x) for x in new_lines):
+                    break
+
+            if not printed_sleep_note:
+                print("No new logs yet; sleeping 0.4s...")
+                printed_sleep_note = True
+            time.sleep(0.4)
+
+        return LogResult(
+            full_reload=full_reload,
+            mq_init=mq_init,
+            changes=changes,
+            incremental_event=incremental_event,
+            raw_lines=collected,
+        )
+
+
+AnyLogReader = Union[LogReader, JournalctlLogReader]
 
 
 # -----------------------
@@ -700,6 +813,8 @@ def realistic_tiered_circuits_base() -> List[Dict[str, str | int | float]]:
                 max_ul = max(1, max_dl - 1)
 
             ip_addr = f"100.64.{third}.{j + 1}"
+            if j == 0:
+                ip_addr = f"{ip_addr},100.64.{third}.{j + 101}"
             row: Dict[str, str | int | float] = {
                 "Circuit ID": str(circuit_id),
                 "Circuit Name": f"CIRCUIT_{circuit_id:04d}",
@@ -760,7 +875,7 @@ def realistic_tiered_circuits_base() -> List[Dict[str, str | int | float]]:
 # -----------------------
 
 
-def run_refresh_and_wait(log: LogReader, timeout_s: float) -> LogResult:
+def run_refresh_and_wait(log: AnyLogReader, timeout_s: float) -> LogResult:
     offset = log.snapshot()
     # Call the core refresh function; this does not require running as __main__
     LibreQoS.refreshShapers()
@@ -768,6 +883,27 @@ def run_refresh_and_wait(log: LogReader, timeout_s: float) -> LogResult:
     print("Sleeping 0.5s to allow lqosd to commit and log...")
     time.sleep(0.5)
     return log.wait_for_events(offset, timeout_s=timeout_s)
+
+
+def settle_initial_bakery_logs(log: AnyLogReader, settle_s: float = 1.5) -> None:
+    offset = log.snapshot()
+    time.sleep(settle_s)
+    _ = log.wait_for_events(offset, timeout_s=0.5)
+
+
+def clear_bakery_fault_once() -> None:
+    try:
+        os.remove(TEST_FAULT_ONCE_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def arm_bakery_fault_once(selector: str) -> None:
+    with open(TEST_FAULT_ONCE_PATH, "w") as f:
+        f.write(selector.strip())
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 
 # -----------------------
@@ -1268,6 +1404,47 @@ def wait_for_runtime_virtualized_node(
     return False, last_msgs
 
 
+def get_treeguard_cpu_mode(config_path: str = "/etc/lqos.conf") -> Optional[str]:
+    current_section: Optional[str] = None
+    mode_re = re.compile(r'^mode\s*=\s*"([^"]+)"')
+    try:
+        with open(config_path, "r", errors="replace") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    current_section = line.strip("[]").strip()
+                    continue
+                if current_section != "treeguard.cpu":
+                    continue
+                m = mode_re.match(line)
+                if m:
+                    return m.group(1).strip()
+    except Exception:
+        return None
+    return None
+
+
+def wait_for_circuit_direction_ceil(
+    circuit_id: str,
+    timeout_s: float = 5.0,
+    poll_s: float = 0.5,
+) -> Tuple[bool, List[str]]:
+    deadline = time.time() + timeout_s
+    last_msgs: List[str] = []
+    while time.time() < deadline:
+        passed, msgs = check_circuit_direction_ceil(circuit_id)
+        last_msgs = msgs
+        if passed:
+            return True, msgs
+        time.sleep(poll_s)
+    last_msgs.append(
+        f"direction check: timed out waiting {timeout_s:.1f}s for circuit {circuit_id} direction mapping to settle"
+    )
+    return False, last_msgs
+
+
 def check_ip_mappings_for_circuit(circuit_id: str) -> Tuple[bool, List[str]]:
     """Ensure that all IPv4s for this circuit are mapped to the correct down (and up if on-a-stick) tc handles."""
     ok_tool, msg, entries = _list_ip_mappings()
@@ -1336,6 +1513,144 @@ def check_ip_mapping_absent(ip: str) -> Tuple[bool, List[str]]:
     if present:
         return False, [f"ipmap check: unexpected mapping remains for {ip}"]
     return True, [f"ipmap check: {ip} successfully absent"]
+
+
+def _expected_ips_for_circuit(circuit: dict) -> List[str]:
+    ips: List[str] = []
+    for dev in circuit.get("devices", []):
+        try:
+            for ip in dev.get("ipv4s", []):
+                ips.append(str(ip))
+        except Exception:
+            pass
+    return ips
+
+
+def check_exact_ip_mappings_for_circuit(
+    circuit_id: str,
+    forbidden_tcs: Optional[Set[str]] = None,
+) -> Tuple[bool, List[str]]:
+    ok_tool, msg, entries = _list_ip_mappings()
+    msgs: List[str] = []
+    if not ok_tool:
+        return True, [msg]  # soft-skip
+
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["ipmap exact check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["ipmap exact check: queuingStructure has no 'Network'"]
+    found = _walk_nodes_for_circuit(net, circuit_id)
+    if not found:
+        return False, [f"ipmap exact check: circuit {circuit_id} not found in structure"]
+    parent_name, circuit = found
+    parent_node = _find_parent_node(net, parent_name)
+    if not isinstance(parent_node, dict):
+        return False, [f"ipmap exact check: parent node '{parent_name}' not found"]
+
+    down_tc, up_tc, _cpu = _expect_handles_for_circuit(parent_node, circuit)
+    allowed_tcs = {down_tc.lower()}
+    if up_tc:
+        allowed_tcs.add(up_tc.lower())
+    forbidden = {tc.lower() for tc in (forbidden_tcs or set())}
+
+    ips = _expected_ips_for_circuit(circuit)
+    if not ips:
+        return True, [f"ipmap exact check: circuit {circuit_id} has no IPv4s; skipping"]
+
+    ok = True
+    for ip in ips:
+        ip_entries = [(cpu, tc.lower()) for (mapped_ip, cpu, tc) in entries if mapped_ip == ip]
+        if not ip_entries:
+            msgs.append(f"ipmap exact check: missing mapping for {ip}")
+            ok = False
+            continue
+        actual_tcs = {tc for (_cpu, tc) in ip_entries}
+        if not actual_tcs.issubset(allowed_tcs):
+            msgs.append(
+                f"ipmap exact check: {ip} has unexpected handles {sorted(actual_tcs - allowed_tcs)} (allowed={sorted(allowed_tcs)})"
+            )
+            ok = False
+        if forbidden and actual_tcs.intersection(forbidden):
+            msgs.append(
+                f"ipmap exact check: {ip} still mapped to forbidden handles {sorted(actual_tcs.intersection(forbidden))}"
+            )
+            ok = False
+        if ok:
+            msgs.append(f"ipmap exact check: {ip} only mapped to expected handles {sorted(actual_tcs)}")
+
+    return ok, msgs
+
+
+def check_exact_ip_mappings_for_circuits(
+    circuit_ids: List[str],
+    forbidden_by_circuit: Optional[Dict[str, Set[str]]] = None,
+) -> Tuple[bool, List[str]]:
+    ok_tool, msg, entries = _list_ip_mappings()
+    msgs: List[str] = []
+    if not ok_tool:
+        return True, [msg]  # soft-skip
+
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["ipmap batch exact check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["ipmap batch exact check: queuingStructure has no 'Network'"]
+
+    ok = True
+    expected_ip_count = 0
+    for circuit_id in circuit_ids:
+        found = _walk_nodes_for_circuit(net, circuit_id)
+        if not found:
+            msgs.append(f"ipmap batch exact check: circuit {circuit_id} not found in structure")
+            ok = False
+            continue
+        parent_name, circuit = found
+        parent_node = _find_parent_node(net, parent_name)
+        if not isinstance(parent_node, dict):
+            msgs.append(f"ipmap batch exact check: parent node '{parent_name}' not found for circuit {circuit_id}")
+            ok = False
+            continue
+
+        down_tc, up_tc, _cpu = _expect_handles_for_circuit(parent_node, circuit)
+        allowed_tcs = {down_tc.lower()}
+        if up_tc:
+            allowed_tcs.add(up_tc.lower())
+        forbidden = {tc.lower() for tc in (forbidden_by_circuit or {}).get(circuit_id, set())}
+
+        ips = _expected_ips_for_circuit(circuit)
+        if not ips:
+            msgs.append(f"ipmap batch exact check: circuit {circuit_id} has no IPv4s; skipping")
+            continue
+        expected_ip_count += len(ips)
+
+        for ip in ips:
+            ip_entries = [(cpu, tc.lower()) for (mapped_ip, cpu, tc) in entries if mapped_ip == ip]
+            if not ip_entries:
+                msgs.append(f"ipmap batch exact check: missing mapping for {ip} (circuit {circuit_id})")
+                ok = False
+                continue
+            actual_tcs = {tc for (_cpu, tc) in ip_entries}
+            if not actual_tcs.issubset(allowed_tcs):
+                msgs.append(
+                    f"ipmap batch exact check: {ip} (circuit {circuit_id}) has unexpected handles {sorted(actual_tcs - allowed_tcs)} (allowed={sorted(allowed_tcs)})"
+                )
+                ok = False
+            if forbidden and actual_tcs.intersection(forbidden):
+                msgs.append(
+                    f"ipmap batch exact check: {ip} (circuit {circuit_id}) still mapped to forbidden handles {sorted(actual_tcs.intersection(forbidden))}"
+                )
+                ok = False
+            if actual_tcs.issubset(allowed_tcs) and not (forbidden and actual_tcs.intersection(forbidden)):
+                msgs.append(f"ipmap batch exact check: {ip} (circuit {circuit_id}) only mapped to expected handles {sorted(actual_tcs)}")
+
+    if ok:
+        msgs.append(
+            f"ipmap batch exact check: verified {expected_ip_count} expected IPv4 mappings across {len(circuit_ids)} circuits"
+        )
+    return ok, msgs
 
 
 def check_generated_pn_tc_bandwidths() -> Tuple[bool, List[str]]:
@@ -1474,6 +1789,175 @@ def _class_has_parent(iface: str, maj: int, mnr: int, pmaj: int, pmnr: int) -> T
     if pmj is None or pmn is None:
         return False, line
     return (pmj == pmaj and pmn == pmnr), line
+
+
+def _tc_class_occurrences(iface: str, maj: int, mnr: int) -> Tuple[int, List[str]]:
+    rc, out, err = _tc(["class", "show", "dev", iface])
+    if rc != 0:
+        return 0, [f"tc class occurrences: 'tc class show dev {iface}' failed: {err.strip()}"]
+
+    matches: List[str] = []
+    cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+    for found in cls_pat.finditer(out):
+        mj = _tc_id_token_to_int(found.group(1))
+        mn = _tc_id_token_to_int(found.group(2))
+        if mj == maj and mn == mnr:
+            matches.append(found.group(0))
+    return len(matches), matches
+
+
+def _tc_qdisc_occurrences_for_parent(iface: str, maj: int, mnr: int) -> Tuple[int, List[str]]:
+    rc, out, err = _qdisc_show(iface)
+    if rc != 0:
+        return 0, [f"tc qdisc occurrences: 'tc qdisc show dev {iface}' failed: {err.strip()}"]
+
+    matches: List[str] = []
+    pat = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+    for found in pat.finditer(out):
+        mj = _tc_id_token_to_int(found.group(1))
+        mn = _tc_id_token_to_int(found.group(2))
+        if mj == maj and mn == mnr:
+            matches.append(found.group(0))
+    return len(matches), matches
+
+
+def _handle_to_parts(handle: Optional[str]) -> Optional[Tuple[int, int]]:
+    if not handle or ":" not in handle:
+        return None
+    left, right = handle.split(":", 1)
+    major = _tc_id_token_to_int(left)
+    minor = _tc_id_token_to_int(right)
+    if major is None or minor is None:
+        return None
+    return major, minor
+
+
+def _current_circuit_handle_strings(circuit_id: str) -> Tuple[Optional[str], Optional[str], List[str]]:
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return None, None, ["cleanup check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return None, None, ["cleanup check: queuingStructure has no 'Network'"]
+    found = _walk_nodes_for_circuit(net, circuit_id)
+    if not found:
+        return None, None, [f"cleanup check: circuit {circuit_id} not found in structure"]
+    _parent_name, circuit = found
+    down_tc = str(circuit.get("classid", "")).replace("0x", "").lower()
+    up_tc = str(circuit.get("up_classid", "")).replace("0x", "").lower()
+    return down_tc or None, up_tc or None, []
+
+
+def check_circuit_transition_cleanup(
+    circuit_id: str,
+    *,
+    old_down_tc: Optional[str],
+    old_up_tc: Optional[str],
+) -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    ok = True
+
+    new_down_tc, new_up_tc, handle_msgs = _current_circuit_handle_strings(circuit_id)
+    msgs.extend(handle_msgs)
+    if handle_msgs:
+        return False, msgs
+
+    if not interface_a or not callable(interface_a):
+        return False, ["cleanup check: interface_a() binding unavailable"]
+    try:
+        ifa = interface_a()
+    except Exception as e:
+        return False, [f"cleanup check: failed to get interface_a(): {e}"]
+    ifb = None
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+        except Exception:
+            ifb = None
+
+    if new_down_tc:
+        down_parts = _handle_to_parts(new_down_tc)
+        if down_parts is None:
+            msgs.append(f"cleanup check: could not parse current down handle {new_down_tc} for circuit {circuit_id}")
+            ok = False
+        else:
+            count, lines = _tc_class_occurrences(ifa, *down_parts)
+            if count != 1:
+                msgs.append(
+                    f"cleanup check: expected exactly one current down class {new_down_tc} for circuit {circuit_id} on {ifa}, found {count}"
+                )
+                msgs.extend(lines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: current down class {new_down_tc} present exactly once on {ifa}")
+    if new_up_tc and ifb:
+        up_parts = _handle_to_parts(new_up_tc)
+        if up_parts is None:
+            msgs.append(f"cleanup check: could not parse current up handle {new_up_tc} for circuit {circuit_id}")
+            ok = False
+        else:
+            count, lines = _tc_class_occurrences(ifb, *up_parts)
+            if count != 1:
+                msgs.append(
+                    f"cleanup check: expected exactly one current up class {new_up_tc} for circuit {circuit_id} on {ifb}, found {count}"
+                )
+                msgs.extend(lines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: current up class {new_up_tc} present exactly once on {ifb}")
+
+    if old_down_tc and old_down_tc.lower() != (new_down_tc or "").lower():
+        old_down_parts = _handle_to_parts(old_down_tc)
+        if old_down_parts is not None:
+            count, lines = _tc_class_occurrences(ifa, *old_down_parts)
+            if count != 0:
+                msgs.append(
+                    f"cleanup check: stale down class {old_down_tc} still present for circuit {circuit_id} on {ifa}"
+                )
+                msgs.extend(lines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: stale down class {old_down_tc} absent on {ifa}")
+
+            qcount, qlines = _tc_qdisc_occurrences_for_parent(ifa, *old_down_parts)
+            if qcount != 0:
+                msgs.append(
+                    f"cleanup check: stale down qdisc parent {old_down_tc} still present for circuit {circuit_id} on {ifa}"
+                )
+                msgs.extend(qlines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: stale down qdisc parent {old_down_tc} absent on {ifa}")
+
+    if old_up_tc and ifb and old_up_tc.lower() != (new_up_tc or "").lower():
+        old_up_parts = _handle_to_parts(old_up_tc)
+        if old_up_parts is not None:
+            count, lines = _tc_class_occurrences(ifb, *old_up_parts)
+            if count != 0:
+                msgs.append(
+                    f"cleanup check: stale up class {old_up_tc} still present for circuit {circuit_id} on {ifb}"
+                )
+                msgs.extend(lines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: stale up class {old_up_tc} absent on {ifb}")
+
+            qcount, qlines = _tc_qdisc_occurrences_for_parent(ifb, *old_up_parts)
+            if qcount != 0:
+                msgs.append(
+                    f"cleanup check: stale up qdisc parent {old_up_tc} still present for circuit {circuit_id} on {ifb}"
+                )
+                msgs.extend(qlines)
+                ok = False
+            else:
+                msgs.append(f"cleanup check: stale up qdisc parent {old_up_tc} absent on {ifb}")
+
+    forbidden = {tc for tc in [old_down_tc, old_up_tc] if tc}
+    passed_ip_exact, ip_msgs = check_exact_ip_mappings_for_circuit(circuit_id, forbidden_tcs=forbidden)
+    msgs.extend(ip_msgs)
+    ok &= passed_ip_exact
+
+    return ok, msgs
 
 
 def check_orphan_tc_attachment(orphan_id: str = "99901") -> Tuple[bool, List[str]]:
@@ -1729,6 +2213,70 @@ def check_circuit_direction_ceil(circuit_id: str) -> Tuple[bool, List[str]]:
     return ok, msgs
 
 
+def check_circuit_qdisc_kind(
+    circuit_id: str,
+    expected_down_kind: Optional[str] = None,
+    expected_up_kind: Optional[str] = None,
+) -> Tuple[bool, List[str]]:
+    msgs: List[str] = []
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, ["qdisc kind check: queuingStructure.json not found"]
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, ["qdisc kind check: queuingStructure has no 'Network'"]
+    found = _walk_nodes_for_circuit(net, circuit_id)
+    if not found:
+        return False, [f"qdisc kind check: circuit {circuit_id} not found in structure"]
+    _parent_name, circuit = found
+
+    maj = _hex_to_int(str(circuit.get("classMajor")))
+    mnr = _hex_to_int(str(circuit.get("classMinor")))
+    upm = _hex_to_int(str(circuit.get("up_classMajor")))
+    if maj is None or mnr is None:
+        return False, [f"qdisc kind check: circuit {circuit_id} missing downlink class IDs"]
+
+    def _check_iface(iface: str, parent_major: int, parent_minor: int, expected_kind: Optional[str], label: str) -> Tuple[bool, str]:
+        rc, out, err = _qdisc_show(iface)
+        if rc != 0:
+            return False, f"qdisc kind check: 'tc qdisc show dev {iface}' failed: {err.strip()}"
+
+        pat = re.compile(r"^qdisc\s+(\S+)\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
+        for match in pat.finditer(out):
+            kind = match.group(1).lower()
+            mj = _tc_id_token_to_int(match.group(2))
+            mn = _tc_id_token_to_int(match.group(3))
+            if mj == parent_major and mn == parent_minor:
+                if expected_kind is not None and kind != expected_kind.lower():
+                    return False, f"qdisc kind check: {label} {iface} expected {expected_kind}, found {kind} for circuit {circuit_id} | {match.group(0)}"
+                return True, f"qdisc kind check: {label} {iface} found {kind} for circuit {circuit_id} | {match.group(0)}"
+
+        return False, f"qdisc kind check: {label} {iface} no qdisc found for parent {parent_major}:{parent_minor} (circuit {circuit_id})"
+
+    ok = True
+    if expected_down_kind is not None:
+        if not interface_a or not callable(interface_a):
+            return False, ["qdisc kind check: interface_a() binding unavailable"]
+        try:
+            ifa = interface_a()
+        except Exception as e:
+            return False, [f"qdisc kind check: failed to get interface_a(): {e}"]
+        passed, message = _check_iface(ifa, maj, mnr, expected_down_kind, "down")
+        msgs.append(message)
+        ok &= passed
+
+    if expected_up_kind is not None and interface_b and callable(interface_b) and upm is not None:
+        try:
+            ifb = interface_b()
+        except Exception as e:
+            return False, [f"qdisc kind check: failed to get interface_b(): {e}"]
+        passed, message = _check_iface(ifb, upm, mnr, expected_up_kind, "up")
+        msgs.append(message)
+        ok &= passed
+
+    return ok, msgs
+
+
 def _walk_nodes_for_circuit(node_map: Dict[str, dict], circuit_id: str) -> Optional[Tuple[str, dict]]:
     for name, node in node_map.items():
         if not isinstance(node, dict):
@@ -1835,6 +2383,188 @@ def assert_full_reload(tag: str, res: LogResult, step_started_at: Optional[float
     return True, f"{tag}: OK (full reload)"
 
 
+def _journal_since_lines(since_ts: float) -> List[str]:
+    proc = subprocess.run(
+        [
+            "journalctl",
+            "-u",
+            "lqosd",
+            "--since",
+            f"@{since_ts:.6f}",
+            "--no-pager",
+            "-o",
+            "short-unix",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return []
+    return [line.rstrip("\n") for line in proc.stdout.splitlines() if line.strip()]
+
+
+def check_no_hidden_incremental_failures(step_started_at: float) -> Tuple[bool, List[str]]:
+    lines = _journal_since_lines(step_started_at)
+    patterns = [
+        re.compile(r"reload required", re.IGNORECASE),
+        re.compile(r"\bRTNETLINK\b", re.IGNORECASE),
+        re.compile(r"\bDirty\b", re.IGNORECASE),
+        re.compile(r"Command error for \(", re.IGNORECASE),
+        re.compile(r"Bakery wrote numbered command failure", re.IGNORECASE),
+        re.compile(r"full reload is now required", re.IGNORECASE),
+    ]
+
+    matches = [line for line in lines if any(p.search(line) for p in patterns)]
+
+    last_error_path = "/tmp/lqos_bakery_last_error.txt"
+    if os.path.exists(last_error_path):
+        try:
+            if os.path.getmtime(last_error_path) >= step_started_at:
+                matches.append(f"last error file updated: {last_error_path}")
+        except Exception:
+            pass
+
+    if matches:
+        return False, [
+            "incremental health: unexpected error/desync indicators detected after step",
+            *matches[-20:],
+        ]
+
+    return True, ["incremental health: no hidden Bakery desync/error indicators detected after step"]
+
+
+def check_fault_injection_observed(step_started_at: float) -> Tuple[bool, List[str]]:
+    lines = _journal_since_lines(step_started_at)
+    fault_patterns = [
+        re.compile(r"synthetic Bakery test fault", re.IGNORECASE),
+        re.compile(r"Bakery test fault injected", re.IGNORECASE),
+    ]
+
+    fault_matches = [line for line in lines if any(p.search(line) for p in fault_patterns)]
+    msgs: List[str] = []
+
+    if os.path.exists(TEST_FAULT_ONCE_PATH):
+        msgs.append(f"fault injection file still present and was not consumed: {TEST_FAULT_ONCE_PATH}")
+        return False, msgs
+
+    if not fault_matches:
+        return False, [
+            "fault reload check: synthetic Bakery fault was not observed in recent logs",
+            *lines[-20:],
+        ]
+
+    msgs.append("fault reload check: Bakery observed and consumed the injected synthetic fault")
+    msgs.extend(fault_matches[-5:])
+    return True, msgs
+
+
+def check_reload_required_since(step_started_at: float) -> Tuple[bool, List[str]]:
+    lines = _journal_since_lines(step_started_at)
+    reload_patterns = [
+        re.compile(r"reload required", re.IGNORECASE),
+        re.compile(r"full reload is now required", re.IGNORECASE),
+        re.compile(r"full reload required before further incremental topology mutation", re.IGNORECASE),
+    ]
+
+    reload_matches = [line for line in lines if any(p.search(line) for p in reload_patterns)]
+    if not reload_matches:
+        return False, [
+            "fault reload check: Bakery did not report reload-required state after injected fault",
+            *lines[-20:],
+        ]
+
+    msgs: List[str] = []
+    msgs.append("fault reload check: Bakery entered reload-required state after the injected fault")
+    msgs.extend(reload_matches[-5:])
+    return True, msgs
+
+
+def collect_failure_diagnostics(
+    tag: str,
+    *,
+    step_started_at: Optional[float] = None,
+    circuit_ids: Optional[List[str]] = None,
+    node_names: Optional[List[str]] = None,
+) -> List[str]:
+    circuit_ids = circuit_ids or []
+    node_names = node_names or []
+    msgs = [f"diagnostics: begin for {tag}"]
+
+    if step_started_at is not None:
+        journal_lines = _journal_since_lines(step_started_at)
+        msgs.append("diagnostics: recent lqosd journal")
+        msgs.extend(journal_lines[-20:] if journal_lines else ["diagnostics: no recent journal lines found"])
+
+    planner = None
+    try:
+        with open("planner_state.json", "r") as f:
+            planner = json.load(f)
+    except Exception as e:
+        msgs.append(f"diagnostics: failed to read planner_state.json: {e}")
+
+    qs = _load_queuing_structure()
+    net = qs.get("Network") if isinstance(qs, dict) else None
+
+    if isinstance(planner, dict):
+        for circuit_id in circuit_ids:
+            entry = planner.get("circuits", {}).get(str(circuit_id))
+            msgs.append(f"diagnostics: planner circuit {circuit_id} -> {json.dumps(entry, sort_keys=True)}")
+
+    if isinstance(net, dict):
+        for circuit_id in circuit_ids:
+            found = _walk_nodes_for_circuit(net, circuit_id)
+            if found:
+                parent_name, circuit = found
+                msgs.append(
+                    f"diagnostics: structure circuit {circuit_id} under {parent_name} -> {json.dumps(circuit, sort_keys=True)}"
+                )
+            else:
+                msgs.append(f"diagnostics: structure circuit {circuit_id} not found")
+        for node_name in node_names:
+            node = _find_parent_node(net, node_name)
+            msgs.append(
+                f"diagnostics: structure node {node_name} -> {json.dumps(node, sort_keys=True) if node is not None else 'missing'}"
+            )
+
+    if interface_a and callable(interface_a):
+        try:
+            ifa = interface_a()
+            rc, out, err = _tc(["class", "show", "dev", ifa])
+            msgs.append(f"diagnostics: tc class show dev {ifa} rc={rc}")
+            msgs.extend(out.splitlines()[-20:] if rc == 0 else [err.strip()])
+            rc, out, err = _qdisc_show(ifa)
+            msgs.append(f"diagnostics: tc qdisc show dev {ifa} rc={rc}")
+            msgs.extend(out.splitlines()[-20:] if rc == 0 else [err.strip()])
+        except Exception as e:
+            msgs.append(f"diagnostics: failed tc dump for interface_a: {e}")
+
+    if interface_b and callable(interface_b):
+        try:
+            ifb = interface_b()
+            rc, out, err = _tc(["class", "show", "dev", ifb])
+            msgs.append(f"diagnostics: tc class show dev {ifb} rc={rc}")
+            msgs.extend(out.splitlines()[-20:] if rc == 0 else [err.strip()])
+            rc, out, err = _qdisc_show(ifb)
+            msgs.append(f"diagnostics: tc qdisc show dev {ifb} rc={rc}")
+            msgs.extend(out.splitlines()[-20:] if rc == 0 else [err.strip()])
+        except Exception as e:
+            msgs.append(f"diagnostics: failed tc dump for interface_b: {e}")
+
+    last_error_path = "/tmp/lqos_bakery_last_error.txt"
+    if os.path.exists(last_error_path):
+        try:
+            with open(last_error_path, "r", errors="replace") as f:
+                lines = f.read().splitlines()
+            msgs.append(f"diagnostics: {last_error_path}")
+            msgs.extend(lines[-20:] if lines else ["diagnostics: last error file empty"])
+        except Exception as e:
+            msgs.append(f"diagnostics: failed reading {last_error_path}: {e}")
+
+    msgs.append(f"diagnostics: end for {tag}")
+    return msgs
+
+
 def with_backups(paths: List[str]):
     class _Ctx:
         def __enter__(self):
@@ -1868,7 +2598,7 @@ def with_backups(paths: List[str]):
 # -----------------------
 
 
-def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+def run_tiered_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
     # Baseline
@@ -2185,13 +2915,14 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
     return ok
 
 
-def run_virtualized_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+def run_virtualized_tiered_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
     write_network_json(VIRTUALIZED_TIERED_NETWORK_BASE)
     rows = virtualized_tiered_circuits_base()
     write_circuits(rows)
     _ = run_refresh_and_wait(log, timeout_s)
+    settle_initial_bakery_logs(log)
     results.append("virtualized: baseline: ok (initial run)")
 
     _mark_step("virtualized: operator-authored virtual node promotion")
@@ -2273,8 +3004,58 @@ def run_virtualized_tiered_suite(log: LogReader, timeout_s: float, results: List
     return ok
 
 
-def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+def run_realistic_tiered_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
+
+    def _first_row_index(
+        rows_local: List[Dict[str, str | int | float]],
+        parent_name: str,
+        exclude_ids: Optional[set[str]] = None,
+    ) -> Optional[int]:
+        excluded = exclude_ids or set()
+        for idx, row in enumerate(rows_local):
+            if str(row.get("Parent Node")) == parent_name and str(row.get("Circuit ID")) not in excluded:
+                return idx
+        return None
+
+    def _record_check(
+        tag: str,
+        passed: bool,
+        msgs: List[str],
+        *,
+        step_started_at: Optional[float] = None,
+        circuit_ids: Optional[List[str]] = None,
+        node_names: Optional[List[str]] = None,
+    ) -> None:
+        nonlocal ok
+        results.extend(msgs)
+        ok &= passed
+        if not passed:
+            results.extend(
+                collect_failure_diagnostics(
+                    tag,
+                    step_started_at=step_started_at,
+                    circuit_ids=circuit_ids,
+                    node_names=node_names,
+                )
+            )
+
+    def _record_hidden_health(
+        tag: str,
+        step_started_at: float,
+        *,
+        circuit_ids: Optional[List[str]] = None,
+        node_names: Optional[List[str]] = None,
+    ) -> None:
+        passed, msgs = check_no_hidden_incremental_failures(step_started_at)
+        _record_check(
+            f"{tag} health",
+            passed,
+            msgs,
+            step_started_at=step_started_at,
+            circuit_ids=circuit_ids,
+            node_names=node_names,
+        )
 
     # Baseline: write realistic network and circuits (including orphans)
     _mark_step("realistic: baseline")
@@ -2328,11 +3109,11 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     passed, msg = assert_no_full_reload("realistic: site speed change", res, step_t0)
     results.append(msg)
     ok &= passed
+    _record_hidden_health("realistic: site speed change", step_t0, node_names=["NET2-1"])
 
     _mark_step("realistic: site direction mapping (NET2-1)")
     passed_site, msgs_site = check_site_direction_ceil("NET2-1", expected_dl=360.0, expected_ul=240.0)
-    results.extend(msgs_site)
-    ok &= passed_site
+    _record_check("realistic: site direction mapping (NET2-1)", passed_site, msgs_site, circuit_ids=[], node_names=["NET2-1"])
 
     # Circuit speed change for a deep leaf circuit (under NET1-1-1)
     _mark_step("realistic: circuit speed change")
@@ -2360,16 +3141,15 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     passed, msg = assert_no_full_reload("realistic: circuit speed change", res, step_t0)
     results.append(msg)
     ok &= passed
+    _record_hidden_health("realistic: circuit speed change", step_t0, circuit_ids=[target_id])
 
     _mark_step("realistic: circuit direction mapping (ceil)")
     passed_dir, msgs_dir = check_circuit_direction_ceil(target_id)
-    results.extend(msgs_dir)
-    ok &= passed_dir
+    _record_check("realistic: circuit direction mapping (ceil)", passed_dir, msgs_dir, circuit_ids=[target_id])
 
     _mark_step("realistic: circuit ip mappings (no change)")
     passed_map, msgs_map = check_ip_mappings_for_circuit(target_id)
-    results.extend(msgs_map)
-    ok &= passed_map
+    _record_check("realistic: circuit ip mappings (no change)", passed_map, msgs_map, circuit_ids=[target_id])
 
     passed_site_snapshot, site_snapshot_msg, site_snapshot = snapshot_site_class_assignments()
     if not passed_site_snapshot:
@@ -2379,6 +3159,7 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     # Circuit parent-node move between existing nodes (should not trigger full reload)
     _mark_step("realistic: circuit parent move")
     rows_parent = json.loads(json.dumps(rows2))
+    old_down_tc, old_up_tc, _old_handle_msgs = _current_circuit_handle_strings(target_id)
     old_parent = str(rows_parent[target_idx]["Parent Node"])
     new_parent = "NET1-1-2" if old_parent != "NET1-1-2" else "NET1-2"
     rows_parent[target_idx]["Parent Node"] = new_parent
@@ -2388,25 +3169,312 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     passed, msg = assert_no_full_reload("realistic: circuit parent move", res, step_t0)
     results.append(msg)
     ok &= passed
+    _record_hidden_health("realistic: circuit parent move", step_t0, circuit_ids=[target_id])
 
     _mark_step("realistic: site class assignment stability after parent move")
     passed_sites_stable, msgs_sites_stable = check_site_class_assignments_unchanged(site_snapshot)
-    results.extend(msgs_sites_stable)
-    ok &= passed_sites_stable
+    _record_check("realistic: site class assignment stability after parent move", passed_sites_stable, msgs_sites_stable, circuit_ids=[target_id])
 
     _mark_step("realistic: parent-moved circuit direction mapping (ceil)")
-    passed_parent_dir, msgs_parent_dir = check_circuit_direction_ceil(target_id)
-    results.extend(msgs_parent_dir)
-    ok &= passed_parent_dir
+    passed_parent_dir, msgs_parent_dir = wait_for_circuit_direction_ceil(target_id)
+    _record_check("realistic: parent-moved circuit direction mapping (ceil)", passed_parent_dir, msgs_parent_dir, circuit_ids=[target_id], step_started_at=step_t0)
 
     _mark_step("realistic: parent-moved circuit ip mappings")
     passed_parent_map, msgs_parent_map = check_ip_mappings_for_circuit(target_id)
-    results.extend(msgs_parent_map)
-    ok &= passed_parent_map
+    _record_check("realistic: parent-moved circuit ip mappings", passed_parent_map, msgs_parent_map, circuit_ids=[target_id])
+
+    _mark_step("realistic: parent-moved circuit cleanup")
+    passed_parent_cleanup, msgs_parent_cleanup = check_circuit_transition_cleanup(
+        target_id,
+        old_down_tc=old_down_tc,
+        old_up_tc=old_up_tc,
+    )
+    _record_check("realistic: parent-moved circuit cleanup", passed_parent_cleanup, msgs_parent_cleanup, circuit_ids=[target_id])
+
+    _mark_step("realistic: parent-moved circuit batch exact IP mappings")
+    passed_parent_batch_ip, msgs_parent_batch_ip = check_exact_ip_mappings_for_circuits(
+        [target_id],
+        forbidden_by_circuit={target_id: {tc for tc in [old_down_tc, old_up_tc] if tc}},
+    )
+    _record_check(
+        "realistic: parent-moved circuit batch exact IP mappings",
+        passed_parent_batch_ip,
+        msgs_parent_batch_ip,
+        circuit_ids=[target_id],
+    )
+
+    # Multiple simultaneous parent-node moves in one incremental commit
+    _mark_step("realistic: multiple circuit parent moves")
+    rows_multi = json.loads(json.dumps(rows_parent))
+    multi_specs = [
+        ("NET2-1-1", "NET2-2"),
+        ("NET3-1", "NET3-2"),
+        ("NET1-2", "NET1-1-1"),
+    ]
+    moved_ids: List[str] = []
+    old_handles_by_circuit: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+    excluded_ids = {target_id}
+    for old_parent_name, new_parent_name in multi_specs:
+        idx = _first_row_index(rows_multi, old_parent_name, excluded_ids)
+        if idx is None:
+            results.append(
+                f"realistic: multiple circuit parent moves: no circuit found under {old_parent_name}"
+            )
+            return False
+        moved_id = str(rows_multi[idx]["Circuit ID"])
+        old_handles_by_circuit[moved_id] = _current_circuit_handle_strings(moved_id)[:2]
+        rows_multi[idx]["Parent Node"] = new_parent_name
+        moved_ids.append(moved_id)
+        excluded_ids.add(moved_id)
+    write_circuits(rows_multi)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: multiple circuit parent moves", res, step_t0)
+    results.append(msg)
+    ok &= passed
+    _record_hidden_health("realistic: multiple circuit parent moves", step_t0, circuit_ids=moved_ids)
+
+    _mark_step("realistic: site class assignment stability after multiple parent moves")
+    passed_sites_stable_multi, msgs_sites_stable_multi = check_site_class_assignments_unchanged(site_snapshot)
+    _record_check("realistic: site class assignment stability after multiple parent moves", passed_sites_stable_multi, msgs_sites_stable_multi, circuit_ids=moved_ids)
+
+    for moved_id in moved_ids:
+        _mark_step(f"realistic: moved circuit {moved_id} direction mapping")
+        passed_move_dir, msgs_move_dir = wait_for_circuit_direction_ceil(moved_id)
+        _record_check(f"realistic: moved circuit {moved_id} direction mapping", passed_move_dir, msgs_move_dir, circuit_ids=[moved_id], step_started_at=step_t0)
+
+        _mark_step(f"realistic: moved circuit {moved_id} ip mappings")
+        passed_move_map, msgs_move_map = check_ip_mappings_for_circuit(moved_id)
+        _record_check(f"realistic: moved circuit {moved_id} ip mappings", passed_move_map, msgs_move_map, circuit_ids=[moved_id])
+
+        _mark_step(f"realistic: moved circuit {moved_id} cleanup")
+        old_down_tc_multi, old_up_tc_multi = old_handles_by_circuit.get(moved_id, (None, None))
+        passed_move_cleanup, msgs_move_cleanup = check_circuit_transition_cleanup(
+            moved_id,
+            old_down_tc=old_down_tc_multi,
+            old_up_tc=old_up_tc_multi,
+        )
+        _record_check(f"realistic: moved circuit {moved_id} cleanup", passed_move_cleanup, msgs_move_cleanup, circuit_ids=[moved_id])
+
+    _mark_step("realistic: multiple parent moves batch exact IP mappings")
+    forbidden_multi = {
+        circuit_id: {tc for tc in old_handles_by_circuit.get(circuit_id, (None, None)) if tc}
+        for circuit_id in moved_ids
+    }
+    passed_multi_batch_ip, msgs_multi_batch_ip = check_exact_ip_mappings_for_circuits(
+        moved_ids,
+        forbidden_by_circuit=forbidden_multi,
+    )
+    _record_check(
+        "realistic: multiple parent moves batch exact IP mappings",
+        passed_multi_batch_ip,
+        msgs_multi_batch_ip,
+        circuit_ids=moved_ids,
+    )
+
+    # Same-circuit mixed change: parent move + rate + IP + SQM in one incremental commit
+    _mark_step("realistic: same-circuit mixed change")
+    rows_same = json.loads(json.dumps(rows_multi))
+    same_idx = _first_row_index(rows_same, "NET3-2", {target_id, *moved_ids})
+    if same_idx is None:
+        results.append("realistic: same-circuit mixed change: no candidate circuit found under NET3-2")
+        return False
+    same_id = str(rows_same[same_idx]["Circuit ID"])
+    same_old_ip = str(rows_same[same_idx]["IPv4"])
+    same_old_down_tc, same_old_up_tc, _ = _current_circuit_handle_strings(same_id)
+    rows_same[same_idx]["Parent Node"] = "NET3-1"
+    rows_same[same_idx]["Download Max Mbps"] = float(rows_same[same_idx]["Download Max Mbps"]) + 19.0
+    rows_same[same_idx]["Upload Max Mbps"] = float(rows_same[same_idx]["Upload Max Mbps"]) + 7.0
+    rows_same[same_idx]["IPv4"] = "100.64.220.1"
+    rows_same[same_idx]["sqm"] = "cake/fq_codel"
+    write_circuits(rows_same)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: same-circuit mixed change", res, step_t0)
+    results.append(msg)
+    ok &= passed
+    _record_hidden_health("realistic: same-circuit mixed change", step_t0, circuit_ids=[same_id])
+
+    _mark_step("realistic: same-circuit mixed direction mapping")
+    passed_same_dir, msgs_same_dir = wait_for_circuit_direction_ceil(same_id)
+    _record_check("realistic: same-circuit mixed direction mapping", passed_same_dir, msgs_same_dir, circuit_ids=[same_id], step_started_at=step_t0)
+
+    _mark_step("realistic: same-circuit mixed IP mappings")
+    passed_same_ip, msgs_same_ip = check_ip_mappings_for_circuit(same_id)
+    _record_check("realistic: same-circuit mixed IP mappings", passed_same_ip, msgs_same_ip, circuit_ids=[same_id])
+    passed_same_old_ip, msgs_same_old_ip = check_ip_mapping_absent(same_old_ip)
+    _record_check("realistic: same-circuit mixed old IP absent", passed_same_old_ip, msgs_same_old_ip, circuit_ids=[same_id])
+
+    _mark_step("realistic: same-circuit mixed exact IP mappings")
+    passed_same_exact_ip, msgs_same_exact_ip = check_exact_ip_mappings_for_circuit(
+        same_id,
+        forbidden_tcs={tc for tc in [same_old_down_tc, same_old_up_tc] if tc},
+    )
+    _record_check("realistic: same-circuit mixed exact IP mappings", passed_same_exact_ip, msgs_same_exact_ip, circuit_ids=[same_id])
+
+    _mark_step("realistic: same-circuit mixed SQM kind")
+    passed_same_sqm, msgs_same_sqm = check_circuit_qdisc_kind(
+        same_id,
+        expected_down_kind="cake",
+        expected_up_kind="fq_codel",
+    )
+    _record_check("realistic: same-circuit mixed SQM kind", passed_same_sqm, msgs_same_sqm, circuit_ids=[same_id])
+
+    _mark_step("realistic: same-circuit mixed cleanup")
+    passed_same_cleanup, msgs_same_cleanup = check_circuit_transition_cleanup(
+        same_id,
+        old_down_tc=same_old_down_tc,
+        old_up_tc=same_old_up_tc,
+    )
+    _record_check("realistic: same-circuit mixed cleanup", passed_same_cleanup, msgs_same_cleanup, circuit_ids=[same_id])
+
+    _mark_step("realistic: same-circuit mixed batch exact IP mappings")
+    passed_same_batch_ip, msgs_same_batch_ip = check_exact_ip_mappings_for_circuits(
+        [same_id],
+        forbidden_by_circuit={same_id: {tc for tc in [same_old_down_tc, same_old_up_tc] if tc}},
+    )
+    _record_check(
+        "realistic: same-circuit mixed batch exact IP mappings",
+        passed_same_batch_ip,
+        msgs_same_batch_ip,
+        circuit_ids=[same_id],
+    )
+
+    # Mixed incremental batch: site speed, circuit speed, IP, SQM, and parent move together
+    _mark_step("realistic: mixed incremental batch")
+    net_mixed = json.loads(json.dumps(net2))
+    try:
+        net_mixed["NET3"]["children"]["NET3-1"]["downloadBandwidthMbps"] = 275
+        net_mixed["NET3"]["children"]["NET3-1"]["uploadBandwidthMbps"] = 155
+    except Exception:
+        results.append("realistic: mixed incremental batch: failed to modify NET3-1 speeds in fixture")
+        return False
+
+    rows_mixed = json.loads(json.dumps(rows_same))
+    excluded_mixed = {target_id, *moved_ids, same_id}
+
+    speed_idx = _first_row_index(rows_mixed, "NET2-2", excluded_mixed)
+    if speed_idx is None:
+        results.append("realistic: mixed incremental batch: no speed-change circuit found under NET2-2")
+        return False
+    speed_id = str(rows_mixed[speed_idx]["Circuit ID"])
+    rows_mixed[speed_idx]["Download Max Mbps"] = float(rows_mixed[speed_idx]["Download Max Mbps"]) + 17.0
+    rows_mixed[speed_idx]["Upload Max Mbps"] = float(rows_mixed[speed_idx]["Upload Max Mbps"]) + 6.0
+    excluded_mixed.add(speed_id)
+
+    ip_idx = _first_row_index(rows_mixed, "NET3-2", excluded_mixed)
+    if ip_idx is None:
+        results.append("realistic: mixed incremental batch: no IP-change circuit found under NET3-2")
+        return False
+    ip_id = str(rows_mixed[ip_idx]["Circuit ID"])
+    old_ip = str(rows_mixed[ip_idx]["IPv4"])
+    rows_mixed[ip_idx]["IPv4"] = "100.64.210.1"
+    excluded_mixed.add(ip_id)
+
+    sqm_idx = _first_row_index(rows_mixed, "NET1-1-2", excluded_mixed)
+    if sqm_idx is None:
+        results.append("realistic: mixed incremental batch: no SQM-change circuit found under NET1-1-2")
+        return False
+    sqm_id = str(rows_mixed[sqm_idx]["Circuit ID"])
+    rows_mixed[sqm_idx]["sqm"] = "fq_codel/cake"
+    excluded_mixed.add(sqm_id)
+
+    mixed_move_idx: Optional[int] = None
+    mixed_move_target: Optional[str] = None
+    for source_parent, target_parent in [
+        ("NET2-2", "NET2-1-1"),
+        ("NET3-2", "NET3-1"),
+        ("NET1-1-2", "NET1-2"),
+    ]:
+        idx = _first_row_index(rows_mixed, source_parent, excluded_mixed)
+        if idx is not None:
+            mixed_move_idx = idx
+            mixed_move_target = target_parent
+            break
+    if mixed_move_idx is None or mixed_move_target is None:
+        results.append("realistic: mixed incremental batch: no parent-move circuit found in fallback candidate set")
+        return False
+    mixed_move_id = str(rows_mixed[mixed_move_idx]["Circuit ID"])
+    mixed_old_down_tc, mixed_old_up_tc, _ = _current_circuit_handle_strings(mixed_move_id)
+    rows_mixed[mixed_move_idx]["Parent Node"] = mixed_move_target
+
+    write_network_json(net_mixed)
+    write_circuits(rows_mixed)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: mixed incremental batch", res, step_t0)
+    results.append(msg)
+    ok &= passed
+    _record_hidden_health(
+        "realistic: mixed incremental batch",
+        step_t0,
+        circuit_ids=[speed_id, ip_id, sqm_id, mixed_move_id],
+        node_names=["NET3-1"],
+    )
+
+    _mark_step("realistic: site class assignment stability after mixed batch")
+    passed_sites_stable_mixed, msgs_sites_stable_mixed = check_site_class_assignments_unchanged(site_snapshot)
+    _record_check("realistic: site class assignment stability after mixed batch", passed_sites_stable_mixed, msgs_sites_stable_mixed, circuit_ids=[speed_id, ip_id, sqm_id, mixed_move_id], node_names=["NET3-1"])
+
+    _mark_step("realistic: mixed batch site direction mapping (NET3-1)")
+    passed_site_mixed, msgs_site_mixed = check_site_direction_ceil("NET3-1", expected_dl=275.0, expected_ul=155.0)
+    _record_check("realistic: mixed batch site direction mapping (NET3-1)", passed_site_mixed, msgs_site_mixed, node_names=["NET3-1"])
+
+    _mark_step("realistic: mixed batch circuit speed direction mapping")
+    passed_speed_dir, msgs_speed_dir = wait_for_circuit_direction_ceil(speed_id)
+    _record_check("realistic: mixed batch circuit speed direction mapping", passed_speed_dir, msgs_speed_dir, circuit_ids=[speed_id], step_started_at=step_t0)
+
+    _mark_step("realistic: mixed batch circuit IP mappings")
+    passed_ip_map, msgs_ip_map = check_ip_mappings_for_circuit(ip_id)
+    _record_check("realistic: mixed batch circuit IP mappings", passed_ip_map, msgs_ip_map, circuit_ids=[ip_id])
+    passed_old_ip_absent, msgs_old_ip_absent = check_ip_mapping_absent(old_ip)
+    _record_check("realistic: mixed batch old IP absent", passed_old_ip_absent, msgs_old_ip_absent, circuit_ids=[ip_id])
+
+    _mark_step("realistic: mixed batch exact IP mappings")
+    passed_ip_exact, msgs_ip_exact = check_exact_ip_mappings_for_circuit(ip_id)
+    _record_check("realistic: mixed batch exact IP mappings", passed_ip_exact, msgs_ip_exact, circuit_ids=[ip_id])
+
+    _mark_step("realistic: mixed batch circuit SQM kind")
+    passed_sqm_kind, msgs_sqm_kind = check_circuit_qdisc_kind(
+        sqm_id,
+        expected_down_kind="fq_codel",
+        expected_up_kind="cake",
+    )
+    _record_check("realistic: mixed batch circuit SQM kind", passed_sqm_kind, msgs_sqm_kind, circuit_ids=[sqm_id])
+
+    _mark_step("realistic: mixed batch parent-moved circuit direction mapping")
+    passed_mixed_move_dir, msgs_mixed_move_dir = wait_for_circuit_direction_ceil(mixed_move_id)
+    _record_check("realistic: mixed batch parent-moved circuit direction mapping", passed_mixed_move_dir, msgs_mixed_move_dir, circuit_ids=[mixed_move_id], step_started_at=step_t0)
+
+    _mark_step("realistic: mixed batch parent-moved circuit ip mappings")
+    passed_mixed_move_map, msgs_mixed_move_map = check_ip_mappings_for_circuit(mixed_move_id)
+    _record_check("realistic: mixed batch parent-moved circuit ip mappings", passed_mixed_move_map, msgs_mixed_move_map, circuit_ids=[mixed_move_id])
+
+    _mark_step("realistic: mixed batch parent-moved circuit cleanup")
+    passed_mixed_move_cleanup, msgs_mixed_move_cleanup = check_circuit_transition_cleanup(
+        mixed_move_id,
+        old_down_tc=mixed_old_down_tc,
+        old_up_tc=mixed_old_up_tc,
+    )
+    _record_check("realistic: mixed batch parent-moved circuit cleanup", passed_mixed_move_cleanup, msgs_mixed_move_cleanup, circuit_ids=[mixed_move_id])
+
+    _mark_step("realistic: mixed batch exact IP mappings")
+    passed_mixed_batch_ip, msgs_mixed_batch_ip = check_exact_ip_mappings_for_circuits(
+        [speed_id, ip_id, sqm_id, mixed_move_id],
+        forbidden_by_circuit={
+            mixed_move_id: {tc for tc in [mixed_old_down_tc, mixed_old_up_tc] if tc},
+        },
+    )
+    _record_check(
+        "realistic: mixed batch exact IP mappings",
+        passed_mixed_batch_ip,
+        msgs_mixed_batch_ip,
+        circuit_ids=[speed_id, ip_id, sqm_id, mixed_move_id],
+    )
 
     # Add circuit under a different leaf (NET3-2)
     _mark_step("realistic: add circuit")
-    rows3 = json.loads(json.dumps(rows_parent))
+    rows3 = json.loads(json.dumps(rows_mixed))
     new_circuit_id = "99901"
     new_circuit_ip = "100.64.200.1"
     rows3.append({
@@ -2432,11 +3500,11 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
         results.append("realistic: add circuit: full reload (allowed for larger tree)")
     else:
         results.append("realistic: add circuit: OK (no full reload)")
+    _record_hidden_health("realistic: add circuit", step_t0, circuit_ids=[new_circuit_id])
 
     _mark_step("realistic: added circuit ip mappings")
     passed_add_map, msgs_add_map = check_ip_mappings_for_circuit(new_circuit_id)
-    results.extend(msgs_add_map)
-    ok &= passed_add_map
+    _record_check("realistic: added circuit ip mappings", passed_add_map, msgs_add_map, circuit_ids=[new_circuit_id])
 
     # Remove the added circuit
     _mark_step("realistic: remove circuit")
@@ -2448,19 +3516,194 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
         results.append("realistic: remove circuit: full reload (allowed for larger tree)")
     else:
         results.append("realistic: remove circuit: OK (no full reload)")
+    _record_hidden_health("realistic: remove circuit", step_t0, circuit_ids=[new_circuit_id])
 
     _mark_step("realistic: removed circuit ip unmapped")
     passed_unmap, msgs_unmap = check_ip_mapping_absent(new_circuit_ip)
-    results.extend(msgs_unmap)
-    ok &= passed_unmap
+    _record_check("realistic: removed circuit ip unmapped", passed_unmap, msgs_unmap, circuit_ids=[new_circuit_id])
 
     return ok
 
 
+def run_fault_reload_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
+    ok = True
+
+    def _record_check(
+        tag: str,
+        passed: bool,
+        msgs: List[str],
+        *,
+        step_started_at: Optional[float] = None,
+        circuit_ids: Optional[List[str]] = None,
+        node_names: Optional[List[str]] = None,
+    ) -> None:
+        nonlocal ok
+        results.extend(msgs)
+        ok &= passed
+        if not passed:
+            results.extend(
+                collect_failure_diagnostics(
+                    tag,
+                    step_started_at=step_started_at,
+                    circuit_ids=circuit_ids,
+                    node_names=node_names,
+                )
+            )
+
+    clear_bakery_fault_once()
+    try:
+        _mark_step("fault-reload: baseline")
+        write_network_json(REALISTIC_TIERED_NETWORK)
+        rows = realistic_tiered_circuits_base()
+        write_circuits(rows)
+        _ = run_refresh_and_wait(log, timeout_s)
+        results.append("fault-reload: baseline: ok (initial run)")
+
+        target_idx: Optional[int] = None
+        for idx, row in enumerate(rows):
+            if str(row.get("Parent Node")) == "NET1-1-1":
+                target_idx = idx
+                break
+        if target_idx is None:
+            results.append("fault-reload: no candidate circuit found under NET1-1-1")
+            return False
+
+        target_id = str(rows[target_idx]["Circuit ID"])
+        old_down_tc, old_up_tc, _ = _current_circuit_handle_strings(target_id)
+
+        rows_fault = json.loads(json.dumps(rows))
+        rows_fault[target_idx]["Parent Node"] = "NET1-1-2"
+        arm_bakery_fault_once("migrating circuits between parent nodes")
+
+        _mark_step("fault-reload: injected parent-move failure")
+        write_circuits(rows_fault)
+        step_t0 = time.time()
+        res = run_refresh_and_wait(log, timeout_s)
+        if res.full_reload and not res.mq_init:
+            results.append("fault-reload: injected failure triggered an immediate full reload")
+        else:
+            results.append("fault-reload: injected failure commit completed without immediate full reload")
+
+        passed_reload_required, msgs_reload_required = check_fault_injection_observed(step_t0)
+        _record_check(
+            "fault-reload: fault injection observed",
+            passed_reload_required,
+            msgs_reload_required,
+            step_started_at=step_t0,
+            circuit_ids=[target_id],
+        )
+
+        rows_rebuild = json.loads(json.dumps(rows_fault))
+        rows_rebuild[target_idx]["Download Max Mbps"] = float(rows_rebuild[target_idx]["Download Max Mbps"]) + 7.0
+        rows_rebuild[target_idx]["Upload Max Mbps"] = float(rows_rebuild[target_idx]["Upload Max Mbps"]) + 3.0
+
+        _mark_step("fault-reload: follow-up commit forces full reload")
+        write_circuits(rows_rebuild)
+        step_t1 = time.time()
+        res = run_refresh_and_wait(log, timeout_s)
+        passed_full, msg_full = assert_full_reload(
+            "fault-reload: follow-up commit forces full reload",
+            res,
+            step_started_at=step_t1,
+        )
+        results.append(msg_full)
+        ok &= passed_full
+        if not passed_full:
+            results.extend(
+                collect_failure_diagnostics(
+                    "fault-reload: follow-up commit forces full reload",
+                    step_started_at=step_t1,
+                    circuit_ids=[target_id],
+                )
+            )
+
+        passed_reload_gate, msgs_reload_gate = check_reload_required_since(step_t0)
+        _record_check(
+            "fault-reload: reload-required gate observed",
+            passed_reload_gate,
+            msgs_reload_gate,
+            step_started_at=step_t0,
+            circuit_ids=[target_id],
+        )
+
+        _mark_step("fault-reload: post-reload circuit direction mapping")
+        passed_dir, msgs_dir = wait_for_circuit_direction_ceil(target_id)
+        _record_check(
+            "fault-reload: post-reload circuit direction mapping",
+            passed_dir,
+            msgs_dir,
+            circuit_ids=[target_id],
+            step_started_at=step_t1,
+        )
+
+        _mark_step("fault-reload: post-reload exact IP mappings")
+        passed_ip, msgs_ip = check_exact_ip_mappings_for_circuit(
+            target_id,
+            forbidden_tcs={tc for tc in [old_down_tc, old_up_tc] if tc},
+        )
+        _record_check(
+            "fault-reload: post-reload exact IP mappings",
+            passed_ip,
+            msgs_ip,
+            circuit_ids=[target_id],
+        )
+
+        _mark_step("fault-reload: post-reload cleanup")
+        passed_cleanup, msgs_cleanup = check_circuit_transition_cleanup(
+            target_id,
+            old_down_tc=old_down_tc,
+            old_up_tc=old_up_tc,
+        )
+        _record_check(
+            "fault-reload: post-reload cleanup",
+            passed_cleanup,
+            msgs_cleanup,
+            circuit_ids=[target_id],
+        )
+
+        rows_recovered = json.loads(json.dumps(rows_rebuild))
+        rows_recovered[target_idx]["Download Max Mbps"] = float(rows_recovered[target_idx]["Download Max Mbps"]) + 5.0
+        rows_recovered[target_idx]["Upload Max Mbps"] = float(rows_recovered[target_idx]["Upload Max Mbps"]) + 2.0
+
+        _mark_step("fault-reload: post-reload incremental recovery")
+        write_circuits(rows_recovered)
+        step_t2 = time.time()
+        res = run_refresh_and_wait(log, timeout_s)
+        passed_recovery, msg_recovery = assert_no_full_reload(
+            "fault-reload: post-reload incremental recovery",
+            res,
+            step_started_at=step_t2,
+        )
+        results.append(msg_recovery)
+        ok &= passed_recovery
+        if not passed_recovery:
+            results.extend(
+                collect_failure_diagnostics(
+                    "fault-reload: post-reload incremental recovery",
+                    step_started_at=step_t2,
+                    circuit_ids=[target_id],
+                )
+            )
+
+        passed_health, msgs_health = check_no_hidden_incremental_failures(step_t2)
+        _record_check(
+            "fault-reload: post-reload incremental recovery health",
+            passed_health,
+            msgs_health,
+            step_started_at=step_t2,
+            circuit_ids=[target_id],
+        )
+
+        return ok
+    finally:
+        clear_bakery_fault_once()
+
+
 def run_treeguard_runtime_suite(
-    log: LogReader, timeout_s: float, treeguard_timeout_s: float, results: List[str]
+    log: AnyLogReader, timeout_s: float, treeguard_timeout_s: float, results: List[str]
 ) -> bool:
     ok = True
+    cpu_mode = get_treeguard_cpu_mode()
 
     _mark_step("treeguard: baseline")
     write_network_json(treeguard_runtime_network_base())
@@ -2480,10 +3723,21 @@ def run_treeguard_runtime_suite(
         "702",
         treeguard_timeout_s,
     )
-    results.extend(msgs)
-    ok &= passed
+    if passed:
+        results.extend(msgs)
+        ok &= passed
+    elif cpu_mode == "cpu_aware":
+        still_physical, still_physical_msgs = check_node_present_in_physical_tree("Town_TG")
+        results.extend(still_physical_msgs)
+        results.append(
+            "treeguard runtime check: SKIP under cpu_aware because no runtime virtualization occurred without induced CPU pressure"
+        )
+        ok &= still_physical
+    else:
+        results.extend(msgs)
+        ok &= passed
 
-    new_lines = log.read_since(after_baseline_offset)
+    _, new_lines = log.read_since(after_baseline_offset)
     if _log_contains_unexpected_full_reload(new_lines):
         results.append("treeguard: runtime virtualization: unexpected full reload detected")
         ok = False
@@ -2508,7 +3762,7 @@ def run_treeguard_runtime_suite(
     return ok
 
 
-def run_flat_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool:
+def run_flat_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
     # Baseline
@@ -2583,7 +3837,10 @@ def run_flat_suite(log: LogReader, timeout_s: float, results: List[str]) -> bool
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="LibreQoS/Bakery integration tests")
-    ap.add_argument("--log-file", required=True, help="Path to lqosd log file (stdout/tee capture)")
+    ap.add_argument(
+        "--log-file",
+        help="Path to lqosd log file (stdout/tee capture). When omitted, the harness reads journalctl -u lqosd.",
+    )
     ap.add_argument("--timeout", type=float, default=8.0, help="Wait time per step (seconds)")
     ap.add_argument(
         "--treeguard-timeout",
@@ -2598,21 +3855,30 @@ def main() -> int:
     g.add_argument("--realistic-only", action="store_true", help="Run realistic tiered cases only")
     g.add_argument("--virtualized-only", action="store_true", help="Run virtualized-node tiered cases only")
     g.add_argument("--treeguard-only", action="store_true", help="Run live TreeGuard runtime cases only")
+    g.add_argument(
+        "--fault-reload-only",
+        action="store_true",
+        help="Run the opt-in Bakery fault-injection reload-escalation suite only",
+    )
     ap.add_argument("--no-restore", action="store_true", help="Do not restore original files (debugging)")
 
     args = ap.parse_args()
-
-    # Pre-flight guidance
-    if not os.path.exists(args.log_file):
-        print("ERROR: Log file not found. Please run lqosd with logs, e.g.:")
-        print("  sudo RUST_LOG=info lqosd 2>&1 | tee /tmp/lqosd.log")
-        return 1
 
     if not is_lqosd_alive():
         print("WARNING: lqosd does not appear to be running. This test will not observe Bakery logs.")
         print("Start lqosd and re-run, or continue if already started but lib binding cannot detect it.")
 
-    log = LogReader(args.log_file)
+    log: AnyLogReader
+    if args.log_file:
+        if not os.path.exists(args.log_file):
+            print(f"ERROR: Log file not found: {args.log_file}")
+            print("Either point --log-file at an existing tee'd log, or omit it to use journalctl -u lqosd.")
+            return 1
+        print(f"Using tee'd lqosd log file: {args.log_file}")
+        log = LogReader(args.log_file)
+    else:
+        print("Using journalctl -u lqosd for Bakery event detection")
+        log = JournalctlLogReader("lqosd")
     results: List[str] = []
     overall_ok = True
 
@@ -2639,6 +3905,9 @@ def main() -> int:
                 log, args.timeout, args.treeguard_timeout, results
             )
             overall_ok &= ok
+        elif args.fault_reload_only:
+            ok = run_fault_reload_suite(log, args.timeout, results)
+            overall_ok &= ok
         elif args.full_suite:
             ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
@@ -2651,6 +3920,7 @@ def main() -> int:
 
             ok = run_realistic_tiered_suite(log, args.timeout, results)
             overall_ok &= ok
+
         else:
             ok = run_tiered_suite(log, args.timeout, results)
             overall_ok &= ok

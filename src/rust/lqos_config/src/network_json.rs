@@ -643,8 +643,10 @@ mod test {
             .find(|n| n.name == "Bad Tower")
             .expect("Bad Tower must be present");
 
-        assert!((good.latitude.unwrap() - 45.123).abs() < 0.001);
-        assert!((good.longitude.unwrap() + 111.75).abs() < 0.001);
+        let good_latitude = good.latitude.expect("Tower A latitude must parse");
+        let good_longitude = good.longitude.expect("Tower A longitude must parse");
+        assert!((good_latitude - 45.123).abs() < 0.001);
+        assert!((good_longitude + 111.75).abs() < 0.001);
         assert_eq!(bad.latitude, None);
         assert_eq!(bad.longitude, None);
 
