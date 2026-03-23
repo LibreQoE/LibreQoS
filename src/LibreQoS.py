@@ -40,6 +40,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     is_insight_enabled, scheduler_error, xdp_ip_mapping_capacity, \
+    overrides_circuit_adjustments_effective, \
     plan_top_level_cpu_bins, \
     plan_class_identities, \
     fast_queues_fq_codel, \
@@ -686,6 +687,66 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 )
     return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
 
+
+def normalize_sqm_override_token(raw_token):
+    token = (raw_token or '').strip().lower()
+    if token == '':
+        return ''
+    if '/' in token:
+        left, right = token.split('/', 1)
+        token = left.strip() + '/' + right.strip()
+    return token
+
+
+def apply_effective_runtime_circuit_overrides(subscriberCircuits):
+    """
+    Overlay adaptive runtime circuit adjustments in memory without mutating
+    ShapedDevices.csv, so rebuilds can honor TreeGuard/StormGuard state.
+    """
+    try:
+        adjustments = overrides_circuit_adjustments_effective()
+    except Exception as e:
+        warnings.warn(f"Unable to load effective runtime circuit overrides: {e}", stacklevel=2)
+        return 0
+
+    sqm_by_device_id = {}
+    for adj in adjustments:
+        if adj.get('type') != 'device_adjust_sqm':
+            continue
+        device_id = (adj.get('device_id') or '').strip()
+        sqm_override = normalize_sqm_override_token(adj.get('sqm_override'))
+        if device_id == '' or sqm_override == '':
+            continue
+        sqm_by_device_id[device_id] = sqm_override
+
+    if not sqm_by_device_id:
+        return 0
+
+    overlay_count = 0
+    for circuit in subscriberCircuits:
+        circuit_override = None
+        for device in circuit.get('devices', []):
+            override = sqm_by_device_id.get(device.get('deviceID', ''))
+            if override is None:
+                continue
+            if circuit_override is not None and circuit_override != override:
+                warnings.warn(
+                    "Effective runtime SQM override conflict on circuit "
+                    + circuit.get('circuitID', 'unknown')
+                    + ". Will instead use the first runtime SQM override discovered.",
+                    stacklevel=2,
+                )
+                continue
+            circuit_override = override
+
+        if circuit_override is None:
+            continue
+        if circuit.get('sqm') != circuit_override:
+            overlay_count += 1
+        circuit['sqm'] = circuit_override
+
+    return overlay_count
+
 def refreshShapers():
 
     # Starting
@@ -733,6 +794,13 @@ def refreshShapers():
 
         # Load Subscriber Circuits & Devices
         subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
+        runtime_override_count = apply_effective_runtime_circuit_overrides(subscriberCircuits)
+        if runtime_override_count > 0:
+            print(
+                "Applied "
+                + str(runtime_override_count)
+                + " effective runtime circuit SQM override(s) in memory"
+            )
 
         # Preserve the logical parent (as configured in ShapedDevices.csv) before any shaping-time rewrites.
         for circuit in subscriberCircuits:

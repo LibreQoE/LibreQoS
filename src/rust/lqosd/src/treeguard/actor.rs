@@ -2465,7 +2465,6 @@ fn apply_circuit_sqm_change<P, C, L>(
     }
 
     let mut persisted_ok = false;
-    let mut can_apply_live = true;
     let device_ids: Vec<String> = devices
         .iter()
         .map(|device| device.device_id.clone())
@@ -2481,7 +2480,6 @@ fn apply_circuit_sqm_change<P, C, L>(
                 persisted_ok = true;
             }
             Err(e) => {
-                can_apply_live = false;
                 status.warnings.push(format!(
                     "TreeGuard circuits: failed to {} SQM overrides for circuit '{circuit_id}': {e}",
                     if returning_to_base { "clear" } else { "persist" }
@@ -2505,33 +2503,29 @@ fn apply_circuit_sqm_change<P, C, L>(
         }
     }
 
-    let live_ok = if can_apply_live {
-        match live_apply(circuit_id, devices, live_token) {
-            Ok(()) => true,
-            Err(e) => {
-                status.warnings.push(format!(
-                    "TreeGuard circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
-                ));
-                push_activity(
-                    activity,
-                    TreeguardActivityEntry {
-                        time: now_unix.to_string(),
-                        entity_type: "circuit".to_string(),
-                        entity_id: circuit_entity_id.to_string(),
-                        action: if returning_to_base {
-                            "clear_sqm_live_failed".to_string()
-                        } else {
-                            format!("apply_sqm_live_failed:{token}")
-                        },
-                        persisted: persisted_ok,
-                        reason: format!("Bakery live apply failed: {e}"),
+    let live_ok = match live_apply(circuit_id, devices, live_token) {
+        Ok(()) => true,
+        Err(e) => {
+            status.warnings.push(format!(
+                "TreeGuard circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
+            ));
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "circuit".to_string(),
+                    entity_id: circuit_entity_id.to_string(),
+                    action: if returning_to_base {
+                        "clear_sqm_live_failed".to_string()
+                    } else {
+                        format!("apply_sqm_live_failed:{token}")
                     },
-                );
-                false
-            }
+                    persisted: persisted_ok,
+                    reason: format!("Bakery live apply failed: {e}"),
+                },
+            );
+            false
         }
-    } else {
-        false
     };
 
     if live_ok || persisted_ok {

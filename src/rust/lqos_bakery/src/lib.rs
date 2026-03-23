@@ -813,6 +813,11 @@ fn push_bakery_event(event: &str, status: &str, summary: String) {
     }
 }
 
+fn announce_full_reload(summary: &str) {
+    warn!("{summary}");
+    push_bakery_event("full_reload_trigger", "warning", summary.to_string());
+}
+
 fn clear_bakery_apply_progress(state: &mut BakeryTelemetryState) {
     state.current_apply_phase = None;
     state.current_apply_total_tc_commands = 0;
@@ -1976,6 +1981,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     }
 
     fn process_pending_migrations(
+        config: &Arc<Config>,
         circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
         live_circuits: &mut HashMap<i64, u64>,
         sites: &HashMap<i64, Arc<BakeryCommands>>,
@@ -1984,15 +1990,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
         runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     ) {
-        if migrations.is_empty() {
-            return;
-        }
-
-        let Ok(config) = lqos_config::load_config() else {
-            error!("Failed to load configuration while processing pending migrations.");
-            return;
-        };
-
         let mut advanced = 0usize;
         let mut to_remove = Vec::new();
         let mut effective_state_changed = false;
@@ -2321,7 +2318,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         let command = match rx.recv_timeout(Duration::from_millis(BAKERY_BACKGROUND_INTERVAL_MS)) {
             Ok(command) => command,
             Err(RecvTimeoutError::Timeout) => {
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration while processing pending migrations.");
+                    continue;
+                };
                 process_pending_migrations(
+                    &config,
                     &mut circuits,
                     &mut live_circuits,
                     &sites,
@@ -2473,7 +2475,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut virtualized_sites,
                     &mut runtime_node_operations,
                 );
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration while processing pending migrations.");
+                    continue;
+                };
                 process_pending_migrations(
+                    &config,
                     &mut circuits,
                     &mut live_circuits,
                     &sites,
@@ -2504,7 +2511,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             BakeryCommands::Tick => {
                 // Reset per-cycle counters at the start of the tick
                 handle_tick(&mut circuits, &mut live_circuits, &mut sites);
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration while processing pending migrations.");
+                    continue;
+                };
                 process_pending_migrations(
+                    &config,
                     &mut circuits,
                     &mut live_circuits,
                     &sites,
@@ -2654,6 +2666,10 @@ fn handle_commit_batch(
     let limit_label = format_mapped_limit(effective_limit);
 
     if let Some(reason) = bakery_reload_required_reason() {
+        let summary = format!(
+            "Bakery full reload triggered by reload-required state: {}",
+            reason
+        );
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
         log_mapped_limit_decision("reload-required rebuild", mapped_limit, mapped_limit_stats);
@@ -2669,10 +2685,7 @@ fn handle_commit_batch(
             );
             maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
         }
-        warn!(
-            "Bakery: full reload required before further incremental topology mutation: {}",
-            reason
-        );
+        announce_full_reload(&summary);
         full_reload(
             batch,
             sites,
@@ -2686,6 +2699,7 @@ fn handle_commit_batch(
             stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
+            summary,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2714,7 +2728,10 @@ fn handle_commit_batch(
             maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
         }
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
+        let summary = "Bakery full reload triggered by baseline rebuild after restart/cold start."
+            .to_string();
         info!("Bakery baseline rebuild after restart/cold start: performing explicit full reload.");
+        announce_full_reload(&summary);
         full_reload(
             batch,
             sites,
@@ -2728,13 +2745,14 @@ fn handle_commit_batch(
             stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
+            summary,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
     let site_change_mode = diff_sites(&new_batch, sites);
-    if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
+    if let SiteDiffResult::RebuildRequired { summary } = &site_change_mode {
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
         log_mapped_limit_decision("site-structure rebuild", mapped_limit, mapped_limit_stats);
@@ -2752,6 +2770,7 @@ fn handle_commit_batch(
         }
         // If the site structure has changed, we need to rebuild everything.
         info!("Bakery full reload: site_struct=1, circuit_struct=0");
+        announce_full_reload(summary);
         full_reload(
             batch,
             sites,
@@ -2765,6 +2784,7 @@ fn handle_commit_batch(
             stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
+            summary.clone(),
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2786,6 +2806,10 @@ fn handle_commit_batch(
     if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode
         && !categories.structural_changed.is_empty()
     {
+        let summary = format!(
+            "Bakery full reload triggered by circuit structural diff: structural_changed_count={}",
+            categories.structural_changed.len()
+        );
         let (new_batch, mapped_limit_stats) =
             filter_batch_by_mapped_circuit_limit(new_batch.clone(), circuits, effective_limit);
         log_mapped_limit_decision(
@@ -2809,6 +2833,7 @@ fn handle_commit_batch(
             "Bakery full reload: site_struct=0, circuit_struct={}",
             categories.structural_changed.len()
         );
+        announce_full_reload(&summary);
         full_reload(
             batch,
             sites,
@@ -2822,6 +2847,7 @@ fn handle_commit_batch(
             stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
+            summary,
         );
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -2857,6 +2883,11 @@ fn handle_commit_batch(
             }) {
                 error!("Channel full, falling back to full rebuild: {}", e);
                 info!("Bakery full reload: site_struct=0, circuit_struct=0");
+                let summary = format!(
+                    "Bakery full reload triggered because site speed live-change enqueue failed: {}",
+                    e
+                );
+                announce_full_reload(&summary);
                 full_reload(
                     batch,
                     sites,
@@ -2870,6 +2901,7 @@ fn handle_commit_batch(
                     stormguard_overrides,
                     virtualized_sites,
                     runtime_node_operations,
+                    summary,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
@@ -3095,6 +3127,11 @@ fn handle_commit_batch(
                         mapped_limit,
                         mapped_limit_stats,
                     );
+                    let summary = format!(
+                        "Bakery full reload triggered because live migration setup failed for active migrated circuit {}.",
+                        circuit_hash
+                    );
+                    announce_full_reload(&summary);
                     full_reload(
                         batch,
                         sites,
@@ -3108,6 +3145,7 @@ fn handle_commit_batch(
                         stormguard_overrides,
                         virtualized_sites,
                         runtime_node_operations,
+                        summary,
                     );
                     MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
@@ -6242,13 +6280,13 @@ fn full_reload(
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
     runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
+    trigger_summary: String,
 ) {
-    warn!("Bakery: Full reload triggered due to site or circuit changes.");
     FULL_RELOAD_IN_PROGRESS.store(true, Ordering::Relaxed);
     mark_bakery_action_started(
         BakeryMode::ApplyingFullReload,
         "full_reload_started",
-        "Full reload triggered due to site or circuit changes.".to_string(),
+        trigger_summary,
     );
     let _reload_scope = FullReloadScope;
     let previous_sites = sites.clone();
@@ -7273,6 +7311,91 @@ mod tests {
         let telemetry = bakery_status_snapshot();
         assert_eq!(telemetry.runtime_operations.deferred_count, 1);
         assert!(!telemetry.reload_required);
+    }
+
+    #[test]
+    fn deferred_runtime_site_prune_advances_without_pending_migrations() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let mut cfg = Config::default();
+        cfg.bridge = Some(lqos_config::BridgeConfig {
+            use_xdp_bridge: false,
+            to_internet: "__bakery-missing-wan__".to_string(),
+            to_network: "__bakery-missing-lan__".to_string(),
+        });
+        let config = Arc::new(cfg);
+
+        let site_hash = 20;
+        let site = mk_add_site(site_hash, 0x10020, 0x20020, 0x21);
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site,
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::new(),
+                active_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::new();
+        let submitted_at = unix_now().saturating_sub(5);
+        let mut operation = RuntimeNodeOperation::new(
+            1,
+            site_hash,
+            RuntimeNodeOperationAction::Virtualize,
+            submitted_at,
+        );
+        operation.attempt_count = 1;
+        operation.update_status(
+            RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+            submitted_at,
+            None,
+            Some(0),
+        );
+        runtime_node_operations.insert(site_hash, operation);
+
+        flush_deferred_runtime_site_prunes(
+            &config,
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+        );
+
+        let state = virtualized_sites
+            .get(&site_hash)
+            .expect("virtualized site state");
+        let operation = runtime_node_operations
+            .get(&site_hash)
+            .expect("runtime operation");
+
+        assert!(state.pending_prune);
+        assert_eq!(
+            operation.status,
+            RuntimeNodeOperationStatus::AppliedAwaitingCleanup
+        );
+        assert_eq!(operation.attempt_count, 2);
+        assert!(operation.updated_at_unix >= submitted_at);
+        assert_eq!(
+            operation.next_retry_at_unix,
+            Some(state.next_prune_attempt_unix)
+        );
+        assert!(operation.next_retry_at_unix.expect("retry time") >= operation.updated_at_unix);
+        assert!(
+            operation
+                .last_error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Failed to snapshot live classes on __bakery-missing-lan__")
+        );
     }
 
     #[test]

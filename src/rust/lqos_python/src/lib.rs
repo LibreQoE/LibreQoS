@@ -13,6 +13,7 @@ use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use std::fmt::Write as _;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -973,6 +974,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
@@ -2536,6 +2538,73 @@ fn calculate_hash() -> PyResult<i64> {
     let hash = lqos_utils::hash_to_i64(&combined);
 
     Ok(hash)
+}
+
+fn shaping_runtime_sqm_fingerprint() -> Result<String> {
+    let config = lqos_config::load_config()?;
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|sg| sg.enabled && !sg.dry_run);
+    let apply_treeguard = config.treeguard.enabled;
+    let overrides =
+        lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard)?;
+
+    let mut sqm_entries: Vec<(String, String)> = overrides
+        .circuit_adjustments()
+        .iter()
+        .filter_map(|adj| match adj {
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+                device_id,
+                sqm_override,
+            } => {
+                let token = sqm_override
+                    .as_deref()
+                    .map(str::trim)
+                    .map(str::to_lowercase)
+                    .unwrap_or_default();
+                if token.is_empty() {
+                    None
+                } else {
+                    Some((device_id.clone(), token))
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    sqm_entries.sort();
+
+    let mut fingerprint = String::new();
+    for (device_id, token) in sqm_entries {
+        let _ = writeln!(&mut fingerprint, "{device_id}={token}");
+    }
+
+    Ok(fingerprint)
+}
+
+#[pyfunction]
+fn calculate_shaping_runtime_hash() -> PyResult<i64> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(0);
+    };
+    let nj_path = Path::new(&config.lqos_directory).join("network.json");
+    let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+
+    let Ok(nj_as_string) = read_to_string(nj_path) else {
+        return Ok(0);
+    };
+    let Ok(sd_as_string) = read_to_string(sd_path) else {
+        return Ok(0);
+    };
+    let Ok(runtime_sqm_fingerprint) = shaping_runtime_sqm_fingerprint() else {
+        return Ok(0);
+    };
+
+    let combined = format!(
+        "{}\n{}\n{}",
+        nj_as_string, sd_as_string, runtime_sqm_fingerprint
+    );
+    Ok(lqos_utils::hash_to_i64(&combined))
 }
 
 ////////////////////////////// The Bakery class //////////////////////////////

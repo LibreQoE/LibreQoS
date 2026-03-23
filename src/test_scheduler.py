@@ -27,13 +27,16 @@ def install_scheduler_stubs():
     lqlib.automatic_import_netzur = lambda: False
     lqlib.automatic_import_visp = lambda: False
     lqlib.calculate_hash = lambda: 0
+    lqlib.calculate_shaping_runtime_hash = lambda: 0
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
     lqlib.scheduler_output = Mock()
     lqlib.wait_for_bus_ready = Mock(return_value=True)
     lqlib.overrides_persistent_devices_effective = lambda: []
+    lqlib.overrides_persistent_devices_materialized = lambda: []
     lqlib.overrides_circuit_adjustments_effective = lambda: []
+    lqlib.overrides_circuit_adjustments_materialized = lambda: []
     lqlib.overrides_network_adjustments_effective = lambda: []
     lqlib.overrides_network_adjustments_materialized = lambda: []
     sys.modules["liblqos_python"] = lqlib
@@ -266,10 +269,10 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
 
         with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):
             with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                with patch.object(scheduler, "overrides_persistent_devices_effective", return_value=[]):
+                with patch.object(scheduler, "overrides_persistent_devices_materialized", return_value=[]):
                     with patch.object(
                         scheduler,
-                        "overrides_circuit_adjustments_effective",
+                        "overrides_circuit_adjustments_materialized",
                         return_value=[{
                             "type": "device_adjust_sqm",
                             "device_id": "splynx_service_93",

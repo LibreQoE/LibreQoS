@@ -11,7 +11,7 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
+    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
     overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
     scheduler_output, wait_for_bus_ready
@@ -22,7 +22,7 @@ import os.path
 import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
-network_hash = 0
+shaping_runtime_hash = 0
 
 
 def clear_scheduler_error():
@@ -594,16 +594,17 @@ def importAndShapeFullReload():
 
 
 def importAndShapePartialReload():
-    global network_hash
+    global shaping_runtime_hash
 
     importFromCRM()
-    # Calculate if the network.json or ShapedDevices.csv has changed and reload only if it has.
-    new_hash = calculate_hash()
-    if new_hash != network_hash:
-        refreshShapersUpdateOnly()
-        network_hash = new_hash
+    # Rebuild when runtime shaping inputs change, including effective adaptive
+    # circuit overrides that do not belong in source-of-truth files.
+    new_hash = calculate_shaping_runtime_hash()
+    if new_hash != shaping_runtime_hash:
+        refreshShapers()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
     else:
-        print("No changes detected in network.json or ShapedDevices.csv, skipping shaper refresh.")
+        print("No runtime shaping changes detected, skipping shaper refresh.")
 
 
 def not_dead_yet():
@@ -619,7 +620,7 @@ if __name__ == '__main__':
     try:
         ensure_bus_ready()
         importAndShapeFullReload()
-        network_hash = calculate_hash()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
 
         print("Starting scheduler with jobs:")
         print(f"- not_dead_yet every 1 minute")
