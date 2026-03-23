@@ -55,23 +55,20 @@ function renderSchedulerStatus(container, state) {
     let color = "text-secondary";
     let icon = "fa-spinner fa-spin";
     let label = "Scheduler status is loading";
-    let buttonText = "Scheduler starting...";
+    const buttonText = "Scheduler";
 
     if (state === "healthy") {
         color = "text-success";
         icon = "fa-check-circle";
         label = "Scheduler is available";
-        buttonText = "Scheduler";
     } else if (state === "unavailable") {
         color = "text-warning";
         icon = "fa-clock";
         label = "Scheduler is still unavailable";
-        buttonText = "Scheduler unavailable";
     } else if (state === "error") {
         color = "text-danger";
         icon = "fa-triangle-exclamation";
         label = "Scheduler has an internal error";
-        buttonText = "Scheduler error";
     }
 
     container.innerHTML = `

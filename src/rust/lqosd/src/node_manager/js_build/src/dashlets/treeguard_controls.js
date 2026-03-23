@@ -123,12 +123,17 @@ export class TreeguardControlsDashlet extends BaseDashlet {
     syncControls() {
         const enabled = document.getElementById(this.enabledId());
         const dryRun = document.getElementById(this.dryRunId());
+        const controls = document.getElementById(this.controlsId());
         const statusEnabled = this.liveStatus?.enabled;
         const statusDryRun = this.liveStatus?.dry_run;
+        const paused = !!this.liveStatus?.paused_for_bakery_reload;
         enabled.checked = this.configLoaded ? !!this.treeguard.enabled : !!(statusEnabled ?? this.treeguard.enabled);
         dryRun.checked = this.configLoaded ? !!this.treeguard.dry_run : !!(statusDryRun ?? this.treeguard.dry_run);
-        enabled.disabled = this.isSaving;
-        dryRun.disabled = this.isSaving;
+        enabled.disabled = this.isSaving || paused;
+        dryRun.disabled = this.isSaving || paused;
+        if (controls) {
+            controls.classList.toggle("opacity-50", paused);
+        }
     }
 
     renderStatusLine() {
@@ -136,6 +141,8 @@ export class TreeguardControlsDashlet extends BaseDashlet {
         const liveStatus = this.liveStatus || {};
         const enabled = (liveStatus.enabled ?? this.treeguard.enabled) ? "Enabled" : "Disabled";
         const dryRun = !!(liveStatus.dry_run ?? this.treeguard.dry_run);
+        const paused = !!liveStatus.paused_for_bakery_reload;
+        const pauseReason = (liveStatus.pause_reason || "Bakery full reload in progress").trim();
         const liveState = dryRun ? "dry run" : "live";
         const mode = this.treeguard.cpu?.mode === "cpu_aware" ? "CPU-aware" : "Traffic/RTT only";
         const linkScope = this.treeguard.links?.all_nodes ? "all links" : "allowlisted links";
@@ -154,6 +161,9 @@ export class TreeguardControlsDashlet extends BaseDashlet {
             linkScope,
             circuitScope,
         ];
+        if (paused) {
+            summaryBits.push(`<span class="text-warning">paused: ${pauseReason}</span>`);
+        }
         if (managedNodes !== null || managedCircuits !== null) {
             const counts = [];
             if (managedNodes !== null) counts.push(`${managedNodes} node${managedNodes === 1 ? "" : "s"}`);

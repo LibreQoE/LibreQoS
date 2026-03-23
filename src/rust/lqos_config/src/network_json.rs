@@ -570,8 +570,10 @@ mod test {
         assert!(tiny.max_throughput.1 > 0.0);
 
         let transport = tiny.clone_to_transit();
+        assert!(!transport.runtime_virtualized);
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
+        assert_eq!(encoded["runtime_virtualized"], serde_json::json!(false));
     }
 
     #[test]

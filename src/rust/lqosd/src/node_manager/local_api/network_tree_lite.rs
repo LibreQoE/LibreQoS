@@ -12,6 +12,9 @@ pub struct NetworkTreeLiteNode {
     /// True if the node is virtual/logical-only.
     #[serde(rename = "virtual", default)]
     pub is_virtual: bool,
+    /// True if TreeGuard has runtime-virtualized this node in Bakery.
+    #[serde(default)]
+    pub runtime_virtualized: bool,
     /// Configured maximum throughput in Mbps.
     pub max_throughput: (f64, f64),
     /// Current throughput in bytes per second.

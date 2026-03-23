@@ -36,6 +36,7 @@ use tokio::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
+const RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS: u64 = 5;
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
 pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
@@ -155,10 +156,36 @@ fn throughput_task(
 
     // Counter for occasional stats
     let mut stats_counter = 0;
+    let mut reload_backoff_logged = false;
+    let mut last_reload_poll =
+        Instant::now() - Duration::from_secs(RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS);
 
     loop {
         let start = Instant::now();
         timer_metrics.zero();
+        let bakery_reload_in_progress = full_reload_in_progress();
+        if bakery_reload_in_progress {
+            if !reload_backoff_logged {
+                info!(
+                    "Throughput monitor: backing off to every {} seconds while Bakery full reload is in progress",
+                    RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS
+                );
+                reload_backoff_logged = true;
+            }
+            if start.duration_since(last_reload_poll)
+                < Duration::from_secs(RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS)
+            {
+                let missed_ticks = tfd.read();
+                if missed_ticks > 1 {
+                    warn!("Missed {} ticks", missed_ticks - 1);
+                }
+                continue;
+            }
+            last_reload_poll = start;
+        } else if reload_backoff_logged {
+            info!("Throughput monitor: resuming 1-second polling after Bakery full reload");
+            reload_backoff_logged = false;
+        }
 
         // Formerly a "spawn blocking" blob
         {
@@ -199,7 +226,13 @@ fn throughput_task(
             expired_flows.shrink_to_fit();
 
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            if bakery_reload_in_progress {
+                debug!(
+                    "Throughput monitor: skipping queue-stat application during Bakery full reload"
+                );
+            } else {
+                THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            }
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.update_totals();
             timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();

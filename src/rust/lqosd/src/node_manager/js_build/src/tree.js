@@ -302,6 +302,13 @@ function renderHeaderStatusIcons(node) {
             "Virtual node (logical only; not shaped in HTB)."
         ));
     }
+    if (node.runtime_virtualized === true) {
+        target.appendChild(buildStatusIcon(
+            "fa-layer-group",
+            "text-warning",
+            "TreeGuard runtime-virtualized node (physically bypassed in Bakery while preserved in the logical hierarchy)."
+        ));
+    }
     if (isStormguardNode(node)) {
         target.appendChild(buildStatusIcon(
             "fa-cloud-bolt",
@@ -1248,6 +1255,12 @@ function buildRow(i, depth=0) {
         "Virtual node: Inactive",
     ));
     statusWrap.appendChild(buildTreeRowStatusIcon(
+        "fa-layer-group",
+        node.runtime_virtualized === true,
+        "TreeGuard runtime virtualization: Active",
+        "TreeGuard runtime virtualization: Inactive",
+    ));
+    statusWrap.appendChild(buildTreeRowStatusIcon(
         "fa-cloud-bolt",
         isStormguardNode(node),
         "StormGuard: Active",
@@ -1400,6 +1413,7 @@ function treeUpdate(msg) {
                 || tree[nodeId][1].subtree_circuit_count !== node.subtree_circuit_count
                 || tree[nodeId][1].type !== node.type
                 || tree[nodeId][1].virtual !== node.virtual
+                || tree[nodeId][1].runtime_virtualized !== node.runtime_virtualized
                 || tree[nodeId][1].name !== node.name) {
                 needsRebuild = true;
             }

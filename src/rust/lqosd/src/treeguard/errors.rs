@@ -36,4 +36,8 @@ pub enum TreeguardError {
     /// A queue structure class identifier was invalid.
     #[error("invalid queue structure class id: {details}")]
     InvalidClassId { details: String },
+
+    /// A TreeGuard runtime node-virtualization request failed in Bakery.
+    #[error("bakery runtime node virtualization failed: {details}")]
+    BakeryVirtualization { details: String },
 }

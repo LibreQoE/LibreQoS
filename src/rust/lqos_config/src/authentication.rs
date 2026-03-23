@@ -2,17 +2,34 @@
 //! local web UI on LibreQoS boxes. It maps to `/<install dir>/lqusers.toml`
 
 use allocative::Allocative;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fmt::Display,
-    fs::{OpenOptions, read_to_string, remove_file},
+    fs::{OpenOptions, read_to_string, remove_file, rename},
     io::Write,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
 use tracing::{error, warn};
 use uuid::Uuid;
+
+const AUTH_FILE_VERSION: u32 = 2;
+const LEGACY_AUTH_FILE_VERSION: u32 = 1;
+const INITIAL_AUTH_EPOCH: u64 = 1;
+const LEGACY_AUTH_FILE_NAME: &str = "webusers.toml";
+const CURRENT_AUTH_FILE_NAME: &str = "lqusers.toml";
+const LEGACY_PASSWORD_PEPPER: &str = "_LibreQosLikesPasswordsForDinner";
+
+fn default_auth_file_version() -> u32 {
+    LEGACY_AUTH_FILE_VERSION
+}
+
+fn default_auth_epoch() -> u64 {
+    INITIAL_AUTH_EPOCH
+}
 
 /// Access rights of a user
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Allocative)]
@@ -59,29 +76,91 @@ impl Display for UserRole {
 pub struct WebUser {
     /// The user's username.
     pub username: String,
-    /// The user's password hash.
+    /// The user's password hash. This may be a legacy SHA-256 hash or an
+    /// Argon2id PHC string until the user next logs in.
     pub password_hash: String,
     /// The user's role.
     pub role: UserRole,
-    /// The user's token.
-    pub token: String,
+}
+
+/// Result of authenticating a single user.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthenticatedUser {
+    /// The authenticated username.
+    pub username: String,
+    /// The user's role.
+    pub role: UserRole,
+    /// Current auth epoch after any migration-side rewrite.
+    pub auth_epoch: u64,
+    /// True when a legacy password hash was upgraded to Argon2id.
+    pub password_upgraded: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PasswordVerification {
+    valid: bool,
+    needs_rehash: bool,
 }
 
 /// Container holding the authorized web users.
-#[derive(Clone, Debug, Deserialize, Serialize, Default, Allocative)]
+#[derive(Clone, Debug, Deserialize, Serialize, Allocative)]
 pub struct WebUsers {
+    #[serde(default = "default_auth_file_version")]
+    version: u32,
+    #[serde(default = "default_auth_epoch")]
+    auth_epoch: u64,
+    #[serde(default)]
     allow_unauthenticated_to_view: bool,
+    #[serde(default)]
     users: Vec<WebUser>,
 }
 
+impl Default for WebUsers {
+    fn default() -> Self {
+        Self {
+            version: AUTH_FILE_VERSION,
+            auth_epoch: INITIAL_AUTH_EPOCH,
+            allow_unauthenticated_to_view: false,
+            users: Vec::new(),
+        }
+    }
+}
+
 impl WebUsers {
-    fn path() -> Result<PathBuf, AuthenticationError> {
+    fn base_path() -> Result<PathBuf, AuthenticationError> {
         let base_path = crate::load_config()
             .map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?
             .lqos_directory
             .clone();
-        let filename = Path::new(&base_path).join("lqusers.toml");
-        Ok(filename)
+        Ok(PathBuf::from(base_path))
+    }
+
+    fn primary_path() -> Result<PathBuf, AuthenticationError> {
+        Ok(Self::base_path()?.join(CURRENT_AUTH_FILE_NAME))
+    }
+
+    fn legacy_path() -> Result<PathBuf, AuthenticationError> {
+        Ok(Self::base_path()?.join(LEGACY_AUTH_FILE_NAME))
+    }
+
+    /// Returns the current `lqusers.toml` path.
+    pub fn path() -> Result<PathBuf, AuthenticationError> {
+        Self::primary_path()
+    }
+
+    /// Returns the existing auth file path, checking the legacy filename as a fallback.
+    pub fn existing_path() -> Result<Option<PathBuf>, AuthenticationError> {
+        let current = Self::primary_path()?;
+        if current.exists() {
+            return Ok(Some(current));
+        }
+
+        let legacy = Self::legacy_path()?;
+        if legacy.exists() {
+            return Ok(Some(legacy));
+        }
+
+        Ok(None)
     }
 
     /// Is the list of users empty?
@@ -89,64 +168,154 @@ impl WebUsers {
         self.users.is_empty()
     }
 
+    fn normalize_for_save(&self) -> Self {
+        let mut normalized = self.clone();
+        normalized.version = AUTH_FILE_VERSION;
+        if normalized.auth_epoch == 0 {
+            normalized.auth_epoch = INITIAL_AUTH_EPOCH;
+        }
+        normalized
+    }
+
     fn save_to_disk(&self) -> Result<(), AuthenticationError> {
-        let path = Self::path()?;
-        let new_contents =
-            toml_edit::ser::to_string(&self).map_err(AuthenticationError::SerializationError)?;
-        if path.exists() && remove_file(&path).is_err() {
-            error!("Unable to delete web users file");
-            return Err(AuthenticationError::UnableToDelete);
+        let path = Self::primary_path()?;
+        let tmp_path = path.with_extension(format!("toml.tmp-{}", Uuid::new_v4()));
+        let normalized = self.normalize_for_save();
+        let new_contents = toml_edit::ser::to_string(&normalized)
+            .map_err(AuthenticationError::SerializationError)?;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .map_err(|e| {
+                error!(
+                    "Unable to open temporary auth file {:?} for writing: {e}",
+                    tmp_path
+                );
+                AuthenticationError::UnableToWrite
+            })?;
+        file.write_all(new_contents.as_bytes()).map_err(|e| {
+            error!("Unable to write temporary auth file {:?}: {e}", tmp_path);
+            AuthenticationError::UnableToWrite
+        })?;
+        drop(file);
+
+        rename(&tmp_path, &path).map_err(|e| {
+            error!(
+                "Unable to rename temporary auth file {:?} to {:?}: {e}",
+                tmp_path, path
+            );
+            let _ = remove_file(&tmp_path);
+            AuthenticationError::UnableToWrite
+        })?;
+
+        let legacy_path = Self::legacy_path()?;
+        if legacy_path != path
+            && legacy_path.exists()
+            && let Err(e) = remove_file(&legacy_path)
+        {
+            warn!("Unable to remove legacy auth file {:?}: {e}", legacy_path);
         }
-        if let Ok(mut file) = OpenOptions::new().write(true).create_new(true).open(path) {
-            if file.write_all(new_contents.as_bytes()).is_err() {
-                error!("Unable to write web users file to disk.");
-                return Err(AuthenticationError::UnableToWrite);
-            }
-        } else {
-            error!("Unable to open web users file for writing.");
-            return Err(AuthenticationError::UnableToWrite);
+
+        Ok(())
+    }
+
+    fn migrate_if_needed(&mut self, loaded_from: &Path) -> Result<(), AuthenticationError> {
+        let current_path = Self::primary_path()?;
+        let loaded_from_legacy_path = loaded_from != current_path;
+        let mut needs_rewrite = false;
+
+        if self.version != AUTH_FILE_VERSION {
+            self.version = AUTH_FILE_VERSION;
+            needs_rewrite = true;
         }
+
+        if self.auth_epoch == 0 {
+            self.auth_epoch = INITIAL_AUTH_EPOCH;
+            needs_rewrite = true;
+        }
+
+        if loaded_from_legacy_path {
+            needs_rewrite = true;
+        }
+
+        if needs_rewrite {
+            self.bump_auth_epoch();
+            self.save_to_disk()?;
+        }
+
         Ok(())
     }
 
     /// Does the user's file exist? True if it does, false otherwise.
     pub fn does_users_file_exist() -> Result<bool, AuthenticationError> {
-        Ok(Self::path()?.exists())
+        Ok(Self::existing_path()?.is_some())
     }
 
-    /// Try to load `lqusers.toml`. If it is unavailable, create a new--empty--
-    /// file.
+    /// Try to load `lqusers.toml`, creating a new version 2 file if no auth file exists.
     pub fn load_or_create() -> Result<Self, AuthenticationError> {
-        let path = Self::path()?;
-        if !path.exists() {
-            // Create a new users file, save it and return the
-            // empty file
+        if let Some(path) = Self::existing_path()? {
+            let raw = read_to_string(&path).map_err(|e| {
+                error!("Unable to read auth file {:?}: {e}", path);
+                AuthenticationError::UnableToRead
+            })?;
+            let mut users: Self = toml_edit::de::from_str(&raw).map_err(|e| {
+                error!("Unable to deserialize auth file {:?}: {e}", path);
+                AuthenticationError::UnableToParse
+            })?;
+            users.migrate_if_needed(&path)?;
+            Ok(users)
+        } else {
             let new_users = Self::default();
             new_users.save_to_disk()?;
             Ok(new_users)
-        } else {
-            // Load from disk
-            if let Ok(raw) = read_to_string(path) {
-                let parse_result = toml_edit::de::from_str(&raw);
-                if let Ok(users) = parse_result {
-                    Ok(users)
-                } else {
-                    error!("Unable to deserialize lqusers.toml. Error in next message.");
-                    error!("{:?}", parse_result);
-                    Err(AuthenticationError::UnableToParse)
-                }
-            } else {
-                error!("Unable to read lqusers.toml");
-                Err(AuthenticationError::UnableToRead)
-            }
         }
     }
 
-    fn hash_password(password: &str) -> String {
-        let salted = format!("!x{password}_LibreQosLikesPasswordsForDinner");
+    fn hash_password(password: &str) -> Result<String, AuthenticationError> {
+        let salt = SaltString::generate(&mut OsRng);
+        Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map(|hash| hash.to_string())
+            .map_err(AuthenticationError::PasswordHashError)
+    }
+
+    fn hash_password_legacy(password: &str) -> String {
+        let salted = format!("!x{password}{LEGACY_PASSWORD_PEPPER}");
         let mut sha256 = Sha256::new();
         sha256.update(salted);
         format!("{:X}", sha256.finalize())
+    }
+
+    fn verify_password(
+        password: &str,
+        password_hash: &str,
+    ) -> Result<PasswordVerification, AuthenticationError> {
+        if password_hash.starts_with("$argon2") {
+            let parsed =
+                PasswordHash::new(password_hash).map_err(AuthenticationError::PasswordHashError)?;
+            Ok(PasswordVerification {
+                valid: Argon2::default()
+                    .verify_password(password.as_bytes(), &parsed)
+                    .is_ok(),
+                needs_rehash: false,
+            })
+        } else {
+            Ok(PasswordVerification {
+                valid: Self::hash_password_legacy(password) == password_hash,
+                needs_rehash: true,
+            })
+        }
+    }
+
+    fn bump_auth_epoch(&mut self) {
+        self.auth_epoch = self.auth_epoch.saturating_add(1).max(INITIAL_AUTH_EPOCH);
+    }
+
+    /// Returns the current auth epoch used to revoke signed sessions.
+    pub fn auth_epoch(&self) -> u64 {
+        self.auth_epoch
     }
 
     /// If a user exists with this username, update their details to the
@@ -157,25 +326,23 @@ impl WebUsers {
         username: &str,
         password: &str,
         role: UserRole,
-    ) -> Result<String, AuthenticationError> {
-        let token; // Assigned in a branch
+    ) -> Result<(), AuthenticationError> {
+        let password_hash = Self::hash_password(password)?;
         if let Some(user) = self.users.iter_mut().find(|u| u.username == username) {
-            user.password_hash = Self::hash_password(password);
+            user.password_hash = password_hash;
             user.role = role;
-            token = user.token.clone();
         } else {
-            token = Uuid::new_v4().to_string();
             let new_user = WebUser {
                 username: username.to_string(),
-                password_hash: Self::hash_password(password),
+                password_hash,
                 role,
-                token: token.clone(),
             };
             self.users.push(new_user);
         }
 
+        self.bump_auth_epoch();
         self.save_to_disk()?;
-        Ok(token)
+        Ok(())
     }
 
     /// Update an existing user, optionally changing their password.
@@ -189,20 +356,18 @@ impl WebUsers {
         username: &str,
         password: Option<&str>,
         role: UserRole,
-    ) -> Result<String, AuthenticationError> {
-        let token;
-        if let Some(user) = self.users.iter_mut().find(|u| u.username == username) {
-            if let Some(password) = password {
-                user.password_hash = Self::hash_password(password);
-            }
-            user.role = role;
-            token = user.token.clone();
-        } else {
+    ) -> Result<(), AuthenticationError> {
+        let Some(user) = self.users.iter_mut().find(|u| u.username == username) else {
             return Err(AuthenticationError::UserNotFound);
-        }
+        };
 
+        if let Some(password) = password {
+            user.password_hash = Self::hash_password(password)?;
+        }
+        user.role = role;
+        self.bump_auth_epoch();
         self.save_to_disk()?;
-        Ok(token)
+        Ok(())
     }
 
     /// Delete a user from `lqusers.toml`
@@ -213,48 +378,42 @@ impl WebUsers {
             error!("User {username} not found, hence not deleted.");
             return Err(AuthenticationError::UserNotFound);
         }
+        self.bump_auth_epoch();
         self.save_to_disk()?;
         Ok(())
     }
 
-    /// Attempt a login with the specified username and password. If
-    /// the login succeeds, returns the publically shareable token that
-    /// uniquely identifies the user a a string. If it fails, returns an
-    /// `Err`.
-    pub fn login(&self, username: &str, password: &str) -> Result<String, AuthenticationError> {
-        let hash = Self::hash_password(password);
-        if let Some(user) = self
-            .users
-            .iter()
-            .find(|u| u.username == username && u.password_hash == hash)
-        {
-            Ok(user.token.clone())
-        } else if self.allow_unauthenticated_to_view {
-            Ok("default".to_string())
-        } else {
-            Err(AuthenticationError::InvalidLogin)
-        }
-    }
+    /// Attempt a login with the specified username and password. If the login
+    /// succeeds, returns the authenticated user details and transparently
+    /// upgrades legacy password hashes to Argon2id.
+    pub fn authenticate(
+        &mut self,
+        username: &str,
+        password: &str,
+    ) -> Result<AuthenticatedUser, AuthenticationError> {
+        let Some(index) = self.users.iter().position(|u| u.username == username) else {
+            return Err(AuthenticationError::InvalidLogin);
+        };
 
-    /// Given a token, lookup the matching user and return their role.
-    pub fn get_role_from_token(&self, token: &str) -> Result<UserRole, AuthenticationError> {
-        if let Some(user) = self.users.iter().find(|u| u.token == token) {
-            Ok(user.role)
-        } else if self.allow_unauthenticated_to_view {
-            Ok(UserRole::ReadOnly)
-        } else {
-            warn!("Token {token} not found, invalid data access attempt.");
-            Err(AuthenticationError::InvalidToken)
+        let verification = Self::verify_password(password, &self.users[index].password_hash)?;
+        if !verification.valid {
+            return Err(AuthenticationError::InvalidLogin);
         }
-    }
 
-    /// Given a token, lookup the matching user and return their username.
-    pub fn get_username(&self, token: &str) -> String {
-        if let Some(user) = self.users.iter().find(|u| u.token == token) {
-            user.username.clone()
-        } else {
-            "Anonymous".to_string()
+        let mut password_upgraded = false;
+        if verification.needs_rehash {
+            self.users[index].password_hash = Self::hash_password(password)?;
+            self.bump_auth_epoch();
+            self.save_to_disk()?;
+            password_upgraded = true;
         }
+
+        Ok(AuthenticatedUser {
+            username: self.users[index].username.clone(),
+            role: self.users[index].role,
+            auth_epoch: self.auth_epoch,
+            password_upgraded,
+        })
     }
 
     /// Dump all users to the console.
@@ -275,6 +434,7 @@ impl WebUsers {
     /// for demonstration purposes.
     pub fn allow_anonymous(&mut self, allow: bool) -> Result<(), AuthenticationError> {
         self.allow_unauthenticated_to_view = allow;
+        self.bump_auth_epoch();
         self.save_to_disk()?;
         Ok(())
     }
@@ -286,16 +446,6 @@ impl WebUsers {
 }
 
 /// Errors that can occur while managing web-UI authentication.
-///
-/// This enum groups failures encountered by helpers in this module while
-/// interacting with `lqusers.toml` and related configuration, including:
-/// - Resolving the LibreQoS config directory via `crate::load_config`.
-/// - Serializing/deserializing user data with `toml_edit`.
-/// - Reading, writing, or deleting the `lqusers.toml` file on disk.
-/// - Looking up users, validating credentials, and resolving tokens.
-///
-/// Each variant implements a concise display message via `thiserror::Error`
-/// and is suitable for logging or bubbling up to higher layers.
 #[derive(Error, Debug)]
 pub enum AuthenticationError {
     /// Failed to load the main configuration (`/etc/lqos.conf`) to
@@ -306,11 +456,8 @@ pub enum AuthenticationError {
     /// `lqusers.toml` to disk.
     #[error("Unable to serialize to TOML")]
     SerializationError(toml_edit::ser::Error),
-    /// Failed to remove an existing `lqusers.toml` prior to rewriting it.
-    #[error("Unable to remove existing web users file")]
-    UnableToDelete,
-    /// Failed to create or write `lqusers.toml` (e.g., permissions or IO).
-    #[error("Unable to open lqusers.toml for writing. Check permissions?")]
+    /// Failed to persist `lqusers.toml` (e.g., permissions or IO).
+    #[error("Unable to write lqusers.toml")]
     UnableToWrite,
     /// Failed to read `lqusers.toml` from disk.
     #[error("Unable to read lqusers.toml")]
@@ -318,13 +465,13 @@ pub enum AuthenticationError {
     /// Failed to parse `lqusers.toml` contents as valid TOML.
     #[error("Unable to parse lqusers.toml")]
     UnableToParse,
+    /// Password hash creation or verification failed.
+    #[error("Unable to process password hash")]
+    PasswordHashError(argon2::password_hash::Error),
     /// Attempted to remove or reference a user that does not exist.
     #[error("User not found")]
     UserNotFound,
-    /// Username/password did not match (and anonymous read-only is disabled).
+    /// Username/password did not match.
     #[error("Invalid Login")]
     InvalidLogin,
-    /// Provided token did not match any user (and anonymous read-only is disabled).
-    #[error("Invalid User Token")]
-    InvalidToken,
 }

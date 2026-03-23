@@ -74,5 +74,12 @@ export function bakeryPreflightBadge(preflight) {
     if (preflight.ok) {
         return mkBadge("Within Budget", "bg-success-subtle text-success border border-success-subtle", preflight.message || "");
     }
+    const interfaces = Array.isArray(preflight.interfaces) ? preflight.interfaces : [];
+    const safeBudget = Number.isFinite(preflight.safeBudget) ? preflight.safeBudget : null;
+    const overBudget = safeBudget !== null
+        && interfaces.some((entry) => Number.isFinite(entry?.plannedQdiscs) && entry.plannedQdiscs > safeBudget);
+    if (!overBudget && preflight.memoryOk === false) {
+        return mkBadge("Memory Blocked", "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
+    }
     return mkBadge("Over Budget", "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
 }

@@ -21,6 +21,8 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
         return TreeguardStatusData {
             enabled: false,
             dry_run: true,
+            paused_for_bakery_reload: false,
+            pause_reason: None,
             cpu_max_pct: None,
             managed_nodes: 0,
             managed_circuits: 0,
@@ -52,6 +54,8 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
     TreeguardStatusData {
         enabled: tg.enabled,
         dry_run: tg.dry_run,
+        paused_for_bakery_reload: false,
+        pause_reason: None,
         cpu_max_pct: None,
         managed_nodes: if tg.links.all_nodes {
             0

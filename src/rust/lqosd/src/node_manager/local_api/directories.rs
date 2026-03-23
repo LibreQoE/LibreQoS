@@ -206,7 +206,7 @@ pub fn treeguard_metadata_summary() -> TreeGuardMetadataSummary {
         .iter()
         .filter(|(_, node)| {
             let name = node.name.trim();
-            !name.is_empty() && name != "Root" && node.is_virtual
+            !name.is_empty() && name != "Root" && node.runtime_virtualized
         })
         .count();
 

@@ -322,6 +322,10 @@ pub struct RamData {
 pub struct BakeryCapacityInterfaceData {
     pub name: String,
     pub planned_qdiscs: usize,
+    pub infra_qdiscs: usize,
+    pub cake_qdiscs: usize,
+    pub fq_codel_qdiscs: usize,
+    pub estimated_memory_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -331,6 +335,10 @@ pub struct BakeryPreflightData {
     pub message: String,
     pub safe_budget: usize,
     pub hard_limit: usize,
+    pub estimated_total_memory_bytes: u64,
+    pub memory_available_bytes: Option<u64>,
+    pub memory_guard_min_available_bytes: u64,
+    pub memory_ok: bool,
     pub interfaces: Vec<BakeryCapacityInterfaceData>,
 }
 
@@ -340,6 +348,11 @@ pub struct BakeryStatusState {
     pub active_circuits: usize,
     pub mode: String,
     pub current_action_started_unix: Option<u64>,
+    pub current_apply_phase: Option<String>,
+    pub current_apply_total_tc_commands: usize,
+    pub current_apply_completed_tc_commands: usize,
+    pub current_apply_total_chunks: usize,
+    pub current_apply_completed_chunks: usize,
     pub last_success_unix: Option<u64>,
     pub last_failure_unix: Option<u64>,
     pub last_failure_summary: Option<String>,
@@ -371,6 +384,8 @@ pub struct BakeryActivityEntry {
 pub struct TreeguardStatusData {
     pub enabled: bool,
     pub dry_run: bool,
+    pub paused_for_bakery_reload: bool,
+    pub pause_reason: Option<String>,
     pub cpu_max_pct: Option<u8>,
     pub managed_nodes: usize,
     pub managed_circuits: usize,

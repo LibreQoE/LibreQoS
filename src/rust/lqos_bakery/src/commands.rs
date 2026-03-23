@@ -8,6 +8,7 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::mpsc::Sender as ReplySender;
 use tracing::{debug, info};
 
 #[derive(Debug, Clone, Copy, Allocative)]
@@ -172,6 +173,16 @@ pub enum BakeryCommands {
         /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
     },
+    /// Runtime TreeGuard request to virtualize or restore a non-top-level site without a full reload.
+    TreeGuardSetNodeVirtual {
+        /// Stable Bakery site hash derived from the node name.
+        site_hash: i64,
+        /// Whether the site should be virtualized (`true`) or restored (`false`).
+        virtualized: bool,
+        /// Optional synchronous reply channel for immediate success/failure reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
 }
 
 impl BakeryCommands {
@@ -266,9 +277,8 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        info!("Clearing prior settings");
+        info!("Clearing prior root qdiscs before MQ setup");
         if config.on_a_stick_mode() {
-            // Clear just the MQ on the ISP-facing interface
             result.push(vec![
                 "qdisc".to_string(),
                 "del".to_string(),
@@ -960,5 +970,90 @@ impl BakeryCommands {
         }
 
         Some(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BakeryCommands, ExecutionMode};
+    use lqos_config::{Config, SingleInterfaceConfig};
+    use std::sync::Arc;
+
+    fn is_root_delete(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 5
+            && cmd[0] == "qdisc"
+            && cmd[1] == "del"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+    }
+
+    fn is_root_replace_mq(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 8
+            && cmd[0] == "qdisc"
+            && cmd[1] == "replace"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+            && cmd[5] == "handle"
+            && cmd[6] == "7FFF:"
+            && cmd[7] == "mq"
+    }
+
+    #[test]
+    fn mq_setup_bridge_mode_emits_root_delete_before_replace() {
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_delete(&commands[0], &config.isp_interface()));
+        assert!(is_root_delete(&commands[1], &config.internet_interface()));
+        assert!(is_root_replace_mq(&commands[2], &config.isp_interface()));
+        let internet_replace_idx = commands
+            .iter()
+            .position(|cmd| is_root_replace_mq(cmd, &config.internet_interface()))
+            .expect("expected internet-interface root replace");
+        assert!(
+            internet_replace_idx > 1,
+            "internet-interface root replace should occur after both deletes"
+        );
+    }
+
+    #[test]
+    fn mq_setup_on_a_stick_emits_single_root_delete_before_replace() {
+        let mut cfg = Config::default();
+        cfg.bridge = None;
+        cfg.single_interface = Some(SingleInterfaceConfig::default());
+        let config = Arc::new(cfg);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 3,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_delete(&commands[0], &config.isp_interface()));
+        assert!(is_root_replace_mq(&commands[1], &config.isp_interface()));
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| is_root_delete(cmd, &config.isp_interface()))
+                .count(),
+            1,
+            "expected a single root delete on the shared interface"
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| is_root_replace_mq(cmd, &config.isp_interface()))
+                .count(),
+            1,
+            "expected a single root replace on the shared interface"
+        );
     }
 }

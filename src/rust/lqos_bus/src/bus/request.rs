@@ -13,6 +13,14 @@ pub struct BakeryCapacityReportInterface {
     pub name: String,
     /// Planned qdisc count for the interface.
     pub planned_qdiscs: usize,
+    /// Planned infrastructure qdiscs (`mq`, `htb`, etc.) for the interface.
+    pub infra_qdiscs: usize,
+    /// Planned `cake` leaf qdiscs for the interface.
+    pub cake_qdiscs: usize,
+    /// Planned `fq_codel` leaf qdiscs for the interface.
+    pub fq_codel_qdiscs: usize,
+    /// Estimated kernel memory cost for the interface's planned qdiscs.
+    pub estimated_memory_bytes: u64,
 }
 
 /// Source system for an urgent issue
@@ -190,6 +198,9 @@ pub enum BusRequest {
 
     /// Requests that the configuration be updated
     UpdateLqosdConfig(Box<lqos_config::Config>),
+
+    /// Invalidate cached Node Manager authentication state.
+    InvalidateAuthCache,
 
     /// Request that we start watching a circuit's queue
     WatchQueue(String),
@@ -379,6 +390,14 @@ pub enum BusRequest {
         safe_budget: usize,
         /// Hard kernel limit for reference.
         hard_limit: usize,
+        /// Estimated total kernel memory cost of the planned qdisc model.
+        estimated_total_memory_bytes: u64,
+        /// Current host memory available during preflight, if known.
+        memory_available_bytes: Option<u64>,
+        /// Memory floor that must remain available before the apply proceeds.
+        memory_guard_min_available_bytes: u64,
+        /// Whether the memory preflight passed.
+        memory_ok: bool,
         /// Per-interface planned qdisc counts.
         interfaces: Vec<BakeryCapacityReportInterface>,
     },

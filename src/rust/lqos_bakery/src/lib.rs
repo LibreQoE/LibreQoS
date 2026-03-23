@@ -28,7 +28,7 @@ mod utils;
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::RwLock;
 use std::collections::VecDeque;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -40,13 +40,20 @@ use crate::commands::ExecutionMode;
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::qdisc_handles::QdiscHandleState;
 use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32};
-use crate::utils::{ExecuteResult, execute_in_memory, write_command_file};
+use crate::utils::{
+    ExecuteResult, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
+    read_live_qdisc_handle_majors, read_memory_snapshot, write_command_file,
+};
 pub use commands::BakeryCommands;
 use lqos_bus::{
     BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
     UrgentSource,
 };
-use lqos_config::{Config, LazyQueueMode};
+use lqos_config::{
+    CircuitIdentityGroupInput, Config, LazyQueueMode, PlannerCircuitIdentityState,
+    PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode,
+    TopLevelPlannerParams, plan_class_identities, plan_top_level_assignments,
+};
 use qdisc_handles::MqDeviceLayout;
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
@@ -63,7 +70,12 @@ enum MigrationStage {
 #[derive(Clone, Debug)]
 struct Migration {
     circuit_hash: i64,
-    // Parent handles and majors
+    // Old parent handles and majors
+    old_parent_class_id: TcHandle,
+    old_up_parent_class_id: TcHandle,
+    old_class_major: u16,
+    old_up_class_major: u16,
+    // New parent handles and majors
     parent_class_id: TcHandle,
     up_parent_class_id: TcHandle,
     class_major: u16,
@@ -94,6 +106,15 @@ struct Migration {
 struct StormguardOverrideKey {
     interface: String,
     class: TcHandle,
+}
+
+#[derive(Clone, Debug)]
+struct VirtualizedSiteState {
+    site: Arc<BakeryCommands>,
+    saved_sites: HashMap<i64, Arc<BakeryCommands>>,
+    saved_circuits: HashMap<i64, Arc<BakeryCommands>>,
+    active_sites: HashMap<i64, Arc<BakeryCommands>>,
+    active_circuits: HashMap<i64, Arc<BakeryCommands>>,
 }
 
 fn parse_ip_list(s: &str) -> Vec<String> {
@@ -206,6 +227,91 @@ fn build_temp_add_cmd(
     }
 }
 
+fn queue_live_migration(
+    old_cmd: &BakeryCommands,
+    new_cmd: &Arc<BakeryCommands>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &HashMap<i64, u64>,
+    migrations: &mut HashMap<i64, Migration>,
+) -> bool {
+    let BakeryCommands::AddCircuit {
+        circuit_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        download_bandwidth_min,
+        upload_bandwidth_min,
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        class_major,
+        up_class_major,
+        down_qdisc_handle,
+        up_qdisc_handle,
+        ip_addresses,
+        sqm_override,
+        ..
+    } = new_cmd.as_ref()
+    else {
+        return false;
+    };
+
+    let Some(_) = live_circuits.get(circuit_hash) else {
+        return false;
+    };
+
+    let BakeryCommands::AddCircuit {
+        parent_class_id: old_parent_class_id,
+        up_parent_class_id: old_up_parent_class_id,
+        class_minor: old_minor,
+        download_bandwidth_min: old_down_min,
+        upload_bandwidth_min: old_up_min,
+        download_bandwidth_max: old_down_max,
+        upload_bandwidth_max: old_up_max,
+        class_major: old_class_major,
+        up_class_major: old_up_class_major,
+        ..
+    } = old_cmd
+    else {
+        return false;
+    };
+
+    let Some(shadow_minor) = find_free_minor(circuits, parent_class_id, up_parent_class_id) else {
+        return false;
+    };
+
+    let mig = Migration {
+        circuit_hash: *circuit_hash,
+        old_parent_class_id: *old_parent_class_id,
+        old_up_parent_class_id: *old_up_parent_class_id,
+        old_class_major: *old_class_major,
+        old_up_class_major: *old_up_class_major,
+        parent_class_id: *parent_class_id,
+        up_parent_class_id: *up_parent_class_id,
+        class_major: *class_major,
+        up_class_major: *up_class_major,
+        down_qdisc_handle: *down_qdisc_handle,
+        up_qdisc_handle: *up_qdisc_handle,
+        old_down_min: *old_down_min,
+        old_down_max: *old_down_max,
+        old_up_min: *old_up_min,
+        old_up_max: *old_up_max,
+        new_down_min: *download_bandwidth_min,
+        new_down_max: *download_bandwidth_max,
+        new_up_min: *upload_bandwidth_min,
+        new_up_max: *upload_bandwidth_max,
+        old_minor: *old_minor,
+        shadow_minor,
+        final_minor: *class_minor,
+        ips: parse_ip_list(ip_addresses),
+        sqm_override: sqm_override.clone(),
+        stage: MigrationStage::PrepareShadow,
+    };
+
+    migrations.insert(*circuit_hash, mig);
+    circuits.insert(*circuit_hash, Arc::clone(new_cmd));
+    true
+}
+
 /// Count of Bakery-Managed circuits that are currently active.
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// True while Bakery is applying a full reload batch to `tc`.
@@ -214,6 +320,24 @@ static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 65_534;
 /// Conservative operational limit used to fail a full reload before qdisc handle exhaustion.
 pub const SAFE_QDISC_BUDGET_PER_INTERFACE: usize = 65_000;
+/// Conservative estimated kernel-memory cost of a non-leaf infrastructure qdisc.
+///
+/// These weights are not kernel ABI sizes. They are deliberately conservative
+/// safety estimates used to block or stop obviously risky full reloads before
+/// the host reaches OOM pressure.
+pub const INFRA_QDISC_ESTIMATED_MEMORY_BYTES: u64 = 16 * 1024;
+/// Conservative estimated kernel-memory cost of an `fq_codel` leaf qdisc.
+///
+/// This remains intentionally lower than CAKE, but is biased high enough to
+/// prefer false-positive safety blocks over OOM risk on large reloads.
+pub const FQ_CODEL_QDISC_ESTIMATED_MEMORY_BYTES: u64 = 64 * 1024;
+/// Conservative estimated kernel-memory cost of a `cake` leaf qdisc.
+///
+/// Tuned upward after live production capture showed summed CAKE runtime memory
+/// substantially exceeding the earlier heuristic during busy periods.
+pub const CAKE_QDISC_ESTIMATED_MEMORY_BYTES: u64 = 512 * 1024;
+/// Minimum memory headroom Bakery tries to leave unused after a projected or in-flight apply.
+pub const BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES: u64 = 768 * 1024 * 1024;
 /// Maximum number of mapped circuits allowed without Insight.
 const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
 /// Minimum interval between repeated mapped-circuit-limit urgent issues.
@@ -221,6 +345,7 @@ const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
 /// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
 static LAST_CIRCUIT_LIMIT_URGENT_TS: AtomicU64 = AtomicU64::new(0);
 const BAKERY_EVENT_LIMIT: usize = 50;
+const FULL_RELOAD_TC_CHUNK_SIZE: usize = 2_500;
 
 /// High-level Bakery execution mode for operator-facing status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -251,6 +376,14 @@ pub struct BakeryCapacityInterfaceSnapshot {
     pub name: String,
     /// Planned qdisc count for that interface.
     pub planned_qdiscs: usize,
+    /// Planned infrastructure qdiscs (`mq`, `htb`, etc.) for that interface.
+    pub infra_qdiscs: usize,
+    /// Planned `cake` leaf qdiscs for that interface.
+    pub cake_qdiscs: usize,
+    /// Planned `fq_codel` leaf qdiscs for that interface.
+    pub fq_codel_qdiscs: usize,
+    /// Estimated kernel memory cost for that interface's planned qdiscs.
+    pub estimated_memory_bytes: u64,
 }
 
 /// Last qdisc preflight result retained for Bakery UI/status.
@@ -264,6 +397,14 @@ pub struct BakeryPreflightSnapshot {
     pub safe_budget: usize,
     /// Hard kernel limit used for reference.
     pub hard_limit: usize,
+    /// Estimated total kernel memory cost of the planned qdisc model.
+    pub estimated_total_memory_bytes: u64,
+    /// Current host memory available during the preflight, if known.
+    pub memory_available_bytes: Option<u64>,
+    /// Memory floor that must remain available before the apply proceeds.
+    pub memory_guard_min_available_bytes: u64,
+    /// Whether the memory preflight passed.
+    pub memory_ok: bool,
     /// Per-interface planned qdisc counts.
     pub interfaces: Vec<BakeryCapacityInterfaceSnapshot>,
 }
@@ -275,6 +416,16 @@ pub struct BakeryStatusSnapshot {
     pub mode: BakeryMode,
     /// Unix timestamp when the current action started, if any.
     pub current_action_started_unix: Option<u64>,
+    /// Current apply phase for the in-flight action, if any.
+    pub current_apply_phase: Option<String>,
+    /// Total `tc` commands planned for the in-flight action.
+    pub current_apply_total_tc_commands: usize,
+    /// `tc` commands already completed for the in-flight action.
+    pub current_apply_completed_tc_commands: usize,
+    /// Total apply chunks planned for the in-flight action.
+    pub current_apply_total_chunks: usize,
+    /// Apply chunks already completed for the in-flight action.
+    pub current_apply_completed_chunks: usize,
     /// Currently active circuit count.
     pub active_circuits: usize,
     /// Unix timestamp of the last successful apply, if any.
@@ -316,6 +467,11 @@ pub struct BakeryActivityEntry {
 struct BakeryTelemetryState {
     mode: BakeryMode,
     current_action_started_unix: Option<u64>,
+    current_apply_phase: Option<String>,
+    current_apply_total_tc_commands: usize,
+    current_apply_completed_tc_commands: usize,
+    current_apply_total_chunks: usize,
+    current_apply_completed_chunks: usize,
     last_success_unix: Option<u64>,
     last_failure_unix: Option<u64>,
     last_failure_summary: Option<String>,
@@ -346,6 +502,11 @@ impl Default for BakeryTelemetryState {
         Self {
             mode: BakeryMode::Idle,
             current_action_started_unix: None,
+            current_apply_phase: None,
+            current_apply_total_tc_commands: 0,
+            current_apply_completed_tc_commands: 0,
+            current_apply_total_chunks: 0,
+            current_apply_completed_chunks: 0,
             last_success_unix: None,
             last_failure_unix: None,
             last_failure_summary: None,
@@ -376,6 +537,7 @@ impl Drop for FullReloadScope {
     fn drop(&mut self) {
         FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
         let mut state = telemetry_state().write();
+        clear_bakery_apply_progress(&mut state);
         if state.mode == BakeryMode::ApplyingFullReload {
             state.mode = BakeryMode::Idle;
             state.current_action_started_unix = None;
@@ -417,14 +579,38 @@ fn push_bakery_event(event: &str, status: &str, summary: String) {
     }
 }
 
+fn clear_bakery_apply_progress(state: &mut BakeryTelemetryState) {
+    state.current_apply_phase = None;
+    state.current_apply_total_tc_commands = 0;
+    state.current_apply_completed_tc_commands = 0;
+    state.current_apply_total_chunks = 0;
+    state.current_apply_completed_chunks = 0;
+}
+
 fn mark_bakery_action_started(mode: BakeryMode, event: &str, summary: String) {
     let ts = current_timestamp();
     {
         let mut state = telemetry_state().write();
         state.mode = mode;
         state.current_action_started_unix = Some(ts);
+        clear_bakery_apply_progress(&mut state);
     }
     push_bakery_event(event, "info", summary);
+}
+
+fn update_bakery_apply_progress(
+    phase: Option<&str>,
+    total_tc_commands: usize,
+    completed_tc_commands: usize,
+    total_chunks: usize,
+    completed_chunks: usize,
+) {
+    let mut state = telemetry_state().write();
+    state.current_apply_phase = phase.map(str::to_string);
+    state.current_apply_total_tc_commands = total_tc_commands;
+    state.current_apply_completed_tc_commands = completed_tc_commands;
+    state.current_apply_total_chunks = total_chunks;
+    state.current_apply_completed_chunks = completed_chunks;
 }
 
 fn mark_bakery_action_finished(metrics: BakeryApplyMetrics<'_>) {
@@ -443,6 +629,7 @@ fn mark_bakery_action_finished(metrics: BakeryApplyMetrics<'_>) {
             state.last_failure_unix = Some(ts);
             state.last_failure_summary = Some(metrics.summary.to_string());
         }
+        clear_bakery_apply_progress(&mut state);
         if state.mode != BakeryMode::ApplyingFullReload {
             state.mode = BakeryMode::Idle;
             state.current_action_started_unix = None;
@@ -465,6 +652,11 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
     BakeryStatusSnapshot {
         mode: state.mode,
         current_action_started_unix: state.current_action_started_unix,
+        current_apply_phase: state.current_apply_phase,
+        current_apply_total_tc_commands: state.current_apply_total_tc_commands,
+        current_apply_completed_tc_commands: state.current_apply_completed_tc_commands,
+        current_apply_total_chunks: state.current_apply_total_chunks,
+        current_apply_completed_chunks: state.current_apply_completed_chunks,
         active_circuits: ACTIVE_CIRCUITS.load(Ordering::Relaxed),
         last_success_unix: state.last_success_unix,
         last_failure_unix: state.last_failure_unix,
@@ -513,10 +705,7 @@ fn summarize_apply_result(purpose: &str, result: &ExecuteResult) -> String {
     }
 }
 
-fn execute_and_record_live_change(
-    command_buffer: &Vec<Vec<String>>,
-    purpose: &str,
-) -> ExecuteResult {
+fn execute_and_record_live_change(command_buffer: &[Vec<String>], purpose: &str) -> ExecuteResult {
     let (total, class_commands, qdisc_commands) = count_tc_command_types(command_buffer);
     mark_bakery_action_started(
         BakeryMode::ApplyingLiveChange,
@@ -540,13 +729,36 @@ fn execute_and_record_live_change(
 
 /// Estimated qdisc-handle usage for a planned full reload.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QdiscInterfaceEstimate {
+    /// Total planned qdiscs for the interface.
+    pub planned_qdiscs: usize,
+    /// Planned infrastructure qdiscs (`mq`, `htb`, etc.) for the interface.
+    pub infra_qdiscs: usize,
+    /// Planned CAKE leaf qdiscs for the interface.
+    pub cake_qdiscs: usize,
+    /// Planned fq_codel leaf qdiscs for the interface.
+    pub fq_codel_qdiscs: usize,
+    /// Estimated kernel memory cost for the interface's planned qdiscs.
+    pub estimated_memory_bytes: u64,
+}
+
+/// Estimated qdisc budget and conservative memory-safety forecast for a planned full reload.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QdiscBudgetEstimate {
     /// Estimated total qdisc count grouped by network interface name.
     pub interfaces: BTreeMap<String, usize>,
+    /// Detailed per-interface qdisc breakdown.
+    pub interface_details: BTreeMap<String, QdiscInterfaceEstimate>,
     /// Conservative operational limit enforced before a full reload is committed.
     pub safe_budget: usize,
     /// Kernel hard limit for the per-device qdisc-handle namespace.
     pub hard_limit: usize,
+    /// Estimated total kernel memory cost of the planned qdisc model.
+    pub estimated_total_memory_bytes: u64,
+    /// Current host memory snapshot used for preflight, if available.
+    pub memory_snapshot: Option<MemorySnapshot>,
+    /// Whether the memory preflight passed.
+    pub memory_ok: bool,
 }
 
 impl QdiscBudgetEstimate {
@@ -555,12 +767,64 @@ impl QdiscBudgetEstimate {
         self.interfaces
             .values()
             .all(|count| *count <= self.safe_budget)
+            && self.memory_ok
     }
 }
 
 fn find_arg_value<'a>(argv: &'a [String], key: &str) -> Option<&'a str> {
     argv.windows(2)
         .find_map(|pair| (pair[0] == key).then_some(pair[1].as_str()))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlannedQdiscKind {
+    Infra,
+    Cake,
+    FqCodel,
+}
+
+fn planned_qdisc_kind(argv: &[String]) -> Option<PlannedQdiscKind> {
+    if argv.len() < 2 || argv[0] != "qdisc" {
+        return None;
+    }
+    if !matches!(argv[1].as_str(), "add" | "replace") {
+        return None;
+    }
+
+    if argv.iter().any(|arg| arg == "cake") {
+        return Some(if planned_qdisc_is_leaf(argv) {
+            PlannedQdiscKind::Cake
+        } else {
+            PlannedQdiscKind::Infra
+        });
+    }
+    if argv.iter().any(|arg| arg == "fq_codel") {
+        return Some(if planned_qdisc_is_leaf(argv) {
+            PlannedQdiscKind::FqCodel
+        } else {
+            PlannedQdiscKind::Infra
+        });
+    }
+    Some(PlannedQdiscKind::Infra)
+}
+
+fn planned_qdisc_is_leaf(argv: &[String]) -> bool {
+    let Some(parent) = find_arg_value(argv, "parent") else {
+        return false;
+    };
+    let Ok(parent_handle) = TcHandle::from_string(parent) else {
+        return false;
+    };
+    let (_, minor) = parent_handle.get_major_minor();
+    minor != 1 && minor != 2
+}
+
+fn qdisc_kind_estimated_memory_bytes(kind: PlannedQdiscKind) -> u64 {
+    match kind {
+        PlannedQdiscKind::Infra => INFRA_QDISC_ESTIMATED_MEMORY_BYTES,
+        PlannedQdiscKind::Cake => CAKE_QDISC_ESTIMATED_MEMORY_BYTES,
+        PlannedQdiscKind::FqCodel => FQ_CODEL_QDISC_ESTIMATED_MEMORY_BYTES,
+    }
 }
 
 fn planned_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
@@ -591,6 +855,7 @@ pub fn estimate_full_reload_auto_qdisc_budget(
     queue: &[BakeryCommands],
 ) -> QdiscBudgetEstimate {
     let mut interfaces = BTreeMap::new();
+    let mut interface_details: BTreeMap<String, QdiscInterfaceEstimate> = BTreeMap::new();
     let mut seen_qdiscs = HashSet::new();
 
     for command in queue {
@@ -602,15 +867,50 @@ pub fn estimate_full_reload_auto_qdisc_budget(
                 continue;
             };
             if seen_qdiscs.insert((dev.clone(), identity)) {
-                *interfaces.entry(dev).or_insert(0) += 1;
+                let kind = planned_qdisc_kind(&argv).unwrap_or(PlannedQdiscKind::Infra);
+                *interfaces.entry(dev.clone()).or_insert(0) += 1;
+                let detail =
+                    interface_details
+                        .entry(dev)
+                        .or_insert_with(|| QdiscInterfaceEstimate {
+                            planned_qdiscs: 0,
+                            infra_qdiscs: 0,
+                            cake_qdiscs: 0,
+                            fq_codel_qdiscs: 0,
+                            estimated_memory_bytes: 0,
+                        });
+                detail.planned_qdiscs += 1;
+                match kind {
+                    PlannedQdiscKind::Infra => detail.infra_qdiscs += 1,
+                    PlannedQdiscKind::Cake => detail.cake_qdiscs += 1,
+                    PlannedQdiscKind::FqCodel => detail.fq_codel_qdiscs += 1,
+                }
+                detail.estimated_memory_bytes = detail
+                    .estimated_memory_bytes
+                    .saturating_add(qdisc_kind_estimated_memory_bytes(kind));
             }
         }
     }
 
+    let estimated_total_memory_bytes = interface_details.values().fold(0u64, |acc, detail| {
+        acc.saturating_add(detail.estimated_memory_bytes)
+    });
+    let memory_snapshot = read_memory_snapshot().ok();
+    let memory_ok = memory_snapshot.as_ref().is_none_or(|snapshot| {
+        snapshot
+            .available_bytes
+            .saturating_sub(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES)
+            >= estimated_total_memory_bytes
+    });
+
     QdiscBudgetEstimate {
         interfaces,
+        interface_details,
         safe_budget: SAFE_QDISC_BUDGET_PER_INTERFACE,
         hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
+        estimated_total_memory_bytes,
+        memory_snapshot,
+        memory_ok,
     }
 }
 
@@ -642,6 +942,16 @@ fn with_assigned_qdisc_handles(
     mq_layout: &MqDeviceLayout,
     qdisc_handles: &mut QdiscHandleState,
 ) -> Arc<BakeryCommands> {
+    with_assigned_qdisc_handles_reserved(command, config, mq_layout, qdisc_handles, &HashMap::new())
+}
+
+fn with_assigned_qdisc_handles_reserved(
+    command: &Arc<BakeryCommands>,
+    config: &Arc<Config>,
+    mq_layout: &MqDeviceLayout,
+    qdisc_handles: &mut QdiscHandleState,
+    extra_reserved_handles: &HashMap<String, HashSet<u16>>,
+) -> Arc<BakeryCommands> {
     let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() else {
         return Arc::clone(command);
     };
@@ -653,8 +963,14 @@ fn with_assigned_qdisc_handles(
     let mut enriched = command.as_ref().clone();
     let isp_interface = config.isp_interface();
     let internet_interface = config.internet_interface();
-    let isp_reserved = mq_layout.reserved_handles(&isp_interface);
-    let up_reserved = mq_layout.reserved_handles(&internet_interface);
+    let mut isp_reserved = mq_layout.reserved_handles(&isp_interface);
+    if let Some(extra) = extra_reserved_handles.get(&isp_interface) {
+        isp_reserved.extend(extra.iter().copied());
+    }
+    let mut up_reserved = mq_layout.reserved_handles(&internet_interface);
+    if let Some(extra) = extra_reserved_handles.get(&internet_interface) {
+        up_reserved.extend(extra.iter().copied());
+    }
 
     if let BakeryCommands::AddCircuit {
         down_qdisc_handle,
@@ -676,6 +992,29 @@ fn with_assigned_qdisc_handles(
     }
 
     Arc::new(enriched)
+}
+
+fn snapshot_live_qdisc_handle_majors(
+    config: &Arc<Config>,
+) -> Result<HashMap<String, HashSet<u16>>, String> {
+    let mut reserved = HashMap::new();
+    let isp_interface = config.isp_interface();
+    reserved.insert(
+        isp_interface.clone(),
+        read_live_qdisc_handle_majors(&isp_interface)?,
+    );
+
+    if !config.on_a_stick_mode() {
+        let internet_interface = config.internet_interface();
+        if internet_interface != isp_interface {
+            reserved.insert(
+                internet_interface.clone(),
+                read_live_qdisc_handle_majors(&internet_interface)?,
+            );
+        }
+    }
+
+    Ok(reserved)
 }
 
 fn parse_directional_sqm_override(
@@ -1062,6 +1401,45 @@ fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
     });
 }
 
+fn maybe_emit_memory_guard_urgent(summary: &str) {
+    if !summary.contains("Bakery memory guard stopped") {
+        return;
+    }
+
+    let message = summary.to_string();
+    let context = read_memory_snapshot().ok().map(|snapshot| {
+        format!(
+            "{{\"available_bytes\":{},\"total_bytes\":{},\"memory_guard_floor_bytes\":{}}}",
+            snapshot.available_bytes, snapshot.total_bytes, BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES
+        )
+    });
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            warn!("Bakery: failed to build runtime for urgent issue submission: {e:?}");
+            return;
+        }
+    };
+    rt.block_on(async {
+        if let Ok(mut bus) = LibreqosBusClient::new().await {
+            let _ = bus
+                .request(vec![BusRequest::SubmitUrgentIssue {
+                    source: UrgentSource::System,
+                    severity: UrgentSeverity::Error,
+                    code: "BAKERY_MEMORY_GUARD".to_string(),
+                    message,
+                    context,
+                    dedupe_key: Some("bakery_memory_guard".to_string()),
+                }])
+                .await;
+        }
+    });
+}
+
 fn log_mapped_limit_decision(
     context: &str,
     mapped_limit: ResolvedMappedLimit,
@@ -1108,6 +1486,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         .unwrap_or_default();
     // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
     let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
+    let mut virtualized_sites: HashMap<i64, VirtualizedSiteState> = HashMap::new();
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -1391,6 +1770,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &tx,
                     &mut migrations,
                     &stormguard_overrides,
+                    &virtualized_sites,
                 );
             }
             BakeryCommands::MqSetup { .. } => {
@@ -1529,19 +1909,19 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             advanced += 1;
                         }
                         MigrationStage::BuildFinal => {
-                            // Delete old classes/qdiscs and create final with NEW rates at original minor
+                            // Delete old classes/qdiscs and create final with NEW rates at final minor.
                             if let Some(old_cmd) = build_temp_add_cmd(
                                 &BakeryCommands::AddCircuit {
                                     circuit_hash: mig.circuit_hash,
-                                    parent_class_id: mig.parent_class_id,
-                                    up_parent_class_id: mig.up_parent_class_id,
+                                    parent_class_id: mig.old_parent_class_id,
+                                    up_parent_class_id: mig.old_up_parent_class_id,
                                     class_minor: mig.old_minor,
                                     download_bandwidth_min: mig.old_down_min,
                                     upload_bandwidth_min: mig.old_up_min,
                                     download_bandwidth_max: mig.old_down_max,
                                     upload_bandwidth_max: mig.old_up_max,
-                                    class_major: mig.class_major,
-                                    up_class_major: mig.up_class_major,
+                                    class_major: mig.old_class_major,
+                                    up_class_major: mig.old_up_class_major,
                                     down_qdisc_handle: None,
                                     up_qdisc_handle: None,
                                     ip_addresses: "".to_string(),
@@ -1560,7 +1940,22 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                                 }
                                 // Final add (new rates) at final_minor
                                 if let Some(final_cmd) = build_temp_add_cmd(
-                                    &old_cmd,
+                                    &BakeryCommands::AddCircuit {
+                                        circuit_hash: mig.circuit_hash,
+                                        parent_class_id: mig.parent_class_id,
+                                        up_parent_class_id: mig.up_parent_class_id,
+                                        class_minor: mig.final_minor,
+                                        download_bandwidth_min: mig.new_down_min,
+                                        upload_bandwidth_min: mig.new_up_min,
+                                        download_bandwidth_max: mig.new_down_max,
+                                        upload_bandwidth_max: mig.new_up_max,
+                                        class_major: mig.class_major,
+                                        up_class_major: mig.up_class_major,
+                                        down_qdisc_handle: mig.down_qdisc_handle,
+                                        up_qdisc_handle: mig.up_qdisc_handle,
+                                        ip_addresses: "".to_string(),
+                                        sqm_override: mig.sqm_override.clone(),
+                                    },
                                     mig.final_minor,
                                     mig.new_down_min,
                                     mig.new_down_max,
@@ -1757,6 +2152,26 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     }
                 }
             }
+            BakeryCommands::TreeGuardSetNodeVirtual {
+                site_hash,
+                virtualized,
+                reply,
+            } => {
+                let result = handle_treeguard_set_node_virtual_live(
+                    site_hash,
+                    virtualized,
+                    &mut sites,
+                    &mut circuits,
+                    &live_circuits,
+                    &mq_layout,
+                    &mut qdisc_handles,
+                    &mut migrations,
+                    &mut virtualized_sites,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
         }
     }
     error!("Bakery thread exited unexpectedly.");
@@ -1773,6 +2188,7 @@ fn handle_commit_batch(
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
     stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
@@ -1784,6 +2200,7 @@ fn handle_commit_batch(
         debug!("CommitBatch received without a batch to commit.");
         return;
     };
+    let new_batch = apply_runtime_virtualization_overlay(new_batch, virtualized_sites);
     let resolved_mq_layout = current_mq_layout(&new_batch, &config, mq_layout);
 
     let mapped_limit = resolve_mapped_circuit_limit();
@@ -1965,11 +2382,12 @@ fn handle_commit_batch(
     if let CircuitDiffResult::Categorized(categories) = circuit_change_mode {
         // One-line summary of changes (info!)
         info!(
-            "Bakery changes: sites_speed={}, circuits_added={}, removed={}, speed={}, ip={}",
+            "Bakery changes: sites_speed={}, circuits_added={}, removed={}, speed={}, migrated={}, ip={}",
             site_speed_change_count,
             categories.newly_added.len(),
             categories.removed_circuits.len(),
             categories.speed_changed.len(),
+            categories.migrated.len(),
             categories.ip_changed.len()
         );
 
@@ -2022,9 +2440,14 @@ fn handle_commit_batch(
             for cmd in &categories.speed_changed {
                 let mut enriched_cmd =
                     with_assigned_qdisc_handles(cmd, &config, layout, qdisc_handles);
-                if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref()
-                    && let Some(old_cmd) = circuits.get(circuit_hash)
+                let old_cmd = if let BakeryCommands::AddCircuit { circuit_hash, .. } =
+                    enriched_cmd.as_ref()
                 {
+                    circuits.get(circuit_hash).cloned()
+                } else {
+                    None
+                };
+                if let Some(old_cmd) = old_cmd.as_ref() {
                     enriched_cmd = rotate_changed_qdisc_handles(
                         old_cmd.as_ref(),
                         &enriched_cmd,
@@ -2033,70 +2456,19 @@ fn handle_commit_batch(
                         qdisc_handles,
                     );
                 }
-                if let BakeryCommands::AddCircuit {
-                    circuit_hash,
-                    parent_class_id,
-                    up_parent_class_id,
-                    class_minor,
-                    download_bandwidth_min,
-                    upload_bandwidth_min,
-                    download_bandwidth_max,
-                    upload_bandwidth_max,
-                    class_major,
-                    up_class_major,
-                    ip_addresses,
-                    sqm_override,
-                    ..
-                } = enriched_cmd.as_ref()
+                if let Some(old_cmd) = old_cmd.as_ref()
+                    && queue_live_migration(
+                        old_cmd.as_ref(),
+                        &enriched_cmd,
+                        circuits,
+                        live_circuits,
+                        migrations,
+                    )
                 {
+                    continue;
+                }
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref() {
                     let was_activated = live_circuits.contains_key(circuit_hash);
-                    if was_activated {
-                        // Attempt live-move
-                        if let Some(shadow_minor) =
-                            find_free_minor(circuits, parent_class_id, up_parent_class_id)
-                        {
-                            // Find old command for old rates
-                            if let Some(old_cmd) = circuits.get(circuit_hash)
-                                && let BakeryCommands::AddCircuit {
-                                    download_bandwidth_min: old_down_min,
-                                    upload_bandwidth_min: old_up_min,
-                                    download_bandwidth_max: old_down_max,
-                                    upload_bandwidth_max: old_up_max,
-                                    down_qdisc_handle,
-                                    up_qdisc_handle,
-                                    ..
-                                } = old_cmd.as_ref()
-                            {
-                                let mig = Migration {
-                                    circuit_hash: *circuit_hash,
-                                    parent_class_id: *parent_class_id,
-                                    up_parent_class_id: *up_parent_class_id,
-                                    class_major: *class_major,
-                                    up_class_major: *up_class_major,
-                                    down_qdisc_handle: *down_qdisc_handle,
-                                    up_qdisc_handle: *up_qdisc_handle,
-                                    old_down_min: *old_down_min,
-                                    old_down_max: *old_down_max,
-                                    old_up_min: *old_up_min,
-                                    old_up_max: *old_up_max,
-                                    new_down_min: *download_bandwidth_min,
-                                    new_down_max: *download_bandwidth_max,
-                                    new_up_min: *upload_bandwidth_min,
-                                    new_up_max: *upload_bandwidth_max,
-                                    old_minor: *class_minor,
-                                    shadow_minor,
-                                    final_minor: *class_minor,
-                                    ips: parse_ip_list(ip_addresses),
-                                    sqm_override: sqm_override.clone(),
-                                    stage: MigrationStage::PrepareShadow,
-                                };
-                                migrations.insert(*circuit_hash, mig);
-                                // Update desired circuit definition now
-                                circuits.insert(*circuit_hash, Arc::clone(&enriched_cmd));
-                                continue; // skip immediate path
-                            }
-                        }
-                    }
                     // Fallback: immediate safe update
                     match config.queues.lazy_queues.as_ref() {
                         None | Some(LazyQueueMode::No) => {
@@ -2152,6 +2524,111 @@ fn handle_commit_batch(
                 execute_and_record_live_change(
                     &immediate_commands,
                     "updating circuit speeds (fallback)",
+                );
+            }
+        }
+
+        // 2b) Parent/class migrations
+        if !categories.migrated.is_empty() {
+            let Some(layout) = resolved_mq_layout.as_ref() else {
+                warn!("Bakery: missing MQ layout during circuit migrations");
+                return;
+            };
+            let mut immediate_commands = Vec::new();
+            for cmd in &categories.migrated {
+                let mut enriched_cmd =
+                    with_assigned_qdisc_handles(cmd, &config, layout, qdisc_handles);
+                let Some(old_cmd) = (if let BakeryCommands::AddCircuit { circuit_hash, .. } =
+                    enriched_cmd.as_ref()
+                {
+                    circuits.get(circuit_hash).cloned()
+                } else {
+                    None
+                }) else {
+                    continue;
+                };
+
+                enriched_cmd = rotate_changed_qdisc_handles(
+                    old_cmd.as_ref(),
+                    &enriched_cmd,
+                    &config,
+                    layout,
+                    qdisc_handles,
+                );
+
+                if queue_live_migration(
+                    old_cmd.as_ref(),
+                    &enriched_cmd,
+                    circuits,
+                    live_circuits,
+                    migrations,
+                ) {
+                    continue;
+                }
+
+                let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref() else {
+                    continue;
+                };
+                let was_activated = live_circuits.contains_key(circuit_hash);
+                if was_activated {
+                    warn!(
+                        "Bakery: falling back to full reload for active migrated circuit {} because live migration setup failed",
+                        circuit_hash
+                    );
+                    let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+                        new_batch.clone(),
+                        circuits,
+                        effective_limit,
+                    );
+                    log_mapped_limit_decision(
+                        "circuit-migration rebuild",
+                        mapped_limit,
+                        mapped_limit_stats,
+                    );
+                    full_reload(
+                        batch,
+                        sites,
+                        circuits,
+                        live_circuits,
+                        mq_layout,
+                        qdisc_handles,
+                        &config,
+                        new_batch,
+                        resolved_mq_layout.clone(),
+                        stormguard_overrides,
+                    );
+                    MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return;
+                }
+
+                match config.queues.lazy_queues.as_ref() {
+                    None | Some(LazyQueueMode::No) => {
+                        if let Some(prune) = old_cmd.to_prune(&config, true) {
+                            immediate_commands.extend(prune);
+                        }
+                        if let Some(add) = enriched_cmd.to_commands(&config, ExecutionMode::Builder)
+                        {
+                            immediate_commands.extend(add);
+                        }
+                    }
+                    Some(LazyQueueMode::Htb) => {
+                        if let Some(prune) = old_cmd.to_prune(&config, true) {
+                            immediate_commands.extend(prune);
+                        }
+                        if let Some(add_htb) =
+                            enriched_cmd.to_commands(&config, ExecutionMode::Builder)
+                        {
+                            immediate_commands.extend(add_htb);
+                        }
+                    }
+                    Some(LazyQueueMode::Full) => {}
+                }
+                circuits.insert(*circuit_hash, enriched_cmd);
+            }
+            if !immediate_commands.is_empty() {
+                execute_and_record_live_change(
+                    &immediate_commands,
+                    "migrating circuits between parent nodes (fallback)",
                 );
             }
         }
@@ -2516,6 +2993,1551 @@ fn handle_change_site_speed_live(
     }
 }
 
+fn site_class_handles(site: &BakeryCommands) -> Option<(TcHandle, TcHandle)> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+    Some((
+        tc_handle_from_major_minor(parent_class_id.get_major_minor().0, *class_minor),
+        tc_handle_from_major_minor(up_parent_class_id.get_major_minor().0, *class_minor),
+    ))
+}
+
+fn site_is_top_level(site: &BakeryCommands) -> bool {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        ..
+    } = site
+    else {
+        return false;
+    };
+    parent_class_id.get_major_minor().1 == 0 && up_parent_class_id.get_major_minor().1 == 0
+}
+
+fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Option<String> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        ..
+    } = site
+    else {
+        return Some("TreeGuard runtime virtualization requires an AddSite command".to_string());
+    };
+
+    if site_is_top_level(site) {
+        return Some(format!(
+            "Site {} is top-level in HTB and cannot be runtime-virtualized in v1",
+            site_hash
+        ));
+    }
+
+    let Some((site_down_class, site_up_class)) = site_class_handles(site) else {
+        return Some(format!("Site {} is not a valid AddSite command", site_hash));
+    };
+
+    let (parent_down_major, _) = parent_class_id.get_major_minor();
+    let (parent_up_major, _) = up_parent_class_id.get_major_minor();
+    let (site_down_major, _) = site_down_class.get_major_minor();
+    let (site_up_major, _) = site_up_class.get_major_minor();
+
+    if parent_down_major != site_down_major || parent_up_major != site_up_major {
+        return Some(format!(
+            "Site {} crosses queue/major domains (parent down/up majors {:x}/{:x}, site down/up majors {:x}/{:x}) and cannot be runtime-virtualized in v1",
+            site_hash, parent_down_major, parent_up_major, site_down_major, site_up_major
+        ));
+    }
+
+    None
+}
+
+fn site_prune_commands(config: &Arc<Config>, site: &BakeryCommands) -> Option<Vec<Vec<String>>> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    Some(vec![
+        vec![
+            "class".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.isp_interface(),
+            "parent".to_string(),
+            parent_class_id.as_tc_string(),
+            "classid".to_string(),
+            format!(
+                "0x{:x}:0x{:x}",
+                parent_class_id.get_major_minor().0,
+                class_minor
+            ),
+        ],
+        vec![
+            "class".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            config.internet_interface(),
+            "parent".to_string(),
+            up_parent_class_id.as_tc_string(),
+            "classid".to_string(),
+            format!(
+                "0x{:x}:0x{:x}",
+                up_parent_class_id.get_major_minor().0,
+                class_minor
+            ),
+        ],
+    ])
+}
+
+fn reparent_site_command(
+    site: &Arc<BakeryCommands>,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+) -> Option<Arc<BakeryCommands>> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        class_minor,
+        download_bandwidth_min,
+        upload_bandwidth_min,
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        ..
+    } = site.as_ref()
+    else {
+        return None;
+    };
+
+    Some(Arc::new(BakeryCommands::AddSite {
+        site_hash: *site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor: *class_minor,
+        download_bandwidth_min: *download_bandwidth_min,
+        upload_bandwidth_min: *upload_bandwidth_min,
+        download_bandwidth_max: *download_bandwidth_max,
+        upload_bandwidth_max: *upload_bandwidth_max,
+    }))
+}
+
+fn reparent_circuit_command(
+    circuit: &Arc<BakeryCommands>,
+    parent_class_id: TcHandle,
+    up_parent_class_id: TcHandle,
+) -> Option<Arc<BakeryCommands>> {
+    let BakeryCommands::AddCircuit {
+        circuit_hash,
+        class_minor,
+        download_bandwidth_min,
+        upload_bandwidth_min,
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        class_major,
+        up_class_major,
+        ip_addresses,
+        sqm_override,
+        ..
+    } = circuit.as_ref()
+    else {
+        return None;
+    };
+
+    Some(Arc::new(BakeryCommands::AddCircuit {
+        circuit_hash: *circuit_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor: *class_minor,
+        download_bandwidth_min: *download_bandwidth_min,
+        upload_bandwidth_min: *upload_bandwidth_min,
+        download_bandwidth_max: *download_bandwidth_max,
+        upload_bandwidth_max: *upload_bandwidth_max,
+        class_major: *class_major,
+        up_class_major: *up_class_major,
+        down_qdisc_handle: None,
+        up_qdisc_handle: None,
+        ip_addresses: ip_addresses.clone(),
+        sqm_override: sqm_override.clone(),
+    }))
+}
+
+fn collect_direct_child_site_hashes(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    target_down: TcHandle,
+    target_up: TcHandle,
+    target_hash: i64,
+) -> Vec<i64> {
+    let mut hashes: Vec<i64> = sites
+        .iter()
+        .filter_map(|(site_hash, site)| {
+            let BakeryCommands::AddSite {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = site.as_ref()
+            else {
+                return None;
+            };
+            (*site_hash != target_hash
+                && *parent_class_id == target_down
+                && *up_parent_class_id == target_up)
+                .then_some(*site_hash)
+        })
+        .collect();
+    hashes.sort_unstable();
+    hashes
+}
+
+fn collect_direct_circuit_hashes(
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    target_down: TcHandle,
+    target_up: TcHandle,
+) -> Vec<i64> {
+    let mut hashes: Vec<i64> = circuits
+        .iter()
+        .filter_map(|(circuit_hash, circuit)| {
+            let BakeryCommands::AddCircuit {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = circuit.as_ref()
+            else {
+                return None;
+            };
+            (*parent_class_id == target_down && *up_parent_class_id == target_up)
+                .then_some(*circuit_hash)
+        })
+        .collect();
+    hashes.sort_unstable();
+    hashes
+}
+
+fn apply_direct_circuit_reparents(
+    config: &Arc<Config>,
+    circuit_hashes: &[i64],
+    new_parent_class_id: TcHandle,
+    new_up_parent_class_id: TcHandle,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &mut HashMap<i64, Migration>,
+) -> Result<(), String> {
+    if circuit_hashes.is_empty() {
+        return Ok(());
+    }
+    let Some(layout) = mq_layout.as_ref() else {
+        return Err("Bakery runtime virtualization requires MQ layout to be available".to_string());
+    };
+
+    for circuit_hash in circuit_hashes {
+        let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
+            continue;
+        };
+        let Some(candidate_cmd) =
+            reparent_circuit_command(&old_cmd, new_parent_class_id, new_up_parent_class_id)
+        else {
+            continue;
+        };
+        if live_circuits.contains_key(circuit_hash)
+            && let BakeryCommands::AddCircuit {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = candidate_cmd.as_ref()
+            && find_free_minor(circuits, parent_class_id, up_parent_class_id).is_none()
+        {
+            return Err(format!(
+                "Unable to queue live migration for active circuit {}: no shadow minor available",
+                circuit_hash
+            ));
+        }
+    }
+
+    let mut immediate_commands = Vec::new();
+    let mut updated_circuits: Vec<(i64, Arc<BakeryCommands>)> = Vec::new();
+
+    for circuit_hash in circuit_hashes {
+        let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
+            continue;
+        };
+        let Some(candidate_cmd) =
+            reparent_circuit_command(&old_cmd, new_parent_class_id, new_up_parent_class_id)
+        else {
+            continue;
+        };
+        let enriched_cmd = rotate_changed_qdisc_handles(
+            old_cmd.as_ref(),
+            &candidate_cmd,
+            config,
+            layout,
+            qdisc_handles,
+        );
+
+        if queue_live_migration(
+            old_cmd.as_ref(),
+            &enriched_cmd,
+            circuits,
+            live_circuits,
+            migrations,
+        ) {
+            continue;
+        }
+
+        let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref() else {
+            continue;
+        };
+        let was_activated = live_circuits.contains_key(circuit_hash);
+        if was_activated {
+            return Err(format!(
+                "Bakery runtime virtualization could not live-migrate active circuit {}",
+                circuit_hash
+            ));
+        }
+
+        match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) => {
+                if let Some(prune) = old_cmd.to_prune(config, true) {
+                    immediate_commands.extend(prune);
+                }
+                if let Some(add) = enriched_cmd.to_commands(config, ExecutionMode::Builder) {
+                    immediate_commands.extend(add);
+                }
+            }
+            Some(LazyQueueMode::Htb) => {
+                if let Some(prune) = old_cmd.to_prune(config, true) {
+                    immediate_commands.extend(prune);
+                }
+                if let Some(add_htb) = enriched_cmd.to_commands(config, ExecutionMode::Builder) {
+                    immediate_commands.extend(add_htb);
+                }
+            }
+            Some(LazyQueueMode::Full) => {}
+        }
+        updated_circuits.push((*circuit_hash, enriched_cmd));
+    }
+
+    if !immediate_commands.is_empty() {
+        let result = execute_and_record_live_change(
+            &immediate_commands,
+            "TreeGuard runtime circuit reparent",
+        );
+        if !result.ok {
+            return Err(summarize_apply_result(
+                "TreeGuard runtime circuit reparent",
+                &result,
+            ));
+        }
+    }
+
+    for (circuit_hash, command) in updated_circuits {
+        circuits.insert(circuit_hash, command);
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+struct PlannedSiteUpdate {
+    queue: u32,
+    parent_site: Option<i64>,
+    command: Arc<BakeryCommands>,
+}
+
+#[derive(Clone, Debug)]
+struct PlannedCircuitUpdate {
+    queue: u32,
+    parent_site: Option<i64>,
+    command: Arc<BakeryCommands>,
+}
+
+#[derive(Clone, Debug)]
+struct TopLevelVirtualizationPlan {
+    saved_sites: HashMap<i64, Arc<BakeryCommands>>,
+    saved_circuits: HashMap<i64, Arc<BakeryCommands>>,
+    active_sites: HashMap<i64, PlannedSiteUpdate>,
+    active_circuits: HashMap<i64, PlannedCircuitUpdate>,
+}
+
+fn site_hash_from_command(site: &BakeryCommands) -> Option<i64> {
+    if let BakeryCommands::AddSite { site_hash, .. } = site {
+        Some(*site_hash)
+    } else {
+        None
+    }
+}
+
+fn circuit_hash_from_command(circuit: &BakeryCommands) -> Option<i64> {
+    if let BakeryCommands::AddCircuit { circuit_hash, .. } = circuit {
+        Some(*circuit_hash)
+    } else {
+        None
+    }
+}
+
+fn site_max_weight(site: &BakeryCommands) -> f64 {
+    if let BakeryCommands::AddSite {
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        ..
+    } = site
+    {
+        f64::from(*download_bandwidth_max + *upload_bandwidth_max)
+    } else {
+        1.0
+    }
+}
+
+fn circuit_max_weight(circuit: &BakeryCommands) -> f64 {
+    if let BakeryCommands::AddCircuit {
+        download_bandwidth_max,
+        upload_bandwidth_max,
+        ..
+    } = circuit
+    {
+        f64::from(*download_bandwidth_max + *upload_bandwidth_max)
+    } else {
+        1.0
+    }
+}
+
+fn current_site_queue(site: &BakeryCommands) -> Option<u32> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+    let (major, _) = parent_class_id.get_major_minor();
+    let class_handle = tc_handle_from_major_minor(major, *class_minor);
+    Some(u32::from(class_handle.get_major_minor().0))
+}
+
+fn current_circuit_queue(circuit: &BakeryCommands) -> Option<u32> {
+    let BakeryCommands::AddCircuit { class_major, .. } = circuit else {
+        return None;
+    };
+    Some(u32::from(*class_major))
+}
+
+fn site_parent_hash(
+    site_hash: i64,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    class_to_site: &HashMap<(TcHandle, TcHandle), i64>,
+) -> Option<i64> {
+    let site = sites.get(&site_hash)?;
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        ..
+    } = site.as_ref()
+    else {
+        return None;
+    };
+    class_to_site
+        .get(&(*parent_class_id, *up_parent_class_id))
+        .copied()
+}
+
+fn direct_child_sites_by_parent(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+) -> HashMap<i64, Vec<i64>> {
+    let mut class_to_site = HashMap::new();
+    for (site_hash, site) in sites {
+        if let Some(handles) = site_class_handles(site.as_ref()) {
+            class_to_site.insert(handles, *site_hash);
+        }
+    }
+
+    let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
+    for site_hash in sites.keys().copied() {
+        if let Some(parent_hash) = site_parent_hash(site_hash, sites, &class_to_site) {
+            result.entry(parent_hash).or_default().push(site_hash);
+        }
+    }
+    for children in result.values_mut() {
+        children.sort_unstable();
+    }
+    result
+}
+
+fn collect_site_subtree_hashes(
+    root_hash: i64,
+    children_by_parent: &HashMap<i64, Vec<i64>>,
+) -> Vec<i64> {
+    let mut ordered = Vec::new();
+    let mut stack = vec![root_hash];
+    while let Some(site_hash) = stack.pop() {
+        ordered.push(site_hash);
+        if let Some(children) = children_by_parent.get(&site_hash) {
+            for child in children.iter().rev() {
+                stack.push(*child);
+            }
+        }
+    }
+    ordered
+}
+
+fn collect_circuits_attached_to_sites(
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    site_hashes: &[i64],
+) -> Vec<i64> {
+    let mut site_handles = HashSet::new();
+    for site_hash in site_hashes {
+        if let Some(site) = sites.get(site_hash)
+            && let Some(handles) = site_class_handles(site.as_ref())
+        {
+            site_handles.insert(handles);
+        }
+    }
+
+    let mut result: Vec<i64> = circuits
+        .iter()
+        .filter_map(|(circuit_hash, circuit)| {
+            let BakeryCommands::AddCircuit {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = circuit.as_ref()
+            else {
+                return None;
+            };
+            site_handles
+                .contains(&(*parent_class_id, *up_parent_class_id))
+                .then_some(*circuit_hash)
+        })
+        .collect();
+    result.sort_unstable();
+    result
+}
+
+fn root_handle_for_queue(queue: u32) -> TcHandle {
+    TcHandle::from_u32(queue << 16)
+}
+
+fn site_stick_offset(site: &BakeryCommands) -> u16 {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        ..
+    } = site
+    else {
+        return 0;
+    };
+    let (down_major, _) = parent_class_id.get_major_minor();
+    let (up_major, _) = up_parent_class_id.get_major_minor();
+    up_major.saturating_sub(down_major)
+}
+
+fn top_level_bin_name(queue: u32) -> String {
+    format!("CpueQueue{}", queue.saturating_sub(1))
+}
+
+fn queue_from_bin_name(name: &str) -> Option<u32> {
+    name.strip_prefix("CpueQueue")
+        .and_then(|v| v.parse::<u32>().ok())
+        .map(|cpu| cpu + 1)
+}
+
+fn planner_site_key(site_hash: i64) -> String {
+    format!("site:{site_hash}")
+}
+
+fn planner_circuit_key(circuit_hash: i64) -> String {
+    format!("circuit:{circuit_hash}")
+}
+
+fn build_current_planner_state(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+) -> (
+    BTreeMap<String, PlannerSiteIdentityState>,
+    BTreeMap<String, PlannerCircuitIdentityState>,
+) {
+    let mut class_to_site = HashMap::new();
+    for (site_hash, site) in sites {
+        if let Some(handles) = site_class_handles(site.as_ref()) {
+            class_to_site.insert(handles, *site_hash);
+        }
+    }
+
+    let mut previous_sites = BTreeMap::new();
+    for (site_hash, site) in sites {
+        let Some(queue) = current_site_queue(site.as_ref()) else {
+            continue;
+        };
+        let Some(class_minor) = (if let BakeryCommands::AddSite { class_minor, .. } = site.as_ref() {
+            Some(*class_minor)
+        } else {
+            None
+        }) else {
+            continue;
+        };
+        let parent_path = site_parent_hash(*site_hash, sites, &class_to_site)
+            .map(planner_site_key)
+            .unwrap_or_default();
+        previous_sites.insert(
+            planner_site_key(*site_hash),
+            PlannerSiteIdentityState {
+                class_minor,
+                queue,
+                parent_path,
+                class_major: queue as u16,
+                up_class_major: 0,
+            },
+        );
+    }
+
+    let mut previous_circuits = BTreeMap::new();
+    for (circuit_hash, circuit) in circuits {
+        let BakeryCommands::AddCircuit {
+            class_minor,
+            class_major,
+            up_class_major,
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = circuit.as_ref()
+        else {
+            continue;
+        };
+        let parent_node = class_to_site
+            .get(&(*parent_class_id, *up_parent_class_id))
+            .map(|site_hash| planner_site_key(*site_hash))
+            .unwrap_or_else(|| format!("root:{}", class_major));
+        previous_circuits.insert(
+            planner_circuit_key(*circuit_hash),
+            PlannerCircuitIdentityState {
+                class_minor: *class_minor,
+                queue: u32::from(*class_major),
+                parent_node,
+                class_major: *class_major,
+                up_class_major: *up_class_major,
+            },
+        );
+    }
+
+    (previous_sites, previous_circuits)
+}
+
+fn top_level_site_hashes(sites: &HashMap<i64, Arc<BakeryCommands>>) -> Vec<i64> {
+    let mut hashes: Vec<i64> = sites
+        .iter()
+        .filter_map(|(site_hash, site)| site_is_top_level(site.as_ref()).then_some(*site_hash))
+        .collect();
+    hashes.sort_unstable();
+    hashes
+}
+
+fn site_descendant_depth(
+    site_hash: i64,
+    parents: &HashMap<i64, Option<i64>>,
+) -> usize {
+    let mut depth = 0usize;
+    let mut current = parents.get(&site_hash).copied().flatten();
+    while let Some(parent) = current {
+        depth += 1;
+        current = parents.get(&parent).copied().flatten();
+    }
+    depth
+}
+
+fn build_top_level_virtualization_plan(
+    target_site: Arc<BakeryCommands>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    stick_offset: u16,
+) -> Result<TopLevelVirtualizationPlan, String> {
+    let Some(target_site_hash) = site_hash_from_command(target_site.as_ref()) else {
+        return Err("TreeGuard top-level virtualization target is not a site".to_string());
+    };
+    if !site_is_top_level(target_site.as_ref()) {
+        return Err(format!(
+            "Site {} is not top-level and should use the v1 same-queue runtime virtualization path",
+            target_site_hash
+        ));
+    }
+
+    let children_by_parent = direct_child_sites_by_parent(sites);
+    let Some((target_down_class, target_up_class)) = site_class_handles(target_site.as_ref()) else {
+        return Err(format!("Site {} is not a valid AddSite command", target_site_hash));
+    };
+
+    let promoted_site_roots = children_by_parent
+        .get(&target_site_hash)
+        .cloned()
+        .unwrap_or_default();
+    let direct_circuits = collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
+    let top_level_sites = top_level_site_hashes(sites);
+
+    let bins: Vec<String> = top_level_sites
+        .iter()
+        .filter_map(|site_hash| {
+            sites.get(site_hash)
+                .and_then(|site| current_site_queue(site.as_ref()))
+                .map(top_level_bin_name)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if bins.is_empty() {
+        return Err("No top-level queues available for runtime top-level virtualization".to_string());
+    }
+
+    let target_queue = current_site_queue(target_site.as_ref()).unwrap_or(1);
+    let mut planner_items = Vec::new();
+    let mut prev_assign = BTreeMap::new();
+    for site_hash in &top_level_sites {
+        if *site_hash == target_site_hash {
+            continue;
+        }
+        let Some(site) = sites.get(site_hash) else {
+            continue;
+        };
+        let Some(queue) = current_site_queue(site.as_ref()) else {
+            continue;
+        };
+        let id = planner_site_key(*site_hash);
+        planner_items.push(TopLevelPlannerItem {
+            id: id.clone(),
+            weight: site_max_weight(site.as_ref()),
+        });
+        prev_assign.insert(id, top_level_bin_name(queue));
+    }
+    for site_hash in &promoted_site_roots {
+        let Some(site) = sites.get(site_hash) else {
+            continue;
+        };
+        let id = planner_site_key(*site_hash);
+        planner_items.push(TopLevelPlannerItem {
+            id: id.clone(),
+            weight: site_max_weight(site.as_ref()),
+        });
+        prev_assign.insert(id, top_level_bin_name(target_queue));
+    }
+    for circuit_hash in &direct_circuits {
+        let Some(circuit) = circuits.get(circuit_hash) else {
+            continue;
+        };
+        let id = planner_circuit_key(*circuit_hash);
+        planner_items.push(TopLevelPlannerItem {
+            id: id.clone(),
+            weight: circuit_max_weight(circuit.as_ref()),
+        });
+        prev_assign.insert(id, top_level_bin_name(target_queue));
+    }
+
+    let planner = plan_top_level_assignments(
+        &planner_items,
+        &bins,
+        &prev_assign,
+        &BTreeMap::new(),
+        current_timestamp() as f64,
+        &TopLevelPlannerParams {
+            mode: TopLevelPlannerMode::StableGreedy,
+            move_budget_per_run: std::cmp::max(1, std::cmp::min(32, planner_items.len())),
+            ..TopLevelPlannerParams::default()
+        },
+    );
+
+    let mut future_top_level_roots = Vec::new();
+    for site_hash in &top_level_sites {
+        if *site_hash != target_site_hash {
+            future_top_level_roots.push(*site_hash);
+        }
+    }
+    future_top_level_roots.extend(promoted_site_roots.iter().copied());
+    future_top_level_roots.sort_unstable();
+
+    let mut future_top_level_queue = HashMap::new();
+    for site_hash in &future_top_level_roots {
+        let key = planner_site_key(*site_hash);
+        let assigned = planner
+            .assignment
+            .get(&key)
+            .or_else(|| prev_assign.get(&key))
+            .ok_or_else(|| format!("Planner did not assign top-level site {}", site_hash))?;
+        let queue = queue_from_bin_name(assigned)
+            .ok_or_else(|| format!("Invalid planner queue assignment {}", assigned))?;
+        future_top_level_queue.insert(*site_hash, queue);
+    }
+
+    let mut moved_top_level_roots = Vec::new();
+    for site_hash in &future_top_level_roots {
+        let Some(site) = sites.get(site_hash) else {
+            continue;
+        };
+        let current_queue = current_site_queue(site.as_ref()).unwrap_or(1);
+        let new_queue = future_top_level_queue
+            .get(site_hash)
+            .copied()
+            .unwrap_or(current_queue);
+        if *site_hash == target_site_hash
+            || promoted_site_roots.contains(site_hash)
+            || new_queue != current_queue
+        {
+            moved_top_level_roots.push(*site_hash);
+        }
+    }
+    moved_top_level_roots.sort_unstable();
+    moved_top_level_roots.dedup();
+
+    let mut saved_sites = HashMap::new();
+    let mut saved_circuits = HashMap::new();
+    let mut affected_site_hashes = HashSet::new();
+    for site_hash in &moved_top_level_roots {
+        for hash in collect_site_subtree_hashes(*site_hash, &children_by_parent) {
+            affected_site_hashes.insert(hash);
+        }
+    }
+    for site_hash in &affected_site_hashes {
+        if let Some(site) = sites.get(site_hash) {
+            saved_sites.insert(*site_hash, Arc::clone(site));
+        }
+    }
+    let affected_site_hashes_vec: Vec<i64> = affected_site_hashes.iter().copied().collect();
+    for circuit_hash in collect_circuits_attached_to_sites(circuits, sites, &affected_site_hashes_vec) {
+        if let Some(circuit) = circuits.get(&circuit_hash) {
+            saved_circuits.insert(circuit_hash, Arc::clone(circuit));
+        }
+    }
+    for circuit_hash in &direct_circuits {
+        if let Some(circuit) = circuits.get(circuit_hash) {
+            saved_circuits.insert(*circuit_hash, Arc::clone(circuit));
+        }
+    }
+
+    let (previous_sites, previous_circuits) = build_current_planner_state(sites, circuits);
+
+    let mut future_parent_by_site: HashMap<i64, Option<i64>> = HashMap::new();
+    for site_hash in &future_top_level_roots {
+        future_parent_by_site.insert(*site_hash, None);
+    }
+    for site_hash in &affected_site_hashes {
+        if future_parent_by_site.contains_key(site_hash) {
+            continue;
+        }
+        let parent_hash = site_parent_hash(*site_hash, sites, &{
+            let mut class_to_site = HashMap::new();
+            for (hash, site) in sites {
+                if let Some(handles) = site_class_handles(site.as_ref()) {
+                    class_to_site.insert(handles, *hash);
+                }
+            }
+            class_to_site
+        });
+        future_parent_by_site.insert(*site_hash, parent_hash);
+    }
+
+    let mut planner_site_inputs = Vec::new();
+    let mut planner_site_hashes: Vec<i64> = sites.keys().copied().filter(|hash| *hash != target_site_hash).collect();
+    planner_site_hashes.sort_by_key(|hash| {
+        (
+            site_descendant_depth(*hash, &future_parent_by_site),
+            *hash,
+        )
+    });
+    for site_hash in &planner_site_hashes {
+        let Some(site) = sites.get(site_hash) else {
+            continue;
+        };
+        let queue = if let Some(root_queue) = future_top_level_queue.get(site_hash) {
+            *root_queue
+        } else {
+            let mut cursor = *site_hash;
+            loop {
+                let Some(parent) = future_parent_by_site.get(&cursor).copied().flatten() else {
+                    break future_top_level_queue.get(&cursor).copied().unwrap_or(1);
+                };
+                cursor = parent;
+            }
+        };
+        let parent_path = future_parent_by_site
+            .get(site_hash)
+            .copied()
+            .flatten()
+            .map(planner_site_key)
+            .unwrap_or_default();
+        let has_children = children_by_parent
+            .get(site_hash)
+            .map(|children| !children.is_empty())
+            .unwrap_or(false);
+        planner_site_inputs.push(SiteIdentityInput {
+            site_key: planner_site_key(*site_hash),
+            parent_path,
+            queue,
+            has_children,
+        });
+        let _ = site;
+    }
+
+    let class_to_site = {
+        let mut m = HashMap::new();
+        for (hash, site) in sites {
+            if let Some(handles) = site_class_handles(site.as_ref()) {
+                m.insert(handles, *hash);
+            }
+        }
+        m
+    };
+
+    let mut circuit_ids_by_parent: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (circuit_hash, circuit) in circuits {
+        let BakeryCommands::AddCircuit {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = circuit.as_ref()
+        else {
+            continue;
+        };
+        if *parent_class_id == target_down_class && *up_parent_class_id == target_up_class {
+            continue;
+        }
+        let parent = class_to_site
+            .get(&(*parent_class_id, *up_parent_class_id))
+            .map(|site_hash| planner_site_key(*site_hash))
+            .unwrap_or_else(|| format!("root:{}", current_circuit_queue(circuit.as_ref()).unwrap_or(1)));
+        circuit_ids_by_parent
+            .entry(parent)
+            .or_default()
+            .push(planner_circuit_key(*circuit_hash));
+    }
+    for circuit_hash in &direct_circuits {
+        let id = planner_circuit_key(*circuit_hash);
+        let assigned = planner
+            .assignment
+            .get(&id)
+            .or_else(|| prev_assign.get(&id))
+            .ok_or_else(|| format!("Planner did not assign direct circuit {}", circuit_hash))?;
+        let queue = queue_from_bin_name(assigned)
+            .ok_or_else(|| format!("Invalid planner queue assignment {}", assigned))?;
+        circuit_ids_by_parent
+            .entry(format!("root:{queue}"))
+            .or_default()
+            .push(id);
+    }
+
+    let mut planner_circuit_groups = Vec::new();
+    for (parent_node, mut circuit_ids) in circuit_ids_by_parent {
+        circuit_ids.sort();
+        let queue = if let Some(root) = parent_node.strip_prefix("root:") {
+            root.parse::<u32>().unwrap_or(1)
+        } else if let Some(site_hash) = parent_node.strip_prefix("site:").and_then(|s| s.parse::<i64>().ok()) {
+            planner_site_inputs
+                .iter()
+                .find(|site| site.site_key == planner_site_key(site_hash))
+                .map(|site| site.queue)
+                .unwrap_or(1)
+        } else {
+            1
+        };
+        planner_circuit_groups.push(CircuitIdentityGroupInput {
+            parent_node,
+            queue,
+            circuit_ids,
+        });
+    }
+
+    let identity = plan_class_identities(
+        &planner_site_inputs,
+        &planner_circuit_groups,
+        &previous_sites,
+        &previous_circuits,
+        stick_offset,
+        0,
+    );
+    let site_identity_by_key: HashMap<String, _> = identity
+        .sites
+        .iter()
+        .map(|entry| (entry.site_key.clone(), entry.clone()))
+        .collect();
+    let circuit_identity_by_key: HashMap<String, _> = identity
+        .circuits
+        .iter()
+        .map(|entry| (entry.circuit_id.clone(), entry.clone()))
+        .collect();
+
+    let mut active_sites = HashMap::new();
+    for site_hash in &planner_site_hashes {
+        let Some(old_site) = sites.get(site_hash) else {
+            continue;
+        };
+        let site_key = planner_site_key(*site_hash);
+        let Some(identity_entry) = site_identity_by_key.get(&site_key) else {
+            continue;
+        };
+        let parent_handles = future_parent_by_site
+            .get(site_hash)
+            .copied()
+            .flatten()
+            .and_then(|parent_hash| {
+                site_identity_by_key.get(&planner_site_key(parent_hash)).map(|parent_identity| {
+                    (
+                        tc_handle_from_major_minor(parent_identity.class_major, parent_identity.class_minor),
+                        tc_handle_from_major_minor(parent_identity.up_class_major, parent_identity.class_minor),
+                    )
+                })
+            })
+            .unwrap_or_else(|| {
+                (
+                    root_handle_for_queue(identity_entry.queue),
+                    root_handle_for_queue(u32::from(identity_entry.up_class_major)),
+                )
+            });
+        let BakeryCommands::AddSite {
+            site_hash,
+            download_bandwidth_min,
+            upload_bandwidth_min,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+            ..
+        } = old_site.as_ref()
+        else {
+            continue;
+        };
+        active_sites.insert(
+            *site_hash,
+            PlannedSiteUpdate {
+                queue: identity_entry.queue,
+                parent_site: future_parent_by_site.get(site_hash).copied().flatten(),
+                command: Arc::new(BakeryCommands::AddSite {
+                    site_hash: *site_hash,
+                    parent_class_id: parent_handles.0,
+                    up_parent_class_id: parent_handles.1,
+                    class_minor: identity_entry.class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                }),
+            },
+        );
+    }
+
+    let mut active_circuits = HashMap::new();
+    for (circuit_hash, circuit) in circuits {
+        let circuit_key = planner_circuit_key(*circuit_hash);
+        let Some(identity_entry) = circuit_identity_by_key.get(&circuit_key) else {
+            continue;
+        };
+        let parent_site = previous_circuits
+            .get(&circuit_key)
+            .and_then(|prev| prev.parent_node.strip_prefix("site:"))
+            .and_then(|s| s.parse::<i64>().ok());
+        let future_parent_site = if direct_circuits.contains(circuit_hash) {
+            None
+        } else {
+            class_to_site
+                .get(&{
+                    let BakeryCommands::AddCircuit {
+                        parent_class_id,
+                        up_parent_class_id,
+                        ..
+                    } = circuit.as_ref()
+                    else {
+                        continue;
+                    };
+                    (*parent_class_id, *up_parent_class_id)
+                })
+                .copied()
+        };
+        let parent_handles = if let Some(parent_site_hash) = future_parent_site {
+            if let Some(parent_identity) = site_identity_by_key.get(&planner_site_key(parent_site_hash)) {
+                (
+                    tc_handle_from_major_minor(parent_identity.class_major, parent_identity.class_minor),
+                    tc_handle_from_major_minor(parent_identity.up_class_major, parent_identity.class_minor),
+                )
+            } else {
+                (
+                    root_handle_for_queue(identity_entry.queue),
+                    root_handle_for_queue(u32::from(identity_entry.up_class_major)),
+                )
+            }
+        } else {
+            (
+                root_handle_for_queue(identity_entry.queue),
+                root_handle_for_queue(u32::from(identity_entry.up_class_major)),
+            )
+        };
+        let BakeryCommands::AddCircuit {
+            circuit_hash,
+            download_bandwidth_min,
+            upload_bandwidth_min,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+            ip_addresses,
+            sqm_override,
+            ..
+        } = circuit.as_ref()
+        else {
+            continue;
+        };
+        active_circuits.insert(
+            *circuit_hash,
+            PlannedCircuitUpdate {
+                queue: identity_entry.queue,
+                parent_site: future_parent_site.or(parent_site),
+                command: Arc::new(BakeryCommands::AddCircuit {
+                    circuit_hash: *circuit_hash,
+                    parent_class_id: parent_handles.0,
+                    up_parent_class_id: parent_handles.1,
+                    class_minor: identity_entry.class_minor,
+                    download_bandwidth_min: *download_bandwidth_min,
+                    upload_bandwidth_min: *upload_bandwidth_min,
+                    download_bandwidth_max: *download_bandwidth_max,
+                    upload_bandwidth_max: *upload_bandwidth_max,
+                    class_major: identity_entry.class_major,
+                    up_class_major: identity_entry.up_class_major,
+                    down_qdisc_handle: None,
+                    up_qdisc_handle: None,
+                    ip_addresses: ip_addresses.clone(),
+                    sqm_override: sqm_override.clone(),
+                }),
+            },
+        );
+    }
+    active_circuits.retain(|hash, _| saved_circuits.contains_key(hash));
+
+    Ok(TopLevelVirtualizationPlan {
+        saved_sites,
+        saved_circuits,
+        active_sites,
+        active_circuits,
+    })
+}
+
+fn apply_site_command_updates(
+    config: &Arc<Config>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    updates: &HashMap<i64, PlannedSiteUpdate>,
+    action_label: &str,
+) -> Result<(), String> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    let mut ordered: Vec<_> = updates.iter().collect();
+    ordered.sort_by_key(|(_, update)| {
+        (
+            update.parent_site.is_some(),
+            update.queue,
+            update.parent_site.unwrap_or_default(),
+            site_hash_from_command(update.command.as_ref()).unwrap_or_default(),
+        )
+    });
+    let mut commands = Vec::new();
+    for (_, update) in &ordered {
+        if let Some(cmds) = update.command.to_commands(config, ExecutionMode::Builder) {
+            commands.extend(cmds);
+        }
+    }
+    if !commands.is_empty() {
+        let result = execute_and_record_live_change(&commands, action_label);
+        if !result.ok {
+            return Err(summarize_apply_result(action_label, &result));
+        }
+    }
+    for (site_hash, update) in ordered {
+        sites.insert(*site_hash, Arc::clone(&update.command));
+    }
+    Ok(())
+}
+
+fn apply_circuit_command_updates(
+    config: &Arc<Config>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    updates: &HashMap<i64, PlannedCircuitUpdate>,
+    live_circuits: &HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &mut HashMap<i64, Migration>,
+    action_label: &str,
+) -> Result<(), String> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    let Some(layout) = mq_layout.as_ref() else {
+        return Err("Bakery runtime virtualization requires MQ layout to be available".to_string());
+    };
+    let mut immediate_commands = Vec::new();
+    let mut updated_circuits = Vec::new();
+    let mut ordered: Vec<_> = updates.iter().collect();
+    ordered.sort_by_key(|(_, update)| {
+        (
+            update.parent_site.is_none(),
+            update.queue,
+            update.parent_site.unwrap_or_default(),
+            circuit_hash_from_command(update.command.as_ref()).unwrap_or_default(),
+        )
+    });
+
+    for (circuit_hash, update) in ordered {
+        let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
+            continue;
+        };
+        let enriched_cmd = rotate_changed_qdisc_handles(
+            old_cmd.as_ref(),
+            &update.command,
+            config,
+            layout,
+            qdisc_handles,
+        );
+        if live_circuits.contains_key(circuit_hash)
+            && let BakeryCommands::AddCircuit {
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } = enriched_cmd.as_ref()
+            && find_free_minor(circuits, parent_class_id, up_parent_class_id).is_none()
+        {
+            return Err(format!(
+                "Unable to queue live migration for active circuit {}: no shadow minor available",
+                circuit_hash
+            ));
+        }
+        if queue_live_migration(
+            old_cmd.as_ref(),
+            &enriched_cmd,
+            circuits,
+            live_circuits,
+            migrations,
+        ) {
+            continue;
+        }
+        if live_circuits.contains_key(circuit_hash) {
+            return Err(format!(
+                "Bakery runtime virtualization could not live-migrate active circuit {}",
+                circuit_hash
+            ));
+        }
+        match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) | Some(LazyQueueMode::Htb) => {
+                if let Some(prune) = old_cmd.to_prune(config, true) {
+                    immediate_commands.extend(prune);
+                }
+                if let Some(add) = enriched_cmd.to_commands(config, ExecutionMode::Builder) {
+                    immediate_commands.extend(add);
+                }
+            }
+            Some(LazyQueueMode::Full) => {}
+        }
+        updated_circuits.push((*circuit_hash, enriched_cmd));
+    }
+
+    if !immediate_commands.is_empty() {
+        let result = execute_and_record_live_change(&immediate_commands, action_label);
+        if !result.ok {
+            return Err(summarize_apply_result(action_label, &result));
+        }
+    }
+    for (circuit_hash, command) in updated_circuits {
+        circuits.insert(circuit_hash, command);
+    }
+    Ok(())
+}
+
+fn apply_runtime_virtualization_overlay(
+    batch: Vec<Arc<BakeryCommands>>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) -> Vec<Arc<BakeryCommands>> {
+    if virtualized_sites.is_empty() {
+        return batch;
+    }
+
+    let mut hidden_site_hashes = HashSet::new();
+    let mut active_site_overrides: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
+    let mut active_circuit_overrides: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
+    for (site_hash, state) in virtualized_sites {
+        hidden_site_hashes.insert(*site_hash);
+        for (hash, command) in &state.active_sites {
+            active_site_overrides.insert(*hash, Arc::clone(command));
+        }
+        for (hash, command) in &state.active_circuits {
+            active_circuit_overrides.insert(*hash, Arc::clone(command));
+        }
+    }
+
+    batch
+        .into_iter()
+        .filter_map(|command| match command.as_ref() {
+            BakeryCommands::AddSite { site_hash, .. } => {
+                if hidden_site_hashes.contains(site_hash) {
+                    return None;
+                }
+                if let Some(override_cmd) = active_site_overrides.get(site_hash) {
+                    return Some(Arc::clone(override_cmd));
+                }
+                Some(command)
+            }
+            BakeryCommands::AddCircuit { circuit_hash, .. } => {
+                if let Some(override_cmd) = active_circuit_overrides.get(circuit_hash) {
+                    return Some(Arc::clone(override_cmd));
+                }
+                Some(command)
+            }
+            _ => Some(command),
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_treeguard_set_node_virtual_live(
+    site_hash: i64,
+    virtualized: bool,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &mut HashMap<i64, Migration>,
+    virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
+) -> Result<(), String> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Err("Failed to load configuration".to_string());
+    };
+
+    if virtualized {
+        if virtualized_sites.contains_key(&site_hash) {
+            return Ok(());
+        }
+
+        let Some(target_site) = sites.get(&site_hash).cloned() else {
+            return Err(format!("Unknown site hash {}", site_hash));
+        };
+        if site_is_top_level(target_site.as_ref()) {
+            let plan = build_top_level_virtualization_plan(
+                Arc::clone(&target_site),
+                sites,
+                circuits,
+                site_stick_offset(target_site.as_ref()),
+            )?;
+            apply_site_command_updates(
+                &config,
+                sites,
+                &plan.active_sites,
+                "TreeGuard runtime top-level site reparent",
+            )?;
+            apply_circuit_command_updates(
+                &config,
+                circuits,
+                &plan.active_circuits,
+                live_circuits,
+                mq_layout,
+                qdisc_handles,
+                migrations,
+                "TreeGuard runtime top-level circuit reparent",
+            )?;
+            if let Some(prune) = site_prune_commands(&config, target_site.as_ref()) {
+                let result =
+                    execute_and_record_live_change(&prune, "TreeGuard runtime top-level site prune");
+                if !result.ok {
+                    return Err(summarize_apply_result(
+                        "TreeGuard runtime top-level site prune",
+                        &result,
+                    ));
+                }
+            }
+            sites.remove(&site_hash);
+            virtualized_sites.insert(
+                site_hash,
+                VirtualizedSiteState {
+                    site: target_site,
+                    saved_sites: plan.saved_sites,
+                    saved_circuits: plan.saved_circuits,
+                    active_sites: plan
+                        .active_sites
+                        .into_iter()
+                        .map(|(hash, update)| (hash, update.command))
+                        .collect(),
+                    active_circuits: plan
+                        .active_circuits
+                        .into_iter()
+                        .map(|(hash, update)| (hash, update.command))
+                        .collect(),
+                },
+            );
+            return Ok(());
+        }
+
+        if let Some(reason) = site_runtime_virtualization_eligibility_error(target_site.as_ref()) {
+            return Err(reason);
+        }
+        let Some((target_down_class, target_up_class)) = site_class_handles(target_site.as_ref())
+        else {
+            return Err(format!("Site {} is not a valid AddSite command", site_hash));
+        };
+        let BakeryCommands::AddSite {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = target_site.as_ref()
+        else {
+            return Err(format!("Site {} is not a valid AddSite command", site_hash));
+        };
+
+        let child_sites =
+            collect_direct_child_site_hashes(sites, target_down_class, target_up_class, site_hash);
+        let direct_circuits =
+            collect_direct_circuit_hashes(circuits, target_down_class, target_up_class);
+        let saved_sites: HashMap<i64, Arc<BakeryCommands>> = child_sites
+            .iter()
+            .filter_map(|hash| sites.get(hash).cloned().map(|cmd| (*hash, cmd)))
+            .collect();
+        let saved_circuits: HashMap<i64, Arc<BakeryCommands>> = direct_circuits
+            .iter()
+            .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
+            .collect();
+
+        let mut active_sites = HashMap::new();
+        for child_hash in &child_sites {
+            let Some(child_site) = sites.get(child_hash).cloned() else {
+                continue;
+            };
+            let Some(updated_site) =
+                reparent_site_command(&child_site, *parent_class_id, *up_parent_class_id)
+            else {
+                continue;
+            };
+            active_sites.insert(
+                *child_hash,
+                PlannedSiteUpdate {
+                    queue: current_site_queue(updated_site.as_ref()).unwrap_or(1),
+                    parent_site: Some(site_hash),
+                    command: updated_site,
+                },
+            );
+        }
+        apply_site_command_updates(
+            &config,
+            sites,
+            &active_sites,
+            "TreeGuard runtime site reparent",
+        )?;
+
+        apply_direct_circuit_reparents(
+            &config,
+            &direct_circuits,
+            *parent_class_id,
+            *up_parent_class_id,
+            circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            migrations,
+        )?;
+
+        if let Some(prune) = site_prune_commands(&config, target_site.as_ref()) {
+            let result = execute_and_record_live_change(&prune, "TreeGuard runtime site prune");
+            if !result.ok {
+                return Err(summarize_apply_result(
+                    "TreeGuard runtime site prune",
+                    &result,
+                ));
+            }
+        }
+        sites.remove(&site_hash);
+        virtualized_sites.insert(
+            site_hash,
+            VirtualizedSiteState {
+                site: target_site,
+                saved_sites,
+                saved_circuits,
+                active_sites: active_sites
+                    .into_iter()
+                    .map(|(hash, update)| (hash, update.command))
+                    .collect(),
+                active_circuits: direct_circuits
+                    .iter()
+                    .filter_map(|hash| circuits.get(hash).cloned().map(|cmd| (*hash, cmd)))
+                    .collect(),
+            },
+        );
+        return Ok(());
+    }
+
+    let Some(saved_state) = virtualized_sites.get(&site_hash).cloned() else {
+        return Ok(());
+    };
+    if !site_is_top_level(saved_state.site.as_ref())
+        && let Some(reason) = site_runtime_virtualization_eligibility_error(saved_state.site.as_ref())
+    {
+        return Err(reason);
+    }
+
+    if let Some(cmds) = saved_state.site.to_commands(&config, ExecutionMode::Builder) {
+        let result = execute_and_record_live_change(&cmds, "TreeGuard runtime hidden site restore");
+        if !result.ok {
+            return Err(summarize_apply_result(
+                "TreeGuard runtime hidden site restore",
+                &result,
+            ));
+        }
+    }
+    sites.insert(site_hash, saved_state.site.clone());
+
+    let restore_sites: HashMap<i64, PlannedSiteUpdate> = saved_state
+        .saved_sites
+        .iter()
+        .map(|(hash, command)| {
+            (
+                *hash,
+                PlannedSiteUpdate {
+                    queue: current_site_queue(command.as_ref()).unwrap_or(1),
+                    parent_site: None,
+                    command: Arc::clone(command),
+                },
+            )
+        })
+        .collect();
+    apply_site_command_updates(
+        &config,
+        sites,
+        &restore_sites,
+        "TreeGuard runtime site restore",
+    )?;
+
+    let restore_circuits: HashMap<i64, PlannedCircuitUpdate> = saved_state
+        .saved_circuits
+        .iter()
+        .map(|(hash, command)| {
+            (
+                *hash,
+                PlannedCircuitUpdate {
+                    queue: current_circuit_queue(command.as_ref()).unwrap_or(1),
+                    parent_site: None,
+                    command: Arc::clone(command),
+                },
+            )
+        })
+        .collect();
+    apply_circuit_command_updates(
+        &config,
+        circuits,
+        &restore_circuits,
+        live_circuits,
+        mq_layout,
+        qdisc_handles,
+        migrations,
+        "TreeGuard runtime circuit restore",
+    )?;
+
+    virtualized_sites.remove(&site_hash);
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn full_reload(
     batch: &mut Option<Vec<Arc<BakeryCommands>>>,
@@ -2537,40 +4559,68 @@ fn full_reload(
         "Full reload triggered due to site or circuit changes.".to_string(),
     );
     let _reload_scope = FullReloadScope;
-    sites.clear();
-    let previous_circuits = std::mem::take(circuits);
-    live_circuits.clear();
-    if let Some(layout) = resolved_mq_layout.as_ref() {
-        process_batch(
-            new_batch,
-            config,
-            sites,
-            circuits,
-            &previous_circuits,
-            layout,
-            qdisc_handles,
-        );
-        let active_hashes = circuits.keys().copied().collect::<HashSet<_>>();
-        qdisc_handles.retain_circuits(&config.isp_interface(), &active_hashes);
-        if !config.on_a_stick_mode() {
-            qdisc_handles.retain_circuits(&config.internet_interface(), &active_hashes);
+    let previous_sites = sites.clone();
+    let previous_circuits = circuits.clone();
+    let previous_live_circuits = live_circuits.clone();
+    let previous_mq_layout = mq_layout.clone();
+
+    let live_reserved_handles = match snapshot_live_qdisc_handle_majors(config) {
+        Ok(handles) => handles,
+        Err(error) => {
+            let summary =
+                format!("Failed to snapshot live qdisc handles before full reload: {error}");
+            error!("{summary}");
+            mark_bakery_action_finished(BakeryApplyMetrics {
+                apply_type: BakeryApplyType::FullReload,
+                summary: &summary,
+                build_duration_ms: 0,
+                apply_duration_ms: 0,
+                total_tc_commands: 0,
+                class_commands: 0,
+                qdisc_commands: 0,
+                ok: false,
+            });
+            *batch = None;
+            return;
         }
+    };
+
+    let mut working_sites = HashMap::new();
+    let mut working_circuits = HashMap::new();
+    let mut working_qdisc_handles = QdiscHandleState::default();
+    let layout = resolved_mq_layout.clone().unwrap_or_default();
+    if resolved_mq_layout.is_none() {
+        warn!("Bakery: full reload skipped MQ layout restore because layout is unknown");
+    }
+
+    let result = process_batch(
+        new_batch,
+        config,
+        &mut working_sites,
+        &mut working_circuits,
+        &layout,
+        &mut working_qdisc_handles,
+        &live_reserved_handles,
+    );
+
+    if result.ok {
+        *sites = working_sites;
+        *circuits = working_circuits;
+        live_circuits.clear();
+        *qdisc_handles = working_qdisc_handles;
         qdisc_handles.save(config);
-        *mq_layout = resolved_mq_layout;
+        if resolved_mq_layout.is_some() {
+            *mq_layout = resolved_mq_layout;
+        }
+        FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
+        apply_stormguard_overrides(stormguard_overrides, config);
     } else {
-        warn!("Bakery: full reload skipped qdisc-handle assignment because MQ layout is unknown");
-        process_batch(
-            new_batch,
-            config,
-            sites,
-            circuits,
-            &previous_circuits,
-            &MqDeviceLayout::default(),
-            qdisc_handles,
-        );
+        *sites = previous_sites;
+        *circuits = previous_circuits;
+        *live_circuits = previous_live_circuits;
+        *mq_layout = previous_mq_layout;
     }
     *batch = None;
-    apply_stormguard_overrides(stormguard_overrides, config);
 }
 
 fn process_batch(
@@ -2578,29 +4628,23 @@ fn process_batch(
     config: &Arc<lqos_config::Config>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
-    previous_circuits: &HashMap<i64, Arc<BakeryCommands>>,
     mq_layout: &MqDeviceLayout,
     qdisc_handles: &mut QdiscHandleState,
-) {
+    extra_reserved_handles: &HashMap<String, HashSet<u16>>,
+) -> ExecuteResult {
     info!("Bakery: Processing batch of {} commands", batch.len());
+    update_bakery_apply_progress(Some("Building tc command batch"), 0, 0, 0, 0);
     let build_started = std::time::Instant::now();
     let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
         .map(|b| {
-            let enriched = with_assigned_qdisc_handles(&b, config, mq_layout, qdisc_handles);
-            let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched.as_ref() else {
-                return enriched;
-            };
-            let Some(previous) = previous_circuits.get(circuit_hash) else {
-                return enriched;
-            };
-            rotate_changed_qdisc_handles(
-                previous.as_ref(),
-                &enriched,
+            with_assigned_qdisc_handles_reserved(
+                &b,
                 config,
                 mq_layout,
                 qdisc_handles,
+                extra_reserved_handles,
             )
         })
         .filter_map(|b| {
@@ -2624,8 +4668,35 @@ fn process_batch(
     write_command_file(&path, &commands);
     let build_duration_ms = build_started.elapsed().as_millis() as u64;
     let (total_tc_commands, class_commands, qdisc_commands) = count_tc_command_types(&commands);
-    let result = execute_in_memory(&commands, "processing batch");
+    let total_chunks = if total_tc_commands == 0 {
+        0
+    } else {
+        total_tc_commands.div_ceil(FULL_RELOAD_TC_CHUNK_SIZE)
+    };
+    update_bakery_apply_progress(
+        Some("Applying tc command chunks"),
+        total_tc_commands,
+        0,
+        total_chunks,
+        0,
+    );
+    let result = execute_in_memory_chunked(
+        &commands,
+        "processing batch",
+        FULL_RELOAD_TC_CHUNK_SIZE,
+        Some(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES),
+        |completed_tc_commands, total_tc_commands, completed_chunks, total_chunks| {
+            update_bakery_apply_progress(
+                Some("Applying tc command chunks"),
+                total_tc_commands,
+                completed_tc_commands,
+                total_chunks,
+                completed_chunks,
+            );
+        },
+    );
     let summary = summarize_apply_result("processing batch", &result);
+    maybe_emit_memory_guard_urgent(&summary);
     mark_bakery_action_finished(BakeryApplyMetrics {
         apply_type: BakeryApplyType::FullReload,
         summary: &summary,
@@ -2637,8 +4708,7 @@ fn process_batch(
         ok: result.ok,
     });
 
-    // Mark that at least one batch has been applied, unblocking live activation.
-    FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
+    result
 }
 
 fn apply_stormguard_overrides(
@@ -2700,6 +4770,24 @@ mod tests {
         })
     }
 
+    fn mk_add_site(
+        site_hash: i64,
+        parent_class_id: u32,
+        up_parent_class_id: u32,
+        class_minor: u16,
+    ) -> Arc<BakeryCommands> {
+        Arc::new(BakeryCommands::AddSite {
+            site_hash,
+            parent_class_id: TcHandle::from_u32(parent_class_id),
+            up_parent_class_id: TcHandle::from_u32(up_parent_class_id),
+            class_minor,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+        })
+    }
+
     fn test_config_with_runtime_dir(name: &str) -> Arc<Config> {
         let mut cfg = Config::default();
         let ts = SystemTime::now()
@@ -2710,6 +4798,33 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("temp runtime dir");
         cfg.lqos_directory = dir.display().to_string();
         Arc::new(cfg)
+    }
+
+    fn mk_test_circuit(
+        circuit_hash: i64,
+        parent_class_id: u32,
+        up_parent_class_id: u32,
+        class_minor: u16,
+        class_major: u16,
+        up_class_major: u16,
+        ip_addresses: &str,
+    ) -> Arc<BakeryCommands> {
+        Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash,
+            parent_class_id: TcHandle::from_u32(parent_class_id),
+            up_parent_class_id: TcHandle::from_u32(up_parent_class_id),
+            class_minor,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major,
+            up_class_major,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: ip_addresses.to_string(),
+            sqm_override: None,
+        })
     }
 
     fn has_hash(batch: &[Arc<BakeryCommands>], hash: i64) -> bool {
@@ -2782,6 +4897,205 @@ mod tests {
         assert_eq!(stats.dropped_mapped, 0);
         assert!(has_hash(&filtered, 9001));
         assert_eq!(filtered.len(), 1001);
+    }
+
+    #[test]
+    fn runtime_virtualization_overlay_hides_virtualized_site_and_reparents_children() {
+        let parent_site = mk_add_site(10, 0x10001, 0x20001, 0x20);
+        let virtualized_site = mk_add_site(20, 0x10020, 0x20020, 0x21);
+        let child_site = mk_add_site(30, 0x10021, 0x20021, 0x22);
+        let child_circuit = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 40,
+            parent_class_id: TcHandle::from_u32(0x10021),
+            up_parent_class_id: TcHandle::from_u32(0x20021),
+            class_minor: 0x30,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x110,
+            up_class_major: 0x210,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.40/32".to_string(),
+            sqm_override: None,
+        });
+
+        let mut virtualized_sites = HashMap::new();
+        virtualized_sites.insert(
+            20,
+            VirtualizedSiteState {
+                site: virtualized_site.clone(),
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::from([(
+                    30,
+                    Arc::new(BakeryCommands::AddSite {
+                        site_hash: 30,
+                        parent_class_id: TcHandle::from_u32(0x10020),
+                        up_parent_class_id: TcHandle::from_u32(0x20020),
+                        class_minor: 0x22,
+                        download_bandwidth_min: 50.0,
+                        upload_bandwidth_min: 50.0,
+                        download_bandwidth_max: 500.0,
+                        upload_bandwidth_max: 500.0,
+                    }),
+                )]),
+                active_circuits: HashMap::from([(
+                    40,
+                    Arc::new(BakeryCommands::AddCircuit {
+                        circuit_hash: 40,
+                        parent_class_id: TcHandle::from_u32(0x10020),
+                        up_parent_class_id: TcHandle::from_u32(0x20020),
+                        class_minor: 0x30,
+                        download_bandwidth_min: 10.0,
+                        upload_bandwidth_min: 10.0,
+                        download_bandwidth_max: 100.0,
+                        upload_bandwidth_max: 100.0,
+                        class_major: 0x110,
+                        up_class_major: 0x210,
+                        down_qdisc_handle: None,
+                        up_qdisc_handle: None,
+                        ip_addresses: "192.0.2.40/32".to_string(),
+                        sqm_override: None,
+                    }),
+                )]),
+            },
+        );
+
+        let overlaid = apply_runtime_virtualization_overlay(
+            vec![parent_site, virtualized_site, child_site, child_circuit],
+            &virtualized_sites,
+        );
+
+        assert_eq!(overlaid.len(), 3);
+        assert!(!overlaid.iter().any(|cmd| matches!(
+            cmd.as_ref(),
+            BakeryCommands::AddSite { site_hash, .. } if *site_hash == 20
+        )));
+
+        let child_site = overlaid
+            .iter()
+            .find_map(|cmd| match cmd.as_ref() {
+                BakeryCommands::AddSite {
+                    site_hash,
+                    parent_class_id,
+                    up_parent_class_id,
+                    ..
+                } if *site_hash == 30 => Some((*parent_class_id, *up_parent_class_id)),
+                _ => None,
+            })
+            .expect("child site should remain in batch");
+        assert_eq!(child_site.0, TcHandle::from_u32(0x10020));
+        assert_eq!(child_site.1, TcHandle::from_u32(0x20020));
+
+        let child_circuit = overlaid
+            .iter()
+            .find_map(|cmd| match cmd.as_ref() {
+                BakeryCommands::AddCircuit {
+                    circuit_hash,
+                    parent_class_id,
+                    up_parent_class_id,
+                    ..
+                } if *circuit_hash == 40 => Some((*parent_class_id, *up_parent_class_id)),
+                _ => None,
+            })
+            .expect("child circuit should remain in batch");
+        assert_eq!(child_circuit.0, TcHandle::from_u32(0x10020));
+        assert_eq!(child_circuit.1, TcHandle::from_u32(0x20020));
+    }
+
+    #[test]
+    fn top_level_virtualization_plan_promotes_children_and_direct_circuits() {
+        let target_site = mk_add_site(20, 0x10000, 0x20000, 0x21);
+        let sibling_site = mk_add_site(10, 0x10000, 0x20000, 0x20);
+        let child_site = mk_add_site(30, 0x10021, 0x20021, 0x22);
+        let grandchild_site = mk_add_site(31, 0x10022, 0x20022, 0x23);
+        let direct_circuit = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 40,
+            parent_class_id: TcHandle::from_u32(0x10021),
+            up_parent_class_id: TcHandle::from_u32(0x20021),
+            class_minor: 0x30,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.40/32".to_string(),
+            sqm_override: None,
+        });
+
+        let mut sites = HashMap::new();
+        sites.insert(10, sibling_site);
+        sites.insert(20, Arc::clone(&target_site));
+        sites.insert(30, child_site);
+        sites.insert(31, grandchild_site);
+
+        let mut circuits = HashMap::new();
+        circuits.insert(40, direct_circuit);
+
+        let plan =
+            build_top_level_virtualization_plan(Arc::clone(&target_site), &sites, &circuits, 1)
+                .expect("top-level plan should build");
+
+        assert!(plan.saved_sites.contains_key(&30));
+        assert!(plan.saved_sites.contains_key(&31));
+        assert!(plan.saved_circuits.contains_key(&40));
+
+        let promoted_site = plan
+            .active_sites
+            .get(&30)
+            .expect("promoted child site should be rewritten");
+        let BakeryCommands::AddSite {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = promoted_site.command.as_ref()
+        else {
+            panic!("expected AddSite");
+        };
+        assert_eq!(parent_class_id.get_major_minor().1, 0);
+        assert_eq!(up_parent_class_id.get_major_minor().1, 0);
+
+        let promoted_circuit = plan
+            .active_circuits
+            .get(&40)
+            .expect("direct circuit should be rewritten");
+        let BakeryCommands::AddCircuit {
+            parent_class_id,
+            up_parent_class_id,
+            ..
+        } = promoted_circuit.command.as_ref()
+        else {
+            panic!("expected AddCircuit");
+        };
+        assert_eq!(parent_class_id.get_major_minor().1, 0);
+        assert_eq!(up_parent_class_id.get_major_minor().1, 0);
+    }
+
+    #[test]
+    fn site_runtime_virtualization_rejects_top_level_sites() {
+        let site = mk_add_site(99, 0x10000, 0x20000, 0x21);
+        let reason = site_runtime_virtualization_eligibility_error(site.as_ref())
+            .expect("top-level site should be rejected");
+        assert!(reason.contains("top-level"));
+    }
+
+    #[test]
+    fn site_runtime_virtualization_accepts_normal_same_queue_site() {
+        let site = mk_add_site(77, 0x10020, 0x20020, 0x22);
+        assert!(site_runtime_virtualization_eligibility_error(site.as_ref()).is_none());
+    }
+
+    #[test]
+    fn site_runtime_virtualization_rejects_non_site_commands() {
+        let circuit = mk_add_circuit(77, "192.0.2.77/32");
+        let reason = site_runtime_virtualization_eligibility_error(circuit.as_ref())
+            .expect("non-site commands should be rejected");
+        assert!(reason.contains("AddSite command"));
     }
 
     #[test]
@@ -2859,6 +5173,34 @@ mod tests {
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
         assert_eq!(estimate.interfaces.get("eth1"), Some(&8));
         assert_eq!(estimate.interfaces.get("eth0"), Some(&8));
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.cake_qdiscs),
+            Some(1)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth1")
+                .map(|d| d.cake_qdiscs),
+            Some(1)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.infra_qdiscs),
+            Some(7)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth1")
+                .map(|d| d.infra_qdiscs),
+            Some(7)
+        );
         assert!(estimate.ok());
     }
 
@@ -2893,6 +5235,70 @@ mod tests {
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
         assert_eq!(estimate.interfaces.get("eth1"), Some(&4));
         assert_eq!(estimate.interfaces.get("eth0"), Some(&4));
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.cake_qdiscs),
+            Some(0)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth1")
+                .map(|d| d.cake_qdiscs),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn qdisc_budget_estimate_counts_fq_codel_leaf_qdiscs_separately() {
+        let config = Arc::new(Config::default());
+        let queue = vec![
+            BakeryCommands::MqSetup {
+                queues_available: 1,
+                stick_offset: 0,
+            },
+            BakeryCommands::AddCircuit {
+                circuit_hash: 2,
+                parent_class_id: TcHandle::from_u32(0x10001),
+                up_parent_class_id: TcHandle::from_u32(0x20001),
+                class_minor: 0x20,
+                download_bandwidth_min: 10.0,
+                upload_bandwidth_min: 10.0,
+                download_bandwidth_max: 2_000.0,
+                upload_bandwidth_max: 2_000.0,
+                class_major: 0x100,
+                up_class_major: 0x200,
+                down_qdisc_handle: Some(0x9000),
+                up_qdisc_handle: Some(0x9001),
+                ip_addresses: "192.0.2.1/32".to_string(),
+                sqm_override: Some("fq_codel".to_string()),
+            },
+        ];
+
+        let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.fq_codel_qdiscs),
+            Some(1)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth1")
+                .map(|d| d.fq_codel_qdiscs),
+            Some(1)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.cake_qdiscs),
+            Some(0)
+        );
     }
 
     #[test]
@@ -3104,5 +5510,152 @@ mod tests {
             panic!("expected new circuit handle");
         };
         assert_eq!(*new_down, *original_down);
+    }
+
+    #[test]
+    fn queue_live_migration_succeeds_for_active_parent_move() {
+        let old_cmd = mk_test_circuit(9001, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.90/32");
+        let new_cmd = mk_test_circuit(9001, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.90/32");
+
+        let mut circuits = HashMap::from([(9001, Arc::clone(&old_cmd))]);
+        let live_circuits = HashMap::from([(9001, 1u64)]);
+        let mut migrations = HashMap::new();
+
+        let queued = queue_live_migration(
+            old_cmd.as_ref(),
+            &new_cmd,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        );
+
+        assert!(queued);
+        let migration = migrations.get(&9001).expect("migration should be queued");
+        assert_eq!(migration.stage, MigrationStage::PrepareShadow);
+        assert_eq!(migration.old_parent_class_id, TcHandle::from_u32(0x10020));
+        assert_eq!(migration.parent_class_id, TcHandle::from_u32(0x10034));
+        assert_eq!(migration.final_minor, 0x35);
+        assert_ne!(migration.shadow_minor, migration.old_minor);
+        assert!(matches!(
+            circuits.get(&9001),
+            Some(cmd) if Arc::ptr_eq(cmd, &new_cmd)
+        ));
+    }
+
+    #[test]
+    fn queue_live_migration_fails_when_target_parent_has_no_shadow_minor() {
+        let old_cmd = mk_test_circuit(9100, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.91/32");
+        let new_cmd = mk_test_circuit(9100, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.91/32");
+
+        let mut circuits = HashMap::from([(9100, Arc::clone(&old_cmd))]);
+        for minor in 1..=0xFFFEu16 {
+            circuits.insert(
+                100_000 + i64::from(minor),
+                mk_test_circuit(
+                    100_000 + i64::from(minor),
+                    0x10034,
+                    0x20034,
+                    minor,
+                    0x3,
+                    0x4,
+                    &format!("198.51.100.{}/32", (minor % 250) + 1),
+                ),
+            );
+        }
+
+        let live_circuits = HashMap::from([(9100, 1u64)]);
+        let mut migrations = HashMap::new();
+
+        let queued = queue_live_migration(
+            old_cmd.as_ref(),
+            &new_cmd,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        );
+
+        assert!(!queued);
+        assert!(!migrations.contains_key(&9100));
+        assert!(matches!(
+            circuits.get(&9100),
+            Some(cmd) if Arc::ptr_eq(cmd, &old_cmd)
+        ));
+    }
+
+    #[test]
+    fn full_reload_allocation_uses_fresh_handles_reserved_from_live_tree() {
+        let config = test_config_with_runtime_dir("fresh-full-reload");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut persisted = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 505,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.5/32".to_string(),
+            sqm_override: None,
+        });
+
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut persisted);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected assigned handles");
+        };
+
+        let mut full_reload_handles = QdiscHandleState::default();
+        let live_reserved = HashMap::from([
+            (config.isp_interface(), HashSet::from([*original_down])),
+            (config.internet_interface(), HashSet::from([*original_up])),
+        ]);
+        let rebuilt_cmd = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 505,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.5/32".to_string(),
+            sqm_override: None,
+        });
+        let rebuilt = with_assigned_qdisc_handles_reserved(
+            &rebuilt_cmd,
+            &config,
+            &layout,
+            &mut full_reload_handles,
+            &live_reserved,
+        );
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(rebuilt_down),
+            up_qdisc_handle: Some(rebuilt_up),
+            ..
+        } = rebuilt.as_ref()
+        else {
+            panic!("expected rebuilt handles");
+        };
+
+        assert_ne!(*rebuilt_down, *original_down);
+        assert_ne!(*rebuilt_up, *original_up);
+        assert_eq!(*rebuilt_down, *original_down + 1);
+        assert_eq!(*rebuilt_up, *original_up + 1);
     }
 }

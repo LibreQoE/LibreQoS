@@ -261,13 +261,6 @@ impl QdiscHandleState {
             .and_then(|state| state.remove(circuit_hash))
             .is_some()
     }
-
-    /// Drops persisted handle assignments for circuits no longer present on an interface.
-    pub(crate) fn retain_circuits(&mut self, interface: &str, active: &HashSet<i64>) {
-        if let Some(state) = self.interfaces.get_mut(interface) {
-            state.retain_circuits(active);
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,20 +313,6 @@ impl InterfaceHandleState {
         self.owners.remove(&removed);
         self.note_reusable_handle(removed);
         Some(removed)
-    }
-
-    fn retain_circuits(&mut self, active: &HashSet<i64>) {
-        let removed = self
-            .circuits
-            .iter()
-            .filter_map(|(hash, handle)| (!active.contains(hash)).then_some((*hash, *handle)))
-            .collect::<Vec<_>>();
-
-        for (hash, handle) in removed {
-            self.circuits.remove(&hash);
-            self.owners.remove(&handle);
-            self.note_reusable_handle(handle);
-        }
     }
 
     fn note_reusable_handle(&mut self, handle: u16) {

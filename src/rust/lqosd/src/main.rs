@@ -12,7 +12,6 @@ pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
 mod program_control;
-mod reload_lock;
 mod remote_commands;
 mod rtt_exclusions;
 mod scheduler_control;
@@ -515,6 +514,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 BusResponse::Ack
             }
+            BusRequest::InvalidateAuthCache => {
+                crate::node_manager::invalidate_auth_cache();
+                BusResponse::Ack
+            }
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
             BusRequest::ValidateShapedDevicesCsv => validation::validate_shaped_devices_csv(),
@@ -743,6 +746,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 message,
                 safe_budget,
                 hard_limit,
+                estimated_total_memory_bytes,
+                memory_available_bytes,
+                memory_guard_min_available_bytes,
+                memory_ok,
                 interfaces,
             } => {
                 lqos_bakery::record_qdisc_preflight_snapshot(
@@ -751,11 +758,19 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         message: message.clone(),
                         safe_budget: *safe_budget,
                         hard_limit: *hard_limit,
+                        estimated_total_memory_bytes: *estimated_total_memory_bytes,
+                        memory_available_bytes: *memory_available_bytes,
+                        memory_guard_min_available_bytes: *memory_guard_min_available_bytes,
+                        memory_ok: *memory_ok,
                         interfaces: interfaces
                             .iter()
                             .map(|entry| lqos_bakery::BakeryCapacityInterfaceSnapshot {
                                 name: entry.name.clone(),
                                 planned_qdiscs: entry.planned_qdiscs,
+                                infra_qdiscs: entry.infra_qdiscs,
+                                cake_qdiscs: entry.cake_qdiscs,
+                                fq_codel_qdiscs: entry.fq_codel_qdiscs,
+                                estimated_memory_bytes: entry.estimated_memory_bytes,
                             })
                             .collect(),
                     },

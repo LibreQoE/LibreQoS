@@ -646,6 +646,23 @@ def _hex_to_int(s: str) -> Optional[int]:
     return None
 
 
+def _tc_id_token_to_int(tok: str) -> Optional[int]:
+    """Parse tc class/qdisc ID tokens.
+
+    The live `tc` text output commonly emits bare hex tokens like `10f` rather than
+    `0x10f`. Treat bare tokens as hex so lookups line up with queuingStructure.json.
+    """
+    s = tok.strip()
+    if not s:
+        return None
+    try:
+        if s.lower().startswith("0x"):
+            return int(s, 16)
+        return int(s, 16)
+    except Exception:
+        return None
+
+
 def _parse_tc_rate_to_mbps(token: str, unit: Optional[str]) -> float:
     try:
         val = float(token)
@@ -675,24 +692,11 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
     # Match the class line for this major/minor, accepting decimal or hex forms.
     cls_pat = re.compile(r"^class\s+htb\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
-    def _to_int(tok: str) -> Optional[int]:
-        s = tok.strip()
-        # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
-        try:
-            if s.lower().startswith("0x"):
-                return int(s, 16)
-            try:
-                return int(s)  # decimal
-            except Exception:
-                return int(s, 16)  # bare hex
-        except Exception:
-            return None
-
     line = None
     for m in cls_pat.finditer(out):
         mj_tok, mn_tok = m.group(1), m.group(2)
-        mj = _to_int(mj_tok)
-        mn = _to_int(mn_tok)
+        mj = _tc_id_token_to_int(mj_tok)
+        mn = _tc_id_token_to_int(mn_tok)
         if mj == major and mn == minor:
             line = m.group(0)
             break
@@ -760,6 +764,65 @@ def check_no_site_circuit_minor_collisions() -> Tuple[bool, List[str]]:
     return ok, msgs
 
 
+def snapshot_site_class_assignments() -> Tuple[bool, str, Dict[str, Tuple[str, str, str, str]]]:
+    """Capture current site class assignment state from queuingStructure.json."""
+    qs = _load_queuing_structure()
+    if not isinstance(qs, dict):
+        return False, "site snapshot: queuingStructure.json not found", {}
+    net = qs.get("Network")
+    if not isinstance(net, dict):
+        return False, "site snapshot: queuingStructure has no 'Network'", {}
+
+    snapshot: Dict[str, Tuple[str, str, str, str]] = {}
+
+    def walk(node_map: Dict[str, dict], trail: Tuple[str, ...] = ()) -> None:
+        for name, node in node_map.items():
+            if not isinstance(node, dict):
+                continue
+            path = "/".join(trail + (name,))
+            snapshot[path] = (
+                str(node.get("classMinor", "")),
+                str(node.get("classid", "")),
+                str(node.get("parentClassID", "")),
+                str(node.get("cpuNum", "")),
+            )
+            ch = node.get("children")
+            if isinstance(ch, dict):
+                walk(ch, trail + (name,))
+
+    walk(net)
+    return True, "", snapshot
+
+
+def check_site_class_assignments_unchanged(
+    before: Dict[str, Tuple[str, str, str, str]]
+) -> Tuple[bool, List[str]]:
+    """Verify that site class assignments did not drift between two snapshots."""
+    ok, err, after = snapshot_site_class_assignments()
+    if not ok:
+        return False, [err]
+
+    msgs: List[str] = []
+    changed = []
+    for path in sorted(set(before.keys()) | set(after.keys())):
+        if before.get(path) != after.get(path):
+            changed.append((path, before.get(path), after.get(path)))
+
+    if changed:
+        for path, old_value, new_value in changed[:20]:
+            msgs.append(
+                f"site assignment stability: {path} changed {old_value} -> {new_value}"
+            )
+        if len(changed) > 20:
+            msgs.append(
+                f"site assignment stability: additional changed sites omitted ({len(changed) - 20})"
+            )
+        return False, msgs
+
+    msgs.append("site assignment stability: all site class assignments unchanged")
+    return True, msgs
+
+
 # -----------------------
 # IP mapping checks
 # -----------------------
@@ -780,8 +843,13 @@ def _list_ip_mappings() -> Tuple[bool, str, List[Tuple[str, int, str]]]:
     if "Socket" in out or "Socket" in err:
         return False, "ipmap check: lqosd bus socket not found; skipping", []
     entries: List[Tuple[str, int, str]] = []
-    # Lines look like: "<ip/prefix>    CPU: <cpu>  TC: <a:b>"
-    pat = re.compile(r"^\s*([0-9A-Fa-f:.]+)/\d+\s+CPU:\s+(\d+)\s+TC:\s+([0-9A-Fa-f]+:[0-9A-Fa-f]+)\s*$")
+    # Lines look like:
+    # "<ip/prefix>    CPU: <cpu>  TC: <a:b>"
+    # or newer output with trailing identity fields:
+    # "<ip/prefix>    CPU: <cpu>  TC: <a:b> CIRCUIT: <id> DEVICE: <id>"
+    pat = re.compile(
+        r"^\s*([0-9A-Fa-f:.]+)/\d+\s+CPU:\s+(\d+)\s+TC:\s+([0-9A-Fa-f]+:[0-9A-Fa-f]+)(?:\s+.*)?$"
+    )
     for line in out.splitlines():
         m = pat.match(line)
         if m:
@@ -1588,24 +1656,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
         else:
             pat = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
-            def _to_int(tok: str) -> Optional[int]:
-                s = tok.strip()
-                # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
-                try:
-                    if s.lower().startswith("0x"):
-                        return int(s, 16)
-                    try:
-                        return int(s)  # decimal
-                    except Exception:
-                        return int(s, 16)  # bare hex
-                except Exception:
-                    return None
-
             line = None
             for m in pat.finditer(out):
                 mj_tok, mn_tok = m.group(1), m.group(2)
-                mj = _to_int(mj_tok)
-                mn = _to_int(mn_tok)
+                mj = _tc_id_token_to_int(mj_tok)
+                mn = _tc_id_token_to_int(mn_tok)
                 if mj == maj and mn == mnr:
                     line = m.group(0)
                     break
@@ -1630,24 +1685,11 @@ def run_tiered_suite(log: LogReader, timeout_s: float, results: List[str]) -> bo
             else:
                 pat2 = re.compile(r"^qdisc\s+\S+\s+\S+:\s+parent\s+([0-9A-Fa-fx]+):([0-9A-Fa-fx]+)\b.*$", re.MULTILINE)
 
-                def _to_int2(tok: str) -> Optional[int]:
-                    s = tok.strip()
-                    # Accept decimal, 0x-prefixed hex, or bare hex (e.g. "f")
-                    try:
-                        if s.lower().startswith("0x"):
-                            return int(s, 16)
-                        try:
-                            return int(s)  # decimal
-                        except Exception:
-                            return int(s, 16)  # bare hex
-                    except Exception:
-                        return None
-
                 line2 = None
                 for m2 in pat2.finditer(out2):
                     mj_tok, mn_tok = m2.group(1), m2.group(2)
-                    mj = _to_int2(mj_tok)
-                    mn = _to_int2(mn_tok)
+                    mj = _tc_id_token_to_int(mj_tok)
+                    mn = _tc_id_token_to_int(mn_tok)
                     if mj == upm and mn == mnr:
                         line2 = m2.group(0)
                         break
@@ -1861,9 +1903,42 @@ def run_realistic_tiered_suite(log: LogReader, timeout_s: float, results: List[s
     results.extend(msgs_map)
     ok &= passed_map
 
+    passed_site_snapshot, site_snapshot_msg, site_snapshot = snapshot_site_class_assignments()
+    if not passed_site_snapshot:
+        results.append(site_snapshot_msg)
+        ok = False
+
+    # Circuit parent-node move between existing nodes (should not trigger full reload)
+    _mark_step("realistic: circuit parent move")
+    rows_parent = json.loads(json.dumps(rows2))
+    old_parent = str(rows_parent[target_idx]["Parent Node"])
+    new_parent = "NET1-1-2" if old_parent != "NET1-1-2" else "NET1-2"
+    rows_parent[target_idx]["Parent Node"] = new_parent
+    write_circuits(rows_parent)
+    step_t0 = time.time()
+    res = run_refresh_and_wait(log, timeout_s)
+    passed, msg = assert_no_full_reload("realistic: circuit parent move", res, step_t0)
+    results.append(msg)
+    ok &= passed
+
+    _mark_step("realistic: site class assignment stability after parent move")
+    passed_sites_stable, msgs_sites_stable = check_site_class_assignments_unchanged(site_snapshot)
+    results.extend(msgs_sites_stable)
+    ok &= passed_sites_stable
+
+    _mark_step("realistic: parent-moved circuit direction mapping (ceil)")
+    passed_parent_dir, msgs_parent_dir = check_circuit_direction_ceil(target_id)
+    results.extend(msgs_parent_dir)
+    ok &= passed_parent_dir
+
+    _mark_step("realistic: parent-moved circuit ip mappings")
+    passed_parent_map, msgs_parent_map = check_ip_mappings_for_circuit(target_id)
+    results.extend(msgs_parent_map)
+    ok &= passed_parent_map
+
     # Add circuit under a different leaf (NET3-2)
     _mark_step("realistic: add circuit")
-    rows3 = json.loads(json.dumps(rows2))
+    rows3 = json.loads(json.dumps(rows_parent))
     new_circuit_id = "99901"
     new_circuit_ip = "100.64.200.1"
     rows3.append({

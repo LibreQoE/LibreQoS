@@ -248,6 +248,7 @@ Practical effect:
 |---|---|---|---|
 | Circuit IP-only change | Yes | No | Mapping update can often be applied without tree rebuild |
 | Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact and available class handles |
+| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | No | Bakery now applies it as a live runtime plan: non-top-level nodes use reparent/prune/restore, and supported top-level nodes use a rebalance + cross-queue migration path |
 | Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits |
 | Topology re-parent/restructure | Rarely | Yes | HTB subtree mutation constraints |
 | Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability and diff correctness boundaries |
@@ -274,6 +275,15 @@ flowchart TD
 2. Batch topology surgery into planned windows.
 3. Expect higher risk when many circuits and many structure-affecting changes happen together.
 4. Build operations cadence around incremental-safe updates by default.
+
+### 7.4 Full-reload safety guards
+
+Current Bakery full reloads apply two conservative safety checks before and during large queue rebuilds:
+
+1. A qdisc preflight estimates planned qdiscs per interface and also separates infrastructure, `cake`, and `fq_codel` leaf qdiscs.
+2. That same preflight applies a conservative memory forecast and hard-blocks clearly unsafe full reloads before `tc -batch` starts.
+3. During chunked full reload apply, Bakery re-checks host memory at chunk boundaries and aborts the remaining apply if available memory drops below its safety floor.
+4. These guards are intentionally biased toward false positives on large reloads so the system fails early with diagnostics instead of spiraling into an OOM event.
 
 ## 8) Design Boundaries for Operators
 

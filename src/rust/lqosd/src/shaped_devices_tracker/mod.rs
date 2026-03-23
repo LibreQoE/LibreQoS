@@ -1,4 +1,5 @@
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
+use crate::treeguard::actor::is_runtime_virtualized_node;
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
@@ -18,6 +19,8 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 // Removed rate_for_plan() function - no longer needed with f32 plan structures
+const SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS: u64 = 500;
+const SHAPED_DEVICES_RELOAD_ATTEMPTS: usize = 2;
 
 pub mod circuit_live;
 mod netjson;
@@ -122,6 +125,7 @@ fn node_to_transport_with_summary(
     summary: NetworkTreeSummary,
 ) -> NetworkJsonTransport {
     let mut transport = node.clone_to_transit();
+    transport.runtime_virtualized = is_runtime_virtualized_node(&node.name);
     transport.configured_max_throughput = node.max_throughput;
     transport.effective_max_throughput = EFFECTIVE_NODE_RATES.load().get(&node.name).copied();
     transport.subtree_site_count = summary.subtree_site_count;
@@ -175,26 +179,42 @@ fn build_network_tree_summaries(
     summaries
 }
 
+fn publish_shaped_devices(new_file: ConfigShapedDevices) {
+    debug!("ShapedDevices.csv loaded");
+    let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
+    SHAPED_DEVICES.store(Arc::new(new_file));
+    SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
+    invalidate_circuit_live_snapshot();
+    invalidate_executive_cache_snapshot();
+    let nj = NETWORK_JSON.read();
+    crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
+}
+
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
-    let shaped_devices = ConfigShapedDevices::load();
-    if let Ok(new_file) = shaped_devices {
-        debug!("ShapedDevices.csv loaded");
-        let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
-        SHAPED_DEVICES.store(Arc::new(new_file));
-        SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
-        invalidate_circuit_live_snapshot();
-        invalidate_executive_cache_snapshot();
-        let nj = NETWORK_JSON.read();
-        crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-    } else {
-        warn!(
-            "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."
-        );
-        SHAPED_DEVICES.store(Arc::new(ConfigShapedDevices::default()));
-        SHAPED_DEVICE_HASH_CACHE.store(Arc::new(ShapedDeviceHashCache::default()));
-        invalidate_circuit_live_snapshot();
-        invalidate_executive_cache_snapshot();
+    for attempt in 1..=SHAPED_DEVICES_RELOAD_ATTEMPTS {
+        match ConfigShapedDevices::load() {
+            Ok(new_file) => {
+                publish_shaped_devices(new_file);
+                return;
+            }
+            Err(err) => {
+                if attempt < SHAPED_DEVICES_RELOAD_ATTEMPTS {
+                    warn!(
+                        "ShapedDevices.csv reload attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
+                        SHAPED_DEVICES_RELOAD_ATTEMPTS, SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS
+                    );
+                    std::thread::sleep(Duration::from_millis(SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS));
+                } else {
+                    let current = SHAPED_DEVICES.load();
+                    warn!(
+                        "ShapedDevices.csv reload failed after {} attempts: {err}. Keeping last-known-good data with {} devices.",
+                        SHAPED_DEVICES_RELOAD_ATTEMPTS,
+                        current.devices.len()
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -312,6 +332,7 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
         name: node.name.clone(),
         id: node.id.clone(),
         is_virtual: node.virtual_node,
+        runtime_virtualized: is_runtime_virtualized_node(&node.name),
         max_throughput: node.max_throughput,
         current_throughput: (
             node.current_throughput.get_down(),
@@ -419,6 +440,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     name: "Others".into(),
                     id: None,
                     is_virtual: false,
+                    runtime_virtualized: false,
                     max_throughput: (0.0, 0.0),
                     configured_max_throughput: (0.0, 0.0),
                     effective_max_throughput: None,

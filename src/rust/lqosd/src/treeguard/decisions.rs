@@ -184,7 +184,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
         cpu_cfg,
         circuits_cfg,
         qoo_cfg,
-        rtt_missing,
+        rtt_missing: _rtt_missing,
         qoo,
         state,
     } = input;
@@ -242,11 +242,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -300,11 +296,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None

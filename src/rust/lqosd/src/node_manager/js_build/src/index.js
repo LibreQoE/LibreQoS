@@ -9,6 +9,7 @@ const defaultLayout = {
     activeTab: 0,
     tabs: [
         {
+            id: "executive-summary",
             name: "Executive Summary",
             dashlets: [
                 { tag: "executiveSnapshot", size: 12 },
@@ -21,6 +22,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "overview",
             name: "Overview",
             dashlets: [
                 { tag: "throughputRing", size: 12 },
@@ -33,6 +35,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "system-overview",
             name: "System Overview",
             dashlets: [
                 { tag: "throughputBps", size: 2 },
@@ -45,6 +48,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "network",
             name: "Network",
             dashlets: [
                 { tag: "networkTreeSankey", size: 6 },
@@ -52,6 +56,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "top-10",
             name: "Top 10",
             dashlets: [
                 { tag: "top10downloaders", size: 6 },
@@ -64,6 +69,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "protocols-cake",
             name: "Protocols & Cake",
             dashlets: [
                 { tag: "etherProtocols", size: 6 },
@@ -72,6 +78,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "treeguard",
             name: "TreeGuard",
             dashlets: [
                 { tag: "treeguardControls", size: 6 },
@@ -80,6 +87,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "bakery",
             name: "Bakery",
             dashlets: [
                 { tag: "bakeryStatusSummary", size: 4 },

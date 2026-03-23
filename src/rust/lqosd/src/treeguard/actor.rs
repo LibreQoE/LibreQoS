@@ -4,20 +4,18 @@
 //! and applying (or dry-running) any decisions.
 
 use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
+use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::{CIRCUIT_RTT_BUFFERS, THROUGHPUT_TRACKER};
+use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::treeguard::TreeguardError;
-use crate::treeguard::reload::{ReloadController, ReloadOutcome, ReloadPriority};
 use crate::treeguard::state::{
     CircuitSqmState, CircuitState, LinkState, LinkVirtualState, is_sustained_idle,
     is_sustained_window,
 };
 use crate::treeguard::{bakery, decisions, overrides};
-use crate::urgent;
 use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_bus::{UrgentSeverity, UrgentSource};
 use lqos_config::load_config;
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_utils::hash_to_i64;
@@ -25,17 +23,22 @@ use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use parking_lot::RwLock;
 use std::collections::VecDeque;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 static TREEGUARD_SENDER: OnceLock<Sender<TreeguardCommand>> = OnceLock::new();
 static TREEGUARD_STATUS_CACHE: OnceLock<RwLock<TreeguardStatusData>> = OnceLock::new();
 static TREEGUARD_ACTIVITY_CACHE: OnceLock<RwLock<Vec<TreeguardActivityEntry>>> = OnceLock::new();
+static TREEGUARD_RUNTIME_VIRTUALIZED_NODES: OnceLock<RwLock<FxHashSet<String>>> = OnceLock::new();
 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
 const TOP_LEVEL_SAFE_SUSTAIN_MINUTES: u32 = 15;
+const TREEGUARD_CIRCUIT_CHANGE_BUDGET_PER_TICK: usize = 512;
+const TREEGUARD_CIRCUIT_TARGET_SWEEP_SECONDS: usize = 15;
+const TREEGUARD_CIRCUIT_MIN_BATCH_SIZE: usize = 128;
+const TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS: u64 = 15 * 60;
 
 /// A message sent to the TreeGuard actor.
 #[derive(Debug)]
@@ -65,6 +68,7 @@ pub(crate) fn start_treeguard_actor(
 
     let _ = TREEGUARD_STATUS_CACHE.set(RwLock::new(empty_status_snapshot()));
     let _ = TREEGUARD_ACTIVITY_CACHE.set(RwLock::new(Vec::new()));
+    let _ = TREEGUARD_RUNTIME_VIRTUALIZED_NODES.set(RwLock::new(FxHashSet::default()));
 
     let (tx, rx) = crossbeam_channel::bounded::<TreeguardCommand>(64);
     let _ = TREEGUARD_SENDER.set(tx);
@@ -82,6 +86,12 @@ pub(crate) fn cached_status_snapshot() -> Option<TreeguardStatusData> {
 
 pub(crate) fn cached_activity_snapshot() -> Option<Vec<TreeguardActivityEntry>> {
     Some(TREEGUARD_ACTIVITY_CACHE.get()?.read().clone())
+}
+
+pub(crate) fn is_runtime_virtualized_node(node_name: &str) -> bool {
+    TREEGUARD_RUNTIME_VIRTUALIZED_NODES
+        .get()
+        .is_some_and(|cache| cache.read().contains(node_name))
 }
 
 /// Requests a status snapshot from the TreeGuard actor.
@@ -149,6 +159,7 @@ fn treeguard_actor_loop(
                     &mut runtime_state,
                 );
                 update_cached_snapshots(&status, &activity);
+                update_runtime_virtualized_cache(&runtime_state.runtime_virtualized_nodes);
             }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 warn!("TreeGuard actor command channel disconnected; exiting actor");
@@ -181,6 +192,8 @@ fn empty_status_snapshot() -> TreeguardStatusData {
     TreeguardStatusData {
         enabled: false,
         dry_run: true,
+        paused_for_bakery_reload: false,
+        pause_reason: None,
         cpu_max_pct: None,
         managed_nodes: 0,
         managed_circuits: 0,
@@ -203,16 +216,212 @@ fn update_cached_snapshots(
     }
 }
 
+fn update_runtime_virtualized_cache(runtime_virtualized_nodes: &FxHashSet<String>) {
+    if let Some(cache) = TREEGUARD_RUNTIME_VIRTUALIZED_NODES.get() {
+        *cache.write() = runtime_virtualized_nodes.clone();
+    }
+}
+
 #[derive(Default)]
 struct TreeguardRuntimeState {
     link_states: FxHashMap<String, LinkState>,
     circuit_states: FxHashMap<String, CircuitState>,
+    circuit_inventory: CircuitInventory,
+    circuit_batch_cursor: usize,
+    runtime_virtualized_nodes: FxHashSet<String>,
+    link_virtualization_backoff_until_unix: FxHashMap<String, u64>,
     managed_nodes: FxHashSet<String>,
     managed_device_ids: FxHashSet<String>,
     duplicate_device_conflict_circuits: FxHashSet<String>,
     last_dry_run: Option<bool>,
     paused_for_bakery_reload: bool,
-    reload_controller: ReloadController,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CircuitInventoryEntry {
+    circuit_hash: i64,
+    circuit_entity_id: String,
+    circuit_label: String,
+    devices: Vec<lqos_config::ShapedDevice>,
+    device_ids: Vec<String>,
+    cap_down: f32,
+    cap_up: f32,
+    duplicate_details: Vec<(String, Vec<String>)>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CircuitInventory {
+    shaped_devices_ptr: usize,
+    circuit_ids: Vec<String>,
+    entries: FxHashMap<String, CircuitInventoryEntry>,
+    all_device_ids: FxHashSet<String>,
+}
+
+fn ensure_circuit_inventory(
+    runtime_state: &mut TreeguardRuntimeState,
+    shaped: &Arc<lqos_config::ConfigShapedDevices>,
+) {
+    let shaped_devices_ptr = Arc::as_ptr(shaped) as usize;
+    if runtime_state.circuit_inventory.shaped_devices_ptr == shaped_devices_ptr {
+        return;
+    }
+
+    runtime_state.circuit_inventory = build_circuit_inventory(shaped.as_ref());
+    runtime_state.circuit_batch_cursor = 0;
+}
+
+fn build_circuit_inventory(shaped: &lqos_config::ConfigShapedDevices) -> CircuitInventory {
+    let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
+    circuits_by_device_id.reserve(shaped.devices.len());
+    for device in shaped.devices.iter() {
+        let device_id = device.device_id.trim();
+        let circuit_id = device.circuit_id.trim();
+        if device_id.is_empty() || circuit_id.is_empty() {
+            continue;
+        }
+        circuits_by_device_id
+            .entry(device_id.to_string())
+            .or_default()
+            .insert(circuit_id.to_string());
+    }
+
+    let duplicate_device_ids: FxHashMap<String, Vec<String>> = circuits_by_device_id
+        .into_iter()
+        .filter_map(|(device_id, circuits)| {
+            if circuits.len() <= 1 {
+                return None;
+            }
+            let mut circuits: Vec<String> = circuits.into_iter().collect();
+            circuits.sort();
+            Some((device_id, circuits))
+        })
+        .collect();
+
+    let mut by_circuit_id: FxHashMap<String, Vec<lqos_config::ShapedDevice>> = FxHashMap::default();
+    by_circuit_id.reserve(shaped.devices.len());
+    let mut all_device_ids = FxHashSet::default();
+    all_device_ids.reserve(shaped.devices.len());
+    for device in shaped.devices.iter() {
+        if device.circuit_id.trim().is_empty() {
+            continue;
+        }
+        by_circuit_id
+            .entry(device.circuit_id.clone())
+            .or_default()
+            .push(device.clone());
+        if !device.device_id.trim().is_empty() {
+            all_device_ids.insert(device.device_id.clone());
+        }
+    }
+
+    let mut circuit_ids: Vec<String> = by_circuit_id.keys().cloned().collect();
+    circuit_ids.sort();
+
+    let mut entries = FxHashMap::default();
+    entries.reserve(circuit_ids.len());
+    for circuit_id in circuit_ids.iter() {
+        let Some(mut devices) = by_circuit_id.remove(circuit_id) else {
+            continue;
+        };
+
+        devices.sort_by(|left, right| left.device_id.cmp(&right.device_id));
+
+        let circuit_name = devices.iter().find_map(|device| {
+            let name = device.circuit_name.trim();
+            if name.is_empty() {
+                None
+            } else {
+                Some(name.to_string())
+            }
+        });
+        let circuit_entity_id = match circuit_name.as_deref() {
+            Some(name) => format!("{name} ({circuit_id})"),
+            None => circuit_id.clone(),
+        };
+        let circuit_label = circuit_name.unwrap_or_else(|| circuit_id.clone());
+
+        let mut cap_down = 0.0f32;
+        let mut cap_up = 0.0f32;
+        let mut device_ids: Vec<String> = devices
+            .iter()
+            .map(|device| device.device_id.clone())
+            .collect();
+        device_ids.sort();
+        device_ids.dedup();
+        for device in devices.iter() {
+            cap_down = cap_down.max(device.download_max_mbps);
+            cap_up = cap_up.max(device.upload_max_mbps);
+        }
+        let duplicate_details: Vec<(String, Vec<String>)> = device_ids
+            .iter()
+            .filter_map(|device_id| {
+                duplicate_device_ids
+                    .get(device_id)
+                    .map(|circuits| (device_id.clone(), circuits.clone()))
+            })
+            .collect();
+
+        entries.insert(
+            circuit_id.clone(),
+            CircuitInventoryEntry {
+                circuit_hash: hash_to_i64(circuit_id),
+                circuit_entity_id,
+                circuit_label,
+                devices,
+                device_ids,
+                cap_down,
+                cap_up,
+                duplicate_details,
+            },
+        );
+    }
+
+    CircuitInventory {
+        shaped_devices_ptr: shaped as *const _ as usize,
+        circuit_ids,
+        entries,
+        all_device_ids,
+    }
+}
+
+fn circuit_evaluation_batch_size(managed_circuits: usize, all_circuits: bool) -> usize {
+    if managed_circuits == 0 {
+        return 0;
+    }
+    if !all_circuits {
+        return managed_circuits;
+    }
+
+    let target = managed_circuits.div_ceil(TREEGUARD_CIRCUIT_TARGET_SWEEP_SECONDS);
+    managed_circuits.min(target.max(TREEGUARD_CIRCUIT_MIN_BATCH_SIZE))
+}
+
+fn collect_circuit_batch<'a>(
+    enrolled_circuits: &'a [String],
+    cursor: &mut usize,
+    batch_size: usize,
+) -> Vec<&'a str> {
+    if enrolled_circuits.is_empty() || batch_size == 0 {
+        *cursor = 0;
+        return Vec::new();
+    }
+
+    if *cursor >= enrolled_circuits.len() {
+        *cursor = 0;
+    }
+
+    let mut batch: Vec<&str> = Vec::with_capacity(batch_size.min(enrolled_circuits.len()));
+    let mut index = *cursor;
+    for _ in 0..batch_size.min(enrolled_circuits.len()) {
+        batch.push(enrolled_circuits[index].as_str());
+        index += 1;
+        if index >= enrolled_circuits.len() {
+            index = 0;
+        }
+    }
+
+    *cursor = index;
+    batch
 }
 
 /// Executes a single TreeGuard tick.
@@ -237,6 +446,8 @@ fn run_tick(
     let Ok(config) = load_config() else {
         status.enabled = false;
         status.dry_run = true;
+        status.paused_for_bakery_reload = false;
+        status.pause_reason = None;
         status.cpu_max_pct = None;
         status.managed_nodes = 0;
         status.managed_circuits = 0;
@@ -274,15 +485,17 @@ fn run_tick(
         return;
     }
 
+    let shaped = SHAPED_DEVICES.load();
+    ensure_circuit_inventory(runtime_state, &shaped);
+
     let link_states = &mut runtime_state.link_states;
     let circuit_states = &mut runtime_state.circuit_states;
+    let runtime_virtualized_nodes = &mut runtime_state.runtime_virtualized_nodes;
+    let link_virtualization_backoff_until_unix =
+        &mut runtime_state.link_virtualization_backoff_until_unix;
     let managed_nodes = &mut runtime_state.managed_nodes;
     let managed_device_ids = &mut runtime_state.managed_device_ids;
     let duplicate_device_conflict_circuits = &mut runtime_state.duplicate_device_conflict_circuits;
-    let reload_controller = &mut runtime_state.reload_controller;
-
-    let mut virtualized_nodes: usize = 0;
-    let mut fq_codel_circuits: usize = 0;
 
     let top_level_auto_virtualize = tg.links.enabled && tg.links.top_level_auto_virtualize;
     if tg.enabled
@@ -414,62 +627,47 @@ fn run_tick(
 
     // Cleanup for removed nodes or disabled links.
     if !manage_links {
-        let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
-            Ok(of) => of
-                .network_adjustments()
-                .iter()
-                .filter_map(|adj| match adj {
-                    NetworkAdjustment::SetNodeVirtual { node_name, .. } => Some(node_name.clone()),
-                    _ => None,
-                })
-                .collect(),
-            Err(e) => {
-                status.warnings.push(format!(
-                    "TreeGuard links: unable to load TreeGuard overrides for cleanup: {e}"
-                ));
-                Vec::new()
-            }
-        };
-        for node_name in removed {
-            match overrides::clear_node_virtual(&node_name) {
-                Ok(changed) => {
-                    if changed {
-                        reload_controller.request_reload(
-                            ReloadPriority::Normal,
-                            format!("Cleared virtual override for node '{node_name}'"),
-                        );
-                        push_activity(
-                            activity,
-                            TreeguardActivityEntry {
-                                time: now_unix.to_string(),
-                                entity_type: "node".to_string(),
-                                entity_id: node_name.clone(),
-                                action: "clear_virtual_override".to_string(),
-                                persisted: true,
-                                reason: "TreeGuard disabled or links disabled".to_string(),
-                            },
-                        );
-                    }
-                    managed_nodes.remove(&node_name);
-                    link_states.remove(&node_name);
-                }
+        let mut removed: FxHashSet<String> =
+            match OverrideStore::load_layer(OverrideLayer::Treeguard) {
+                Ok(of) => of
+                    .network_adjustments()
+                    .iter()
+                    .filter_map(|adj| match adj {
+                        NetworkAdjustment::SetNodeVirtual { node_name, .. } => {
+                            Some(node_name.clone())
+                        }
+                        _ => None,
+                    })
+                    .collect(),
                 Err(e) => {
                     status.warnings.push(format!(
-                        "TreeGuard links: failed to clear virtual override for node '{node_name}': {e}"
+                        "TreeGuard links: unable to load TreeGuard overrides for cleanup: {e}"
                     ));
-                    push_activity(
-                        activity,
-                        TreeguardActivityEntry {
-                            time: now_unix.to_string(),
-                            entity_type: "node".to_string(),
-                            entity_id: node_name,
-                            action: "clear_virtual_override_failed".to_string(),
-                            persisted: false,
-                            reason: format!("Overrides write failed: {e}"),
-                        },
-                    );
+                    FxHashSet::default()
                 }
-            }
+            };
+        removed.extend(runtime_virtualized_nodes.iter().cloned());
+        for node_name in removed {
+            clear_legacy_treeguard_virtual_override(
+                status,
+                activity,
+                now_unix,
+                &node_name,
+                "TreeGuard disabled or links disabled",
+            );
+            restore_runtime_virtualization_if_needed(
+                status,
+                activity,
+                now_unix,
+                &node_name,
+                "TreeGuard disabled or links disabled",
+                tg.dry_run,
+                runtime_virtualized_nodes,
+                link_virtualization_backoff_until_unix,
+                link_states,
+            );
+            managed_nodes.remove(&node_name);
+            link_states.remove(&node_name);
         }
     } else {
         let reader = NETWORK_JSON.read();
@@ -501,7 +699,7 @@ fn run_tick(
             })
             .unwrap_or_default();
 
-        let removed: Vec<String> = if tg.links.all_nodes {
+        let mut removed: FxHashSet<String> = if tg.links.all_nodes {
             let current: FxHashSet<&str> = reader
                 .get_nodes_when_ready()
                 .iter()
@@ -520,46 +718,48 @@ fn run_tick(
                 .cloned()
                 .collect()
         };
+        if tg.links.all_nodes {
+            let current: FxHashSet<&str> = reader
+                .get_nodes_when_ready()
+                .iter()
+                .filter(|n| n.name != "Root")
+                .map(|n| n.name.as_str())
+                .collect();
+            removed.extend(
+                runtime_virtualized_nodes
+                    .iter()
+                    .filter(|n| !current.contains(n.as_str()))
+                    .cloned(),
+            );
+        } else {
+            removed.extend(
+                runtime_virtualized_nodes
+                    .iter()
+                    .filter(|n| !allowlisted_nodes.contains(*n) && !top_level_nodes.contains(*n))
+                    .cloned(),
+            );
+        }
         for node_name in removed {
-            match overrides::clear_node_virtual(&node_name) {
-                Ok(changed) => {
-                    if changed {
-                        reload_controller.request_reload(
-                            ReloadPriority::Normal,
-                            format!("Cleared virtual override for node '{node_name}'"),
-                        );
-                        push_activity(
-                            activity,
-                            TreeguardActivityEntry {
-                                time: now_unix.to_string(),
-                                entity_type: "node".to_string(),
-                                entity_id: node_name.clone(),
-                                action: "clear_virtual_override".to_string(),
-                                persisted: true,
-                                reason: "Node removed from allowlist".to_string(),
-                            },
-                        );
-                    }
-                    managed_nodes.remove(&node_name);
-                    link_states.remove(&node_name);
-                }
-                Err(e) => {
-                    status.warnings.push(format!(
-                        "TreeGuard links: failed to clear virtual override for node '{node_name}': {e}"
-                    ));
-                    push_activity(
-                        activity,
-                        TreeguardActivityEntry {
-                            time: now_unix.to_string(),
-                            entity_type: "node".to_string(),
-                            entity_id: node_name,
-                            action: "clear_virtual_override_failed".to_string(),
-                            persisted: false,
-                            reason: format!("Overrides write failed: {e}"),
-                        },
-                    );
-                }
-            }
+            clear_legacy_treeguard_virtual_override(
+                status,
+                activity,
+                now_unix,
+                &node_name,
+                "Node removed from allowlist",
+            );
+            restore_runtime_virtualization_if_needed(
+                status,
+                activity,
+                now_unix,
+                &node_name,
+                "Node removed from allowlist",
+                tg.dry_run,
+                runtime_virtualized_nodes,
+                link_virtualization_backoff_until_unix,
+                link_states,
+            );
+            managed_nodes.remove(&node_name);
+            link_states.remove(&node_name);
         }
         if tg.links.all_nodes {
             for node in reader.get_nodes_when_ready().iter() {
@@ -572,95 +772,51 @@ fn run_tick(
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
                     ));
-                    match overrides::clear_node_virtual(node_name) {
-                        Ok(changed) => {
-                            if changed {
-                                reload_controller.request_reload(
-                                    ReloadPriority::Normal,
-                                    format!(
-                                        "Cleared virtual override for node '{node_name}' due to operator conflict"
-                                    ),
-                                );
-                                push_activity(
-                                    activity,
-                                    TreeguardActivityEntry {
-                                        time: now_unix.to_string(),
-                                        entity_type: "node".to_string(),
-                                        entity_id: node_name.to_string(),
-                                        action: "clear_virtual_override_conflict".to_string(),
-                                        persisted: true,
-                                        reason: "Operator override present; TreeGuard will not manage this node.".to_string(),
-                                    },
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            status.warnings.push(format!(
-                                "TreeGuard links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
-                            ));
-                        }
-                    }
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Operator override present; TreeGuard will not manage this node.",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Operator override present; TreeGuard will not manage this node.",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
                     managed_nodes.remove(node_name);
                     link_states.remove(node_name);
                     continue;
                 }
 
-                let treeguard_virtual_override = treeguard_overrides_snapshot
-                    .as_ref()
-                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
-
                 if node.virtual_node {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
-                    if treeguard_virtual_override.is_some() {
-                        let needs_reload = treeguard_virtual_override == Some(false);
-                        match overrides::clear_node_virtual(node_name) {
-                            Ok(changed) => {
-                                if changed {
-                                    if needs_reload {
-                                        reload_controller.request_reload(
-                                            ReloadPriority::Normal,
-                                            format!(
-                                                "Cleared stale TreeGuard override for base-virtual node '{node_name}'"
-                                            ),
-                                        );
-                                    }
-                                    push_activity(
-                                        activity,
-                                        TreeguardActivityEntry {
-                                            time: now_unix.to_string(),
-                                            entity_type: "node".to_string(),
-                                            entity_id: node_name.to_string(),
-                                            action: "clear_virtual_override_base_virtual"
-                                                .to_string(),
-                                            persisted: true,
-                                            reason: "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.".to_string(),
-                                        },
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                status.warnings.push(format!(
-                                    "TreeGuard links: failed to clear stale TreeGuard override for base-virtual node '{node_name}': {e}"
-                                ));
-                                push_activity(
-                                    activity,
-                                    TreeguardActivityEntry {
-                                        time: now_unix.to_string(),
-                                        entity_type: "node".to_string(),
-                                        entity_id: node_name.to_string(),
-                                        action: "clear_virtual_override_base_virtual_failed"
-                                            .to_string(),
-                                        persisted: false,
-                                        reason: format!(
-                                            "Failed to clear stale TreeGuard override for base-virtual node: {e}"
-                                        ),
-                                    },
-                                );
-                            }
-                        }
-                    }
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
                     managed_nodes.remove(node_name);
                     link_states.remove(node_name);
                     continue;
@@ -684,14 +840,8 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.to_string()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
-                        && let Some(v) = overrides_node_virtual(overrides, node_name)
-                    {
-                        state.desired = if v {
-                            LinkVirtualState::Virtual
-                        } else {
-                            LinkVirtualState::Physical
-                        };
+                    if runtime_virtualized_nodes.contains(node_name) {
+                        state.desired = LinkVirtualState::Virtual;
                     }
                     state
                 });
@@ -837,99 +987,34 @@ fn run_tick(
                     if target == state.desired {
                         continue;
                     }
-
-                    let persist = !tg.dry_run;
-                    let mut persisted_ok = false;
-                    let mut override_changed = false;
-
-                    if persist {
-                        let new_virtual = target == LinkVirtualState::Virtual;
-                        match overrides::set_node_virtual(node_name, new_virtual) {
-                            Ok(changed) => {
-                                persisted_ok = true;
-                                override_changed = changed;
-                            }
-                            Err(e) => {
-                                status.warnings.push(format!(
-                                    "TreeGuard links: failed to persist virtual override for node '{node_name}': {e}"
-                                ));
-                                managed_nodes.insert(node_name.to_string());
-                                push_activity(
-                                    activity,
-                                    TreeguardActivityEntry {
-                                        time: now_unix.to_string(),
-                                        entity_type: "node".to_string(),
-                                        entity_id: node_name.to_string(),
-                                        action: "set_virtual_override_failed".to_string(),
-                                        persisted: false,
-                                        reason: format!("Overrides write failed: {e}"),
-                                    },
-                                );
-                                continue;
-                            }
-                        }
-                    }
-
-                    if override_changed {
-                        let priority = if target == LinkVirtualState::Physical {
-                            ReloadPriority::Urgent
-                        } else {
-                            ReloadPriority::Normal
-                        };
-                        reload_controller.request_reload(
-                            priority,
-                            format!("Node '{node_name}' virtualization changed"),
-                        );
-                    }
-
-                    state.desired = target;
-                    state.last_change_unix = Some(now_unix);
-                    state.recent_changes_unix.push_back(now_unix);
-                    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
-                    managed_nodes.insert(node_name.to_string());
-
-                    push_activity(
+                    apply_link_virtualization_decision(
+                        status,
                         activity,
-                        TreeguardActivityEntry {
-                            time: now_unix.to_string(),
-                            entity_type: "node".to_string(),
-                            entity_id: node_name.to_string(),
-                            action: match target {
-                                LinkVirtualState::Physical => "unvirtualize".to_string(),
-                                LinkVirtualState::Virtual => "virtualize".to_string(),
-                            },
-                            persisted: persist && persisted_ok,
-                            reason: if is_top_level {
-                                match target {
-                                    LinkVirtualState::Virtual => format!(
-                                        "Top-level safe: sustained utilization below {:.1}% for {} minutes",
-                                        top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
-                                    ),
-                                    LinkVirtualState::Physical => format!(
-                                        "Top-level unsafe: utilization above {:.1}%",
-                                        top_level_safe_util_pct
-                                    ),
-                                }
-                            } else {
-                                "Decision policy matched".to_string()
-                            },
-                        },
-                    );
-                    status.last_action_summary = Some(format!(
-                        "{} node '{}'",
-                        if target == LinkVirtualState::Virtual {
-                            "Virtualized"
+                        now_unix,
+                        node_name,
+                        target,
+                        if is_top_level {
+                            match target {
+                                LinkVirtualState::Virtual => format!(
+                                    "Top-level safe: sustained utilization below {:.1}% for {} minutes",
+                                    top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
+                                ),
+                                LinkVirtualState::Physical => format!(
+                                    "Top-level unsafe: utilization above {:.1}%",
+                                    top_level_safe_util_pct
+                                ),
+                            }
                         } else {
-                            "Unvirtualized"
+                            "Decision policy matched".to_string()
                         },
-                        node_name
-                    ));
+                        tg.dry_run,
+                        state,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                    );
+                    managed_nodes.insert(node_name.to_string());
                 } else {
                     managed_nodes.insert(node_name.to_string());
-                }
-
-                if state.desired == LinkVirtualState::Virtual {
-                    virtualized_nodes += 1;
                 }
             }
         } else {
@@ -945,34 +1030,24 @@ fn run_tick(
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
                     ));
-                    match overrides::clear_node_virtual(node_name) {
-                        Ok(changed) => {
-                            if changed {
-                                reload_controller.request_reload(
-	                                ReloadPriority::Normal,
-	                                format!(
-	                                    "Cleared virtual override for node '{node_name}' due to operator conflict"
-	                                ),
-	                            );
-                                push_activity(
-	                                activity,
-	                                TreeguardActivityEntry {
-	                                    time: now_unix.to_string(),
-                                    entity_type: "node".to_string(),
-                                    entity_id: node_name.clone(),
-                                    action: "clear_virtual_override_conflict".to_string(),
-                                    persisted: true,
-                                    reason: "Operator override present; TreeGuard will not manage this node.".to_string(),
-                                },
-                            );
-                            }
-                        }
-                        Err(e) => {
-                            status.warnings.push(format!(
-                            "TreeGuard links: failed to clear virtual override for node '{node_name}' during conflict cleanup: {e}"
-                        ));
-                        }
-                    }
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Operator override present; TreeGuard will not manage this node.",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Operator override present; TreeGuard will not manage this node.",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
                     managed_nodes.remove(node_name);
                     link_states.remove(node_name);
                     continue;
@@ -981,71 +1056,77 @@ fn run_tick(
                     status.warnings.push(format!(
                         "TreeGuard links allowlist: node '{node_name}' not found in network.json."
                     ));
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node no longer exists in network.json",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node no longer exists in network.json",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
+                    managed_nodes.remove(node_name);
+                    link_states.remove(node_name);
                     continue;
                 };
                 let Some(node) = reader.get_nodes_when_ready().get(index) else {
                     status.warnings.push(format!(
                         "TreeGuard links allowlist: node '{node_name}' index not present."
                     ));
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node index no longer exists in network.json",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node index no longer exists in network.json",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
+                    managed_nodes.remove(node_name);
+                    link_states.remove(node_name);
                     continue;
                 };
-
-                let treeguard_virtual_override = treeguard_overrides_snapshot
-                    .as_ref()
-                    .and_then(|overrides| overrides_node_virtual(overrides, node_name));
 
                 if node.virtual_node {
                     status.warnings.push(format!(
                         "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                     ));
-                    if treeguard_virtual_override.is_some() {
-                        let needs_reload = treeguard_virtual_override == Some(false);
-                        match overrides::clear_node_virtual(node_name) {
-                            Ok(changed) => {
-                                if changed {
-                                    if needs_reload {
-                                        reload_controller.request_reload(
-                                            ReloadPriority::Normal,
-                                            format!(
-                                                "Cleared stale TreeGuard override for base-virtual node '{node_name}'"
-                                            ),
-                                        );
-                                    }
-                                    push_activity(
-                                        activity,
-                                        TreeguardActivityEntry {
-                                            time: now_unix.to_string(),
-                                            entity_type: "node".to_string(),
-                                            entity_id: node_name.clone(),
-                                            action: "clear_virtual_override_base_virtual"
-                                                .to_string(),
-                                            persisted: true,
-                                            reason: "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.".to_string(),
-                                        },
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                status.warnings.push(format!(
-                                    "TreeGuard links: failed to clear stale TreeGuard override for base-virtual node '{node_name}': {e}"
-                                ));
-                                push_activity(
-                                    activity,
-                                    TreeguardActivityEntry {
-                                        time: now_unix.to_string(),
-                                        entity_type: "node".to_string(),
-                                        entity_id: node_name.clone(),
-                                        action: "clear_virtual_override_base_virtual_failed"
-                                            .to_string(),
-                                        persisted: false,
-                                        reason: format!(
-                                            "Failed to clear stale TreeGuard override for base-virtual node: {e}"
-                                        ),
-                                    },
-                                );
-                            }
-                        }
-                    }
+                    clear_legacy_treeguard_virtual_override(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                    );
+                    restore_runtime_virtualization_if_needed(
+                        status,
+                        activity,
+                        now_unix,
+                        node_name,
+                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
+                        tg.dry_run,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                        link_states,
+                    );
                     managed_nodes.remove(node_name);
                     link_states.remove(node_name);
                     continue;
@@ -1069,14 +1150,8 @@ fn run_tick(
 
                 let state = link_states.entry(node_name.clone()).or_insert_with(|| {
                     let mut state = LinkState::default();
-                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
-                        && let Some(v) = overrides_node_virtual(overrides, node_name)
-                    {
-                        state.desired = if v {
-                            LinkVirtualState::Virtual
-                        } else {
-                            LinkVirtualState::Physical
-                        };
+                    if runtime_virtualized_nodes.contains(node_name) {
+                        state.desired = LinkVirtualState::Virtual;
                     }
                     state
                 });
@@ -1222,223 +1297,72 @@ fn run_tick(
                     if target == state.desired {
                         continue;
                     }
-
-                    let persist = !tg.dry_run;
-                    let mut persisted_ok = false;
-                    let mut override_changed = false;
-
-                    if persist {
-                        let new_virtual = target == LinkVirtualState::Virtual;
-                        match overrides::set_node_virtual(node_name, new_virtual) {
-                            Ok(changed) => {
-                                persisted_ok = true;
-                                override_changed = changed;
-                            }
-                            Err(e) => {
-                                status.warnings.push(format!(
-                                "TreeGuard links: failed to persist virtual override for node '{node_name}': {e}"
-                            ));
-                                managed_nodes.insert(node_name.clone());
-                                push_activity(
-                                    activity,
-                                    TreeguardActivityEntry {
-                                        time: now_unix.to_string(),
-                                        entity_type: "node".to_string(),
-                                        entity_id: node_name.clone(),
-                                        action: "set_virtual_override_failed".to_string(),
-                                        persisted: false,
-                                        reason: format!("Overrides write failed: {e}"),
-                                    },
-                                );
-                                continue;
-                            }
-                        }
-                    }
-
-                    if override_changed {
-                        let priority = if target == LinkVirtualState::Physical {
-                            ReloadPriority::Urgent
-                        } else {
-                            ReloadPriority::Normal
-                        };
-                        reload_controller.request_reload(
-                            priority,
-                            format!("Node '{}' virtualization changed", node_name.clone()),
-                        );
-                    }
-                    state.desired = target;
-                    state.last_change_unix = Some(now_unix);
-                    state.recent_changes_unix.push_back(now_unix);
-                    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
-                    managed_nodes.insert(node_name.clone());
-
-                    push_activity(
+                    apply_link_virtualization_decision(
+                        status,
                         activity,
-                        TreeguardActivityEntry {
-                            time: now_unix.to_string(),
-                            entity_type: "node".to_string(),
-                            entity_id: node_name.clone(),
-                            action: match target {
-                                LinkVirtualState::Physical => "unvirtualize".to_string(),
-                                LinkVirtualState::Virtual => "virtualize".to_string(),
-                            },
-                            persisted: persist && persisted_ok,
-                            reason: if is_top_level {
-                                match target {
-                                    LinkVirtualState::Virtual => format!(
-                                        "Top-level safe: sustained utilization below {:.1}% for {} minutes",
-                                        top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
-                                    ),
-                                    LinkVirtualState::Physical => format!(
-                                        "Top-level unsafe: utilization above {:.1}%",
-                                        top_level_safe_util_pct
-                                    ),
-                                }
-                            } else {
-                                "Decision policy matched".to_string()
-                            },
-                        },
-                    );
-                    status.last_action_summary = Some(format!(
-                        "{} node '{}'",
-                        if target == LinkVirtualState::Virtual {
-                            "Virtualized"
+                        now_unix,
+                        node_name,
+                        target,
+                        if is_top_level {
+                            match target {
+                                LinkVirtualState::Virtual => format!(
+                                    "Top-level safe: sustained utilization below {:.1}% for {} minutes",
+                                    top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
+                                ),
+                                LinkVirtualState::Physical => format!(
+                                    "Top-level unsafe: utilization above {:.1}%",
+                                    top_level_safe_util_pct
+                                ),
+                            }
                         } else {
-                            "Unvirtualized"
+                            "Decision policy matched".to_string()
                         },
-                        node_name
-                    ));
+                        tg.dry_run,
+                        state,
+                        runtime_virtualized_nodes,
+                        link_virtualization_backoff_until_unix,
+                    );
+                    managed_nodes.insert(node_name.clone());
                 } else {
                     managed_nodes.insert(node_name.clone());
                 }
-
-                if state.desired == LinkVirtualState::Virtual {
-                    virtualized_nodes += 1;
-                }
-            }
-        }
-    }
-
-    if let Some(attempt) = reload_controller.poll_reload(now_unix, tg.links.reload_cooldown_minutes)
-    {
-        let crate::treeguard::reload::ReloadAttempt {
-            outcome,
-            request_reason,
-        } = attempt;
-
-        match outcome {
-            ReloadOutcome::Success { message: _ } => {
-                let why = request_reason.unwrap_or_else(|| "Topology change".to_string());
-                push_activity(
-                    activity,
-                    TreeguardActivityEntry {
-                        time: now_unix.to_string(),
-                        entity_type: "treeguard".to_string(),
-                        entity_id: "reload".to_string(),
-                        action: "reload_success".to_string(),
-                        persisted: true,
-                        reason: why.clone(),
-                    },
-                );
-                status.last_action_summary = Some(format!("Reloaded LibreQoS: {why}"));
-            }
-            ReloadOutcome::Skipped {
-                reason,
-                next_allowed_unix,
-            } => {
-                let extra = next_allowed_unix
-                    .map(|t| format!(" next_allowed_unix={t}"))
-                    .unwrap_or_default();
-                push_activity(
-                    activity,
-                    TreeguardActivityEntry {
-                        time: now_unix.to_string(),
-                        entity_type: "treeguard".to_string(),
-                        entity_id: "reload".to_string(),
-                        action: "reload_skipped".to_string(),
-                        persisted: false,
-                        reason: format!("{reason}.{extra}"),
-                    },
-                );
-            }
-            ReloadOutcome::Failed {
-                error,
-                next_allowed_unix,
-            } => {
-                let why = request_reason.unwrap_or_else(|| "Topology change".to_string());
-                let extra = next_allowed_unix
-                    .map(|t| format!(" next_allowed_unix={t}"))
-                    .unwrap_or_default();
-                status
-                    .warnings
-                    .push(format!("TreeGuard reload failed: {error}.{extra}"));
-                push_activity(
-                    activity,
-                    TreeguardActivityEntry {
-                        time: now_unix.to_string(),
-                        entity_type: "treeguard".to_string(),
-                        entity_id: "reload".to_string(),
-                        action: "reload_failed".to_string(),
-                        persisted: false,
-                        reason: format!("{error}.{extra}"),
-                    },
-                );
-                urgent::submit(
-                    UrgentSource::System,
-                    UrgentSeverity::Error,
-                    "treeguard_reload_failed".to_string(),
-                    format!("TreeGuard failed to reload LibreQoS: {error}"),
-                    Some(why),
-                    Some("treeguard_reload".to_string()),
-                );
             }
         }
     }
 
     // --- Circuit sampling + decisions (SQM switching) ---
     let manage_circuits = tg.enabled && tg.circuits.enabled;
-
-    // Snapshot shaped devices so we can compute the enrolled circuit set.
-    let shaped = SHAPED_DEVICES.load();
+    let circuit_inventory = &runtime_state.circuit_inventory;
 
     let enrolled_circuits: Vec<String> = if tg.circuits.all_circuits {
-        let mut set: FxHashSet<String> = FxHashSet::default();
-        for d in shaped.devices.iter() {
-            let id = d.circuit_id.trim();
-            if !id.is_empty() {
-                set.insert(id.to_string());
-            }
-        }
-        let mut v: Vec<String> = set.into_iter().collect();
-        v.sort();
-        v
+        circuit_inventory.circuit_ids.clone()
     } else {
         let mut v = tg.circuits.circuits.clone();
         v.sort();
         v.dedup();
         v
     };
-
-    let allowlisted_circuits: FxHashSet<String> = enrolled_circuits.iter().cloned().collect();
     status.managed_circuits = enrolled_circuits.len();
 
-    // Compute desired device_id set from enrolled circuits.
-    let desired_device_ids: FxHashSet<String> = if manage_circuits {
-        if tg.circuits.all_circuits {
-            shaped.devices.iter().map(|d| d.device_id.clone()).collect()
-        } else {
-            shaped
-                .devices
-                .iter()
-                .filter(|d| allowlisted_circuits.contains(&d.circuit_id))
-                .map(|d| d.device_id.clone())
-                .collect()
+    let allowlisted_circuits: FxHashSet<String> = if tg.circuits.all_circuits {
+        FxHashSet::default()
+    } else {
+        enrolled_circuits.iter().cloned().collect()
+    };
+    let desired_device_ids: FxHashSet<String> = if manage_circuits && !tg.circuits.all_circuits {
+        let mut desired = FxHashSet::default();
+        for circuit_id in enrolled_circuits.iter() {
+            if let Some(entry) = circuit_inventory.entries.get(circuit_id) {
+                desired.extend(entry.device_ids.iter().cloned());
+            }
         }
+        desired
     } else {
         FxHashSet::default()
     };
+    let mut circuit_change_budget_remaining = TREEGUARD_CIRCUIT_CHANGE_BUDGET_PER_TICK;
+    let mut deferred_circuit_sqm_changes = 0usize;
 
-    // Cleanup for removed circuits or disabled circuits/TreeGuard.
     if !manage_circuits {
         let removed: Vec<String> = match OverrideStore::load_layer(OverrideLayer::Treeguard) {
             Ok(of) => overrides_sqm_device_ids(&of).into_iter().collect(),
@@ -1476,42 +1400,26 @@ fn run_tick(
         managed_device_ids.clear();
         duplicate_device_conflict_circuits.clear();
         circuit_states.clear();
+        runtime_state.circuit_batch_cursor = 0;
     } else {
-        let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
-        circuits_by_device_id.reserve(shaped.devices.len());
-        for device in shaped.devices.iter() {
-            let device_id = device.device_id.trim();
-            let circuit_id = device.circuit_id.trim();
-            if device_id.is_empty() || circuit_id.is_empty() {
-                continue;
-            }
-            circuits_by_device_id
-                .entry(device_id.to_string())
-                .or_default()
-                .insert(circuit_id.to_string());
-        }
-        let duplicate_device_ids: FxHashMap<String, Vec<String>> = circuits_by_device_id
-            .into_iter()
-            .filter_map(|(device_id, circuits)| {
-                if circuits.len() <= 1 {
-                    return None;
-                }
-                let mut circuits: Vec<String> = circuits.into_iter().collect();
-                circuits.sort();
-                Some((device_id, circuits))
-            })
-            .collect();
-        let mut current_duplicate_device_conflict_circuits: FxHashSet<String> =
-            FxHashSet::default();
+        circuit_states.retain(|circuit_id, _| {
+            circuit_inventory.entries.contains_key(circuit_id)
+                && (tg.circuits.all_circuits || allowlisted_circuits.contains(circuit_id))
+        });
 
-        // Reconcile device IDs removed from allowlisted circuits.
         let treeguard_device_ids_with_overrides: FxHashSet<String> = treeguard_overrides_snapshot
             .as_ref()
             .map(overrides_sqm_device_ids)
             .unwrap_or_default();
         let removed: Vec<String> = treeguard_device_ids_with_overrides
             .iter()
-            .filter(|d| !desired_device_ids.contains(*d))
+            .filter(|device_id| {
+                if tg.circuits.all_circuits {
+                    !circuit_inventory.all_device_ids.contains(*device_id)
+                } else {
+                    !desired_device_ids.contains(*device_id)
+                }
+            })
             .cloned()
             .collect();
         if !removed.is_empty() {
@@ -1542,97 +1450,26 @@ fn run_tick(
             }
         }
 
-        // Snapshot RTT buffers by circuit hash.
         let rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
+        let live_snapshot = fresh_circuit_live_snapshot();
+        let batch_size =
+            circuit_evaluation_batch_size(enrolled_circuits.len(), tg.circuits.all_circuits);
+        let circuit_batch = collect_circuit_batch(
+            &enrolled_circuits,
+            &mut runtime_state.circuit_batch_cursor,
+            batch_size,
+        );
 
-        let allow_hashes: Option<FxHashSet<i64>> = if tg.circuits.all_circuits {
-            None
-        } else {
-            Some(enrolled_circuits.iter().map(|id| hash_to_i64(id)).collect())
-        };
-
-        // Capacity lookup by circuit hash (max down/up Mbps across devices in the circuit).
-        let mut capacity_by_circuit: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
-        capacity_by_circuit.reserve(shaped.devices.len());
-        for device in shaped.devices.iter() {
-            let entry = capacity_by_circuit
-                .entry(device.circuit_hash)
-                .or_insert((device.download_max_mbps, device.upload_max_mbps));
-            if device.download_max_mbps > entry.0 {
-                entry.0 = device.download_max_mbps;
-            }
-            if device.upload_max_mbps > entry.1 {
-                entry.1 = device.upload_max_mbps;
-            }
-        }
-
-        // Aggregate worst (minimum) QoO and throughput per circuit hash across devices/hosts.
-        let mut qoo_by_circuit: FxHashMap<i64, DownUpOrder<Option<f32>>> = FxHashMap::default();
-        let mut bps_by_circuit: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
-        {
-            let raw = THROUGHPUT_TRACKER.raw_data.lock();
-            for entry in raw.values() {
-                let Some(ch) = entry.circuit_hash else {
-                    continue;
-                };
-                if allow_hashes.as_ref().is_some_and(|h| !h.contains(&ch)) {
-                    continue;
-                }
-
-                let down = entry.qoq.download_total_f32();
-                let up = entry.qoq.upload_total_f32();
-                let slot = qoo_by_circuit.entry(ch).or_insert(DownUpOrder {
-                    down: None,
-                    up: None,
-                });
-                slot.down = min_opt_f32(slot.down, down);
-                slot.up = min_opt_f32(slot.up, up);
-
-                let bps = bps_by_circuit
-                    .entry(ch)
-                    .or_insert(DownUpOrder { down: 0, up: 0 });
-                bps.down = bps.down.saturating_add(entry.bytes_per_second.down);
-                bps.up = bps.up.saturating_add(entry.bytes_per_second.up);
-            }
-        }
-
-        for circuit_id in enrolled_circuits.iter() {
-            let devices: Vec<lqos_config::ShapedDevice> = shaped
-                .devices
-                .iter()
-                .filter(|d| d.circuit_id == circuit_id.as_str())
-                .cloned()
-                .collect();
-
-            let circuit_name: Option<String> = devices.iter().find_map(|d| {
-                let name = d.circuit_name.trim();
-                if name.is_empty() {
-                    None
-                } else {
-                    Some(name.to_string())
-                }
-            });
-            let circuit_entity_id: String = match circuit_name.as_deref() {
-                Some(name) => format!("{name} ({circuit_id})"),
-                None => circuit_id.clone(),
+        for circuit_id in circuit_batch {
+            let Some(entry) = circuit_inventory.entries.get(circuit_id) else {
+                continue;
             };
-            let circuit_label: String = circuit_name.unwrap_or_else(|| circuit_id.clone());
 
-            let mut circuit_device_ids: Vec<String> =
-                devices.iter().map(|d| d.device_id.clone()).collect();
-            circuit_device_ids.sort();
-            circuit_device_ids.dedup();
-            let duplicate_details: Vec<(String, Vec<String>)> = circuit_device_ids
-                .iter()
-                .filter_map(|device_id| {
-                    duplicate_device_ids
-                        .get(device_id)
-                        .map(|circuits| (device_id.clone(), circuits.clone()))
-                })
-                .collect();
-            if !duplicate_details.is_empty() {
-                current_duplicate_device_conflict_circuits.insert(circuit_id.clone());
-                let duplicate_reason = duplicate_details
+            if !entry.duplicate_details.is_empty() {
+                let was_conflicted = duplicate_device_conflict_circuits.contains(circuit_id);
+                duplicate_device_conflict_circuits.insert(circuit_id.to_string());
+                let duplicate_reason = entry
+                    .duplicate_details
                     .iter()
                     .map(|(device_id, circuits)| {
                         format!(
@@ -1646,13 +1483,13 @@ fn run_tick(
                 status.warnings.push(format!(
                     "TreeGuard circuits: circuit '{circuit_id}' has duplicate device IDs; TreeGuard will not manage it. {duplicate_reason}"
                 ));
-                if !duplicate_device_conflict_circuits.contains(circuit_id) {
+                if !was_conflicted {
                     push_activity(
                         activity,
                         TreeguardActivityEntry {
                             time: now_unix.to_string(),
                             entity_type: "circuit".to_string(),
-                            entity_id: circuit_entity_id.clone(),
+                            entity_id: entry.circuit_entity_id.clone(),
                             action: "skip_duplicate_device_id".to_string(),
                             persisted: false,
                             reason: format!(
@@ -1661,8 +1498,8 @@ fn run_tick(
                         },
                     );
                 }
-                if !circuit_device_ids.is_empty() {
-                    match overrides::clear_device_overrides(&circuit_device_ids) {
+                if !entry.device_ids.is_empty() {
+                    match overrides::clear_device_overrides(&entry.device_ids) {
                         Ok(changed) => {
                             if changed {
                                 push_activity(
@@ -1670,7 +1507,7 @@ fn run_tick(
                                     TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
-                                        entity_id: circuit_entity_id.clone(),
+                                        entity_id: entry.circuit_entity_id.clone(),
                                         action: "clear_sqm_overrides_duplicate_device_id"
                                             .to_string(),
                                         persisted: true,
@@ -1685,53 +1522,54 @@ fn run_tick(
                             ));
                         }
                     }
-                    for did in circuit_device_ids.iter() {
-                        managed_device_ids.remove(did);
+                    for device_id in entry.device_ids.iter() {
+                        managed_device_ids.remove(device_id);
                     }
                 }
                 circuit_states.remove(circuit_id);
                 continue;
             }
 
-            let state = circuit_states.entry(circuit_id.clone()).or_insert_with(|| {
-                let mut state = CircuitState::default();
-                if let Some(token) = infer_circuit_sqm_override_token(
-                    circuit_id,
-                    &shaped.devices,
-                    treeguard_overrides_snapshot.as_ref(),
-                ) {
-                    let parsed = decisions::parse_directional_sqm_override(&token);
-                    if let Some(down) = parsed.down {
-                        state.down.desired = down;
+            duplicate_device_conflict_circuits.remove(circuit_id);
+
+            let base_sqm = base_circuit_sqm_state(
+                &entry.devices,
+                operator_overrides_snapshot.as_ref(),
+                &config,
+                entry.cap_down,
+                entry.cap_up,
+            );
+            let state = circuit_states
+                .entry(circuit_id.to_string())
+                .or_insert_with(|| {
+                    let mut state = CircuitState::default();
+                    state.down.desired = base_sqm.down;
+                    state.up.desired = base_sqm.up;
+                    if let Some(overrides) = treeguard_overrides_snapshot.as_ref()
+                        && let Some(token) =
+                            find_circuit_override_token_in_overrides(&entry.devices, overrides)
+                    {
+                        let parsed = decisions::parse_directional_sqm_override(&token);
+                        if let Some(down) = parsed.down {
+                            state.down.desired = down;
+                        }
+                        if let Some(up) = parsed.up {
+                            state.up.desired = up;
+                        }
                     }
-                    if let Some(up) = parsed.up {
-                        state.up.desired = up;
-                    }
-                }
-                state
-            });
-            let circuit_hash = hash_to_i64(circuit_id);
-            let (cap_down, cap_up) = capacity_by_circuit
-                .get(&circuit_hash)
-                .copied()
-                .unwrap_or((0.0, 0.0));
-            let qoo = qoo_by_circuit
-                .get(&circuit_hash)
-                .cloned()
-                .unwrap_or(DownUpOrder {
-                    down: None,
-                    up: None,
+                    state
                 });
 
-            let operator_conflict = circuit_device_ids
+            let operator_conflict = entry
+                .device_ids
                 .iter()
-                .any(|did| operator_sqm_device_overrides.contains(did));
+                .any(|device_id| operator_sqm_device_overrides.contains(device_id));
             if operator_conflict {
                 status.warnings.push(format!(
                     "TreeGuard circuits: circuit '{circuit_id}' has operator SQM overrides; TreeGuard will not manage it."
                 ));
-                if !circuit_device_ids.is_empty() {
-                    match overrides::clear_device_overrides(&circuit_device_ids) {
+                if !entry.device_ids.is_empty() {
+                    match overrides::clear_device_overrides(&entry.device_ids) {
                         Ok(changed) => {
                             if changed {
                                 push_activity(
@@ -1739,7 +1577,7 @@ fn run_tick(
                                     TreeguardActivityEntry {
                                         time: now_unix.to_string(),
                                         entity_type: "circuit".to_string(),
-                                        entity_id: circuit_entity_id.clone(),
+                                        entity_id: entry.circuit_entity_id.clone(),
                                         action: "clear_sqm_overrides_conflict".to_string(),
                                         persisted: true,
                                         reason: "Operator SQM overrides present; cleared TreeGuard SQM overlays.".to_string(),
@@ -1753,176 +1591,84 @@ fn run_tick(
                             ));
                         }
                     }
-                    for did in circuit_device_ids.iter() {
-                        managed_device_ids.remove(did);
+                    for device_id in entry.device_ids.iter() {
+                        managed_device_ids.remove(device_id);
                     }
                 }
                 continue;
             }
 
-            let fq_codel = if tg.dry_run {
-                let capacity_known = cap_down > 0.0 && cap_up > 0.0;
-                if !capacity_known {
-                    status.warnings.push(format!(
-                        "TreeGuard circuits: circuit '{circuit_id}' has unknown capacity; no changes will be made."
-                    ));
-                    state.down.idle_since_unix = None;
-                    state.up.idle_since_unix = None;
-                } else {
-                    let bps = bps_by_circuit
-                        .get(&circuit_hash)
-                        .copied()
-                        .unwrap_or(DownUpOrder { down: 0, up: 0 });
-                    let mbps_down = (bps.down as f64 * 8.0) / 1_000_000.0;
-                    let mbps_up = (bps.up as f64 * 8.0) / 1_000_000.0;
-                    let util_down_pct = (mbps_down / cap_down as f64) * 100.0;
-                    let util_up_pct = (mbps_up / cap_up as f64) * 100.0;
+            for device_id in entry.device_ids.iter() {
+                managed_device_ids.insert(device_id.clone());
+            }
 
-                    let ewma_down = state
-                        .down
-                        .util_ewma_pct
-                        .update(util_down_pct, UTIL_EWMA_ALPHA);
-                    let ewma_up = state.up.util_ewma_pct.update(util_up_pct, UTIL_EWMA_ALPHA);
+            if !treeguard_manages_circuit_direction(base_sqm.down)
+                && !treeguard_manages_circuit_direction(base_sqm.up)
+                && state.down.desired == base_sqm.down
+                && state.up.desired == base_sqm.up
+            {
+                continue;
+            }
 
-                    update_idle_since(
-                        &mut state.down.idle_since_unix,
-                        now_unix,
-                        ewma_down,
-                        tg.circuits.idle_util_pct as f64,
-                    );
-                    update_idle_since(
-                        &mut state.up.idle_since_unix,
-                        now_unix,
-                        ewma_up,
-                        tg.circuits.idle_util_pct as f64,
-                    );
-                }
-
-                let rtt_missing = match now_nanos_since_boot {
-                    None => true,
-                    Some(now_nanos) => match rtt_snapshot.get(&circuit_hash) {
-                        None => true,
-                        Some(buf) => {
-                            if buf.last_seen == 0 {
-                                true
-                            } else {
-                                let age_nanos = now_nanos.saturating_sub(buf.last_seen);
-                                age_nanos
-                                    >= u64::from(tg.circuits.rtt_missing_seconds)
-                                        .saturating_mul(1_000_000_000)
-                            }
-                        }
-                    },
-                };
-
-                let decision = decisions::decide_circuit_sqm(decisions::CircuitSqmInput {
+            let live_rollup = live_snapshot.by_circuit_id.get(circuit_id);
+            process_circuit_tick(
+                CircuitTickContext {
+                    status,
+                    activity,
+                    managed_device_ids,
                     now_unix,
-                    allowlisted: allowlisted_circuits.contains(circuit_id) && capacity_known,
+                    now_nanos_since_boot,
                     cpu_max_pct,
+                    dry_run: tg.dry_run,
+                    circuit_id,
+                    circuit_entity_id: &entry.circuit_entity_id,
+                    circuit_label: &entry.circuit_label,
+                    devices: &entry.devices,
+                    allowlisted: tg.circuits.all_circuits
+                        || allowlisted_circuits.contains(circuit_id),
+                    cap_down: entry.cap_down,
+                    cap_up: entry.cap_up,
+                    bps: live_rollup
+                        .map(|rollup| rollup.bytes_per_second)
+                        .unwrap_or(DownUpOrder { down: 0, up: 0 }),
+                    last_rtt_seen_nanos: rtt_snapshot
+                        .get(&entry.circuit_hash)
+                        .map(|buf| buf.last_seen),
+                    qoo: live_rollup.map(|rollup| rollup.qoo).unwrap_or(DownUpOrder {
+                        down: None,
+                        up: None,
+                    }),
                     cpu_cfg: &tg.cpu,
                     circuits_cfg: &tg.circuits,
                     qoo_cfg: &tg.qoo,
-                    rtt_missing,
-                    qoo,
-                    state,
-                });
-
-                let mut proposed_down = state.down.desired;
-                let mut proposed_up = state.up.desired;
-                if let Some(down) = decision.down {
-                    proposed_down = down;
-                }
-                if let Some(up) = decision.up {
-                    proposed_up = up;
-                }
-
-                let changed_down = proposed_down != state.down.desired;
-                let changed_up = proposed_up != state.up.desired;
-
-                if devices.is_empty() {
-                    status.warnings.push(format!(
-                        "TreeGuard circuits: circuit '{circuit_id}' has no devices in ShapedDevices.csv."
-                    ));
-                } else {
-                    for dev in devices.iter() {
-                        managed_device_ids.insert(dev.device_id.clone());
-                    }
-                }
-
-                if changed_down || changed_up {
-                    apply_circuit_sqm_change(
-                        CircuitSqmApplyContext {
-                            status,
-                            activity,
-                            now_unix,
-                            dry_run: true,
-                            persist_sqm_overrides: tg.circuits.persist_sqm_overrides,
-                            circuit_id,
-                            circuit_entity_id: &circuit_entity_id,
-                            circuit_label: &circuit_label,
-                            devices: &devices,
-                        },
-                        state,
-                        CircuitSqmTransition {
-                            proposed_down,
-                            proposed_up,
-                            changed_down,
-                            changed_up,
-                        },
-                        overrides::set_devices_sqm_override,
-                        |circuit_id, devices, token| {
-                            bakery::apply_circuit_sqm_override_live(circuit_id, devices, token)
-                        },
-                    );
-                }
-
-                state.down.desired == CircuitSqmState::FqCodel
-                    || state.up.desired == CircuitSqmState::FqCodel
-            } else {
-                process_circuit_tick(
-                    CircuitTickContext {
-                        status,
-                        activity,
-                        managed_device_ids,
-                        now_unix,
-                        now_nanos_since_boot,
-                        cpu_max_pct,
-                        circuit_id,
-                        circuit_entity_id: &circuit_entity_id,
-                        circuit_label: &circuit_label,
-                        devices: &devices,
-                        allowlisted: allowlisted_circuits.contains(circuit_id),
-                        cap_down,
-                        cap_up,
-                        bps: bps_by_circuit
-                            .get(&circuit_hash)
-                            .copied()
-                            .unwrap_or(DownUpOrder { down: 0, up: 0 }),
-                        last_rtt_seen_nanos: rtt_snapshot
-                            .get(&circuit_hash)
-                            .map(|buf| buf.last_seen),
-                        qoo,
-                        cpu_cfg: &tg.cpu,
-                        circuits_cfg: &tg.circuits,
-                        qoo_cfg: &tg.qoo,
-                    },
-                    state,
-                    overrides::set_devices_sqm_override,
-                    |circuit_id, devices, token| {
-                        bakery::apply_circuit_sqm_override_live(circuit_id, devices, token)
-                    },
-                )
-            };
-
-            if fq_codel {
-                fq_codel_circuits += 1;
-            }
+                    base_sqm,
+                    circuit_change_budget_remaining: &mut circuit_change_budget_remaining,
+                    deferred_circuit_sqm_changes: &mut deferred_circuit_sqm_changes,
+                },
+                state,
+                overrides::set_devices_sqm_override,
+                overrides::clear_device_overrides,
+                |circuit_id, devices, token| {
+                    bakery::apply_circuit_sqm_override_live(circuit_id, devices, token)
+                },
+            );
         }
-        *duplicate_device_conflict_circuits = current_duplicate_device_conflict_circuits;
+        if deferred_circuit_sqm_changes > 0 {
+            status.warnings.push(format!(
+                "TreeGuard circuits: deferred {} SQM changes because the per-tick circuit change budget ({}) was exhausted.",
+                deferred_circuit_sqm_changes, TREEGUARD_CIRCUIT_CHANGE_BUDGET_PER_TICK
+            ));
+        }
     }
 
-    status.virtualized_nodes = virtualized_nodes;
-    status.fq_codel_circuits = fq_codel_circuits;
+    status.virtualized_nodes = runtime_virtualized_nodes.len();
+    status.fq_codel_circuits = circuit_states
+        .values()
+        .filter(|state| {
+            state.down.desired == CircuitSqmState::FqCodel
+                || state.up.desired == CircuitSqmState::FqCodel
+        })
+        .count();
 }
 
 /// Applies TreeGuard backoff while Bakery is performing a structural full reload.
@@ -1962,6 +1708,8 @@ fn pause_for_bakery_reload_with_flag(
         *tick_seconds = (*tick_seconds).max(5);
         status.enabled = enabled;
         status.dry_run = dry_run;
+        status.paused_for_bakery_reload = true;
+        status.pause_reason = Some("Bakery full reload in progress".to_string());
         status.cpu_max_pct = None;
         status.last_action_summary =
             Some("Paused while Bakery full reload is in progress".to_string());
@@ -1975,24 +1723,218 @@ fn pause_for_bakery_reload_with_flag(
         info!("TreeGuard: resuming after Bakery full reload");
         runtime_state.paused_for_bakery_reload = false;
     }
+    status.paused_for_bakery_reload = false;
+    status.pause_reason = None;
 
     false
 }
 
-/// Returns the current `set_node_virtual` override value for `node_name`, if present.
-///
-/// This function is pure: it has no side effects.
-fn overrides_node_virtual(overrides: &OverrideFile, node_name: &str) -> Option<bool> {
-    overrides
-        .network_adjustments()
-        .iter()
-        .find_map(|adj| match adj {
-            NetworkAdjustment::SetNodeVirtual {
-                node_name: n,
-                virtual_node,
-            } if n == node_name => Some(*virtual_node),
-            _ => None,
-        })
+fn clear_legacy_treeguard_virtual_override(
+    status: &mut TreeguardStatusData,
+    activity: &mut VecDeque<TreeguardActivityEntry>,
+    now_unix: u64,
+    node_name: &str,
+    reason: &str,
+) {
+    match overrides::clear_node_virtual(node_name) {
+        Ok(changed) => {
+            if changed {
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.to_string(),
+                        action: "clear_virtual_override".to_string(),
+                        persisted: true,
+                        reason: reason.to_string(),
+                    },
+                );
+            }
+        }
+        Err(e) => {
+            status.warnings.push(format!(
+                "TreeGuard links: failed to clear legacy virtual override for node '{node_name}': {e}"
+            ));
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "node".to_string(),
+                    entity_id: node_name.to_string(),
+                    action: "clear_virtual_override_failed".to_string(),
+                    persisted: false,
+                    reason: format!("Overrides write failed: {e}"),
+                },
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn restore_runtime_virtualization_if_needed(
+    status: &mut TreeguardStatusData,
+    activity: &mut VecDeque<TreeguardActivityEntry>,
+    now_unix: u64,
+    node_name: &str,
+    reason: &str,
+    dry_run: bool,
+    runtime_virtualized_nodes: &mut FxHashSet<String>,
+    link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
+    link_states: &mut FxHashMap<String, LinkState>,
+) {
+    if !runtime_virtualized_nodes.contains(node_name) {
+        if let Some(state) = link_states.get_mut(node_name) {
+            state.desired = LinkVirtualState::Physical;
+        }
+        link_virtualization_backoff_until_unix.remove(node_name);
+        return;
+    }
+
+    if dry_run {
+        status.warnings.push(format!(
+            "TreeGuard links: node '{node_name}' remains runtime-virtualized because dry-run mode will not restore live topology."
+        ));
+        return;
+    }
+
+    match bakery::apply_node_virtualization_live(node_name, false) {
+        Ok(()) => {
+            runtime_virtualized_nodes.remove(node_name);
+            link_virtualization_backoff_until_unix.remove(node_name);
+            if let Some(state) = link_states.get_mut(node_name) {
+                state.desired = LinkVirtualState::Physical;
+                state.last_change_unix = Some(now_unix);
+                state.recent_changes_unix.push_back(now_unix);
+                prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+            }
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "node".to_string(),
+                    entity_id: node_name.to_string(),
+                    action: "unvirtualize".to_string(),
+                    persisted: true,
+                    reason: reason.to_string(),
+                },
+            );
+            status.last_action_summary = Some(format!("Unvirtualized node '{node_name}'"));
+        }
+        Err(e) => {
+            let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
+            link_virtualization_backoff_until_unix.insert(node_name.to_string(), until);
+            status.warnings.push(format!(
+                "TreeGuard links: failed to restore runtime-virtualized node '{node_name}': {e}. Backing off until {until}."
+            ));
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "node".to_string(),
+                    entity_id: node_name.to_string(),
+                    action: "unvirtualize_failed".to_string(),
+                    persisted: false,
+                    reason: format!("{reason}. Bakery live restore failed: {e}"),
+                },
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_link_virtualization_decision(
+    status: &mut TreeguardStatusData,
+    activity: &mut VecDeque<TreeguardActivityEntry>,
+    now_unix: u64,
+    node_name: &str,
+    target: LinkVirtualState,
+    reason: String,
+    dry_run: bool,
+    state: &mut LinkState,
+    runtime_virtualized_nodes: &mut FxHashSet<String>,
+    link_virtualization_backoff_until_unix: &mut FxHashMap<String, u64>,
+) {
+    if target == state.desired {
+        return;
+    }
+
+    let persist = !dry_run;
+    if persist {
+        if let Some(until) = link_virtualization_backoff_until_unix
+            .get(node_name)
+            .copied()
+            && now_unix < until
+        {
+            status.warnings.push(format!(
+                "TreeGuard links: node '{node_name}' runtime virtualization is temporarily ineligible until {until}."
+            ));
+            return;
+        }
+
+        match bakery::apply_node_virtualization_live(node_name, target == LinkVirtualState::Virtual)
+        {
+            Ok(()) => {
+                if target == LinkVirtualState::Virtual {
+                    runtime_virtualized_nodes.insert(node_name.to_string());
+                } else {
+                    runtime_virtualized_nodes.remove(node_name);
+                }
+                link_virtualization_backoff_until_unix.remove(node_name);
+            }
+            Err(e) => {
+                let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
+                link_virtualization_backoff_until_unix.insert(node_name.to_string(), until);
+                status.warnings.push(format!(
+                    "TreeGuard links: failed to apply runtime virtualization for node '{node_name}': {e}. Backing off until {until}."
+                ));
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.to_string(),
+                        action: match target {
+                            LinkVirtualState::Physical => "unvirtualize_failed".to_string(),
+                            LinkVirtualState::Virtual => "virtualize_failed".to_string(),
+                        },
+                        persisted: false,
+                        reason: format!("Bakery runtime virtualization failed: {e}"),
+                    },
+                );
+                return;
+            }
+        }
+    }
+
+    state.desired = target;
+    state.last_change_unix = Some(now_unix);
+    state.recent_changes_unix.push_back(now_unix);
+    prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+
+    push_activity(
+        activity,
+        TreeguardActivityEntry {
+            time: now_unix.to_string(),
+            entity_type: "node".to_string(),
+            entity_id: node_name.to_string(),
+            action: match target {
+                LinkVirtualState::Physical => "unvirtualize".to_string(),
+                LinkVirtualState::Virtual => "virtualize".to_string(),
+            },
+            persisted: persist,
+            reason,
+        },
+    );
+    status.last_action_summary = Some(format!(
+        "{} node '{}'",
+        if target == LinkVirtualState::Virtual {
+            "Virtualized"
+        } else {
+            "Unvirtualized"
+        },
+        node_name
+    ));
 }
 
 /// Returns the current SQM override token for `device_id`, if present.
@@ -2061,29 +2003,38 @@ fn overrides_sqm_device_ids(overrides: &OverrideFile) -> FxHashSet<String> {
     out
 }
 
+/// Looks up an SQM override token for a circuit from a specific overrides file.
+///
+/// This function is pure: it has no side effects.
+fn find_circuit_override_token_in_overrides(
+    devices: &[lqos_config::ShapedDevice],
+    overrides: &OverrideFile,
+) -> Option<String> {
+    for device_id in devices.iter().map(|device| device.device_id.as_str()) {
+        if let Some(token) = overrides_device_sqm(overrides, device_id) {
+            return Some(token);
+        }
+    }
+
+    None
+}
+
 /// Infers an SQM override token for a circuit, preferring persisted override entries.
 ///
 /// This function is pure: it has no side effects.
 fn infer_circuit_sqm_override_token(
-    circuit_id: &str,
-    shaped_devices: &[lqos_config::ShapedDevice],
+    devices: &[lqos_config::ShapedDevice],
     overrides: Option<&OverrideFile>,
 ) -> Option<String> {
-    let circuit_device_ids: FxHashSet<&str> = shaped_devices
-        .iter()
-        .filter(|d| d.circuit_id == circuit_id)
-        .map(|d| d.device_id.as_str())
-        .collect();
-
     if let Some(overrides) = overrides {
-        for device_id in &circuit_device_ids {
+        for device_id in devices.iter().map(|device| device.device_id.as_str()) {
             if let Some(token) = overrides_device_sqm(overrides, device_id) {
                 return Some(token);
             }
         }
     }
 
-    for dev in shaped_devices.iter().filter(|d| d.circuit_id == circuit_id) {
+    for dev in devices {
         if let Some(token) = dev.sqm_override.as_deref() {
             let token = token.trim();
             if !token.is_empty() {
@@ -2093,6 +2044,49 @@ fn infer_circuit_sqm_override_token(
     }
 
     None
+}
+
+/// Returns the default effective SQM state for a direction at the given configured rate.
+///
+/// This function is pure: it has no side effects.
+fn default_sqm_state_for_rate(rate_mbps: f32, config: &lqos_config::Config) -> CircuitSqmState {
+    let default_sqm = config.queues.default_sqm.trim().to_ascii_lowercase();
+    if default_sqm.starts_with("cake") {
+        let threshold = config.queues.fast_queues_fq_codel.unwrap_or(1000.0) as f32;
+        if rate_mbps >= threshold {
+            CircuitSqmState::FqCodel
+        } else {
+            CircuitSqmState::Cake
+        }
+    } else {
+        CircuitSqmState::FqCodel
+    }
+}
+
+/// Computes the base per-direction SQM state for a circuit before TreeGuard overlays are applied.
+///
+/// This function is pure: it has no side effects.
+fn base_circuit_sqm_state(
+    devices: &[lqos_config::ShapedDevice],
+    operator_overrides: Option<&OverrideFile>,
+    config: &lqos_config::Config,
+    cap_down: f32,
+    cap_up: f32,
+) -> DownUpOrder<CircuitSqmState> {
+    let mut down = default_sqm_state_for_rate(cap_down, config);
+    let mut up = default_sqm_state_for_rate(cap_up, config);
+
+    if let Some(token) = infer_circuit_sqm_override_token(devices, operator_overrides) {
+        let parsed = decisions::parse_directional_sqm_override(&token);
+        if let Some(v) = parsed.down {
+            down = v;
+        }
+        if let Some(v) = parsed.up {
+            up = v;
+        }
+    }
+
+    DownUpOrder { down, up }
 }
 
 /// Appends an entry to the activity ring buffer.
@@ -2126,6 +2120,7 @@ struct CircuitSqmApplyContext<'a> {
     circuit_entity_id: &'a str,
     circuit_label: &'a str,
     devices: &'a [lqos_config::ShapedDevice],
+    base_sqm: DownUpOrder<CircuitSqmState>,
 }
 
 struct CircuitSqmTransition {
@@ -2142,6 +2137,7 @@ struct CircuitTickContext<'a> {
     now_unix: u64,
     now_nanos_since_boot: Option<u64>,
     cpu_max_pct: Option<u8>,
+    dry_run: bool,
     circuit_id: &'a str,
     circuit_entity_id: &'a str,
     circuit_label: &'a str,
@@ -2155,16 +2151,65 @@ struct CircuitTickContext<'a> {
     cpu_cfg: &'a lqos_config::TreeguardCpuConfig,
     circuits_cfg: &'a lqos_config::TreeguardCircuitsConfig,
     qoo_cfg: &'a lqos_config::TreeguardQooConfig,
+    base_sqm: DownUpOrder<CircuitSqmState>,
+    circuit_change_budget_remaining: &'a mut usize,
+    deferred_circuit_sqm_changes: &'a mut usize,
 }
 
-fn apply_circuit_sqm_change<P, L>(
+fn treeguard_manages_circuit_direction(base_sqm: CircuitSqmState) -> bool {
+    matches!(base_sqm, CircuitSqmState::Cake)
+}
+
+fn circuit_sqm_transition_from_decision(
+    state: &CircuitState,
+    base_sqm: DownUpOrder<CircuitSqmState>,
+    decision: decisions::CircuitSqmDecision,
+) -> CircuitSqmTransition {
+    let mut proposed_down = state.down.desired;
+    let mut proposed_up = state.up.desired;
+
+    if treeguard_manages_circuit_direction(base_sqm.down) {
+        if let Some(down) = decision.down {
+            proposed_down = down;
+        }
+    } else {
+        proposed_down = base_sqm.down;
+    }
+
+    if treeguard_manages_circuit_direction(base_sqm.up) {
+        if let Some(up) = decision.up {
+            proposed_up = up;
+        }
+    } else {
+        proposed_up = base_sqm.up;
+    }
+
+    CircuitSqmTransition {
+        proposed_down,
+        proposed_up,
+        changed_down: proposed_down != state.down.desired,
+        changed_up: proposed_up != state.up.desired,
+    }
+}
+
+fn try_consume_circuit_change_budget(remaining_budget: &mut usize) -> bool {
+    if *remaining_budget == 0 {
+        return false;
+    }
+    *remaining_budget -= 1;
+    true
+}
+
+fn apply_circuit_sqm_change<P, C, L>(
     ctx: CircuitSqmApplyContext<'_>,
     state: &mut CircuitState,
     transition: CircuitSqmTransition,
     mut persist_override: P,
+    mut clear_override: C,
     mut live_apply: L,
 ) where
     P: FnMut(&[String], &str) -> Result<bool, TreeguardError>,
+    C: FnMut(&[String]) -> Result<bool, TreeguardError>,
     L: FnMut(&str, &[lqos_config::ShapedDevice], &str) -> Result<(), TreeguardError>,
 {
     let CircuitSqmApplyContext {
@@ -2177,6 +2222,7 @@ fn apply_circuit_sqm_change<P, L>(
         circuit_entity_id,
         circuit_label,
         devices,
+        base_sqm,
     } = ctx;
     let CircuitSqmTransition {
         proposed_down,
@@ -2186,6 +2232,12 @@ fn apply_circuit_sqm_change<P, L>(
     } = transition;
 
     let token = decisions::format_directional_sqm_override(proposed_down, proposed_up);
+    let returning_to_base = proposed_down == base_sqm.down && proposed_up == base_sqm.up;
+    let live_token = if returning_to_base {
+        "/"
+    } else {
+        token.as_str()
+    };
 
     if dry_run {
         if changed_down {
@@ -2207,33 +2259,50 @@ fn apply_circuit_sqm_change<P, L>(
                 time: now_unix.to_string(),
                 entity_type: "circuit".to_string(),
                 entity_id: circuit_entity_id.to_string(),
-                action: format!("would_set_sqm_override:{token}"),
+                action: if returning_to_base {
+                    "would_clear_sqm_override".to_string()
+                } else {
+                    format!("would_set_sqm_override:{token}")
+                },
                 persisted: false,
                 reason: "Dry-run".to_string(),
             },
         );
-        status.last_action_summary = Some(format!(
-            "Would set SQM override for circuit '{}' -> {}",
-            circuit_label, token
-        ));
+        status.last_action_summary = Some(if returning_to_base {
+            format!(
+                "Would clear TreeGuard SQM override for circuit '{}' (base {})",
+                circuit_label, token
+            )
+        } else {
+            format!(
+                "Would set SQM override for circuit '{}' -> {}",
+                circuit_label, token
+            )
+        });
         return;
     }
 
     let mut persisted_ok = false;
     let mut can_apply_live = true;
+    let device_ids: Vec<String> = devices
+        .iter()
+        .map(|device| device.device_id.clone())
+        .collect();
     if persist_sqm_overrides {
-        let device_ids: Vec<String> = devices
-            .iter()
-            .map(|device| device.device_id.clone())
-            .collect();
-        match persist_override(&device_ids, &token) {
+        let persist_result = if returning_to_base {
+            clear_override(&device_ids)
+        } else {
+            persist_override(&device_ids, &token)
+        };
+        match persist_result {
             Ok(_) => {
                 persisted_ok = true;
             }
             Err(e) => {
                 can_apply_live = false;
                 status.warnings.push(format!(
-                    "TreeGuard circuits: failed to persist SQM overrides for circuit '{circuit_id}': {e}"
+                    "TreeGuard circuits: failed to {} SQM overrides for circuit '{circuit_id}': {e}",
+                    if returning_to_base { "clear" } else { "persist" }
                 ));
                 push_activity(
                     activity,
@@ -2241,7 +2310,11 @@ fn apply_circuit_sqm_change<P, L>(
                         time: now_unix.to_string(),
                         entity_type: "circuit".to_string(),
                         entity_id: circuit_entity_id.to_string(),
-                        action: "set_sqm_override_failed".to_string(),
+                        action: if returning_to_base {
+                            "clear_sqm_override_failed".to_string()
+                        } else {
+                            "set_sqm_override_failed".to_string()
+                        },
                         persisted: false,
                         reason: format!("Overrides write failed: {e}"),
                     },
@@ -2251,7 +2324,7 @@ fn apply_circuit_sqm_change<P, L>(
     }
 
     let live_ok = if can_apply_live {
-        match live_apply(circuit_id, devices, &token) {
+        match live_apply(circuit_id, devices, live_token) {
             Ok(()) => true,
             Err(e) => {
                 status.warnings.push(format!(
@@ -2263,7 +2336,11 @@ fn apply_circuit_sqm_change<P, L>(
                         time: now_unix.to_string(),
                         entity_type: "circuit".to_string(),
                         entity_id: circuit_entity_id.to_string(),
-                        action: format!("apply_sqm_live_failed:{token}"),
+                        action: if returning_to_base {
+                            "clear_sqm_live_failed".to_string()
+                        } else {
+                            format!("apply_sqm_live_failed:{token}")
+                        },
                         persisted: persisted_ok,
                         reason: format!("Bakery live apply failed: {e}"),
                     },
@@ -2289,17 +2366,30 @@ fn apply_circuit_sqm_change<P, L>(
             prune_recent_changes(&mut state.up.recent_changes_unix, now_unix);
         }
 
-        let (action, reason) = match (persisted_ok, live_ok) {
-            (true, true) => (
+        let (action, reason) = match (returning_to_base, persisted_ok, live_ok) {
+            (false, true, true) => (
                 "set_sqm_override".to_string(),
                 "Applied live + persisted".to_string(),
             ),
-            (true, false) => (
+            (false, true, false) => (
                 "set_sqm_override".to_string(),
                 "Persisted (live apply failed)".to_string(),
             ),
-            (false, true) => ("set_sqm_live".to_string(), "Applied live".to_string()),
-            (false, false) => ("set_sqm_live".to_string(), "Not applied".to_string()),
+            (false, false, true) => ("set_sqm_live".to_string(), "Applied live".to_string()),
+            (false, false, false) => ("set_sqm_live".to_string(), "Not applied".to_string()),
+            (true, true, true) => (
+                "clear_sqm_override".to_string(),
+                "Cleared live + persisted overlay".to_string(),
+            ),
+            (true, true, false) => (
+                "clear_sqm_override".to_string(),
+                "Persisted clear (live apply failed)".to_string(),
+            ),
+            (true, false, true) => (
+                "clear_sqm_live".to_string(),
+                "Applied live clear".to_string(),
+            ),
+            (true, false, false) => ("clear_sqm_live".to_string(), "Not applied".to_string()),
         };
         push_activity(
             activity,
@@ -2313,21 +2403,27 @@ fn apply_circuit_sqm_change<P, L>(
             },
         );
 
-        status.last_action_summary = Some(format!(
-            "SQM override for circuit '{}' -> {}",
-            circuit_label, token
-        ));
+        status.last_action_summary = Some(if returning_to_base {
+            format!(
+                "Cleared TreeGuard SQM override for circuit '{}' (base {})",
+                circuit_label, token
+            )
+        } else {
+            format!("SQM override for circuit '{}' -> {}", circuit_label, token)
+        });
     }
 }
 
-fn process_circuit_tick<P, L>(
+fn process_circuit_tick<P, C, L>(
     ctx: CircuitTickContext<'_>,
     state: &mut CircuitState,
     persist_override: P,
+    clear_override: C,
     live_apply: L,
 ) -> bool
 where
     P: FnMut(&[String], &str) -> Result<bool, TreeguardError>,
+    C: FnMut(&[String]) -> Result<bool, TreeguardError>,
     L: FnMut(&str, &[lqos_config::ShapedDevice], &str) -> Result<(), TreeguardError>,
 {
     let CircuitTickContext {
@@ -2337,6 +2433,7 @@ where
         now_unix,
         now_nanos_since_boot,
         cpu_max_pct,
+        dry_run,
         circuit_id,
         circuit_entity_id,
         circuit_label,
@@ -2350,6 +2447,9 @@ where
         cpu_cfg,
         circuits_cfg,
         qoo_cfg,
+        base_sqm,
+        circuit_change_budget_remaining,
+        deferred_circuit_sqm_changes,
     } = ctx;
 
     prune_recent_changes(&mut state.down.recent_changes_unix, now_unix);
@@ -2396,8 +2496,6 @@ where
         _ => true,
     };
 
-    let mut proposed_down = state.down.desired;
-    let mut proposed_up = state.up.desired;
     let decision = decisions::decide_circuit_sqm(decisions::CircuitSqmInput {
         now_unix,
         allowlisted: allowlisted && capacity_known,
@@ -2409,15 +2507,7 @@ where
         qoo,
         state,
     });
-    if let Some(down) = decision.down {
-        proposed_down = down;
-    }
-    if let Some(up) = decision.up {
-        proposed_up = up;
-    }
-
-    let changed_down = proposed_down != state.down.desired;
-    let changed_up = proposed_up != state.up.desired;
+    let transition = circuit_sqm_transition_from_decision(state, base_sqm, decision);
 
     if devices.is_empty() {
         status.warnings.push(format!(
@@ -2429,29 +2519,30 @@ where
         }
     }
 
-    if (changed_down || changed_up) && !devices.is_empty() {
-        apply_circuit_sqm_change(
-            CircuitSqmApplyContext {
-                status,
-                activity,
-                now_unix,
-                dry_run: false,
-                persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
-                circuit_id,
-                circuit_entity_id,
-                circuit_label,
-                devices,
-            },
-            state,
-            CircuitSqmTransition {
-                proposed_down,
-                proposed_up,
-                changed_down,
-                changed_up,
-            },
-            persist_override,
-            live_apply,
-        );
+    if (transition.changed_down || transition.changed_up) && !devices.is_empty() {
+        if try_consume_circuit_change_budget(circuit_change_budget_remaining) {
+            apply_circuit_sqm_change(
+                CircuitSqmApplyContext {
+                    status,
+                    activity,
+                    now_unix,
+                    dry_run,
+                    persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
+                    circuit_id,
+                    circuit_entity_id,
+                    circuit_label,
+                    devices,
+                    base_sqm,
+                },
+                state,
+                transition,
+                persist_override,
+                clear_override,
+                live_apply,
+            );
+        } else {
+            *deferred_circuit_sqm_changes = deferred_circuit_sqm_changes.saturating_add(1);
+        }
     }
 
     state.down.desired == CircuitSqmState::FqCodel || state.up.desired == CircuitSqmState::FqCodel
@@ -2504,13 +2595,16 @@ fn update_below_since(
 mod tests {
     use super::{
         CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, TreeguardRuntimeState,
-        apply_circuit_sqm_change, empty_status_snapshot, pause_for_bakery_reload_with_flag,
-        process_circuit_tick, run_tick,
+        apply_circuit_sqm_change, base_circuit_sqm_state, circuit_evaluation_batch_size,
+        circuit_sqm_transition_from_decision, collect_circuit_batch, empty_status_snapshot,
+        pause_for_bakery_reload_with_flag, process_circuit_tick, run_tick,
+        treeguard_manages_circuit_direction, try_consume_circuit_change_budget,
     };
     use crate::node_manager::ws::messages::TreeguardActivityEntry;
     use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
     use crate::system_stats::SystemStats;
     use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
+    use crate::treeguard::decisions;
     use crate::treeguard::{bakery, state::CircuitSqmState};
     use crossbeam_channel::bounded;
     use fxhash::{FxHashMap, FxHashSet};
@@ -2608,6 +2702,10 @@ mod tests {
                 circuit_entity_id: "Circuit One (circuit-1)",
                 circuit_label: "Circuit One",
                 devices: &devices,
+                base_sqm: DownUpOrder {
+                    down: CircuitSqmState::Cake,
+                    up: CircuitSqmState::Cake,
+                },
             },
             &mut state,
             CircuitSqmTransition {
@@ -2617,6 +2715,7 @@ mod tests {
                 changed_up: false,
             },
             |_device_ids, _token| Ok(false),
+            |_device_ids| Ok(false),
             |circuit_id, devices, token| {
                 bakery::apply_circuit_sqm_override_live_with_sender_and_snapshot(
                     circuit_id, devices, token, &tx, &queues,
@@ -2660,6 +2759,71 @@ mod tests {
     }
 
     #[test]
+    fn actor_return_to_base_clears_treeguard_overlay_and_uses_live_clear_token() {
+        let devices = vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit One".to_string(),
+            device_id: "device-1".to_string(),
+            ..ShapedDevice::default()
+        }];
+        let mut status = empty_status_snapshot();
+        let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+        let mut state = crate::treeguard::state::CircuitState::default();
+        state.down.desired = CircuitSqmState::FqCodel;
+        state.up.desired = CircuitSqmState::Cake;
+        let mut cleared_device_ids: Vec<String> = Vec::new();
+        let mut live_token: Option<String> = None;
+
+        apply_circuit_sqm_change(
+            CircuitSqmApplyContext {
+                status: &mut status,
+                activity: &mut activity,
+                now_unix: 1_000,
+                dry_run: false,
+                persist_sqm_overrides: true,
+                circuit_id: "circuit-1",
+                circuit_entity_id: "Circuit One (circuit-1)",
+                circuit_label: "Circuit One",
+                devices: &devices,
+                base_sqm: DownUpOrder {
+                    down: CircuitSqmState::Cake,
+                    up: CircuitSqmState::Cake,
+                },
+            },
+            &mut state,
+            CircuitSqmTransition {
+                proposed_down: CircuitSqmState::Cake,
+                proposed_up: CircuitSqmState::Cake,
+                changed_down: true,
+                changed_up: false,
+            },
+            |_device_ids, _token| Ok(false),
+            |device_ids| {
+                cleared_device_ids = device_ids.to_vec();
+                Ok(true)
+            },
+            |_circuit_id, _devices, token| {
+                live_token = Some(token.to_string());
+                Ok(())
+            },
+        );
+
+        assert_eq!(state.down.desired, CircuitSqmState::Cake);
+        assert_eq!(state.up.desired, CircuitSqmState::Cake);
+        assert_eq!(cleared_device_ids, vec!["device-1".to_string()]);
+        assert_eq!(live_token.as_deref(), Some("/"));
+        assert_eq!(
+            status.last_action_summary.as_deref(),
+            Some("Cleared TreeGuard SQM override for circuit 'Circuit One' (base cake/cake)")
+        );
+
+        let last_activity = activity.back().expect("activity should be recorded");
+        assert_eq!(last_activity.action, "clear_sqm_override:cake/cake");
+        assert!(last_activity.persisted);
+        assert_eq!(last_activity.reason, "Cleared live + persisted overlay");
+    }
+
+    #[test]
     fn circuit_tick_snapshot_decides_and_applies_live_override() {
         let (tx, rx) = bounded(1);
         let queues = vec![QueueNode {
@@ -2691,6 +2855,8 @@ mod tests {
 
         let mut circuits_cfg = lqos_config::TreeguardCircuitsConfig::default();
         circuits_cfg.persist_sqm_overrides = false;
+        let mut circuit_change_budget_remaining = 1usize;
+        let mut deferred_circuit_sqm_changes = 0usize;
 
         let fq_codel = process_circuit_tick(
             CircuitTickContext {
@@ -2700,6 +2866,7 @@ mod tests {
                 now_unix: 1_000,
                 now_nanos_since_boot: Some(2_000_000_000),
                 cpu_max_pct: Some(95),
+                dry_run: false,
                 circuit_id: "circuit-2",
                 circuit_entity_id: "Circuit Two (circuit-2)",
                 circuit_label: "Circuit Two",
@@ -2716,9 +2883,16 @@ mod tests {
                 cpu_cfg: &lqos_config::TreeguardCpuConfig::default(),
                 circuits_cfg: &circuits_cfg,
                 qoo_cfg: &lqos_config::TreeguardQooConfig::default(),
+                base_sqm: DownUpOrder {
+                    down: CircuitSqmState::Cake,
+                    up: CircuitSqmState::Cake,
+                },
+                circuit_change_budget_remaining: &mut circuit_change_budget_remaining,
+                deferred_circuit_sqm_changes: &mut deferred_circuit_sqm_changes,
             },
             &mut state,
             |_device_ids, _token| Ok(false),
+            |_device_ids| Ok(false),
             |circuit_id, devices, token| {
                 bakery::apply_circuit_sqm_override_live_with_sender_and_snapshot(
                     circuit_id, devices, token, &tx, &queues,
@@ -2746,6 +2920,92 @@ mod tests {
         };
         assert_eq!(circuit_hash, lqos_utils::hash_to_i64("circuit-2"));
         assert_eq!(sqm_override, Some("fq_codel/fq_codel".to_string()));
+    }
+
+    #[test]
+    fn base_circuit_sqm_state_uses_default_sqm_when_no_operator_override_exists() {
+        let mut config = lqos_config::Config::default();
+        config.queues.default_sqm = "fq_codel".to_string();
+        config.queues.fast_queues_fq_codel = Some(1000.0);
+
+        let shaped_devices = vec![ShapedDevice {
+            circuit_id: "circuit-3".to_string(),
+            device_id: "device-3".to_string(),
+            ..ShapedDevice::default()
+        }];
+
+        let base = base_circuit_sqm_state(&shaped_devices, None, &config, 50.0, 20.0);
+
+        assert_eq!(base.down, CircuitSqmState::FqCodel);
+        assert_eq!(base.up, CircuitSqmState::FqCodel);
+    }
+
+    #[test]
+    fn base_fq_codel_directions_do_not_take_treeguard_circuit_switches() {
+        let mut state = crate::treeguard::state::CircuitState::default();
+        state.down.desired = CircuitSqmState::Cake;
+        state.up.desired = CircuitSqmState::FqCodel;
+
+        let transition = circuit_sqm_transition_from_decision(
+            &state,
+            DownUpOrder {
+                down: CircuitSqmState::FqCodel,
+                up: CircuitSqmState::FqCodel,
+            },
+            decisions::CircuitSqmDecision {
+                down: Some(CircuitSqmState::FqCodel),
+                up: Some(CircuitSqmState::Cake),
+            },
+        );
+
+        assert_eq!(transition.proposed_down, CircuitSqmState::FqCodel);
+        assert_eq!(transition.proposed_up, CircuitSqmState::FqCodel);
+        assert!(transition.changed_down);
+        assert!(!transition.changed_up);
+    }
+
+    #[test]
+    fn treeguard_circuit_change_budget_consumes_then_stops() {
+        let mut remaining = 2usize;
+        assert!(try_consume_circuit_change_budget(&mut remaining));
+        assert_eq!(remaining, 1);
+        assert!(try_consume_circuit_change_budget(&mut remaining));
+        assert_eq!(remaining, 0);
+        assert!(!try_consume_circuit_change_budget(&mut remaining));
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn treeguard_only_manages_cake_based_circuit_directions() {
+        assert!(treeguard_manages_circuit_direction(CircuitSqmState::Cake));
+        assert!(!treeguard_manages_circuit_direction(
+            CircuitSqmState::FqCodel
+        ));
+    }
+
+    #[test]
+    fn treeguard_circuit_batch_size_spreads_large_all_circuit_sweeps() {
+        assert_eq!(circuit_evaluation_batch_size(0, true), 0);
+        assert_eq!(circuit_evaluation_batch_size(64, true), 64);
+        assert_eq!(circuit_evaluation_batch_size(10_000, true), 667);
+        assert_eq!(circuit_evaluation_batch_size(20_000, true), 1334);
+        assert_eq!(circuit_evaluation_batch_size(32, false), 32);
+    }
+
+    #[test]
+    fn treeguard_collect_circuit_batch_wraps_cursor() {
+        let circuits = vec![
+            "c1".to_string(),
+            "c2".to_string(),
+            "c3".to_string(),
+            "c4".to_string(),
+        ];
+        let mut cursor = 3usize;
+
+        let batch = collect_circuit_batch(&circuits, &mut cursor, 3);
+
+        assert_eq!(batch, vec!["c4", "c1", "c2"]);
+        assert_eq!(cursor, 2);
     }
 
     fn test_runtime_dir(name: &str) -> PathBuf {
@@ -2945,16 +3205,5 @@ mod tests {
             None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
         }
         lqos_config::clear_cached_config();
-    }
-}
-
-/// Returns the minimum of two optional floats, treating `None` as "unknown".
-///
-/// This function is pure: it has no side effects.
-fn min_opt_f32(a: Option<f32>, b: Option<f32>) -> Option<f32> {
-    match (a, b) {
-        (Some(x), Some(y)) => Some(x.min(y)),
-        (Some(x), None) | (None, Some(x)) => Some(x),
-        (None, None) => None,
     }
 }

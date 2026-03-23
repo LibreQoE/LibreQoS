@@ -12,7 +12,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, \
+    overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
     scheduler_output, wait_for_bus_ready
 
@@ -225,6 +225,10 @@ SHAPED_DEVICES_HEADER = [
     "Download Max Mbps",
     "Upload Max Mbps",
     "Comment",
+]
+
+SHAPED_DEVICES_HEADER_WITH_SQM = [
+    *SHAPED_DEVICES_HEADER,
     "sqm",
 ]
 
@@ -273,8 +277,8 @@ def read_shaped_devices_csv(path: str):
         return header, data_rows
 
 
-def override_devices_to_rows(devices):
-    """Convert override device dicts to CSV rows (14 columns, optional sqm)."""
+def override_devices_to_rows(devices, include_sqm=False):
+    """Convert override device dicts to CSV rows, preserving the existing CSV shape by default."""
     rows = []
     for d in devices:
         ipv4s = d.get('ipv4s', [])
@@ -295,8 +299,9 @@ def override_devices_to_rows(devices):
             str(d.get('maxDownload', '')),
             str(d.get('maxUpload', '')),
             d.get('comment', ''),
-            str(sqm),
         ]
+        if include_sqm:
+            row.append(str(sqm))
         rows.append(row)
     return rows
 
@@ -329,6 +334,19 @@ def write_shaped_devices_csv(path: str, header, rows):
         writer.writerows(rows)
 
 
+def header_has_sqm(header):
+    return len(header) > 13 and header[13].strip().lower() == "sqm"
+
+
+def operator_requires_sqm_column(devices, adjustments):
+    if any(((d.get('sqm', '') or d.get('sqm_override', '') or '').strip()) for d in devices or []):
+        return True
+    return any(
+        adj.get('type') == 'device_adjust_sqm' and (adj.get('sqm_override') or '').strip()
+        for adj in adjustments or []
+    )
+
+
 def apply_lqos_overrides():
     """Load ShapedDevices.csv, apply persistent devices and circuit adjustments, and save back."""
     path = shaped_devices_csv_path()
@@ -336,22 +354,30 @@ def apply_lqos_overrides():
 
     # 1) Persistent devices: replace by device_id or append
     try:
-        extra = overrides_persistent_devices_effective()
+        extra = overrides_persistent_devices_materialized()
     except Exception as e:
         # Persistent device overrides are optional. Keep the scheduler healthy
         # and continue applying the rest of the override sources if this loader
         # is unavailable or temporarily broken.
         print(f"Skipping persistent device overrides: {e}")
         extra = []
-    override_rows = override_devices_to_rows(extra or [])
-    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 
     # 2) Circuit adjustments: speed changes, removals, reparenting
     try:
-        adjustments = overrides_circuit_adjustments_effective()
+        adjustments = overrides_circuit_adjustments_materialized()
     except Exception as e:
         print(f"Failed to read circuit adjustments: {e}")
         adjustments = []
+
+    need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
+    if need_sqm_column and not header_has_sqm(header):
+        header = list(header) + ["sqm"]
+        for row in rows:
+            if len(row) < len(header):
+                row.extend([""] * (len(header) - len(row)))
+
+    override_rows = override_devices_to_rows(extra or [], include_sqm=need_sqm_column)
+    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 
     def set_if_some(value_opt, current_str):
         if value_opt is None:
@@ -388,6 +414,8 @@ def apply_lqos_overrides():
                         r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
                         changed = True
             elif t == 'device_adjust_sqm':
+                if not need_sqm_column:
+                    continue
                 did = adj.get('device_id', '')
                 sqm_override = (adj.get('sqm_override') or '').strip()
                 for r in merged_rows:
@@ -417,7 +445,8 @@ def apply_lqos_overrides():
                         changed = True
 
     if changed:
-        write_shaped_devices_csv(path, header if header else SHAPED_DEVICES_HEADER, merged_rows)
+        final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
+        write_shaped_devices_csv(path, final_header, merged_rows)
         print("Updated ShapedDevices.csv with overrides")
 
     # 3) Load, adjust, and optionally save network.json

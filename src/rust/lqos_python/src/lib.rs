@@ -12,7 +12,7 @@ use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
@@ -112,6 +112,273 @@ fn get_bool(d: &pyo3::Bound<'_, pyo3::types::PyDict>, key: &str, default: bool) 
         Ok(Some(v)) => v.extract::<bool>().unwrap_or(default),
         _ => default,
     }
+}
+
+#[pyfunction(
+    signature = (
+        items,
+        queues_available,
+        prev_assign=None,
+        last_change_ts=None,
+        now_ts=None,
+        mode=None,
+        move_budget_per_run=None,
+        cooldown_seconds=None,
+        hysteresis_threshold=None
+    )
+)]
+fn plan_top_level_cpu_bins(
+    py: Python,
+    items: PyObject,
+    queues_available: usize,
+    prev_assign: Option<PyObject>,
+    last_change_ts: Option<PyObject>,
+    now_ts: Option<f64>,
+    mode: Option<String>,
+    move_budget_per_run: Option<usize>,
+    cooldown_seconds: Option<f64>,
+    hysteresis_threshold: Option<f64>,
+) -> PyResult<PyObject> {
+    let items_any = items.bind(py);
+    let items_list = items_any.downcast::<PyList>()?;
+    let planner_items: Vec<lqos_config::TopLevelPlannerItem> = items_list
+        .iter()
+        .map(|item| -> PyResult<lqos_config::TopLevelPlannerItem> {
+            let dict = item.downcast::<PyDict>()?;
+            let id = get_string(dict, "id", String::new());
+            let weight = get_f64(dict, "weight", 1.0);
+            Ok(lqos_config::TopLevelPlannerItem { id, weight })
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let prev_assign_map = match prev_assign {
+        Some(obj) => {
+            let any = obj.bind(py);
+            let dict = any.downcast::<PyDict>()?;
+            dict.iter()
+                .filter_map(|(k, v)| {
+                    Some((k.extract::<String>().ok()?, v.extract::<String>().ok()?))
+                })
+                .collect::<BTreeMap<_, _>>()
+        }
+        None => BTreeMap::new(),
+    };
+    let last_change_map = match last_change_ts {
+        Some(obj) => {
+            let any = obj.bind(py);
+            let dict = any.downcast::<PyDict>()?;
+            dict.iter()
+                .filter_map(|(k, v)| Some((k.extract::<String>().ok()?, v.extract::<f64>().ok()?)))
+                .collect::<BTreeMap<_, _>>()
+        }
+        None => BTreeMap::new(),
+    };
+
+    let bins: Vec<String> = (0..queues_available)
+        .map(|idx| format!("CpueQueue{idx}"))
+        .collect();
+    let planner_mode = match mode.as_deref() {
+        Some("round_robin") => lqos_config::TopLevelPlannerMode::RoundRobin,
+        Some("greedy") => lqos_config::TopLevelPlannerMode::Greedy,
+        _ => lqos_config::TopLevelPlannerMode::StableGreedy,
+    };
+    let params = lqos_config::TopLevelPlannerParams {
+        mode: planner_mode,
+        hysteresis_threshold: hysteresis_threshold.unwrap_or(0.03),
+        cooldown_seconds: cooldown_seconds.unwrap_or(3600.0),
+        move_budget_per_run: move_budget_per_run.unwrap_or(1),
+    };
+    let result = lqos_config::plan_top_level_assignments(
+        &planner_items,
+        &bins,
+        &prev_assign_map,
+        &last_change_map,
+        now_ts.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0)
+        }),
+        &params,
+    );
+
+    let out = PyDict::new(py);
+    let assignment = PyDict::new(py);
+    for (item, bin) in result.assignment {
+        assignment.set_item(item, bin)?;
+    }
+    out.set_item("assignment", assignment)?;
+    out.set_item("changed", result.changed)?;
+    out.set_item("planner_used", result.planner_used)?;
+    Ok(out.into())
+}
+
+#[pyfunction(
+    signature = (
+        sites,
+        circuit_groups,
+        site_state=None,
+        circuit_state=None,
+        stick_offset=0,
+        circuit_padding=8
+    )
+)]
+fn plan_class_identities(
+    py: Python,
+    sites: PyObject,
+    circuit_groups: PyObject,
+    site_state: Option<PyObject>,
+    circuit_state: Option<PyObject>,
+    stick_offset: u16,
+    circuit_padding: u32,
+) -> PyResult<PyObject> {
+    let sites_list = sites.bind(py).downcast::<PyList>()?;
+    let site_inputs: Vec<lqos_config::SiteIdentityInput> = sites_list
+        .iter()
+        .map(|item| -> PyResult<lqos_config::SiteIdentityInput> {
+            let dict = item.downcast::<PyDict>()?;
+            Ok(lqos_config::SiteIdentityInput {
+                site_key: get_string(dict, "site_key", String::new()),
+                parent_path: get_string(dict, "parent_path", String::new()),
+                queue: get_i64(dict, "queue", 0).max(0) as u32,
+                has_children: get_bool(dict, "has_children", false),
+            })
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let groups_list = circuit_groups.bind(py).downcast::<PyList>()?;
+    let circuit_group_inputs: Vec<lqos_config::CircuitIdentityGroupInput> = groups_list
+        .iter()
+        .map(|item| -> PyResult<lqos_config::CircuitIdentityGroupInput> {
+            let dict = item.downcast::<PyDict>()?;
+            let ids = match dict.get_item("circuit_ids")? {
+                Some(value) => value
+                    .downcast::<PyList>()?
+                    .iter()
+                    .filter_map(|entry| entry.extract::<String>().ok())
+                    .collect::<Vec<_>>(),
+                None => Vec::new(),
+            };
+            Ok(lqos_config::CircuitIdentityGroupInput {
+                parent_node: get_string(dict, "parent_node", String::new()),
+                queue: get_i64(dict, "queue", 0).max(0) as u32,
+                circuit_ids: ids,
+            })
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let previous_sites = match site_state {
+        Some(obj) => {
+            let dict = obj.bind(py).downcast::<PyDict>()?;
+            dict.iter()
+                .filter_map(|(k, v)| {
+                    let key = k.extract::<String>().ok()?;
+                    let entry = v.downcast::<PyDict>().ok()?;
+                    Some((
+                        key,
+                        lqos_config::PlannerSiteIdentityState {
+                            class_minor: get_i64(entry, "class_minor", 0).max(0) as u16,
+                            queue: get_i64(entry, "queue", 0).max(0) as u32,
+                            parent_path: get_string(entry, "parent_path", String::new()),
+                            class_major: get_i64(entry, "class_major", 0).max(0) as u16,
+                            up_class_major: get_i64(entry, "up_class_major", 0).max(0) as u16,
+                        },
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        }
+        None => BTreeMap::new(),
+    };
+
+    let previous_circuits = match circuit_state {
+        Some(obj) => {
+            let dict = obj.bind(py).downcast::<PyDict>()?;
+            dict.iter()
+                .filter_map(|(k, v)| {
+                    let key = k.extract::<String>().ok()?;
+                    let entry = v.downcast::<PyDict>().ok()?;
+                    Some((
+                        key,
+                        lqos_config::PlannerCircuitIdentityState {
+                            class_minor: get_i64(entry, "class_minor", 0).max(0) as u16,
+                            queue: get_i64(entry, "queue", 0).max(0) as u32,
+                            parent_node: get_string(entry, "parent_node", String::new()),
+                            class_major: get_i64(entry, "class_major", 0).max(0) as u16,
+                            up_class_major: get_i64(entry, "up_class_major", 0).max(0) as u16,
+                        },
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+        }
+        None => BTreeMap::new(),
+    };
+
+    let result = lqos_config::plan_class_identities(
+        &site_inputs,
+        &circuit_group_inputs,
+        &previous_sites,
+        &previous_circuits,
+        stick_offset,
+        circuit_padding,
+    );
+
+    let out = PyDict::new(py);
+    let sites_out = PyList::empty(py);
+    for site in result.sites {
+        let d = PyDict::new(py);
+        d.set_item("site_key", site.site_key)?;
+        d.set_item("queue", site.queue)?;
+        d.set_item("class_minor", site.class_minor)?;
+        d.set_item("class_major", site.class_major)?;
+        d.set_item("up_class_major", site.up_class_major)?;
+        d.set_item("parent_path", site.parent_path)?;
+        sites_out.append(d)?;
+    }
+    out.set_item("sites", sites_out)?;
+
+    let circuits_out = PyList::empty(py);
+    for circuit in result.circuits {
+        let d = PyDict::new(py);
+        d.set_item("circuit_id", circuit.circuit_id)?;
+        d.set_item("parent_node", circuit.parent_node)?;
+        d.set_item("queue", circuit.queue)?;
+        d.set_item("class_minor", circuit.class_minor)?;
+        d.set_item("class_major", circuit.class_major)?;
+        d.set_item("up_class_major", circuit.up_class_major)?;
+        circuits_out.append(d)?;
+    }
+    out.set_item("circuits", circuits_out)?;
+
+    let site_state_out = PyDict::new(py);
+    for (key, state) in result.site_state {
+        let d = PyDict::new(py);
+        d.set_item("class_minor", state.class_minor)?;
+        d.set_item("queue", state.queue)?;
+        d.set_item("parent_path", state.parent_path)?;
+        d.set_item("class_major", state.class_major)?;
+        d.set_item("up_class_major", state.up_class_major)?;
+        site_state_out.set_item(key, d)?;
+    }
+    out.set_item("site_state", site_state_out)?;
+
+    let circuit_state_out = PyDict::new(py);
+    for (key, state) in result.circuit_state {
+        let d = PyDict::new(py);
+        d.set_item("class_minor", state.class_minor)?;
+        d.set_item("queue", state.queue)?;
+        d.set_item("parent_node", state.parent_node)?;
+        d.set_item("class_major", state.class_major)?;
+        d.set_item("up_class_major", state.up_class_major)?;
+        circuit_state_out.set_item(key, d)?;
+    }
+    out.set_item("circuit_state", circuit_state_out)?;
+
+    let last_used = PyDict::new(py);
+    for (queue, minor) in result.last_used_minor_by_queue {
+        last_used.set_item(queue, minor)?;
+    }
+    out.set_item("last_used_minor_by_queue", last_used)?;
+    Ok(out.into())
 }
 
 #[pyfunction]
@@ -672,9 +939,17 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        overrides_persistent_devices_materialized,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(overrides_circuit_adjustments, m)?)?;
     m.add_function(wrap_pyfunction!(
         overrides_circuit_adjustments_effective,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        overrides_circuit_adjustments_materialized,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(overrides_network_adjustments, m)?)?;
@@ -710,6 +985,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(store_planner_remote, m)?)?;
     m.add_function(wrap_pyfunction!(write_planner_cbor, m)?)?;
     m.add_function(wrap_pyfunction!(read_planner_cbor, m)?)?;
+    m.add_function(wrap_pyfunction!(plan_top_level_cpu_bins, m)?)?;
+    m.add_function(wrap_pyfunction!(plan_class_identities, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -1114,6 +1391,59 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
     Ok(out)
 }
 
+/// Returns a Python list of dictionaries representing persistent devices that should be
+/// materialized into `ShapedDevices.csv`.
+///
+/// This includes only operator-owned persistent devices so adaptive runtime layers do not
+/// overwrite the source-of-truth CSV.
+#[pyfunction]
+fn overrides_persistent_devices_materialized(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideStore::load_effective(false, false) {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for dev in overrides.persistent_devices().iter() {
+        let ipv4s: Vec<String> = dev
+            .ipv4
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+        let ipv6s: Vec<String> = dev
+            .ipv6
+            .iter()
+            .map(|(ip, prefix)| format!("{}/{}", ip, prefix))
+            .collect();
+
+        let d = PyDict::new(py);
+        d.set_item("circuitID", dev.circuit_id.clone())?;
+        d.set_item("circuitName", dev.circuit_name.clone())?;
+        d.set_item("deviceID", dev.device_id.clone())?;
+        d.set_item("deviceName", dev.device_name.clone())?;
+        d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item("mac", dev.mac.clone())?;
+        d.set_item("ipv4s", ipv4s)?;
+        d.set_item("ipv6s", ipv6s)?;
+        d.set_item("minDownload", dev.download_min_mbps)?;
+        d.set_item("minUpload", dev.upload_min_mbps)?;
+        d.set_item("maxDownload", dev.download_max_mbps)?;
+        d.set_item("maxUpload", dev.upload_max_mbps)?;
+        d.set_item("comment", dev.comment.clone())?;
+        d.set_item(
+            "sqm",
+            dev.sqm_override
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+        )?;
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
 /// Returns the list of circuit adjustments as Python dicts.
 #[pyfunction]
 fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
@@ -1220,6 +1550,99 @@ fn overrides_circuit_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
             Ok(o) => o,
             Err(e) => return Err(PyOSError::new_err(e.to_string())),
         };
+
+    let mut out: Vec<PyObject> = Vec::new();
+    for adj in overrides.circuit_adjustments().iter() {
+        let d = PyDict::new(py);
+        match adj {
+            lqos_overrides::CircuitAdjustment::CircuitAdjustSpeed {
+                circuit_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                d.set_item("type", "circuit_adjust_speed")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSpeed {
+                device_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                d.set_item("type", "device_adjust_speed")?;
+                d.set_item("device_id", device_id.clone())?;
+                if let Some(v) = min_download_bandwidth {
+                    d.set_item("min_download_bandwidth", *v)?;
+                }
+                if let Some(v) = max_download_bandwidth {
+                    d.set_item("max_download_bandwidth", *v)?;
+                }
+                if let Some(v) = min_upload_bandwidth {
+                    d.set_item("min_upload_bandwidth", *v)?;
+                }
+                if let Some(v) = max_upload_bandwidth {
+                    d.set_item("max_upload_bandwidth", *v)?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
+                device_id,
+                sqm_override,
+            } => {
+                d.set_item("type", "device_adjust_sqm")?;
+                d.set_item("device_id", device_id.clone())?;
+                if let Some(value) = sqm_override {
+                    d.set_item("sqm_override", value.clone())?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
+                d.set_item("type", "remove_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::RemoveDevice { device_id } => {
+                d.set_item("type", "remove_device")?;
+                d.set_item("device_id", device_id.clone())?;
+            }
+            lqos_overrides::CircuitAdjustment::ReparentCircuit {
+                circuit_id,
+                parent_node,
+            } => {
+                d.set_item("type", "reparent_circuit")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("parent_node", parent_node.clone())?;
+            }
+        }
+        let obj: PyObject = d.unbind().into();
+        out.push(obj);
+    }
+
+    Ok(out)
+}
+
+/// Returns the list of circuit adjustments that should be materialized into `ShapedDevices.csv`.
+///
+/// This includes only operator-owned circuit adjustments so adaptive runtime layers do not
+/// overwrite the source-of-truth CSV.
+#[pyfunction]
+fn overrides_circuit_adjustments_materialized(py: Python<'_>) -> PyResult<Vec<PyObject>> {
+    let overrides = match lqos_overrides::OverrideStore::load_effective(false, false) {
+        Ok(o) => o,
+        Err(e) => return Err(PyOSError::new_err(e.to_string())),
+    };
 
     let mut out: Vec<PyObject> = Vec::new();
     for adj in overrides.circuit_adjustments().iter() {
@@ -2346,26 +2769,56 @@ impl Bakery {
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
         let is_ok = estimate.ok();
         let interface_reports = estimate
-            .interfaces
+            .interface_details
             .iter()
-            .map(|(name, planned_qdiscs)| BakeryCapacityReportInterface {
+            .map(|(name, detail)| BakeryCapacityReportInterface {
                 name: name.clone(),
-                planned_qdiscs: *planned_qdiscs,
+                planned_qdiscs: detail.planned_qdiscs,
+                infra_qdiscs: detail.infra_qdiscs,
+                cake_qdiscs: detail.cake_qdiscs,
+                fq_codel_qdiscs: detail.fq_codel_qdiscs,
+                estimated_memory_bytes: detail.estimated_memory_bytes,
             })
             .collect::<Vec<_>>();
+        let memory_summary = if let Some(snapshot) = estimate.memory_snapshot.as_ref() {
+            format!(
+                "estimated qdisc memory {} bytes with {} bytes currently available and safety floor {} bytes",
+                estimate.estimated_total_memory_bytes,
+                snapshot.available_bytes,
+                lqos_bakery::BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES
+            )
+        } else {
+            format!(
+                "estimated qdisc memory {} bytes; host memory snapshot unavailable",
+                estimate.estimated_total_memory_bytes
+            )
+        };
         let summary = if interface_reports.is_empty() {
             format!(
-                "Planned queue model {} qdisc budget. No shaping interfaces were queued.",
-                if is_ok { "fits" } else { "exceeds" }
+                "Planned queue model {} preflight. No shaping interfaces were queued; {memory_summary}.",
+                if is_ok { "fits" } else { "exceeds" },
             )
         } else {
             let interface_summary = interface_reports
                 .iter()
-                .map(|entry| format!("{} estimated {} qdiscs", entry.name, entry.planned_qdiscs))
+                .map(|entry| {
+                    let detail = estimate
+                        .interface_details
+                        .get(&entry.name)
+                        .expect("detail should exist for interface");
+                    format!(
+                        "{} estimated {} qdiscs (infra {}, cake {}, fq_codel {})",
+                        entry.name,
+                        entry.planned_qdiscs,
+                        detail.infra_qdiscs,
+                        detail.cake_qdiscs,
+                        detail.fq_codel_qdiscs
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "Planned queue model {} qdisc budget. {interface_summary}; safe budget {}, kernel limit {}.",
+                "Planned queue model {} preflight. {interface_summary}; safe budget {}, kernel limit {}; {memory_summary}.",
                 if is_ok { "fits" } else { "exceeds" },
                 estimate.safe_budget,
                 estimate.hard_limit,
@@ -2373,23 +2826,58 @@ impl Bakery {
         };
         let _ = run_query(vec![BusRequest::BakeryReportPreflight {
             ok: is_ok,
-            message: summary,
+            message: summary.clone(),
             safe_budget: estimate.safe_budget,
             hard_limit: estimate.hard_limit,
+            estimated_total_memory_bytes: estimate.estimated_total_memory_bytes,
+            memory_available_bytes: estimate
+                .memory_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.available_bytes),
+            memory_guard_min_available_bytes: lqos_bakery::BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES,
+            memory_ok: estimate.memory_ok,
             interfaces: interface_reports,
         }]);
 
         let result = PyDict::new(py);
         let interfaces = PyDict::new(py);
+        let interface_details = PyDict::new(py);
 
         for (interface, count) in estimate.interfaces {
             interfaces.set_item(interface, count)?;
         }
+        for (interface, detail) in estimate.interface_details {
+            let detail_dict = PyDict::new(py);
+            detail_dict.set_item("planned_qdiscs", detail.planned_qdiscs)?;
+            detail_dict.set_item("infra_qdiscs", detail.infra_qdiscs)?;
+            detail_dict.set_item("cake_qdiscs", detail.cake_qdiscs)?;
+            detail_dict.set_item("fq_codel_qdiscs", detail.fq_codel_qdiscs)?;
+            detail_dict.set_item("estimated_memory_bytes", detail.estimated_memory_bytes)?;
+            interface_details.set_item(interface, detail_dict)?;
+        }
 
         result.set_item("interfaces", interfaces)?;
+        result.set_item("interface_details", interface_details)?;
         result.set_item("safe_budget", estimate.safe_budget)?;
         result.set_item("hard_limit", estimate.hard_limit)?;
+        result.set_item(
+            "estimated_total_memory_bytes",
+            estimate.estimated_total_memory_bytes,
+        )?;
+        result.set_item("memory_ok", estimate.memory_ok)?;
+        result.set_item(
+            "memory_guard_min_available_bytes",
+            lqos_bakery::BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES,
+        )?;
+        if let Some(snapshot) = estimate.memory_snapshot {
+            result.set_item("memory_total_bytes", snapshot.total_bytes)?;
+            result.set_item("memory_available_bytes", snapshot.available_bytes)?;
+        } else {
+            result.set_item("memory_total_bytes", py.None())?;
+            result.set_item("memory_available_bytes", py.None())?;
+        }
         result.set_item("ok", is_ok)?;
+        result.set_item("summary", summary)?;
         Ok(result.into())
     }
 

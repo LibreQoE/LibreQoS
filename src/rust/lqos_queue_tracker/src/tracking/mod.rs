@@ -21,6 +21,8 @@ use watched_queues::WATCHED_QUEUES;
 pub use watched_queues::{add_watched_queue, still_watching};
 
 static QUEUE_STATS_STALE: AtomicBool = AtomicBool::new(false);
+const ALL_QUEUE_MONITOR_INTERVAL_SECONDS: u64 = 2;
+const RELOAD_QUEUE_MONITOR_INTERVAL_SECONDS: u64 = 10;
 
 /// Returns `true` when queue counts are intentionally held at their last-known values.
 ///
@@ -31,6 +33,12 @@ pub fn queue_stats_stale() -> bool {
 }
 
 fn track_queues() {
+    if full_reload_in_progress() {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+        debug!("(TC monitor) Skipping watched queue reads during Bakery full reload");
+        expire_watched_queues();
+        return;
+    }
     if WATCHED_QUEUES.is_empty() {
         //info!("No queues marked for read.");
         return; // There's nothing to do - bail out fast
@@ -261,7 +269,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
     std::thread::Builder::new()
         .name("All Queue Monitor".to_string())
         .spawn(|| {
-            let mut interval_seconds = 2;
+            let mut interval_seconds = ALL_QUEUE_MONITOR_INTERVAL_SECONDS;
             let Ok(mut tfd) = TimerFd::new() else {
                 error!("Unable to start timer file descriptor. All queue monitor cannot run.");
                 return;
@@ -269,7 +277,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
             assert_eq!(tfd.get_state(), TimerState::Disarmed);
             tfd.set_state(
                 TimerState::Periodic {
-                    current: Duration::new(2, 0),
+                    current: Duration::new(interval_seconds, 0),
                     interval: Duration::new(interval_seconds, 0),
                 },
                 SetTimeFlags::Default,
@@ -277,13 +285,34 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
             let _ = tfd.read(); // Initial pause
 
             loop {
-                all_queue_reader();
+                let desired_interval_seconds = if full_reload_in_progress() {
+                    RELOAD_QUEUE_MONITOR_INTERVAL_SECONDS
+                } else {
+                    ALL_QUEUE_MONITOR_INTERVAL_SECONDS
+                };
+                if interval_seconds != desired_interval_seconds {
+                    interval_seconds = desired_interval_seconds;
+                    tfd.set_state(
+                        TimerState::Periodic {
+                            current: Duration::new(interval_seconds, 0),
+                            interval: Duration::new(interval_seconds, 0),
+                        },
+                        SetTimeFlags::Default,
+                    );
+                }
+
+                if full_reload_in_progress() {
+                    QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+                    debug!("(TC monitor) Backing off full queue reads during Bakery full reload");
+                } else {
+                    all_queue_reader();
+                }
 
                 // Sleep until the next second
                 let missed_ticks = tfd.read();
                 if missed_ticks > 1 {
                     warn!("All Queue Reader: Missed {} ticks", missed_ticks - 1);
-                    interval_seconds = 2 + (missed_ticks - 1);
+                    interval_seconds = desired_interval_seconds + (missed_ticks - 1);
                     tfd.set_state(
                         TimerState::Periodic {
                             current: Duration::new(interval_seconds, 0),
