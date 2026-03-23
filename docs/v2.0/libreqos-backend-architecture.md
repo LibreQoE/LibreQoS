@@ -246,12 +246,14 @@ Practical effect:
 
 | Change type | Usually incremental-safe | Often requires full reload | Why |
 |---|---|---|---|
-| Circuit IP-only change | Yes | No | Mapping update can often be applied without tree rebuild |
-| Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact and available class handles |
-| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | No | Bakery now applies it as a live runtime plan: non-top-level nodes use reparent/prune/restore, and supported top-level nodes use a rebalance + cross-queue migration path |
-| Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits |
-| Topology re-parent/restructure | Rarely | Yes | HTB subtree mutation constraints |
-| Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability and diff correctness boundaries |
+| Circuit IP-only change | Yes | No | Mapping updates can usually be applied without rebuilding the queue tree |
+| Circuit SQM-only change | Yes | No | Leaf qdisc kind/parameter changes can usually be applied live |
+| Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact, queue-count pressure, and available class handles |
+| Ordinary circuit parent move | Yes | Sometimes | Bakery now supports live circuit migration for common parent/class moves, but it still escalates to reload if live `tc` state drifts or the mutation cannot be applied safely |
+| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | No | TreeGuard decides when virtualization is worth attempting, but Bakery owns the physical runtime plan and applies it as a live mutation path |
+| Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits still matter, even with better incremental behavior |
+| Site add/remove or broader structural topology change | Rarely | Yes | HTB subtree mutation constraints remain much stricter at site/topology level than at per-circuit level |
+| Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability, tree size, and diff correctness boundaries |
 
 This table reflects Bakery design behavior and Linux `tc` mutation constraints discussed in the devblog material.
 
@@ -285,6 +287,23 @@ Current Bakery full reloads apply two conservative safety checks before and duri
 3. During chunked full reload apply, Bakery re-checks host memory at chunk boundaries and aborts the remaining apply if available memory drops below its safety floor.
 4. These guards are intentionally biased toward false positives on large reloads so the system fails early with diagnostics instead of spiraling into an OOM event.
 
+### 7.5 Runtime safety model
+
+Bakery's newer runtime-safety direction is intentionally narrow:
+
+1. Reconcile enough live state to decide whether deferred cleanup is safe.
+2. Detect material drift between Bakery's intended state and live kernel `tc` state.
+3. Stop trusting incremental/runtime mutation once drift is real.
+4. Escalate to a controlled full reload as the recovery path.
+
+This is intentionally **not** a broad self-healing reconciler. LibreQoS is biased toward:
+
+- lightweight cleanup gating for expected lag
+- explicit `reload required` escalation on material live-state drift
+- one controlled full reload to re-establish a single authoritative queue model
+
+That design keeps failure handling easier to reason about than trying to incrementally repair arbitrary split-brain queue state.
+
 ## 8) Design Boundaries for Operators
 
 ### 8.1 Observability boundaries
@@ -301,7 +320,7 @@ Current Bakery full reloads apply two conservative safety checks before and duri
 | Risk factor | Typical symptom | Mitigation |
 |---|---|---|
 | Very high queue counts with CAKE everywhere | RAM growth and scheduler overhead | Use `lazy_queues`, expiry, selective fq_codel where appropriate |
-| Frequent full-tree updates | Brief packet disruption windows | Increase incremental-safe update usage; batch structural changes |
+| Frequent full-tree updates | Brief packet disruption windows | Increase incremental-safe update usage; batch structural changes, and let Bakery keep ordinary circuit moves incremental where possible |
 | Incomplete parent mapping in hierarchy | Subscribers unexpectedly unshaped | Validate parent relationships in `network.json` and input data |
 | Single-queue/weak NIC virtualization behavior | Poor spread and unstable shaping | Ensure multi-queue NIC path and verify queue mapping assumptions |
 
@@ -312,7 +331,7 @@ Current Bakery full reloads apply two conservative safety checks before and duri
 | Latency spikes but interface throughput is not fully pegged | Microburst queue buildup, poor flow isolation, or direction mismatch | Compare latency vs queue/drop trends; verify both directions are shaped | Tune leaf qdisc strategy and verify directional shaping design |
 | One CPU runs hot while others are underused | Queue steering imbalance or weak multi-queue path | Inspect CPU utilization and per-class counters by queue branch | Fix queue mapping assumptions and verify `mq`/class structure |
 | Subscribers intermittently appear unshaped | Parent/hierarchy mapping mismatch | Validate parent node references and resulting class creation | Correct hierarchy mappings, then apply and verify class presence |
-| Frequent short disruption during updates | Too many full-reload-triggering changes | Classify recent changes as structural vs incremental | Re-batch operations to favor incremental-safe deltas |
+| Frequent short disruption during updates | Too many full-reload-triggering changes or runtime drift escalation | Classify recent changes as structural vs incremental, and check for `reload required` events | Re-batch operations to favor incremental-safe deltas and investigate live-state drift |
 | RAM growth during scale-up | Too many active leaf qdiscs or aggressive CAKE footprint | Measure queue count and memory trends over update windows | Use lazy queue creation/expiry and consider selective fq_codel use |
 | Dashboard traffic appears higher than expected user throughput | Counter scope differs from post-drop forwarded traffic | Compare dashboard metrics with `tc` drop/mark context | Align runbooks to metric semantics before escalating |
 

@@ -53,6 +53,7 @@ let latestFlowMsg = null;
 let latestCakeMsg = null;
 let cakeGraphs = null;
 let cakeQueueUnavailable = false;
+let circuitSqmOverride = "";
 let queuingActivityGraph = null;
 let latestCircuitDevices = [];
 let latestCircuitQooScore = null;
@@ -808,7 +809,7 @@ function renderCakeGraphShell() {
             </div>
         </div>
     `;
-    setQueueTypeDisplay("");
+    setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up, circuitSqmOverride);
 }
 
 function applyCakeMessage(msg) {
@@ -816,6 +817,7 @@ function applyCakeMessage(msg) {
         return;
     }
     $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
+    setQueueTypeDisplayFromKinds(msg.kind_down, msg.kind_up, circuitSqmOverride);
     cakeGraphs.backlog.update(msg);
     resizeGraphIfVisible(cakeGraphs.backlog);
     cakeGraphs.delays.update(msg);
@@ -950,6 +952,12 @@ function parseDirectionalSqmToken(token) {
 
 function formatQueueTypeDisplay(sqmToken) {
     const { down, up } = parseDirectionalSqmToken(sqmToken);
+    return formatDirectionalQueueTypeDisplay(down, up);
+}
+
+function formatDirectionalQueueTypeDisplay(downToken, upToken) {
+    const down = (downToken ?? "").toString().trim().toLowerCase();
+    const up = (upToken ?? "").toString().trim().toLowerCase();
     const downLabel = down || "Unknown";
     const upLabel = up || down || "Unknown";
     return `${downLabel} / ${upLabel}`;
@@ -961,6 +969,20 @@ function setQueueTypeDisplay(sqmToken) {
         return;
     }
     queueTypeEl.textContent = formatQueueTypeDisplay(sqmToken);
+}
+
+function setQueueTypeDisplayFromKinds(kindDown, kindUp, fallbackSqmToken = "") {
+    const queueTypeEl = document.getElementById("cakeQueueType");
+    if (!queueTypeEl) {
+        return;
+    }
+    const down = (kindDown ?? "").toString().trim().toLowerCase();
+    const up = (kindUp ?? "").toString().trim().toLowerCase();
+    if (down || up) {
+        queueTypeEl.textContent = formatDirectionalQueueTypeDisplay(down, up);
+        return;
+    }
+    queueTypeEl.textContent = formatQueueTypeDisplay(fallbackSqmToken);
 }
 
 function requestCircuitById(onSuccess, onError) {
@@ -2072,7 +2094,8 @@ function loadInitial() {
             up: toNumber(circuit.upload_max_mbps, 0),
         };
         latestCircuitDevices = circuits;
-        setQueueTypeDisplay(circuit.sqm_override || "");
+        circuitSqmOverride = circuit.sqm_override || "";
+        setQueueTypeDisplay(circuitSqmOverride);
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
         qooGauge = new QooScoreGauge("qooGauge");
