@@ -191,7 +191,8 @@ pub fn build_class_identity_reservations(
     previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
     previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
 ) -> (PlannerMinorReservations, PlannerMinorReservations) {
-    let planned_site_keys: BTreeSet<&str> = sites.iter().map(|site| site.site_key.as_str()).collect();
+    let planned_site_keys: BTreeSet<&str> =
+        sites.iter().map(|site| site.site_key.as_str()).collect();
     let planned_circuit_ids: BTreeSet<&str> = circuit_groups
         .iter()
         .flat_map(|group| group.circuit_ids.iter().map(|id| id.as_str()))
@@ -424,7 +425,9 @@ pub fn plan_class_identities_with_constraints(
     let mut site_assignments = Vec::with_capacity(sites.len());
     let mut site_state = BTreeMap::new();
     for (queue, reserved) in &reserved_site_minors {
-        let next_minor = next_site_minor_by_queue.entry(*queue).or_insert(site_minor_start.max(3));
+        let next_minor = next_site_minor_by_queue
+            .entry(*queue)
+            .or_insert(site_minor_start.max(3));
         if let Some(last_reserved) = reserved.iter().next_back().copied() {
             *next_minor = (*next_minor).max(last_reserved.saturating_add(1));
         }
@@ -569,12 +572,8 @@ pub fn plan_class_identities(
     stick_offset: u16,
     circuit_padding: u32,
 ) -> ClassIdentityPlannerOutput {
-    let (reserved_site_minors, reserved_circuit_minors) = build_class_identity_reservations(
-        sites,
-        circuit_groups,
-        previous_sites,
-        previous_circuits,
-    );
+    let (reserved_site_minors, reserved_circuit_minors) =
+        build_class_identity_reservations(sites, circuit_groups, previous_sites, previous_circuits);
     plan_class_identities_with_constraints(
         sites,
         circuit_groups,
@@ -813,8 +812,7 @@ mod tests {
             ),
         ]);
 
-        let result =
-            plan_class_identities(&site_inputs, &[], &prev_sites, &BTreeMap::new(), 0, 0);
+        let result = plan_class_identities(&site_inputs, &[], &prev_sites, &BTreeMap::new(), 0, 0);
 
         assert_eq!(result.sites.len(), 1);
         assert_eq!(result.sites[0].queue, 7);
@@ -839,12 +837,8 @@ mod tests {
                 up_class_major: 7,
             },
         )]);
-        let (reserved_site_minors, reserved_circuit_minors) = build_class_identity_reservations(
-            &site_inputs,
-            &[],
-            &prev_sites,
-            &BTreeMap::new(),
-        );
+        let (reserved_site_minors, reserved_circuit_minors) =
+            build_class_identity_reservations(&site_inputs, &[], &prev_sites, &BTreeMap::new());
 
         let result = plan_class_identities_with_constraints(
             &site_inputs,

@@ -757,6 +757,8 @@ MemFree:         1024000 kB
     fn ignorable_delete_absence_rejects_non_delete_failures() {
         let output = mock_tc_output(1, "", "Error: HTB class in use.\n");
         let lines = "class del dev if0 parent 0x1:0x35 classid 0x1:0x39\n";
-        assert!(!tc_batch_failure_is_ignorable_delete_absence(&output, lines));
+        assert!(!tc_batch_failure_is_ignorable_delete_absence(
+            &output, lines
+        ));
     }
 }
