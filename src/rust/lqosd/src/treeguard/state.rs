@@ -69,6 +69,9 @@ pub struct LinkDirectionState {
     /// When the link first went below the configured top-level safe-util threshold (seconds since
     /// UNIX epoch), if currently below.
     pub top_level_safe_since_unix: Option<u64>,
+    /// When the link first went above the fixed emergency-util threshold (seconds since UNIX
+    /// epoch), if currently above.
+    pub top_level_emergency_since_unix: Option<u64>,
 }
 
 /// Per-node link virtualization tracking state.

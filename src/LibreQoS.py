@@ -176,6 +176,19 @@ def _parse_int_token(value):
         return None
 
 
+def is_generated_parent_node_name(node_name):
+    return isinstance(node_name, str) and node_name.startswith("Generated_PN_")
+
+
+def generated_parent_node_queue_key(node_name, queues_available):
+    if not is_generated_parent_node_name(node_name) or queues_available <= 0:
+        return None
+    suffix = _parse_int_token(str(node_name).rsplit("_", 1)[-1])
+    if suffix is None or suffix <= 0:
+        return None
+    return "CpueQueue" + str((suffix - 1) % queues_available)
+
+
 def planner_circuit_identity_key(circuit):
     circuit_id = str(circuit.get("circuitID", "") or "").strip()
     if not circuit_id:
@@ -1299,6 +1312,8 @@ def refreshShapers():
                     pass
 
             for node in network:
+                if is_generated_parent_node_name(node):
+                    continue
                 w = weight_by_name.get(str(node), 1.0)
                 try:
                     w = float(w)
@@ -1371,9 +1386,18 @@ def refreshShapers():
                 changed = list(assignment.keys())
                 planner_used = False
 
+            resolved_assignment = {}
+            for node in network:
+                tgt = generated_parent_node_queue_key(node, queuesAvailable)
+                if tgt is None:
+                    tgt = assignment.get(node)
+                if tgt is None:
+                    tgt = "CpueQueue" + str(queuesAvailable - 1)
+                resolved_assignment[str(node)] = tgt
+
             for x in range(queuesAvailable):
                 key = "CpueQueue" + str(x)
-                assigned = [name for name, tgt in assignment.items() if tgt == key]
+                assigned = [name for name, tgt in resolved_assignment.items() if tgt == key]
                 print("Bin " + str(x) + " = ", assigned)
 
             # Build the binned network structure
@@ -1390,7 +1414,7 @@ def refreshShapers():
                     'name': cpuKey
                 }
             for node in network:
-                tgt = assignment.get(node)
+                tgt = resolved_assignment.get(str(node))
                 if tgt is None:
                     tgt = "CpueQueue" + str(queuesAvailable - 1)
                 binnedNetwork[tgt]['children'][node] = network[node]
@@ -1404,6 +1428,13 @@ def refreshShapers():
                     state["assignments"] = {}
                 if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
                     state["last_change_ts"] = {}
+                stale_generated = [
+                    iid for iid in list(state["assignments"].keys())
+                    if is_generated_parent_node_name(iid)
+                ]
+                for iid in stale_generated:
+                    state["assignments"].pop(iid, None)
+                    state["last_change_ts"].pop(iid, None)
                 for iid, b in assignment.items():
                     if iid in changed:
                         state["last_change_ts"][iid] = now_ts

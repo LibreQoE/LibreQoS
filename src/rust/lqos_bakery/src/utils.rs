@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 /// Get the current Unix timestamp in seconds
@@ -15,6 +17,40 @@ pub(crate) fn current_timestamp() -> u64 {
 }
 
 static FILE_LOCK: Mutex<()> = Mutex::new(());
+static LIVE_TC_SNAPSHOT_CACHE: LazyLock<Mutex<LiveTcSnapshotCache>> =
+    LazyLock::new(|| Mutex::new(LiveTcSnapshotCache::new()));
+const LIVE_TC_SNAPSHOT_MAX_AGE_MS: u64 = 250;
+
+#[derive(Clone)]
+struct TimedClassSnapshot {
+    captured_at: Instant,
+    snapshot: HashMap<TcHandle, LiveTcClassEntry>,
+}
+
+#[derive(Clone)]
+struct TimedQdiscSnapshot {
+    captured_at: Instant,
+    handles: HashSet<u16>,
+}
+
+struct LiveTcSnapshotCache {
+    class_snapshots: HashMap<String, TimedClassSnapshot>,
+    qdisc_snapshots: HashMap<String, TimedQdiscSnapshot>,
+}
+
+impl LiveTcSnapshotCache {
+    fn new() -> Self {
+        Self {
+            class_snapshots: HashMap::new(),
+            qdisc_snapshots: HashMap::new(),
+        }
+    }
+
+    fn invalidate(&mut self) {
+        self.class_snapshots.clear();
+        self.qdisc_snapshots.clear();
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExecuteResult {
@@ -74,6 +110,41 @@ fn summarize_tc_batch_failure(output: &std::process::Output) -> Option<String> {
     }
 }
 
+fn tc_batch_command_is_delete_only(line: &str) -> bool {
+    let mut parts = line.split_whitespace();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some("qdisc"), Some("del")) | (Some("class"), Some("del"))
+    )
+}
+
+fn tc_batch_failure_is_ignorable_delete_absence(
+    output: &std::process::Output,
+    lines: &str,
+) -> bool {
+    if output.status.success() {
+        return false;
+    }
+
+    if lines.trim().is_empty() || !lines.lines().all(tc_batch_command_is_delete_only) {
+        return false;
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.trim().is_empty() {
+        return false;
+    }
+
+    stderr.lines().all(|line| {
+        let trimmed = line.trim().to_ascii_lowercase();
+        trimmed.is_empty()
+            || trimmed.starts_with("command failed ")
+            || trimmed.starts_with("error: specified class not found")
+            || trimmed.starts_with("error: cannot find specified qdisc on specified device")
+            || trimmed.starts_with("rtnetlink answers: no such file or directory")
+    })
+}
+
 pub(crate) fn read_memory_snapshot() -> Result<MemorySnapshot, String> {
     let raw = std::fs::read_to_string("/proc/meminfo")
         .map_err(|e| format!("Failed to read /proc/meminfo: {e}"))?;
@@ -127,7 +198,13 @@ fn memory_guard_failure_summary(
     )
 }
 
-pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u16>, String> {
+#[allow(dead_code)]
+pub(crate) fn invalidate_live_tc_snapshots() {
+    let mut cache = LIVE_TC_SNAPSHOT_CACHE.lock();
+    cache.invalidate();
+}
+
+fn read_live_qdisc_handle_majors_raw(interface: &str) -> Result<HashSet<u16>, String> {
     let output = std::process::Command::new("/sbin/tc")
         .args(["-s", "-j", "qdisc", "show", "dev", interface])
         .output()
@@ -148,7 +225,29 @@ pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u
         .map_err(|e| format!("Failed to parse live qdisc snapshot on {interface}: {e}"))
 }
 
-pub(crate) fn read_live_class_snapshot(
+pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u16>, String> {
+    let _lock = FILE_LOCK.lock();
+    let mut cache = LIVE_TC_SNAPSHOT_CACHE.lock();
+    let now = Instant::now();
+    if let Some(entry) = cache.qdisc_snapshots.get(interface)
+        && now.duration_since(entry.captured_at)
+            <= Duration::from_millis(LIVE_TC_SNAPSHOT_MAX_AGE_MS)
+    {
+        return Ok(entry.handles.clone());
+    }
+
+    let handles = read_live_qdisc_handle_majors_raw(interface)?;
+    cache.qdisc_snapshots.insert(
+        interface.to_string(),
+        TimedQdiscSnapshot {
+            captured_at: now,
+            handles: handles.clone(),
+        },
+    );
+    Ok(handles)
+}
+
+fn read_live_class_snapshot_raw(
     interface: &str,
 ) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
     let output = std::process::Command::new("/sbin/tc")
@@ -169,6 +268,30 @@ pub(crate) fn read_live_class_snapshot(
 
     parse_live_class_snapshot(&stdout)
         .map_err(|e| format!("Failed to parse live class snapshot on {interface}: {e}"))
+}
+
+pub(crate) fn read_live_class_snapshot(
+    interface: &str,
+) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
+    let _lock = FILE_LOCK.lock();
+    let mut cache = LIVE_TC_SNAPSHOT_CACHE.lock();
+    let now = Instant::now();
+    if let Some(entry) = cache.class_snapshots.get(interface)
+        && now.duration_since(entry.captured_at)
+            <= Duration::from_millis(LIVE_TC_SNAPSHOT_MAX_AGE_MS)
+    {
+        return Ok(entry.snapshot.clone());
+    }
+
+    let snapshot = read_live_class_snapshot_raw(interface)?;
+    cache.class_snapshots.insert(
+        interface.to_string(),
+        TimedClassSnapshot {
+            captured_at: now,
+            snapshot: snapshot.clone(),
+        },
+    );
+    Ok(snapshot)
 }
 
 fn parse_live_qdisc_handle_majors(raw_json: &str) -> Result<HashSet<u16>, String> {
@@ -372,7 +495,11 @@ where
             warn!("Command stderr for ({purpose}): {:?}", stderr.trim());
         }
 
-        if let Some(failure_summary) = summarize_tc_batch_failure(&output) {
+        if tc_batch_failure_is_ignorable_delete_absence(&output, &lines) {
+            warn!(
+                "Bakery tolerated delete-only tc batch absence during {purpose}; targets were already gone"
+            );
+        } else if let Some(failure_summary) = summarize_tc_batch_failure(&output) {
             let numbered = format_numbered_lines(&lines, global_line_start);
             let chunk_line_end = global_line_start + chunk.len().saturating_sub(1);
             let detailed = format!(
@@ -417,6 +544,7 @@ where
 
         completed_commands += chunk.len();
         completed_chunks += 1;
+        LIVE_TC_SNAPSHOT_CACHE.lock().invalidate();
 
         if let Some(min_available_bytes) = memory_guard_min_available_bytes {
             match read_memory_snapshot() {
@@ -612,5 +740,23 @@ MemFree:         1024000 kB
     fn summarize_tc_batch_failure_accepts_success_with_stderr_warning() {
         let output = mock_tc_output(0, "", "Warning: sch_htb: quantum of class 10134 is big.\n");
         assert!(summarize_tc_batch_failure(&output).is_none());
+    }
+
+    #[test]
+    fn ignorable_delete_absence_accepts_missing_delete_targets() {
+        let output = mock_tc_output(
+            1,
+            "",
+            "Error: Specified class not found.\nCommand failed /tmp/x:1\nRTNETLINK answers: No such file or directory\nCommand failed /tmp/x:2\n",
+        );
+        let lines = "qdisc del dev if0 parent 0x1:0x2000\nclass del dev if0 parent 0x1:0x3 classid 0x1:0x2000\n";
+        assert!(tc_batch_failure_is_ignorable_delete_absence(&output, lines));
+    }
+
+    #[test]
+    fn ignorable_delete_absence_rejects_non_delete_failures() {
+        let output = mock_tc_output(1, "", "Error: HTB class in use.\n");
+        let lines = "class del dev if0 parent 0x1:0x35 classid 0x1:0x39\n";
+        assert!(!tc_batch_failure_is_ignorable_delete_absence(&output, lines));
     }
 }

@@ -36,6 +36,8 @@ static TREEGUARD_RUNTIME_VIRTUALIZED_NODES: OnceLock<RwLock<FxHashSet<String>>> 
 const ACTIVITY_RING_CAPACITY: usize = 200;
 const UTIL_EWMA_ALPHA: f64 = 0.1;
 const TOP_LEVEL_SAFE_SUSTAIN_MINUTES: u32 = 15;
+const TOP_LEVEL_EMERGENCY_UTIL_PCT: f64 = 95.0;
+const TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS: u64 = 5;
 const TREEGUARD_LINK_CHANGE_BUDGET_PER_TICK: usize = 4;
 const TREEGUARD_CIRCUIT_CHANGE_BUDGET_PER_TICK: usize = 512;
 const TREEGUARD_CIRCUIT_TARGET_SWEEP_SECONDS: usize = 15;
@@ -1217,6 +1219,18 @@ fn run_tick(
                     ewma_up,
                     top_level_safe_util_pct,
                 );
+                update_above_since(
+                    &mut state.down.top_level_emergency_since_unix,
+                    now_unix,
+                    ewma_down,
+                    TOP_LEVEL_EMERGENCY_UTIL_PCT,
+                );
+                update_above_since(
+                    &mut state.up.top_level_emergency_since_unix,
+                    now_unix,
+                    ewma_up,
+                    TOP_LEVEL_EMERGENCY_UTIL_PCT,
+                );
             }
 
             let rtt_missing = match now_nanos_since_boot {
@@ -1254,35 +1268,40 @@ fn run_tick(
             };
 
             let decision = if is_top_level {
-                let dwell_secs = u64::from(tg.links.min_state_dwell_minutes).saturating_mul(60);
-                let in_dwell_window = state
-                    .last_change_unix
-                    .is_some_and(|last| now_unix.saturating_sub(last) < dwell_secs);
-                let rate_limited = if tg.links.max_link_changes_per_hour == 0 {
-                    true
-                } else {
-                    state.recent_changes_unix.len() >= tg.links.max_link_changes_per_hour as usize
-                };
-                if in_dwell_window || rate_limited {
-                    decisions::LinkVirtualDecision::NoChange
-                } else {
-                    let sustained_safe = is_sustained_window(
+                let sustained_safe = is_sustained_window(
+                    now_unix,
+                    state.down.top_level_safe_since_unix,
+                    state.up.top_level_safe_since_unix,
+                    TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
+                );
+                let emergency_util_sustained = state
+                    .down
+                    .top_level_emergency_since_unix
+                    .is_some_and(|since| {
+                        now_unix.saturating_sub(since) >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                    })
+                    || state
+                        .up
+                        .top_level_emergency_since_unix
+                        .is_some_and(|since| {
+                            now_unix.saturating_sub(since) >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                        });
+                decisions::decide_top_level_link_virtualization(
+                    decisions::TopLevelLinkVirtualizationInput {
                         now_unix,
-                        state.down.top_level_safe_since_unix,
-                        state.up.top_level_safe_since_unix,
-                        TOP_LEVEL_SAFE_SUSTAIN_MINUTES,
-                    );
-                    decisions::decide_top_level_link_virtualization(
-                        decisions::TopLevelLinkVirtualizationInput {
-                            cpu_max_pct,
-                            cpu_cfg: &tg.cpu,
-                            util_ewma_pct,
-                            safe_util_pct: top_level_safe_util_pct,
-                            sustained_safe,
-                            state,
-                        },
-                    )
-                }
+                        cpu_max_pct,
+                        cpu_cfg: &tg.cpu,
+                        links_cfg: &tg.links,
+                        qoo_cfg: &tg.qoo,
+                        rtt_missing,
+                        qoo,
+                        util_ewma_pct,
+                        safe_util_pct: top_level_safe_util_pct,
+                        sustained_safe,
+                        emergency_util_sustained,
+                        state,
+                    },
+                )
             } else {
                 decisions::decide_link_virtualization(decisions::LinkVirtualizationInput {
                     now_unix,
@@ -1308,10 +1327,37 @@ fn run_tick(
                             "Top-level safe: sustained utilization below {:.1}% for {} minutes",
                             top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
                         ),
-                        LinkVirtualState::Physical => format!(
-                            "Top-level unsafe: utilization above {:.1}%",
-                            top_level_safe_util_pct
-                        ),
+                        LinkVirtualState::Physical => {
+                            if qoo.down.is_some_and(|score| score < tg.qoo.min_score)
+                                || qoo.up.is_some_and(|score| score < tg.qoo.min_score)
+                            {
+                                "Top-level emergency restore: QoO below threshold".to_string()
+                            } else if state.down.top_level_emergency_since_unix.is_some_and(
+                                |since| {
+                                    now_unix.saturating_sub(since)
+                                        >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                                },
+                            ) || state.up.top_level_emergency_since_unix.is_some_and(
+                                |since| {
+                                    now_unix.saturating_sub(since)
+                                        >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                                },
+                            ) {
+                                format!(
+                                    "Top-level emergency restore: utilization >= {:.1}% for {}s",
+                                    TOP_LEVEL_EMERGENCY_UTIL_PCT,
+                                    TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                                )
+                            } else if rtt_missing {
+                                "Top-level restore: RTT missing while branch is not idle"
+                                    .to_string()
+                            } else {
+                                format!(
+                                    "Top-level restore: utilization above {:.1}%",
+                                    top_level_safe_util_pct
+                                )
+                            }
+                        }
                     }
                 } else {
                     "Decision policy matched".to_string()
@@ -2896,6 +2942,22 @@ fn update_below_since(
         }
     } else {
         *below_since = None;
+    }
+}
+
+/// Updates an "above threshold since" timestamp based on utilization and a threshold.
+fn update_above_since(
+    above_since: &mut Option<u64>,
+    now_unix: u64,
+    util_pct: f64,
+    threshold_pct: f64,
+) {
+    if util_pct >= threshold_pct {
+        if above_since.is_none() {
+            *above_since = Some(now_unix);
+        }
+    } else {
+        *above_since = None;
     }
 }
 

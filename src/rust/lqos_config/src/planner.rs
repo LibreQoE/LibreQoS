@@ -378,6 +378,18 @@ pub fn plan_class_identities(
     let mut next_site_minor_by_queue: BTreeMap<u32, u32> = BTreeMap::new();
     let mut site_assignments = Vec::with_capacity(sites.len());
     let mut site_state = BTreeMap::new();
+    let planned_site_keys: std::collections::BTreeSet<&str> =
+        sites.iter().map(|site| site.site_key.as_str()).collect();
+
+    for (site_key, stored) in previous_sites {
+        if planned_site_keys.contains(site_key.as_str()) {
+            continue;
+        }
+        let reserved = reserved_site_minors.entry(stored.queue).or_default();
+        reserved.insert(stored.class_minor as u32);
+        let next_minor = next_site_minor_by_queue.entry(stored.queue).or_insert(3);
+        *next_minor = (*next_minor).max((stored.class_minor as u32).saturating_add(1));
+    }
 
     for site in sites {
         let reserved = reserved_site_minors.entry(site.queue).or_default();
@@ -422,6 +434,17 @@ pub fn plan_class_identities(
 
     let mut reserved_circuit_minors: BTreeMap<u32, std::collections::BTreeSet<u32>> =
         reserved_site_minors.clone();
+    let planned_circuit_ids: std::collections::BTreeSet<&str> = circuit_groups
+        .iter()
+        .flat_map(|group| group.circuit_ids.iter().map(|id| id.as_str()))
+        .collect();
+    for (circuit_id, stored) in previous_circuits {
+        if planned_circuit_ids.contains(circuit_id.as_str()) {
+            continue;
+        }
+        let reserved = reserved_circuit_minors.entry(stored.queue).or_default();
+        reserved.insert(stored.class_minor as u32);
+    }
     let mut next_circuit_minor_by_queue = BTreeMap::new();
     for (queue, reserved) in &reserved_circuit_minors {
         let start = next_site_minor_by_queue
@@ -689,5 +712,44 @@ mod tests {
         assert_eq!(result.circuits[0].class_minor, 0x30);
         assert_eq!(result.circuits[1].queue, 1);
         assert_eq!(result.circuits[1].class_major, 1);
+    }
+
+    #[test]
+    fn class_identity_planner_reserves_untouched_previous_minors() {
+        let site_inputs = vec![SiteIdentityInput {
+            site_key: "CpueQueue6/site-moved".to_string(),
+            parent_path: "CpueQueue6/site-parent".to_string(),
+            queue: 7,
+            has_children: false,
+        }];
+        let prev_sites = BTreeMap::from([
+            (
+                "CpueQueue6/site-untouched".to_string(),
+                PlannerSiteIdentityState {
+                    class_minor: 0x29,
+                    queue: 7,
+                    parent_path: "".to_string(),
+                    class_major: 7,
+                    up_class_major: 7,
+                },
+            ),
+            (
+                "CpueQueue0/site-moved".to_string(),
+                PlannerSiteIdentityState {
+                    class_minor: 0x13,
+                    queue: 1,
+                    parent_path: "CpueQueue0/site-parent".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+        ]);
+
+        let result =
+            plan_class_identities(&site_inputs, &[], &prev_sites, &BTreeMap::new(), 0, 0);
+
+        assert_eq!(result.sites.len(), 1);
+        assert_eq!(result.sites[0].queue, 7);
+        assert_ne!(result.sites[0].class_minor, 0x29);
     }
 }

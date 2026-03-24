@@ -47,11 +47,17 @@ pub struct LinkVirtualizationInput<'a> {
 /// Input to top-level link virtualization decisions.
 #[derive(Clone, Copy, Debug)]
 pub struct TopLevelLinkVirtualizationInput<'a> {
+    pub now_unix: u64,
     pub cpu_max_pct: Option<u8>,
     pub cpu_cfg: &'a TreeguardCpuConfig,
+    pub links_cfg: &'a TreeguardLinksConfig,
+    pub qoo_cfg: &'a TreeguardQooConfig,
+    pub rtt_missing: bool,
+    pub qoo: DownUpOrder<Option<f32>>,
     pub util_ewma_pct: DownUpOrder<f64>,
     pub safe_util_pct: f64,
     pub sustained_safe: bool,
+    pub emergency_util_sustained: bool,
     pub state: &'a LinkState,
 }
 
@@ -144,25 +150,24 @@ pub fn decide_link_virtualization(input: LinkVirtualizationInput<'_>) -> LinkVir
         return LinkVirtualDecision::NoChange;
     }
 
-    if in_dwell_window(
-        now_unix,
-        state.last_change_unix,
-        links_cfg.min_state_dwell_minutes,
-    ) {
-        return LinkVirtualDecision::NoChange;
-    }
-
-    if rate_limited(
-        state.recent_changes_unix.len(),
-        links_cfg.max_link_changes_per_hour,
-    ) {
-        return LinkVirtualDecision::NoChange;
-    }
-
     let qoo_bad = qoo_below_threshold(qoo_cfg, qoo);
 
     match state.desired {
         LinkVirtualState::Physical => {
+            if in_dwell_window(
+                now_unix,
+                state.last_change_unix,
+                links_cfg.min_state_dwell_minutes,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
+
+            if rate_limited(
+                state.recent_changes_unix.len(),
+                links_cfg.max_link_changes_per_hour,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
             if !cpu_allows_saving(cpu_cfg, cpu_max_pct) {
                 return LinkVirtualDecision::NoChange;
             }
@@ -191,18 +196,38 @@ pub fn decide_top_level_link_virtualization(
     input: TopLevelLinkVirtualizationInput<'_>,
 ) -> LinkVirtualDecision {
     let TopLevelLinkVirtualizationInput {
+        now_unix,
         cpu_max_pct,
         cpu_cfg,
+        links_cfg,
+        qoo_cfg,
+        rtt_missing,
+        qoo,
         util_ewma_pct,
         safe_util_pct,
         sustained_safe,
+        emergency_util_sustained,
         state,
     } = input;
 
     let util_high = util_ewma_pct.down >= safe_util_pct || util_ewma_pct.up >= safe_util_pct;
+    let qoo_bad = qoo_below_threshold(qoo_cfg, qoo);
 
     match state.desired {
         LinkVirtualState::Physical => {
+            if in_dwell_window(
+                now_unix,
+                state.last_change_unix,
+                links_cfg.min_state_dwell_minutes,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
+            if rate_limited(
+                state.recent_changes_unix.len(),
+                links_cfg.max_link_changes_per_hour,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
             if cpu_allows_saving(cpu_cfg, cpu_max_pct) && sustained_safe {
                 LinkVirtualDecision::Set(LinkVirtualState::Virtual)
             } else {
@@ -210,7 +235,7 @@ pub fn decide_top_level_link_virtualization(
             }
         }
         LinkVirtualState::Virtual => {
-            if util_high {
+            if qoo_bad || emergency_util_sustained || util_high || rtt_missing {
                 LinkVirtualDecision::Set(LinkVirtualState::Physical)
             } else {
                 LinkVirtualDecision::NoChange
@@ -539,10 +564,18 @@ mod tests {
             ..Default::default()
         };
         let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
             cpu_max_pct: Some(10),
             cpu_cfg: &TreeguardCpuConfig {
                 mode: TreeguardCpuMode::CpuAware,
                 ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
             },
             util_ewma_pct: DownUpOrder {
                 down: 10.0,
@@ -550,6 +583,7 @@ mod tests {
             },
             safe_util_pct: 85.0,
             sustained_safe: true,
+            emergency_util_sustained: false,
             state: &state,
         });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
@@ -562,10 +596,18 @@ mod tests {
             ..Default::default()
         };
         let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
             cpu_max_pct: Some(90),
             cpu_cfg: &TreeguardCpuConfig {
                 mode: TreeguardCpuMode::CpuAware,
                 ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
             },
             util_ewma_pct: DownUpOrder {
                 down: 10.0,
@@ -573,6 +615,7 @@ mod tests {
             },
             safe_util_pct: 85.0,
             sustained_safe: true,
+            emergency_util_sustained: false,
             state: &state,
         });
         assert_eq!(
@@ -588,10 +631,18 @@ mod tests {
             ..Default::default()
         };
         let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
             cpu_max_pct: Some(10),
             cpu_cfg: &TreeguardCpuConfig {
                 mode: TreeguardCpuMode::CpuAware,
                 ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
             },
             util_ewma_pct: DownUpOrder {
                 down: 90.0,
@@ -599,6 +650,7 @@ mod tests {
             },
             safe_util_pct: 85.0,
             sustained_safe: false,
+            emergency_util_sustained: false,
             state: &state,
         });
         assert_eq!(
