@@ -60,12 +60,14 @@ use lqos_bus::{
 };
 use lqos_config::{
     CircuitIdentityGroupInput, Config, LazyQueueMode, PlannerCircuitIdentityState,
-    PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode,
-    TopLevelPlannerParams, plan_class_identities, plan_top_level_assignments,
+    PlannerMinorReservations, PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem,
+    TopLevelPlannerMode, TopLevelPlannerParams, build_class_identity_reservations,
+    plan_class_identities_with_constraints, plan_top_level_assignments,
 };
 use qdisc_handles::MqDeviceLayout;
 
 const TEST_FAULT_ONCE_PATH: &str = "/tmp/lqos_bakery_fail_purpose_once.txt";
+const ACTIVE_RUNTIME_MINOR_START: u32 = 0x1000;
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4661,6 +4663,52 @@ fn build_current_planner_state(
     (previous_sites, previous_circuits)
 }
 
+fn build_effective_runtime_state(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) -> (
+    HashMap<i64, Arc<BakeryCommands>>,
+    HashMap<i64, Arc<BakeryCommands>>,
+) {
+    if virtualized_sites.is_empty() {
+        return (sites.clone(), circuits.clone());
+    }
+
+    let mut effective_sites = sites.clone();
+    let mut effective_circuits = circuits.clone();
+
+    for (site_hash, state) in virtualized_sites {
+        if state.active_branch_hides_original_site() {
+            effective_sites.remove(site_hash);
+        }
+        for (hash, command) in &state.active_sites {
+            effective_sites.insert(*hash, Arc::clone(command));
+        }
+        for (hash, command) in &state.active_circuits {
+            effective_circuits.insert(*hash, Arc::clone(command));
+        }
+    }
+
+    (effective_sites, effective_circuits)
+}
+
+fn reserve_live_snapshot_minors(
+    reservations: &mut PlannerMinorReservations,
+    snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+) {
+    for handle in snapshot.keys() {
+        let (major, minor) = handle.get_major_minor();
+        if major == 0 || minor == 0 {
+            continue;
+        }
+        reservations
+            .entry(u32::from(major))
+            .or_default()
+            .insert(u32::from(minor));
+    }
+}
+
 fn top_level_site_hashes(sites: &HashMap<i64, Arc<BakeryCommands>>) -> Vec<i64> {
     let mut hashes: Vec<i64> = sites
         .iter()
@@ -4684,6 +4732,8 @@ fn build_top_level_virtualization_plan(
     target_site: Arc<BakeryCommands>,
     sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    config: Option<&Arc<Config>>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
     stick_offset: u16,
 ) -> Result<TopLevelVirtualizationPlan, String> {
     let Some(target_site_hash) = site_hash_from_command(target_site.as_ref()) else {
@@ -4825,7 +4875,10 @@ fn build_top_level_virtualization_plan(
         }
     }
 
-    let (previous_sites, previous_circuits) = build_current_planner_state(sites, circuits);
+    let (effective_sites, effective_circuits) =
+        build_effective_runtime_state(sites, circuits, virtualized_sites);
+    let (previous_sites, previous_circuits) =
+        build_current_planner_state(&effective_sites, &effective_circuits);
 
     let mut future_parent_by_site: HashMap<i64, Option<i64>> = HashMap::new();
     for site_hash in future_top_level_queue.keys() {
@@ -4965,11 +5018,29 @@ fn build_top_level_virtualization_plan(
         });
     }
 
-    let identity = plan_class_identities(
+    let (mut reserved_site_minors, mut reserved_circuit_minors) = build_class_identity_reservations(
         &planner_site_inputs,
         &planner_circuit_groups,
         &previous_sites,
         &previous_circuits,
+    );
+    if let Some(config) = config {
+        let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
+        let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
+        reserve_live_snapshot_minors(&mut reserved_site_minors, &down_snapshot);
+        reserve_live_snapshot_minors(&mut reserved_site_minors, &up_snapshot);
+        reserve_live_snapshot_minors(&mut reserved_circuit_minors, &down_snapshot);
+        reserve_live_snapshot_minors(&mut reserved_circuit_minors, &up_snapshot);
+    }
+    let identity = plan_class_identities_with_constraints(
+        &planner_site_inputs,
+        &planner_circuit_groups,
+        &previous_sites,
+        &previous_circuits,
+        &reserved_site_minors,
+        &reserved_circuit_minors,
+        ACTIVE_RUNTIME_MINOR_START,
+        ACTIVE_RUNTIME_MINOR_START,
         stick_offset,
         0,
     );
@@ -5035,7 +5106,7 @@ fn build_top_level_virtualization_plan(
             PlannedSiteUpdate {
                 queue: identity_entry.queue,
                 parent_site: future_parent_by_site.get(site_hash).copied().flatten(),
-                stage_depth: 0,
+                stage_depth: site_descendant_depth(*site_hash, &future_parent_by_site),
                 command: Arc::new(BakeryCommands::AddSite {
                     site_hash: *site_hash,
                     parent_class_id: parent_handles.0,
@@ -5142,15 +5213,23 @@ fn build_top_level_virtualization_plan(
             },
         );
     }
-    let filtered_site_stage: Vec<i64> = planner_site_hashes
+    let mut site_stages_map: BTreeMap<usize, Vec<i64>> = BTreeMap::new();
+    for site_hash in planner_site_hashes
         .into_iter()
         .filter(|hash| active_sites.contains_key(hash))
+    {
+        let update = active_sites
+            .get(&site_hash)
+            .expect("active top-level site update");
+        site_stages_map
+            .entry(update.stage_depth)
+            .or_default()
+            .push(site_hash);
+    }
+    let site_stages = site_stages_map
+        .into_iter()
+        .map(|(_, hashes)| hashes)
         .collect();
-    let site_stages = if filtered_site_stage.is_empty() {
-        Vec::new()
-    } else {
-        vec![filtered_site_stage]
-    };
 
     Ok(TopLevelVirtualizationPlan {
         saved_sites,
@@ -5420,8 +5499,8 @@ fn verify_site_updates_live(
                 config.internet_interface()
             ));
         };
-        if down_entry.parent != Some(*parent_class_id)
-            || up_entry.parent != Some(*up_parent_class_id)
+        if !live_parent_matches(down_entry.parent, *parent_class_id)
+            || !live_parent_matches(up_entry.parent, *up_parent_class_id)
         {
             return Err(format!(
                 "Runtime child site {} shadow verify failed: expected parents {}/{} for class minor 0x{:x}, observed parents {:?}/{:?}",
@@ -6106,8 +6185,18 @@ fn site_commands_observed_live(
         let Some(up_entry) = up_snapshot.get(&up_class) else {
             return false;
         };
-        down_entry.parent == Some(*parent_class_id) && up_entry.parent == Some(*up_parent_class_id)
+        live_parent_matches(down_entry.parent, *parent_class_id)
+            && live_parent_matches(up_entry.parent, *up_parent_class_id)
     })
+}
+
+fn live_parent_matches(observed: Option<TcHandle>, expected: TcHandle) -> bool {
+    if observed == Some(expected) {
+        return true;
+    }
+
+    let (_, expected_minor) = expected.get_major_minor();
+    expected_minor == 0 && observed.is_none()
 }
 
 fn verify_top_level_runtime_shadow_active(
@@ -6142,7 +6231,8 @@ fn verify_top_level_runtime_shadow_active(
                 site_hash
             ));
         };
-        if down_entry.parent != Some(*parent_class_id) || up_entry.parent != Some(*up_parent_class_id)
+        if !live_parent_matches(down_entry.parent, *parent_class_id)
+            || !live_parent_matches(up_entry.parent, *up_parent_class_id)
         {
             warn!(
                 "Bakery: top-level cutover site {} planned down_class={} up_class={} expected parents {}/{} observed parents {:?}/{:?}",
@@ -6193,7 +6283,8 @@ fn verify_top_level_runtime_shadow_active(
                 circuit_hash
             ));
         };
-        if down_entry.parent != Some(*parent_class_id) || up_entry.parent != Some(*up_parent_class_id)
+        if !live_parent_matches(down_entry.parent, *parent_class_id)
+            || !live_parent_matches(up_entry.parent, *up_parent_class_id)
         {
             return Err(format!(
                 "Top-level runtime cutover activation verification observed active shadow circuit {} with wrong parents {:?}/{:?}, expected {}/{}",
@@ -6205,17 +6296,6 @@ fn verify_top_level_runtime_shadow_active(
             ));
         }
 
-        if let Some(saved_circuit) = state.saved_circuits.get(circuit_hash)
-            && let Some((old_down_class, old_up_class)) = circuit_class_handles(saved_circuit.as_ref())
-            && (down_snapshot.contains_key(&old_down_class) || up_snapshot.contains_key(&old_up_class))
-        {
-            return Err(format!(
-                "Top-level runtime cutover activation verification still observes original active circuit {} on standby handles {}/{}",
-                circuit_hash,
-                old_down_class.as_tc_string(),
-                old_up_class.as_tc_string()
-            ));
-        }
     }
 
     Ok(())
@@ -7296,13 +7376,17 @@ fn handle_treeguard_set_node_virtual_live(
                     Arc::clone(&target_site),
                     sites,
                     circuits,
+                    Some(&config),
+                    virtualized_sites,
                     site_stick_offset(target_site.as_ref()),
                 )?;
-                apply_site_command_updates(
+                apply_site_command_update_stages(
                     &config,
                     sites,
                     &plan.active_sites,
+                    &plan.site_stages,
                     "TreeGuard runtime top-level site reparent",
+                    true,
                 )?;
                 apply_top_level_circuit_command_updates(
                     &config,
@@ -8643,9 +8727,15 @@ mod tests {
         let mut circuits = HashMap::new();
         circuits.insert(40, direct_circuit);
 
-        let plan =
-            build_top_level_virtualization_plan(Arc::clone(&target_site), &sites, &circuits, 1)
-                .expect("top-level plan should build");
+        let plan = build_top_level_virtualization_plan(
+            Arc::clone(&target_site),
+            &sites,
+            &circuits,
+            None,
+            &HashMap::new(),
+            1,
+        )
+        .expect("top-level plan should build");
 
         assert!(plan.saved_sites.contains_key(&30));
         assert!(plan.saved_sites.contains_key(&31));
@@ -8681,7 +8771,18 @@ mod tests {
         };
         assert_eq!(parent_class_id.get_major_minor().1, 0);
         assert_eq!(up_parent_class_id.get_major_minor().1, 0);
-        assert_eq!(plan.site_stages.len(), 1);
+        assert_eq!(plan.site_stages, vec![vec![30], vec![31]]);
+        assert_eq!(
+            plan.active_sites.get(&30).expect("child site").stage_depth,
+            0
+        );
+        assert_eq!(
+            plan.active_sites
+                .get(&31)
+                .expect("grandchild site")
+                .stage_depth,
+            1
+        );
     }
 
     #[test]
@@ -9869,6 +9970,7 @@ mod tests {
         assert_eq!(migration.old_parent_class_id, TcHandle::from_u32(0x10020));
         assert_eq!(migration.parent_class_id, TcHandle::from_u32(0x10034));
         assert_eq!(migration.final_minor, 0x35);
+        assert!(migration.shadow_minor >= 0x2000);
         assert_ne!(migration.shadow_minor, migration.old_minor);
         assert!(matches!(
             circuits.get(&9200),

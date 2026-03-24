@@ -4,7 +4,7 @@
 //! and future Bakery/TreeGuard runtime replans can use the same assignment logic.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A top-level item to be assigned to a shaping queue/bin.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -165,6 +165,9 @@ pub struct ClassIdentityPlannerOutput {
     pub last_used_minor_by_queue: BTreeMap<u32, u32>,
 }
 
+/// Reserved minor numbers keyed by shaping queue.
+pub type PlannerMinorReservations = BTreeMap<u32, BTreeSet<u32>>;
+
 fn sanitize_weight(weight: f64) -> f64 {
     if !weight.is_finite() || weight <= 0.0 {
         1.0
@@ -173,12 +176,50 @@ fn sanitize_weight(weight: f64) -> f64 {
     }
 }
 
-fn next_free_minor(start_minor: u32, reserved: &std::collections::BTreeSet<u32>) -> u32 {
+fn next_free_minor(start_minor: u32, reserved: &BTreeSet<u32>) -> u32 {
     let mut candidate = start_minor.max(3);
     while reserved.contains(&candidate) {
         candidate += 1;
     }
     candidate
+}
+
+/// Builds reservation maps for identities that are not part of the current planning scope.
+pub fn build_class_identity_reservations(
+    sites: &[SiteIdentityInput],
+    circuit_groups: &[CircuitIdentityGroupInput],
+    previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
+    previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
+) -> (PlannerMinorReservations, PlannerMinorReservations) {
+    let planned_site_keys: BTreeSet<&str> = sites.iter().map(|site| site.site_key.as_str()).collect();
+    let planned_circuit_ids: BTreeSet<&str> = circuit_groups
+        .iter()
+        .flat_map(|group| group.circuit_ids.iter().map(|id| id.as_str()))
+        .collect();
+
+    let mut reserved_site_minors: PlannerMinorReservations = BTreeMap::new();
+    for (site_key, stored) in previous_sites {
+        if planned_site_keys.contains(site_key.as_str()) {
+            continue;
+        }
+        reserved_site_minors
+            .entry(stored.queue)
+            .or_default()
+            .insert(stored.class_minor as u32);
+    }
+
+    let mut reserved_circuit_minors: PlannerMinorReservations = BTreeMap::new();
+    for (circuit_id, stored) in previous_circuits {
+        if planned_circuit_ids.contains(circuit_id.as_str()) {
+            continue;
+        }
+        reserved_circuit_minors
+            .entry(stored.queue)
+            .or_default()
+            .insert(stored.class_minor as u32);
+    }
+
+    (reserved_site_minors, reserved_circuit_minors)
 }
 
 fn round_robin_assign(items: &[TopLevelPlannerItem], bins: &[String]) -> BTreeMap<String, String> {
@@ -366,34 +407,34 @@ pub fn plan_top_level_assignments(
 ///
 /// This function is pure: it computes deterministic minor/class-major assignments from the
 /// provided planner state and traversal order without performing any I/O.
-pub fn plan_class_identities(
+pub fn plan_class_identities_with_constraints(
     sites: &[SiteIdentityInput],
     circuit_groups: &[CircuitIdentityGroupInput],
     previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
     previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
+    reserved_site_minors: &PlannerMinorReservations,
+    reserved_circuit_minors_input: &PlannerMinorReservations,
+    site_minor_start: u32,
+    circuit_minor_start: u32,
     stick_offset: u16,
     circuit_padding: u32,
 ) -> ClassIdentityPlannerOutput {
-    let mut reserved_site_minors: BTreeMap<u32, std::collections::BTreeSet<u32>> = BTreeMap::new();
+    let mut reserved_site_minors = reserved_site_minors.clone();
     let mut next_site_minor_by_queue: BTreeMap<u32, u32> = BTreeMap::new();
     let mut site_assignments = Vec::with_capacity(sites.len());
     let mut site_state = BTreeMap::new();
-    let planned_site_keys: std::collections::BTreeSet<&str> =
-        sites.iter().map(|site| site.site_key.as_str()).collect();
-
-    for (site_key, stored) in previous_sites {
-        if planned_site_keys.contains(site_key.as_str()) {
-            continue;
+    for (queue, reserved) in &reserved_site_minors {
+        let next_minor = next_site_minor_by_queue.entry(*queue).or_insert(site_minor_start.max(3));
+        if let Some(last_reserved) = reserved.iter().next_back().copied() {
+            *next_minor = (*next_minor).max(last_reserved.saturating_add(1));
         }
-        let reserved = reserved_site_minors.entry(stored.queue).or_default();
-        reserved.insert(stored.class_minor as u32);
-        let next_minor = next_site_minor_by_queue.entry(stored.queue).or_insert(3);
-        *next_minor = (*next_minor).max((stored.class_minor as u32).saturating_add(1));
     }
 
     for site in sites {
         let reserved = reserved_site_minors.entry(site.queue).or_default();
-        let next_minor = next_site_minor_by_queue.entry(site.queue).or_insert(3);
+        let next_minor = next_site_minor_by_queue
+            .entry(site.queue)
+            .or_insert(site_minor_start.max(3));
         let reuse_minor = previous_sites.get(&site.site_key).and_then(|stored| {
             (stored.queue == site.queue
                 && stored.parent_path == site.parent_path
@@ -432,26 +473,23 @@ pub fn plan_class_identities(
         site_assignments.push(assigned);
     }
 
-    let mut reserved_circuit_minors: BTreeMap<u32, std::collections::BTreeSet<u32>> =
-        reserved_site_minors.clone();
-    let planned_circuit_ids: std::collections::BTreeSet<&str> = circuit_groups
-        .iter()
-        .flat_map(|group| group.circuit_ids.iter().map(|id| id.as_str()))
-        .collect();
-    for (circuit_id, stored) in previous_circuits {
-        if planned_circuit_ids.contains(circuit_id.as_str()) {
-            continue;
-        }
-        let reserved = reserved_circuit_minors.entry(stored.queue).or_default();
-        reserved.insert(stored.class_minor as u32);
+    let mut reserved_circuit_minors = reserved_site_minors.clone();
+    for (queue, extras) in reserved_circuit_minors_input {
+        reserved_circuit_minors
+            .entry(*queue)
+            .or_default()
+            .extend(extras.iter().copied());
     }
     let mut next_circuit_minor_by_queue = BTreeMap::new();
     for (queue, reserved) in &reserved_circuit_minors {
         let start = next_site_minor_by_queue
             .get(queue)
             .copied()
-            .unwrap_or_else(|| next_free_minor(3, reserved));
-        next_circuit_minor_by_queue.insert(*queue, next_free_minor(start, reserved));
+            .unwrap_or_else(|| next_free_minor(circuit_minor_start.max(3), reserved));
+        next_circuit_minor_by_queue.insert(
+            *queue,
+            next_free_minor(start.max(circuit_minor_start.max(3)), reserved),
+        );
     }
 
     let mut circuit_assignments = Vec::new();
@@ -460,7 +498,7 @@ pub fn plan_class_identities(
         let reserved = reserved_circuit_minors.entry(group.queue).or_default();
         let next_minor = next_circuit_minor_by_queue
             .entry(group.queue)
-            .or_insert_with(|| next_free_minor(3, reserved));
+            .or_insert_with(|| next_free_minor(circuit_minor_start.max(3), reserved));
         for circuit_id in &group.circuit_ids {
             let reuse_minor = previous_circuits.get(circuit_id).and_then(|stored| {
                 (stored.queue == group.queue
@@ -522,12 +560,42 @@ pub fn plan_class_identities(
     }
 }
 
+/// Plans site and circuit class identities using the default structural allocator policy.
+pub fn plan_class_identities(
+    sites: &[SiteIdentityInput],
+    circuit_groups: &[CircuitIdentityGroupInput],
+    previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
+    previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
+    stick_offset: u16,
+    circuit_padding: u32,
+) -> ClassIdentityPlannerOutput {
+    let (reserved_site_minors, reserved_circuit_minors) = build_class_identity_reservations(
+        sites,
+        circuit_groups,
+        previous_sites,
+        previous_circuits,
+    );
+    plan_class_identities_with_constraints(
+        sites,
+        circuit_groups,
+        previous_sites,
+        previous_circuits,
+        &reserved_site_minors,
+        &reserved_circuit_minors,
+        3,
+        3,
+        stick_offset,
+        circuit_padding,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         CircuitIdentityGroupInput, PlannerCircuitIdentityState, PlannerSiteIdentityState,
         SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode, TopLevelPlannerParams,
-        plan_class_identities, plan_top_level_assignments,
+        build_class_identity_reservations, plan_class_identities,
+        plan_class_identities_with_constraints, plan_top_level_assignments,
     };
     use std::collections::BTreeMap;
 
@@ -751,5 +819,47 @@ mod tests {
         assert_eq!(result.sites.len(), 1);
         assert_eq!(result.sites[0].queue, 7);
         assert_ne!(result.sites[0].class_minor, 0x29);
+    }
+
+    #[test]
+    fn class_identity_planner_runtime_constraints_prefer_runtime_band() {
+        let site_inputs = vec![SiteIdentityInput {
+            site_key: "CpueQueue6/site-runtime".to_string(),
+            parent_path: "CpueQueue6/site-parent".to_string(),
+            queue: 7,
+            has_children: false,
+        }];
+        let prev_sites = BTreeMap::from([(
+            "CpueQueue6/site-untouched".to_string(),
+            PlannerSiteIdentityState {
+                class_minor: 0x29,
+                queue: 7,
+                parent_path: "".to_string(),
+                class_major: 7,
+                up_class_major: 7,
+            },
+        )]);
+        let (reserved_site_minors, reserved_circuit_minors) = build_class_identity_reservations(
+            &site_inputs,
+            &[],
+            &prev_sites,
+            &BTreeMap::new(),
+        );
+
+        let result = plan_class_identities_with_constraints(
+            &site_inputs,
+            &[],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &reserved_site_minors,
+            &reserved_circuit_minors,
+            0x1000,
+            0x1000,
+            0,
+            0,
+        );
+
+        assert_eq!(result.sites.len(), 1);
+        assert!(result.sites[0].class_minor >= 0x1000);
     }
 }
