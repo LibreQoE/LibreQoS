@@ -83,11 +83,11 @@ enum MigrationStage {
 #[derive(Clone, Debug)]
 struct Migration {
     circuit_hash: i64,
-    // Old parent handles and majors
-    old_parent_class_id: TcHandle,
-    old_up_parent_class_id: TcHandle,
+    // Old majors and qdisc handles
     old_class_major: u16,
     old_up_class_major: u16,
+    old_down_qdisc_handle: Option<u16>,
+    old_up_qdisc_handle: Option<u16>,
     // New parent handles and majors
     parent_class_id: TcHandle,
     up_parent_class_id: TcHandle,
@@ -586,8 +586,6 @@ fn queue_runtime_migration(
     }
 
     let BakeryCommands::AddCircuit {
-        parent_class_id: old_parent_class_id,
-        up_parent_class_id: old_up_parent_class_id,
         class_minor: old_minor,
         download_bandwidth_min: old_down_min,
         upload_bandwidth_min: old_up_min,
@@ -595,6 +593,8 @@ fn queue_runtime_migration(
         upload_bandwidth_max: old_up_max,
         class_major: old_class_major,
         up_class_major: old_up_class_major,
+        down_qdisc_handle: old_down_qdisc_handle,
+        up_qdisc_handle: old_up_qdisc_handle,
         ..
     } = old_cmd
     else {
@@ -607,10 +607,10 @@ fn queue_runtime_migration(
 
     let mig = Migration {
         circuit_hash: *circuit_hash,
-        old_parent_class_id: *old_parent_class_id,
-        old_up_parent_class_id: *old_up_parent_class_id,
         old_class_major: *old_class_major,
         old_up_class_major: *old_up_class_major,
+        old_down_qdisc_handle: *old_down_qdisc_handle,
+        old_up_qdisc_handle: *old_up_qdisc_handle,
         parent_class_id: *parent_class_id,
         up_parent_class_id: *up_parent_class_id,
         class_major: *class_major,
@@ -2374,6 +2374,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         mig.new_up_max,
                         true,
                     ) {
+                        if let Some(summary) =
+                            build_final_qdisc_handle_rotation_invariant_error(mig, &final_cmd)
+                        {
+                            mark_reload_required(format!(
+                                "Bakery live migration refused to build final state for circuit {} because a parent-changed migration kept the old qdisc handle: {}. A full reload is now required before further incremental topology mutations.",
+                                mig.circuit_hash, summary
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
                         match config.queues.lazy_queues.as_ref() {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) = add_commands_for_circuit(
@@ -5695,6 +5706,14 @@ fn apply_circuit_command_updates(
             layout,
             qdisc_handles,
         );
+        if let Some(summary) =
+            qdisc_handle_rotation_invariant_error(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
+        {
+            return Err(format!(
+                "Bakery runtime virtualization refusing live migration for active circuit {}: {}",
+                circuit_hash, summary
+            ));
+        }
         if live_circuits.contains_key(circuit_hash)
             && let BakeryCommands::AddCircuit {
                 parent_class_id,
@@ -5757,6 +5776,125 @@ fn circuit_qdisc_parent_changed(
     let (old_down_parent, old_up_parent) = effective_directional_qdisc_parents(old_cmd, config);
     let (new_down_parent, new_up_parent) = effective_directional_qdisc_parents(new_cmd, config);
     old_down_parent != new_down_parent || old_up_parent != new_up_parent
+}
+
+fn qdisc_handle_rotation_invariant_error(
+    old_cmd: &BakeryCommands,
+    new_cmd: &BakeryCommands,
+    config: &Arc<Config>,
+) -> Option<String> {
+    let (old_down_parent, old_up_parent) = effective_directional_qdisc_parents(old_cmd, config);
+    let (new_down_parent, new_up_parent) = effective_directional_qdisc_parents(new_cmd, config);
+    let BakeryCommands::AddCircuit {
+        down_qdisc_handle: old_down_qdisc_handle,
+        up_qdisc_handle: old_up_qdisc_handle,
+        ..
+    } = old_cmd
+    else {
+        return None;
+    };
+    let BakeryCommands::AddCircuit {
+        down_qdisc_handle: new_down_qdisc_handle,
+        up_qdisc_handle: new_up_qdisc_handle,
+        ..
+    } = new_cmd
+    else {
+        return None;
+    };
+
+    if old_down_parent != new_down_parent
+        && old_down_qdisc_handle.is_some()
+        && old_down_qdisc_handle == new_down_qdisc_handle
+    {
+        return Some(format!(
+            "downlink qdisc handle {:?} was preserved even though the qdisc parent changed from {:?} to {:?}",
+            old_down_qdisc_handle, old_down_parent, new_down_parent
+        ));
+    }
+
+    if old_up_parent != new_up_parent
+        && old_up_qdisc_handle.is_some()
+        && old_up_qdisc_handle == new_up_qdisc_handle
+    {
+        return Some(format!(
+            "uplink qdisc handle {:?} was preserved even though the qdisc parent changed from {:?} to {:?}",
+            old_up_qdisc_handle, old_up_parent, new_up_parent
+        ));
+    }
+
+    None
+}
+
+fn migration_qdisc_handle_rotation_invariant_error(mig: &Migration) -> Option<String> {
+    let old_down_parent =
+        tc_handle_from_major_minor(mig.old_class_major, mig.old_minor);
+    let new_down_parent = tc_handle_from_major_minor(mig.class_major, mig.final_minor);
+    if old_down_parent != new_down_parent
+        && mig.old_down_qdisc_handle.is_some()
+        && mig.old_down_qdisc_handle == mig.down_qdisc_handle
+    {
+        return Some(format!(
+            "downlink qdisc handle {:?} is still the old handle while the final parent changed from {} to {}",
+            mig.down_qdisc_handle,
+            old_down_parent.as_tc_string(),
+            new_down_parent.as_tc_string()
+        ));
+    }
+
+    let old_up_parent =
+        tc_handle_from_major_minor(mig.old_up_class_major, mig.old_minor);
+    let new_up_parent = tc_handle_from_major_minor(mig.up_class_major, mig.final_minor);
+    if old_up_parent != new_up_parent
+        && mig.old_up_qdisc_handle.is_some()
+        && mig.old_up_qdisc_handle == mig.up_qdisc_handle
+    {
+        return Some(format!(
+            "uplink qdisc handle {:?} is still the old handle while the final parent changed from {} to {}",
+            mig.up_qdisc_handle,
+            old_up_parent.as_tc_string(),
+            new_up_parent.as_tc_string()
+        ));
+    }
+
+    None
+}
+
+fn build_final_qdisc_handle_rotation_invariant_error(
+    mig: &Migration,
+    final_cmd: &BakeryCommands,
+) -> Option<String> {
+    let BakeryCommands::AddCircuit {
+        class_minor,
+        down_qdisc_handle,
+        up_qdisc_handle,
+        ..
+    } = final_cmd
+    else {
+        return Some("build-final command was not an AddCircuit".to_string());
+    };
+
+    if *class_minor != mig.final_minor {
+        return Some(format!(
+            "build-final command used unexpected class minor {} instead of {}",
+            class_minor, mig.final_minor
+        ));
+    }
+
+    if *down_qdisc_handle != mig.down_qdisc_handle {
+        return Some(format!(
+            "build-final command used downlink qdisc handle {:?}, expected rotated handle {:?}",
+            down_qdisc_handle, mig.down_qdisc_handle
+        ));
+    }
+
+    if *up_qdisc_handle != mig.up_qdisc_handle {
+        return Some(format!(
+            "build-final command used uplink qdisc handle {:?}, expected rotated handle {:?}",
+            up_qdisc_handle, mig.up_qdisc_handle
+        ));
+    }
+
+    migration_qdisc_handle_rotation_invariant_error(mig)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5827,6 +5965,14 @@ fn apply_top_level_circuit_command_updates(
             layout,
             qdisc_handles,
         );
+        if let Some(summary) =
+            qdisc_handle_rotation_invariant_error(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
+        {
+            return Err(format!(
+                "Bakery runtime top-level virtualization refusing live migration for active circuit {}: {}",
+                circuit_hash, summary
+            ));
+        }
 
         if circuit_qdisc_parent_changed(old_cmd.as_ref(), enriched_cmd.as_ref(), config) {
             if !queue_top_level_runtime_migration(
@@ -8323,10 +8469,10 @@ mod tests {
             40,
             Migration {
                 circuit_hash: 40,
-                old_parent_class_id: TcHandle::from_u32(0x1),
-                old_up_parent_class_id: TcHandle::from_u32(0x2),
                 old_class_major: 0x100,
                 old_up_class_major: 0x200,
+                old_down_qdisc_handle: None,
+                old_up_qdisc_handle: None,
                 parent_class_id: TcHandle::from_u32(0x1),
                 up_parent_class_id: TcHandle::from_u32(0x2),
                 class_major: 0x100,
@@ -9766,7 +9912,6 @@ mod tests {
         assert!(queued);
         let migration = migrations.get(&9001).expect("migration should be queued");
         assert_eq!(migration.stage, MigrationStage::PrepareShadow);
-        assert_eq!(migration.old_parent_class_id, TcHandle::from_u32(0x10020));
         assert_eq!(migration.parent_class_id, TcHandle::from_u32(0x10034));
         assert_eq!(migration.final_minor, 0x35);
         assert_ne!(migration.shadow_minor, migration.old_minor);
@@ -9854,10 +9999,10 @@ mod tests {
         );
         let mut migration = Migration {
             circuit_hash: 9002,
-            old_parent_class_id: TcHandle::from_u32(0x10020),
-            old_up_parent_class_id: TcHandle::from_u32(0x20020),
             old_class_major: 0x1,
             old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
             parent_class_id: TcHandle::from_u32(0x10034),
             up_parent_class_id: TcHandle::from_u32(0x20034),
             class_major: 0x1,
@@ -9911,10 +10056,10 @@ mod tests {
         );
         let mut migration = Migration {
             circuit_hash: 9003,
-            old_parent_class_id: TcHandle::from_u32(0x10020),
-            old_up_parent_class_id: TcHandle::from_u32(0x20020),
             old_class_major: 0x1,
             old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
             parent_class_id: TcHandle::from_u32(0x10034),
             up_parent_class_id: TcHandle::from_u32(0x20034),
             class_major: 0x1,
@@ -9953,6 +10098,56 @@ mod tests {
         assert!(advanced);
         assert_eq!(migration.stage, MigrationStage::SwapToFinal);
         assert!(bakery_reload_required_reason().is_none());
+    }
+
+    #[test]
+    fn migration_invariant_rejects_stale_qdisc_handles_when_parent_changes() {
+        let migration = Migration {
+            circuit_hash: 9004,
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec!["192.0.2.94/32".to_string()],
+            sqm_override: None,
+            desired_cmd: mk_test_circuit(9004, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.94/32"),
+            stage: MigrationStage::BuildFinal,
+        };
+
+        let summary = migration_qdisc_handle_rotation_invariant_error(&migration)
+            .expect("stale qdisc handles should be rejected");
+        assert!(summary.contains("old handle"));
+
+        let final_cmd = build_temp_add_cmd(
+            migration.desired_cmd.as_ref(),
+            migration.final_minor,
+            migration.new_down_min,
+            migration.new_down_max,
+            migration.new_up_min,
+            migration.new_up_max,
+            true,
+        )
+        .expect("final command");
+        let final_summary = build_final_qdisc_handle_rotation_invariant_error(&migration, &final_cmd)
+            .expect("final command should also be rejected");
+        assert!(final_summary.contains("old handle"));
     }
 
     #[test]
@@ -10017,7 +10212,6 @@ mod tests {
         assert!(queued);
         let migration = migrations.get(&9200).expect("migration should be queued");
         assert_eq!(migration.stage, MigrationStage::PrepareShadow);
-        assert_eq!(migration.old_parent_class_id, TcHandle::from_u32(0x10020));
         assert_eq!(migration.parent_class_id, TcHandle::from_u32(0x10034));
         assert_eq!(migration.final_minor, 0x35);
         assert!(migration.shadow_minor >= 0x2000);

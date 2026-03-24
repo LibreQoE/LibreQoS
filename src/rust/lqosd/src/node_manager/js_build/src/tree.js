@@ -24,6 +24,7 @@ var treeQooGauge = null;
 var lastAttachedCircuitsPage = null;
 var attachedCircuitsWatchSignature = null;
 var currentSelectionIdentity = null;
+var rootGaugeConfigMax = null;
 var selectionLocator = {
     nodeId: null,
     nodePath: null,
@@ -79,6 +80,26 @@ function sendWsRequest(responseEvent, request) {
 
 function sendPrivateRequest(command) {
     wsClient.send({Private: command});
+}
+
+async function loadRootGaugeConfigMax() {
+    try {
+        const msg = await sendWsRequest("GetConfig", {GetConfig: {}});
+        const queues = msg?.data?.queues;
+        if (!queues) {
+            return;
+        }
+        rootGaugeConfigMax = [
+            toNumber(queues.downlink_bandwidth_mbps, 0),
+            toNumber(queues.uplink_bandwidth_mbps, 0),
+        ];
+        const node = currentNode();
+        if (node && isSyntheticRootNode(node)) {
+            updateTreeGauges(node);
+        }
+    } catch (_error) {
+        // If config load fails, keep the existing node-derived gauge behavior.
+    }
 }
 
 function formatDeviceIp(ip) {
@@ -158,6 +179,25 @@ function configuredMax(node) {
 
 function effectiveMax(node) {
     return node.effective_max_throughput || configuredMax(node);
+}
+
+function rootGaugeMaxAvailable() {
+    return Array.isArray(rootGaugeConfigMax)
+        && rootGaugeConfigMax.length === 2
+        && Number.isFinite(Number(rootGaugeConfigMax[0]))
+        && Number.isFinite(Number(rootGaugeConfigMax[1]));
+}
+
+function nodeSnapshotGaugeMax(node) {
+    if (isSyntheticRootNode(node) && rootGaugeMaxAvailable()) {
+        // BitsPerSecondGauge doubles the supplied max values internally.
+        // Halve the configured root limits here so the rendered max matches config.
+        return [
+            toNumber(rootGaugeConfigMax[0], 0) / 2,
+            toNumber(rootGaugeConfigMax[1], 0) / 2,
+        ];
+    }
+    return effectiveMax(node);
 }
 
 function ratesMatch(a, b) {
@@ -1042,12 +1082,12 @@ function updateTreeGauges(node) {
         return;
     }
     ensureTreeGauges();
-    const effective = effectiveMax(node);
+    const gaugeMax = nodeSnapshotGaugeMax(node);
     treeBitsGauge.update(
         toNumber(node.current_throughput?.[0], 0) * 8,
         toNumber(node.current_throughput?.[1], 0) * 8,
-        effective[0],
-        effective[1],
+        gaugeMax[0],
+        gaugeMax[1],
     );
     treeQooGauge.update(representativeNodeQoo(node));
 }
@@ -1699,4 +1739,5 @@ wsClient.on("join", () => {
     loadNodeRateOverrideState();
 });
 
+loadRootGaugeConfigMax();
 getInitialTree();
