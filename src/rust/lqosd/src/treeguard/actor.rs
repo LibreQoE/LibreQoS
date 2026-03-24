@@ -252,6 +252,8 @@ fn empty_status_snapshot() -> TreeguardStatusData {
         paused_for_bakery_reload: false,
         pause_reason: None,
         cpu_max_pct: None,
+        total_nodes: 0,
+        total_circuits: 0,
         managed_nodes: 0,
         managed_circuits: 0,
         virtualized_nodes: 0,
@@ -259,6 +261,31 @@ fn empty_status_snapshot() -> TreeguardStatusData {
         last_action_summary: None,
         warnings: Vec::new(),
     }
+}
+
+fn current_topology_totals() -> (usize, usize) {
+    let total_nodes = {
+        let reader = NETWORK_JSON.read();
+        reader
+            .get_nodes_when_ready()
+            .iter()
+            .filter(|n| n.name != "Root")
+            .count()
+    };
+
+    let total_circuits = {
+        let shaped = SHAPED_DEVICES.load();
+        let mut circuits: FxHashSet<&str> = FxHashSet::default();
+        for d in shaped.devices.iter() {
+            let id = d.circuit_id.trim();
+            if !id.is_empty() {
+                circuits.insert(id);
+            }
+        }
+        circuits.len()
+    };
+
+    (total_nodes, total_circuits)
 }
 
 fn update_cached_snapshots(
@@ -751,13 +778,10 @@ fn run_tick(
         warnings.push(notice);
     }
 
+    let (total_nodes_count, total_circuits_count) = current_topology_totals();
+
     let managed_nodes_count: usize = if tg.links.all_nodes {
-        let reader = NETWORK_JSON.read();
-        reader
-            .get_nodes_when_ready()
-            .iter()
-            .filter(|n| n.name != "Root")
-            .count()
+        total_nodes_count
     } else {
         let mut enrolled: FxHashSet<String> = tg.links.nodes.iter().cloned().collect();
         if top_level_auto_virtualize {
@@ -772,15 +796,7 @@ fn run_tick(
     };
 
     let managed_circuits_count: usize = if tg.circuits.all_circuits {
-        let shaped = SHAPED_DEVICES.load();
-        let mut circuits: FxHashSet<&str> = FxHashSet::default();
-        for d in shaped.devices.iter() {
-            let id = d.circuit_id.trim();
-            if !id.is_empty() {
-                circuits.insert(id);
-            }
-        }
-        circuits.len()
+        total_circuits_count
     } else {
         tg.circuits.circuits.len()
     };
@@ -788,6 +804,8 @@ fn run_tick(
     status.enabled = tg.enabled;
     status.dry_run = tg.dry_run;
     status.cpu_max_pct = cpu_max_pct;
+    status.total_nodes = total_nodes_count;
+    status.total_circuits = total_circuits_count;
     status.managed_nodes = managed_nodes_count;
     status.managed_circuits = managed_circuits_count;
     status.warnings = warnings;

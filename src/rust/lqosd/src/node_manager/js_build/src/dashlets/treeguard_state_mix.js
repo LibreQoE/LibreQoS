@@ -1,5 +1,4 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {get_ws_client} from "../pubsub/ws";
 
 function progressMetric(label, badgeClass) {
     const wrap = document.createElement("div");
@@ -28,10 +27,13 @@ function progressMetric(label, badgeClass) {
 }
 
 function updateMetric(metric, value, max, colorClass, title) {
-    const safeMax = Math.max(1, Number.isFinite(max) ? max : 1);
+    const hasMax = Number.isFinite(max) && max > 0;
+    const safeMax = hasMax ? max : Math.max(1, Number.isFinite(value) ? value : 1);
     const safeValue = Number.isFinite(value) ? value : 0;
     const pct = Math.max(0, Math.min(100, (safeValue / safeMax) * 100));
-    metric.count.textContent = `${safeValue.toLocaleString()} / ${max.toLocaleString()}`;
+    metric.count.textContent = hasMax
+        ? `${safeValue.toLocaleString()} / ${max.toLocaleString()}`
+        : safeValue.toLocaleString();
     metric.bar.className = `progress-bar ${colorClass}`;
     metric.bar.style.width = `${pct}%`;
     metric.bar.title = title || "";
@@ -44,7 +46,6 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 4;
-        this.metadata = null;
         this.status = null;
     }
 
@@ -58,17 +59,6 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
 
     subscribeTo() {
         return ["TreeGuardStatus"];
-    }
-
-    setup() {
-        const wsClient = get_ws_client();
-        const wrapped = (msg) => {
-            wsClient.off("TreeGuardMetadataSummary", wrapped);
-            this.metadata = msg?.data || null;
-            this.renderState();
-        };
-        wsClient.on("TreeGuardMetadataSummary", wrapped);
-        wsClient.send({ TreeGuardMetadataSummary: {} });
     }
 
     buildContainer() {
@@ -107,16 +97,16 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
     }
 
     renderState() {
-        const totalNodes = Number.isFinite(this.metadata?.total_nodes) ? this.metadata.total_nodes : 0;
-        const totalCircuits = Number.isFinite(this.metadata?.total_circuits) ? this.metadata.total_circuits : 0;
+        const totalNodes = Number.isFinite(this.status?.total_nodes) ? this.status.total_nodes : 0;
+        const totalCircuits = Number.isFinite(this.status?.total_circuits) ? this.status.total_circuits : 0;
         const managedNodes = Number.isFinite(this.status?.managed_nodes) ? this.status.managed_nodes : 0;
         const managedCircuits = Number.isFinite(this.status?.managed_circuits) ? this.status.managed_circuits : 0;
         const virtualizedNodes = Number.isFinite(this.status?.virtualized_nodes)
             ? this.status.virtualized_nodes
-            : (Number.isFinite(this.metadata?.virtualized_nodes) ? this.metadata.virtualized_nodes : 0);
+            : 0;
         const fqCodelCircuits = Number.isFinite(this.status?.fq_codel_circuits)
             ? this.status.fq_codel_circuits
-            : (Number.isFinite(this.metadata?.fq_codel_circuits) ? this.metadata.fq_codel_circuits : 0);
+            : 0;
 
         updateMetric(this.nodesManaged, managedNodes, totalNodes, "bg-primary", "Nodes currently managed by TreeGuard");
         updateMetric(this.nodesVirtual, virtualizedNodes, totalNodes, "bg-warning", "Nodes currently runtime-virtualized");
@@ -125,6 +115,6 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
 
         this.footerEl.textContent = totalNodes > 0 || totalCircuits > 0
             ? "This view shows how much of the discovered topology is currently under TreeGuard influence."
-            : "Waiting for TreeGuard metadata.";
+            : "Waiting for TreeGuard topology totals.";
     }
 }

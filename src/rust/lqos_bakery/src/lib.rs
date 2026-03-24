@@ -2826,12 +2826,15 @@ fn handle_commit_batch(
     };
     qdisc_handles.clear_retired_handles();
 
-    let Some(new_batch) = batch.take() else {
+    let Some(raw_batch) = batch.take() else {
         debug!("CommitBatch received without a batch to commit.");
         return;
     };
-    let new_batch = apply_runtime_virtualization_overlay(new_batch, virtualized_sites);
-    let resolved_mq_layout = current_mq_layout(&new_batch, &config, mq_layout);
+    let (baseline_sites, baseline_circuits) =
+        reconstruct_structural_baseline_state(sites, circuits, virtualized_sites);
+    let effective_new_batch =
+        apply_runtime_virtualization_overlay(raw_batch.clone(), virtualized_sites);
+    let resolved_mq_layout = current_mq_layout(&raw_batch, &config, mq_layout);
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
@@ -2842,8 +2845,11 @@ fn handle_commit_batch(
             "Bakery full reload triggered by reload-required state: {}",
             reason
         );
-        let (new_batch, mapped_limit_stats) =
-            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
         log_mapped_limit_decision("reload-required rebuild", mapped_limit, mapped_limit_stats);
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
@@ -2884,8 +2890,11 @@ fn handle_commit_batch(
             "warning",
             "Bakery runtime state was reset by restart/cold start; performing explicit baseline full reload.".to_string(),
         );
-        let (new_batch, mapped_limit_stats) =
-            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
         log_mapped_limit_decision("full reload", mapped_limit, mapped_limit_stats);
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
@@ -2923,10 +2932,13 @@ fn handle_commit_batch(
         return;
     }
 
-    let site_change_mode = diff_sites(&new_batch, sites);
-    if let SiteDiffResult::RebuildRequired { summary } = &site_change_mode {
-        let (new_batch, mapped_limit_stats) =
-            filter_batch_by_mapped_circuit_limit(new_batch, circuits, effective_limit);
+    let structural_site_change_mode = diff_sites(&raw_batch, &baseline_sites);
+    if let SiteDiffResult::RebuildRequired { summary } = &structural_site_change_mode {
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
         log_mapped_limit_decision("site-structure rebuild", mapped_limit, mapped_limit_stats);
         if mapped_limit_stats.dropped_mapped > 0 {
             warn!(
@@ -2962,8 +2974,12 @@ fn handle_commit_batch(
         return;
     }
 
+    let baseline_circuits_for_diff =
+        circuits_with_pending_migration_targets(&baseline_circuits, migrations);
+    let structural_circuit_change_mode = diff_circuits(&raw_batch, &baseline_circuits_for_diff);
+    let site_change_mode = diff_sites(&effective_new_batch, sites);
     let circuits_for_diff = circuits_with_pending_migration_targets(circuits, migrations);
-    let circuit_change_mode = diff_circuits(&new_batch, &circuits_for_diff);
+    let circuit_change_mode = diff_circuits(&effective_new_batch, &circuits_for_diff);
 
     // If neither has changed, there's nothing to do.
     if matches!(site_change_mode, SiteDiffResult::NoChange)
@@ -2975,15 +2991,18 @@ fn handle_commit_batch(
     }
 
     // If any structural changes occurred, do a full reload
-    if let CircuitDiffResult::Categorized(categories) = &circuit_change_mode
+    if let CircuitDiffResult::Categorized(categories) = &structural_circuit_change_mode
         && !categories.structural_changed.is_empty()
     {
         let summary = format!(
             "Bakery full reload triggered by circuit structural diff: structural_changed_count={}",
             categories.structural_changed.len()
         );
-        let (new_batch, mapped_limit_stats) =
-            filter_batch_by_mapped_circuit_limit(new_batch.clone(), circuits, effective_limit);
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
         log_mapped_limit_decision(
             "circuit-structure rebuild",
             mapped_limit,
@@ -3068,7 +3087,7 @@ fn handle_commit_batch(
                     mq_layout,
                     qdisc_handles,
                     &config,
-                    new_batch.clone(),
+                    raw_batch.clone(),
                     resolved_mq_layout.clone(),
                     stormguard_overrides,
                     virtualized_sites,
@@ -3289,9 +3308,9 @@ fn handle_commit_batch(
                         "Bakery: falling back to full reload for active migrated circuit {} because live migration setup failed",
                         circuit_hash
                     );
-                    let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
-                        new_batch.clone(),
-                        circuits,
+                    let (_new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+                        raw_batch.clone(),
+                        &baseline_circuits,
                         effective_limit,
                     );
                     log_mapped_limit_decision(
@@ -3312,7 +3331,7 @@ fn handle_commit_batch(
                         mq_layout,
                         qdisc_handles,
                         &config,
-                        new_batch,
+                        raw_batch.clone(),
                         resolved_mq_layout.clone(),
                         stormguard_overrides,
                         virtualized_sites,
@@ -5736,6 +5755,34 @@ fn apply_runtime_virtualization_overlay(
         .collect()
 }
 
+fn reconstruct_structural_baseline_state(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) -> (
+    HashMap<i64, Arc<BakeryCommands>>,
+    HashMap<i64, Arc<BakeryCommands>>,
+) {
+    if virtualized_sites.is_empty() {
+        return (sites.clone(), circuits.clone());
+    }
+
+    let mut baseline_sites = sites.clone();
+    let mut baseline_circuits = circuits.clone();
+
+    for (site_hash, state) in virtualized_sites {
+        baseline_sites.insert(*site_hash, Arc::clone(&state.site));
+        for (saved_hash, saved_site) in &state.saved_sites {
+            baseline_sites.insert(*saved_hash, Arc::clone(saved_site));
+        }
+        for (saved_hash, saved_circuit) in &state.saved_circuits {
+            baseline_circuits.insert(*saved_hash, Arc::clone(saved_circuit));
+        }
+    }
+
+    (baseline_sites, baseline_circuits)
+}
+
 fn runtime_virtualized_site_has_pending_migrations(
     state: &VirtualizedSiteState,
     migrations: &HashMap<i64, Migration>,
@@ -7213,6 +7260,87 @@ mod tests {
             .expect("child circuit should remain in batch");
         assert_eq!(child_circuit.0, TcHandle::from_u32(0x10020));
         assert_eq!(child_circuit.1, TcHandle::from_u32(0x20020));
+    }
+
+    #[test]
+    fn structural_baseline_reconstruction_ignores_hidden_runtime_virtualized_sites() {
+        let parent_site = mk_add_site(10, 0x10001, 0x20001, 0x20);
+        let virtualized_site = mk_add_site(20, 0x10020, 0x20020, 0x21);
+        let child_site = mk_add_site(30, 0x10021, 0x20021, 0x22);
+        let child_site_runtime = Arc::new(BakeryCommands::AddSite {
+            site_hash: 30,
+            parent_class_id: TcHandle::from_u32(0x10020),
+            up_parent_class_id: TcHandle::from_u32(0x20020),
+            class_minor: 0x22,
+            download_bandwidth_min: 50.0,
+            upload_bandwidth_min: 50.0,
+            download_bandwidth_max: 500.0,
+            upload_bandwidth_max: 500.0,
+        });
+        let child_circuit =
+            mk_test_circuit(40, 0x10021, 0x20021, 0x30, 0x110, 0x210, "192.0.2.40/32");
+        let child_circuit_runtime =
+            mk_test_circuit(40, 0x10020, 0x20020, 0x30, 0x110, 0x210, "192.0.2.40/32");
+
+        let effective_sites = HashMap::from([
+            (10, Arc::clone(&parent_site)),
+            (30, Arc::clone(&child_site_runtime)),
+        ]);
+        let effective_circuits = HashMap::from([(40, Arc::clone(&child_circuit_runtime))]);
+        let virtualized_sites = HashMap::from([(
+            20,
+            VirtualizedSiteState {
+                site: Arc::clone(&virtualized_site),
+                saved_sites: HashMap::from([(30, Arc::clone(&child_site))]),
+                saved_circuits: HashMap::from([(40, Arc::clone(&child_circuit))]),
+                active_sites: HashMap::from([(30, Arc::clone(&child_site_runtime))]),
+                active_circuits: HashMap::from([(40, Arc::clone(&child_circuit_runtime))]),
+                prune_sites: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+                hide_site_in_overlay: true,
+            },
+        )]);
+
+        let raw_batch = vec![
+            Arc::clone(&parent_site),
+            Arc::clone(&virtualized_site),
+            Arc::clone(&child_site),
+            Arc::clone(&child_circuit),
+        ];
+
+        let (baseline_sites, baseline_circuits) = reconstruct_structural_baseline_state(
+            &effective_sites,
+            &effective_circuits,
+            &virtualized_sites,
+        );
+
+        assert!(matches!(
+            diff_sites(&raw_batch, &effective_sites),
+            SiteDiffResult::RebuildRequired { .. }
+        ));
+        assert!(matches!(
+            diff_sites(&raw_batch, &baseline_sites),
+            SiteDiffResult::NoChange
+        ));
+        assert!(matches!(
+            baseline_circuits
+                .get(&40)
+                .expect("baseline circuit restored")
+                .as_ref(),
+            BakeryCommands::AddCircuit {
+                circuit_hash,
+                parent_class_id,
+                up_parent_class_id,
+                ..
+            } if *circuit_hash == 40
+                && *parent_class_id == TcHandle::from_u32(0x10021)
+                && *up_parent_class_id == TcHandle::from_u32(0x20021)
+        ));
     }
 
     #[test]

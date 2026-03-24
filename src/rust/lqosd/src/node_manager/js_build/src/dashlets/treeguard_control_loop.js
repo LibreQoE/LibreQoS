@@ -1,5 +1,4 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {get_ws_client} from "../pubsub/ws";
 
 function toneClasses(kind) {
     switch (kind) {
@@ -50,7 +49,6 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
         super(slot);
         this.size = 4;
         this.lastStatus = null;
-        this.metadata = null;
     }
 
     title() {
@@ -63,19 +61,6 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
 
     subscribeTo() {
         return ["TreeGuardStatus"];
-    }
-
-    setup() {
-        const wsClient = get_ws_client();
-        const wrapped = (msg) => {
-            wsClient.off("TreeGuardMetadataSummary", wrapped);
-            this.metadata = msg?.data || null;
-            if (this.lastStatus) {
-                this.renderStatus();
-            }
-        };
-        wsClient.on("TreeGuardMetadataSummary", wrapped);
-        wsClient.send({ TreeGuardMetadataSummary: {} });
     }
 
     buildContainer() {
@@ -112,8 +97,8 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
 
     renderStatus() {
         const status = this.lastStatus || {};
-        const totalNodes = Number.isFinite(this.metadata?.total_nodes) ? this.metadata.total_nodes : 0;
-        const totalCircuits = Number.isFinite(this.metadata?.total_circuits) ? this.metadata.total_circuits : 0;
+        const totalNodes = Number.isFinite(status.total_nodes) ? status.total_nodes : 0;
+        const totalCircuits = Number.isFinite(status.total_circuits) ? status.total_circuits : 0;
         const cpuMax = Number.isFinite(Number(status.cpu_max_pct)) ? Math.max(0, Math.trunc(Number(status.cpu_max_pct))) : null;
         const enabled = !!status.enabled;
         const dryRun = !!status.dry_run;

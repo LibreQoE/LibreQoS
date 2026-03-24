@@ -1,5 +1,4 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {get_ws_client} from "../pubsub/ws";
 
 function clamp(n, min, max) {
     return Math.min(Math.max(n, min), max);
@@ -169,7 +168,6 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 6;
-        this.metadataSummary = null;
         this.lastStatusData = null;
     }
 
@@ -183,19 +181,6 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
 
     subscribeTo() {
         return ["TreeGuardStatus"];
-    }
-
-    setup() {
-        const wsClient = get_ws_client();
-        const metadataWrapped = (msg) => {
-            wsClient.off("TreeGuardMetadataSummary", metadataWrapped);
-            this.metadataSummary = msg?.data || null;
-            if (this.lastStatusData) {
-                this.renderStatus(this.lastStatusData);
-            }
-        };
-        wsClient.on("TreeGuardMetadataSummary", metadataWrapped);
-        wsClient.send({ TreeGuardMetadataSummary: {} });
     }
 
     buildContainer() {
@@ -299,24 +284,24 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         const managedCircuits = Math.max(0, Math.trunc(Number(data.managed_circuits ?? 0) || 0));
         const virtualizedNodesExact = Math.max(0, Math.trunc(Number(data.virtualized_nodes ?? 0) || 0));
         const fqCodelCircuitsExact = Math.max(0, Math.trunc(Number(data.fq_codel_circuits ?? 0) || 0));
-        const totalNodes = Number(this.metadataSummary?.total_nodes ?? 0);
+        const totalNodes = Math.max(0, Math.trunc(Number(data.total_nodes ?? 0) || 0));
         const nodesMax = totalNodes > 0 ? totalNodes : Math.max(1, managedNodes);
         const nodesPct = nodesMax ? clamp((managedNodes / nodesMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.nodesMetric, {
             value: managedNodes,
             max: nodesMax,
-            text: managedNodes.toString(),
+            text: totalNodes > 0 ? `${managedNodes} / ${totalNodes}` : managedNodes.toString(),
             bgClass: "bg-info",
-                title: totalNodes > 0 ? `${managedNodes} / ${totalNodes} (${nodesPct.toFixed(0)}%)` : `${managedNodes}`,
+            title: totalNodes > 0 ? `${managedNodes} / ${totalNodes} (${nodesPct.toFixed(0)}%)` : `${managedNodes}`,
         });
 
-        const totalCircuits = Number(this.metadataSummary?.total_circuits ?? 0);
+        const totalCircuits = Math.max(0, Math.trunc(Number(data.total_circuits ?? 0) || 0));
         const circuitsMax = totalCircuits > 0 ? totalCircuits : Math.max(1, managedCircuits);
         const circuitsPct = circuitsMax ? clamp((managedCircuits / circuitsMax) * 100, 0, 100) : 0;
         updateProgressMetric(this.circuitsMetric, {
             value: managedCircuits,
             max: circuitsMax,
-            text: managedCircuits.toString(),
+            text: totalCircuits > 0 ? `${managedCircuits} / ${totalCircuits}` : managedCircuits.toString(),
             bgClass: "bg-info",
             title: totalCircuits > 0
                 ? `${managedCircuits} / ${totalCircuits} (${circuitsPct.toFixed(0)}%)`
@@ -329,7 +314,7 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         updateProgressMetric(this.virtualizedMetric, {
             value: virtualizedNodes,
             max: virtMax,
-            text: virtualizedNodes.toString(),
+            text: managedNodes > 0 ? `${virtualizedNodes} / ${managedNodes}` : virtualizedNodes.toString(),
             bgClass: "bg-primary",
             title: managedNodes > 0
                 ? `${virtualizedNodes} / ${managedNodes} (${virtPct.toFixed(0)}%)`
@@ -342,7 +327,7 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         updateProgressMetric(this.fqCodelMetric, {
             value: fqCodelCircuits,
             max: fqMax,
-            text: fqCodelCircuits.toString(),
+            text: managedCircuits > 0 ? `${fqCodelCircuits} / ${managedCircuits}` : fqCodelCircuits.toString(),
             bgClass: "bg-warning",
             title: managedCircuits > 0
                 ? `${fqCodelCircuits} / ${managedCircuits} (${fqPct.toFixed(0)}%)`

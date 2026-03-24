@@ -428,6 +428,8 @@ pub struct TreeguardStatusData {
     pub paused_for_bakery_reload: bool,
     pub pause_reason: Option<String>,
     pub cpu_max_pct: Option<u8>,
+    pub total_nodes: usize,
+    pub total_circuits: usize,
     pub managed_nodes: usize,
     pub managed_circuits: usize,
     pub virtualized_nodes: usize,
