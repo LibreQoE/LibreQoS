@@ -809,14 +809,14 @@ function renderCakeGraphShell() {
             </div>
         </div>
     `;
-    setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up, circuitSqmOverride);
+    setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up);
 }
 
 function applyCakeMessage(msg) {
     if (!msg) {
         return;
     }
-    setQueueTypeDisplayFromKinds(msg.kind_down, msg.kind_up, circuitSqmOverride);
+    setQueueTypeDisplayFromKinds(msg.kind_down, msg.kind_up);
     if (!cakeGraphs) {
         return;
     }
@@ -974,18 +974,14 @@ function setQueueTypeDisplay(sqmToken) {
     queueTypeEl.textContent = formatQueueTypeDisplay(sqmToken);
 }
 
-function setQueueTypeDisplayFromKinds(kindDown, kindUp, fallbackSqmToken = "") {
+function setQueueTypeDisplayFromKinds(kindDown, kindUp) {
     const queueTypeEl = document.getElementById("cakeQueueType");
     if (!queueTypeEl) {
         return;
     }
     const down = (kindDown ?? "").toString().trim().toLowerCase();
     const up = (kindUp ?? "").toString().trim().toLowerCase();
-    if (down || up) {
-        queueTypeEl.textContent = formatDirectionalQueueTypeDisplay(down, up);
-        return;
-    }
-    queueTypeEl.textContent = formatQueueTypeDisplay(fallbackSqmToken);
+    queueTypeEl.textContent = formatDirectionalQueueTypeDisplay(down, up);
 }
 
 function requestCircuitById(onSuccess, onError) {
@@ -1985,7 +1981,7 @@ function subscribeToCake() {
     }, (msg) => {
         //console.log(msg);
         latestCakeMsg = msg;
-        setQueueTypeDisplayFromKinds(msg?.kind_down, msg?.kind_up, circuitSqmOverride);
+        setQueueTypeDisplayFromKinds(msg?.kind_down, msg?.kind_up);
         
         // Clear the timeout and set flag that we've received data
         if (noDataTimeout) {
@@ -2099,7 +2095,7 @@ function loadInitial() {
         };
         latestCircuitDevices = circuits;
         circuitSqmOverride = circuit.sqm_override || "";
-        setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up, circuitSqmOverride);
+        setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up);
         initialDevices(circuits);
         speedometer = new BitsPerSecondGauge("bitsGauge", "Plan");
         qooGauge = new QooScoreGauge("qooGauge");
