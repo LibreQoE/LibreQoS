@@ -6796,6 +6796,38 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
+fn build_post_restore_virtualized_state(
+    saved_state: VirtualizedSiteState,
+    restore_active_sites: HashMap<i64, Arc<BakeryCommands>>,
+    restore_active_circuits: HashMap<i64, Arc<BakeryCommands>>,
+    now_unix: u64,
+) -> Option<VirtualizedSiteState> {
+    let prune_shadow_sites = saved_state.active_sites.clone();
+    let prune_shadow_circuits = saved_state.active_circuits.clone();
+
+    if prune_shadow_sites.is_empty() && prune_shadow_circuits.is_empty() {
+        return None;
+    }
+
+    Some(VirtualizedSiteState {
+        site: saved_state.site,
+        saved_sites: saved_state.saved_sites,
+        saved_circuits: saved_state.saved_circuits,
+        active_sites: restore_active_sites,
+        active_circuits: restore_active_circuits,
+        prune_sites: prune_shadow_sites,
+        prune_circuits: prune_shadow_circuits,
+        qdisc_handles: VirtualizedSiteQdiscHandles {
+            down: None,
+            up: None,
+        },
+        active_branch: RuntimeVirtualizedActiveBranch::Original,
+        lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
+        pending_prune: true,
+        next_prune_attempt_unix: now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS),
+    })
+}
+
 fn runtime_node_operation_action(virtualized: bool) -> RuntimeNodeOperationAction {
     if virtualized {
         RuntimeNodeOperationAction::Virtualize
@@ -7106,6 +7138,40 @@ fn flush_deferred_runtime_site_prunes(
         }
     };
 
+    flush_deferred_runtime_site_prunes_with_snapshots(
+        config,
+        virtualized_sites,
+        migrations,
+        runtime_node_operations,
+        &down_snapshot,
+        &up_snapshot,
+    );
+}
+
+fn flush_deferred_runtime_site_prunes_with_snapshots(
+    config: &Arc<Config>,
+    virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
+    migrations: &HashMap<i64, Migration>,
+    runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
+    down_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    up_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+) {
+    if bakery_reload_required_reason().is_some() {
+        return;
+    }
+    let now_unix = unix_now();
+    let mut grouped_events = GroupedBakeryEventLimiter::default();
+    let pending_site_hashes: Vec<i64> = virtualized_sites
+        .iter()
+        .filter_map(|(site_hash, state)| {
+            runtime_virtualized_site_prune_ready(state, migrations, now_unix).then_some(*site_hash)
+        })
+        .collect();
+
+    if pending_site_hashes.is_empty() {
+        return;
+    }
+
     let mut completed_restore_cleanup = Vec::new();
     for site_hash in pending_site_hashes {
         let Some(state) = virtualized_sites.get_mut(&site_hash) else {
@@ -7119,8 +7185,8 @@ fn flush_deferred_runtime_site_prunes(
         }
         sync_runtime_virtualized_site_qdisc_handles_from_live_snapshot(
             state,
-            &down_snapshot,
-            &up_snapshot,
+            down_snapshot,
+            up_snapshot,
         );
         if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending
             && state.active_branch_hides_original_site()
@@ -7129,7 +7195,7 @@ fn flush_deferred_runtime_site_prunes(
                 "Bakery: evaluating runtime cutover activation for site {}",
                 site_hash
             );
-            match verify_runtime_shadow_active(state, &down_snapshot, &up_snapshot) {
+            match verify_runtime_shadow_active(state, down_snapshot, up_snapshot) {
                 Ok(()) => {
                     state.pending_prune = false;
                     state.next_prune_attempt_unix = 0;
@@ -7227,7 +7293,7 @@ fn flush_deferred_runtime_site_prunes(
                 }
             }
         }
-        match execute_runtime_virtualized_subtree_prune(config, state, &down_snapshot, &up_snapshot)
+        match execute_runtime_virtualized_subtree_prune(config, state, down_snapshot, up_snapshot)
         {
             RuntimePrunePassResult::Completed => {
                 if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
@@ -7821,33 +7887,15 @@ fn handle_treeguard_set_node_virtual_live(
             .iter()
             .map(|(hash, update)| (*hash, Arc::clone(&update.command)))
             .collect();
-        let prune_shadow_sites = saved_state.active_sites.clone();
-        let prune_shadow_circuits = saved_state.active_circuits.clone();
-
-        if prune_shadow_sites.is_empty() && prune_shadow_circuits.is_empty() {
-            virtualized_sites.remove(&site_hash);
+        if let Some(restored_state) = build_post_restore_virtualized_state(
+            saved_state,
+            restore_active_sites,
+            restore_active_circuits,
+            now_unix,
+        ) {
+            virtualized_sites.insert(site_hash, restored_state);
         } else {
-            virtualized_sites.insert(
-                site_hash,
-                VirtualizedSiteState {
-                    site: saved_state.site,
-                    saved_sites: saved_state.saved_sites,
-                    saved_circuits: saved_state.saved_circuits,
-                    active_sites: restore_active_sites,
-                    active_circuits: restore_active_circuits,
-                    prune_sites: prune_shadow_sites,
-                    prune_circuits: prune_shadow_circuits,
-                    qdisc_handles: VirtualizedSiteQdiscHandles {
-                        down: None,
-                        up: None,
-                    },
-                    active_branch: RuntimeVirtualizedActiveBranch::Original,
-                    lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
-                    pending_prune: true,
-                    next_prune_attempt_unix: now_unix
-                        .saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS),
-                },
-            );
+            virtualized_sites.remove(&site_hash);
         }
         Ok(())
     })();
@@ -8227,6 +8275,29 @@ mod tests {
             ip_addresses: ip_addresses.to_string(),
             sqm_override: None,
         })
+    }
+
+    fn mk_runtime_operation(
+        operation_id: u64,
+        site_hash: i64,
+        action: RuntimeNodeOperationAction,
+        status: RuntimeNodeOperationStatus,
+        attempt_count: u32,
+        next_retry_at_unix: Option<u64>,
+    ) -> RuntimeNodeOperation {
+        let now = unix_now();
+        let mut operation = RuntimeNodeOperation::new(operation_id, site_hash, action, now);
+        operation.attempt_count = attempt_count;
+        operation.update_status(status, now, None, next_retry_at_unix);
+        operation
+    }
+
+    fn live_class_entry(class_id: u32, parent: Option<u32>) -> LiveTcClassEntry {
+        LiveTcClassEntry {
+            class_id: TcHandle::from_u32(class_id),
+            parent: parent.map(TcHandle::from_u32),
+            leaf_qdisc_major: None,
+        }
     }
 
     fn has_hash(batch: &[Arc<BakeryCommands>], hash: i64) -> bool {
@@ -9307,6 +9378,388 @@ mod tests {
         );
         assert!(!state.active_branch_hides_original_site());
         assert!(state.pending_prune);
+    }
+
+    #[test]
+    fn deferred_restore_cleanup_completes_and_removes_retained_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let config = Arc::new(Config::default());
+        let site_hash = 20;
+        let site = mk_add_site(site_hash, 0x10020, 0x20020, 0x21);
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site,
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::new(),
+                active_circuits: HashMap::new(),
+                prune_sites: HashMap::new(),
+                prune_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                active_branch: RuntimeVirtualizedActiveBranch::Original,
+                lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::from([(
+            site_hash,
+            mk_runtime_operation(
+                1,
+                site_hash,
+                RuntimeNodeOperationAction::Restore,
+                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                1,
+                Some(0),
+            ),
+        )]);
+
+        flush_deferred_runtime_site_prunes_with_snapshots(
+            &config,
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert!(!virtualized_sites.contains_key(&site_hash));
+        let operation = runtime_node_operations
+            .get(&site_hash)
+            .expect("runtime operation");
+        assert_eq!(operation.status, RuntimeNodeOperationStatus::Completed);
+        assert_eq!(operation.next_retry_at_unix, None);
+
+        let telemetry = bakery_status_snapshot();
+        assert_eq!(telemetry.runtime_operations.awaiting_cleanup_count, 0);
+        assert_eq!(
+            bakery_runtime_node_operation_snapshot(site_hash)
+                .expect("runtime op snapshot")
+                .status,
+            RuntimeNodeOperationStatus::Completed
+        );
+    }
+
+    #[test]
+    fn cutover_pending_converges_to_completed_when_shadow_is_verified_active() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let config = Arc::new(Config::default());
+        let site_hash = 20;
+        let active_site = mk_add_site(30, 0x10020, 0x20020, 0x22);
+        let active_circuit =
+            mk_test_circuit(40, 0x10020, 0x20020, 0x30, 0x110, 0x210, "192.0.2.40/32");
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site: mk_add_site(site_hash, 0x10000, 0x20000, 0x21),
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::from([(30, Arc::clone(&active_site))]),
+                active_circuits: HashMap::from([(40, Arc::clone(&active_circuit))]),
+                prune_sites: HashMap::new(),
+                prune_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                active_branch: RuntimeVirtualizedActiveBranch::Shadow,
+                lifecycle: RuntimeVirtualizedBranchLifecycle::CutoverPending,
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::from([(
+            site_hash,
+            mk_runtime_operation(
+                2,
+                site_hash,
+                RuntimeNodeOperationAction::Virtualize,
+                RuntimeNodeOperationStatus::Applying,
+                1,
+                Some(0),
+            ),
+        )]);
+        let down_snapshot = HashMap::from([
+            (TcHandle::from_u32(0x10022), live_class_entry(0x10022, Some(0x10020))),
+            (
+                tc_handle_from_major_minor(0x110, 0x30),
+                LiveTcClassEntry {
+                    class_id: tc_handle_from_major_minor(0x110, 0x30),
+                    parent: Some(TcHandle::from_u32(0x10020)),
+                    leaf_qdisc_major: Some(0x9000),
+                },
+            ),
+        ]);
+        let up_snapshot = HashMap::from([
+            (TcHandle::from_u32(0x20022), live_class_entry(0x20022, Some(0x20020))),
+            (
+                tc_handle_from_major_minor(0x210, 0x30),
+                LiveTcClassEntry {
+                    class_id: tc_handle_from_major_minor(0x210, 0x30),
+                    parent: Some(TcHandle::from_u32(0x20020)),
+                    leaf_qdisc_major: Some(0x9001),
+                },
+            ),
+        ]);
+
+        flush_deferred_runtime_site_prunes_with_snapshots(
+            &config,
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+            &down_snapshot,
+            &up_snapshot,
+        );
+
+        let state = virtualized_sites
+            .get(&site_hash)
+            .expect("retained shadow runtime state");
+        assert_eq!(
+            state.lifecycle,
+            RuntimeVirtualizedBranchLifecycle::FlattenedActive
+        );
+        assert!(!state.pending_prune);
+        let operation = runtime_node_operations
+            .get(&site_hash)
+            .expect("runtime operation");
+        assert_eq!(operation.status, RuntimeNodeOperationStatus::Completed);
+    }
+
+    #[test]
+    fn restore_without_shadow_remainders_completes_immediately() {
+        let saved_state = VirtualizedSiteState {
+            site: mk_add_site(20, 0x10000, 0x20000, 0x21),
+            saved_sites: HashMap::new(),
+            saved_circuits: HashMap::new(),
+            active_sites: HashMap::new(),
+            active_circuits: HashMap::new(),
+            prune_sites: HashMap::new(),
+            prune_circuits: HashMap::new(),
+            qdisc_handles: VirtualizedSiteQdiscHandles {
+                down: None,
+                up: None,
+            },
+            active_branch: RuntimeVirtualizedActiveBranch::Shadow,
+            lifecycle: RuntimeVirtualizedBranchLifecycle::FlattenedActive,
+            pending_prune: false,
+            next_prune_attempt_unix: 0,
+        };
+
+        assert!(
+            build_post_restore_virtualized_state(saved_state, HashMap::new(), HashMap::new(), 0)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn restore_cleanup_retry_keeps_operation_in_applied_awaiting_cleanup() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let config = Arc::new(Config::default());
+        let site_hash = 20;
+        let prune_site = mk_add_site(site_hash, 0x10020, 0x20020, 0x21);
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site: mk_add_site(site_hash, 0x10000, 0x20000, 0x21),
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::new(),
+                active_circuits: HashMap::new(),
+                prune_sites: HashMap::from([(site_hash, Arc::clone(&prune_site))]),
+                prune_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                active_branch: RuntimeVirtualizedActiveBranch::Original,
+                lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::from([(
+            site_hash,
+            mk_runtime_operation(
+                3,
+                site_hash,
+                RuntimeNodeOperationAction::Restore,
+                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                1,
+                Some(0),
+            ),
+        )]);
+        let down_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x10022),
+            live_class_entry(0x10022, Some(0x10021)),
+        )]);
+        let up_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x20022),
+            live_class_entry(0x20022, Some(0x20021)),
+        )]);
+
+        flush_deferred_runtime_site_prunes_with_snapshots(
+            &config,
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+            &down_snapshot,
+            &up_snapshot,
+        );
+
+        let state = virtualized_sites
+            .get(&site_hash)
+            .expect("virtualized site state");
+        assert!(state.pending_prune);
+        let operation = runtime_node_operations
+            .get(&site_hash)
+            .expect("runtime operation");
+        assert_eq!(
+            operation.status,
+            RuntimeNodeOperationStatus::AppliedAwaitingCleanup
+        );
+        assert!(operation.next_retry_at_unix.is_some());
+        assert!(operation.last_error.is_some());
+    }
+
+    #[test]
+    fn restore_cleanup_failure_eventually_marks_dirty() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let config = Arc::new(Config::default());
+        let site_hash = 20;
+        let prune_site = mk_add_site(site_hash, 0x10020, 0x20020, 0x21);
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site: mk_add_site(site_hash, 0x10000, 0x20000, 0x21),
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::new(),
+                active_circuits: HashMap::new(),
+                prune_sites: HashMap::from([(site_hash, Arc::clone(&prune_site))]),
+                prune_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                active_branch: RuntimeVirtualizedActiveBranch::Original,
+                lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::from([(
+            site_hash,
+            mk_runtime_operation(
+                4,
+                site_hash,
+                RuntimeNodeOperationAction::Restore,
+                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                RUNTIME_SITE_PRUNE_MAX_ATTEMPTS - 1,
+                Some(0),
+            ),
+        )]);
+        let down_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x10022),
+            live_class_entry(0x10022, Some(0x10021)),
+        )]);
+        let up_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x20022),
+            live_class_entry(0x20022, Some(0x20021)),
+        )]);
+
+        flush_deferred_runtime_site_prunes_with_snapshots(
+            &config,
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+            &down_snapshot,
+            &up_snapshot,
+        );
+
+        let state = virtualized_sites
+            .get(&site_hash)
+            .expect("virtualized site state");
+        assert!(!state.pending_prune);
+        assert_eq!(state.lifecycle, RuntimeVirtualizedBranchLifecycle::Failed);
+        let operation = runtime_node_operations
+            .get(&site_hash)
+            .expect("runtime operation");
+        assert_eq!(operation.status, RuntimeNodeOperationStatus::Dirty);
+        assert!(operation.next_retry_at_unix.is_none());
+    }
+
+    #[test]
+    fn runtime_branch_snapshot_tracks_restore_completion() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let config = Arc::new(Config::default());
+        let site_hash = 20;
+        let mut virtualized_sites = HashMap::from([(
+            site_hash,
+            VirtualizedSiteState {
+                site: mk_add_site(site_hash, 0x10000, 0x20000, 0x21),
+                saved_sites: HashMap::new(),
+                saved_circuits: HashMap::new(),
+                active_sites: HashMap::new(),
+                active_circuits: HashMap::new(),
+                prune_sites: HashMap::new(),
+                prune_circuits: HashMap::new(),
+                qdisc_handles: VirtualizedSiteQdiscHandles {
+                    down: None,
+                    up: None,
+                },
+                active_branch: RuntimeVirtualizedActiveBranch::Original,
+                lifecycle: RuntimeVirtualizedBranchLifecycle::PhysicalActiveCleanupPending,
+                pending_prune: true,
+                next_prune_attempt_unix: 0,
+            },
+        )]);
+        let mut runtime_node_operations = HashMap::from([(
+            site_hash,
+            mk_runtime_operation(
+                5,
+                site_hash,
+                RuntimeNodeOperationAction::Restore,
+                RuntimeNodeOperationStatus::AppliedAwaitingCleanup,
+                1,
+                Some(0),
+            ),
+        )]);
+
+        update_desync_state_from_runtime_state(&runtime_node_operations, &virtualized_sites);
+        let before = bakery_runtime_node_branch_snapshot(site_hash).expect("branch snapshot");
+        assert_eq!(before.active_branch, "Original");
+        assert!(before.pending_prune);
+
+        flush_deferred_runtime_site_prunes_with_snapshots(
+            &config,
+            &mut virtualized_sites,
+            &HashMap::new(),
+            &mut runtime_node_operations,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert!(bakery_runtime_node_branch_snapshot(site_hash).is_none());
+        assert_eq!(
+            bakery_runtime_node_operation_snapshot(site_hash)
+                .expect("runtime operation snapshot")
+                .status,
+            RuntimeNodeOperationStatus::Completed
+        );
     }
 
     #[test]
