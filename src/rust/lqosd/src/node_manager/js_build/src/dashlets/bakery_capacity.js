@@ -5,26 +5,6 @@ function clamp(n, min, max) {
     return Math.min(Math.max(n, min), max);
 }
 
-function formatBinaryBytes(bytes) {
-    const value = typeof bytes === "number" ? bytes : parseInt(bytes, 10);
-    if (!Number.isFinite(value) || value < 0) {
-        return "—";
-    }
-    if (value === 0) {
-        return "0 B";
-    }
-
-    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-    let scaled = value;
-    let unitIndex = 0;
-    while (scaled >= 1024 && unitIndex < units.length - 1) {
-        scaled /= 1024;
-        unitIndex += 1;
-    }
-    const decimals = scaled >= 100 || unitIndex === 0 ? 0 : 1;
-    return `${scaled.toFixed(decimals)} ${units[unitIndex]}`;
-}
-
 function formatPercent(value, max) {
     if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) {
         return "—";
@@ -65,6 +45,8 @@ export class BakeryCapacityDashlet extends BaseDashlet {
         super(slot);
         this.size = 4;
         this.lastPreflight = null;
+        this.liveCapacityInterfaces = [];
+        this.liveCapacitySafeBudget = null;
     }
 
     title() {
@@ -72,7 +54,7 @@ export class BakeryCapacityDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>Capacity / Safety</h5><p>Shows the last recorded Bakery qdisc-budget preflight, including per-interface planned qdisc counts and whether the full reload was within budget.</p>";
+        return "<h5>Capacity / Safety</h5><p>Shows current live TC handle usage by interface against Bakery's safe budget. The badges summarize the most recent full-reload preflight.</p>";
     }
 
     subscribeTo() {
@@ -96,7 +78,7 @@ export class BakeryCapacityDashlet extends BaseDashlet {
 
         const thead = document.createElement("thead");
         const hr = document.createElement("tr");
-        ["Interface", "Planned", "Usage", "Mix"].forEach((label) => {
+        ["Interface", "Usage"].forEach((label) => {
             const th = document.createElement("th");
             th.textContent = label;
             hr.appendChild(th);
@@ -118,31 +100,27 @@ export class BakeryCapacityDashlet extends BaseDashlet {
             return;
         }
         this.lastPreflight = msg?.data?.currentState?.preflight || null;
-        this.renderPreflight();
+        this.liveCapacityInterfaces = Array.isArray(msg?.data?.currentState?.liveCapacityInterfaces)
+            ? msg.data.currentState.liveCapacityInterfaces
+            : [];
+        this.liveCapacitySafeBudget = Number.isFinite(msg?.data?.currentState?.liveCapacitySafeBudget)
+            ? msg.data.currentState.liveCapacitySafeBudget
+            : null;
+        this.renderCapacity();
     }
 
-    renderPreflight() {
+    renderCapacity() {
         this.badgeWrap.innerHTML = "";
         this.badgeWrap.appendChild(bakeryPreflightBadge(this.lastPreflight));
         this.badgeWrap.appendChild(bakeryMemoryBadge(this.lastPreflight));
 
         this.interfacesTbody.innerHTML = "";
 
-        if (!this.lastPreflight) {
-            const tr = document.createElement("tr");
-            const td = document.createElement("td");
-            td.colSpan = 4;
-            td.textContent = "No interface budget data";
-            tr.appendChild(td);
-            this.interfacesTbody.appendChild(tr);
-            return;
-        }
-
-        const interfaces = Array.isArray(this.lastPreflight.interfaces)
-            ? [...this.lastPreflight.interfaces].sort((left, right) => {
-                const plannedDiff = (right?.plannedQdiscs || 0) - (left?.plannedQdiscs || 0);
-                if (plannedDiff !== 0) {
-                    return plannedDiff;
+        const interfaces = Array.isArray(this.liveCapacityInterfaces)
+            ? [...this.liveCapacityInterfaces].sort((left, right) => {
+                const liveDiff = (right?.liveQdiscs || 0) - (left?.liveQdiscs || 0);
+                if (liveDiff !== 0) {
+                    return liveDiff;
                 }
                 return (left?.name || "").localeCompare(right?.name || "");
             })
@@ -151,8 +129,8 @@ export class BakeryCapacityDashlet extends BaseDashlet {
         if (interfaces.length === 0) {
             const tr = document.createElement("tr");
             const td = document.createElement("td");
-            td.colSpan = 4;
-            td.textContent = "No interface budget data";
+            td.colSpan = 2;
+            td.textContent = "No live interface usage data";
             tr.appendChild(td);
             this.interfacesTbody.appendChild(tr);
             return;
@@ -161,35 +139,21 @@ export class BakeryCapacityDashlet extends BaseDashlet {
         interfaces.forEach((entry) => {
             const tr = document.createElement("tr");
             const tdName = document.createElement("td");
-            const tdPlanned = document.createElement("td");
             const tdUsage = document.createElement("td");
-            const tdMix = document.createElement("td");
 
             tdName.textContent = entry?.name || "—";
 
-            const plannedValue = document.createElement("div");
-            plannedValue.classList.add("fw-semibold");
-            plannedValue.textContent = Number.isFinite(entry?.plannedQdiscs)
-                ? entry.plannedQdiscs.toLocaleString()
-                : "—";
-            const plannedMeta = document.createElement("div");
-            plannedMeta.classList.add("small", "text-body-secondary");
-            plannedMeta.textContent = formatBinaryBytes(entry?.estimatedMemoryBytes);
-            tdPlanned.appendChild(plannedValue);
-            tdPlanned.appendChild(plannedMeta);
-
-            const safeBudget = Number.isFinite(this.lastPreflight?.safeBudget) ? this.lastPreflight.safeBudget : null;
-            const hardLimit = Number.isFinite(this.lastPreflight?.hardLimit) ? this.lastPreflight.hardLimit : null;
+            const safeBudget = this.liveCapacitySafeBudget;
             const usageText = document.createElement("div");
             usageText.classList.add("d-flex", "justify-content-between", "small", "mb-1");
             const usageLabel = document.createElement("span");
-            usageLabel.textContent = Number.isFinite(entry?.plannedQdiscs) && safeBudget !== null
-                ? `${formatPercent(entry.plannedQdiscs, safeBudget)} of safe`
+            usageLabel.textContent = Number.isFinite(entry?.liveQdiscs) && safeBudget !== null
+                ? formatPercent(entry.liveQdiscs, safeBudget)
                 : "—";
             const usageCount = document.createElement("span");
             usageCount.classList.add("text-body-secondary");
-            usageCount.textContent = safeBudget !== null && hardLimit !== null
-                ? `${safeBudget.toLocaleString()} / ${hardLimit.toLocaleString()}`
+            usageCount.textContent = Number.isFinite(entry?.liveQdiscs)
+                ? `${entry.liveQdiscs.toLocaleString()} handles`
                 : "—";
             usageText.appendChild(usageLabel);
             usageText.appendChild(usageCount);
@@ -198,44 +162,22 @@ export class BakeryCapacityDashlet extends BaseDashlet {
             progress.classList.add("progress");
             progress.style.height = "0.55rem";
             const bar = document.createElement("div");
-            bar.classList.add("progress-bar", usageBarClass(entry?.plannedQdiscs, safeBudget, hardLimit));
+            bar.classList.add("progress-bar", usageBarClass(entry?.liveQdiscs, safeBudget, null));
             bar.setAttribute("role", "progressbar");
-            const pct = Number.isFinite(entry?.plannedQdiscs) && safeBudget !== null && safeBudget > 0
-                ? clamp((entry.plannedQdiscs / safeBudget) * 100.0, 0, 100)
+            const pct = Number.isFinite(entry?.liveQdiscs) && safeBudget !== null && safeBudget > 0
+                ? clamp((entry.liveQdiscs / safeBudget) * 100.0, 0, 100)
                 : 0;
             bar.style.width = `${pct.toFixed(1)}%`;
             bar.setAttribute("aria-valuemin", "0");
             bar.setAttribute("aria-valuemax", safeBudget !== null ? safeBudget.toString() : "0");
-            bar.setAttribute("aria-valuenow", Number.isFinite(entry?.plannedQdiscs) ? entry.plannedQdiscs.toString() : "0");
+            bar.setAttribute("aria-valuenow", Number.isFinite(entry?.liveQdiscs) ? entry.liveQdiscs.toString() : "0");
             progress.appendChild(bar);
 
             tdUsage.appendChild(usageText);
             tdUsage.appendChild(progress);
 
-            const mixWrap = document.createElement("div");
-            mixWrap.classList.add("d-flex", "flex-wrap", "gap-1", "mb-1");
-            mixWrap.appendChild(mkBadge(
-                `infra ${Number.isFinite(entry?.infraQdiscs) ? entry.infraQdiscs.toLocaleString() : "—"}`,
-                "bg-light text-secondary border",
-            ));
-            if (Number.isFinite(entry?.cakeQdiscs) && entry.cakeQdiscs > 0) {
-                mixWrap.appendChild(mkBadge(
-                    `cake ${entry.cakeQdiscs.toLocaleString()}`,
-                    "bg-warning-subtle text-warning border border-warning-subtle",
-                ));
-            }
-            if (Number.isFinite(entry?.fqCodelQdiscs) && entry.fqCodelQdiscs > 0) {
-                mixWrap.appendChild(mkBadge(
-                    `fq_codel ${entry.fqCodelQdiscs.toLocaleString()}`,
-                    "bg-info-subtle text-info border border-info-subtle",
-                ));
-            }
-            tdMix.appendChild(mixWrap);
-
             tr.appendChild(tdName);
-            tr.appendChild(tdPlanned);
             tr.appendChild(tdUsage);
-            tr.appendChild(tdMix);
             this.interfacesTbody.appendChild(tr);
         });
     }

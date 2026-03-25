@@ -3,6 +3,7 @@
 //! This module will hold per-node and per-circuit state such as dwell timers,
 //! last-seen timestamps, and smoothed telemetry.
 
+use lqos_bakery::BakeryRuntimeNodeOperationFailureReason;
 use std::collections::VecDeque;
 
 /// Smoothed state using an exponential weighted moving average (EWMA).
@@ -74,6 +75,24 @@ pub struct LinkDirectionState {
     pub top_level_emergency_since_unix: Option<u64>,
 }
 
+/// Minimal topology fingerprint for deciding whether a structural ineligibility latch is still valid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LinkTopologyFingerprint {
+    /// Number of direct child sites under the node.
+    pub direct_child_sites: usize,
+    /// Number of direct circuits directly attached to the node.
+    pub direct_circuits: usize,
+}
+
+/// Latched structural ineligibility state for TreeGuard runtime virtualization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinkStructuralIneligibleState {
+    /// Structured Bakery failure reason.
+    pub reason: BakeryRuntimeNodeOperationFailureReason,
+    /// Topology fingerprint observed when Bakery rejected the node.
+    pub topology_fingerprint: LinkTopologyFingerprint,
+}
+
 /// Per-node link virtualization tracking state.
 #[derive(Clone, Debug, Default)]
 pub struct LinkState {
@@ -83,6 +102,10 @@ pub struct LinkState {
     pub last_change_unix: Option<u64>,
     /// History of recent state changes (seconds since UNIX epoch), newest at the back.
     pub recent_changes_unix: VecDeque<u64>,
+    /// Current topology fingerprint for this node.
+    pub topology_fingerprint: LinkTopologyFingerprint,
+    /// Latched structural ineligibility, if Bakery rejected virtualization for this topology.
+    pub structural_ineligible: Option<LinkStructuralIneligibleState>,
     /// Download direction tracking state.
     pub down: LinkDirectionState,
     /// Upload direction tracking state.

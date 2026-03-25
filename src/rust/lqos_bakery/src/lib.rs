@@ -38,8 +38,8 @@ use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
 pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 use crate::commands::{
-    ExecutionMode, RuntimeNodeOperationAction, RuntimeNodeOperationSnapshot,
-    RuntimeNodeOperationStatus,
+    ExecutionMode, RuntimeNodeOperationAction, RuntimeNodeOperationFailureReason,
+    RuntimeNodeOperationSnapshot, RuntimeNodeOperationStatus,
 };
 use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::qdisc_handles::QdiscHandleState;
@@ -51,6 +51,7 @@ use crate::utils::{
 };
 pub use commands::{
     BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
+    RuntimeNodeOperationFailureReason as BakeryRuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot as BakeryRuntimeNodeOperationSnapshot,
     RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus,
 };
@@ -261,6 +262,7 @@ struct RuntimeNodeOperation {
     updated_at_unix: u64,
     next_retry_at_unix: Option<u64>,
     last_error: Option<String>,
+    failure_reason: Option<RuntimeNodeOperationFailureReason>,
 }
 
 impl RuntimeNodeOperation {
@@ -280,6 +282,7 @@ impl RuntimeNodeOperation {
             updated_at_unix: now_unix,
             next_retry_at_unix: None,
             last_error: None,
+            failure_reason: None,
         }
     }
 
@@ -294,6 +297,7 @@ impl RuntimeNodeOperation {
             updated_at_unix: self.updated_at_unix,
             next_retry_at_unix: self.next_retry_at_unix,
             last_error: self.last_error.clone(),
+            failure_reason: self.failure_reason,
         }
     }
 
@@ -304,9 +308,21 @@ impl RuntimeNodeOperation {
         last_error: Option<String>,
         next_retry_at_unix: Option<u64>,
     ) {
+        self.update_status_with_reason(status, now_unix, last_error, None, next_retry_at_unix);
+    }
+
+    fn update_status_with_reason(
+        &mut self,
+        status: RuntimeNodeOperationStatus,
+        now_unix: u64,
+        last_error: Option<String>,
+        failure_reason: Option<RuntimeNodeOperationFailureReason>,
+        next_retry_at_unix: Option<u64>,
+    ) {
         self.status = status;
         self.updated_at_unix = now_unix;
         self.last_error = last_error;
+        self.failure_reason = failure_reason;
         self.next_retry_at_unix = next_retry_at_unix;
     }
 }
@@ -684,6 +700,7 @@ static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 65_534;
 /// Conservative operational limit used to fail a full reload before qdisc handle exhaustion.
 pub const SAFE_QDISC_BUDGET_PER_INTERFACE: usize = 65_000;
+const LIVE_CAPACITY_REFRESH_SECONDS: u64 = 30 * 60;
 /// Conservative estimated kernel-memory cost of a non-leaf infrastructure qdisc.
 ///
 /// These weights are not kernel ABI sizes. They are deliberately conservative
@@ -748,6 +765,15 @@ pub struct BakeryCapacityInterfaceSnapshot {
     pub fq_codel_qdiscs: usize,
     /// Estimated kernel memory cost for that interface's planned qdiscs.
     pub estimated_memory_bytes: u64,
+}
+
+/// Per-interface live qdisc usage snapshot for Bakery UI/status.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryLiveCapacityInterfaceSnapshot {
+    /// Interface name, e.g. `ens19`.
+    pub name: String,
+    /// Current live qdisc handle count observed on the interface.
+    pub live_qdiscs: usize,
 }
 
 /// Per-queue-root queue layout summary for Bakery UI/status.
@@ -898,6 +924,12 @@ pub struct BakeryStatusSnapshot {
     pub runtime_operations: BakeryRuntimeOperationsSnapshot,
     /// Current queue-root distribution summary.
     pub queue_distribution: Vec<BakeryQueueDistributionSnapshot>,
+    /// Current live per-interface qdisc usage snapshot.
+    pub live_capacity_interfaces: Vec<BakeryLiveCapacityInterfaceSnapshot>,
+    /// Safe per-interface qdisc budget used for the live usage bar.
+    pub live_capacity_safe_budget: usize,
+    /// Unix timestamp when the live capacity snapshot was last refreshed.
+    pub live_capacity_updated_at_unix: Option<u64>,
     /// Last qdisc preflight summary known to Bakery.
     pub preflight: Option<BakeryPreflightSnapshot>,
     /// Whether Bakery has detected enough runtime drift to require a structural full reload.
@@ -917,6 +949,8 @@ pub struct BakeryActivityEntry {
     pub event: String,
     /// `info`, `warning`, or `error`.
     pub status: String,
+    /// Stable Bakery site hash associated with the event, if any.
+    pub site_hash: Option<i64>,
     /// Human-readable summary.
     pub summary: String,
 }
@@ -942,6 +976,8 @@ struct BakeryTelemetryState {
     last_apply_duration_ms: u64,
     runtime_operations: BakeryRuntimeOperationsSnapshot,
     queue_distribution: Vec<BakeryQueueDistributionSnapshot>,
+    live_capacity_interfaces: Vec<BakeryLiveCapacityInterfaceSnapshot>,
+    live_capacity_updated_at_unix: Option<u64>,
     preflight: Option<BakeryPreflightSnapshot>,
     reload_required: bool,
     reload_required_reason: Option<String>,
@@ -973,6 +1009,18 @@ impl GroupedBakeryEventLimiter {
         summary: String,
         suppression_summary: String,
     ) {
+        self.emit_with_site(group_key, event, status, None, summary, suppression_summary);
+    }
+
+    fn emit_with_site(
+        &mut self,
+        group_key: impl Into<String>,
+        event: &str,
+        status: &str,
+        site_hash: Option<i64>,
+        summary: String,
+        suppression_summary: String,
+    ) {
         let state =
             self.groups
                 .entry(group_key.into())
@@ -984,7 +1032,7 @@ impl GroupedBakeryEventLimiter {
                     suppression_summary,
                 });
         if state.emitted < BAKERY_GROUPED_EVENT_DETAIL_LIMIT {
-            push_bakery_event(event, status, summary);
+            push_bakery_event_with_site(event, status, site_hash, summary);
             state.emitted += 1;
         } else {
             state.suppressed += 1;
@@ -1050,6 +1098,8 @@ impl Default for BakeryTelemetryState {
                 latest: None,
             },
             queue_distribution: Vec::new(),
+            live_capacity_interfaces: Vec::new(),
+            live_capacity_updated_at_unix: None,
             preflight: None,
             reload_required: false,
             reload_required_reason: None,
@@ -1105,10 +1155,15 @@ fn count_tc_command_types(commands: &[Vec<String>]) -> (usize, usize, usize) {
 }
 
 fn push_bakery_event(event: &str, status: &str, summary: String) {
+    push_bakery_event_with_site(event, status, None, summary);
+}
+
+fn push_bakery_event_with_site(event: &str, status: &str, site_hash: Option<i64>, summary: String) {
     let entry = BakeryActivityEntry {
         ts: current_timestamp(),
         event: event.to_string(),
         status: status.to_string(),
+        site_hash,
         summary,
     };
     let mut state = telemetry_state().write();
@@ -1249,6 +1304,9 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
         last_apply_duration_ms: state.last_apply_duration_ms,
         runtime_operations: state.runtime_operations,
         queue_distribution: state.queue_distribution,
+        live_capacity_interfaces: state.live_capacity_interfaces,
+        live_capacity_safe_budget: SAFE_QDISC_BUDGET_PER_INTERFACE,
+        live_capacity_updated_at_unix: state.live_capacity_updated_at_unix,
         preflight: state.preflight,
         reload_required: state.reload_required,
         reload_required_reason: state.reload_required_reason,
@@ -1291,6 +1349,43 @@ pub fn bakery_reload_required_reason() -> Option<String> {
 /// Returns recent Bakery activity entries for UI/status consumers.
 pub fn bakery_activity_snapshot() -> Vec<BakeryActivityEntry> {
     telemetry_state().read().activity.iter().cloned().collect()
+}
+
+fn configured_live_capacity_interfaces(config: &Config) -> Vec<String> {
+    let mut interfaces = BTreeSet::new();
+    interfaces.insert(config.isp_interface());
+    interfaces.insert(config.internet_interface());
+    interfaces.into_iter().collect()
+}
+
+fn refresh_live_capacity_snapshot(config: &Config, force: bool) {
+    let now_unix = current_timestamp();
+    {
+        let state = telemetry_state().read();
+        if !force
+            && state
+                .live_capacity_updated_at_unix
+                .is_some_and(|last| now_unix.saturating_sub(last) < LIVE_CAPACITY_REFRESH_SECONDS)
+        {
+            return;
+        }
+    }
+
+    let interfaces = configured_live_capacity_interfaces(config);
+    let mut snapshot = Vec::with_capacity(interfaces.len());
+    for interface in interfaces {
+        let live_qdiscs = read_live_qdisc_handle_majors(&interface)
+            .map(|handles| handles.len())
+            .unwrap_or(0);
+        snapshot.push(BakeryLiveCapacityInterfaceSnapshot {
+            name: interface,
+            live_qdiscs,
+        });
+    }
+
+    let mut state = telemetry_state().write();
+    state.live_capacity_interfaces = snapshot;
+    state.live_capacity_updated_at_unix = Some(now_unix);
 }
 
 /// Stores the latest qdisc-budget preflight result for UI/status consumers.
@@ -1368,6 +1463,11 @@ fn execute_and_record_live_change(command_buffer: &[Vec<String>], purpose: &str)
         qdisc_commands,
         ok: result.ok,
     });
+    if result.ok
+        && let Ok(config) = lqos_config::load_config()
+    {
+        refresh_live_capacity_snapshot(&config, true);
+    }
     result
 }
 
@@ -2681,6 +2781,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut virtualized_sites,
                     &mut runtime_node_operations,
                 );
+                refresh_live_capacity_snapshot(&config, false);
                 continue;
             }
             Err(RecvTimeoutError::Disconnected) => break,
@@ -4058,19 +4159,19 @@ fn top_level_runtime_virtualization_eligibility_error(
     target_site: &BakeryCommands,
     sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &HashMap<i64, Arc<BakeryCommands>>,
-) -> Option<String> {
+) -> Option<RuntimeNodeEligibilityError> {
     if !site_is_top_level(target_site) {
-        return Some(format!(
+        return Some(RuntimeNodeEligibilityError::plain(format!(
             "Site {} is not top-level and cannot use the top-level runtime virtualization path",
             site_hash
-        ));
+        )));
     }
 
     if current_site_queue(target_site).is_none() {
-        return Some(format!(
+        return Some(RuntimeNodeEligibilityError::plain(format!(
             "Site {} does not have a deterministic current queue assignment",
             site_hash
-        ));
+        )));
     }
 
     let children_by_parent = direct_child_sites_by_parent(sites);
@@ -4083,20 +4184,48 @@ fn top_level_runtime_virtualization_eligibility_error(
         .unwrap_or(0);
 
     if child_sites == 0 && direct_circuits == 0 {
-        return Some(format!(
-            "Site {} has no direct child sites or direct circuits to promote safely",
-            site_hash
+        return Some(RuntimeNodeEligibilityError::new(
+            format!(
+                "Site {} has no direct child sites or direct circuits to promote safely",
+                site_hash
+            ),
+            RuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren,
         ));
     }
 
     if child_sites + direct_circuits < 2 {
-        return Some(format!(
-            "Site {} has only one promotable direct child, so top-level runtime virtualization would not produce a deterministic v1 split point",
-            site_hash
+        return Some(RuntimeNodeEligibilityError::new(
+            format!(
+                "Site {} has only one promotable direct child, so top-level runtime virtualization would not produce a deterministic v1 split point",
+                site_hash
+            ),
+            RuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild,
         ));
     }
 
     None
+}
+
+#[derive(Clone, Debug)]
+struct RuntimeNodeEligibilityError {
+    message: String,
+    failure_reason: Option<RuntimeNodeOperationFailureReason>,
+}
+
+impl RuntimeNodeEligibilityError {
+    fn plain(message: String) -> Self {
+        Self {
+            message,
+            failure_reason: None,
+        }
+    }
+
+    fn new(message: String, failure_reason: RuntimeNodeOperationFailureReason) -> Self {
+        Self {
+            message,
+            failure_reason: Some(failure_reason),
+        }
+    }
 }
 
 fn site_prune_commands(
@@ -5924,15 +6053,6 @@ fn circuit_qdisc_parent_changed(
     old_down_parent != new_down_parent || old_up_parent != new_up_parent
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-fn qdisc_handle_rotation_invariant_error(
-    old_cmd: &BakeryCommands,
-    new_cmd: &BakeryCommands,
-    config: &Arc<Config>,
-) -> Option<String> {
-    qdisc_handle_rotation_invariant_error_with_live_reservations(old_cmd, new_cmd, config, None)
-}
-
 fn qdisc_handle_rotation_invariant_error_with_live_reservations(
     old_cmd: &BakeryCommands,
     new_cmd: &BakeryCommands,
@@ -7402,10 +7522,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             None,
                         );
                     }
-                    grouped_events.emit(
+                    grouped_events.emit_with_site(
                         "runtime_cutover_completed|completed",
                         "runtime_cutover_completed",
                         "info",
+                        Some(site_hash),
                         format!(
                             "Runtime cutover completed for site {}; shadow branch is active and original branch is standby.",
                             site_hash
@@ -7431,10 +7552,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                                 Some(summary.clone()),
                                 None,
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site(
                                 format!("runtime_cutover_dirty|activation_failed|{summary}"),
                                 "runtime_cutover_dirty",
                                 "error",
+                                Some(site_hash),
                                 format!(
                                     "Runtime cutover for site {} marked Dirty after {} attempts: {}",
                                     site_hash, operation.attempt_count, summary
@@ -7460,10 +7582,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site(
                                 format!("runtime_cutover_retry|activation_failed|{summary}"),
                                 "runtime_cutover_retry",
                                 "warning",
+                                Some(site_hash),
                                 format!(
                                     "Runtime cutover retry {}/{} for site {} waiting for active/standby convergence: {}",
                                     operation.attempt_count,
@@ -7506,10 +7629,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                         None,
                     );
                 }
-                grouped_events.emit(
+                grouped_events.emit_with_site(
                     "runtime_site_prune_completed|completed",
                     "runtime_site_prune_completed",
                     "info",
+                    Some(site_hash),
                     format!(
                         "Deferred runtime site prune completed for site {}.",
                         site_hash
@@ -7537,10 +7661,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                         Some(now_unix),
                     );
                 }
-                grouped_events.emit(
+                grouped_events.emit_with_site(
                     format!("runtime_site_prune_progress|{summary}"),
                     "runtime_site_prune_progress",
                     "info",
+                    Some(site_hash),
                     format!(
                         "Deferred runtime site prune for site {} made progress: {}",
                         site_hash, summary
@@ -7586,10 +7711,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             Some(summary.clone()),
                             None,
                         );
-                        grouped_events.emit(
+                        grouped_events.emit_with_site(
                             format!("runtime_site_prune_dirty|execute_failed|{summary}"),
                             "runtime_site_prune_dirty",
                             "error",
+                            Some(site_hash),
                             format!(
                                 "Deferred runtime site prune for site {} marked Dirty after {} attempts: {}",
                                 site_hash, operation.attempt_count, summary
@@ -7610,10 +7736,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             Some(summary.clone()),
                             Some(retry_at),
                         );
-                        grouped_events.emit(
+                        grouped_events.emit_with_site(
                             format!("runtime_site_prune_retry|execute_failed|{summary}"),
                             "runtime_site_prune_retry",
                             "warning",
+                            Some(site_hash),
                             format!(
                                 "Deferred runtime site prune retry {}/{} for site {} failed: {}",
                                 operation.attempt_count,
@@ -7630,10 +7757,11 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                 } else {
                     state.next_prune_attempt_unix =
                         now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
-                    grouped_events.emit(
+                    grouped_events.emit_with_site(
                         format!("runtime_site_prune_retry|outside_tracking|{summary}"),
                         "runtime_site_prune_retry",
                         "warning",
+                        Some(site_hash),
                         format!(
                             "Deferred runtime site prune for site {} failed outside operation tracking: {}",
                             site_hash, summary
@@ -7743,7 +7871,12 @@ fn handle_treeguard_set_node_virtual_live(
         );
         runtime_node_operations.insert(site_hash, operation.clone());
         update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
-        push_bakery_event("runtime_node_op_deferred", "warning", summary);
+        push_bakery_event_with_site(
+            "runtime_node_op_deferred",
+            "warning",
+            Some(site_hash),
+            summary,
+        );
         return operation.snapshot();
     }
 
@@ -7782,7 +7915,12 @@ fn handle_treeguard_set_node_virtual_live(
         );
         runtime_node_operations.insert(site_hash, operation.clone());
         update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
-        push_bakery_event("runtime_node_op_deferred", "warning", summary);
+        push_bakery_event_with_site(
+            "runtime_node_op_deferred",
+            "warning",
+            Some(site_hash),
+            summary,
+        );
         return operation.snapshot();
     }
 
@@ -7813,6 +7951,7 @@ fn handle_treeguard_set_node_virtual_live(
         return operation.snapshot();
     };
 
+    let mut failure_reason = None;
     let result: Result<(), String> = (|| {
         if virtualized {
             if virtualized_sites.contains_key(&site_hash) {
@@ -7830,7 +7969,8 @@ fn handle_treeguard_set_node_virtual_live(
                     sites,
                     circuits,
                 ) {
-                    return Err(reason);
+                    failure_reason = reason.failure_reason;
+                    return Err(reason.message);
                 }
                 let plan = build_top_level_virtualization_plan(
                     Arc::clone(&target_site),
@@ -8100,10 +8240,11 @@ fn handle_treeguard_set_node_virtual_live(
         *migrations = migrations_snapshot;
         *virtualized_sites = virtualized_sites_snapshot;
         *runtime_node_operations = runtime_ops_snapshot;
-        operation.update_status(
+        operation.update_status_with_reason(
             RuntimeNodeOperationStatus::Failed,
             unix_now(),
             Some(error.clone()),
+            failure_reason,
             None,
         );
         runtime_node_operations.insert(site_hash, operation.clone());
@@ -8248,6 +8389,9 @@ fn full_reload(
         *circuits = previous_circuits;
         *live_circuits = previous_live_circuits;
         *mq_layout = previous_mq_layout;
+    }
+    if result.ok {
+        refresh_live_capacity_snapshot(config, true);
     }
     update_queue_distribution_snapshot(sites, circuits);
     *batch = None;
@@ -9378,7 +9522,11 @@ mod tests {
         )
         .expect("single-child top-level virtualization should be rejected");
 
-        assert!(reason.contains("only one promotable direct child"));
+        assert!(reason.message.contains("only one promotable direct child"));
+        assert_eq!(
+            reason.failure_reason,
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild)
+        );
     }
 
     #[test]

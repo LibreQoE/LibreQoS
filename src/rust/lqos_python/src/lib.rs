@@ -3166,6 +3166,7 @@ fn treeguard_get_node_virtual_status(
             let Some(snapshot) = snapshot else {
                 return Ok(None);
             };
+            let failure_reason = snapshot.failure_reason.clone();
             let d = PyDict::new(py);
             d.set_item("operation_id", snapshot.operation_id)?;
             d.set_item("site_hash", snapshot.site_hash)?;
@@ -3176,6 +3177,7 @@ fn treeguard_get_node_virtual_status(
             d.set_item("updated_at_unix", snapshot.updated_at_unix)?;
             d.set_item("next_retry_at_unix", snapshot.next_retry_at_unix)?;
             d.set_item("last_error", snapshot.last_error)?;
+            d.set_item("failure_reason", failure_reason)?;
             return Ok(Some(d.unbind()));
         }
     }

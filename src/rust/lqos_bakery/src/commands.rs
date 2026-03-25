@@ -39,6 +39,15 @@ pub enum RuntimeNodeOperationStatus {
     Dirty,
 }
 
+/// Structured failure reason for a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationFailureReason {
+    /// The node has no direct child sites or direct circuits to promote.
+    StructuralIneligibleNoPromotableChildren,
+    /// The node has only one promotable direct child, so v1 flattening has no deterministic split.
+    StructuralIneligibleSinglePromotableChild,
+}
+
 /// Snapshot of a Bakery-tracked TreeGuard runtime node operation.
 #[derive(Debug, Clone, PartialEq, Eq, Allocative)]
 pub struct RuntimeNodeOperationSnapshot {
@@ -60,6 +69,8 @@ pub struct RuntimeNodeOperationSnapshot {
     pub next_retry_at_unix: Option<u64>,
     /// Last error observed by Bakery for this operation, if any.
     pub last_error: Option<String>,
+    /// Structured failure reason observed by Bakery for this operation, if any.
+    pub failure_reason: Option<RuntimeNodeOperationFailureReason>,
 }
 
 #[derive(Debug, Clone, Copy, Allocative)]

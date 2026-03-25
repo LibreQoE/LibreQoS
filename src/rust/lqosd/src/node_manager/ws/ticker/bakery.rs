@@ -1,7 +1,7 @@
 use crate::node_manager::ws::messages::{
-    BakeryActivityEntry, BakeryCapacityInterfaceData, BakeryPreflightData,
-    BakeryQueueDistributionData, BakeryRuntimeOperationHeadlineData, BakeryRuntimeOperationsData,
-    BakeryStatusData, BakeryStatusState, WsResponse,
+    BakeryActivityEntry, BakeryCapacityInterfaceData, BakeryLiveCapacityInterfaceData,
+    BakeryPreflightData, BakeryQueueDistributionData, BakeryRuntimeOperationHeadlineData,
+    BakeryRuntimeOperationsData, BakeryStatusData, BakeryStatusState, WsResponse,
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -154,18 +154,32 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                     upload_mbps: entry.upload_mbps,
                 })
                 .collect(),
+            live_capacity_interfaces: snapshot
+                .live_capacity_interfaces
+                .into_iter()
+                .map(|entry| BakeryLiveCapacityInterfaceData {
+                    name: entry.name,
+                    live_qdiscs: entry.live_qdiscs,
+                })
+                .collect(),
+            live_capacity_safe_budget: snapshot.live_capacity_safe_budget,
+            live_capacity_updated_at_unix: snapshot.live_capacity_updated_at_unix,
             preflight: snapshot.preflight.map(map_preflight),
         },
     }
 }
 
 fn map_activity(entry: BakeryActivitySnapshot) -> BakeryActivityEntry {
-    let site_name = extract_site_hash_from_summary(&entry.summary).and_then(resolve_site_name);
+    let site_hash = entry
+        .site_hash
+        .or_else(|| extract_site_hash_from_summary(&entry.summary));
+    let site_name = site_hash.and_then(resolve_site_name);
     BakeryActivityEntry {
         ts: entry.ts,
         event: entry.event,
         status: entry.status,
         summary: entry.summary,
+        site_hash,
         site_name,
     }
 }

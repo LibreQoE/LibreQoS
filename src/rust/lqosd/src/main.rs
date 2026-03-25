@@ -786,7 +786,16 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let snapshot = crate::treeguard::bakery::node_virtualization_operation_status(
                     node_name,
                 )
-                .map(|snapshot| TreeGuardRuntimeNodeOperationSnapshot {
+                .map(|snapshot| {
+                    let failure_reason = snapshot.failure_reason.map(|reason| match reason {
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren => {
+                            "structural_ineligible_no_promotable_children".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
+                            "structural_ineligible_single_promotable_child".to_string()
+                        }
+                    });
+                    TreeGuardRuntimeNodeOperationSnapshot {
                     operation_id: snapshot.operation_id,
                     site_hash: snapshot.site_hash,
                     action: match snapshot.action {
@@ -825,7 +834,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     updated_at_unix: snapshot.updated_at_unix,
                     next_retry_at_unix: snapshot.next_retry_at_unix,
                     last_error: snapshot.last_error,
-                });
+                    failure_reason,
+                }});
                 BusResponse::TreeGuardRuntimeNodeOperation(snapshot)
             }
             BusRequest::TreeGuardGetNodeVirtualBranchState { node_name } => {

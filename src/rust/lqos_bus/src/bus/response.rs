@@ -69,6 +69,8 @@ pub struct TreeGuardRuntimeNodeOperationSnapshot {
     pub next_retry_at_unix: Option<u64>,
     /// Last error observed by Bakery for this operation, if any.
     pub last_error: Option<String>,
+    /// Structured failure reason observed by Bakery for this operation, if any.
+    pub failure_reason: Option<String>,
 }
 
 /// Serializable snapshot of Bakery's retained runtime branch state for a TreeGuard node.

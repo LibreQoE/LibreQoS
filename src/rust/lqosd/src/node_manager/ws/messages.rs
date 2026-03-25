@@ -330,6 +330,13 @@ pub struct BakeryCapacityInterfaceData {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BakeryLiveCapacityInterfaceData {
+    pub name: String,
+    pub live_qdiscs: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BakeryPreflightData {
     pub ok: bool,
     pub message: String,
@@ -365,6 +372,9 @@ pub struct BakeryStatusState {
     pub last_apply_duration_ms: u64,
     pub runtime_operations: BakeryRuntimeOperationsData,
     pub queue_distribution: Vec<BakeryQueueDistributionData>,
+    pub live_capacity_interfaces: Vec<BakeryLiveCapacityInterfaceData>,
+    pub live_capacity_safe_budget: usize,
+    pub live_capacity_updated_at_unix: Option<u64>,
     pub preflight: Option<BakeryPreflightData>,
     pub reload_required: bool,
     pub reload_required_reason: Option<String>,
@@ -421,6 +431,7 @@ pub struct BakeryActivityEntry {
     pub event: String,
     pub status: String,
     pub summary: String,
+    pub site_hash: Option<i64>,
     pub site_name: Option<String>,
 }
 

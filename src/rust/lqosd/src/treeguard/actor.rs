@@ -10,14 +10,14 @@ use crate::system_stats::SystemStats;
 use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::treeguard::TreeguardError;
 use crate::treeguard::state::{
-    CircuitSqmState, CircuitState, LinkState, LinkVirtualState, is_sustained_idle,
-    is_sustained_window,
+    CircuitSqmState, CircuitState, LinkState, LinkStructuralIneligibleState,
+    LinkTopologyFingerprint, LinkVirtualState, is_sustained_idle, is_sustained_window,
 };
 use crate::treeguard::{bakery, decisions, overrides};
 use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_bakery::BakeryRuntimeNodeOperationStatus;
-use lqos_config::load_config;
+use lqos_bakery::{BakeryRuntimeNodeOperationFailureReason, BakeryRuntimeNodeOperationStatus};
+use lqos_config::{NetworkJsonNode, ShapedDevice, load_config};
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
@@ -288,6 +288,79 @@ fn current_topology_totals() -> (usize, usize) {
     };
 
     (total_nodes, total_circuits)
+}
+
+fn direct_child_site_counts_by_node(nodes: &[NetworkJsonNode]) -> Vec<usize> {
+    let mut counts = vec![0usize; nodes.len()];
+    for node in nodes {
+        if let Some(parent) = node.immediate_parent
+            && parent < counts.len()
+        {
+            counts[parent] = counts[parent].saturating_add(1);
+        }
+    }
+    counts
+}
+
+fn direct_circuit_counts_by_node(shaped_devices: &[ShapedDevice]) -> FxHashMap<String, usize> {
+    let mut circuits_by_node: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
+    for device in shaped_devices {
+        let node_name = device.parent_node.trim();
+        let circuit_id = device.circuit_id.trim();
+        if node_name.is_empty() || circuit_id.is_empty() {
+            continue;
+        }
+        circuits_by_node
+            .entry(node_name.to_string())
+            .or_default()
+            .insert(circuit_id);
+    }
+
+    circuits_by_node
+        .into_iter()
+        .map(|(node_name, circuits)| (node_name, circuits.len()))
+        .collect()
+}
+
+fn structural_failure_reason_label(
+    reason: BakeryRuntimeNodeOperationFailureReason,
+) -> &'static str {
+    match reason {
+        BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren => {
+            "no promotable children"
+        }
+        BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
+            "single promotable child"
+        }
+    }
+}
+
+fn clear_structural_ineligible_if_topology_changed(
+    state: &mut LinkState,
+    new_topology_fingerprint: LinkTopologyFingerprint,
+) -> bool {
+    if state
+        .structural_ineligible
+        .is_some_and(|latched| latched.topology_fingerprint != new_topology_fingerprint)
+    {
+        state.structural_ineligible = None;
+        return true;
+    }
+    false
+}
+
+fn latched_structural_ineligible_reason(
+    state: &LinkState,
+    target: LinkVirtualState,
+) -> Option<BakeryRuntimeNodeOperationFailureReason> {
+    if target != LinkVirtualState::Virtual {
+        return None;
+    }
+
+    state
+        .structural_ineligible
+        .filter(|latched| latched.topology_fingerprint == state.topology_fingerprint)
+        .map(|latched| latched.reason)
 }
 
 fn update_cached_snapshots(
@@ -1014,6 +1087,8 @@ fn run_tick(
         let parent_by_index: Vec<Option<usize>> =
             nodes.iter().map(|node| node.immediate_parent).collect();
         let subtree_node_counts = build_subtree_node_counts(&parent_by_index);
+        let direct_child_site_counts = direct_child_site_counts_by_node(nodes);
+        let direct_circuit_counts = direct_circuit_counts_by_node(&shaped.devices);
         let existing_virtualized_indices: FxHashSet<usize> = runtime_virtualized_nodes
             .iter()
             .filter_map(|node_name| reader.get_index_for_name(node_name))
@@ -1177,6 +1252,14 @@ fn run_tick(
                 state
             });
             prune_recent_changes(&mut state.recent_changes_unix, now_unix);
+            let topology_fingerprint = LinkTopologyFingerprint {
+                direct_child_sites: direct_child_site_counts.get(index).copied().unwrap_or(0),
+                direct_circuits: direct_circuit_counts.get(node_name).copied().unwrap_or(0),
+            };
+            if clear_structural_ineligible_if_topology_changed(state, topology_fingerprint) {
+                link_virtualization_backoff_until_unix.remove(node_name);
+            }
+            state.topology_fingerprint = topology_fingerprint;
 
             let ewma_down = state
                 .down
@@ -1321,6 +1404,23 @@ fn run_tick(
             if let decisions::LinkVirtualDecision::Set(target) = decision
                 && target != state.desired
             {
+                if let Some(reason) = latched_structural_ineligible_reason(state, target) {
+                    let details = structural_failure_reason_label(reason);
+                    warning_limiter.push(
+                        status,
+                        format!(
+                            "runtime_structural_ineligible|{}|{:?}",
+                            node_name, reason
+                        ),
+                        format!(
+                            "TreeGuard links: node '{node_name}' remains ineligible for runtime virtualization ({details}) until its direct topology changes."
+                        ),
+                        format!(
+                            "TreeGuard runtime structural-ineligible warnings for reason={details}"
+                        ),
+                    );
+                    continue;
+                }
                 let reason = if is_top_level {
                     match target {
                         LinkVirtualState::Virtual => format!(
@@ -1916,6 +2016,7 @@ fn reconcile_pending_link_operations(
                     state.desired = pending.target;
                     state.last_change_unix = Some(now_unix);
                     state.recent_changes_unix.push_back(now_unix);
+                    state.structural_ineligible = None;
                     prune_recent_changes(&mut state.recent_changes_unix, now_unix);
                 }
                 push_activity(
@@ -2014,12 +2115,22 @@ fn reconcile_pending_link_operations(
                 );
             }
             BakeryRuntimeNodeOperationStatus::Failed | BakeryRuntimeNodeOperationStatus::Dirty => {
+                let structural_ineligible = snapshot.failure_reason;
                 let until = now_unix.saturating_add(TREEGUARD_LINK_VIRTUALIZATION_BACKOFF_SECONDS);
-                link_virtualization_backoff_until_unix.insert(node_name.clone(), until);
+                if structural_ineligible.is_none() {
+                    link_virtualization_backoff_until_unix.insert(node_name.clone(), until);
+                } else {
+                    link_virtualization_backoff_until_unix.remove(&node_name);
+                }
                 pending_link_operations.remove(&node_name);
                 if let Some(state) = link_states.get_mut(&node_name) {
                     state.desired =
                         current_link_virtual_state(runtime_virtualized_nodes, &node_name);
+                    state.structural_ineligible =
+                        structural_ineligible.map(|reason| LinkStructuralIneligibleState {
+                            reason,
+                            topology_fingerprint: state.topology_fingerprint,
+                        });
                 }
                 let details = snapshot.last_error.unwrap_or_else(|| {
                     format!("Bakery operation {} failed", snapshot.operation_id)
@@ -2029,14 +2140,30 @@ fn reconcile_pending_link_operations(
                 } else {
                     "restore"
                 };
-                warning_limiter.push(
-                    status,
-                    format!("runtime_failed|{target_label}|{details}"),
-                    format!(
-                        "TreeGuard links: failed to apply runtime {target_label} for node '{node_name}': {details}. Backing off until {until}."
-                    ),
-                    format!("TreeGuard failed runtime {target_label} warnings for reason={details}"),
-                );
+                if let Some(reason) = structural_ineligible {
+                    let reason_label = structural_failure_reason_label(reason);
+                    warning_limiter.push(
+                        status,
+                        format!("runtime_structural_ineligible|{target_label}|{:?}", reason),
+                        format!(
+                            "TreeGuard links: node '{node_name}' is structurally ineligible for runtime {target_label} ({reason_label}): {details}. TreeGuard will retry only after the node's direct topology changes."
+                        ),
+                        format!(
+                            "TreeGuard runtime structural-ineligible {target_label} warnings for reason={reason_label}"
+                        ),
+                    );
+                } else {
+                    warning_limiter.push(
+                        status,
+                        format!("runtime_failed|{target_label}|{details}"),
+                        format!(
+                            "TreeGuard links: failed to apply runtime {target_label} for node '{node_name}': {details}. Backing off until {until}."
+                        ),
+                        format!(
+                            "TreeGuard failed runtime {target_label} warnings for reason={details}"
+                        ),
+                    );
+                }
                 push_activity(
                     activity,
                     TreeguardActivityEntry {
@@ -2967,7 +3094,8 @@ mod tests {
         CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, LinkVirtualState,
         PendingLinkVirtualizationDecision, TreeguardRuntimeState, apply_circuit_sqm_change,
         apply_link_virtualization_decision, base_circuit_sqm_state, circuit_evaluation_batch_size,
-        circuit_sqm_transition_from_decision, collect_circuit_batch, empty_status_snapshot,
+        circuit_sqm_transition_from_decision, clear_structural_ineligible_if_topology_changed,
+        collect_circuit_batch, empty_status_snapshot, latched_structural_ineligible_reason,
         pause_for_bakery_reload_with_flag, process_circuit_tick, run_tick,
         select_link_virtualization_candidates, treeguard_manages_circuit_direction,
         try_consume_circuit_change_budget,
@@ -2977,10 +3105,15 @@ mod tests {
     use crate::system_stats::SystemStats;
     use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
     use crate::treeguard::decisions;
-    use crate::treeguard::{bakery, state::CircuitSqmState, state::LinkState};
+    use crate::treeguard::{
+        bakery,
+        state::{
+            CircuitSqmState, LinkState, LinkStructuralIneligibleState, LinkTopologyFingerprint,
+        },
+    };
     use crossbeam_channel::bounded;
     use fxhash::{FxHashMap, FxHashSet};
-    use lqos_bakery::BakeryCommands;
+    use lqos_bakery::{BakeryCommands, BakeryRuntimeNodeOperationFailureReason};
     use lqos_bus::TcHandle;
     use lqos_config::ConfigShapedDevices;
     use lqos_config::ShapedDevice;
@@ -3286,6 +3419,53 @@ mod tests {
         assert_eq!(selected[0].node_name, "large-auto");
         assert_eq!(deferred, 0);
         assert_eq!(skipped_low_value, 0);
+    }
+
+    #[test]
+    fn structural_ineligible_latch_blocks_virtualize_until_topology_changes() {
+        let mut state = LinkState {
+            topology_fingerprint: LinkTopologyFingerprint {
+                direct_child_sites: 0,
+                direct_circuits: 0,
+            },
+            structural_ineligible: Some(LinkStructuralIneligibleState {
+                reason:
+                    BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren,
+                topology_fingerprint: LinkTopologyFingerprint {
+                    direct_child_sites: 0,
+                    direct_circuits: 0,
+                },
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            latched_structural_ineligible_reason(&state, LinkVirtualState::Virtual),
+            Some(BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren)
+        );
+        assert_eq!(
+            latched_structural_ineligible_reason(&state, LinkVirtualState::Physical),
+            None
+        );
+
+        let changed = clear_structural_ineligible_if_topology_changed(
+            &mut state,
+            LinkTopologyFingerprint {
+                direct_child_sites: 1,
+                direct_circuits: 0,
+            },
+        );
+        state.topology_fingerprint = LinkTopologyFingerprint {
+            direct_child_sites: 1,
+            direct_circuits: 0,
+        };
+
+        assert!(changed);
+        assert!(state.structural_ineligible.is_none());
+        assert_eq!(
+            latched_structural_ineligible_reason(&state, LinkVirtualState::Virtual),
+            None
+        );
     }
 
     #[test]
