@@ -6,6 +6,10 @@ import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
 const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
+const compactAsnLabel = (label) => {
+    if (!label) return "";
+    return label.length > 16 ? `${label.slice(0, 15)}…` : label;
+};
 
 export class Top10FlowsRate extends DashletBaseInsight {
     constructor(slot) {
@@ -44,7 +48,7 @@ export class Top10FlowsRate extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("dash-table", "table-sm", "small");
+            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small", "lqos-topflow-table");
 
             let th = document.createElement("thead");
             th.classList.add("small");
@@ -68,21 +72,32 @@ export class Top10FlowsRate extends DashletBaseInsight {
 
                 if (r.circuit_id !== "") {
                     let circuit = document.createElement("td");
+                    circuit.classList.add("lqos-topflow-key-cell");
                     let link = document.createElement("a");
                     link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
                     link.innerText = TrimToFit(r.circuit_name);
-                    link.classList.add("redactable");
+                    link.title = r.circuit_name || "";
+                    link.classList.add("redactable", "lqos-table-cell-ellipsis");
                     circuit.appendChild(link);
                     row.appendChild(circuit);
                 } else {
                     let localIp = document.createElement("td");
-                    localIp.innerText = r.local_ip;
-                    localIp.classList.add("redactable");
+                    localIp.classList.add("lqos-topflow-key-cell");
+                    const localIpText = document.createElement("span");
+                    localIpText.innerText = r.local_ip;
+                    localIpText.title = r.local_ip || "";
+                    localIpText.classList.add("redactable", "lqos-table-cell-ellipsis");
+                    localIp.appendChild(localIpText);
                     row.appendChild(localIp);
                 }
 
                 let proto = document.createElement("td");
-                proto.innerText = r.analysis;
+                proto.classList.add("lqos-topflow-protocol-cell");
+                const protoText = document.createElement("span");
+                protoText.innerText = r.analysis;
+                protoText.title = r.analysis || "";
+                protoText.classList.add("lqos-table-cell-ellipsis");
+                proto.appendChild(protoText);
                 row.appendChild(proto);
 
                 let dl = document.createElement("td");
@@ -131,15 +146,15 @@ export class Top10FlowsRate extends DashletBaseInsight {
                 const asnLabel = (r.remote_asn_name && r.remote_asn_name.length > 0) ? r.remote_asn_name : r.remote_ip;
                 const asnText = document.createElement("span");
                 asnText.classList.add("lqos-table-cell-ellipsis");
-                if (asnLabel && asnLabel.length > 13) {
+                if (asnLabel && asnLabel.length > 16) {
                     asnText.classList.add("tiny");
                 }
-                asnText.textContent = asnLabel || "";
+                asnText.textContent = compactAsnLabel(asnLabel || "");
                 asnText.title = asnLabel || "";
                 asn.appendChild(asnText);
                 row.appendChild(asn);
 
-                t.appendChild(row);
+                tbody.appendChild(row);
             });
             t.appendChild(tbody);
 

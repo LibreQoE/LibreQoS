@@ -86,12 +86,6 @@ export class BakeryStatusSummaryDashlet extends BaseDashlet {
         this.renderStatus();
     }
 
-    onCadence() {
-        if (this.lastStatus?.mode === "ApplyingFullReload" || this.lastStatus?.mode === "ApplyingLiveChange") {
-            this.renderStatus();
-        }
-    }
-
     renderStatus() {
         const status = this.lastStatus || {};
 

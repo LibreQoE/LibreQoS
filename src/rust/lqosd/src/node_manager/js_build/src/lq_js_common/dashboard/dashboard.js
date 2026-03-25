@@ -47,7 +47,6 @@ export class Dashboard {
         this.channels = [];
         this.tabChannels = {};
         this.pendingImmediateDashlets = new Set();
-        this.activatedTabs = new Set();
         this.wsClient = get_ws_client();
         this.channelDisposers = new Map();
         this.subscribedChannels = new Set();
@@ -203,7 +202,6 @@ export class Dashboard {
             activeTab: this.layout.activeTab,
             cadence: this.cadence,
             paused: this.paused,
-            activatedTabs: Array.from(this.activatedTabs),
             desiredChannels,
             subscribedChannels,
             lastMessageChannels: Array.from(this.lastMessages.keys()),
@@ -243,7 +241,6 @@ export class Dashboard {
         this.#filterWidgetList();
         this.#buildTabUI();
         this.#buildTabContents();
-        this.activatedTabs.add(this.layout.activeTab);
         this.#buildChannelList(this.dashlets);
         const renderableDashlets = this.#renderableDashlets();
         this.#debug("build", {
@@ -281,7 +278,6 @@ export class Dashboard {
         this.tabChannels = {};
         this.childIds = [];
         this.pendingImmediateDashlets.clear();
-        this.activatedTabs = new Set();
         this.lastMessages.clear();
         this.#clearRenderedDashboard();
     }
@@ -359,7 +355,6 @@ export class Dashboard {
 
         // Update active tab in layout
         this.layout.activeTab = tabIndex;
-        this.activatedTabs.add(tabIndex);
         this.layout.save(this.layout);
         
         // Update tab navigation
@@ -470,7 +465,7 @@ export class Dashboard {
     }
 
     #dashletShouldStayActive(dashlet) {
-        return dashlet.keepSubscribedWhenHidden() || this.activatedTabs.has(dashlet.tabIndex);
+        return dashlet.keepSubscribedWhenHidden() || dashlet.tabIndex === this.layout.activeTab;
     }
 
     #subscribedDashlets() {

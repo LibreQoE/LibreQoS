@@ -81,13 +81,6 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         return ["BakeryStatus"];
     }
 
-    onCadence() {
-        if (!this.lastStatus) return;
-        if (this.lastStatus.mode === "ApplyingFullReload" || this.lastStatus.mode === "ApplyingLiveChange") {
-            this.renderStatus(this.lastStatus);
-        }
-    }
-
     buildContainer() {
         const base = super.buildContainer();
         const wrap = document.createElement("div");
