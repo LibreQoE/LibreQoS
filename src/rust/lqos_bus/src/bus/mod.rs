@@ -19,8 +19,8 @@ pub use request::{
 #[allow(unused_imports)]
 pub use response::{
     AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
-    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeOperationSnapshot,
-    UrgentIssue,
+    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeBranchSnapshot,
+    TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
 };
 pub use session::BusSession;
 use thiserror::Error;

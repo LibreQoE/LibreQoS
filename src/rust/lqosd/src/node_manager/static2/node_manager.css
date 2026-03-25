@@ -1772,3 +1772,62 @@ table tr td a {
     font-weight: 100 900;
     font-display: swap;
 }
+
+.bakery-pipeline-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.bakery-pipeline-row {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.bakery-pipeline-cell {
+    min-width: 0;
+}
+
+.bakery-pipeline-stage {
+    min-height: 8.1rem;
+}
+
+.bakery-pipeline-stage-top,
+.bakery-pipeline-stage-title,
+.bakery-pipeline-stage-status,
+.bakery-pipeline-stage-footer {
+    min-width: 0;
+}
+
+.bakery-pipeline-stage-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bakery-pipeline-stage-status {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    line-height: 1.3;
+    min-height: 2.6em;
+}
+
+.bakery-pipeline-stage-footer {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 1.6rem;
+}
+
+@media (min-width: 768px) {
+    .bakery-pipeline-row-top {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .bakery-pipeline-row-bottom {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

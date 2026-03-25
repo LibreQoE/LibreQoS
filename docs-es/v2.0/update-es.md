@@ -39,6 +39,13 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
+Si ya te topaste con un instalador anterior del hotfix que se detiene con `Packages were downgraded and -y was used without --allow-downgrades`, vuelve a ejecutar una vez la instalación de paquetes con:
+
+```bash
+sudo apt-get install -y --allow-downgrades /tmp/libreqos-systemd-hotfix.*/*.deb
+sudo reboot
+```
+
 Después del reinicio, reanuda la actualización y reinicia los servicios:
 
 ```bash

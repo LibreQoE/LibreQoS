@@ -39,9 +39,14 @@ export function formatElapsedSince(unixSeconds) {
     if (delta < 3600) {
         return `${Math.floor(delta / 60)}m ${delta % 60}s`;
     }
-    const hours = Math.floor(delta / 3600);
-    const mins = Math.floor((delta % 3600) / 60);
-    return `${hours}h ${mins}m`;
+    if (delta < 86_400) {
+        const hours = Math.floor(delta / 3600);
+        const mins = Math.floor((delta % 3600) / 60);
+        return `${hours}h ${mins}m`;
+    }
+    const days = Math.floor(delta / 86_400);
+    const hours = Math.floor((delta % 86_400) / 3600);
+    return `${days}d ${hours}h`;
 }
 
 export function mkBadge(text, className, title = "") {

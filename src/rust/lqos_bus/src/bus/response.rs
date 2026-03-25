@@ -71,6 +71,31 @@ pub struct TreeGuardRuntimeNodeOperationSnapshot {
     pub last_error: Option<String>,
 }
 
+/// Serializable snapshot of Bakery's retained runtime branch state for a TreeGuard node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct TreeGuardRuntimeNodeBranchSnapshot {
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Which retained branch is currently active (`shadow` or `original`).
+    pub active_branch: String,
+    /// Current runtime lifecycle label for the node.
+    pub lifecycle: String,
+    /// Whether Bakery is still waiting to prune the inactive branch.
+    pub pending_prune: bool,
+    /// Optional unix timestamp for the next prune/cleanup retry, if one is pending.
+    pub next_prune_attempt_unix: Option<u64>,
+    /// Hashes of branch sites currently marked active.
+    pub active_site_hashes: Vec<i64>,
+    /// Hashes of original/saved sites retained for restore logic.
+    pub saved_site_hashes: Vec<i64>,
+    /// Hashes of inactive-branch sites queued for pruning.
+    pub prune_site_hashes: Vec<i64>,
+    /// Observed downlink qdisc major for the runtime root, if known.
+    pub qdisc_down_major: Option<u16>,
+    /// Observed uplink qdisc major for the runtime root, if known.
+    pub qdisc_up_major: Option<u16>,
+}
+
 /// Circuit-level TemporalHeatmap data for the executive summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct CircuitHeatmapData {
@@ -659,4 +684,7 @@ pub enum BusResponse {
 
     /// Latest Bakery runtime node-operation snapshot for a named TreeGuard node, if any.
     TreeGuardRuntimeNodeOperation(Option<TreeGuardRuntimeNodeOperationSnapshot>),
+
+    /// Latest Bakery runtime branch-state snapshot for a named TreeGuard node, if any.
+    TreeGuardRuntimeNodeBranch(Option<TreeGuardRuntimeNodeBranchSnapshot>),
 }

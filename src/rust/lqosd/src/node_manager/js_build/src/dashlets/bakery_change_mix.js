@@ -45,16 +45,88 @@ function statusTone(status) {
     }
 }
 
+function statusBadgeClass(status) {
+    switch (status) {
+        case "Submitted":
+            return "bg-primary-subtle text-primary border border-primary-subtle";
+        case "Applying":
+            return "bg-info-subtle text-info border border-info-subtle";
+        case "Deferred":
+        case "AppliedAwaitingCleanup":
+            return "bg-warning-subtle text-warning border border-warning-subtle";
+        case "Dirty":
+        case "Failed":
+            return "bg-danger-subtle text-danger border border-danger-subtle";
+        case "Completed":
+            return "bg-success-subtle text-success border border-success-subtle";
+        default:
+            return "bg-light text-secondary border";
+    }
+}
+
+function siteLabelFor(latest) {
+    const name = (latest?.siteName ?? "").toString().trim();
+    return name || `site ${latest?.siteHash ?? "?"}`;
+}
+
+function actionWords(action) {
+    if ((action ?? "").toString().trim() === "Restore") {
+        return {
+            base: "Restore",
+            progressive: "Restoring",
+            completed: "Restored",
+        };
+    }
+
+    return {
+        base: "Virtualize",
+        progressive: "Virtualizing",
+        completed: "Virtualized",
+    };
+}
+
+function latestActionLabel(latest) {
+    const words = actionWords(latest?.action);
+    const site = siteLabelFor(latest);
+    switch (latest?.status) {
+        case "Completed":
+            return `${words.completed} ${site}`;
+        case "Applying":
+        case "AppliedAwaitingCleanup":
+            return `${words.progressive} ${site}`;
+        case "Deferred":
+            return `${words.base} deferred for ${site}`;
+        case "Submitted":
+            return `${words.base} requested for ${site}`;
+        case "Failed":
+            return `${words.base} failed for ${site}`;
+        case "Dirty":
+            return `${words.base} needs reload for ${site}`;
+        default:
+            return `${words.base} ${site}`;
+    }
+}
+
 function statCard(label, value, tone = "text-primary") {
     const wrap = document.createElement("div");
-    wrap.classList.add("border", "rounded", "p-2", "bg-body-tertiary", "h-100");
+    wrap.classList.add(
+        "d-flex",
+        "align-items-center",
+        "justify-content-between",
+        "gap-2",
+        "border",
+        "rounded",
+        "px-2",
+        "py-1",
+        "bg-body-tertiary",
+    );
 
     const top = document.createElement("div");
-    top.classList.add("small", "text-body-secondary");
+    top.classList.add("small", "text-body-secondary", "text-truncate");
     top.textContent = label;
 
     const bottom = document.createElement("div");
-    bottom.classList.add("fw-semibold", tone);
+    bottom.classList.add("fw-semibold", tone, "small");
     bottom.textContent = value;
 
     wrap.appendChild(top);
@@ -69,11 +141,11 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
     }
 
     title() {
-        return "Runtime Operations";
+        return "Live Topology Changes";
     }
 
     tooltip() {
-        return "<h5>Bakery Runtime Operations</h5><p>Shows live TreeGuard/Bakery runtime mutations, including queued requests, active virtualization work, deferred/backed-off operations, deferred cleanup, failures, and whether incremental topology changes are currently frozen.</p>";
+        return "<h5>Live Topology Changes</h5><p>Shows human-readable TreeGuard and Bakery runtime changes, including queued requests, active virtualization work, deferred cleanup, failures, and whether incremental topology changes are currently frozen.</p>";
     }
 
     subscribeTo() {
@@ -86,10 +158,10 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
         wrap.classList.add("p-2");
 
         this.summaryGrid = document.createElement("div");
-        this.summaryGrid.classList.add("row", "g-2", "mb-3");
+        this.summaryGrid.classList.add("d-flex", "flex-wrap", "gap-2", "mb-2");
 
         this.latestWrap = document.createElement("div");
-        this.latestWrap.classList.add("border", "rounded", "p-2", "mb-3");
+        this.latestWrap.classList.add("border", "rounded", "px-2", "py-2", "mb-2");
 
         this.badgeWrap = document.createElement("div");
         this.badgeWrap.classList.add("d-flex", "flex-wrap", "gap-2", "mb-2");
@@ -139,10 +211,8 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             statCard("Failed", compactCount(failed), failed > 0 ? "text-danger" : "text-body"),
             statCard("Dirty", compactCount(dirty), dirty > 0 ? "text-danger" : "text-body"),
         ].forEach((card) => {
-            const col = document.createElement("div");
-            col.classList.add("col-6");
-            col.appendChild(card);
-            this.summaryGrid.appendChild(col);
+            card.style.minWidth = "calc(50% - 0.25rem)";
+            this.summaryGrid.appendChild(card);
         });
 
         this.badgeWrap.innerHTML = "";
@@ -150,16 +220,25 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             this.badgeWrap.appendChild(
                 mkBadge("Reload Required", "bg-danger-subtle text-danger border border-danger-subtle", status?.reloadRequiredReason || ""),
             );
-        } else if (applying + cleanup + failed + dirty + deferred + submitted === 0) {
+        }
+
+        if (latest?.status) {
+            this.badgeWrap.appendChild(
+                mkBadge(latest.status, statusBadgeClass(latest.status), latest?.lastError || latestActionLabel(latest)),
+            );
+        } else if (!status?.reloadRequired && applying + cleanup + failed + dirty + deferred + submitted === 0) {
             this.badgeWrap.appendChild(mkBadge("Idle", "bg-light text-secondary border"));
         }
 
         if (latest) {
             this.latestMain.className = `fw-semibold mb-1 ${statusTone(latest.status)}`;
-            this.latestMain.textContent = `${latest.action} site ${latest.siteHash} • ${latest.status}`;
+            this.latestMain.textContent = latestActionLabel(latest);
 
             const meta = [];
             meta.push(`Op ${latest.operationId}`);
+            if (!latest?.siteName) {
+                meta.push(`site hash ${latest.siteHash}`);
+            }
             meta.push(`updated ${formatElapsedSince(latest.updatedAtUnix)} ago`);
             if (Number.isFinite(latest.attemptCount) && latest.attemptCount > 1) {
                 meta.push(`${latest.attemptCount} attempts`);

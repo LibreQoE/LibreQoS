@@ -110,6 +110,15 @@ into the base `network.json` by the scheduler, and they are not persisted as Tre
 restart returns the physical tree to the base operator-defined topology until TreeGuard decides
 again.
 
+For local runtime verification and debugging, `liblqos_python` now exposes both the current
+TreeGuard node-operation status and a Bakery runtime branch-state snapshot. The branch-state
+snapshot is the authoritative control-plane view of which retained branch is active for a node, and
+is more reliable than inferring parent changes from `tc` output alone for non-top-level cases.
+The local confidence workflow also now uses a larger synthetic Bakery TreeGuard fixture for scale
+checks: 8 top-level nodes, 3 levels deep, and 1,000 circuits attached only at the lowest level.
+When traffic-backed verification is enabled, the runtime verifier now defaults to 10 tracked
+circuits per successful case instead of the earlier smaller smoke-test default.
+
 TreeGuard circuit SQM decisions are also runtime overrides. The scheduler does not materialize TreeGuard-owned SQM changes back into the base `ShapedDevices.csv`, so clearing TreeGuard does not permanently rewrite operator-authored circuit SQM policy.
 
 TreeGuard also refuses to manage nodes that are already marked `"virtual": true` in the base `network.json`. If stale legacy TreeGuard-owned node-virtualization overrides exist for those nodes, TreeGuard clears that legacy override state and falls back to the base topology definition.

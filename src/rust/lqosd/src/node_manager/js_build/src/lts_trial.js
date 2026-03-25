@@ -721,13 +721,13 @@ function attachEventHandlers() {
                 showSection('successSection');
                 $('#successMessage').html(`
                     <strong>License Key:</strong> ${response.licenseKey}<br>
-                    <small>An email with your license key and portal access has been sent to your email address.</small>
+                    <small>Your trial is almost active. Watch for an email from Insight to add billing details within 2 days. No charge occurs until the trial ends, and you can cancel any time.</small>
                 `);
                 $('#configStatus').text('Saving configuration...');
 
                 wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
-                $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
+                $('#configStatus').html(`Your Insight trial has been created. Add billing details from the Insight email within 2 days to keep the trial active.`);
                 setTimeout(() => {
                     $('#configSpinner').hide();
                     $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);

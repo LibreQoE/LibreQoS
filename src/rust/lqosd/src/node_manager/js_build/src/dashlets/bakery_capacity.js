@@ -109,41 +109,6 @@ export class BakeryCapacityDashlet extends BaseDashlet {
         table.appendChild(this.interfacesTbody);
         tableWrap.appendChild(table);
         wrap.appendChild(tableWrap);
-
-        const safetyWrap = document.createElement("div");
-        safetyWrap.classList.add("lqos-table-wrap");
-
-        const safetyTable = document.createElement("table");
-        safetyTable.classList.add("lqos-table", "lqos-table-compact", "mb-0", "small");
-        const safetyBody = document.createElement("tbody");
-
-        const mkRow = (label) => {
-            const tr = document.createElement("tr");
-            const tdL = document.createElement("td");
-            tdL.classList.add("table-label-cell");
-            tdL.style.width = "44%";
-            tdL.textContent = label;
-            const tdV = document.createElement("td");
-            tdV.classList.add("table-value-cell");
-            const valueEl = document.createElement("span");
-            valueEl.textContent = "—";
-            tdV.appendChild(valueEl);
-            tr.appendChild(tdL);
-            tr.appendChild(tdV);
-            safetyBody.appendChild(tr);
-            return {tr, valueEl};
-        };
-
-        this.safeBudgetRow = mkRow("Safe Budget");
-        this.hardLimitRow = mkRow("Kernel Limit");
-        this.estimatedMemoryRow = mkRow("Est. Memory");
-        this.availableMemoryRow = mkRow("Avail. Memory");
-        this.memoryFloorRow = mkRow("Safety Floor");
-        this.memoryHeadroomRow = mkRow("Headroom");
-
-        safetyTable.appendChild(safetyBody);
-        safetyWrap.appendChild(safetyTable);
-        wrap.appendChild(safetyWrap);
         base.appendChild(wrap);
         return base;
     }
@@ -164,7 +129,6 @@ export class BakeryCapacityDashlet extends BaseDashlet {
         this.interfacesTbody.innerHTML = "";
 
         if (!this.lastPreflight) {
-            this.setSafetySummary({});
             const tr = document.createElement("tr");
             const td = document.createElement("td");
             td.colSpan = 4;
@@ -183,7 +147,6 @@ export class BakeryCapacityDashlet extends BaseDashlet {
                 return (left?.name || "").localeCompare(right?.name || "");
             })
             : [];
-        this.setSafetySummary(this.lastPreflight);
 
         if (interfaces.length === 0) {
             const tr = document.createElement("tr");
@@ -275,46 +238,5 @@ export class BakeryCapacityDashlet extends BaseDashlet {
             tr.appendChild(tdMix);
             this.interfacesTbody.appendChild(tr);
         });
-    }
-
-    setSafetySummary(preflight) {
-        const setText = (row, value, className = "") => {
-            row.valueEl.textContent = value;
-            row.valueEl.className = className;
-        };
-        const setVisible = (row, visible) => {
-            row.tr.hidden = !visible;
-        };
-
-        setText(this.safeBudgetRow, Number.isFinite(preflight?.safeBudget) ? preflight.safeBudget.toLocaleString() : "—");
-        setText(this.hardLimitRow, Number.isFinite(preflight?.hardLimit) ? preflight.hardLimit.toLocaleString() : "—");
-        setText(
-            this.estimatedMemoryRow,
-            Number.isFinite(preflight?.estimatedTotalMemoryBytes) ? formatBinaryBytes(preflight.estimatedTotalMemoryBytes) : "—",
-        );
-        setVisible(this.availableMemoryRow, Number.isFinite(preflight?.memoryAvailableBytes));
-        setVisible(
-            this.memoryFloorRow,
-            Number.isFinite(preflight?.memoryAvailableBytes) && Number.isFinite(preflight?.memoryGuardMinAvailableBytes),
-        );
-        const headroom = Number.isFinite(preflight?.memoryAvailableBytes)
-            && Number.isFinite(preflight?.memoryGuardMinAvailableBytes)
-            ? preflight.memoryAvailableBytes - preflight.memoryGuardMinAvailableBytes
-            : null;
-        setVisible(this.memoryHeadroomRow, headroom !== null);
-
-        if (Number.isFinite(preflight?.memoryAvailableBytes)) {
-            setText(this.availableMemoryRow, formatBinaryBytes(preflight.memoryAvailableBytes));
-        }
-        if (Number.isFinite(preflight?.memoryGuardMinAvailableBytes)) {
-            setText(this.memoryFloorRow, formatBinaryBytes(preflight.memoryGuardMinAvailableBytes));
-        }
-        if (headroom !== null) {
-            setText(
-                this.memoryHeadroomRow,
-                `${headroom >= 0 ? "+" : "-"}${formatBinaryBytes(Math.abs(headroom))}`,
-                headroom < 0 ? "text-danger" : "",
-            );
-        }
     }
 }

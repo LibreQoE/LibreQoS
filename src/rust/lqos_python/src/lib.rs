@@ -984,6 +984,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
     m.add_function(wrap_pyfunction!(treeguard_set_node_virtual_live, m)?)?;
     m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_status, m)?)?;
+    m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_branch_state, m)?)?;
     m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
     // Planner remote fetch/store for Insight integration
     m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;
@@ -3172,6 +3173,39 @@ fn treeguard_get_node_virtual_status(
             d.set_item("updated_at_unix", snapshot.updated_at_unix)?;
             d.set_item("next_retry_at_unix", snapshot.next_retry_at_unix)?;
             d.set_item("last_error", snapshot.last_error)?;
+            return Ok(Some(d.unbind()));
+        }
+    }
+    Ok(None)
+}
+
+/// Fetch the latest Bakery runtime branch-state snapshot for a named node, if one is retained.
+#[pyfunction]
+fn treeguard_get_node_virtual_branch_state(
+    py: Python,
+    node_name: String,
+) -> PyResult<Option<Py<PyDict>>> {
+    let Ok(reply) = run_query(vec![BusRequest::TreeGuardGetNodeVirtualBranchState {
+        node_name,
+    }]) else {
+        return Ok(None);
+    };
+    for resp in reply {
+        if let BusResponse::TreeGuardRuntimeNodeBranch(snapshot) = resp {
+            let Some(snapshot) = snapshot else {
+                return Ok(None);
+            };
+            let d = PyDict::new(py);
+            d.set_item("site_hash", snapshot.site_hash)?;
+            d.set_item("active_branch", snapshot.active_branch)?;
+            d.set_item("lifecycle", snapshot.lifecycle)?;
+            d.set_item("pending_prune", snapshot.pending_prune)?;
+            d.set_item("next_prune_attempt_unix", snapshot.next_prune_attempt_unix)?;
+            d.set_item("active_site_hashes", snapshot.active_site_hashes)?;
+            d.set_item("saved_site_hashes", snapshot.saved_site_hashes)?;
+            d.set_item("prune_site_hashes", snapshot.prune_site_hashes)?;
+            d.set_item("qdisc_down_major", snapshot.qdisc_down_major)?;
+            d.set_item("qdisc_up_major", snapshot.qdisc_up_major)?;
             return Ok(Some(d.unbind()));
         }
     }

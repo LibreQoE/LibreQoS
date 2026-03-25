@@ -4,7 +4,9 @@
 
 use crate::treeguard::TreeguardError;
 use crossbeam_channel::Sender;
-use lqos_bakery::{BakeryCommands, BakeryRuntimeNodeOperationSnapshot};
+use lqos_bakery::{
+    BakeryCommands, BakeryRuntimeNodeBranchSnapshot, BakeryRuntimeNodeOperationSnapshot,
+};
 use lqos_config::ShapedDevice;
 use lqos_queue_tracker::{QUEUE_STRUCTURE, QueueNode};
 use lqos_utils::hash_to_i64;
@@ -160,6 +162,14 @@ pub(crate) fn node_virtualization_operation_status(
 ) -> Option<BakeryRuntimeNodeOperationSnapshot> {
     let site_hash = hash_to_i64(node_name);
     lqos_bakery::bakery_runtime_node_operation_snapshot(site_hash)
+}
+
+/// Returns the latest Bakery runtime branch-state snapshot for a node, if Bakery retains one.
+pub(crate) fn node_virtualization_branch_state(
+    node_name: &str,
+) -> Option<BakeryRuntimeNodeBranchSnapshot> {
+    let site_hash = hash_to_i64(node_name);
+    lqos_bakery::bakery_runtime_node_branch_snapshot(site_hash)
 }
 
 /// Builds a comma-separated IP list string from a circuit's shaped devices.

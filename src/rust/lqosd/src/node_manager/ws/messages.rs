@@ -354,6 +354,7 @@ pub struct BakeryStatusState {
     pub current_apply_total_chunks: usize,
     pub current_apply_completed_chunks: usize,
     pub last_success_unix: Option<u64>,
+    pub last_full_reload_success_unix: Option<u64>,
     pub last_failure_unix: Option<u64>,
     pub last_failure_summary: Option<String>,
     pub last_apply_type: String,
@@ -404,6 +405,7 @@ pub struct BakeryRuntimeOperationsData {
 pub struct BakeryRuntimeOperationHeadlineData {
     pub operation_id: u64,
     pub site_hash: i64,
+    pub site_name: Option<String>,
     pub action: String,
     pub status: String,
     pub attempt_count: u32,
@@ -419,6 +421,7 @@ pub struct BakeryActivityEntry {
     pub event: String,
     pub status: String,
     pub summary: String,
+    pub site_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -20,6 +20,7 @@ function renderStage(host, iconClass, title, statusText, tone, footerNode = null
     host.innerHTML = "";
     host.className = "";
     host.classList.add(
+        "bakery-pipeline-stage",
         "border",
         "rounded",
         "p-2",
@@ -32,14 +33,14 @@ function renderStage(host, iconClass, title, statusText, tone, footerNode = null
     stageClasses(tone).forEach((cls) => host.classList.add(cls));
 
     const top = document.createElement("div");
-    top.classList.add("d-flex", "align-items-center", "gap-2");
+    top.classList.add("bakery-pipeline-stage-top", "d-flex", "align-items-center", "gap-2");
 
     const icon = document.createElement("i");
     icon.classList.add("fa", "fa-fw", iconClass);
     top.appendChild(icon);
 
     const titleWrap = document.createElement("div");
-    titleWrap.classList.add("fw-semibold");
+    titleWrap.classList.add("bakery-pipeline-stage-title", "fw-semibold");
     if (titleNode) {
         titleWrap.appendChild(titleNode);
     } else {
@@ -49,14 +50,16 @@ function renderStage(host, iconClass, title, statusText, tone, footerNode = null
     host.appendChild(top);
 
     const status = document.createElement("div");
-    status.classList.add("fw-semibold");
+    status.classList.add("bakery-pipeline-stage-status", "fw-semibold");
     status.textContent = statusText;
+    status.title = statusText;
     host.appendChild(status);
 
     if (footerNode) {
         const footer = document.createElement("div");
-        footer.classList.add("text-body-secondary");
+        footer.classList.add("bakery-pipeline-stage-footer", "text-body-secondary");
         footer.appendChild(footerNode);
+        footer.title = footer.textContent || "";
         host.appendChild(footer);
     }
 }
@@ -92,17 +95,31 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         const wrap = document.createElement("div");
         wrap.classList.add("p-2");
 
-        const grid = document.createElement("div");
-        grid.classList.add("row", "g-2");
+        const layout = document.createElement("div");
+        layout.classList.add("bakery-pipeline-layout");
+        const topRow = document.createElement("div");
+        topRow.classList.add("bakery-pipeline-row", "bakery-pipeline-row-top");
+        const bottomRow = document.createElement("div");
+        bottomRow.classList.add("bakery-pipeline-row", "bakery-pipeline-row-bottom");
         this.stageEls = [];
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
             const col = document.createElement("div");
-            col.classList.add("col-6", "col-xl");
+            col.classList.add("bakery-pipeline-cell");
             const stage = document.createElement("div");
             col.appendChild(stage);
-            grid.appendChild(col);
+            topRow.appendChild(col);
             this.stageEls.push(stage);
         }
+        for (let i = 0; i < 2; i++) {
+            const col = document.createElement("div");
+            col.classList.add("bakery-pipeline-cell");
+            const stage = document.createElement("div");
+            col.appendChild(stage);
+            bottomRow.appendChild(col);
+            this.stageEls.push(stage);
+        }
+        layout.appendChild(topRow);
+        layout.appendChild(bottomRow);
 
         this.progressWrap = document.createElement("div");
         this.progressWrap.classList.add("mt-3");
@@ -135,7 +152,7 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         this.footerEl = document.createElement("div");
         this.footerEl.classList.add("small", "text-body-secondary", "mt-2");
 
-        wrap.appendChild(grid);
+        wrap.appendChild(layout);
         wrap.appendChild(this.alertEl);
         wrap.appendChild(this.progressWrap);
         wrap.appendChild(this.footerEl);
@@ -186,13 +203,13 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         );
 
         const buildFooter = document.createElement("span");
-        buildFooter.textContent = formatDurationMs(status.lastBuildDurationMs);
+        buildFooter.textContent = formatElapsedSince(status.lastFullReloadSuccessUnix);
         renderStage(
             this.stageEls[2],
             "fa-cubes",
             "Build",
             applying ? (status.currentApplyPhase || "Preparing commands") : "Last build",
-            applying ? "active" : (status.lastBuildDurationMs > 0 ? "ok" : "idle"),
+            applying ? "active" : (status.lastFullReloadSuccessUnix ? "ok" : "idle"),
             buildFooter,
         );
 

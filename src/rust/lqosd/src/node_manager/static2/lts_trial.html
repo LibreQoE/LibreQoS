@@ -123,6 +123,9 @@ body.dark-mode .card-header.bg-light {
                 <div class="container">
                     <h1 class="display-4 fw-bold"><i class="fas fa-chart-line"></i> LibreQoS Insight</h1>
                     <p class="lead">Unlock the full potential of your network with advanced analytics, reporting, and monitoring.</p>
+                    <div class="alert alert-light text-primary-emphasis border-0 shadow-sm mt-4 mb-0" role="alert">
+                        Free 30-day trial. Billing details are required within 2 days to keep the trial active. You will not be charged until the trial ends. Cancel any time.
+                    </div>
                     <div id="circuitCount" class="mt-3 mb-4" style="display: none;">
                         <h3>Your Network: <span id="circuitNumber">0</span> Active Circuits</h3>
                         <p class="fs-5">Only $<span id="monthlyPrice">0.00</span>/month for comprehensive network insights!</p>
@@ -326,6 +329,9 @@ body.dark-mode .card-header.bg-light {
                                     <button type="submit" class="btn btn-outline-primary btn-lg">
                                         <i class="fas fa-rocket"></i> Start Free Trial
                                     </button>
+                                    <p class="small text-body-secondary mb-0 text-center">
+                                        Free 30-day trial. Billing details are required within 2 days to keep the trial active. You will not be charged until the trial ends. Cancel any time.
+                                    </p>
                                     <button type="button" id="btnBackFromSignup" class="btn btn-secondary">
                                         <i class="fas fa-arrow-left"></i> Back
                                     </button>
@@ -346,10 +352,10 @@ body.dark-mode .card-header.bg-light {
             <div class="card shadow border-success">
                 <div class="card-body p-5">
                     <i class="fas fa-check-circle text-success" style="font-size: 5rem;"></i>
-                    <h2 class="mt-4 mb-3">Welcome to LibreQoS Insight!</h2>
-                    <p class="lead mb-4">Your license has been activated successfully.</p>
+                    <h2 class="mt-4 mb-3">Insight Trial Created</h2>
+                    <p class="lead mb-4">Your trial is almost active.</p>
                     <div id="successMessage" class="alert alert-success"></div>
-                    <p class="mb-4">LibreQoS is now being configured to connect to Insight. This process may take a few moments.</p>
+                    <p class="mb-4">LibreQoS is saving your Insight configuration now. Finish the billing step from the Insight email to keep the free trial active.</p>
                     <div class="spinner-border text-primary mb-4" role="status" id="configSpinner">
                         <span class="visually-hidden">Configuring...</span>
                     </div>

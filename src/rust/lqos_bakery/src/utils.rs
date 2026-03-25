@@ -6,7 +6,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Get the current Unix timestamp in seconds
 pub(crate) fn current_timestamp() -> u64 {
@@ -496,7 +496,7 @@ where
         }
 
         if tc_batch_failure_is_ignorable_delete_absence(&output, &lines) {
-            warn!(
+            debug!(
                 "Bakery tolerated delete-only tc batch absence during {purpose}; targets were already gone"
             );
         } else if let Some(failure_summary) = summarize_tc_batch_failure(&output) {

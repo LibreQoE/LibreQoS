@@ -111,6 +111,17 @@ persisten como entradas TreeGuard `set_node_virtual` dentro de la entrada efecti
 v1 son efímeras: un reinicio del daemon devuelve el árbol físico a la topología base definida por
 el operador hasta que TreeGuard vuelva a decidir.
 
+Para verificación y depuración local en tiempo de ejecución, `liblqos_python` ahora expone tanto
+el estado actual de la operación del nodo TreeGuard como un snapshot del estado de ramas en tiempo
+de ejecución de Bakery. Ese snapshot de ramas es la vista autoritativa del plano de control sobre
+qué rama retenida está activa para un nodo, y es más confiable que inferir cambios de parentaje
+solo desde la salida de `tc` en casos no top-level.
+El flujo local de confianza también usa ahora un fixture sintético de Bakery TreeGuard más grande
+para pruebas de escala: 8 nodos top-level, 3 niveles de profundidad y 1.000 circuitos conectados
+solo en el nivel más bajo. Cuando la verificación con tráfico está habilitada, el runtime verifier
+ahora usa por defecto 10 circuitos rastreados por cada caso exitoso en lugar del smoke test menor
+anterior.
+
 Las decisiones SQM por circuito de TreeGuard también son overrides de tiempo de ejecución. El scheduler no materializa los cambios SQM propiedad de TreeGuard de vuelta en el `ShapedDevices.csv` base, por lo que limpiar TreeGuard no reescribe permanentemente la política SQM definida por el operador.
 
 TreeGuard también se niega a gestionar nodos que ya estén marcados con `"virtual": true` en el `network.json` base. Si existen overrides legados de TreeGuard para esos nodos, TreeGuard limpia ese estado legado y vuelve a respetar la definición base de la topología.

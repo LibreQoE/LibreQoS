@@ -39,8 +39,8 @@ use crate::{
 };
 use anyhow::Result;
 use lqos_bus::{
-    BusRequest, BusResponse, InsightLicenseSummary, TreeGuardRuntimeNodeOperationSnapshot,
-    UnixSocketServer,
+    BusRequest, BusResponse, InsightLicenseSummary, TreeGuardRuntimeNodeBranchSnapshot,
+    TreeGuardRuntimeNodeOperationSnapshot, UnixSocketServer,
 };
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
@@ -827,6 +827,24 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     last_error: snapshot.last_error,
                 });
                 BusResponse::TreeGuardRuntimeNodeOperation(snapshot)
+            }
+            BusRequest::TreeGuardGetNodeVirtualBranchState { node_name } => {
+                let snapshot = crate::treeguard::bakery::node_virtualization_branch_state(
+                    node_name,
+                )
+                .map(|snapshot| TreeGuardRuntimeNodeBranchSnapshot {
+                    site_hash: snapshot.site_hash,
+                    active_branch: snapshot.active_branch.to_ascii_lowercase(),
+                    lifecycle: snapshot.lifecycle,
+                    pending_prune: snapshot.pending_prune,
+                    next_prune_attempt_unix: snapshot.next_prune_attempt_unix,
+                    active_site_hashes: snapshot.active_site_hashes,
+                    saved_site_hashes: snapshot.saved_site_hashes,
+                    prune_site_hashes: snapshot.prune_site_hashes,
+                    qdisc_down_major: snapshot.qdisc_down_major,
+                    qdisc_up_major: snapshot.qdisc_up_major,
+                });
+                BusResponse::TreeGuardRuntimeNodeBranch(snapshot)
             }
             BusRequest::ApiReady => {
                 tool_status::api_seen();

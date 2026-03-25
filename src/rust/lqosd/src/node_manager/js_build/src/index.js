@@ -40,11 +40,11 @@ const defaultLayout = {
             dashlets: [
                 { tag: "throughputBps", size: 2 },
                 { tag: "shapedUnshaped", size: 2 },
-                { tag: "throughputPps", size: 2 },
-                { tag: "trackedFlowsCount", size: 2 },
-                { tag: "rttHistogram", size: 2 },
-                { tag: "cpu", size: 3 },
-                { tag: "ram", size: 3 }
+                { tag: "ram", size: 2 },
+                { tag: "cpu", size: 5 },
+                { tag: "rttHistogram", size: 3 },
+                { tag: "throughputPps", size: 4 },
+                { tag: "trackedFlowsCount", size: 4 }
             ]
         },
         {
@@ -92,10 +92,10 @@ const defaultLayout = {
             id: "bakery",
             name: "Bakery",
             dashlets: [
-                { tag: "bakeryPipeline", size: 4 },
-                { tag: "bakeryChangeMix", size: 4 },
-                { tag: "bakeryCapacity", size: 4 },
-                { tag: "bakeryStatus", size: 12 },
+                { tag: "bakeryPipeline", size: 3 },
+                { tag: "bakeryChangeMix", size: 3 },
+                { tag: "bakeryStatus", size: 3 },
+                { tag: "bakeryCapacity", size: 3 },
                 { tag: "bakeryActivity", size: 12 }
             ]
         }

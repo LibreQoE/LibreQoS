@@ -278,7 +278,7 @@ install_bundle() {
         package_paths+=("${workdir}/${package}")
     done < <(resolved_hotfix_packages)
 
-    run_as_root apt-get install -y "${package_paths[@]}"
+    run_as_root apt-get install -y --allow-downgrades "${package_paths[@]}"
     write_marker
     log "Hotfix installed."
     offer_reboot

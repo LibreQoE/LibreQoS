@@ -422,6 +422,15 @@ pub enum BusRequest {
         node_name: String,
     },
 
+    /// Request the latest Bakery runtime branch-state snapshot for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need to verify which
+    /// retained branch is active after a runtime virtualization or restore.
+    TreeGuardGetNodeVirtualBranchState {
+        /// Exact node name from `network.json`.
+        node_name: String,
+    },
+
     /// Announce that the API is ready
     ApiReady,
 

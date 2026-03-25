@@ -5,11 +5,13 @@ use crate::node_manager::ws::messages::{
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_bakery::{
     BakeryActivityEntry as BakeryActivitySnapshot, BakeryApplyType, BakeryMode,
     BakeryPreflightSnapshot, BakeryRuntimeNodeOperationAction, BakeryRuntimeNodeOperationStatus,
     BakeryStatusSnapshot,
 };
+use lqos_utils::hash_to_i64;
 use std::sync::Arc;
 
 fn mode_to_string(mode: BakeryMode) -> String {
@@ -76,6 +78,25 @@ fn map_preflight(snapshot: BakeryPreflightSnapshot) -> BakeryPreflightData {
     }
 }
 
+fn resolve_site_name(site_hash: i64) -> Option<String> {
+    let reader = NETWORK_JSON.read();
+    reader
+        .get_nodes_when_ready()
+        .iter()
+        .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
+}
+
+fn extract_site_hash_from_summary(summary: &str) -> Option<i64> {
+    let lower = summary.to_ascii_lowercase();
+    let site_index = lower.find("site ")?;
+    let rest = &summary[site_index + 5..];
+    let digits: String = rest
+        .chars()
+        .take_while(|ch| *ch == '-' || ch.is_ascii_digit())
+        .collect();
+    (!digits.is_empty()).then_some(digits)?.parse().ok()
+}
+
 fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
     BakeryStatusData {
         current_state: BakeryStatusState {
@@ -88,6 +109,7 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
             current_apply_total_chunks: snapshot.current_apply_total_chunks,
             current_apply_completed_chunks: snapshot.current_apply_completed_chunks,
             last_success_unix: snapshot.last_success_unix,
+            last_full_reload_success_unix: snapshot.last_full_reload_success_unix,
             last_failure_unix: snapshot.last_failure_unix,
             last_failure_summary: snapshot.last_failure_summary,
             last_apply_type: apply_type_to_string(snapshot.last_apply_type),
@@ -107,6 +129,7 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                     BakeryRuntimeOperationHeadlineData {
                         operation_id: entry.operation_id,
                         site_hash: entry.site_hash,
+                        site_name: resolve_site_name(entry.site_hash),
                         action: runtime_action_to_string(entry.action),
                         status: runtime_status_to_string(entry.status),
                         attempt_count: entry.attempt_count,
@@ -137,11 +160,13 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
 }
 
 fn map_activity(entry: BakeryActivitySnapshot) -> BakeryActivityEntry {
+    let site_name = extract_site_hash_from_summary(&entry.summary).and_then(resolve_site_name);
     BakeryActivityEntry {
         ts: entry.ts,
         event: entry.event,
         status: entry.status,
         summary: entry.summary,
+        site_name,
     }
 }
 

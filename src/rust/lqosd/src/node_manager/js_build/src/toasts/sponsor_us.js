@@ -1,6 +1,7 @@
 import { get_ws_client } from "../pubsub/ws";
 
 const sponsorBtn = "<a href=\"https://github.com/sponsors/LibreQoE/\" target='_blank' class='text-primary-emphasis'><i class=\"fa fa-heart\"></i> Sponsor Us on GitHub</a>";
+const trialTermsMessage = "Start a free trial. Billing details required within 2 days. No charge until trial ends.";
 const sponsorMessages = [
     "LibreQoS includes shaping and core controls. Insight adds historical dashboards and alerts so you can spot issues before tickets arrive. Start a free 30-day trial.",
     "Need proof before or after changes? Insight keeps long-term latency, retransmit, and flow history in one place. Try it free.",
@@ -19,7 +20,7 @@ export function sponsorTag(parentId) {
             if (!window.hasLts) {
                 let div = document.createElement("div");
                 let random = Math.floor(Math.random() * sponsorMessages.length);
-                div.innerHTML = sponsorMessages[random];
+                div.innerHTML = `${trialTermsMessage} ${sponsorMessages[random]}`;
                 div.classList.add("alert", "alert-warning", "toasty");
                 let parent = document.getElementById(parentId);
                 parent.appendChild(div);

@@ -227,7 +227,7 @@ High-level flow:
 1. Build desired state.
 2. Diff desired vs active state.
 3. Apply smallest safe delta.
-4. Trigger full reload only when update type crosses live-mutation limits.
+4. Trigger full reload when a change is outside live-mutation support, or when runtime verification/drift detection marks incremental topology mutation unsafe.
 
 
 ### 7.1 Lazy queueing and expiration
@@ -249,8 +249,8 @@ Practical effect:
 | Circuit IP-only change | Yes | No | Mapping updates can usually be applied without rebuilding the queue tree |
 | Circuit SQM-only change | Yes | No | Leaf qdisc kind/parameter changes can usually be applied live |
 | Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact, queue-count pressure, and available class handles |
-| Ordinary circuit parent move | Yes | Sometimes | Bakery now supports live circuit migration for common parent/class moves, but it still escalates to reload if live `tc` state drifts or the mutation cannot be applied safely |
-| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | No | TreeGuard decides when virtualization is worth attempting, but Bakery owns the physical runtime plan and applies it as a live mutation path |
+| Ordinary circuit parent move | Yes | Sometimes | Bakery uses staged live migration for common active parent/class moves, including qdisc-handle rotation and final-state verification, but it still escalates to reload if the migration cannot be applied or verified safely |
+| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | Sometimes | Bakery can apply supported runtime virtualization live, but deferred cleanup, live-state verification failures, or accumulated dirty runtime subtrees can mark `reload required` and freeze further incremental topology mutation until a full reload |
 | Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits still matter, even with better incremental behavior |
 | Site add/remove or broader structural topology change | Rarely | Yes | HTB subtree mutation constraints remain much stricter at site/topology level than at per-circuit level |
 | Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability, tree size, and diff correctness boundaries |
@@ -259,16 +259,17 @@ This table reflects Bakery design behavior and Linux `tc` mutation constraints d
 
 ```{mermaid}
 flowchart TD
-    A[Config or integration change arrives] --> B[Build desired state and compute diff]
+    A[Config or runtime change arrives] --> B[Build desired or runtime target state]
     B --> C{Any effective state change?}
     C -->|No| D[No-op]
-    C -->|Yes| E{Structural hierarchy change?}
-    E -->|Yes| F[Controlled full reload]
-    E -->|No| G{Within incremental-safe limits?}
-    G -->|Yes| H[Apply incremental tc updates]
-    G -->|No| F
-    H --> I[Verify class/qdisc state and counters]
-    F --> I
+    C -->|Yes| E{Supported live mutation path?}
+    E -->|No| F[Controlled full reload]
+    E -->|Yes| G[Apply staged incremental/runtime mutation]
+    G --> H{Live verification and cleanup safe?}
+    H -->|Yes| I[Keep incremental state authoritative]
+    H -->|No| J[Mark reload required and freeze further incremental topology mutation]
+    J --> F
+    F --> K[Re-establish single authoritative queue model]
 ```
 
 ### 7.3 Reload boundary quick rules
@@ -303,6 +304,31 @@ This is intentionally **not** a broad self-healing reconciler. LibreQoS is biase
 - one controlled full reload to re-establish a single authoritative queue model
 
 That design keeps failure handling easier to reason about than trying to incrementally repair arbitrary split-brain queue state.
+
+### 7.6 Explicit qdisc-handle management
+
+Bakery now treats leaf qdisc handles as persistent runtime state rather than disposable auto-allocation details.
+
+1. Circuit leaf qdiscs are assigned explicit handle majors and persisted across applies.
+2. Handle assignments rotate when a live mutation changes the effective leaf qdisc kind or qdisc parent.
+3. Full reload planning reserves live handle majors so rebuilds do not collide with surviving kernel state.
+4. Parent-changed live migration is rejected if Bakery detects stale-handle reuse that would make final state ambiguous.
+
+This handle model is one of the mechanisms that makes common live circuit migration safer than earlier Bakery generations.
+
+### 7.7 Runtime virtualization limits and operator expectations
+
+Current runtime virtualization support is intentionally constrained.
+
+1. Non-top-level runtime virtualization is limited to same-queue / same-major-domain subtree paths.
+2. Top-level runtime virtualization uses a separate rebalance/promote path and only applies when Bakery can derive a deterministic split.
+3. Runtime operations may remain in `AppliedAwaitingCleanup` while deferred prune work completes.
+4. Runtime operations can become `Dirty`; repeated dirty subtree states escalate to `reload required` rather than attempting broad self-healing.
+
+Operator takeaway:
+
+- treat runtime virtualization as a narrow live-mutation feature with verification gates
+- treat `reload required` as the authoritative signal that Bakery no longer trusts incremental topology mutation
 
 ## 8) Design Boundaries for Operators
 

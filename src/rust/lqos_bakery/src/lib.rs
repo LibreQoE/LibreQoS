@@ -233,6 +233,13 @@ fn runtime_lifecycle_label(lifecycle: RuntimeVirtualizedBranchLifecycle) -> &'st
     }
 }
 
+fn runtime_active_branch_label(active_branch: RuntimeVirtualizedActiveBranch) -> &'static str {
+    match active_branch {
+        RuntimeVirtualizedActiveBranch::Shadow => "Shadow",
+        RuntimeVirtualizedActiveBranch::Original => "Original",
+    }
+}
+
 const RUNTIME_SITE_PRUNE_RETRY_SECONDS: u64 = 30;
 const RUNTIME_SITE_PRUNE_MAX_ATTEMPTS: u32 = 5;
 const RUNTIME_CUTOVER_RETRY_SECONDS: u64 = 1;
@@ -781,6 +788,31 @@ pub struct BakeryRuntimeOperationHeadlineSnapshot {
     pub last_error: Option<String>,
 }
 
+/// Latest Bakery-tracked runtime branch-state snapshot for a single node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BakeryRuntimeNodeBranchSnapshot {
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Which retained branch is currently active for this node.
+    pub active_branch: String,
+    /// Current runtime lifecycle label for this node.
+    pub lifecycle: String,
+    /// Whether Bakery is still waiting to prune the inactive branch.
+    pub pending_prune: bool,
+    /// Optional unix timestamp for the next cleanup retry, if one is pending.
+    pub next_prune_attempt_unix: Option<u64>,
+    /// Hashes of branch sites currently marked active.
+    pub active_site_hashes: Vec<i64>,
+    /// Hashes of original/saved sites retained for restore logic.
+    pub saved_site_hashes: Vec<i64>,
+    /// Hashes of inactive-branch sites queued for pruning.
+    pub prune_site_hashes: Vec<i64>,
+    /// Observed downlink qdisc major for the runtime root, if known.
+    pub qdisc_down_major: Option<u16>,
+    /// Observed uplink qdisc major for the runtime root, if known.
+    pub qdisc_up_major: Option<u16>,
+}
+
 /// Compact runtime-operation summary for Bakery UI/status.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BakeryRuntimeOperationsSnapshot {
@@ -844,6 +876,8 @@ pub struct BakeryStatusSnapshot {
     pub active_circuits: usize,
     /// Unix timestamp of the last successful apply, if any.
     pub last_success_unix: Option<u64>,
+    /// Unix timestamp of the last successful full reload, if any.
+    pub last_full_reload_success_unix: Option<u64>,
     /// Unix timestamp of the last failed apply, if any.
     pub last_failure_unix: Option<u64>,
     /// Summary of the last failure, if any.
@@ -897,6 +931,7 @@ struct BakeryTelemetryState {
     current_apply_total_chunks: usize,
     current_apply_completed_chunks: usize,
     last_success_unix: Option<u64>,
+    last_full_reload_success_unix: Option<u64>,
     last_failure_unix: Option<u64>,
     last_failure_summary: Option<String>,
     last_apply_type: BakeryApplyType,
@@ -912,6 +947,7 @@ struct BakeryTelemetryState {
     reload_required_reason: Option<String>,
     dirty_subtree_count: usize,
     runtime_operations_by_site: HashMap<i64, RuntimeNodeOperationSnapshot>,
+    runtime_branch_states_by_site: HashMap<i64, BakeryRuntimeNodeBranchSnapshot>,
     activity: VecDeque<BakeryActivityEntry>,
 }
 
@@ -995,6 +1031,7 @@ impl Default for BakeryTelemetryState {
             current_apply_total_chunks: 0,
             current_apply_completed_chunks: 0,
             last_success_unix: None,
+            last_full_reload_success_unix: None,
             last_failure_unix: None,
             last_failure_summary: None,
             last_apply_type: BakeryApplyType::None,
@@ -1018,6 +1055,7 @@ impl Default for BakeryTelemetryState {
             reload_required_reason: None,
             dirty_subtree_count: 0,
             runtime_operations_by_site: HashMap::new(),
+            runtime_branch_states_by_site: HashMap::new(),
             activity: VecDeque::with_capacity(BAKERY_EVENT_LIMIT),
         }
     }
@@ -1163,6 +1201,9 @@ fn mark_bakery_action_finished(metrics: BakeryApplyMetrics<'_>) {
         state.last_apply_duration_ms = metrics.apply_duration_ms;
         if metrics.ok {
             state.last_success_unix = Some(ts);
+            if metrics.apply_type == BakeryApplyType::FullReload {
+                state.last_full_reload_success_unix = Some(ts);
+            }
         } else {
             state.last_failure_unix = Some(ts);
             state.last_failure_summary = Some(metrics.summary.to_string());
@@ -1197,6 +1238,7 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
         current_apply_completed_chunks: state.current_apply_completed_chunks,
         active_circuits: ACTIVE_CIRCUITS.load(Ordering::Relaxed),
         last_success_unix: state.last_success_unix,
+        last_full_reload_success_unix: state.last_full_reload_success_unix,
         last_failure_unix: state.last_failure_unix,
         last_failure_summary: state.last_failure_summary,
         last_apply_type: state.last_apply_type,
@@ -1221,6 +1263,17 @@ pub fn bakery_runtime_node_operation_snapshot(
     telemetry_state()
         .read()
         .runtime_operations_by_site
+        .get(&site_hash)
+        .cloned()
+}
+
+/// Returns the latest Bakery-tracked runtime branch-state snapshot for a site, if any.
+pub fn bakery_runtime_node_branch_snapshot(
+    site_hash: i64,
+) -> Option<BakeryRuntimeNodeBranchSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_branch_states_by_site
         .get(&site_hash)
         .cloned()
 }
@@ -6878,8 +6931,42 @@ fn runtime_error_suggests_material_desync(summary: &str) -> bool {
         || lower.contains("unexpected live child classes")
 }
 
-fn update_desync_state_from_runtime_operations(
+fn rebuild_runtime_branch_snapshots(
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) -> HashMap<i64, BakeryRuntimeNodeBranchSnapshot> {
+    virtualized_sites
+        .iter()
+        .map(|(site_hash, state)| {
+            let mut active_site_hashes: Vec<i64> = state.active_sites.keys().copied().collect();
+            active_site_hashes.sort_unstable();
+            let mut saved_site_hashes: Vec<i64> = state.saved_sites.keys().copied().collect();
+            saved_site_hashes.sort_unstable();
+            let mut prune_site_hashes: Vec<i64> = state.prune_sites.keys().copied().collect();
+            prune_site_hashes.sort_unstable();
+            (
+                *site_hash,
+                BakeryRuntimeNodeBranchSnapshot {
+                    site_hash: *site_hash,
+                    active_branch: runtime_active_branch_label(state.active_branch).to_string(),
+                    lifecycle: runtime_lifecycle_label(state.lifecycle).to_string(),
+                    pending_prune: state.pending_prune,
+                    next_prune_attempt_unix: state
+                        .pending_prune
+                        .then_some(state.next_prune_attempt_unix),
+                    active_site_hashes,
+                    saved_site_hashes,
+                    prune_site_hashes,
+                    qdisc_down_major: state.qdisc_handles.down,
+                    qdisc_up_major: state.qdisc_handles.up,
+                },
+            )
+        })
+        .collect()
+}
+
+fn update_desync_state_from_runtime_state(
     runtime_node_operations: &HashMap<i64, RuntimeNodeOperation>,
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
 ) {
     let snapshot = rebuild_runtime_operations_snapshot(runtime_node_operations);
     let dirty_count = snapshot.dirty_count;
@@ -6887,11 +6974,13 @@ fn update_desync_state_from_runtime_operations(
         .iter()
         .map(|(site_hash, operation)| (*site_hash, operation.snapshot()))
         .collect();
+    let runtime_branch_states_by_site = rebuild_runtime_branch_snapshots(virtualized_sites);
     {
         let mut state = telemetry_state().write();
         state.runtime_operations = snapshot;
         state.dirty_subtree_count = dirty_count;
         state.runtime_operations_by_site = runtime_operations_by_site;
+        state.runtime_branch_states_by_site = runtime_branch_states_by_site;
     }
     if dirty_count >= RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD
         && bakery_reload_required_reason().is_none()
@@ -7068,7 +7157,7 @@ fn flush_deferred_runtime_site_prunes(
             continue;
         };
         if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
-            warn!(
+            debug!(
                 "Bakery: deferred runtime handler inspecting CutoverPending site {} (pending_prune={}, active_branch={:?}, next_prune_attempt_unix={})",
                 site_hash, state.pending_prune, state.active_branch, state.next_prune_attempt_unix
             );
@@ -7081,7 +7170,7 @@ fn flush_deferred_runtime_site_prunes(
         if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending
             && state.active_branch_hides_original_site()
         {
-            warn!(
+            debug!(
                 "Bakery: evaluating runtime cutover activation for site {}",
                 site_hash
             );
@@ -7340,7 +7429,7 @@ fn flush_deferred_runtime_site_prunes(
         virtualized_sites.remove(&site_hash);
     }
     grouped_events.flush();
-    update_desync_state_from_runtime_operations(runtime_node_operations);
+    update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7377,7 +7466,7 @@ fn handle_treeguard_set_node_virtual_live(
                 None,
             );
             runtime_node_operations.insert(site_hash, operation.clone());
-            update_desync_state_from_runtime_operations(runtime_node_operations);
+            update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
             operation.snapshot()
         };
         return snapshot;
@@ -7427,7 +7516,7 @@ fn handle_treeguard_set_node_virtual_live(
             Some(retry_at),
         );
         runtime_node_operations.insert(site_hash, operation.clone());
-        update_desync_state_from_runtime_operations(runtime_node_operations);
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         push_bakery_event("runtime_node_op_deferred", "warning", summary);
         return operation.snapshot();
     }
@@ -7466,7 +7555,7 @@ fn handle_treeguard_set_node_virtual_live(
             Some(retry_at),
         );
         runtime_node_operations.insert(site_hash, operation.clone());
-        update_desync_state_from_runtime_operations(runtime_node_operations);
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         push_bakery_event("runtime_node_op_deferred", "warning", summary);
         return operation.snapshot();
     }
@@ -7484,7 +7573,7 @@ fn handle_treeguard_set_node_virtual_live(
     operation.attempt_count = 1;
     operation.update_status(RuntimeNodeOperationStatus::Applying, now_unix, None, None);
     runtime_node_operations.insert(site_hash, operation.clone());
-    update_desync_state_from_runtime_operations(runtime_node_operations);
+    update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
 
     let Ok(config) = lqos_config::load_config() else {
         operation.update_status(
@@ -7494,7 +7583,7 @@ fn handle_treeguard_set_node_virtual_live(
             None,
         );
         runtime_node_operations.insert(site_hash, operation.clone());
-        update_desync_state_from_runtime_operations(runtime_node_operations);
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         return operation.snapshot();
     };
 
@@ -7822,7 +7911,7 @@ fn handle_treeguard_set_node_virtual_live(
                 error
             ));
         }
-        update_desync_state_from_runtime_operations(runtime_node_operations);
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         return operation.snapshot();
     }
 
@@ -7858,7 +7947,7 @@ fn handle_treeguard_set_node_virtual_live(
     }
     operation.update_status(status, finished_at, None, next_retry);
     runtime_node_operations.insert(site_hash, operation.clone());
-    update_desync_state_from_runtime_operations(runtime_node_operations);
+    update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
     operation.snapshot()
 }
 
@@ -7940,7 +8029,7 @@ fn full_reload(
         }
         virtualized_sites.clear();
         runtime_node_operations.clear();
-        update_desync_state_from_runtime_operations(runtime_node_operations);
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         clear_reload_required(
             "A successful Bakery full reload re-established baseline state; incremental topology mutations can resume.",
         );
@@ -9079,7 +9168,7 @@ mod tests {
             operation.update_status(RuntimeNodeOperationStatus::Applying, unix_now(), None, None);
             runtime_node_operations.insert(site_hash, operation);
         }
-        update_desync_state_from_runtime_operations(&runtime_node_operations);
+        update_desync_state_from_runtime_state(&runtime_node_operations, &HashMap::new());
 
         let snapshot = handle_treeguard_set_node_virtual_live(
             999,
@@ -9125,7 +9214,7 @@ mod tests {
         operation.attempt_count = 1;
         operation.update_status(RuntimeNodeOperationStatus::Applying, unix_now(), None, None);
         runtime_node_operations.insert(20, operation);
-        update_desync_state_from_runtime_operations(&runtime_node_operations);
+        update_desync_state_from_runtime_state(&runtime_node_operations, &HashMap::new());
 
         let snapshot = handle_treeguard_set_node_virtual_live(
             21,
@@ -9421,7 +9510,7 @@ mod tests {
             runtime_node_operations.insert(site_hash, operation);
         }
 
-        update_desync_state_from_runtime_operations(&runtime_node_operations);
+        update_desync_state_from_runtime_state(&runtime_node_operations, &HashMap::new());
 
         let telemetry = bakery_status_snapshot();
         assert_eq!(
@@ -9456,7 +9545,7 @@ mod tests {
             runtime_node_operations.insert(site_hash, operation);
         }
 
-        update_desync_state_from_runtime_operations(&runtime_node_operations);
+        update_desync_state_from_runtime_state(&runtime_node_operations, &HashMap::new());
 
         let telemetry = bakery_status_snapshot();
         assert_eq!(
