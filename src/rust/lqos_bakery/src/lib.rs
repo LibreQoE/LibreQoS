@@ -59,10 +59,11 @@ use lqos_bus::{
     UrgentSource,
 };
 use lqos_config::{
-    CircuitIdentityGroupInput, Config, LazyQueueMode, PlannerCircuitIdentityState,
-    PlannerMinorReservations, PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem,
-    TopLevelPlannerMode, TopLevelPlannerParams, build_class_identity_reservations,
-    plan_class_identities_with_constraints, plan_top_level_assignments,
+    CircuitIdentityGroupInput, ClassIdentityPlannerConstraints, Config, LazyQueueMode,
+    PlannerCircuitIdentityState, PlannerMinorReservations, PlannerSiteIdentityState,
+    SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode, TopLevelPlannerParams,
+    build_class_identity_reservations, plan_class_identities_with_constraints,
+    plan_top_level_assignments,
 };
 use qdisc_handles::MqDeviceLayout;
 
@@ -243,7 +244,6 @@ fn runtime_active_branch_label(active_branch: RuntimeVirtualizedActiveBranch) ->
 const RUNTIME_SITE_PRUNE_RETRY_SECONDS: u64 = 30;
 const RUNTIME_SITE_PRUNE_MAX_ATTEMPTS: u32 = 5;
 const RUNTIME_CUTOVER_RETRY_SECONDS: u64 = 1;
-const TOP_LEVEL_RUNTIME_CUTOVER_MAX_PASSES: usize = 4;
 const BAKERY_BACKGROUND_INTERVAL_MS: u64 = 250;
 const RUNTIME_DIRTY_SUBTREE_RELOAD_THRESHOLD: usize = 3;
 const RUNTIME_NODE_OPERATION_CAPACITY: usize = 32;
@@ -2303,7 +2303,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     fn process_pending_migrations(
         config: &Arc<Config>,
         circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
-        live_circuits: &mut HashMap<i64, u64>,
         sites: &HashMap<i64, Arc<BakeryCommands>>,
         migrations: &mut HashMap<i64, Migration>,
         mapping_current: &mut HashMap<MappingKey, MappingVal>,
@@ -2349,20 +2348,20 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         match config.queues.lazy_queues.as_ref() {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) =
-                                    add_commands_for_circuit(&temp, &config, ExecutionMode::Builder)
+                                    add_commands_for_circuit(&temp, config, ExecutionMode::Builder)
                                 {
                                     cmds.extend(c);
                                 }
                             }
                             Some(LazyQueueMode::Htb) => {
                                 if let Some(c) =
-                                    add_commands_for_circuit(&temp, &config, ExecutionMode::Builder)
+                                    add_commands_for_circuit(&temp, config, ExecutionMode::Builder)
                                 {
                                     cmds.extend(c);
                                 }
                                 if let Some(c) = add_commands_for_circuit(
                                     &temp,
-                                    &config,
+                                    config,
                                     ExecutionMode::LiveUpdate,
                                 ) {
                                     cmds.extend(c);
@@ -2371,7 +2370,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             Some(LazyQueueMode::Full) => {
                                 if let Some(c) = add_commands_for_circuit(
                                     &temp,
-                                    &config,
+                                    config,
                                     ExecutionMode::LiveUpdate,
                                 ) {
                                     cmds.extend(c);
@@ -2442,7 +2441,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) = add_commands_for_circuit(
                                     &final_cmd,
-                                    &config,
+                                    config,
                                     ExecutionMode::Builder,
                                 ) {
                                     cmds.extend(c);
@@ -2451,14 +2450,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             Some(LazyQueueMode::Htb) => {
                                 if let Some(c) = add_commands_for_circuit(
                                     &final_cmd,
-                                    &config,
+                                    config,
                                     ExecutionMode::Builder,
                                 ) {
                                     cmds.extend(c);
                                 }
                                 if let Some(c) = add_commands_for_circuit(
                                     &final_cmd,
-                                    &config,
+                                    config,
                                     ExecutionMode::LiveUpdate,
                                 ) {
                                     cmds.extend(c);
@@ -2467,7 +2466,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             Some(LazyQueueMode::Full) => {
                                 if let Some(c) = add_commands_for_circuit(
                                     &final_cmd,
-                                    &config,
+                                    config,
                                     ExecutionMode::LiveUpdate,
                                 ) {
                                     cmds.extend(c);
@@ -2490,7 +2489,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     advanced += 1;
                 }
                 MigrationStage::SwapToFinal => {
-                    let final_ready = match migration_final_state_ready(&config, mig) {
+                    let final_ready = match migration_final_state_ready(config, mig) {
                         Ok(ready) => ready,
                         Err(e) => {
                             mark_reload_required(format!(
@@ -2554,7 +2553,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         mig.old_up_min,
                         mig.old_up_max,
                         false,
-                    ) && let Some(shadow_prune) = shadow_cmd.to_prune(&config, true)
+                    ) && let Some(shadow_prune) = shadow_cmd.to_prune(config, true)
                     {
                         prune.extend(shadow_prune);
                     }
@@ -2585,7 +2584,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         }
 
         flush_deferred_runtime_site_prunes(
-            &config,
+            config,
             virtualized_sites,
             migrations,
             runtime_node_operations,
@@ -2593,8 +2592,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         if effective_state_changed {
             update_queue_distribution_snapshot(sites, circuits);
         }
-
-        let _ = live_circuits;
     }
 
     {
@@ -2625,7 +2622,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 process_pending_migrations(
                     &config,
                     &mut circuits,
-                    &mut live_circuits,
                     &sites,
                     &mut migrations,
                     &mut mapping_current,
@@ -2782,7 +2778,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 process_pending_migrations(
                     &config,
                     &mut circuits,
-                    &mut live_circuits,
                     &sites,
                     &mut migrations,
                     &mut mapping_current,
@@ -2818,7 +2813,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 process_pending_migrations(
                     &config,
                     &mut circuits,
-                    &mut live_circuits,
                     &sites,
                     &mut migrations,
                     &mut mapping_current,
@@ -5102,17 +5096,20 @@ fn build_top_level_virtualization_plan(
         reserve_live_snapshot_minors(&mut reserved_circuit_minors, &down_snapshot);
         reserve_live_snapshot_minors(&mut reserved_circuit_minors, &up_snapshot);
     }
+    let constraints = ClassIdentityPlannerConstraints {
+        reserved_site_minors,
+        reserved_circuit_minors,
+        site_minor_start: ACTIVE_RUNTIME_MINOR_START,
+        circuit_minor_start: ACTIVE_RUNTIME_MINOR_START,
+        stick_offset,
+        circuit_padding: 0,
+    };
     let identity = plan_class_identities_with_constraints(
         &planner_site_inputs,
         &planner_circuit_groups,
         &previous_sites,
         &previous_circuits,
-        &reserved_site_minors,
-        &reserved_circuit_minors,
-        ACTIVE_RUNTIME_MINOR_START,
-        ACTIVE_RUNTIME_MINOR_START,
-        stick_offset,
-        0,
+        &constraints,
     );
     let site_identity_by_key: HashMap<String, _> = identity
         .sites
@@ -5297,8 +5294,7 @@ fn build_top_level_virtualization_plan(
             .push(site_hash);
     }
     let site_stages = site_stages_map
-        .into_iter()
-        .map(|(_, hashes)| hashes)
+        .into_values()
         .collect();
 
     Ok(TopLevelVirtualizationPlan {
@@ -5439,8 +5435,8 @@ fn build_non_top_level_virtualization_plan(
             .push(*site_hash);
     }
     let mut site_stages: Vec<Vec<i64>> = site_stages_map
-        .into_iter()
-        .map(|(_, mut hashes)| {
+        .into_values()
+        .map(|mut hashes| {
             hashes.sort_by_key(|hash| {
                 let update = active_sites.get(hash).expect("planned site update");
                 (update.queue, update.parent_site.unwrap_or_default(), *hash)
@@ -6793,47 +6789,6 @@ fn execute_runtime_virtualized_subtree_prune(
     RuntimePrunePassResult::Completed
 }
 
-fn converge_top_level_runtime_cutover(
-    config: &Arc<Config>,
-    state: &mut VirtualizedSiteState,
-) -> Result<(), String> {
-    state.lifecycle = RuntimeVirtualizedBranchLifecycle::CutoverPending;
-
-    let mut progress_count = 0usize;
-    loop {
-        let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
-        let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
-
-        match execute_runtime_virtualized_subtree_prune(config, state, &down_snapshot, &up_snapshot)
-        {
-            RuntimePrunePassResult::Completed => {
-                state.pending_prune = false;
-                state.next_prune_attempt_unix = 0;
-                state.lifecycle = RuntimeVirtualizedBranchLifecycle::FlattenedActive;
-                return Ok(());
-            }
-            RuntimePrunePassResult::Progress(_) => {
-                progress_count = progress_count.saturating_add(1);
-                if progress_count >= TOP_LEVEL_RUNTIME_CUTOVER_MAX_PASSES {
-                    return Err(
-                        "Top-level runtime cutover verification exceeded bounded progress budget"
-                            .to_string(),
-                    );
-                }
-            }
-            RuntimePrunePassResult::Pending(summary) => {
-                return Err(format!(
-                    "Top-level runtime cutover verification failed to converge: {}",
-                    summary
-                ));
-            }
-            RuntimePrunePassResult::Failed(summary) => {
-                return Err(format!("Top-level runtime cutover failed: {}", summary));
-            }
-        }
-    }
-}
-
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -7200,13 +7155,13 @@ fn flush_deferred_runtime_site_prunes(
                     continue;
                 }
                 Err(summary) => {
-                    warn!(
-                        "Bakery: runtime cutover activation for site {} not ready: {}",
-                        site_hash, summary
-                    );
                     if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
                         operation.attempt_count = operation.attempt_count.saturating_add(1);
                         if operation.attempt_count >= RUNTIME_SITE_PRUNE_MAX_ATTEMPTS {
+                            warn!(
+                                "Bakery: runtime cutover activation for site {} not ready on final attempt {}: {}",
+                                site_hash, operation.attempt_count, summary
+                            );
                             state.pending_prune = false;
                             state.next_prune_attempt_unix = 0;
                             state.lifecycle = RuntimeVirtualizedBranchLifecycle::Failed;
@@ -7230,6 +7185,13 @@ fn flush_deferred_runtime_site_prunes(
                                 ),
                             );
                         } else {
+                            debug!(
+                                "Bakery: runtime cutover activation for site {} not ready on retry {}/{}: {}",
+                                site_hash,
+                                operation.attempt_count,
+                                RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
+                                summary
+                            );
                             let retry_at = now_unix.saturating_add(RUNTIME_CUTOVER_RETRY_SECONDS);
                             state.next_prune_attempt_unix = retry_at;
                             operation.update_status(
@@ -7255,6 +7217,11 @@ fn flush_deferred_runtime_site_prunes(
                                 ),
                             );
                         }
+                    } else {
+                        debug!(
+                            "Bakery: runtime cutover activation for site {} not ready with no runtime operation state: {}",
+                            site_hash, summary
+                        );
                     }
                     continue;
                 }
@@ -7264,7 +7231,7 @@ fn flush_deferred_runtime_site_prunes(
         {
             RuntimePrunePassResult::Completed => {
                 if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
-                    warn!(
+                    debug!(
                         "Bakery: CutoverPending site {} fell through to generic prune Completed",
                         site_hash
                     );
@@ -7296,7 +7263,7 @@ fn flush_deferred_runtime_site_prunes(
             }
             RuntimePrunePassResult::Progress(summary) => {
                 if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
-                    warn!(
+                    debug!(
                         "Bakery: CutoverPending site {} fell through to generic prune Progress: {}",
                         site_hash, summary
                     );
@@ -7324,7 +7291,7 @@ fn flush_deferred_runtime_site_prunes(
             }
             RuntimePrunePassResult::Pending(summary) => {
                 if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
-                    warn!(
+                    debug!(
                         "Bakery: CutoverPending site {} fell through to generic prune Pending: {}",
                         site_hash, summary
                     );
@@ -7658,7 +7625,7 @@ fn handle_treeguard_set_node_virtual_live(
                     pending_prune: true,
                     next_prune_attempt_unix: now_unix.saturating_add(RUNTIME_CUTOVER_RETRY_SECONDS),
                 };
-                warn!(
+                debug!(
                     "Bakery: queued top-level runtime cutover for site {} with {} active sites and {} active circuits",
                     site_hash,
                     state.active_sites.len(),
@@ -7666,7 +7633,7 @@ fn handle_treeguard_set_node_virtual_live(
                 );
                 virtualized_sites.insert(site_hash, state);
                 if let Some(inserted) = virtualized_sites.get(&site_hash) {
-                    warn!(
+                    debug!(
                         "Bakery: inserted top-level runtime state for site {} lifecycle={} pending_prune={} next_prune_attempt_unix={} active_branch={:?}",
                         site_hash,
                         runtime_lifecycle_label(inserted.lifecycle),
@@ -7930,7 +7897,7 @@ fn handle_treeguard_set_node_virtual_live(
             }
         });
     if let Some(state) = virtualized_sites.get(&site_hash) {
-        warn!(
+        debug!(
             "Bakery: final runtime status for site {} action={:?} lifecycle={} pending_prune={} next_retry={:?} computed_status={:?}",
             site_hash,
             action,
@@ -7940,7 +7907,7 @@ fn handle_treeguard_set_node_virtual_live(
             status
         );
     } else {
-        warn!(
+        debug!(
             "Bakery: final runtime status for site {} action={:?} with no retained state next_retry={:?} computed_status={:?}",
             site_hash, action, next_retry, status
         );
@@ -9347,12 +9314,14 @@ mod tests {
         let _guard = bakery_test_lock().lock().expect("test lock");
         reset_bakery_test_state();
 
-        let mut cfg = Config::default();
-        cfg.bridge = Some(lqos_config::BridgeConfig {
-            use_xdp_bridge: false,
-            to_internet: "__bakery-missing-wan__".to_string(),
-            to_network: "__bakery-missing-lan__".to_string(),
-        });
+        let cfg = Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: false,
+                to_internet: "__bakery-missing-wan__".to_string(),
+                to_network: "__bakery-missing-lan__".to_string(),
+            }),
+            ..Config::default()
+        };
         let config = Arc::new(cfg);
 
         let site_hash = 20;

@@ -23,10 +23,8 @@ function renderStage(host, iconClass, title, statusText, tone, footerNode = null
         "bakery-pipeline-stage",
         "border",
         "rounded",
-        "p-2",
         "d-flex",
         "flex-column",
-        "gap-1",
         "h-100",
         "small",
     );
@@ -36,7 +34,7 @@ function renderStage(host, iconClass, title, statusText, tone, footerNode = null
     top.classList.add("bakery-pipeline-stage-top", "d-flex", "align-items-center", "gap-2");
 
     const icon = document.createElement("i");
-    icon.classList.add("fa", "fa-fw", iconClass);
+    icon.classList.add("fa", "fa-fw", iconClass, "bakery-pipeline-stage-icon");
     top.appendChild(icon);
 
     const titleWrap = document.createElement("div");

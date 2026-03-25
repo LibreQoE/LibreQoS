@@ -145,6 +145,18 @@ fn tc_batch_failure_is_ignorable_delete_absence(
     })
 }
 
+fn tc_success_stderr_is_harmless(stderr: &str) -> bool {
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    trimmed.lines().all(|line| {
+        let normalized = line.trim();
+        normalized.is_empty() || normalized.to_ascii_lowercase().starts_with("warning:")
+    })
+}
+
 pub(crate) fn read_memory_snapshot() -> Result<MemorySnapshot, String> {
     let raw = std::fs::read_to_string("/proc/meminfo")
         .map_err(|e| format!("Failed to read /proc/meminfo: {e}"))?;
@@ -492,7 +504,11 @@ where
         }
         let stderr = String::from_utf8_lossy(&output.stderr);
         if output.status.success() && !stderr.trim().is_empty() {
-            warn!("Command stderr for ({purpose}): {:?}", stderr.trim());
+            if tc_success_stderr_is_harmless(stderr.trim()) {
+                debug!("Command stderr for ({purpose}): {:?}", stderr.trim());
+            } else {
+                warn!("Command stderr for ({purpose}): {:?}", stderr.trim());
+            }
         }
 
         if tc_batch_failure_is_ignorable_delete_absence(&output, &lines) {
@@ -740,6 +756,16 @@ MemFree:         1024000 kB
     fn summarize_tc_batch_failure_accepts_success_with_stderr_warning() {
         let output = mock_tc_output(0, "", "Warning: sch_htb: quantum of class 10134 is big.\n");
         assert!(summarize_tc_batch_failure(&output).is_none());
+        assert!(tc_success_stderr_is_harmless(
+            "Warning: sch_htb: quantum of class 10134 is big.\n"
+        ));
+    }
+
+    #[test]
+    fn harmless_success_stderr_rejects_non_warning_lines() {
+        assert!(!tc_success_stderr_is_harmless(
+            "RTNETLINK answers: No such file or directory\n"
+        ));
     }
 
     #[test]

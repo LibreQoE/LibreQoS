@@ -29,11 +29,12 @@ pub use etc::{
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use planner::{
-    CircuitIdentityAssignment, CircuitIdentityGroupInput, ClassIdentityPlannerOutput,
-    PlannerCircuitIdentityState, PlannerMinorReservations, PlannerSiteIdentityState,
-    SiteIdentityAssignment, SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode,
-    TopLevelPlannerOutput, TopLevelPlannerParams, build_class_identity_reservations,
-    plan_class_identities, plan_class_identities_with_constraints, plan_top_level_assignments,
+    CircuitIdentityAssignment, CircuitIdentityGroupInput, ClassIdentityPlannerConstraints,
+    ClassIdentityPlannerOutput, PlannerCircuitIdentityState, PlannerMinorReservations,
+    PlannerSiteIdentityState, SiteIdentityAssignment, SiteIdentityInput, TopLevelPlannerItem,
+    TopLevelPlannerMode, TopLevelPlannerOutput, TopLevelPlannerParams,
+    build_class_identity_reservations, plan_class_identities,
+    plan_class_identities_with_constraints, plan_top_level_assignments,
 };
 pub use program_control::load_libreqos;
 pub use qoo_profiles::{

@@ -168,6 +168,23 @@ pub struct ClassIdentityPlannerOutput {
 /// Reserved minor numbers keyed by shaping queue.
 pub type PlannerMinorReservations = BTreeMap<u32, BTreeSet<u32>>;
 
+/// Structural constraints and numbering offsets for class identity planning.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClassIdentityPlannerConstraints {
+    /// Reserved site minors keyed by queue.
+    pub reserved_site_minors: PlannerMinorReservations,
+    /// Reserved circuit minors keyed by queue.
+    pub reserved_circuit_minors: PlannerMinorReservations,
+    /// Starting minor for planned site classes.
+    pub site_minor_start: u32,
+    /// Starting minor for planned circuit classes.
+    pub circuit_minor_start: u32,
+    /// Uplink major offset for on-a-stick layouts.
+    pub stick_offset: u16,
+    /// Padding to leave after each circuit group allocation.
+    pub circuit_padding: u32,
+}
+
 fn sanitize_weight(weight: f64) -> f64 {
     if !weight.is_finite() || weight <= 0.0 {
         1.0
@@ -413,21 +430,16 @@ pub fn plan_class_identities_with_constraints(
     circuit_groups: &[CircuitIdentityGroupInput],
     previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
     previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
-    reserved_site_minors: &PlannerMinorReservations,
-    reserved_circuit_minors_input: &PlannerMinorReservations,
-    site_minor_start: u32,
-    circuit_minor_start: u32,
-    stick_offset: u16,
-    circuit_padding: u32,
+    constraints: &ClassIdentityPlannerConstraints,
 ) -> ClassIdentityPlannerOutput {
-    let mut reserved_site_minors = reserved_site_minors.clone();
+    let mut reserved_site_minors = constraints.reserved_site_minors.clone();
     let mut next_site_minor_by_queue: BTreeMap<u32, u32> = BTreeMap::new();
     let mut site_assignments = Vec::with_capacity(sites.len());
     let mut site_state = BTreeMap::new();
     for (queue, reserved) in &reserved_site_minors {
         let next_minor = next_site_minor_by_queue
             .entry(*queue)
-            .or_insert(site_minor_start.max(3));
+            .or_insert(constraints.site_minor_start.max(3));
         if let Some(last_reserved) = reserved.iter().next_back().copied() {
             *next_minor = (*next_minor).max(last_reserved.saturating_add(1));
         }
@@ -437,7 +449,7 @@ pub fn plan_class_identities_with_constraints(
         let reserved = reserved_site_minors.entry(site.queue).or_default();
         let next_minor = next_site_minor_by_queue
             .entry(site.queue)
-            .or_insert(site_minor_start.max(3));
+            .or_insert(constraints.site_minor_start.max(3));
         let reuse_minor = previous_sites.get(&site.site_key).and_then(|stored| {
             (stored.queue == site.queue
                 && stored.parent_path == site.parent_path
@@ -448,7 +460,7 @@ pub fn plan_class_identities_with_constraints(
         let class_minor_u32 = reuse_minor.unwrap_or_else(|| next_free_minor(*next_minor, reserved));
         let class_minor = u16::try_from(class_minor_u32).unwrap_or(u16::MAX);
         let class_major = u16::try_from(site.queue).unwrap_or(u16::MAX);
-        let up_class_major = class_major.saturating_add(stick_offset);
+        let up_class_major = class_major.saturating_add(constraints.stick_offset);
         reserved.insert(class_minor_u32);
         *next_minor = (*next_minor).max(class_minor_u32).saturating_add(1);
         if site.has_children {
@@ -477,7 +489,7 @@ pub fn plan_class_identities_with_constraints(
     }
 
     let mut reserved_circuit_minors = reserved_site_minors.clone();
-    for (queue, extras) in reserved_circuit_minors_input {
+    for (queue, extras) in &constraints.reserved_circuit_minors {
         reserved_circuit_minors
             .entry(*queue)
             .or_default()
@@ -488,10 +500,10 @@ pub fn plan_class_identities_with_constraints(
         let start = next_site_minor_by_queue
             .get(queue)
             .copied()
-            .unwrap_or_else(|| next_free_minor(circuit_minor_start.max(3), reserved));
+            .unwrap_or_else(|| next_free_minor(constraints.circuit_minor_start.max(3), reserved));
         next_circuit_minor_by_queue.insert(
             *queue,
-            next_free_minor(start.max(circuit_minor_start.max(3)), reserved),
+            next_free_minor(start.max(constraints.circuit_minor_start.max(3)), reserved),
         );
     }
 
@@ -501,7 +513,7 @@ pub fn plan_class_identities_with_constraints(
         let reserved = reserved_circuit_minors.entry(group.queue).or_default();
         let next_minor = next_circuit_minor_by_queue
             .entry(group.queue)
-            .or_insert_with(|| next_free_minor(circuit_minor_start.max(3), reserved));
+            .or_insert_with(|| next_free_minor(constraints.circuit_minor_start.max(3), reserved));
         for circuit_id in &group.circuit_ids {
             let reuse_minor = previous_circuits.get(circuit_id).and_then(|stored| {
                 (stored.queue == group.queue
@@ -513,7 +525,7 @@ pub fn plan_class_identities_with_constraints(
                 reuse_minor.unwrap_or_else(|| next_free_minor(*next_minor, reserved));
             let class_minor = u16::try_from(class_minor_u32).unwrap_or(u16::MAX);
             let class_major = u16::try_from(group.queue).unwrap_or(u16::MAX);
-            let up_class_major = class_major.saturating_add(stick_offset);
+            let up_class_major = class_major.saturating_add(constraints.stick_offset);
             reserved.insert(class_minor_u32);
             *next_minor = (*next_minor).max(class_minor_u32).saturating_add(1);
 
@@ -536,7 +548,7 @@ pub fn plan_class_identities_with_constraints(
                 },
             );
         }
-        *next_minor = (*next_minor).saturating_add(circuit_padding);
+        *next_minor = (*next_minor).saturating_add(constraints.circuit_padding);
     }
 
     let mut last_used_minor_by_queue = BTreeMap::new();
@@ -574,25 +586,29 @@ pub fn plan_class_identities(
 ) -> ClassIdentityPlannerOutput {
     let (reserved_site_minors, reserved_circuit_minors) =
         build_class_identity_reservations(sites, circuit_groups, previous_sites, previous_circuits);
+    let constraints = ClassIdentityPlannerConstraints {
+        reserved_site_minors,
+        reserved_circuit_minors,
+        site_minor_start: 3,
+        circuit_minor_start: 3,
+        stick_offset,
+        circuit_padding,
+    };
     plan_class_identities_with_constraints(
         sites,
         circuit_groups,
         previous_sites,
         previous_circuits,
-        &reserved_site_minors,
-        &reserved_circuit_minors,
-        3,
-        3,
-        stick_offset,
-        circuit_padding,
+        &constraints,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CircuitIdentityGroupInput, PlannerCircuitIdentityState, PlannerSiteIdentityState,
-        SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode, TopLevelPlannerParams,
+        CircuitIdentityGroupInput, ClassIdentityPlannerConstraints, PlannerCircuitIdentityState,
+        PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode,
+        TopLevelPlannerParams,
         build_class_identity_reservations, plan_class_identities,
         plan_class_identities_with_constraints, plan_top_level_assignments,
     };
@@ -839,18 +855,21 @@ mod tests {
         )]);
         let (reserved_site_minors, reserved_circuit_minors) =
             build_class_identity_reservations(&site_inputs, &[], &prev_sites, &BTreeMap::new());
+        let constraints = ClassIdentityPlannerConstraints {
+            reserved_site_minors,
+            reserved_circuit_minors,
+            site_minor_start: 0x1000,
+            circuit_minor_start: 0x1000,
+            stick_offset: 0,
+            circuit_padding: 0,
+        };
 
         let result = plan_class_identities_with_constraints(
             &site_inputs,
             &[],
             &BTreeMap::new(),
             &BTreeMap::new(),
-            &reserved_site_minors,
-            &reserved_circuit_minors,
-            0x1000,
-            0x1000,
-            0,
-            0,
+            &constraints,
         );
 
         assert_eq!(result.sites.len(), 1);

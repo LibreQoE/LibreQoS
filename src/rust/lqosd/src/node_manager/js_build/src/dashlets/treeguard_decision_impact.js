@@ -111,16 +111,57 @@ function buildAlertTooltip(label, messages) {
     return `${label}\n\n${messages.join("\n")}`;
 }
 
+function compactAlertMessage(message) {
+    const normalized = normalizeMessage(message);
+    if (!normalized) {
+        return "";
+    }
+
+    let match = normalized.match(/^TreeGuard links: deferred (\d+) lower-value or over-budget node virtualization changes this tick\.?$/i);
+    if (match) {
+        const count = Number.parseInt(match[1], 10) || 0;
+        return `${count} deferred link change${count === 1 ? "" : "s"}`;
+    }
+
+    match = normalized.match(/^TreeGuard links: skipped (\d+) low-value automatic node virtualization candidates this tick because the subtree was too small for its current throughput\.?$/i);
+    if (match) {
+        const count = Number.parseInt(match[1], 10) || 0;
+        return `${count} low-value candidate${count === 1 ? "" : "s"} skipped`;
+    }
+
+    match = normalized.match(/^TreeGuard links: deferred runtime ([^ ]+) for node '([^']+)': .*$/i);
+    if (match) {
+        return `Deferred runtime ${match[1]} for ${match[2]}`;
+    }
+
+    return normalized;
+}
+
 function summarizeAlerts(errors, warnings) {
     const lines = [];
     if (errors[0]) {
-        lines.push({ icon: "fa-circle-exclamation", tone: "text-danger", text: errors[0] });
+        lines.push({
+            icon: "fa-circle-exclamation",
+            tone: "text-danger",
+            text: compactAlertMessage(errors[0]),
+            fullText: errors[0],
+        });
     }
     if (warnings[0]) {
-        lines.push({ icon: "fa-triangle-exclamation", tone: "text-warning", text: warnings[0] });
+        lines.push({
+            icon: "fa-triangle-exclamation",
+            tone: "text-warning",
+            text: compactAlertMessage(warnings[0]),
+            fullText: warnings[0],
+        });
     }
     if (!errors[0] && warnings[1]) {
-        lines.push({ icon: "fa-triangle-exclamation", tone: "text-warning", text: warnings[1] });
+        lines.push({
+            icon: "fa-triangle-exclamation",
+            tone: "text-warning",
+            text: compactAlertMessage(warnings[1]),
+            fullText: warnings[1],
+        });
     }
     return lines;
 }
@@ -267,7 +308,7 @@ export class TreeGuardDecisionImpactDashlet extends BaseDashlet {
         alertSummaryLines.forEach((item) => {
             const row = document.createElement("div");
             row.classList.add("d-flex", "align-items-start", "gap-2", "text-body-secondary");
-            row.title = item.text;
+            row.title = item.fullText || item.text;
 
             const icon = document.createElement("i");
             icon.className = `fa fa-fw ${item.icon} ${item.tone}`;
