@@ -1125,19 +1125,41 @@ h5 {
 .lqos-asn-cell .lqos-table-cell-ellipsis {
     max-width: 100%;
 }
+.lqos-topflow-table {
+    width: 100%;
+    table-layout: fixed;
+}
 .lqos-topflow-table .lqos-topflow-key-cell,
 .lqos-topflow-table .lqos-topflow-protocol-cell {
     white-space: nowrap;
+}
+.lqos-topflow-table .lqos-topflow-key-cell {
+    width: 24%;
+}
+.lqos-topflow-table .lqos-topflow-protocol-cell {
+    width: 9%;
 }
 .lqos-topflow-table .lqos-topflow-key-cell .lqos-table-cell-ellipsis {
     max-width: 10rem;
 }
 .lqos-topflow-table .lqos-topflow-protocol-cell .lqos-table-cell-ellipsis {
-    max-width: 8.5rem;
+    max-width: 100%;
+}
+.lqos-topflow-table .lqos-topflow-rate-cell {
+    width: 4.75rem;
+}
+.lqos-topflow-table .lqos-topflow-total-cell {
+    width: 5.5rem;
+}
+.lqos-topflow-table .lqos-topflow-rtt-cell {
+    width: 3.9rem;
+}
+.lqos-topflow-table .lqos-topflow-retrans-cell {
+    width: 4.5rem;
 }
 .lqos-topflow-table .lqos-asn-cell {
-    width: 8.5rem;
-    max-width: 8.5rem;
+    width: 7.5rem;
+    max-width: 7.5rem;
 }
 .lqos-tree-stack {
     display: flex;
