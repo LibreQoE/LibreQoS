@@ -1058,6 +1058,19 @@ h5 {
 .dash-table .muted-meta {
     color: var(--bs-tertiary-color);
 }
+.lqos-topn-plain thead th {
+    padding: 0.32rem 0.46rem;
+    line-height: 1;
+}
+.lqos-topn-plain tbody td {
+    border-top: 0;
+    padding: 0.22rem 0.46rem;
+    line-height: 1;
+}
+.lqos-topn-plain tbody tr:nth-child(2n) td,
+.lqos-topn-plain tbody tr:hover td {
+    background: transparent;
+}
 .lqos-limit-block {
     display: flex;
     flex-direction: column;
@@ -1129,18 +1142,22 @@ h5 {
     width: 100%;
     table-layout: fixed;
 }
+.lqos-topflow-table th,
+.lqos-topflow-table td {
+    white-space: nowrap;
+}
 .lqos-topflow-table .lqos-topflow-key-cell,
 .lqos-topflow-table .lqos-topflow-protocol-cell {
     white-space: nowrap;
 }
 .lqos-topflow-table .lqos-topflow-key-cell {
-    width: 24%;
+    width: 18%;
 }
 .lqos-topflow-table .lqos-topflow-protocol-cell {
     width: 9%;
 }
 .lqos-topflow-table .lqos-topflow-key-cell .lqos-table-cell-ellipsis {
-    max-width: 10rem;
+    max-width: 7.5rem;
 }
 .lqos-topflow-table .lqos-topflow-protocol-cell .lqos-table-cell-ellipsis {
     max-width: 100%;

@@ -1,19 +1,24 @@
 import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
-import {RttCache} from "../helpers/rtt_cache";
-import {formatRetransmit, formatRtt, rttNanosAsSpan} from "../helpers/scaling";
+import {formatRtt} from "../helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
 
 const wsClient = get_ws_client();
-const flowCacheKey = (row) => `${row.remote_ip}|${row.analysis}`;
 const MAX_VISIBLE_ASN_CHARS = 12;
+const MAX_VISIBLE_TOPFLOW_KEY_CHARS = 12;
 const compactAsnLabel = (label) => {
     if (!label) return "";
     return label.length > MAX_VISIBLE_ASN_CHARS
         ? `${label.slice(0, MAX_VISIBLE_ASN_CHARS)}…`
+        : label;
+};
+const compactTopflowKeyLabel = (label) => {
+    if (!label) return "";
+    return label.length > MAX_VISIBLE_TOPFLOW_KEY_CHARS
+        ? `${label.slice(0, MAX_VISIBLE_TOPFLOW_KEY_CHARS)}…`
         : label;
 };
 const listenOnceForSeconds = (eventName, seconds, handler) => {
@@ -28,7 +33,6 @@ const listenOnceForSeconds = (eventName, seconds, handler) => {
 export class Top10FlowsBytes extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
-        this.rttCache = new RttCache();
     }
 
     canBeSlowedDown() {
@@ -40,7 +44,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
     }
 
     tooltip() {
-        return "<h5>Top 10 Flows (by total bytes)</h5><p>Top 10 Flows by total bytes, including protocol, local and remote IP addresses, download and upload rates, total bytes, round-trip time, TCP retransmits, remote ASN, and country.</p>";
+        return "<h5>Top 10 Flows (by total bytes)</h5><p>Top 10 flows by total bytes, including protocol, local and remote IP addresses, download and upload rates, total bytes, and remote ASN.</p>";
     }
 
     subscribeTo() {
@@ -63,7 +67,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "small", "lqos-topflow-table");
+            t.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topflow-table", "lqos-topn-plain");
 
             let th = document.createElement("thead");
             th.classList.add("small");
@@ -82,12 +86,6 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             const totalHeading = theading("Total");
             totalHeading.classList.add("lqos-topflow-total-cell");
             th.appendChild(totalHeading);
-            const rttHeading = theading("RTT", 2);
-            rttHeading.classList.add("lqos-topflow-rtt-cell");
-            th.appendChild(rttHeading);
-            const retransmitHeading = theading("TCP Retransmits", 2);
-            retransmitHeading.classList.add("lqos-topflow-retrans-cell");
-            th.appendChild(retransmitHeading);
             const asnHeading = theading("Remote ASN");
             asnHeading.classList.add("lqos-asn-cell");
             th.appendChild(asnHeading);
@@ -104,7 +102,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                     circuit.classList.add("lqos-topflow-key-cell");
                     let link = document.createElement("a");
                     link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
-                    link.innerText = TrimToFit(r.circuit_name);
+                    link.innerText = compactTopflowKeyLabel(TrimToFit(r.circuit_name, MAX_VISIBLE_TOPFLOW_KEY_CHARS + 1));
                     link.title = r.circuit_name || "";
                     link.classList.add("redactable", "lqos-table-cell-ellipsis");
                     circuit.appendChild(link);
@@ -113,7 +111,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                     let localIp = document.createElement("td");
                     localIp.classList.add("lqos-topflow-key-cell");
                     const localIpText = document.createElement("span");
-                    localIpText.innerText = r.local_ip;
+                    localIpText.innerText = compactTopflowKeyLabel(r.local_ip);
                     localIpText.title = r.local_ip || "";
                     localIpText.classList.add("redactable", "lqos-table-cell-ellipsis");
                     localIp.appendChild(localIpText);
@@ -144,39 +142,6 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
-                const cacheKey = flowCacheKey(r);
-                if (r.rtt_nanos['down'] !== undefined) {
-                    this.rttCache.set(cacheKey, r.rtt_nanos);
-                }
-                let rtt = this.rttCache.get(cacheKey);
-                if (rtt === 0) {
-                    rtt = { down: 0, up: 0 };
-                }
-
-                let rttD = document.createElement("td");
-                rttD.classList.add("lqos-topflow-rtt-cell");
-                rttD.innerHTML = rttNanosAsSpan(rtt.down);
-                row.appendChild(rttD);
-
-                let rttU = document.createElement("td");
-                rttU.classList.add("lqos-topflow-rtt-cell");
-                rttU.innerHTML = rttNanosAsSpan(rtt.up);
-                row.appendChild(rttU);
-
-                let tcp1 = document.createElement("td");
-                tcp1.classList.add("lqos-topflow-retrans-cell");
-                const packetsDown = toNumber(r.packets_sent.down, 0);
-                const retransmitsDown = toNumber(r.tcp_retransmits.down, 0);
-                tcp1.innerHTML = formatRetransmit(packetsDown > 0 ? retransmitsDown / packetsDown : 0);
-                row.appendChild(tcp1);
-
-                let tcp2 = document.createElement("td");
-                tcp2.classList.add("lqos-topflow-retrans-cell");
-                const packetsUp = toNumber(r.packets_sent.up, 0);
-                const retransmitsUp = toNumber(r.tcp_retransmits.up, 0);
-                tcp2.innerHTML = formatRetransmit(packetsUp > 0 ? retransmitsUp / packetsUp : 0);
-                row.appendChild(tcp2);
-
                 let asn = document.createElement("td");
                 asn.classList.add("lqos-asn-cell");
                 const asnLabel = (r.remote_asn_name && r.remote_asn_name.length > 0) ? r.remote_asn_name : r.remote_ip;
@@ -196,7 +161,10 @@ export class Top10FlowsBytes extends DashletBaseInsight {
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            const tableWrap = document.createElement("div");
+            tableWrap.classList.add("lqos-table-wrap");
+            tableWrap.appendChild(t);
+            target.appendChild(tableWrap);
         }
     }
 
@@ -213,7 +181,7 @@ export class Top10FlowsBytes extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("lqos-table", "lqos-table-compact", "small");
+            table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
             let thead = document.createElement("thead");
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Protocol"));

@@ -175,13 +175,13 @@ export function topNTableRow(r) {
 
 export function TopNTableFromMsgData(circuits) {
     let t = document.createElement("table");
-    t.classList.add("dash-table", "lqos-table", "lqos-table-compact");
+    t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "lqos-topn-plain");
 
     t.appendChild(topNTableHeader());
 
     let tbody = document.createElement("tbody");
     circuits.forEach((r) => {
-        t.appendChild(topNTableRow(r));
+        tbody.appendChild(topNTableRow(r));
     });
     t.appendChild(tbody);
     return t;

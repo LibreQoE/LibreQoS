@@ -81,7 +81,7 @@ export class Worst10Retransmits extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("lqos-table", "lqos-table-compact", "small");
+            table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
             let thead = document.createElement("thead");
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Bytes Downloaded"));
