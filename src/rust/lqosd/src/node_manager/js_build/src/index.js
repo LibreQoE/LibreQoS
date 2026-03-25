@@ -89,6 +89,16 @@ const defaultLayout = {
             ]
         },
         {
+            id: "stormguard",
+            name: "StormGuard",
+            dashlets: [
+                { tag: "stormguardSummary", size: 12 },
+                { tag: "stormguardSiteList", size: 4 },
+                { tag: "stormguardSiteDetail", size: 8 },
+                { tag: "stormguardRecentActivity", size: 12 }
+            ]
+        },
+        {
             id: "bakery",
             name: "Bakery",
             dashlets: [

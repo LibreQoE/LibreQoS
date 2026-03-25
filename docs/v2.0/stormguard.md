@@ -43,7 +43,12 @@ If you are testing, start with `dry_run = true` so you can observe decisions bef
 
 ## UI and Debugging
 
-- WebUI provides StormGuard status and debug views.
+- WebUI provides a dedicated StormGuard dashboard tab plus status and debug views.
+- The StormGuard dashboard tab is intended to answer "what is StormGuard doing right now?" with:
+  - summary cards for watched, cooling-down, and recently changed sites
+  - a site list that works for single-site and multi-site watched sets
+  - a selected-site detail panel explaining current limits, last actions, and why StormGuard is holding or changing rates
+  - a recent activity feed for quick operator triage
 - The StormGuard debug page shows:
   - current effective limits
   - evaluation metrics

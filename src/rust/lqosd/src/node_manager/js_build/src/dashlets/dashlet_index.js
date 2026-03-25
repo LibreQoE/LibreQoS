@@ -42,6 +42,10 @@ import {TreeGuardStateMixDashlet} from "./treeguard_state_mix";
 import {TreeGuardDecisionImpactDashlet} from "./treeguard_decision_impact";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
+import {StormguardSummaryDashlet} from "./stormguard_summary";
+import {StormguardSiteListDashlet} from "./stormguard_site_list";
+import {StormguardSiteDetailDashlet} from "./stormguard_site_detail";
+import {StormguardRecentActivityDashlet} from "./stormguard_recent_activity";
 // New Traffic Overview dashlets
 import {ShaperTopAsnDownload} from "./top_asn_download";
 import {ShaperTopAsnUpload} from "./top_asn_upload";
@@ -91,6 +95,10 @@ export const DashletMenu = [
     { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3, category: "Insight" },
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
     { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
+    { name: "StormGuard Summary", tag: "stormguardSummary", size: 12, category: "Queue Management" },
+    { name: "StormGuard Sites", tag: "stormguardSiteList", size: 4, category: "Queue Management" },
+    { name: "StormGuard Site Detail", tag: "stormguardSiteDetail", size: 8, category: "Queue Management" },
+    { name: "StormGuard Recent Activity", tag: "stormguardRecentActivity", size: 12, category: "Queue Management" },
     { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
     { name: "Bakery Status", tag: "bakeryStatusSummary", size: 4, category: "Bakery" },
     { name: "Bakery Apply Summary", tag: "bakeryApplySummary", size: 4, category: "Bakery" },
@@ -154,6 +162,10 @@ export function widgetFactory(widgetName, count) {
         case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
+        case "stormguardSummary": widget = new StormguardSummaryDashlet(count); break;
+        case "stormguardSiteList": widget = new StormguardSiteListDashlet(count); break;
+        case "stormguardSiteDetail": widget = new StormguardSiteDetailDashlet(count); break;
+        case "stormguardRecentActivity": widget = new StormguardRecentActivityDashlet(count); break;
         case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
         case "bakeryStatusSummary": widget = new BakeryStatusSummaryDashlet(count); break;
         case "bakeryApplySummary": widget = new BakeryApplySummaryDashlet(count); break;

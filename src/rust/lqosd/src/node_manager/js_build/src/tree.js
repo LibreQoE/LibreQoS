@@ -190,11 +190,9 @@ function rootGaugeMaxAvailable() {
 
 function nodeSnapshotGaugeMax(node) {
     if (isSyntheticRootNode(node) && rootGaugeMaxAvailable()) {
-        // BitsPerSecondGauge doubles the supplied max values internally.
-        // Halve the configured root limits here so the rendered max matches config.
         return [
-            toNumber(rootGaugeConfigMax[0], 0) / 2,
-            toNumber(rootGaugeConfigMax[1], 0) / 2,
+            toNumber(rootGaugeConfigMax[0], 0),
+            toNumber(rootGaugeConfigMax[1], 0),
         ];
     }
     return effectiveMax(node);
