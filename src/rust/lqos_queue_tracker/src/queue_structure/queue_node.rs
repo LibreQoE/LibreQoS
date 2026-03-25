@@ -389,6 +389,9 @@ mod test {
 
         assert_eq!(target.download_bandwidth_mbps, 60);
         assert_eq!(target.upload_bandwidth_mbps, 60);
-        assert_eq!(target.class_id, TcHandle::from_string("0x1:0xb").expect("valid tc handle"));
+        assert_eq!(
+            target.class_id,
+            TcHandle::from_string("0x1:0xb").expect("valid tc handle")
+        );
     }
 }

@@ -984,7 +984,10 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
     m.add_function(wrap_pyfunction!(treeguard_set_node_virtual_live, m)?)?;
     m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_status, m)?)?;
-    m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_branch_state, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        treeguard_get_node_virtual_branch_state,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
     // Planner remote fetch/store for Insight integration
     m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;

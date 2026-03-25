@@ -1580,6 +1580,7 @@ fn current_mq_layout(
     latest
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn with_assigned_qdisc_handles(
     command: &Arc<BakeryCommands>,
     config: &Arc<Config>,
@@ -1747,12 +1748,31 @@ fn effective_directional_qdisc_parents(
     (down_parent, up_parent)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn rotate_changed_qdisc_handles(
     previous: &BakeryCommands,
     command: &Arc<BakeryCommands>,
     config: &Arc<Config>,
     mq_layout: &MqDeviceLayout,
     qdisc_handles: &mut QdiscHandleState,
+) -> Arc<BakeryCommands> {
+    rotate_changed_qdisc_handles_reserved(
+        previous,
+        command,
+        config,
+        mq_layout,
+        qdisc_handles,
+        &HashMap::new(),
+    )
+}
+
+fn rotate_changed_qdisc_handles_reserved(
+    previous: &BakeryCommands,
+    command: &Arc<BakeryCommands>,
+    config: &Arc<Config>,
+    mq_layout: &MqDeviceLayout,
+    qdisc_handles: &mut QdiscHandleState,
+    extra_reserved_handles: &HashMap<String, HashSet<u16>>,
 ) -> Arc<BakeryCommands> {
     let (old_down_kind, old_up_kind) = effective_directional_sqm_kinds(previous, config);
     let (new_down_kind, new_up_kind) = effective_directional_sqm_kinds(command.as_ref(), config);
@@ -1763,8 +1783,14 @@ fn rotate_changed_qdisc_handles(
     let mut rotated = command.as_ref().clone();
     let isp_interface = config.isp_interface();
     let internet_interface = config.internet_interface();
-    let isp_reserved = mq_layout.reserved_handles(&isp_interface);
-    let up_reserved = mq_layout.reserved_handles(&internet_interface);
+    let mut isp_reserved = mq_layout.reserved_handles(&isp_interface);
+    if let Some(extra) = extra_reserved_handles.get(&isp_interface) {
+        isp_reserved.extend(extra.iter().copied());
+    }
+    let mut up_reserved = mq_layout.reserved_handles(&internet_interface);
+    if let Some(extra) = extra_reserved_handles.get(&internet_interface) {
+        up_reserved.extend(extra.iter().copied());
+    }
 
     if let BakeryCommands::AddCircuit {
         circuit_hash,
@@ -1796,6 +1822,21 @@ fn rotate_changed_qdisc_handles(
     }
 
     Arc::new(rotated)
+}
+
+fn snapshot_live_qdisc_handle_majors_or_empty(
+    config: &Arc<Config>,
+    purpose: &str,
+) -> HashMap<String, HashSet<u16>> {
+    match snapshot_live_qdisc_handle_majors(config) {
+        Ok(handles) => handles,
+        Err(error) => {
+            warn!(
+                "Bakery could not snapshot live qdisc handles before {purpose}; proceeding without extra live reservations: {error}"
+            );
+            HashMap::new()
+        }
+    }
 }
 
 /// Returns `true` while Bakery is applying a full reload batch to Linux `tc`.
@@ -2417,6 +2458,13 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::BuildFinal => {
                     let mut cmds = Vec::new();
+                    let live_qdisc_handles = snapshot_live_qdisc_handle_majors_or_empty(
+                        config,
+                        "live-move: build final",
+                    );
+                    let down_live_qdisc_handles = live_qdisc_handles.get(&config.isp_interface());
+                    let up_live_qdisc_handles =
+                        live_qdisc_handles.get(&config.internet_interface());
                     if let Some(final_cmd) = build_temp_add_cmd(
                         mig.desired_cmd.as_ref(),
                         mig.final_minor,
@@ -2427,10 +2475,15 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         true,
                     ) {
                         if let Some(summary) =
-                            build_final_qdisc_handle_rotation_invariant_error(mig, &final_cmd)
+                            build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
+                                mig,
+                                &final_cmd,
+                                down_live_qdisc_handles,
+                                up_live_qdisc_handles,
+                            )
                         {
                             mark_reload_required(format!(
-                                "Bakery live migration refused to build final state for circuit {} because a parent-changed migration kept the old qdisc handle: {}. A full reload is now required before further incremental topology mutations.",
+                                "Bakery live migration refused to build final state for circuit {} because the final qdisc handles were unsafe: {}. A full reload is now required before further incremental topology mutations.",
                                 mig.circuit_hash, summary
                             ));
                             mig.stage = MigrationStage::Done;
@@ -3279,10 +3332,17 @@ fn handle_commit_batch(
                 warn!("Bakery: missing MQ layout during circuit speed updates");
                 return;
             };
+            let live_reserved_handles =
+                snapshot_live_qdisc_handle_majors_or_empty(&config, "circuit speed updates");
             let mut immediate_commands = Vec::new();
             for cmd in &categories.speed_changed {
-                let mut enriched_cmd =
-                    with_assigned_qdisc_handles(cmd, &config, layout, qdisc_handles);
+                let mut enriched_cmd = with_assigned_qdisc_handles_reserved(
+                    cmd,
+                    &config,
+                    layout,
+                    qdisc_handles,
+                    &live_reserved_handles,
+                );
                 let old_cmd = if let BakeryCommands::AddCircuit { circuit_hash, .. } =
                     enriched_cmd.as_ref()
                 {
@@ -3291,12 +3351,13 @@ fn handle_commit_batch(
                     None
                 };
                 if let Some(old_cmd) = old_cmd.as_ref() {
-                    enriched_cmd = rotate_changed_qdisc_handles(
+                    enriched_cmd = rotate_changed_qdisc_handles_reserved(
                         old_cmd.as_ref(),
                         &enriched_cmd,
                         &config,
                         layout,
                         qdisc_handles,
+                        &live_reserved_handles,
                     );
                 }
                 if let Some(old_cmd) = old_cmd.as_ref()
@@ -3377,6 +3438,8 @@ fn handle_commit_batch(
                 warn!("Bakery: missing MQ layout during circuit migrations");
                 return;
             };
+            let live_reserved_handles =
+                snapshot_live_qdisc_handle_majors_or_empty(&config, "circuit migrations");
             let down_live_snapshot = read_live_class_snapshot(&config.isp_interface()).ok();
             let up_live_snapshot = read_live_class_snapshot(&config.internet_interface()).ok();
             let mut immediate_commands = Vec::new();
@@ -3385,8 +3448,13 @@ fn handle_commit_batch(
             let mut protected_down_classes = HashSet::new();
             let mut protected_up_classes = HashSet::new();
             for cmd in &categories.migrated {
-                let mut enriched_cmd =
-                    with_assigned_qdisc_handles(cmd, &config, layout, qdisc_handles);
+                let mut enriched_cmd = with_assigned_qdisc_handles_reserved(
+                    cmd,
+                    &config,
+                    layout,
+                    qdisc_handles,
+                    &live_reserved_handles,
+                );
                 let Some(old_cmd) = (if let BakeryCommands::AddCircuit { circuit_hash, .. } =
                     enriched_cmd.as_ref()
                 {
@@ -3397,12 +3465,13 @@ fn handle_commit_batch(
                     continue;
                 };
 
-                enriched_cmd = rotate_changed_qdisc_handles(
+                enriched_cmd = rotate_changed_qdisc_handles_reserved(
                     old_cmd.as_ref(),
                     &enriched_cmd,
                     &config,
                     layout,
                     qdisc_handles,
+                    &live_reserved_handles,
                 );
                 let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref() else {
                     continue;
@@ -3586,9 +3655,19 @@ fn handle_commit_batch(
                 );
                 return;
             };
+            let live_reserved_handles =
+                snapshot_live_qdisc_handle_majors_or_empty(&config, "incremental additions");
             let enriched_additions: Vec<Arc<BakeryCommands>> = accepted_additions
                 .iter()
-                .map(|command| with_assigned_qdisc_handles(command, &config, layout, qdisc_handles))
+                .map(|command| {
+                    with_assigned_qdisc_handles_reserved(
+                        command,
+                        &config,
+                        layout,
+                        qdisc_handles,
+                        &live_reserved_handles,
+                    )
+                })
                 .collect();
             let commands: Vec<Vec<String>> = enriched_additions
                 .iter()
@@ -3612,8 +3691,16 @@ fn handle_commit_batch(
                 warn!("Bakery: missing MQ layout during IP-only circuit updates");
                 return;
             };
+            let live_reserved_handles =
+                snapshot_live_qdisc_handle_majors_or_empty(&config, "IP-only circuit updates");
             for command in categories.ip_changed {
-                let enriched = with_assigned_qdisc_handles(command, &config, layout, qdisc_handles);
+                let enriched = with_assigned_qdisc_handles_reserved(
+                    command,
+                    &config,
+                    layout,
+                    qdisc_handles,
+                    &live_reserved_handles,
+                );
                 if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched.as_ref() {
                     circuits.insert(*circuit_hash, enriched);
                 }
@@ -5293,9 +5380,7 @@ fn build_top_level_virtualization_plan(
             .or_default()
             .push(site_hash);
     }
-    let site_stages = site_stages_map
-        .into_values()
-        .collect();
+    let site_stages = site_stages_map.into_values().collect();
 
     Ok(TopLevelVirtualizationPlan {
         saved_sites,
@@ -5732,6 +5817,7 @@ fn apply_circuit_command_updates(
     let Some(layout) = mq_layout.as_ref() else {
         return Err("Bakery runtime virtualization requires MQ layout to be available".to_string());
     };
+    let live_reserved_handles = snapshot_live_qdisc_handle_majors_or_empty(config, action_label);
     let mut immediate_commands = Vec::new();
     let mut updated_circuits = Vec::new();
     let mut ordered: Vec<_> = updates.iter().collect();
@@ -5748,16 +5834,27 @@ fn apply_circuit_command_updates(
         let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
             continue;
         };
-        let enriched_cmd = rotate_changed_qdisc_handles(
-            old_cmd.as_ref(),
+        let enriched_base = with_assigned_qdisc_handles_reserved(
             &update.command,
             config,
             layout,
             qdisc_handles,
+            &live_reserved_handles,
         );
-        if let Some(summary) =
-            qdisc_handle_rotation_invariant_error(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
-        {
+        let enriched_cmd = rotate_changed_qdisc_handles_reserved(
+            old_cmd.as_ref(),
+            &enriched_base,
+            config,
+            layout,
+            qdisc_handles,
+            &live_reserved_handles,
+        );
+        if let Some(summary) = qdisc_handle_rotation_invariant_error_with_live_reservations(
+            old_cmd.as_ref(),
+            enriched_cmd.as_ref(),
+            config,
+            Some(&live_reserved_handles),
+        ) {
             return Err(format!(
                 "Bakery runtime virtualization refusing live migration for active circuit {}: {}",
                 circuit_hash, summary
@@ -5827,10 +5924,20 @@ fn circuit_qdisc_parent_changed(
     old_down_parent != new_down_parent || old_up_parent != new_up_parent
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn qdisc_handle_rotation_invariant_error(
     old_cmd: &BakeryCommands,
     new_cmd: &BakeryCommands,
     config: &Arc<Config>,
+) -> Option<String> {
+    qdisc_handle_rotation_invariant_error_with_live_reservations(old_cmd, new_cmd, config, None)
+}
+
+fn qdisc_handle_rotation_invariant_error_with_live_reservations(
+    old_cmd: &BakeryCommands,
+    new_cmd: &BakeryCommands,
+    config: &Arc<Config>,
+    live_reserved_handles: Option<&HashMap<String, HashSet<u16>>>,
 ) -> Option<String> {
     let (old_down_parent, old_up_parent) = effective_directional_qdisc_parents(old_cmd, config);
     let (new_down_parent, new_up_parent) = effective_directional_qdisc_parents(new_cmd, config);
@@ -5871,12 +5978,39 @@ fn qdisc_handle_rotation_invariant_error(
         ));
     }
 
+    if let Some(live_reserved) = live_reserved_handles {
+        let isp_interface = config.isp_interface();
+        if let Some(new_down_handle) = new_down_qdisc_handle
+            && live_reserved
+                .get(&isp_interface)
+                .is_some_and(|handles| handles.contains(new_down_handle))
+            && Some(*new_down_handle) != *old_down_qdisc_handle
+        {
+            return Some(format!(
+                "downlink qdisc handle {:?} is already live on {} and cannot be reused for a different circuit/parent",
+                new_down_handle, isp_interface
+            ));
+        }
+
+        let up_interface = config.internet_interface();
+        if let Some(new_up_handle) = new_up_qdisc_handle
+            && live_reserved
+                .get(&up_interface)
+                .is_some_and(|handles| handles.contains(new_up_handle))
+            && Some(*new_up_handle) != *old_up_qdisc_handle
+        {
+            return Some(format!(
+                "uplink qdisc handle {:?} is already live on {} and cannot be reused for a different circuit/parent",
+                new_up_handle, up_interface
+            ));
+        }
+    }
+
     None
 }
 
 fn migration_qdisc_handle_rotation_invariant_error(mig: &Migration) -> Option<String> {
-    let old_down_parent =
-        tc_handle_from_major_minor(mig.old_class_major, mig.old_minor);
+    let old_down_parent = tc_handle_from_major_minor(mig.old_class_major, mig.old_minor);
     let new_down_parent = tc_handle_from_major_minor(mig.class_major, mig.final_minor);
     if old_down_parent != new_down_parent
         && mig.old_down_qdisc_handle.is_some()
@@ -5890,8 +6024,7 @@ fn migration_qdisc_handle_rotation_invariant_error(mig: &Migration) -> Option<St
         ));
     }
 
-    let old_up_parent =
-        tc_handle_from_major_minor(mig.old_up_class_major, mig.old_minor);
+    let old_up_parent = tc_handle_from_major_minor(mig.old_up_class_major, mig.old_minor);
     let new_up_parent = tc_handle_from_major_minor(mig.up_class_major, mig.final_minor);
     if old_up_parent != new_up_parent
         && mig.old_up_qdisc_handle.is_some()
@@ -5908,9 +6041,21 @@ fn migration_qdisc_handle_rotation_invariant_error(mig: &Migration) -> Option<St
     None
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn build_final_qdisc_handle_rotation_invariant_error(
     mig: &Migration,
     final_cmd: &BakeryCommands,
+) -> Option<String> {
+    build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
+        mig, final_cmd, None, None,
+    )
+}
+
+fn build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
+    mig: &Migration,
+    final_cmd: &BakeryCommands,
+    live_down_reserved_handles: Option<&HashSet<u16>>,
+    live_up_reserved_handles: Option<&HashSet<u16>>,
 ) -> Option<String> {
     let BakeryCommands::AddCircuit {
         class_minor,
@@ -5943,7 +6088,35 @@ fn build_final_qdisc_handle_rotation_invariant_error(
         ));
     }
 
-    migration_qdisc_handle_rotation_invariant_error(mig)
+    if let Some(summary) = migration_qdisc_handle_rotation_invariant_error(mig) {
+        return Some(summary);
+    }
+
+    if let Some(live_down_reserved) = live_down_reserved_handles {
+        if let Some(down_handle) = *down_qdisc_handle
+            && live_down_reserved.contains(&down_handle)
+            && Some(down_handle) != mig.old_down_qdisc_handle
+        {
+            return Some(format!(
+                "build-final command used downlink qdisc handle {:?}, but that handle is already live on the interface under another parent",
+                down_handle
+            ));
+        }
+    }
+
+    if let Some(live_up_reserved) = live_up_reserved_handles {
+        if let Some(up_handle) = *up_qdisc_handle
+            && live_up_reserved.contains(&up_handle)
+            && Some(up_handle) != mig.old_up_qdisc_handle
+        {
+            return Some(format!(
+                "build-final command used uplink qdisc handle {:?}, but that handle is already live on the interface under another parent",
+                up_handle
+            ));
+        }
+    }
+
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5963,6 +6136,8 @@ fn apply_top_level_circuit_command_updates(
     let Some(layout) = mq_layout.as_ref() else {
         return Err("Bakery runtime virtualization requires MQ layout to be available".to_string());
     };
+    let live_reserved_handles =
+        snapshot_live_qdisc_handle_majors_or_empty(config, "top-level runtime virtualization");
 
     let mut ordered: Vec<_> = updates.iter().collect();
     ordered.sort_by_key(|(_, update)| {
@@ -5978,12 +6153,20 @@ fn apply_top_level_circuit_command_updates(
         let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
             continue;
         };
-        let enriched_cmd = rotate_changed_qdisc_handles(
-            old_cmd.as_ref(),
+        let enriched_base = with_assigned_qdisc_handles_reserved(
             &update.command,
             config,
             layout,
             qdisc_handles,
+            &live_reserved_handles,
+        );
+        let enriched_cmd = rotate_changed_qdisc_handles_reserved(
+            old_cmd.as_ref(),
+            &enriched_base,
+            config,
+            layout,
+            qdisc_handles,
+            &live_reserved_handles,
         );
         if circuit_qdisc_parent_changed(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
             && let BakeryCommands::AddCircuit {
@@ -6007,16 +6190,27 @@ fn apply_top_level_circuit_command_updates(
         let Some(old_cmd) = circuits.get(circuit_hash).cloned() else {
             continue;
         };
-        let enriched_cmd = rotate_changed_qdisc_handles(
-            old_cmd.as_ref(),
+        let enriched_base = with_assigned_qdisc_handles_reserved(
             &update.command,
             config,
             layout,
             qdisc_handles,
+            &live_reserved_handles,
         );
-        if let Some(summary) =
-            qdisc_handle_rotation_invariant_error(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
-        {
+        let enriched_cmd = rotate_changed_qdisc_handles_reserved(
+            old_cmd.as_ref(),
+            &enriched_base,
+            config,
+            layout,
+            qdisc_handles,
+            &live_reserved_handles,
+        );
+        if let Some(summary) = qdisc_handle_rotation_invariant_error_with_live_reservations(
+            old_cmd.as_ref(),
+            enriched_cmd.as_ref(),
+            config,
+            Some(&live_reserved_handles),
+        ) {
             return Err(format!(
                 "Bakery runtime top-level virtualization refusing live migration for active circuit {}: {}",
                 circuit_hash, summary
@@ -7293,8 +7487,7 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                 }
             }
         }
-        match execute_runtime_virtualized_subtree_prune(config, state, down_snapshot, up_snapshot)
-        {
+        match execute_runtime_virtualized_subtree_prune(config, state, down_snapshot, up_snapshot) {
             RuntimePrunePassResult::Completed => {
                 if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending {
                     debug!(
@@ -9488,7 +9681,10 @@ mod tests {
             ),
         )]);
         let down_snapshot = HashMap::from([
-            (TcHandle::from_u32(0x10022), live_class_entry(0x10022, Some(0x10020))),
+            (
+                TcHandle::from_u32(0x10022),
+                live_class_entry(0x10022, Some(0x10020)),
+            ),
             (
                 tc_handle_from_major_minor(0x110, 0x30),
                 LiveTcClassEntry {
@@ -9499,7 +9695,10 @@ mod tests {
             ),
         ]);
         let up_snapshot = HashMap::from([
-            (TcHandle::from_u32(0x20022), live_class_entry(0x20022, Some(0x20020))),
+            (
+                TcHandle::from_u32(0x20022),
+                live_class_entry(0x20022, Some(0x20020)),
+            ),
             (
                 tc_handle_from_major_minor(0x210, 0x30),
                 LiveTcClassEntry {
@@ -10404,6 +10603,91 @@ mod tests {
     }
 
     #[test]
+    fn parent_change_rotation_avoids_live_reserved_handles() {
+        let config = test_config_with_runtime_dir("parent-change-live-reserved");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut handles = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 313,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.13/32".to_string(),
+            sqm_override: None,
+        });
+
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut handles);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected assigned handles");
+        };
+
+        handles.save(&config);
+        let mut reloaded = QdiscHandleState::load(&config);
+
+        let moved = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 313,
+            parent_class_id: TcHandle::from_u32(0x10002),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x101,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.13/32".to_string(),
+            sqm_override: None,
+        });
+
+        let live_reserved = HashMap::from([
+            (config.isp_interface(), HashSet::from([*original_down + 1])),
+            (config.internet_interface(), HashSet::from([*original_up])),
+        ]);
+        let moved = with_assigned_qdisc_handles_reserved(
+            &moved,
+            &config,
+            &layout,
+            &mut reloaded,
+            &live_reserved,
+        );
+        let rotated = rotate_changed_qdisc_handles_reserved(
+            original.as_ref(),
+            &moved,
+            &config,
+            &layout,
+            &mut reloaded,
+            &live_reserved,
+        );
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(rotated_down),
+            ..
+        } = rotated.as_ref()
+        else {
+            panic!("expected rotated handles");
+        };
+
+        assert_ne!(*rotated_down, *original_down);
+        assert_ne!(*rotated_down, *original_down + 1);
+    }
+
+    #[test]
     fn queue_live_migration_succeeds_for_active_parent_move() {
         let old_cmd = mk_test_circuit(9001, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.90/32");
         let new_cmd = mk_test_circuit(9001, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.90/32");
@@ -10656,9 +10940,79 @@ mod tests {
             true,
         )
         .expect("final command");
-        let final_summary = build_final_qdisc_handle_rotation_invariant_error(&migration, &final_cmd)
-            .expect("final command should also be rejected");
+        let final_summary =
+            build_final_qdisc_handle_rotation_invariant_error(&migration, &final_cmd)
+                .expect("final command should also be rejected");
         assert!(final_summary.contains("old handle"));
+    }
+
+    #[test]
+    fn migration_invariant_rejects_live_reserved_handle_collisions() {
+        let migration = Migration {
+            circuit_hash: 9005,
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x93c9),
+            up_qdisc_handle: Some(0x93ca),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec!["192.0.2.95/32".to_string()],
+            sqm_override: None,
+            desired_cmd: Arc::new(BakeryCommands::AddCircuit {
+                circuit_hash: 9005,
+                parent_class_id: TcHandle::from_u32(0x10034),
+                up_parent_class_id: TcHandle::from_u32(0x20034),
+                class_minor: 0x35,
+                download_bandwidth_min: 1.0,
+                upload_bandwidth_min: 1.0,
+                download_bandwidth_max: 20.0,
+                upload_bandwidth_max: 20.0,
+                class_major: 0x1,
+                up_class_major: 0x2,
+                down_qdisc_handle: Some(0x93c9),
+                up_qdisc_handle: Some(0x93ca),
+                ip_addresses: "192.0.2.95/32".to_string(),
+                sqm_override: None,
+            }),
+            stage: MigrationStage::BuildFinal,
+        };
+
+        let final_cmd = build_temp_add_cmd(
+            migration.desired_cmd.as_ref(),
+            migration.final_minor,
+            migration.new_down_min,
+            migration.new_down_max,
+            migration.new_up_min,
+            migration.new_up_max,
+            true,
+        )
+        .expect("final command");
+        let down_reserved = HashSet::from([0x93c9]);
+        let up_reserved = HashSet::from([0x93ca]);
+        let final_summary =
+            build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
+                &migration,
+                &final_cmd,
+                Some(&down_reserved),
+                Some(&up_reserved),
+            )
+            .expect("live reserved collision should be rejected");
+        assert!(final_summary.contains("already live"));
     }
 
     #[test]

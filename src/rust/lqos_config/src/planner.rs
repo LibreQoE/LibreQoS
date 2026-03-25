@@ -608,8 +608,7 @@ mod tests {
     use super::{
         CircuitIdentityGroupInput, ClassIdentityPlannerConstraints, PlannerCircuitIdentityState,
         PlannerSiteIdentityState, SiteIdentityInput, TopLevelPlannerItem, TopLevelPlannerMode,
-        TopLevelPlannerParams,
-        build_class_identity_reservations, plan_class_identities,
+        TopLevelPlannerParams, build_class_identity_reservations, plan_class_identities,
         plan_class_identities_with_constraints, plan_top_level_assignments,
     };
     use std::collections::BTreeMap;
