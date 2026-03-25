@@ -47,7 +47,7 @@ use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32, qua
 use crate::utils::{
     ExecuteResult, LiveTcClassEntry, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
     read_live_class_snapshot, read_live_qdisc_handle_majors, read_memory_snapshot,
-    write_command_file,
+    tc_io_cadence_snapshot, write_command_file,
 };
 pub use commands::{
     BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
@@ -920,6 +920,12 @@ pub struct BakeryStatusSnapshot {
     pub last_build_duration_ms: u64,
     /// Time spent running the last apply through `tc`.
     pub last_apply_duration_ms: u64,
+    /// Average interval between real unified Bakery `tc` reads/writes, in milliseconds.
+    pub avg_tc_io_interval_ms: Option<u64>,
+    /// Unix timestamp when Bakery last performed a real unified `tc` read/write.
+    pub last_tc_io_unix: Option<u64>,
+    /// Number of recent intervals contributing to the average TC I/O interval.
+    pub tc_io_interval_samples: usize,
     /// Current runtime node-operation summary.
     pub runtime_operations: BakeryRuntimeOperationsSnapshot,
     /// Current queue-root distribution summary.
@@ -1283,6 +1289,7 @@ fn mark_bakery_action_finished(metrics: BakeryApplyMetrics<'_>) {
 /// Returns the latest Bakery status snapshot for UI/status consumers.
 pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
     let state = telemetry_state().read().clone();
+    let tc_io = tc_io_cadence_snapshot();
     BakeryStatusSnapshot {
         mode: state.mode,
         current_action_started_unix: state.current_action_started_unix,
@@ -1302,6 +1309,9 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
         last_qdisc_commands: state.last_qdisc_commands,
         last_build_duration_ms: state.last_build_duration_ms,
         last_apply_duration_ms: state.last_apply_duration_ms,
+        avg_tc_io_interval_ms: tc_io.avg_interval_ms,
+        last_tc_io_unix: tc_io.last_event_unix,
+        tc_io_interval_samples: tc_io.sample_count,
         runtime_operations: state.runtime_operations,
         queue_distribution: state.queue_distribution,
         live_capacity_interfaces: state.live_capacity_interfaces,

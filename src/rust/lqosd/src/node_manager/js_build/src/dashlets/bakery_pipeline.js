@@ -101,7 +101,7 @@ export class BakeryPipelineDashlet extends BaseDashlet {
             topRow.appendChild(col);
             this.stageEls.push(stage);
         }
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 3; i++) {
             const col = document.createElement("div");
             col.classList.add("bakery-pipeline-cell");
             const stage = document.createElement("div");
@@ -240,6 +240,24 @@ export class BakeryPipelineDashlet extends BaseDashlet {
                 : (applying ? "warning" : (lastOutcomeFailed ? "danger" : (lastSuccessUnix ? "ok" : "idle"))),
             verifyFooter,
             verifyTitleNode,
+        );
+
+        const tcIoFooter = document.createElement("span");
+        if (Number.isFinite(status.lastTcIoUnix) && status.lastTcIoUnix > 0) {
+            tcIoFooter.textContent = `Last tc I/O ${formatElapsedSince(status.lastTcIoUnix)}`;
+        } else {
+            tcIoFooter.textContent = "Tracks real tc reads/writes";
+        }
+        const tcIoSamples = Number.isFinite(status.tcIoIntervalSamples) ? status.tcIoIntervalSamples : 0;
+        renderStage(
+            this.stageEls[5],
+            "fa-clock",
+            "TC Interval",
+            Number.isFinite(status.avgTcIoIntervalMs)
+                ? formatDurationMs(status.avgTcIoIntervalMs)
+                : (Number.isFinite(status.lastTcIoUnix) && status.lastTcIoUnix > 0 ? "Collecting" : "No samples"),
+            tcIoSamples > 0 ? "ok" : "idle",
+            tcIoFooter,
         );
 
         this.alertEl.classList.toggle("d-none", !reloadRequired);

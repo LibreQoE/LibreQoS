@@ -1,6 +1,6 @@
 use lqos_bus::TcHandle;
 use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -19,7 +19,10 @@ pub(crate) fn current_timestamp() -> u64 {
 static FILE_LOCK: Mutex<()> = Mutex::new(());
 static LIVE_TC_SNAPSHOT_CACHE: LazyLock<Mutex<LiveTcSnapshotCache>> =
     LazyLock::new(|| Mutex::new(LiveTcSnapshotCache::new()));
+static TC_IO_CADENCE_STATE: LazyLock<Mutex<TcIoCadenceState>> =
+    LazyLock::new(|| Mutex::new(TcIoCadenceState::new()));
 const LIVE_TC_SNAPSHOT_MAX_AGE_MS: u64 = 250;
+const TC_IO_INTERVAL_WINDOW: usize = 128;
 
 #[derive(Clone)]
 struct TimedClassSnapshot {
@@ -50,6 +53,62 @@ impl LiveTcSnapshotCache {
         self.class_snapshots.clear();
         self.qdisc_snapshots.clear();
     }
+}
+
+struct TcIoCadenceState {
+    last_event_at: Option<Instant>,
+    last_event_unix: Option<u64>,
+    intervals_ms: VecDeque<u64>,
+    interval_sum_ms: u128,
+}
+
+impl TcIoCadenceState {
+    fn new() -> Self {
+        Self {
+            last_event_at: None,
+            last_event_unix: None,
+            intervals_ms: VecDeque::new(),
+            interval_sum_ms: 0,
+        }
+    }
+
+    fn record_event(&mut self) {
+        let now = Instant::now();
+        let now_unix = current_timestamp();
+        if let Some(last) = self.last_event_at {
+            let interval_ms = now.duration_since(last).as_millis() as u64;
+            self.intervals_ms.push_back(interval_ms);
+            self.interval_sum_ms = self.interval_sum_ms.saturating_add(u128::from(interval_ms));
+            while self.intervals_ms.len() > TC_IO_INTERVAL_WINDOW {
+                if let Some(removed) = self.intervals_ms.pop_front() {
+                    self.interval_sum_ms = self.interval_sum_ms.saturating_sub(u128::from(removed));
+                }
+            }
+        }
+        self.last_event_at = Some(now);
+        self.last_event_unix = Some(now_unix);
+    }
+
+    fn snapshot(&self) -> TcIoCadenceSnapshot {
+        let sample_count = self.intervals_ms.len();
+        let avg_interval_ms = if sample_count == 0 {
+            None
+        } else {
+            Some((self.interval_sum_ms / sample_count as u128) as u64)
+        };
+        TcIoCadenceSnapshot {
+            avg_interval_ms,
+            last_event_unix: self.last_event_unix,
+            sample_count,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TcIoCadenceSnapshot {
+    pub(crate) avg_interval_ms: Option<u64>,
+    pub(crate) last_event_unix: Option<u64>,
+    pub(crate) sample_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +143,7 @@ fn format_numbered_lines(lines: &str, starting_line_number: usize) -> String {
 }
 
 fn run_tc_batch(path: &Path, purpose: &str) -> Result<std::process::Output, String> {
+    record_tc_io_event();
     std::process::Command::new("/sbin/tc")
         .args(["-f", "-batch", path.to_str().unwrap_or_default()])
         .output()
@@ -216,7 +276,16 @@ pub(crate) fn invalidate_live_tc_snapshots() {
     cache.invalidate();
 }
 
+fn record_tc_io_event() {
+    TC_IO_CADENCE_STATE.lock().record_event();
+}
+
+pub(crate) fn tc_io_cadence_snapshot() -> TcIoCadenceSnapshot {
+    TC_IO_CADENCE_STATE.lock().snapshot()
+}
+
 fn read_live_qdisc_handle_majors_raw(interface: &str) -> Result<HashSet<u16>, String> {
+    record_tc_io_event();
     let output = std::process::Command::new("/sbin/tc")
         .args(["-s", "-j", "qdisc", "show", "dev", interface])
         .output()
@@ -262,6 +331,7 @@ pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u
 fn read_live_class_snapshot_raw(
     interface: &str,
 ) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
+    record_tc_io_event();
     let output = std::process::Command::new("/sbin/tc")
         .args(["class", "show", "dev", interface])
         .output()

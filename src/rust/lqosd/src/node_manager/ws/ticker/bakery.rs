@@ -118,6 +118,9 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
             last_qdisc_commands: snapshot.last_qdisc_commands,
             last_build_duration_ms: snapshot.last_build_duration_ms,
             last_apply_duration_ms: snapshot.last_apply_duration_ms,
+            avg_tc_io_interval_ms: snapshot.avg_tc_io_interval_ms,
+            last_tc_io_unix: snapshot.last_tc_io_unix,
+            tc_io_interval_samples: snapshot.tc_io_interval_samples,
             runtime_operations: BakeryRuntimeOperationsData {
                 submitted_count: snapshot.runtime_operations.submitted_count,
                 deferred_count: snapshot.runtime_operations.deferred_count,
