@@ -341,33 +341,6 @@ impl BakeryCommands {
         let mut result = Vec::new();
         let observe_only = config.queues.queue_mode.is_observe();
         let mq_already_created = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
-        if !observe_only {
-            info!("Clearing prior root qdiscs before MQ setup");
-            if config.on_a_stick_mode() {
-                result.push(vec![
-                    "qdisc".to_string(),
-                    "del".to_string(),
-                    "dev".to_string(),
-                    config.isp_interface(),
-                    "root".to_string(),
-                ]);
-            } else {
-                result.push(vec![
-                    "qdisc".to_string(),
-                    "del".to_string(),
-                    "dev".to_string(),
-                    config.isp_interface(),
-                    "root".to_string(),
-                ]);
-                result.push(vec![
-                    "qdisc".to_string(),
-                    "del".to_string(),
-                    "dev".to_string(),
-                    config.internet_interface(),
-                    "root".to_string(),
-                ]);
-            }
-        }
 
         if observe_only {
             if mq_already_created {
@@ -405,12 +378,13 @@ impl BakeryCommands {
             MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
             return Some(result);
         }
-
         info!(
             "Setting up MQ with {} queues and stick offset {}",
             queues_available, stick_offset
         );
-        // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+        // Use root replace directly so full reload stays idempotent on hosts
+        // where deleting the existing root qdisc fails before tc can apply the
+        // replacement.
         let sqm_strings = sqm_as_vec(config);
         let r2q = r2q(u64::max(
             config.queues.uplink_bandwidth_mbps,
@@ -1147,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn mq_setup_bridge_mode_emits_root_delete_before_replace() {
+    fn mq_setup_bridge_mode_emits_root_replace_commands() {
         let config = Arc::new(Config::default());
         let commands = BakeryCommands::MqSetup {
             queues_available: 1,
@@ -1156,21 +1130,19 @@ mod tests {
         .to_commands(&config, ExecutionMode::Builder)
         .expect("mq setup should emit commands");
 
-        assert!(is_root_delete(&commands[0], &config.isp_interface()));
-        assert!(is_root_delete(&commands[1], &config.internet_interface()));
-        assert!(is_root_replace_mq(&commands[2], &config.isp_interface()));
+        assert!(is_root_replace_mq(&commands[0], &config.isp_interface()));
         let internet_replace_idx = commands
             .iter()
             .position(|cmd| is_root_replace_mq(cmd, &config.internet_interface()))
             .expect("expected internet-interface root replace");
         assert!(
-            internet_replace_idx > 1,
-            "internet-interface root replace should occur after both deletes"
+            internet_replace_idx > 0,
+            "internet-interface root replace should occur after the ISP-interface root replace"
         );
     }
 
     #[test]
-    fn mq_setup_on_a_stick_emits_single_root_delete_before_replace() {
+    fn mq_setup_on_a_stick_emits_single_root_replace() {
         let config = Arc::new(Config {
             bridge: None,
             single_interface: Some(SingleInterfaceConfig::default()),
@@ -1184,16 +1156,7 @@ mod tests {
         .to_commands(&config, ExecutionMode::Builder)
         .expect("mq setup should emit commands");
 
-        assert!(is_root_delete(&commands[0], &config.isp_interface()));
-        assert!(is_root_replace_mq(&commands[1], &config.isp_interface()));
-        assert_eq!(
-            commands
-                .iter()
-                .filter(|cmd| is_root_delete(cmd, &config.isp_interface()))
-                .count(),
-            1,
-            "expected a single root delete on the shared interface"
-        );
+        assert!(is_root_replace_mq(&commands[0], &config.isp_interface()));
         assert_eq!(
             commands
                 .iter()
