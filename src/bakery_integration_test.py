@@ -51,6 +51,8 @@ Usage examples
 - Fault-injection reload escalation suite only:
     python3 bakery_integration_test.py --fault-reload-only
   This destructive safety-path test is opt-in and is not included in --full-suite.
+- Queue mode toggle suite only:
+    sudo python3 bakery_integration_test.py --queue-mode-only
 - Flat only:
     python3 bakery_integration_test.py --flat-only
 
@@ -107,6 +109,14 @@ try:
         from liblqos_python import on_a_stick  # type: ignore
     except Exception:
         on_a_stick = None  # type: ignore
+    try:
+        from liblqos_python import queue_mode  # type: ignore
+    except Exception:
+        queue_mode = None  # type: ignore
+    try:
+        from liblqos_python import sync_lqosd_config_from_disk  # type: ignore
+    except Exception:
+        sync_lqosd_config_from_disk = None  # type: ignore
 except Exception:
     # Provide a soft fallback if binding is unavailable
     def is_lqosd_alive() -> bool:
@@ -899,6 +909,25 @@ def run_refresh_and_wait(log: AnyLogReader, timeout_s: float) -> LogResult:
     return log.wait_for_events(offset, timeout_s=timeout_s)
 
 
+def run_refresh_subprocess_and_wait(log: AnyLogReader, timeout_s: float) -> LogResult:
+    offset = log.snapshot()
+    proc = subprocess.run(
+        [sys.executable, "LibreQoS.py"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.stdout:
+        print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
+    if proc.stderr:
+        print(proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if proc.returncode != 0:
+        raise RuntimeError(f"queue-mode suite: LibreQoS.py subprocess exited {proc.returncode}")
+    print("Sleeping 0.5s to allow lqosd to commit and log...")
+    time.sleep(0.5)
+    return log.wait_for_events(offset, timeout_s=timeout_s)
+
+
 def settle_initial_bakery_logs(log: AnyLogReader, settle_s: float = 1.5) -> None:
     offset = log.snapshot()
     time.sleep(settle_s)
@@ -1105,6 +1134,96 @@ def _read_htb_rate_ceil_mbps(iface: str, major: int, minor: int) -> Optional[Tup
 
 def _qdisc_show(iface: str) -> Tuple[int, str, str]:
     return _tc(["qdisc", "show", "dev", iface])
+
+
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
+
+def _write_text(path: str, text: str) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _set_queue_mode_in_lqos_conf_text(config_text: str, mode: str) -> str:
+    if mode not in {"shape", "observe"}:
+        raise ValueError(f"unsupported queue mode: {mode}")
+
+    section_pat = re.compile(r"(?ms)^(\[queues\]\n)(.*?)(?=^\[|\Z)")
+    match = section_pat.search(config_text)
+    if not match:
+        raise RuntimeError("queue-mode suite: [queues] section not found in /etc/lqos.conf")
+
+    header = match.group(1)
+    body = match.group(2)
+    queue_mode_line = f'queue_mode = "{mode}"\n'
+    if re.search(r'(?m)^queue_mode\s*=\s*".*?"\s*$', body):
+        new_body = re.sub(
+            r'(?m)^queue_mode\s*=\s*".*?"\s*$',
+            queue_mode_line.rstrip("\n"),
+            body,
+            count=1,
+        )
+        if not new_body.endswith("\n"):
+            new_body += "\n"
+    else:
+        new_body = queue_mode_line + body
+    return config_text[:match.start()] + header + new_body + config_text[match.end():]
+
+
+@dataclass
+class TcShapeSummary:
+    iface: str
+    root_mq: bool
+    clsact: bool
+    root_htb_qdiscs: int
+    htb_classes: int
+    child_leaf_qdiscs: int
+
+
+def _summarize_iface_tc(iface: str) -> TcShapeSummary:
+    qdisc_rc, qdisc_out, qdisc_err = _qdisc_show(iface)
+    if qdisc_rc != 0:
+        raise RuntimeError(f"queue-mode suite: tc qdisc show dev {iface} failed: {qdisc_err.strip()}")
+
+    class_rc, class_out, class_err = _tc(["class", "show", "dev", iface])
+    if class_rc != 0:
+        raise RuntimeError(f"queue-mode suite: tc class show dev {iface} failed: {class_err.strip()}")
+
+    root_mq = bool(re.search(r"(?m)^qdisc\s+mq\s+7fff:\s+root\b", qdisc_out))
+    clsact = bool(re.search(r"(?m)^qdisc\s+clsact\s+ffff:\s+parent\s+ffff:fff1\b", qdisc_out))
+    root_htb_qdiscs = len(
+        re.findall(r"(?m)^qdisc\s+htb\s+[0-9A-Fa-fx]+:\s+parent\s+7fff:[0-9A-Fa-fx]+\b", qdisc_out)
+    )
+    htb_classes = len(re.findall(r"(?m)^class\s+htb\s+[0-9A-Fa-fx]+:[0-9A-Fa-fx]+\b", class_out))
+    child_leaf_qdiscs = len(
+        re.findall(
+            r"(?m)^qdisc\s+(?!mq\b)(?!htb\b)(?!clsact\b)\S+\s+\S+:\s+parent\s+(?!ffff:)[0-9A-Fa-fx]+:[0-9A-Fa-fx]+\b",
+            qdisc_out,
+        )
+    )
+
+    return TcShapeSummary(
+        iface=iface,
+        root_mq=root_mq,
+        clsact=clsact,
+        root_htb_qdiscs=root_htb_qdiscs,
+        htb_classes=htb_classes,
+        child_leaf_qdiscs=child_leaf_qdiscs,
+    )
+
+
+def _shape_summary_message(prefix: str, summary: TcShapeSummary) -> str:
+    return (
+        f"{prefix}: {summary.iface}: "
+        f"root_mq={summary.root_mq}, clsact={summary.clsact}, "
+        f"root_htb_qdiscs={summary.root_htb_qdiscs}, "
+        f"htb_classes={summary.htb_classes}, "
+        f"child_leaf_qdiscs={summary.child_leaf_qdiscs}"
+    )
 
 
 def check_no_site_circuit_minor_collisions() -> Tuple[bool, List[str]]:
@@ -2635,6 +2754,153 @@ def with_backups(paths: List[str]):
 # -----------------------
 
 
+def run_queue_mode_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
+    if os.geteuid() != 0:
+        results.append("queue-mode: must run as root to edit /etc/lqos.conf")
+        return False
+    if not queue_mode or not callable(queue_mode):  # type: ignore[name-defined]
+        results.append("queue-mode: queue_mode() binding unavailable")
+        return False
+    if not sync_lqosd_config_from_disk or not callable(sync_lqosd_config_from_disk):  # type: ignore[name-defined]
+        results.append("queue-mode: sync_lqosd_config_from_disk() binding unavailable")
+        return False
+    if not interface_a or not callable(interface_a):  # type: ignore[name-defined]
+        results.append("queue-mode: interface_a() binding unavailable")
+        return False
+
+    iface_names: List[str] = []
+    try:
+        iface_names.append(interface_a())  # type: ignore[misc]
+    except Exception as exc:
+        results.append(f"queue-mode: failed to resolve interface_a(): {exc}")
+        return False
+    if interface_b and callable(interface_b):  # type: ignore[name-defined]
+        try:
+            iface_b_name = interface_b()  # type: ignore[misc]
+            if iface_b_name and iface_b_name not in iface_names:
+                iface_names.append(iface_b_name)
+        except Exception as exc:
+            results.append(f"queue-mode: failed to resolve interface_b(): {exc}")
+            return False
+
+    config_path = "/etc/lqos.conf"
+    original_config_text = _read_text(config_path)
+    try:
+        original_mode = queue_mode()  # type: ignore[misc]
+    except Exception as exc:
+        results.append(f"queue-mode: failed to read current queue_mode(): {exc}")
+        return False
+
+    last_applied_mode = original_mode
+
+    def _set_mode_and_refresh(mode: str, step_name: str) -> Tuple[bool, LogResult]:
+        nonlocal last_applied_mode
+        _mark_step(step_name)
+        _write_text(config_path, _set_queue_mode_in_lqos_conf_text(_read_text(config_path), mode))
+        sync_lqosd_config_from_disk()  # type: ignore[misc]
+        step_started_at = time.time()
+        res = run_refresh_subprocess_and_wait(log, timeout_s)
+        last_applied_mode = mode
+        results.append(
+            f"{step_name}: bakery outcome full_reload={res.full_reload} mq_init={res.mq_init} incremental={res.incremental_event or 'none'}"
+        )
+        if not res.raw_lines:
+            results.append(f"{step_name}: no Bakery logs observed after refresh (started {step_started_at:.6f})")
+            return False, res
+        return True, res
+
+    def _check_shape_state(tag: str, baseline: Optional[Dict[str, TcShapeSummary]] = None) -> Tuple[bool, Dict[str, TcShapeSummary]]:
+        ok = True
+        summaries: Dict[str, TcShapeSummary] = {}
+        for iface in iface_names:
+            summary = _summarize_iface_tc(iface)
+            summaries[iface] = summary
+            results.append(_shape_summary_message(tag, summary))
+            if not summary.root_mq:
+                results.append(f"{tag}: {iface}: expected root mq to remain present")
+                ok = False
+            if summary.root_htb_qdiscs <= 0:
+                results.append(f"{tag}: {iface}: expected HTB qdiscs in shape mode")
+                ok = False
+            if summary.htb_classes <= 0:
+                results.append(f"{tag}: {iface}: expected HTB classes in shape mode")
+                ok = False
+            if summary.child_leaf_qdiscs <= 0:
+                results.append(f"{tag}: {iface}: expected leaf qdiscs in shape mode")
+                ok = False
+            if baseline is not None:
+                prior = baseline.get(iface)
+                if prior is None:
+                    results.append(f"{tag}: {iface}: missing baseline summary for comparison")
+                    ok = False
+                elif summary != prior:
+                    results.append(
+                        f"{tag}: {iface}: note restored shape counts differ from baseline "
+                        f"(baseline root_htb_qdiscs={prior.root_htb_qdiscs}, htb_classes={prior.htb_classes}, "
+                        f"child_leaf_qdiscs={prior.child_leaf_qdiscs}); "
+                        "shape rebuild appears to have normalized pre-existing stale TC state"
+                    )
+        return ok, summaries
+
+    def _check_observe_state(tag: str) -> Tuple[bool, Dict[str, TcShapeSummary]]:
+        ok = True
+        summaries: Dict[str, TcShapeSummary] = {}
+        for iface in iface_names:
+            summary = _summarize_iface_tc(iface)
+            summaries[iface] = summary
+            results.append(_shape_summary_message(tag, summary))
+            if not summary.root_mq:
+                results.append(f"{tag}: {iface}: expected root mq to remain present")
+                ok = False
+            if summary.root_htb_qdiscs != 0:
+                results.append(f"{tag}: {iface}: expected no root HTB qdiscs in observe mode")
+                ok = False
+            if summary.htb_classes != 0:
+                results.append(f"{tag}: {iface}: expected no HTB classes in observe mode")
+                ok = False
+            if summary.child_leaf_qdiscs != 0:
+                results.append(f"{tag}: {iface}: expected no child leaf qdiscs in observe mode")
+                ok = False
+        return ok, summaries
+
+    overall_ok = True
+    baseline_shape: Optional[Dict[str, TcShapeSummary]] = None
+
+    try:
+        mode_ok, _ = _set_mode_and_refresh("shape", "queue-mode: baseline shape sync")
+        overall_ok &= mode_ok
+
+        shape_ok, baseline_shape = _check_shape_state("queue-mode: baseline shape")
+        overall_ok &= shape_ok
+
+        mode_ok, _ = _set_mode_and_refresh("observe", "queue-mode: switch to observe")
+        overall_ok &= mode_ok
+        observe_ok, _ = _check_observe_state("queue-mode: observe state")
+        overall_ok &= observe_ok
+
+        mode_ok, _ = _set_mode_and_refresh("shape", "queue-mode: switch back to shape")
+        overall_ok &= mode_ok
+        restore_ok, _ = _check_shape_state("queue-mode: restored shape", baseline_shape)
+        overall_ok &= restore_ok
+    finally:
+        current_config_text = _read_text(config_path)
+        if current_config_text != original_config_text:
+            _write_text(config_path, original_config_text)
+        if last_applied_mode != original_mode:
+            try:
+                _mark_step("queue-mode: restore original runtime mode")
+                sync_lqosd_config_from_disk()  # type: ignore[misc]
+                _ = run_refresh_subprocess_and_wait(log, timeout_s)
+                results.append(f"queue-mode: restored original runtime mode {original_mode}")
+            except Exception as exc:
+                results.append(f"queue-mode: failed to restore original runtime mode {original_mode}: {exc}")
+                overall_ok = False
+        else:
+            results.append("queue-mode: restored /etc/lqos.conf to original text")
+
+    return overall_ok
+
+
 def run_tiered_suite(log: AnyLogReader, timeout_s: float, results: List[str]) -> bool:
     ok = True
 
@@ -3920,6 +4186,7 @@ def main() -> int:
     g.add_argument("--realistic-only", action="store_true", help="Run realistic tiered cases only")
     g.add_argument("--virtualized-only", action="store_true", help="Run virtualized-node tiered cases only")
     g.add_argument("--treeguard-only", action="store_true", help="Run live TreeGuard runtime cases only")
+    g.add_argument("--queue-mode-only", action="store_true", help="Run live Observe/Shape queue-mode toggle checks only")
     g.add_argument(
         "--fault-reload-only",
         action="store_true",
@@ -3979,6 +4246,10 @@ def main() -> int:
             ok = run_treeguard_runtime_suite(
                 log, args.timeout, args.treeguard_timeout, results
             )
+            overall_ok &= ok
+        elif args.queue_mode_only:
+            selected_suite = "queue-mode-only"
+            ok = run_queue_mode_suite(log, args.timeout, results)
             overall_ok &= ok
         elif args.fault_reload_only:
             selected_suite = "fault-reload-only"

@@ -853,6 +853,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(is_lqosd_alive, m)?)?;
     m.add_function(wrap_pyfunction!(list_ip_mappings, m)?)?;
     m.add_function(wrap_pyfunction!(clear_ip_mappings, m)?)?;
+    m.add_function(wrap_pyfunction!(sync_lqosd_config_from_disk, m)?)?;
     m.add_function(wrap_pyfunction!(delete_ip_mapping, m)?)?;
     m.add_function(wrap_pyfunction!(add_ip_mapping, m)?)?;
     m.add_function(wrap_pyfunction!(validate_shaped_devices, m)?)?;
@@ -1059,6 +1060,30 @@ fn list_ip_mappings(_py: Python) -> PyResult<Vec<PyIpMapping>> {
 #[pyfunction]
 fn clear_ip_mappings(_py: Python) -> PyResult<()> {
     run_query(vec![BusRequest::ClearIpFlow]).unwrap();
+    Ok(())
+}
+
+/// Reloads `/etc/lqos.conf` from disk in the current process and pushes the same
+/// config into the running `lqosd` process.
+///
+/// This is intended for local admin workflows and test harnesses that update the
+/// config file out-of-band and then need `lqosd` to observe the new values before
+/// issuing runtime actions.
+#[pyfunction]
+fn sync_lqosd_config_from_disk(_py: Python) -> PyResult<()> {
+    lqos_config::clear_cached_config();
+    let config = lqos_config::load_config()
+        .map_err(|e| PyOSError::new_err(format!("Unable to load /etc/lqos.conf: {e}")))?;
+    let responses = run_query(vec![BusRequest::UpdateLqosdConfig(Box::new(
+        (*config).clone(),
+    ))])
+    .map_err(|e| PyOSError::new_err(format!("Unable to push config into lqosd: {e}")))?;
+    if !responses.iter().any(|response| matches!(response, BusResponse::Ack)) {
+        return Err(PyOSError::new_err(
+            "lqosd did not acknowledge the config update request",
+        ));
+    }
+    lqos_config::clear_cached_config();
     Ok(())
 }
 

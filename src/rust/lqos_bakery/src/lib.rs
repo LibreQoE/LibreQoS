@@ -8556,7 +8556,14 @@ fn apply_stormguard_overrides(
     overrides: &HashMap<StormguardOverrideKey, u64>,
     config: &Arc<Config>,
 ) {
-    let _ = config; // currently unused but kept for future interface-specific logic
+    if config.queues.queue_mode.is_observe() {
+        push_bakery_event(
+            "stormguard_override_replay_skipped",
+            "info",
+            "Skipping StormGuard HTB override replay because queue_mode is observe.".to_string(),
+        );
+        return;
+    }
     if overrides.is_empty() {
         return;
     }
