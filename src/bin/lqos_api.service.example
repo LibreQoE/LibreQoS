@@ -1,5 +1,6 @@
 [Unit]
-After=network.service lqosd.service
+Wants=network-online.target
+After=network-online.target systemd-resolved.service lqosd.service
 Requires=lqosd.service
 
 [Service]
@@ -9,4 +10,3 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-

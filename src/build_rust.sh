@@ -114,6 +114,27 @@ service_exists() {
     fi
 }
 
+refresh_service_unit() {
+    local unit_name=$1
+    local src="./bin/${unit_name}.service.example"
+    local dst="/etc/systemd/system/${unit_name}.service"
+    if [ -f "$src" ] && [ -f "$dst" ]; then
+        echo "Refreshing $dst from $src"
+        sudo cp "$src" "$dst"
+        SERVICE_UNITS_UPDATED=1
+    fi
+}
+
+SERVICE_UNITS_UPDATED=0
+refresh_service_unit lqosd
+refresh_service_unit lqos_scheduler
+refresh_service_unit lqos_api
+
+if [ "$SERVICE_UNITS_UPDATED" -eq 1 ]; then
+    echo "Reloading systemd unit definitions."
+    sudo systemctl daemon-reload
+fi
+
 if service_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
     sudo systemctl stop lqos_node_manager

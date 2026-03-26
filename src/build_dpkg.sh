@@ -147,14 +147,14 @@ sudo chown -R root:root /opt/libreqos
 # - Run lqsetup
 /opt/libreqos/src/bin/lqos_setup
 # - Setup the services
-cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
-cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
-cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
+install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl enable lqosd lqos_scheduler lqos_api || true
-/bin/systemctl start lqosd lqos_scheduler lqos_api || true
+/bin/systemctl restart lqosd lqos_scheduler lqos_api || true
 popd > /dev/null
 EOF
 

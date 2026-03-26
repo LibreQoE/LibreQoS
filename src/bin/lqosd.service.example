@@ -1,5 +1,6 @@
 [Unit]
-After=network.service
+Wants=network-online.target
+After=network-online.target systemd-resolved.service
 
 [Service]
 WorkingDirectory=/opt/libreqos/src/bin
