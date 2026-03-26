@@ -39,12 +39,7 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
-If you already hit an older hotfix installer that stops with `Packages were downgraded and -y was used without --allow-downgrades`, rerun the package install once with:
-
-```bash
-sudo apt-get install -y --allow-downgrades /tmp/libreqos-systemd-hotfix.*/*.deb
-sudo reboot
-```
+The hotfix installer bootstraps the LibreQoS APT repo at `https://repo.libreqos.com`, installs the patched Noble `systemd` package set, and pins those packages for future updates.
 
 After the reboot, resume the upgrade and restart services:
 

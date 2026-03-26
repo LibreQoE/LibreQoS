@@ -39,12 +39,7 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
-Si ya te topaste con un instalador anterior del hotfix que se detiene con `Packages were downgraded and -y was used without --allow-downgrades`, vuelve a ejecutar una vez la instalación de paquetes con:
-
-```bash
-sudo apt-get install -y --allow-downgrades /tmp/libreqos-systemd-hotfix.*/*.deb
-sudo reboot
-```
+El instalador del hotfix configura el repositorio APT de LibreQoS en `https://repo.libreqos.com`, instala el conjunto parchado de paquetes `systemd` de Noble y fija esos paquetes para futuras actualizaciones.
 
 Después del reinicio, reanuda la actualización y reinicia los servicios:
 

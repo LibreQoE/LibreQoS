@@ -2,12 +2,19 @@
 
 set -euo pipefail
 
-HOTFIX_BASE_URL="https://download.libreqos.com"
-HOTFIX_PACKAGE_VERSION="${HOTFIX_PACKAGE_VERSION:-255.4-1ubuntu8.12+libreqos1}"
+HOTFIX_REPO_URL="${HOTFIX_REPO_URL:-https://repo.libreqos.com}"
+HOTFIX_REPO_DIST="${HOTFIX_REPO_DIST:-noble}"
+HOTFIX_REPO_COMPONENT="${HOTFIX_REPO_COMPONENT:-main}"
+HOTFIX_KEY_URL="${HOTFIX_KEY_URL:-${HOTFIX_REPO_URL}/keys/libreqos-archive-keyring.gpg}"
+HOTFIX_KEYRING_PATH="${HOTFIX_KEYRING_PATH:-/usr/share/keyrings/libreqos-archive-keyring.gpg}"
+HOTFIX_APT_SOURCE_PATH="${HOTFIX_APT_SOURCE_PATH:-/etc/apt/sources.list.d/libreqos-systemd-hotfix.list}"
+HOTFIX_APT_PREFERENCES_PATH="${HOTFIX_APT_PREFERENCES_PATH:-/etc/apt/preferences.d/libreqos-systemd-hotfix}"
+HOTFIX_APT_PIN_ORIGIN="${HOTFIX_APT_PIN_ORIGIN:-LibreQoS}"
+HOTFIX_APT_PIN_LABEL="${HOTFIX_APT_PIN_LABEL:-LibreQoS}"
+HOTFIX_PACKAGE_VERSION="${HOTFIX_PACKAGE_VERSION:-255.4-1ubuntu8.14+libreqos1}"
 SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS="${SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS:-255.4-1ubuntu8 255.4-1ubuntu8.*}"
 HOTFIX_MARKER="${HOTFIX_MARKER:-/opt/libreqos/src/.systemd_hotfix_installed}"
 HOTFIX_SKIP_REBOOT_PROMPT="${HOTFIX_SKIP_REBOOT_PROMPT:-0}"
-ARCH="${ARCH:-amd64}"
 
 HOTFIX_CORE_PACKAGES=(
   "libsystemd0"
@@ -35,17 +42,26 @@ Usage: $0 <command>
 Commands:
   status        Show whether this host should be offered the Noble systemd hotfix
   should-offer  Exit 0 when the hotfix should be offered on this host
-  download      Download the hotfix bundle into a temporary directory
-  install       Download and install the hotfix bundle, then offer to schedule a reboot
-  packages      Print the package filenames expected for this host
-  urls          Print the expected package URLs for this host
+  bootstrap     Configure the LibreQoS APT repo and package pin for this host
+  download      Download the hotfix package set into a temporary directory via APT
+  install       Configure the LibreQoS APT repo and install the hotfix package set
+  packages      Print the package names managed by the hotfix on this host
+  urls          Print the repo bootstrap URLs used for this host
 
 Environment:
-  HOTFIX_PACKAGE_VERSION           Backported package version suffix
+  HOTFIX_REPO_URL                  LibreQoS APT repository URL
+  HOTFIX_REPO_DIST                 APT distribution, defaults to noble
+  HOTFIX_REPO_COMPONENT            APT component, defaults to main
+  HOTFIX_KEY_URL                   Public key URL for the LibreQoS APT repository
+  HOTFIX_KEYRING_PATH              Destination keyring path installed on the host
+  HOTFIX_APT_SOURCE_PATH           Destination apt source list path installed on the host
+  HOTFIX_APT_PREFERENCES_PATH      Destination apt pin file installed on the host
+  HOTFIX_APT_PIN_ORIGIN            Expected Release Origin field, defaults to LibreQoS
+  HOTFIX_APT_PIN_LABEL             Expected Release Label field, defaults to LibreQoS
+  HOTFIX_PACKAGE_VERSION           Backported package version to install
   SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS Space-separated stock Ubuntu version globs eligible for replacement
   HOTFIX_MARKER                    Marker file written after install
   HOTFIX_SKIP_REBOOT_PROMPT        Set to 1 to suppress the reboot prompt after install
-  ARCH                             Debian architecture suffix, defaults to amd64
 EOF
 }
 
@@ -112,39 +128,52 @@ package_is_installed() {
     dpkg-query -W -f='${db:Status-Abbrev}\n' "$package" 2>/dev/null | grep -q '^ii'
 }
 
-package_arch_suffix() {
-    local package="$1"
-
-    case "$package" in
-        systemd-dev)
-            printf 'all\n'
-            ;;
-        *)
-            printf '%s\n' "$ARCH"
-            ;;
-    esac
-}
-
-package_filename() {
-    local package="$1"
-    printf '%s_%s_%s.deb\n' \
-        "$package" \
-        "$HOTFIX_PACKAGE_VERSION" \
-        "$(package_arch_suffix "$package")"
-}
-
-resolved_hotfix_packages() {
+resolved_hotfix_package_names() {
     local package
 
     for package in "${HOTFIX_CORE_PACKAGES[@]}"; do
-        package_filename "$package"
+        printf '%s\n' "$package"
     done
 
     for package in "${HOTFIX_OPTIONAL_PACKAGES[@]}"; do
         if package_is_installed "$package"; then
-            package_filename "$package"
+            printf '%s\n' "$package"
         fi
     done
+}
+
+resolved_hotfix_package_specs() {
+    local package
+    while IFS= read -r package; do
+        printf '%s=%s\n' "$package" "$HOTFIX_PACKAGE_VERSION"
+    done < <(resolved_hotfix_package_names)
+}
+
+joined_hotfix_packages() {
+    local packages=()
+    local package
+
+    while IFS= read -r package; do
+        packages+=("$package")
+    done < <(resolved_hotfix_package_names)
+
+    printf '%s\n' "${packages[*]}"
+}
+
+render_apt_source() {
+    printf 'deb [signed-by=%s] %s %s %s\n' \
+        "$HOTFIX_KEYRING_PATH" \
+        "$HOTFIX_REPO_URL" \
+        "$HOTFIX_REPO_DIST" \
+        "$HOTFIX_REPO_COMPONENT"
+}
+
+render_apt_preferences() {
+    cat <<EOF
+Package: $(joined_hotfix_packages)
+Pin: release o=${HOTFIX_APT_PIN_ORIGIN},l=${HOTFIX_APT_PIN_LABEL},n=${HOTFIX_REPO_DIST}
+Pin-Priority: 1001
+EOF
 }
 
 is_supported_os() {
@@ -178,15 +207,22 @@ uses_systemd_networkd() {
     [[ "$enabled_state" == "enabled" || "$enabled_state" == "static" || "$active_state" == "active" ]]
 }
 
+ensure_applicable_host() {
+    local version
+    version="$(current_systemd_version)"
+
+    is_supported_os || fail "Host is not Ubuntu 24.04 Noble. Hotfix not applicable."
+    [[ -n "$version" ]] || fail "systemd is not installed via dpkg query. Hotfix not applicable."
+    uses_systemd_networkd || fail "systemd-networkd is not enabled or active. Hotfix not applicable."
+}
+
 print_urls() {
-    local package
-    while IFS= read -r package; do
-        printf '%s/%s\n' "$HOTFIX_BASE_URL" "$package"
-    done < <(resolved_hotfix_packages)
+    printf 'repo=%s\n' "$HOTFIX_REPO_URL"
+    printf 'key=%s\n' "$HOTFIX_KEY_URL"
 }
 
 print_packages() {
-    resolved_hotfix_packages
+    resolved_hotfix_package_names
 }
 
 status() {
@@ -222,13 +258,42 @@ status() {
     return 1
 }
 
-download_bundle() {
-    local workdir package
+bootstrap_repo() {
     require_command curl
+    require_command apt-get
+
+    ensure_applicable_host
+
+    run_as_root install -d -m 755 \
+        "$(dirname "$HOTFIX_KEYRING_PATH")" \
+        "$(dirname "$HOTFIX_APT_SOURCE_PATH")" \
+        "$(dirname "$HOTFIX_APT_PREFERENCES_PATH")"
+
+    curl -fsSL "$HOTFIX_KEY_URL" | run_as_root tee "$HOTFIX_KEYRING_PATH" >/dev/null
+    run_as_root chmod 644 "$HOTFIX_KEYRING_PATH"
+
+    render_apt_source | run_as_root tee "$HOTFIX_APT_SOURCE_PATH" >/dev/null
+    render_apt_preferences | run_as_root tee "$HOTFIX_APT_PREFERENCES_PATH" >/dev/null
+    run_as_root chmod 644 "$HOTFIX_APT_SOURCE_PATH" "$HOTFIX_APT_PREFERENCES_PATH"
+
+    run_as_root apt-get update
+    log "Configured LibreQoS APT hotfix repository: $HOTFIX_REPO_URL"
+}
+
+download_bundle() {
+    local workdir
+
+    require_command apt-get
+    bootstrap_repo
+
     workdir="$(mktemp -d /tmp/libreqos-systemd-hotfix.XXXXXX)"
-    while IFS= read -r package; do
-        curl -fL --retry 3 --output "${workdir}/${package}" "${HOTFIX_BASE_URL}/${package}"
-    done < <(resolved_hotfix_packages)
+    (
+        cd "$workdir"
+        while IFS= read -r package; do
+            apt-get download "$package"
+        done < <(resolved_hotfix_package_specs)
+    )
+
     printf '%s\n' "$workdir"
 }
 
@@ -237,12 +302,15 @@ write_marker() {
     {
         printf 'installed_at=%s\n' "$(date -Iseconds)"
         printf 'package_version=%s\n' "$HOTFIX_PACKAGE_VERSION"
-        printf 'base_url=%s\n' "$HOTFIX_BASE_URL"
+        printf 'repo_url=%s\n' "$HOTFIX_REPO_URL"
+        printf 'key_url=%s\n' "$HOTFIX_KEY_URL"
+        printf 'apt_source_path=%s\n' "$HOTFIX_APT_SOURCE_PATH"
+        printf 'apt_preferences_path=%s\n' "$HOTFIX_APT_PREFERENCES_PATH"
         printf 'systemd_version=%s\n' "$(current_systemd_version)"
         while IFS= read -r package; do
-            printf 'package_file=%s\n' "$package"
-            printf 'package_url=%s/%s\n' "$HOTFIX_BASE_URL" "$package"
-        done < <(resolved_hotfix_packages)
+            printf 'package_name=%s\n' "$package"
+            printf 'package_spec=%s=%s\n' "$package" "$HOTFIX_PACKAGE_VERSION"
+        done < <(resolved_hotfix_package_names)
     } | run_as_root tee "$HOTFIX_MARKER" >/dev/null
 }
 
@@ -268,17 +336,18 @@ offer_reboot() {
 }
 
 install_bundle() {
-    local workdir package_paths=() package
+    local package_specs=()
+    local package
 
-    status >/dev/null || fail "Hotfix is not applicable on this host."
     require_command apt-get
+    ensure_applicable_host
+    bootstrap_repo
 
-    workdir="$(download_bundle)"
     while IFS= read -r package; do
-        package_paths+=("${workdir}/${package}")
-    done < <(resolved_hotfix_packages)
+        package_specs+=("$package")
+    done < <(resolved_hotfix_package_specs)
 
-    run_as_root apt-get install -y --allow-downgrades "${package_paths[@]}"
+    run_as_root apt-get install -y "${package_specs[@]}"
     write_marker
     log "Hotfix installed."
     offer_reboot
@@ -294,8 +363,10 @@ main() {
         should-offer)
             status >/dev/null
             ;;
+        bootstrap)
+            bootstrap_repo
+            ;;
         download)
-            status >/dev/null || fail "Hotfix is not applicable on this host."
             download_bundle
             ;;
         packages)

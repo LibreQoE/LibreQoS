@@ -125,7 +125,7 @@ LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this h
 Run:
   sudo /opt/libreqos/src/systemd_hotfix.sh install
 
-The hotfix installer downloads from https://download.libreqos.com and will offer to schedule a reboot.
+The hotfix installer bootstraps the LibreQoS APT repo at https://repo.libreqos.com and will offer to schedule a reboot.
 
 After the reboot, finish the LibreQoS package configuration with:
   sudo dpkg --configure -a
