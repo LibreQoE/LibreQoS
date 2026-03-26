@@ -371,13 +371,9 @@ function inferQueueMode(config) {
 
 function renderQueueModeState(mode, busy = false) {
     const nav = document.getElementById("observeShapeNav");
-    const badge = document.getElementById("queueModeBadge");
     const observeBtn = document.getElementById("btnQueueModeObserve");
     const shapeBtn = document.getElementById("btnQueueModeShape");
-    if (!nav || !badge || !observeBtn || !shapeBtn) return;
-
-    badge.className = `badge ${mode === "observe" ? "text-bg-warning" : "text-bg-success"}`;
-    badge.textContent = mode === "observe" ? "Observe" : "Shape";
+    if (!nav || !observeBtn || !shapeBtn) return;
 
     observeBtn.disabled = busy || mode === "observe";
     shapeBtn.disabled = busy || mode === "shape";
