@@ -45,7 +45,6 @@ LQOS_FILES=(
   manualNetwork.template.csv
   integrationUISProutes.template.csv
   integrationSplynxBandwidths.template.csv
-  deb-requirements-constraints.txt
   ../requirements.txt
   update_api.sh
 )
@@ -136,7 +135,11 @@ fi
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task
+if [ -s src/deb-requirements-constraints.txt ]; then
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -c src/deb-requirements-constraints.txt -r src/requirements.txt
+else
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
+fi
 # - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
@@ -174,6 +177,10 @@ popd > /dev/null || exit
 for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
+
+if [ -f deb-requirements-constraints.txt ]; then
+  cp deb-requirements-constraints.txt "$LQOS_DIR" || echo "Error copying deb-requirements-constraints.txt"
+fi
 
 # Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then

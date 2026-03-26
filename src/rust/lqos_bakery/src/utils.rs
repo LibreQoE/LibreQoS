@@ -33,7 +33,7 @@ struct TimedClassSnapshot {
 #[derive(Clone)]
 struct TimedQdiscSnapshot {
     captured_at: Instant,
-    handles: HashSet<u16>,
+    entries: Vec<LiveTcQdiscEntry>,
 }
 
 struct LiveTcSnapshotCache {
@@ -132,6 +132,14 @@ pub(crate) struct LiveTcClassEntry {
     pub(crate) class_id: TcHandle,
     pub(crate) parent: Option<TcHandle>,
     pub(crate) leaf_qdisc_major: Option<u16>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LiveTcQdiscEntry {
+    pub(crate) kind: String,
+    pub(crate) handle: Option<TcHandle>,
+    pub(crate) parent: Option<TcHandle>,
+    pub(crate) is_root: bool,
 }
 
 fn format_numbered_lines(lines: &str, starting_line_number: usize) -> String {
@@ -284,7 +292,7 @@ pub(crate) fn tc_io_cadence_snapshot() -> TcIoCadenceSnapshot {
     TC_IO_CADENCE_STATE.lock().snapshot()
 }
 
-fn read_live_qdisc_handle_majors_raw(interface: &str) -> Result<HashSet<u16>, String> {
+fn read_live_qdisc_snapshot_raw(interface: &str) -> Result<Vec<LiveTcQdiscEntry>, String> {
     record_tc_io_event();
     let output = std::process::Command::new("/sbin/tc")
         .args(["-s", "-j", "qdisc", "show", "dev", interface])
@@ -302,11 +310,11 @@ fn read_live_qdisc_handle_majors_raw(interface: &str) -> Result<HashSet<u16>, St
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| format!("Live qdisc snapshot on {interface} was not UTF-8: {e}"))?;
 
-    parse_live_qdisc_handle_majors(&stdout)
+    parse_live_qdisc_snapshot(&stdout)
         .map_err(|e| format!("Failed to parse live qdisc snapshot on {interface}: {e}"))
 }
 
-pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u16>, String> {
+pub(crate) fn read_live_qdisc_snapshot(interface: &str) -> Result<Vec<LiveTcQdiscEntry>, String> {
     let _lock = FILE_LOCK.lock();
     let mut cache = LIVE_TC_SNAPSHOT_CACHE.lock();
     let now = Instant::now();
@@ -314,18 +322,30 @@ pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u
         && now.duration_since(entry.captured_at)
             <= Duration::from_millis(LIVE_TC_SNAPSHOT_MAX_AGE_MS)
     {
-        return Ok(entry.handles.clone());
+        return Ok(entry.entries.clone());
     }
 
-    let handles = read_live_qdisc_handle_majors_raw(interface)?;
+    let entries = read_live_qdisc_snapshot_raw(interface)?;
     cache.qdisc_snapshots.insert(
         interface.to_string(),
         TimedQdiscSnapshot {
             captured_at: now,
-            handles: handles.clone(),
+            entries: entries.clone(),
         },
     );
-    Ok(handles)
+    Ok(entries)
+}
+
+pub(crate) fn read_live_qdisc_handle_majors(interface: &str) -> Result<HashSet<u16>, String> {
+    let entries = read_live_qdisc_snapshot(interface)?;
+    Ok(entries
+        .into_iter()
+        .filter_map(|entry| entry.handle)
+        .filter_map(|handle| {
+            let (major, _) = handle.get_major_minor();
+            (major != 0).then_some(major)
+        })
+        .collect())
 }
 
 fn read_live_class_snapshot_raw(
@@ -376,28 +396,46 @@ pub(crate) fn read_live_class_snapshot(
     Ok(snapshot)
 }
 
-fn parse_live_qdisc_handle_majors(raw_json: &str) -> Result<HashSet<u16>, String> {
+fn parse_live_qdisc_snapshot(raw_json: &str) -> Result<Vec<LiveTcQdiscEntry>, String> {
     let parsed = serde_json::from_str::<serde_json::Value>(raw_json)
         .map_err(|e| format!("invalid JSON: {e}"))?;
     let items = parsed
         .as_array()
         .ok_or_else(|| "expected JSON array from tc qdisc show -j".to_string())?;
 
-    let mut handles = HashSet::new();
+    let mut entries = Vec::with_capacity(items.len());
     for item in items {
-        let Some(handle) = item.get("handle").and_then(|value| value.as_str()) else {
-            continue;
-        };
-        let Ok(tc_handle) = TcHandle::from_string(handle) else {
-            continue;
-        };
-        let (major, _) = tc_handle.get_major_minor();
-        if major != 0 {
-            handles.insert(major);
-        }
+        let kind = item
+            .get("kind")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let handle = item
+            .get("handle")
+            .and_then(|value| value.as_str())
+            .and_then(|value| TcHandle::from_string(value).ok());
+        let parent_raw = item.get("parent").and_then(|value| value.as_str());
+        let parent = parent_raw.and_then(|value| {
+            if value.eq_ignore_ascii_case("root") {
+                None
+            } else {
+                TcHandle::from_string(value).ok()
+            }
+        });
+        let is_root = item
+            .get("root")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+            || matches!(parent_raw, Some(value) if value.eq_ignore_ascii_case("root"));
+        entries.push(LiveTcQdiscEntry {
+            kind,
+            handle,
+            parent,
+            is_root,
+        });
     }
 
-    Ok(handles)
+    Ok(entries)
 }
 
 fn parse_live_class_snapshot(raw: &str) -> Result<HashMap<TcHandle, LiveTcClassEntry>, String> {
@@ -731,7 +769,49 @@ mod tests {
     }
 
     #[test]
-    fn parse_live_qdisc_handle_majors_collects_non_zero_handles() {
+    fn parse_live_qdisc_snapshot_extracts_root_parent_and_handle_data() {
+        let raw = r#"
+[
+  { "kind": "mq", "handle": "7fff:", "parent": "root" },
+  { "kind": "cake", "handle": "90f1:", "parent": "2:1039" },
+  { "kind": "fq_codel", "handle": "50c0:", "parent": "8:24dd" },
+  { "kind": "ingress", "handle": "ffff:", "parent": "ffff:fff1", "root": false },
+  { "kind": "fq_codel", "handle": "0:", "parent": "3:20" }
+]
+"#;
+        let snapshot = parse_live_qdisc_snapshot(raw).expect("snapshot parsed");
+        assert_eq!(snapshot.len(), 5);
+
+        let root = &snapshot[0];
+        assert_eq!(root.kind, "mq");
+        assert_eq!(
+            root.handle,
+            Some(TcHandle::from_string("7fff:").expect("valid"))
+        );
+        assert_eq!(root.parent, None);
+        assert!(root.is_root);
+
+        let child = &snapshot[1];
+        assert_eq!(child.kind, "cake");
+        assert_eq!(
+            child.parent,
+            Some(TcHandle::from_string("2:1039").expect("valid"))
+        );
+        assert!(!child.is_root);
+
+        let zero_handle = &snapshot[4];
+        assert_eq!(
+            zero_handle.handle,
+            Some(TcHandle::from_string("0:").expect("valid"))
+        );
+        assert_eq!(
+            zero_handle.parent,
+            Some(TcHandle::from_string("3:20").expect("valid"))
+        );
+    }
+
+    #[test]
+    fn read_live_qdisc_handle_majors_collects_non_zero_handles_from_snapshot() {
         let raw = r#"
 [
   { "kind": "mq", "handle": "7fff:", "parent": "root" },
@@ -741,7 +821,15 @@ mod tests {
   { "kind": "fq_codel", "handle": "0:", "parent": "3:20" }
 ]
 "#;
-        let handles = parse_live_qdisc_handle_majors(raw).expect("handles parsed");
+        let snapshot = parse_live_qdisc_snapshot(raw).expect("snapshot parsed");
+        let handles: HashSet<u16> = snapshot
+            .into_iter()
+            .filter_map(|entry| entry.handle)
+            .filter_map(|handle| {
+                let (major, _) = handle.get_major_minor();
+                (major != 0).then_some(major)
+            })
+            .collect();
         assert!(handles.contains(&0x7fff));
         assert!(handles.contains(&0x90f1));
         assert!(handles.contains(&0x50c0));
@@ -750,9 +838,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_live_qdisc_handle_majors_rejects_non_arrays() {
-        let err = parse_live_qdisc_handle_majors(r#"{"handle":"90f1:"}"#)
-            .expect_err("non-array should fail");
+    fn parse_live_qdisc_snapshot_rejects_non_arrays() {
+        let err =
+            parse_live_qdisc_snapshot(r#"{"handle":"90f1:"}"#).expect_err("non-array should fail");
         assert!(err.contains("expected JSON array"));
     }
 

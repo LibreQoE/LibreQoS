@@ -769,7 +769,11 @@ def refreshShapers():
     if enable_actual_shell_commands() == False:
         warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
     if observe_mode:
-        warnings.warn("queue_mode is set to observe. LibreQoS will keep root MQ but will not apply the shaping tree.", stacklevel=2)
+        warnings.warn(
+            "queue_mode is set to observe. LibreQoS will keep the root MQ and remove the shaping tree for a true baseline. "
+            "Switching between Observe and Shape may briefly interrupt traffic.",
+            stacklevel=2,
+        )
 
 
     # Check if first run since boot
@@ -2056,7 +2060,25 @@ def refreshShapers():
         # Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
         xdpStartTime = datetime.now()
         #if enable_actual_shell_commands():
-        # The bakery will handle stale mapping cleanup; avoid clearing mappings here.
+        # Observe mode removes the shaping tree entirely, so clear any live
+        # per-circuit IP mappings before the commit to avoid pointing packets
+        # at handles that are about to disappear.
+        if enable_actual_shell_commands() and observe_mode:
+            logging.info("# Observe Mode Mapping Quiesce")
+            try:
+                clear_ip_mappings()
+            except Exception as e:
+                report_refresh_failure(
+                    "XDP_IP_MAPPING_CLEAR_FAILED",
+                    "Failed to clear XDP IP mappings before entering Observe mode: " + str(e),
+                    {
+                        "required_ip_mappings": requiredIpMappings,
+                        "queued_requests": ipMapBatch.length(),
+                        "on_a_stick": on_a_stick(),
+                        "queue_mode": queue_mode(),
+                    },
+                    "XDP_IP_MAPPING_CLEAR_FAILED",
+                )
         # Set up XDP-CPUMAP-TC
         logging.info("# XDP Setup")
         # Commented out - the daemon does this
@@ -2092,20 +2114,24 @@ def refreshShapers():
         print("Executing XDP-CPUMAP-TC IP filter commands")
         numXdpCommands = ipMapBatch.length()
         if enable_actual_shell_commands():
-            ipMapBatch.finish_ip_mappings()
-            try:
-                ipMapBatch.submit()
-            except Exception as e:
-                report_refresh_failure(
-                    "XDP_IP_MAPPING_APPLY_FAILED",
-                    "Failed to apply XDP IP mappings: " + str(e),
-                    {
-                        "required_ip_mappings": requiredIpMappings,
-                        "queued_requests": numXdpCommands,
-                        "on_a_stick": on_a_stick(),
-                    },
-                    "XDP_IP_MAPPING_APPLY_FAILED",
-                )
+            if observe_mode:
+                print("Observe mode active; skipping XDP-CPUMAP-TC IP filter apply after clearing mappings")
+                numXdpCommands = 0
+            else:
+                ipMapBatch.finish_ip_mappings()
+                try:
+                    ipMapBatch.submit()
+                except Exception as e:
+                    report_refresh_failure(
+                        "XDP_IP_MAPPING_APPLY_FAILED",
+                        "Failed to apply XDP IP mappings: " + str(e),
+                        {
+                            "required_ip_mappings": requiredIpMappings,
+                            "queued_requests": numXdpCommands,
+                            "on_a_stick": on_a_stick(),
+                        },
+                        "XDP_IP_MAPPING_APPLY_FAILED",
+                    )
             #for command in xdpCPUmapCommands:
             #	logging.info(command)
             #	commands = command.split(' ')

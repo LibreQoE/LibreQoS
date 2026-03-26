@@ -45,8 +45,9 @@ use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
 use crate::qdisc_handles::QdiscHandleState;
 use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32, quantum, r2q};
 use crate::utils::{
-    ExecuteResult, LiveTcClassEntry, MemorySnapshot, execute_in_memory, execute_in_memory_chunked,
-    read_live_class_snapshot, read_live_qdisc_handle_majors, read_memory_snapshot,
+    ExecuteResult, LiveTcClassEntry, LiveTcQdiscEntry, MemorySnapshot, execute_in_memory,
+    execute_in_memory_chunked, invalidate_live_tc_snapshots, read_live_class_snapshot,
+    read_live_qdisc_handle_majors, read_live_qdisc_snapshot, read_memory_snapshot,
     tc_io_cadence_snapshot, write_command_file,
 };
 pub use commands::{
@@ -1679,6 +1680,9 @@ fn desired_shaping_tree_active(config: &Arc<Config>) -> bool {
 }
 
 fn live_tree_mutation_blocker_for_config(config: &Arc<Config>) -> Option<String> {
+    if FULL_RELOAD_IN_PROGRESS.load(Ordering::Relaxed) {
+        return Some("a full reload is currently in progress".to_string());
+    }
     if config.queues.queue_mode.is_observe() {
         return Some(
             "queue_mode is observe; root MQ is retained but the shaping tree is not live"
@@ -1689,6 +1693,219 @@ fn live_tree_mutation_blocker_for_config(config: &Arc<Config>) -> Option<String>
         return Some("the shaping tree is not currently active".to_string());
     }
     None
+}
+
+const ROOT_MQ_MAJOR: u16 = 0x7fff;
+
+fn managed_interfaces_for_config(config: &Arc<Config>) -> Vec<String> {
+    let mut interfaces = vec![config.isp_interface()];
+    if !config.on_a_stick_mode() {
+        interfaces.push(config.internet_interface());
+    }
+    interfaces
+}
+
+fn retained_root_mq_entry(snapshot: &[LiveTcQdiscEntry]) -> Option<&LiveTcQdiscEntry> {
+    snapshot.iter().find(|entry| {
+        entry.is_root
+            && entry.kind == "mq"
+            && entry
+                .handle
+                .is_some_and(|handle| handle.get_major_minor().0 == ROOT_MQ_MAJOR)
+    })
+}
+
+fn managed_root_child_parent_handles(snapshot: &[LiveTcQdiscEntry]) -> HashSet<TcHandle> {
+    snapshot
+        .iter()
+        .filter(|entry| {
+            entry
+                .parent
+                .is_some_and(|parent| parent.get_major_minor().0 == ROOT_MQ_MAJOR)
+                && entry
+                    .handle
+                    .is_some_and(|handle| handle.get_major_minor().0 != 0)
+        })
+        .filter_map(|entry| entry.parent)
+        .collect()
+}
+
+fn verify_root_mq_snapshot(snapshot: &[LiveTcQdiscEntry], interface: &str) -> Result<(), String> {
+    if retained_root_mq_entry(snapshot).is_none() {
+        return Err(format!(
+            "interface {interface} does not currently have root mq handle 7fff:"
+        ));
+    }
+    Ok(())
+}
+
+fn verify_clean_root_child_tree(
+    qdisc_snapshot: &[LiveTcQdiscEntry],
+    class_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    interface: &str,
+) -> Result<(), String> {
+    verify_root_mq_snapshot(qdisc_snapshot, interface)?;
+
+    let child_handles = managed_root_child_parent_handles(qdisc_snapshot);
+    if !child_handles.is_empty() {
+        return Err(format!(
+            "interface {interface} still has {} managed child qdisc(s) beneath root mq 7fff:",
+            child_handles.len()
+        ));
+    }
+
+    let managed_class_count = class_snapshot
+        .values()
+        .filter(|entry| entry.class_id.get_major_minor().0 != ROOT_MQ_MAJOR)
+        .count();
+    if managed_class_count != 0 {
+        return Err(format!(
+            "interface {interface} still has {} managed tc class(es) after root-child prune",
+            managed_class_count
+        ));
+    }
+
+    Ok(())
+}
+
+fn root_replace_failure_is_fallbackable(summary: &str) -> bool {
+    let normalized = summary.to_ascii_lowercase();
+    normalized.contains("exclusivity flag on, cannot modify")
+        || normalized.contains("rtnetlink answers: file exists")
+        || normalized.contains("file exists")
+}
+
+fn run_root_preflight_commands(commands: &[Vec<String>], purpose: &str) -> Result<(), String> {
+    let result = execute_in_memory_chunked(commands, purpose, 1, None, |_, _, _, _| {});
+    if result.ok {
+        Ok(())
+    } else {
+        Err(result
+            .failure_summary
+            .unwrap_or_else(|| format!("{purpose} failed")))
+    }
+}
+
+fn root_mq_replace_command(interface_name: &str) -> Vec<String> {
+    vec![
+        "qdisc".to_string(),
+        "replace".to_string(),
+        "dev".to_string(),
+        interface_name.to_string(),
+        "root".to_string(),
+        "handle".to_string(),
+        "7FFF:".to_string(),
+        "mq".to_string(),
+    ]
+}
+
+fn root_mq_delete_command(interface_name: &str) -> Vec<String> {
+    vec![
+        "qdisc".to_string(),
+        "del".to_string(),
+        "dev".to_string(),
+        interface_name.to_string(),
+        "root".to_string(),
+    ]
+}
+
+fn root_mq_add_command(interface_name: &str) -> Vec<String> {
+    vec![
+        "qdisc".to_string(),
+        "add".to_string(),
+        "dev".to_string(),
+        interface_name.to_string(),
+        "root".to_string(),
+        "handle".to_string(),
+        "7FFF:".to_string(),
+        "mq".to_string(),
+    ]
+}
+
+fn prepare_root_mq_for_full_reload(config: &Arc<Config>) -> Result<(), String> {
+    for interface in managed_interfaces_for_config(config) {
+        let qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
+        if retained_root_mq_entry(&qdisc_snapshot).is_some() {
+            let prune_commands = managed_root_child_parent_handles(&qdisc_snapshot)
+                .into_iter()
+                .map(|parent| {
+                    vec![
+                        "qdisc".to_string(),
+                        "del".to_string(),
+                        "dev".to_string(),
+                        interface.clone(),
+                        "parent".to_string(),
+                        parent.as_tc_string(),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            if !prune_commands.is_empty() {
+                run_root_preflight_commands(
+                    &prune_commands,
+                    &format!("full reload retained-root child prune on {interface}"),
+                )?;
+                invalidate_live_tc_snapshots();
+            }
+
+            let pruned_qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
+            let pruned_class_snapshot = read_live_class_snapshot(&interface)?;
+            if verify_clean_root_child_tree(
+                &pruned_qdisc_snapshot,
+                &pruned_class_snapshot,
+                &interface,
+            )
+            .is_ok()
+            {
+                continue;
+            }
+        }
+
+        let replace_summary = run_root_preflight_commands(
+            &[root_mq_replace_command(&interface)],
+            &format!("full reload root mq replace on {interface}"),
+        )
+        .err();
+        invalidate_live_tc_snapshots();
+
+        if let Some(summary) = replace_summary {
+            if !root_replace_failure_is_fallbackable(&summary) {
+                return Err(summary);
+            }
+        } else {
+            let replaced_qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
+            let replaced_class_snapshot = read_live_class_snapshot(&interface)?;
+            if verify_clean_root_child_tree(
+                &replaced_qdisc_snapshot,
+                &replaced_class_snapshot,
+                &interface,
+            )
+            .is_ok()
+            {
+                continue;
+            }
+        }
+
+        run_root_preflight_commands(
+            &[root_mq_delete_command(&interface)],
+            &format!("full reload root mq delete on {interface}"),
+        )?;
+        invalidate_live_tc_snapshots();
+        run_root_preflight_commands(
+            &[root_mq_add_command(&interface)],
+            &format!("full reload root mq add on {interface}"),
+        )?;
+        invalidate_live_tc_snapshots();
+
+        let recovered_qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
+        let recovered_class_snapshot = read_live_class_snapshot(&interface)?;
+        verify_clean_root_child_tree(
+            &recovered_qdisc_snapshot,
+            &recovered_class_snapshot,
+            &interface,
+        )?;
+    }
+
+    Ok(())
 }
 
 fn live_tree_mutations_allowed(config: &Arc<Config>) -> bool {
@@ -8511,6 +8728,25 @@ fn full_reload(
     let previous_mq_created = MQ_CREATED.load(Ordering::Relaxed);
     let previous_shaping_tree_active = SHAPING_TREE_ACTIVE.load(Ordering::Relaxed);
 
+    if let Err(error) = prepare_root_mq_for_full_reload(config) {
+        let summary = format!("Failed to prepare root mq state before full reload: {error}");
+        error!("{summary}");
+        mark_bakery_action_finished(BakeryApplyMetrics {
+            apply_type: BakeryApplyType::FullReload,
+            summary: &summary,
+            build_duration_ms: 0,
+            apply_duration_ms: 0,
+            total_tc_commands: 0,
+            class_commands: 0,
+            qdisc_commands: 0,
+            ok: false,
+        });
+        *batch = None;
+        return;
+    }
+    invalidate_live_tc_snapshots();
+    MQ_CREATED.store(true, Ordering::Relaxed);
+
     let live_reserved_handles = match snapshot_live_qdisc_handle_majors(config) {
         Ok(handles) => handles,
         Err(error) => {
@@ -8827,6 +9063,20 @@ mod tests {
             class_id: TcHandle::from_u32(class_id),
             parent: parent.map(TcHandle::from_u32),
             leaf_qdisc_major: None,
+        }
+    }
+
+    fn live_qdisc_entry(
+        kind: &str,
+        handle: Option<u32>,
+        parent: Option<u32>,
+        is_root: bool,
+    ) -> LiveTcQdiscEntry {
+        LiveTcQdiscEntry {
+            kind: kind.to_string(),
+            handle: handle.map(TcHandle::from_u32),
+            parent: parent.map(TcHandle::from_u32),
+            is_root,
         }
     }
 
@@ -9817,6 +10067,7 @@ mod tests {
     fn non_top_level_runtime_virtualization_enters_cutover_pending_without_pruning_standby() {
         let _guard = bakery_test_lock().lock().expect("test lock");
         reset_bakery_test_state();
+        SHAPING_TREE_ACTIVE.store(true, Ordering::Relaxed);
 
         let parent_site = mk_add_site(10, 0x10003, 0x20003, 0x20);
         let target_site = mk_add_site(20, 0x10020, 0x20020, 0x21);
@@ -9860,6 +10111,7 @@ mod tests {
     fn restore_with_pending_cleanup_is_not_reported_completed() {
         let _guard = bakery_test_lock().lock().expect("test lock");
         reset_bakery_test_state();
+        SHAPING_TREE_ACTIVE.store(true, Ordering::Relaxed);
 
         let site_hash = 20;
         let standby_site = mk_add_site(site_hash, 0x10000, 0x20000, 0x21);
@@ -10565,6 +10817,8 @@ mod tests {
 
     #[test]
     fn qdisc_budget_estimate_counts_total_qdiscs_per_interface() {
+        let _guard = bakery_test_lock().lock().expect("lock");
+        reset_bakery_test_state();
         let config = Arc::new(Config::default());
         let queue = vec![
             BakeryCommands::StartBatch,
@@ -10724,6 +10978,91 @@ mod tests {
 
         SHAPING_TREE_ACTIVE.store(true, Ordering::Relaxed);
         assert_eq!(live_tree_mutation_blocker_for_config(&active_cfg), None);
+    }
+
+    #[test]
+    fn live_tree_mutation_blocker_reports_full_reload_in_progress() {
+        let _guard = bakery_test_lock().lock().expect("lock");
+        reset_bakery_test_state();
+
+        let active_cfg = Arc::new(Config::default());
+        SHAPING_TREE_ACTIVE.store(true, Ordering::Relaxed);
+        FULL_RELOAD_IN_PROGRESS.store(true, Ordering::Relaxed);
+
+        assert_eq!(
+            live_tree_mutation_blocker_for_config(&active_cfg),
+            Some("a full reload is currently in progress".to_string())
+        );
+        reset_bakery_test_state();
+    }
+
+    #[test]
+    fn verify_clean_root_child_tree_accepts_empty_retained_root() {
+        let qdisc_snapshot = vec![live_qdisc_entry("mq", Some(0x7fff0000), None, true)];
+        let class_snapshot = HashMap::new();
+        assert!(verify_clean_root_child_tree(&qdisc_snapshot, &class_snapshot, "eth0").is_ok());
+    }
+
+    #[test]
+    fn verify_clean_root_child_tree_accepts_kernel_default_root_children() {
+        let qdisc_snapshot = vec![
+            live_qdisc_entry("mq", Some(0x7fff0000), None, true),
+            live_qdisc_entry("fq_codel", Some(0), Some(0x7fff0001), false),
+        ];
+        let class_snapshot = HashMap::new();
+        assert!(verify_clean_root_child_tree(&qdisc_snapshot, &class_snapshot, "eth0").is_ok());
+    }
+
+    #[test]
+    fn verify_clean_root_child_tree_accepts_kernel_default_mq_classes() {
+        let qdisc_snapshot = vec![live_qdisc_entry("mq", Some(0x7fff0000), None, true)];
+        let class_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x7fff0001),
+            live_class_entry(0x7fff0001, None),
+        )]);
+        assert!(verify_clean_root_child_tree(&qdisc_snapshot, &class_snapshot, "eth0").is_ok());
+    }
+
+    #[test]
+    fn verify_clean_root_child_tree_rejects_lingering_managed_root_children() {
+        let qdisc_snapshot = vec![
+            live_qdisc_entry("mq", Some(0x7fff0000), None, true),
+            live_qdisc_entry("htb", Some(0x00010000), Some(0x7fff0001), false),
+        ];
+        let class_snapshot = HashMap::new();
+        let err = verify_clean_root_child_tree(&qdisc_snapshot, &class_snapshot, "eth0")
+            .expect_err("child qdisc should fail retained-root verification");
+        assert!(err.contains("still has 1 managed child qdisc"));
+    }
+
+    #[test]
+    fn verify_clean_root_child_tree_rejects_lingering_classes() {
+        let qdisc_snapshot = vec![live_qdisc_entry("mq", Some(0x7fff0000), None, true)];
+        let class_snapshot = HashMap::from([(
+            TcHandle::from_u32(0x10001),
+            live_class_entry(0x10001, Some(0x10000)),
+        )]);
+        let err = verify_clean_root_child_tree(&qdisc_snapshot, &class_snapshot, "eth0")
+            .expect_err("lingering classes should fail retained-root verification");
+        assert!(err.contains("still has 1 managed tc class"));
+    }
+
+    #[test]
+    fn managed_root_child_parent_handles_ignore_kernel_default_qdiscs() {
+        let qdisc_snapshot = vec![
+            live_qdisc_entry("mq", Some(0x7fff0000), None, true),
+            live_qdisc_entry("fq_codel", Some(0), Some(0x7fff0001), false),
+        ];
+        assert!(managed_root_child_parent_handles(&qdisc_snapshot).is_empty());
+
+        let managed_snapshot = vec![
+            live_qdisc_entry("mq", Some(0x7fff0000), None, true),
+            live_qdisc_entry("htb", Some(0x00010000), Some(0x7fff0001), false),
+        ];
+        assert_eq!(
+            managed_root_child_parent_handles(&managed_snapshot),
+            HashSet::from([TcHandle::from_u32(0x7fff0001)])
+        );
     }
 
     #[test]
