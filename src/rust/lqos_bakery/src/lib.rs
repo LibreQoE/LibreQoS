@@ -696,6 +696,11 @@ fn circuits_with_pending_migration_targets(
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// True while Bakery is applying a full reload batch to `tc`.
 static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+pub(crate) fn test_state_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
 /// Hard kernel limit for auto-allocated qdisc handles on a single network interface.
 pub const HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE: usize = 65_534;
 /// Conservative operational limit used to fail a full reload before qdisc handle exhaustion.
@@ -1122,6 +1127,7 @@ static BAKERY_TELEMETRY: OnceLock<RwLock<BakeryTelemetryState>> = OnceLock::new(
 /// Message Queue sender for the bakery
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
+static SHAPING_TREE_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Indicates that at least one command batch has been processed and applied.
 /// Used to avoid racing live activation against initial class creation.
 static FIRST_COMMIT_APPLIED: AtomicBool = AtomicBool::new(false);
@@ -1668,6 +1674,10 @@ pub fn estimate_full_reload_auto_qdisc_budget(
     }
 }
 
+fn desired_shaping_tree_active(config: &Arc<Config>) -> bool {
+    !config.queues.queue_mode.is_observe()
+}
+
 fn current_mq_layout(
     batch: &[Arc<BakeryCommands>],
     config: &Arc<Config>,
@@ -1711,7 +1721,7 @@ fn with_assigned_qdisc_handles_reserved(
         return Arc::clone(command);
     };
 
-    if config.queues.monitor_only {
+    if config.queues.queue_mode.is_observe() {
         return Arc::clone(command);
     }
 
@@ -1811,7 +1821,7 @@ fn effective_directional_sqm_kinds(
         return (None, None);
     };
 
-    if config.queues.monitor_only {
+    if config.queues.queue_mode.is_observe() {
         return (None, None);
     }
 
@@ -1842,7 +1852,7 @@ fn effective_directional_qdisc_parents(
         return (None, None);
     };
 
-    if config.queues.monitor_only {
+    if config.queues.queue_mode.is_observe() {
         return (None, None);
     }
 
@@ -3165,11 +3175,12 @@ fn handle_commit_batch(
             runtime_node_operations,
             summary,
         );
-        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
+    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+    let desired_tree_active = desired_shaping_tree_active(&config);
     if !has_mq_been_setup {
         push_bakery_event(
             "baseline_rebuild_required",
@@ -3214,7 +3225,52 @@ fn handle_commit_batch(
             runtime_node_operations,
             summary,
         );
-        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+        return;
+    }
+
+    if shaping_tree_active != desired_tree_active {
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
+        log_mapped_limit_decision("queue-mode rebuild", mapped_limit, mapped_limit_stats);
+        if mapped_limit_stats.dropped_mapped > 0 {
+            warn!(
+                "Bakery mapped circuit cap enforced (queue-mode rebuild): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+                mapped_limit_stats.requested_mapped,
+                mapped_limit_stats.allowed_mapped,
+                mapped_limit_stats.dropped_mapped,
+                limit_label,
+                mapped_limit.licensed,
+                mapped_limit.max_circuits
+            );
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
+        let summary = format!(
+            "Bakery full reload triggered by queue mode transition to {}.",
+            if desired_tree_active {
+                "shape"
+            } else {
+                "observe"
+            }
+        );
+        announce_full_reload(&summary);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            &config,
+            new_batch,
+            resolved_mq_layout,
+            stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
+            summary,
+        );
         return;
     }
 
@@ -3256,7 +3312,6 @@ fn handle_commit_batch(
             runtime_node_operations,
             summary.clone(),
         );
-        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
@@ -3326,7 +3381,6 @@ fn handle_commit_batch(
             runtime_node_operations,
             summary,
         );
-        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
@@ -3640,7 +3694,6 @@ fn handle_commit_batch(
                         runtime_node_operations,
                         summary,
                     );
-                    MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
                     return;
                 }
 
@@ -6222,28 +6275,26 @@ fn build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
         return Some(summary);
     }
 
-    if let Some(live_down_reserved) = live_down_reserved_handles {
-        if let Some(down_handle) = *down_qdisc_handle
-            && live_down_reserved.contains(&down_handle)
-            && Some(down_handle) != mig.old_down_qdisc_handle
-        {
-            return Some(format!(
-                "build-final command used downlink qdisc handle {:?}, but that handle is already live on the interface under another parent",
-                down_handle
-            ));
-        }
+    if let Some(live_down_reserved) = live_down_reserved_handles
+        && let Some(down_handle) = *down_qdisc_handle
+        && live_down_reserved.contains(&down_handle)
+        && Some(down_handle) != mig.old_down_qdisc_handle
+    {
+        return Some(format!(
+            "build-final command used downlink qdisc handle {:?}, but that handle is already live on the interface under another parent",
+            down_handle
+        ));
     }
 
-    if let Some(live_up_reserved) = live_up_reserved_handles {
-        if let Some(up_handle) = *up_qdisc_handle
-            && live_up_reserved.contains(&up_handle)
-            && Some(up_handle) != mig.old_up_qdisc_handle
-        {
-            return Some(format!(
-                "build-final command used uplink qdisc handle {:?}, but that handle is already live on the interface under another parent",
-                up_handle
-            ));
-        }
+    if let Some(live_up_reserved) = live_up_reserved_handles
+        && let Some(up_handle) = *up_qdisc_handle
+        && live_up_reserved.contains(&up_handle)
+        && Some(up_handle) != mig.old_up_qdisc_handle
+    {
+        return Some(format!(
+            "build-final command used uplink qdisc handle {:?}, but that handle is already live on the interface under another parent",
+            up_handle
+        ));
     }
 
     None
@@ -8337,6 +8388,8 @@ fn full_reload(
     let previous_circuits = circuits.clone();
     let previous_live_circuits = live_circuits.clone();
     let previous_mq_layout = mq_layout.clone();
+    let previous_mq_created = MQ_CREATED.load(Ordering::Relaxed);
+    let previous_shaping_tree_active = SHAPING_TREE_ACTIVE.load(Ordering::Relaxed);
 
     let live_reserved_handles = match snapshot_live_qdisc_handle_majors(config) {
         Ok(handles) => handles,
@@ -8383,6 +8436,8 @@ fn full_reload(
         live_circuits.clear();
         *qdisc_handles = working_qdisc_handles;
         qdisc_handles.save(config);
+        MQ_CREATED.store(true, Ordering::Relaxed);
+        SHAPING_TREE_ACTIVE.store(desired_shaping_tree_active(config), Ordering::Relaxed);
         if resolved_mq_layout.is_some() {
             *mq_layout = resolved_mq_layout;
         }
@@ -8399,6 +8454,8 @@ fn full_reload(
         *circuits = previous_circuits;
         *live_circuits = previous_live_circuits;
         *mq_layout = previous_mq_layout;
+        MQ_CREATED.store(previous_mq_created, Ordering::Relaxed);
+        SHAPING_TREE_ACTIVE.store(previous_shaping_tree_active, Ordering::Relaxed);
     }
     if result.ok {
         refresh_live_capacity_snapshot(config, true);
@@ -8533,17 +8590,16 @@ fn apply_stormguard_overrides(
 mod tests {
     use super::*;
     use lqos_config::Config;
-    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn bakery_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    fn bakery_test_lock() -> &'static std::sync::Mutex<()> {
+        crate::test_state_lock()
     }
 
     fn reset_bakery_test_state() {
         *telemetry_state().write() = BakeryTelemetryState::default();
         MQ_CREATED.store(false, Ordering::Relaxed);
+        SHAPING_TREE_ACTIVE.store(false, Ordering::Relaxed);
         FIRST_COMMIT_APPLIED.store(false, Ordering::Relaxed);
         FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
     }
@@ -10453,9 +10509,11 @@ mod tests {
     }
 
     #[test]
-    fn qdisc_budget_estimate_skips_circuit_leaf_qdiscs_in_monitor_only_mode() {
+    fn qdisc_budget_estimate_counts_only_root_mq_in_observe_mode() {
+        let _guard = bakery_test_lock().lock().expect("lock");
+        reset_bakery_test_state();
         let mut cfg = Config::default();
-        cfg.queues.monitor_only = true;
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
         let config = Arc::new(cfg);
         let queue = vec![
             BakeryCommands::MqSetup {
@@ -10481,8 +10539,22 @@ mod tests {
         ];
 
         let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
-        assert_eq!(estimate.interfaces.get("eth1"), Some(&4));
-        assert_eq!(estimate.interfaces.get("eth0"), Some(&4));
+        assert_eq!(estimate.interfaces.get("eth1"), Some(&1));
+        assert_eq!(estimate.interfaces.get("eth0"), Some(&1));
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth0")
+                .map(|d| d.infra_qdiscs),
+            Some(1)
+        );
+        assert_eq!(
+            estimate
+                .interface_details
+                .get("eth1")
+                .map(|d| d.infra_qdiscs),
+            Some(1)
+        );
         assert_eq!(
             estimate
                 .interface_details

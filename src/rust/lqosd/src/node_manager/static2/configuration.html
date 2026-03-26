@@ -242,8 +242,15 @@
                             </td>
                         </tr>
                         <tr>
-                            <td><label for="bindMonitorMode">Monitor Only Mode (No Shaping): </label></td>
-                            <td><input type="checkbox" id="bindMonitorMode"/></td>
+                            <td><label for="bindQueueMode">Queue Mode: </label></td>
+                            <td>
+                                <select id="bindQueueMode">
+                                    <option value="shape">Shape</option>
+                                    <option value="observe">Observe</option>
+                                </select>
+                                <br/>
+                                <small class="text-muted">Observe keeps root MQ active for the transparent bridge, but removes the LibreQoS shaping tree.</small>
+                            </td>
                         </tr>
                         <tr>
                             <td><label for="bindUplinkMbps">Uplink Bandwidth (Mbps): </label></td>

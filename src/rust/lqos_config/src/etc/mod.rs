@@ -19,7 +19,7 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, LazyQueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    BridgeConfig, LazyQueueMode, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
     StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig,
     TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };

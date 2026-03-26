@@ -6,7 +6,7 @@ use crate::queue_math::{
 use allocative::Allocative;
 use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::Sender as ReplySender;
 use tracing::{debug, info};
@@ -339,30 +339,71 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        info!("Clearing prior root qdiscs before MQ setup");
-        if config.on_a_stick_mode() {
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "root".to_string(),
-            ]);
-        } else {
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "root".to_string(),
-            ]);
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.internet_interface(),
-                "root".to_string(),
-            ]);
+        let observe_only = config.queues.queue_mode.is_observe();
+        let mq_already_created = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
+        if !observe_only {
+            info!("Clearing prior root qdiscs before MQ setup");
+            if config.on_a_stick_mode() {
+                result.push(vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "root".to_string(),
+                ]);
+            } else {
+                result.push(vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    config.isp_interface(),
+                    "root".to_string(),
+                ]);
+                result.push(vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    config.internet_interface(),
+                    "root".to_string(),
+                ]);
+            }
+        }
+
+        if observe_only {
+            if mq_already_created {
+                let mut shared_slots = BTreeSet::new();
+                for queue in 0..queues_available {
+                    shared_slots.insert(queue + 1);
+                }
+                if config.on_a_stick_mode() {
+                    for queue in 0..queues_available {
+                        shared_slots.insert(queue + stick_offset + 1);
+                    }
+                    append_mq_child_prune_commands(
+                        &mut result,
+                        config.isp_interface(),
+                        shared_slots,
+                    );
+                } else {
+                    append_mq_child_prune_commands(
+                        &mut result,
+                        config.isp_interface(),
+                        shared_slots,
+                    );
+                    append_mq_child_prune_commands(
+                        &mut result,
+                        config.internet_interface(),
+                        (0..queues_available).map(|queue| queue + stick_offset + 1),
+                    );
+                }
+            } else {
+                result.push(root_mq_replace_command(config.isp_interface()));
+                if !config.on_a_stick_mode() {
+                    result.push(root_mq_replace_command(config.internet_interface()));
+                }
+            }
+            MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+            return Some(result);
         }
 
         info!(
@@ -377,16 +418,7 @@ impl BakeryCommands {
         ));
 
         // ISP-facing interface (interface_a in Python)
-        result.push(vec![
-            "qdisc".to_string(),
-            "replace".to_string(),
-            "dev".to_string(),
-            config.isp_interface(),
-            "root".to_string(),
-            "handle".to_string(),
-            "7FFF:".to_string(),
-            "mq".to_string(),
-        ]);
+        result.push(root_mq_replace_command(config.isp_interface()));
 
         /*
         for queue in range(queuesAvailable):
@@ -630,6 +662,10 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
+        if config.queues.queue_mode.is_observe() {
+            return None;
+        }
+
         let mut result = Vec::new();
         // Derive major IDs from parent handles so classids are fully qualified
         // and consistent with queuingStructure.json (classMajor/classMinor).
@@ -700,6 +736,10 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
+        if config.queues.queue_mode.is_observe() {
+            return None;
+        }
+
         if let Some(ref s) = params.sqm_override
             && s.eq_ignore_ascii_case("fq_codel")
         {
@@ -809,7 +849,7 @@ impl BakeryCommands {
                 ),
             ]);
         }
-        if !config.queues.monitor_only
+        if !config.queues.queue_mode.is_observe()
             && do_sqm
             && !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
         {
@@ -860,7 +900,7 @@ impl BakeryCommands {
             ]);
         }
 
-        if !config.queues.monitor_only
+        if !config.queues.queue_mode.is_observe()
             && do_sqm
             && !config.on_a_stick_mode()
             && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
@@ -1035,9 +1075,43 @@ impl BakeryCommands {
     }
 }
 
+fn root_mq_replace_command(interface_name: String) -> Vec<String> {
+    vec![
+        "qdisc".to_string(),
+        "replace".to_string(),
+        "dev".to_string(),
+        interface_name,
+        "root".to_string(),
+        "handle".to_string(),
+        "7FFF:".to_string(),
+        "mq".to_string(),
+    ]
+}
+
+fn append_mq_child_prune_commands<I>(
+    result: &mut Vec<Vec<String>>,
+    interface_name: String,
+    queue_slots: I,
+) where
+    I: IntoIterator<Item = usize>,
+{
+    for queue_slot in queue_slots {
+        result.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            interface_name.clone(),
+            "parent".to_string(),
+            format!("7FFF:0x{:x}", queue_slot),
+        ]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BakeryCommands, ExecutionMode};
+    use crate::MQ_CREATED;
+    use crate::test_state_lock;
     use lqos_config::{Config, SingleInterfaceConfig};
     use std::sync::Arc;
 
@@ -1060,6 +1134,16 @@ mod tests {
             && cmd[5] == "handle"
             && cmd[6] == "7FFF:"
             && cmd[7] == "mq"
+    }
+
+    fn is_mq_child_prune(cmd: &[String], interface: &str, band: usize) -> bool {
+        cmd.len() == 6
+            && cmd[0] == "qdisc"
+            && cmd[1] == "del"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "parent"
+            && cmd[5] == format!("7FFF:0x{:x}", band)
     }
 
     #[test]
@@ -1118,5 +1202,156 @@ mod tests {
             1,
             "expected a single root replace on the shared interface"
         );
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_bootstraps_root_mq_when_runtime_state_is_empty() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config::default();
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.internet_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_root_replace_mq(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_root_replace_mq(cmd, &config.internet_interface()))
+        );
+        assert_eq!(
+            commands.len(),
+            2,
+            "observe mode should bootstrap root mq when runtime state is empty"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_prunes_only_child_qdiscs_when_mq_exists() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config::default();
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.internet_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_replace_mq(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_replace_mq(cmd, &config.internet_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_mq_child_prune(cmd, &config.isp_interface(), 1))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_mq_child_prune(cmd, &config.isp_interface(), 2))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_mq_child_prune(cmd, &config.internet_interface(), 1))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_mq_child_prune(cmd, &config.internet_interface(), 2))
+        );
+        assert_eq!(
+            commands.len(),
+            4,
+            "observe mode should prune only child qdiscs beneath the retained root mq"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_prunes_both_band_ranges_on_a_stick() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig::default()),
+            ..Config::default()
+        };
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 2,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe on-a-stick mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_replace_mq(cmd, &config.isp_interface()))
+        );
+        for band in [1usize, 2, 3, 4] {
+            assert!(
+                commands
+                    .iter()
+                    .any(|cmd| is_mq_child_prune(cmd, &config.isp_interface(), band)),
+                "expected observe mode to prune retained on-a-stick band {band}"
+            );
+        }
+        assert_eq!(
+            commands.len(),
+            4,
+            "observe mode should prune both download and upload mq child bands on-a-stick"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }

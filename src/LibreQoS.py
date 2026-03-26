@@ -36,7 +36,7 @@ from shaping_skip_report import (
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
     is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
     check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
-    interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
+    interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, queue_mode, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     is_insight_enabled, scheduler_error, xdp_ip_mapping_capacity, \
@@ -118,6 +118,10 @@ def get_network_json_path():
 
 def get_planner_state_path():
     return os.path.join(get_libreqos_directory(), "planner_state.json")
+
+
+def observe_mode_enabled():
+    return queue_mode() == "observe"
 
 
 def _load_json_dict(path):
@@ -599,12 +603,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     token = left + '/' + right
                 sqm_override_token = token
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
-            # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-            if monitor_mode_only() == True:
-                downloadMin = 10000
-                uploadMin = 10000
-                downloadMax = 10000
-                uploadMax = 10000
             ipv4_subnets_and_hosts = []
             # Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each
             if ipv4_input != "":
@@ -633,13 +631,11 @@ def loadSubscriberCircuits(shapedDevicesFile):
                         if circuit['ParentNode'] != ParentNode:
                             errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
                             raise ValueError(errorMessageString)
-                    # Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
-                    if monitor_mode_only() == False:
-                        if ((circuit['minDownload'] != float(downloadMin))
-                            or (circuit['minUpload'] != float(uploadMin))
-                            or (circuit['maxDownload'] != float(downloadMax))
-                            or (circuit['maxUpload'] != float(uploadMax))):
-                            warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
+                    if ((circuit['minDownload'] != float(downloadMin))
+                        or (circuit['minUpload'] != float(uploadMin))
+                        or (circuit['maxDownload'] != float(downloadMax))
+                        or (circuit['maxUpload'] != float(uploadMax))):
+                        warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
                     # If this row specifies an SQM override, but the circuit already has a different one, warn and keep the first.
                     if sqm_override_token != '':
                         if 'sqm' in circuit:
@@ -764,6 +760,7 @@ def refreshShapers():
 
     # Starting
     print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+    observe_mode = observe_mode_enabled()
     # Create a single batch of xdp update commands to execute together
     ipMapBatch = BatchedCommands()
     requiredIpMappings = 0
@@ -771,9 +768,8 @@ def refreshShapers():
     # Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
     if enable_actual_shell_commands() == False:
         warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
-    # Warn user if monitorOnlyMode is True, because that would mean no actual shaping is happening
-    if monitor_mode_only() == True:
-        warnings.warn("monitorOnlyMode is set to True. Shaping will not occur.", stacklevel=2)
+    if observe_mode:
+        warnings.warn("queue_mode is set to observe. LibreQoS will keep root MQ but will not apply the shaping tree.", stacklevel=2)
 
 
     # Check if first run since boot
@@ -937,27 +933,12 @@ def refreshShapers():
             queuesAvailable = math.floor(queuesAvailable / 2)
             stickOffset = queuesAvailable
 
-        # If in monitorOnlyMode, override network.json bandwidth rates to where no shaping will actually occur
-        if monitor_mode_only() == True:
-            def overrideNetworkBandwidths(data):
-                for elem in data:
-                    if 'children' in data[elem]:
-                        overrideNetworkBandwidths(data[elem]['children'])
-                    data[elem]['downloadBandwidthMbpsMin'] = 100000
-                    data[elem]['uploadBandwidthMbpsMin'] = 100000
-            overrideNetworkBandwidths(network)
-
         # Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
         print("Generating parent nodes")
         generatedPNs = []
         numberOfGeneratedPNs = queuesAvailable
-        # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-        if monitor_mode_only() == True:
-            chosenDownloadMbps = 10000
-            chosenUploadMbps = 10000
-        else:
-            chosenDownloadMbps = generated_pn_download_mbps()
-            chosenUploadMbps = generated_pn_upload_mbps()
+        chosenDownloadMbps = generated_pn_download_mbps()
+        chosenUploadMbps = generated_pn_upload_mbps()
         for x in range(numberOfGeneratedPNs):
             genPNname = "Generated_PN_" + str(x+1)
             network[genPNname] =	{
@@ -1039,7 +1020,7 @@ def refreshShapers():
                 "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
                 "last_change_ts_by_item": last_change_ts,
             }
-            if monitor_mode_only() == True:
+            if observe_mode:
                 params["move_budget_per_run"] = 0
 
             if bin_planner is not None:
@@ -1351,7 +1332,7 @@ def refreshShapers():
             last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
 
             move_budget = max(1, min(32, int(0.01 * max(1, len(items)))))
-            if monitor_mode_only() == True:
+            if observe_mode:
                 move_budget = 0
 
             planner_mode = "stable_greedy" if insight_enabled else "round_robin"
@@ -1568,16 +1549,10 @@ def refreshShapers():
                     current_up_parent_classid = hex(up_major) + ':'
                 data[node]['parentClassID'] = current_parent_classid
                 data[node]['up_parentClassID'] = current_up_parent_classid
-                if monitor_mode_only() == True:
-                    data[node]['downloadBandwidthMbps'] = 100000
-                    data[node]['uploadBandwidthMbps'] = 100000
-                    data[node]['downloadBandwidthMbpsMin'] = 100000
-                    data[node]['uploadBandwidthMbpsMin'] = 100000
-                else:
-                    data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'], parentMaxDL)
-                    data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'], parentMaxUL)
-                    data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
-                    data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
+                data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'], parentMaxDL)
+                data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'], parentMaxUL)
+                data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
+                data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
                 data[node]['classMajor'] = hex(major)
                 data[node]['up_classMajor'] = hex(up_major)
                 data[node]['classMinor'] = hex(assigned_site_minor)
@@ -1637,23 +1612,21 @@ def refreshShapers():
                 if node in circuits_by_parent_node:
                     override_min_down = None
                     override_min_up = None
-                    if monitor_mode_only() == False:
-                        if (circuit_min_down_combined_by_parent_node[node] > node_data['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > node_data['uploadBandwidthMbpsMin']):
-                            override_min_down = 1
-                            override_min_up = 1
-                            logging.info("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
-                            if ((override_min_down * len(circuits_by_parent_node[node])) > node_data['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > node_data['uploadBandwidthMbpsMin']):
-                                logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
-                                nodes_requiring_min_squashing[node] = True
+                    if (circuit_min_down_combined_by_parent_node[node] > node_data['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > node_data['uploadBandwidthMbpsMin']):
+                        override_min_down = 1
+                        override_min_up = 1
+                        logging.info("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
+                        if ((override_min_down * len(circuits_by_parent_node[node])) > node_data['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > node_data['uploadBandwidthMbpsMin']):
+                            logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
+                            nodes_requiring_min_squashing[node] = True
                     sorted_circuits = sorted(circuits_by_parent_node[node], key=lambda c: c.get('circuitName', c.get('circuitID', '')))
                     for circuit in sorted_circuits:
                         if node != circuit['ParentNode']:
                             continue
-                        if monitor_mode_only() == False:
-                            if circuit['maxDownload'] > node_data['downloadBandwidthMbps']:
-                                logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-                            if circuit['maxUpload'] > node_data['uploadBandwidthMbps']:
-                                logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                        if circuit['maxDownload'] > node_data['downloadBandwidthMbps']:
+                            logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                        if circuit['maxUpload'] > node_data['uploadBandwidthMbps']:
+                            logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
                         planner_key = planner_circuit_identity_key(circuit)
                         planned_identity = circuit_assignment_by_key.get(planner_key)
                         if planned_identity is None:
@@ -1907,57 +1880,52 @@ def refreshShapers():
                         )
                         command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
                         linuxTCcommands.append(command)
-                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-                        if monitor_mode_only() == False:
-                            # SQM Fixup for lower rates (and per-circuit override)
-                            def effective_sqm_str(rate, override, direction):
-                                base = sqm()
-                                # Resolve per-direction token from override string
-                                chosen = None
-                                if override:
-                                    try:
-                                        ov = str(override).strip().lower()
-                                        if '/' in ov:
-                                            left, right = ov.split('/', 1)
-                                            left = left.strip()
-                                            right = right.strip()
-                                            chosen = left if direction == 'down' else right
-                                        else:
-                                            chosen = ov
-                                    except Exception:
-                                        chosen = None
-                                # If no explicit token for this direction, use default behavior
-                                if not chosen:
-                                    try:
-                                        thresh = fast_queues_fq_codel()
-                                    except Exception:
-                                        thresh = 1000.0
-                                    if rate >= thresh:
-                                        return 'fq_codel'
-                                    return sqmFixupRate(rate, base)
-                                if chosen == 'none':
-                                    return ''
-                                if chosen == 'fq_codel':
+                        # SQM Fixup for lower rates (and per-circuit override)
+                        def effective_sqm_str(rate, override, direction):
+                            base = sqm()
+                            # Resolve per-direction token from override string
+                            chosen = None
+                            if override:
+                                try:
+                                    ov = str(override).strip().lower()
+                                    if '/' in ov:
+                                        left, right = ov.split('/', 1)
+                                        left = left.strip()
+                                        right = right.strip()
+                                        chosen = left if direction == 'down' else right
+                                    else:
+                                        chosen = ov
+                                except Exception:
+                                    chosen = None
+                            # If no explicit token for this direction, use default behavior
+                            if not chosen:
+                                try:
+                                    thresh = fast_queues_fq_codel()
+                                except Exception:
+                                    thresh = 1000.0
+                                if rate >= thresh:
                                     return 'fq_codel'
-                                if chosen == 'cake':
-                                    cake_base = base if base.startswith('cake') else 'cake diffserv4'
-                                    return sqmFixupRate(rate, cake_base)
                                 return sqmFixupRate(rate, base)
-                            sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override, 'down')
-                            if useSqm != '':
-                                command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                                linuxTCcommands.append(command)
+                            if chosen == 'none':
+                                return ''
+                            if chosen == 'fq_codel':
+                                return 'fq_codel'
+                            if chosen == 'cake':
+                                cake_base = base if base.startswith('cake') else 'cake diffserv4'
+                                return sqmFixupRate(rate, cake_base)
+                            return sqmFixupRate(rate, base)
+                        sqm_override = circuit['sqm'] if 'sqm' in circuit else None
+                        useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override, 'down')
+                        if useSqm != '':
+                            command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                            linuxTCcommands.append(command)
                         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
                         linuxTCcommands.append(command)
-                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-                        if monitor_mode_only() == False:
-                            # SQM Fixup for lower rates (and per-circuit override)
-                            sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
-                            if useSqm != '':
-                                command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                                linuxTCcommands.append(command)
+                        sqm_override = circuit['sqm'] if 'sqm' in circuit else None
+                        useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
+                        if useSqm != '':
+                            command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                            linuxTCcommands.append(command)
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:
@@ -2058,7 +2026,7 @@ def refreshShapers():
                         "memory_total_bytes": qdiscBudgetEstimate.get("memory_total_bytes"),
                         "memory_available_bytes": qdiscBudgetEstimate.get("memory_available_bytes"),
                         "on_a_stick": on_a_stick(),
-                        "monitor_only": monitor_mode_only(),
+                        "queue_mode": queue_mode(),
                         "shaped_devices_file": shapedDevicesFile,
                         "network_json_file": networkJSONfile,
                     },
@@ -2104,6 +2072,8 @@ def refreshShapers():
         # Execute actual Linux TC commands
         tcStartTime = datetime.now()
         # print("Executing linux TC class/qdisc commands")
+        if observe_mode:
+            linuxTCcommands = []
         with open('linux_tc.txt', 'w') as f:
             for command in linuxTCcommands:
                 logging.info(command)

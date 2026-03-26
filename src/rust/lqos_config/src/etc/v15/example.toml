@@ -32,7 +32,7 @@ to_network = "eth1"
 
 [queues]
 default_sqm = "cake diffserv4"
-monitor_only = false
+queue_mode = "shape"
 uplink_bandwidth_mbps = 1000
 downlink_bandwidth_mbps = 1000
 generated_pn_download_mbps = 1000

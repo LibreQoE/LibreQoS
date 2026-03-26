@@ -78,7 +78,7 @@ const bindings = [
 
     // Queues
     { field: "bindSqm", path: ".queues.default_sqm", data: "select-premade", editable: true },
-    { field: "bindMonitorMode", path: ".queues.monitor_only", data: "bool", editable: true },
+    { field: "bindQueueMode", path: ".queues.queue_mode", data: "select-premade", editable: true },
     { field: "bindUplinkMbps", path: ".queues.uplink_bandwidth_mbps", data: "integer", editable: true },
     { field: "bindDownlinkMbps", path: ".queues.downlink_bandwidth_mbps", data: "integer", editable: true },
     { field: "bindGeneratedDownlinkMbps", path: ".queues.generated_pn_download_mbps", data: "integer", editable: true },
@@ -477,11 +477,12 @@ function getFinalValue(target) {
 function updateSavedConfig(changes) {
     for (let i=0; i<changes.length; i++) {
         let target = bindings[changes[i]];
+        let finalValue = getFinalValue(target);
 
         let parts = target.path.split(".");
         if (parts.length === 2) {
             // It's a top-level entry so we have to write to the master variable
-            lqosd_config[parts[1]] = getFinalValue(target);
+            lqosd_config[parts[1]] = finalValue;
         }
 
         let configTarget = lqosd_config;
@@ -493,7 +494,7 @@ function updateSavedConfig(changes) {
             // Stopping at the pre-value level and then referencing its' child forces
             // JS to pass by reference and do what we want!
             if (j === parts.length-2) {
-                configTarget[parts[j+1]] = getFinalValue(target);
+                configTarget[parts[j+1]] = finalValue;
             }
         }
     }
