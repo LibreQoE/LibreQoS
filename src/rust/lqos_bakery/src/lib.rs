@@ -1678,6 +1678,33 @@ fn desired_shaping_tree_active(config: &Arc<Config>) -> bool {
     !config.queues.queue_mode.is_observe()
 }
 
+fn live_tree_mutation_blocker_for_config(config: &Arc<Config>) -> Option<String> {
+    if config.queues.queue_mode.is_observe() {
+        return Some(
+            "queue_mode is observe; root MQ is retained but the shaping tree is not live"
+                .to_string(),
+        );
+    }
+    if !SHAPING_TREE_ACTIVE.load(Ordering::Relaxed) {
+        return Some("the shaping tree is not currently active".to_string());
+    }
+    None
+}
+
+fn live_tree_mutations_allowed(config: &Arc<Config>) -> bool {
+    live_tree_mutation_blocker_for_config(config).is_none()
+}
+
+/// Returns the reason live shaping-tree mutations are currently blocked, if any.
+///
+/// This function is not pure: it reads runtime config and Bakery shaping-tree state.
+pub fn bakery_live_tree_mutation_blocker() -> Option<String> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Some("configuration could not be loaded".to_string());
+    };
+    live_tree_mutation_blocker_for_config(&config)
+}
+
 fn current_mq_layout(
     batch: &[Arc<BakeryCommands>],
     config: &Arc<Config>,
@@ -3021,6 +3048,10 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     debug!("StormGuardAdjustment received before MQ setup, skipping.");
                     continue;
                 }
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration, skipping StormGuardAdjustment.");
+                    continue;
+                };
                 let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
                     warn!(
                         "StormGuardAdjustment has invalid class_id [{}], skipping.",
@@ -3034,6 +3065,13 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         class: tc_handle,
                     };
                     stormguard_overrides.insert(key, new_rate);
+                }
+                if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+                    info!(
+                        "Skipping StormGuard live class change for {} {} because {}.",
+                        interface_name, class_id, reason
+                    );
+                    continue;
                 }
                 let normalized_class = tc_handle.as_tc_string();
                 // Build the HTB command
@@ -3493,21 +3531,45 @@ fn handle_commit_batch(
 
         // 2) Speed changes (avoid linux TC deadlock by removing qdisc first)
         if !categories.speed_changed.is_empty() {
-            let Some(layout) = resolved_mq_layout.as_ref() else {
-                warn!("Bakery: missing MQ layout during circuit speed updates");
-                return;
+            let live_tree_allowed = live_tree_mutations_allowed(&config);
+            if !live_tree_allowed
+                && let Some(reason) = live_tree_mutation_blocker_for_config(&config)
+            {
+                info!(
+                    "Skipping live circuit speed fallback updates because {}. Runtime state will be updated in memory only.",
+                    reason
+                );
+                push_bakery_event(
+                    "live_circuit_speed_skipped",
+                    "info",
+                    format!(
+                        "Skipping live circuit speed fallback updates because {}.",
+                        reason
+                    ),
+                );
+            }
+            let live_reserved_handles = if live_tree_allowed {
+                snapshot_live_qdisc_handle_majors_or_empty(&config, "circuit speed updates")
+            } else {
+                HashMap::new()
             };
-            let live_reserved_handles =
-                snapshot_live_qdisc_handle_majors_or_empty(&config, "circuit speed updates");
             let mut immediate_commands = Vec::new();
             for cmd in &categories.speed_changed {
-                let mut enriched_cmd = with_assigned_qdisc_handles_reserved(
-                    cmd,
-                    &config,
-                    layout,
-                    qdisc_handles,
-                    &live_reserved_handles,
-                );
+                let mut enriched_cmd = if live_tree_allowed {
+                    let Some(layout) = resolved_mq_layout.as_ref() else {
+                        warn!("Bakery: missing MQ layout during circuit speed updates");
+                        return;
+                    };
+                    with_assigned_qdisc_handles_reserved(
+                        cmd,
+                        &config,
+                        layout,
+                        qdisc_handles,
+                        &live_reserved_handles,
+                    )
+                } else {
+                    Arc::clone(cmd)
+                };
                 let old_cmd = if let BakeryCommands::AddCircuit { circuit_hash, .. } =
                     enriched_cmd.as_ref()
                 {
@@ -3515,7 +3577,13 @@ fn handle_commit_batch(
                 } else {
                     None
                 };
-                if let Some(old_cmd) = old_cmd.as_ref() {
+                if let Some(old_cmd) = old_cmd.as_ref()
+                    && live_tree_allowed
+                {
+                    let Some(layout) = resolved_mq_layout.as_ref() else {
+                        warn!("Bakery: missing MQ layout during circuit speed updates");
+                        return;
+                    };
                     enriched_cmd = rotate_changed_qdisc_handles_reserved(
                         old_cmd.as_ref(),
                         &enriched_cmd,
@@ -3525,7 +3593,8 @@ fn handle_commit_batch(
                         &live_reserved_handles,
                     );
                 }
-                if let Some(old_cmd) = old_cmd.as_ref()
+                if live_tree_allowed
+                    && let Some(old_cmd) = old_cmd.as_ref()
                     && queue_live_migration(
                         old_cmd.as_ref(),
                         &enriched_cmd,
@@ -3537,6 +3606,10 @@ fn handle_commit_batch(
                     continue;
                 }
                 if let BakeryCommands::AddCircuit { circuit_hash, .. } = enriched_cmd.as_ref() {
+                    if !live_tree_allowed {
+                        circuits.insert(*circuit_hash, enriched_cmd);
+                        continue;
+                    }
                     let was_activated = live_circuits.contains_key(circuit_hash);
                     // Fallback: immediate safe update
                     match config.queues.lazy_queues.as_ref() {
@@ -3589,7 +3662,7 @@ fn handle_commit_batch(
                     circuits.insert(*circuit_hash, enriched_cmd);
                 }
             }
-            if !immediate_commands.is_empty() {
+            if live_tree_allowed && !immediate_commands.is_empty() {
                 execute_and_record_live_change(
                     &immediate_commands,
                     "updating circuit speeds (fallback)",
@@ -4087,6 +4160,31 @@ fn handle_change_site_speed_live(
         } else {
             download_bandwidth_min
         };
+        if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+            let summary = format!(
+                "Skipping live site speed change for site {} because {}.",
+                site_hash, reason
+            );
+            info!("{summary}");
+            push_bakery_event_with_site(
+                "live_site_speed_skipped",
+                "info",
+                Some(site_hash),
+                summary,
+            );
+            let new_site = Arc::new(BakeryCommands::AddSite {
+                site_hash,
+                parent_class_id: *parent_class_id,
+                up_parent_class_id: *up_parent_class_id,
+                class_minor: *class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+            });
+            sites.insert(site_hash, new_site);
+            return;
+        }
         let commands = vec![
             vec![
                 "class".to_string(),
@@ -8011,6 +8109,28 @@ fn handle_treeguard_set_node_virtual_live(
         update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
         return operation.snapshot();
     };
+    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+        let summary = format!(
+            "TreeGuard runtime {} for site {} is blocked because {}.",
+            if virtualized {
+                "virtualization"
+            } else {
+                "restore"
+            },
+            site_hash,
+            reason
+        );
+        operation.update_status(
+            RuntimeNodeOperationStatus::Deferred,
+            now_unix,
+            Some(summary.clone()),
+            None,
+        );
+        runtime_node_operations.insert(site_hash, operation.clone());
+        update_desync_state_from_runtime_state(runtime_node_operations, virtualized_sites);
+        push_bakery_event_with_site("runtime_node_op_deferred", "info", Some(site_hash), summary);
+        return operation.snapshot();
+    }
 
     let mut failure_reason = None;
     let result: Result<(), String> = (|| {
@@ -10576,6 +10696,34 @@ mod tests {
                 .map(|d| d.cake_qdiscs),
             Some(0)
         );
+    }
+
+    #[test]
+    fn live_tree_mutation_blocker_reports_observe_mode_and_inactive_tree() {
+        let _guard = bakery_test_lock().lock().expect("lock");
+        reset_bakery_test_state();
+
+        let mut observe_cfg = Config::default();
+        observe_cfg
+            .queues
+            .set_queue_mode(lqos_config::QueueMode::Observe);
+        let observe_cfg = Arc::new(observe_cfg);
+        assert_eq!(
+            live_tree_mutation_blocker_for_config(&observe_cfg),
+            Some(
+                "queue_mode is observe; root MQ is retained but the shaping tree is not live"
+                    .to_string()
+            )
+        );
+
+        let active_cfg = Arc::new(Config::default());
+        assert_eq!(
+            live_tree_mutation_blocker_for_config(&active_cfg),
+            Some("the shaping tree is not currently active".to_string())
+        );
+
+        SHAPING_TREE_ACTIVE.store(true, Ordering::Relaxed);
+        assert_eq!(live_tree_mutation_blocker_for_config(&active_cfg), None);
     }
 
     #[test]

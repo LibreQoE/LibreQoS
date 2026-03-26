@@ -20,6 +20,9 @@ pub(crate) fn apply_circuit_sqm_override_live(
     devices: &[ShapedDevice],
     sqm_override: &str,
 ) -> Result<(), TreeguardError> {
+    if let Some(details) = lqos_bakery::bakery_live_tree_mutation_blocker() {
+        return Err(TreeguardError::LiveMutationUnavailable { details });
+    }
     let Some(sender) = lqos_bakery::BAKERY_SENDER.get() else {
         return Err(TreeguardError::BakeryNotReady);
     };
@@ -140,6 +143,9 @@ pub(crate) fn submit_node_virtualization_live(
     node_name: &str,
     virtualized: bool,
 ) -> Result<(), TreeguardError> {
+    if let Some(details) = lqos_bakery::bakery_live_tree_mutation_blocker() {
+        return Err(TreeguardError::LiveMutationUnavailable { details });
+    }
     let Some(sender) = lqos_bakery::BAKERY_SENDER.get() else {
         return Err(TreeguardError::BakeryNotReady);
     };
