@@ -576,6 +576,108 @@ fn build_temp_add_cmd(
     }
 }
 
+fn shadow_qdisc_allocation_key(circuit_hash: i64, uplink: bool) -> i64 {
+    let base = circuit_hash.wrapping_mul(2).wrapping_neg();
+    if uplink { base.wrapping_sub(1) } else { base }
+}
+
+fn assign_shadow_qdisc_handles(
+    migration: &Migration,
+    config: &Arc<Config>,
+    qdisc_handles: &QdiscHandleState,
+    live_reserved_handles: &HashMap<String, HashSet<u16>>,
+) -> (Option<u16>, Option<u16>) {
+    let mut shadow_handles = qdisc_handles.clone();
+    let isp_interface = config.isp_interface();
+    let mut down_reserved = live_reserved_handles
+        .get(&isp_interface)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(handle) = migration.old_down_qdisc_handle {
+        down_reserved.insert(handle);
+    }
+    if let Some(handle) = migration.down_qdisc_handle {
+        down_reserved.insert(handle);
+    }
+    let down_handle = migration.down_qdisc_handle.and_then(|_| {
+        shadow_handles.assign_circuit_handle(
+            &isp_interface,
+            shadow_qdisc_allocation_key(migration.circuit_hash, false),
+            &down_reserved,
+        )
+    });
+
+    if config.on_a_stick_mode() {
+        return (down_handle, None);
+    }
+
+    let internet_interface = config.internet_interface();
+    let mut up_reserved = live_reserved_handles
+        .get(&internet_interface)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(handle) = migration.old_up_qdisc_handle {
+        up_reserved.insert(handle);
+    }
+    if let Some(handle) = migration.up_qdisc_handle {
+        up_reserved.insert(handle);
+    }
+    let up_handle = migration.up_qdisc_handle.and_then(|_| {
+        shadow_handles.assign_circuit_handle(
+            &internet_interface,
+            shadow_qdisc_allocation_key(migration.circuit_hash, true),
+            &up_reserved,
+        )
+    });
+
+    (down_handle, up_handle)
+}
+
+fn build_shadow_add_cmd(
+    migration: &Migration,
+    config: &Arc<Config>,
+    qdisc_handles: &QdiscHandleState,
+    live_reserved_handles: &HashMap<String, HashSet<u16>>,
+) -> Option<BakeryCommands> {
+    let mut temp = build_temp_add_cmd(
+        &BakeryCommands::AddCircuit {
+            circuit_hash: migration.circuit_hash,
+            parent_class_id: migration.parent_class_id,
+            up_parent_class_id: migration.up_parent_class_id,
+            class_minor: migration.shadow_minor,
+            download_bandwidth_min: migration.old_down_min,
+            upload_bandwidth_min: migration.old_up_min,
+            download_bandwidth_max: migration.old_down_max,
+            upload_bandwidth_max: migration.old_up_max,
+            class_major: migration.class_major,
+            up_class_major: migration.up_class_major,
+            down_qdisc_handle: migration.down_qdisc_handle,
+            up_qdisc_handle: migration.up_qdisc_handle,
+            ip_addresses: String::new(),
+            sqm_override: migration.sqm_override.clone(),
+        },
+        migration.shadow_minor,
+        migration.old_down_min,
+        migration.old_down_max,
+        migration.old_up_min,
+        migration.old_up_max,
+        false,
+    )?;
+    let (down_qdisc_handle, up_qdisc_handle) =
+        assign_shadow_qdisc_handles(migration, config, qdisc_handles, live_reserved_handles);
+    let BakeryCommands::AddCircuit {
+        down_qdisc_handle: shadow_down_qdisc_handle,
+        up_qdisc_handle: shadow_up_qdisc_handle,
+        ..
+    } = &mut temp
+    else {
+        return None;
+    };
+    *shadow_down_qdisc_handle = down_qdisc_handle;
+    *shadow_up_qdisc_handle = up_qdisc_handle;
+    Some(temp)
+}
+
 fn queue_runtime_migration(
     old_cmd: &BakeryCommands,
     new_cmd: &Arc<BakeryCommands>,
@@ -2717,6 +2819,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         let mut advanced = 0usize;
         let mut to_remove = Vec::new();
         let mut effective_state_changed = false;
+        let persisted_qdisc_handles = QdiscHandleState::load(config);
 
         for (_hash, mig) in migrations.iter_mut() {
             if advanced >= MIGRATIONS_PER_TICK {
@@ -2725,29 +2828,15 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
 
             match mig.stage {
                 MigrationStage::PrepareShadow => {
-                    if let Some(temp) = build_temp_add_cmd(
-                        &BakeryCommands::AddCircuit {
-                            circuit_hash: mig.circuit_hash,
-                            parent_class_id: mig.parent_class_id,
-                            up_parent_class_id: mig.up_parent_class_id,
-                            class_minor: mig.shadow_minor,
-                            download_bandwidth_min: mig.old_down_min,
-                            upload_bandwidth_min: mig.old_up_min,
-                            download_bandwidth_max: mig.old_down_max,
-                            upload_bandwidth_max: mig.old_up_max,
-                            class_major: mig.class_major,
-                            up_class_major: mig.up_class_major,
-                            down_qdisc_handle: mig.down_qdisc_handle,
-                            up_qdisc_handle: mig.up_qdisc_handle,
-                            ip_addresses: "".to_string(),
-                            sqm_override: mig.sqm_override.clone(),
-                        },
-                        mig.shadow_minor,
-                        mig.old_down_min,
-                        mig.old_down_max,
-                        mig.old_up_min,
-                        mig.old_up_max,
-                        false,
+                    let live_reserved_handles = snapshot_live_qdisc_handle_majors_or_empty(
+                        config,
+                        "live-move: create shadow",
+                    );
+                    if let Some(temp) = build_shadow_add_cmd(
+                        mig,
+                        config,
+                        &persisted_qdisc_handles,
+                        &live_reserved_handles,
                     ) {
                         let mut cmds = Vec::new();
                         match config.queues.lazy_queues.as_ref() {
@@ -11810,6 +11899,110 @@ mod tests {
             Some(cmd) if Arc::ptr_eq(cmd, &old_cmd)
         ));
         assert!(Arc::ptr_eq(&migration.desired_cmd, &new_cmd));
+    }
+
+    #[test]
+    fn build_shadow_add_cmd_uses_ephemeral_qdisc_handles_distinct_from_old_and_final() {
+        let config = test_config_with_runtime_dir("shadow-create-handles");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut handles = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 9400,
+            parent_class_id: TcHandle::from_u32(0x10020),
+            up_parent_class_id: TcHandle::from_u32(0x20020),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.96/32".to_string(),
+            sqm_override: None,
+        });
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut handles);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected original handles");
+        };
+
+        handles.save(&config);
+        let mut reloaded = QdiscHandleState::load(&config);
+        let moved = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 9400,
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_minor: 0x35,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x3,
+            up_class_major: 0x4,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.96/32".to_string(),
+            sqm_override: None,
+        });
+        let moved = with_assigned_qdisc_handles(&moved, &config, &layout, &mut reloaded);
+        let moved = rotate_changed_qdisc_handles(
+            original.as_ref(),
+            &moved,
+            &config,
+            &layout,
+            &mut reloaded,
+        );
+        reloaded.save(&config);
+
+        let mut circuits = HashMap::from([(9400, Arc::clone(&original))]);
+        let live_circuits = HashMap::from([(9400, 1u64)]);
+        let mut migrations = HashMap::new();
+        assert!(queue_live_migration(
+            original.as_ref(),
+            &moved,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        ));
+        let migration = migrations.get(&9400).expect("migration should exist");
+        let persisted_handles = QdiscHandleState::load(&config);
+        let live_reserved = HashMap::from([
+            (config.isp_interface(), HashSet::from([*original_down])),
+            (config.internet_interface(), HashSet::from([*original_up])),
+        ]);
+        let shadow = build_shadow_add_cmd(migration, &config, &persisted_handles, &live_reserved)
+            .expect("shadow command");
+
+        let BakeryCommands::AddCircuit {
+            class_minor,
+            down_qdisc_handle: Some(shadow_down),
+            up_qdisc_handle: Some(shadow_up),
+            ..
+        } = shadow
+        else {
+            panic!("expected shadow qdisc handles");
+        };
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(final_down),
+            up_qdisc_handle: Some(final_up),
+            ..
+        } = moved.as_ref()
+        else {
+            panic!("expected final qdisc handles");
+        };
+
+        assert_eq!(class_minor, migration.shadow_minor);
+        assert_ne!(shadow_down, *original_down);
+        assert_ne!(shadow_up, *original_up);
+        assert_ne!(shadow_down, *final_down);
+        assert_ne!(shadow_up, *final_up);
     }
 
     #[test]

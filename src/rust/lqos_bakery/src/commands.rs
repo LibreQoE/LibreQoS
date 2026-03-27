@@ -1035,7 +1035,7 @@ mod tests {
     use super::{BakeryCommands, ExecutionMode};
     use crate::MQ_CREATED;
     use crate::test_state_lock;
-    use lqos_config::{Config, SingleInterfaceConfig};
+    use lqos_config::{Config, LazyQueueMode, SingleInterfaceConfig};
     use std::sync::Arc;
 
     fn is_root_delete(cmd: &[String], interface: &str) -> bool {
@@ -1057,6 +1057,23 @@ mod tests {
             && cmd[5] == "handle"
             && cmd[6] == "7FFF:"
             && cmd[7] == "mq"
+    }
+
+    fn assert_qdisc_add_replace_commands_use_explicit_handles(commands: &[Vec<String>]) {
+        for cmd in commands {
+            let is_qdisc_add_or_replace = cmd.first().is_some_and(|part| part == "qdisc")
+                && cmd
+                    .get(1)
+                    .is_some_and(|part| part == "add" || part == "replace");
+            if !is_qdisc_add_or_replace {
+                continue;
+            }
+            assert!(
+                cmd.iter().any(|part| part == "handle"),
+                "qdisc add/replace command omitted explicit handle: {:?}",
+                cmd
+            );
+        }
     }
 
     #[test]
@@ -1134,6 +1151,22 @@ mod tests {
                 .iter()
                 .all(|cmd| !is_root_add_mq(cmd, &config.internet_interface()))
         );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_qdisc_add_replace_commands_use_explicit_handles() {
+        let _guard = test_state_lock().lock().expect("lock");
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert_qdisc_add_replace_commands_use_explicit_handles(&commands);
         MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
@@ -1221,6 +1254,53 @@ mod tests {
             "observe mode should rely on full-reload preflight when the root mq already exists"
         );
         MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
+        let config = Arc::new(Config::default());
+        let builder_commands = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            parent_class_id: crate::TcHandle::from_u32(0x10020),
+            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.42/32".to_string(),
+            sqm_override: None,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("builder add_circuit should emit commands");
+        assert_qdisc_add_replace_commands_use_explicit_handles(&builder_commands);
+
+        let mut live_cfg = Config::default();
+        live_cfg.queues.lazy_queues = Some(LazyQueueMode::Full);
+        let live_config = Arc::new(live_cfg);
+        let live_commands = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            parent_class_id: crate::TcHandle::from_u32(0x10020),
+            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.42/32".to_string(),
+            sqm_override: None,
+        }
+        .to_commands(&live_config, ExecutionMode::LiveUpdate)
+        .expect("live add_circuit should emit commands");
+        assert_qdisc_add_replace_commands_use_explicit_handles(&live_commands);
     }
 
     #[test]
