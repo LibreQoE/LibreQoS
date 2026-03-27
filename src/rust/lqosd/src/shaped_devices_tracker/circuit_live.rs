@@ -1,7 +1,7 @@
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{DownUpOrder, TcpRetransmitSample, down_up_retransmit_sample};
 use lqos_utils::unix_time::time_since_boot;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -23,8 +23,7 @@ pub struct CircuitLiveRollup {
     pub bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
-    pub tcp_packets: DownUpOrder<u64>,
-    pub tcp_retransmits: DownUpOrder<u64>,
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     pub last_seen_nanos: u64,
 }
 
@@ -141,11 +140,8 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps.round());
         entry.bytes_per_second.down += data.bytes_per_second.down;
         entry.bytes_per_second.up += data.bytes_per_second.up;
-        entry.tcp_packets.down += data
-            .tcp_packets
-            .down
-            .saturating_sub(data.prev_tcp_packets.down);
-        entry.tcp_packets.up += data.tcp_packets.up.saturating_sub(data.prev_tcp_packets.up);
+        entry.tcp_packets.down += data.tcp_retransmit_packets.down;
+        entry.tcp_packets.up += data.tcp_retransmit_packets.up;
         entry.tcp_retransmits.down += data.tcp_retransmits.down;
         entry.tcp_retransmits.up += data.tcp_retransmits.up;
         entry.last_seen_nanos = Some(match entry.last_seen_nanos {
@@ -189,8 +185,10 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
                 bytes_per_second: value.bytes_per_second,
                 rtt_current_p50_nanos: value.rtt_current_p50_nanos,
                 qoo: value.qoo,
-                tcp_packets: value.tcp_packets,
-                tcp_retransmits: value.tcp_retransmits,
+                tcp_retransmit_sample: down_up_retransmit_sample(
+                    value.tcp_retransmits,
+                    value.tcp_packets,
+                ),
                 last_seen_nanos: value.last_seen_nanos.unwrap_or(u64::MAX),
             },
         );

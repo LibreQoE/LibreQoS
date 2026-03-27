@@ -21,6 +21,9 @@ pub struct NetworkTreeLiteNode {
     pub current_throughput: (u64, u64),
     /// Current TCP packets.
     pub current_tcp_packets: (u64, u64),
+    /// TCP packets paired with the current retransmit counts.
+    #[serde(default)]
+    pub current_tcp_retransmit_packets: (u64, u64),
     /// Current TCP retransmits.
     pub current_retransmits: (u64, u64),
     /// Approximate current RTT medians for down/up, in milliseconds.

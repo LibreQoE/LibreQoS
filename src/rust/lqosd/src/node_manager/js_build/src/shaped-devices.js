@@ -1,6 +1,11 @@
 import {clearDiv, formatLastSeen} from "./helpers/builders";
 import {get_ws_client} from "./pubsub/ws";
-import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
+import {
+    formatRetransmit,
+    formatRtt,
+    formatThroughput,
+    retransmitFractionFromSample,
+} from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
 
@@ -161,12 +166,8 @@ function applyCircuitUpdate(device) {
     updateMetricHtml(circuitId, "qooDown", formatQooScore(device.qoo ? device.qoo.down : null));
     updateMetricHtml(circuitId, "qooUp", formatQooScore(device.qoo ? device.qoo.up : null));
 
-    const packetsDown = toNumber(device.tcp_packets.down, 0);
-    const packetsUp = toNumber(device.tcp_packets.up, 0);
-    const retransDown = toNumber(device.tcp_retransmits.down, 0);
-    const retransUp = toNumber(device.tcp_retransmits.up, 0);
-    const fractionDown = packetsDown > 0 ? retransDown / packetsDown : 0;
-    const fractionUp = packetsUp > 0 ? retransUp / packetsUp : 0;
+    const fractionDown = retransmitFractionFromSample(device.tcp_retransmit_sample?.down);
+    const fractionUp = retransmitFractionFromSample(device.tcp_retransmit_sample?.up);
     updateMetricHtml(circuitId, "reXmitDown", formatRetransmit(fractionDown));
     updateMetricHtml(circuitId, "reXmitUp", formatRetransmit(fractionUp));
 }

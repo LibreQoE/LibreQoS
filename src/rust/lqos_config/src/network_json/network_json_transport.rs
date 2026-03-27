@@ -37,6 +37,9 @@ pub struct NetworkJsonTransport {
     pub current_icmp_packets: (u64, u64),
     /// Current count of TCP retransmits
     pub current_retransmits: (u64, u64),
+    /// TCP packets paired with current retransmit counts.
+    #[serde(default)]
+    pub current_tcp_retransmit_packets: (u64, u64),
     /// Cake marks
     pub current_marks: (u64, u64),
     /// Cake drops

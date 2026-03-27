@@ -45,6 +45,7 @@ pub(crate) struct FlowApplyContext<'a> {
     pub(crate) rtt_circuit_tracker: &'a mut FxHashMap<XdpIpAddress, RttBuffer>,
     pub(crate) rtt_by_circuit: &'a mut FxHashMap<i64, RttBuffer>,
     pub(crate) tcp_retries: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
+    pub(crate) tcp_retry_packets: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
     pub(crate) expired_keys: &'a mut Vec<FlowbeeKey>,
 }
 
@@ -197,18 +198,12 @@ impl ThroughputTracker {
                 let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
                 total_download_bytes = total_download_bytes.saturating_add(download_delta);
                 total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
-                total_tcp_packets.down = total_tcp_packets.down.saturating_add(
-                    entry
-                        .tcp_packets
-                        .down
-                        .saturating_sub(entry.prev_tcp_packets.down),
-                );
-                total_tcp_packets.up = total_tcp_packets.up.saturating_add(
-                    entry
-                        .tcp_packets
-                        .up
-                        .saturating_sub(entry.prev_tcp_packets.up),
-                );
+                total_tcp_packets.down = total_tcp_packets
+                    .down
+                    .saturating_add(entry.tcp_retransmit_packets.down);
+                total_tcp_packets.up = total_tcp_packets
+                    .up
+                    .saturating_add(entry.tcp_retransmit_packets.up);
                 total_retransmits.down = total_retransmits
                     .down
                     .saturating_add(entry.tcp_retransmits.down);
@@ -219,18 +214,14 @@ impl ThroughputTracker {
                 let agg = aggregates.entry(circuit_hash).or_default();
                 agg.download_bytes = agg.download_bytes.saturating_add(download_delta);
                 agg.upload_bytes = agg.upload_bytes.saturating_add(upload_delta);
-                agg.tcp_packets.down = agg.tcp_packets.down.saturating_add(
-                    entry
-                        .tcp_packets
-                        .down
-                        .saturating_sub(entry.prev_tcp_packets.down),
-                );
-                agg.tcp_packets.up = agg.tcp_packets.up.saturating_add(
-                    entry
-                        .tcp_packets
-                        .up
-                        .saturating_sub(entry.prev_tcp_packets.up),
-                );
+                agg.tcp_packets.down = agg
+                    .tcp_packets
+                    .down
+                    .saturating_add(entry.tcp_retransmit_packets.down);
+                agg.tcp_packets.up = agg
+                    .tcp_packets
+                    .up
+                    .saturating_add(entry.tcp_retransmit_packets.up);
                 agg.tcp_retransmits.down = agg
                     .tcp_retransmits
                     .down
@@ -593,7 +584,7 @@ impl ThroughputTracker {
                     last_fresh_rtt_data_cycle: 0,
                     last_seen: reduced.last_seen,
                     tcp_retransmits: DownUpOrder::zeroed(),
-                    prev_tcp_retransmits: DownUpOrder::zeroed(),
+                    tcp_retransmit_packets: DownUpOrder::zeroed(),
                     qoq: QoqScores::default(),
                 };
                 raw_data.insert(*xdp_ip, entry);
@@ -640,6 +631,7 @@ impl ThroughputTracker {
             rtt_circuit_tracker,
             rtt_by_circuit,
             tcp_retries,
+            tcp_retry_packets,
             expired_keys,
         } = ctx;
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
@@ -799,6 +791,19 @@ impl ThroughputTracker {
                                 flow_rtt,
                             );
                         }
+                        if key.ip_protocol == 6
+                            && data.end_status == 0
+                            && raw_data.contains_key(&key.local_ip)
+                        {
+                            tcp_retries
+                                .entry(key.local_ip)
+                                .or_insert_with(DownUpOrder::zeroed)
+                                .checked_add(delta_retrans);
+                            tcp_retry_packets
+                                .entry(key.local_ip)
+                                .or_insert_with(DownUpOrder::zeroed)
+                                .checked_add(delta_packets);
+                        }
                     } else {
                         // Check if we've hit the flow limit
                         if all_flows_lock.flow_data.len() >= MAX_FLOWS {
@@ -901,25 +906,6 @@ impl ThroughputTracker {
                         }
                     }
 
-                    // TCP - we have RTT data? 6 is TCP
-                    if key.ip_protocol == 6
-                        && data.end_status == 0
-                        && raw_data.contains_key(&key.local_ip)
-                    {
-                        // TCP Retries
-                        if let Some(retries) = tcp_retries.get_mut(&key.local_ip) {
-                            retries.down += data.tcp_retransmits.down as u64;
-                            retries.up += data.tcp_retransmits.up as u64;
-                        } else {
-                            tcp_retries.insert(
-                                key.local_ip,
-                                DownUpOrder::new(
-                                    data.tcp_retransmits.down as u64,
-                                    data.tcp_retransmits.up as u64,
-                                ),
-                            );
-                        }
-                    }
                     if data.end_status != 0 {
                         // The flow has ended. We need to remove it from the map.
                         expired_keys.push(*key);
@@ -971,21 +957,24 @@ impl ThroughputTracker {
             // Reset all entries in the tracker to 0
             for (_k, circuit) in raw_data.iter_mut() {
                 circuit.tcp_retransmits = DownUpOrder::zeroed();
+                circuit.tcp_retransmit_packets = DownUpOrder::zeroed();
             }
             // Apply the new ones
             for (local_ip, retries) in tcp_retries {
                 if let Some(tracker) = raw_data.get_mut(local_ip) {
-                    tracker.tcp_retransmits.down = retries
-                        .down
-                        .saturating_sub(tracker.prev_tcp_retransmits.down);
-                    tracker.tcp_retransmits.up =
-                        retries.up.saturating_sub(tracker.prev_tcp_retransmits.up);
-                    tracker.prev_tcp_retransmits.down = retries.down;
-                    tracker.prev_tcp_retransmits.up = retries.up;
+                    tracker.tcp_retransmit_packets = tcp_retry_packets
+                        .get(local_ip)
+                        .copied()
+                        .unwrap_or_else(DownUpOrder::zeroed);
+                    tracker.tcp_retransmits = *retries;
 
                     // Send it upstream
                     if let Some(parents) = &tracker.network_json_parents {
-                        net_json_calc.add_retransmit_cycle(parents, tracker.tcp_retransmits);
+                        net_json_calc.add_retransmit_cycle(
+                            parents,
+                            tracker.tcp_retransmits,
+                            tracker.tcp_retransmit_packets,
+                        );
                     }
                 }
             }
@@ -1005,9 +994,7 @@ impl ThroughputTracker {
                         tracker.qoq = QoqScores::default();
                         continue;
                     }
-                    let tcp_packets_delta = tracker
-                        .tcp_packets
-                        .checked_sub_or_zero(tracker.prev_tcp_packets);
+                    let tcp_packets_delta = tracker.tcp_retransmit_packets;
                     let loss_download = tcp_retransmit_loss_proxy(
                         tracker.tcp_retransmits.down,
                         tcp_packets_delta.down,

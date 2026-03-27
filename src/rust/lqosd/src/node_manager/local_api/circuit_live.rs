@@ -1,5 +1,5 @@
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -18,8 +18,7 @@ pub struct CircuitLiveMetrics {
     pub bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
-    pub tcp_packets: DownUpOrder<u64>,
-    pub tcp_retransmits: DownUpOrder<u64>,
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     pub last_seen_nanos: u64,
 }
 
@@ -43,8 +42,7 @@ pub fn circuit_live_metrics(query: &CircuitMetricsQuery) -> Vec<CircuitLiveMetri
                     bytes_per_second: row.bytes_per_second,
                     rtt_current_p50_nanos: row.rtt_current_p50_nanos,
                     qoo: row.qoo,
-                    tcp_packets: row.tcp_packets,
-                    tcp_retransmits: row.tcp_retransmits,
+                    tcp_retransmit_sample: row.tcp_retransmit_sample,
                     last_seen_nanos: row.last_seen_nanos,
                 })
         })

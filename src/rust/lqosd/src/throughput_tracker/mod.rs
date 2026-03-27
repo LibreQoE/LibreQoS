@@ -25,7 +25,7 @@ use lqos_bus::{
 };
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, queue_stats_stale};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::units::{DownUpOrder, down_up_divide};
+use lqos_utils::units::{DownUpOrder, TcpRetransmitSample, down_up_retransmit_sample};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -152,6 +152,7 @@ fn throughput_task(
     let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
     let mut rtt_by_circuit: FxHashMap<i64, RttBuffer> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+    let mut tcp_retry_packets: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
     // Counter for occasional stats
@@ -206,6 +207,7 @@ fn throughput_task(
                 rtt_circuit_tracker: &mut rtt_circuit_tracker,
                 rtt_by_circuit: &mut rtt_by_circuit,
                 tcp_retries: &mut tcp_retries,
+                tcp_retry_packets: &mut tcp_retry_packets,
                 expired_keys: &mut expired_flows,
             });
             CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
@@ -219,10 +221,12 @@ fn throughput_task(
             rtt_circuit_tracker.clear();
             rtt_by_circuit.clear();
             tcp_retries.clear();
+            tcp_retry_packets.clear();
             expired_flows.clear();
             rtt_circuit_tracker.shrink_to_fit();
             rtt_by_circuit.shrink_to_fit();
             tcp_retries.shrink_to_fit();
+            tcp_retry_packets.shrink_to_fit();
             expired_flows.shrink_to_fit();
 
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
@@ -349,7 +353,7 @@ type TopList = (
     f32,
     TcHandle,
     String,
-    (f64, f64),
+    DownUpOrder<TcpRetransmitSample>,
 );
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
@@ -371,7 +375,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -389,7 +393,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmit_sample: *tcp_retransmits,
             },
         )
         .collect();
@@ -415,7 +419,7 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -433,7 +437,7 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmit_sample: *tcp_retransmits,
             },
         )
         .collect();
@@ -568,7 +572,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -586,7 +590,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmit_sample: *tcp_retransmits,
             },
         )
         .collect();
@@ -613,7 +617,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -621,8 +625,10 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
     // Use a total order for floating-point comparison to avoid panics
     // when NaN/Inf are present and ensure comparator transitivity.
     full_list.sort_by(|a, b| {
-        let total_a = a.6.0 + a.6.1;
-        let total_b = b.6.0 + b.6.1;
+        let total_a = a.6.down.fraction().map(|f| f.get()).unwrap_or(0.0)
+            + a.6.up.fraction().map(|f| f.get()).unwrap_or(0.0);
+        let total_b = b.6.down.fraction().map(|f| f.get()).unwrap_or(0.0)
+            + b.6.up.fraction().map(|f| f.get()).unwrap_or(0.0);
         total_b.total_cmp(&total_a)
     });
     let result = full_list
@@ -637,7 +643,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmit_sample: *tcp_retransmits,
             },
         )
         .collect();
@@ -669,7 +675,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -688,7 +694,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmit_sample: *tcp_retransmits,
             },
         )
         .collect();
@@ -994,7 +1000,10 @@ pub fn all_unknown_ips() -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (0.0, 0.0),
+                tcp_retransmit_sample: DownUpOrder::new(
+                    TcpRetransmitSample::new(0, 0),
+                    TcpRetransmitSample::new(0, 0),
+                ),
             },
         )
         .collect();

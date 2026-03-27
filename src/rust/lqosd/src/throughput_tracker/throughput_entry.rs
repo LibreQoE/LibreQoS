@@ -30,7 +30,7 @@ pub(crate) struct ThroughputEntry {
     pub(crate) last_fresh_rtt_data_cycle: u64,
     pub(crate) last_seen: u64, // Last seen in kernel time since boot
     pub(crate) tcp_retransmits: DownUpOrder<u64>,
-    pub(crate) prev_tcp_retransmits: DownUpOrder<u64>,
+    pub(crate) tcp_retransmit_packets: DownUpOrder<u64>,
     pub(crate) qoq: QoqScores,
 }
 

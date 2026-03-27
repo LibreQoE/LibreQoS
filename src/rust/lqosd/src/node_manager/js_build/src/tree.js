@@ -1,7 +1,7 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {
     formatCakeStat, formatCakeStatPercent,
-    formatRetransmit, formatRetransmitRaw,
+    formatRetransmit, formatRetransmitFraction, retransmitFractionFromSample,
     formatRtt,
     formatThroughput,
 } from "./helpers/scaling";
@@ -46,6 +46,13 @@ const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
 const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
+
+function retransmitPacketsForNode(node, direction) {
+    return toNumber(
+        node.current_tcp_retransmit_packets?.[direction] ?? node.current_tcp_packets?.[direction],
+        0,
+    );
+}
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -1218,13 +1225,13 @@ function fillHeader(node) {
     $("#parentQooD").html(formatQooScore(node.qoo ? node.qoo[0] : null));
     $("#parentQooU").html(formatQooScore(node.qoo ? node.qoo[1] : null));
     let retr = 0;
-    const packetsDown = toNumber(node.current_tcp_packets[0], 0);
+    const packetsDown = retransmitPacketsForNode(node, 0);
     if (packetsDown > 0) {
         retr = toNumber(node.current_retransmits[0], 0) / packetsDown;
     }
     $("#parentRxmitD").html(formatRetransmit(retr));
     retr = 0;
-    const packetsUp = toNumber(node.current_tcp_packets[1], 0);
+    const packetsUp = retransmitPacketsForNode(node, 1);
     if (packetsUp > 0) {
         retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
     }
@@ -1374,7 +1381,12 @@ function buildRow(i, depth=0) {
     col.id = "re-xmit-down-" + nodeId;
     col.style.width = "6%";
     if (node.current_retransmits[0] !== undefined) {
-        col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
+        let retr = 0;
+        const packetsDown = retransmitPacketsForNode(node, 0);
+        if (packetsDown > 0) {
+            retr = toNumber(node.current_retransmits[0], 0) / packetsDown;
+        }
+        col.innerHTML = formatRetransmitFraction(retr);
     } else {
         col.textContent = "-";
     }
@@ -1384,7 +1396,12 @@ function buildRow(i, depth=0) {
     col.id = "re-xmit-up-" + nodeId;
     col.style.width = "6%";
     if (node.current_retransmits[1] !== undefined) {
-        col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
+        let retr = 0;
+        const packetsUp = retransmitPacketsForNode(node, 1);
+        if (packetsUp > 0) {
+            retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
+        }
+        col.innerHTML = formatRetransmitFraction(retr);
     } else {
         col.textContent = "-";
     }
@@ -1495,7 +1512,7 @@ function treeUpdate(msg) {
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
                 let retr = 0;
-                const packetsDown = toNumber(node.current_tcp_packets[0], 0);
+                const packetsDown = retransmitPacketsForNode(node, 0);
                 if (packetsDown > 0) {
                     retr = toNumber(node.current_retransmits[0], 0) / packetsDown;
                 }
@@ -1508,7 +1525,7 @@ function treeUpdate(msg) {
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
                 let retr = 0;
-                const packetsUp = toNumber(node.current_tcp_packets[1], 0);
+                const packetsUp = retransmitPacketsForNode(node, 1);
                 if (packetsUp > 0) {
                     retr = toNumber(node.current_retransmits[1], 0) / packetsUp;
                 }
@@ -1635,17 +1652,8 @@ function renderAttachedCircuitsRows(rows) {
                 tr.appendChild(simpleRow("-"));
             }
 
-            let retr = 0;
-            if (toNumber(circuit.tcp_packets?.down, 0) > 0) {
-                retr = toNumber(circuit.tcp_retransmits?.down, 0) / toNumber(circuit.tcp_packets?.down, 0);
-            }
-            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
-
-            retr = 0;
-            if (toNumber(circuit.tcp_packets?.up, 0) > 0) {
-                retr = toNumber(circuit.tcp_retransmits?.up, 0) / toNumber(circuit.tcp_packets?.up, 0);
-            }
-            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
+            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.down))));
+            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.up))));
 
             tbody.appendChild(tr);
     });

@@ -8,6 +8,98 @@ use serde::{Deserialize, Serialize};
 use std::ops::AddAssign;
 use zerocopy::FromBytes;
 
+/// Strongly-typed count of TCP retransmit events.
+#[repr(transparent)]
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Ord, PartialOrd, Hash,
+    Allocative,
+)]
+#[serde(transparent)]
+pub struct RetransmitCount(pub u64);
+
+impl RetransmitCount {
+    /// Returns the underlying retransmit count.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Strongly-typed count of TCP packets used as the retransmit denominator.
+#[repr(transparent)]
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Ord, PartialOrd, Hash,
+    Allocative,
+)]
+#[serde(transparent)]
+pub struct TcpPacketCount(pub u64);
+
+impl TcpPacketCount {
+    /// Returns the underlying packet count.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Strongly-typed retransmit fraction in the inclusive range `0.0..=1.0`.
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, PartialOrd, Serialize, Deserialize, Allocative)]
+#[serde(transparent)]
+pub struct RetransmitFraction(f64);
+
+impl RetransmitFraction {
+    /// Constructs a retransmit fraction if the provided value is within `0.0..=1.0`.
+    pub fn new(value: f64) -> Option<Self> {
+        if (0.0..=1.0).contains(&value) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the underlying fraction value.
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+
+    /// Converts the fraction to a `0.0..=100.0` percentage.
+    pub fn percent_0_to_100(self) -> f64 {
+        self.0 * 100.0
+    }
+}
+
+/// Keeps TCP retransmit numerator and denominator together so callers cannot mix units.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Allocative)]
+pub struct TcpRetransmitSample {
+    /// The retransmit count for the sample window.
+    pub retransmits: RetransmitCount,
+    /// The TCP packet count for the same sample window.
+    pub packets: TcpPacketCount,
+}
+
+impl TcpRetransmitSample {
+    /// Creates a new retransmit sample from raw counts.
+    pub const fn new(retransmits: u64, packets: u64) -> Self {
+        Self {
+            retransmits: RetransmitCount(retransmits),
+            packets: TcpPacketCount(packets),
+        }
+    }
+
+    /// Computes the retransmit fraction for the sample window.
+    pub fn fraction(self) -> Option<RetransmitFraction> {
+        let packets = self.packets.get();
+        if packets == 0 {
+            return None;
+        }
+        RetransmitFraction::new(self.retransmits.get() as f64 / packets as f64)
+    }
+
+    /// Computes the retransmit percentage for the sample window.
+    pub fn percent_0_to_100(self) -> Option<f64> {
+        self.fraction().map(RetransmitFraction::percent_0_to_100)
+    }
+}
+
 /// Provides strong download/upload separation for
 /// stored statistics to eliminate confusion. This is a generic
 /// type: you can control the type stored inside.
@@ -34,6 +126,49 @@ pub struct DownUpOrder<T> {
 }
 
 impl<T> DownUpOrder<T>
+{
+    /// Create a new DownUpOrder with the given down and up values.
+    pub const fn new(down: T, up: T) -> Self {
+        Self { down, up }
+    }
+
+    /// In the C code, it's common to refer to a "direction" byte:
+    ///
+    /// * 0: down
+    /// * 1: up
+    /// * >1: error
+    ///
+    /// This is a helper function to translate that byte into the
+    /// appropriate value.
+    pub fn dir(&self, direction: usize) -> T
+    where
+        T: Copy,
+    {
+        if direction == 0 {
+            self.down
+        } else {
+            self.up
+        }
+    }
+
+    /// Get the `down` value.
+    pub fn get_down(&self) -> T
+    where
+        T: Copy,
+    {
+        self.down
+    }
+
+    /// Get the `up` value.
+    pub fn get_up(&self) -> T
+    where
+        T: Copy,
+    {
+        self.up
+    }
+}
+
+impl<T> DownUpOrder<T>
 where
     T: std::cmp::Ord
         + num_traits::Zero
@@ -46,23 +181,6 @@ where
         + num_traits::SaturatingAdd
         + Default,
 {
-    /// Create a new DownUpOrder with the given down and up values.
-    pub fn new(down: T, up: T) -> Self {
-        Self { down, up }
-    }
-
-    /// In the C code, it's common to refer to a "direction" byte:
-    ///
-    /// * 0: down
-    /// * 1: up
-    /// * >1: error
-    ///
-    /// This is a helper function to translate that byte into the
-    /// appropriate value.
-    pub fn dir(&self, direction: usize) -> T {
-        if direction == 0 { self.down } else { self.up }
-    }
-
     /// Return a new DownUpOrder with both down and up set to zero.
     pub fn zeroed() -> Self {
         Self {
@@ -127,16 +245,6 @@ where
         }
     }
 
-    /// Get the `down` value.
-    pub fn get_down(&self) -> T {
-        self.down
-    }
-
-    /// Get the `up` value.
-    pub fn get_up(&self) -> T {
-        self.up
-    }
-
     /// Set both the `down` and `up` values to zero.
     pub fn set_to_zero(&mut self) {
         self.down = T::zero();
@@ -175,6 +283,17 @@ pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, 
         if d == 0 { 0.0 } else { n as f64 / d as f64 }
     }
     (safe_div(left.down, right.down), safe_div(left.up, right.up))
+}
+
+/// Pairs retransmit counts with TCP packet counts in the same directional ordering.
+pub fn down_up_retransmit_sample(
+    retransmits: DownUpOrder<u64>,
+    packets: DownUpOrder<u64>,
+) -> DownUpOrder<TcpRetransmitSample> {
+    DownUpOrder::new(
+        TcpRetransmitSample::new(retransmits.down, packets.down),
+        TcpRetransmitSample::new(retransmits.up, packets.up),
+    )
 }
 
 #[cfg(test)]
@@ -225,5 +344,24 @@ mod tests {
         a.checked_add_direct(1, 1);
         assert_eq!(a.down, 2);
         assert_eq!(a.up, 3);
+    }
+
+    #[test]
+    fn retransmit_fraction_rejects_invalid_values() {
+        assert!(RetransmitFraction::new(-0.1).is_none());
+        assert!(RetransmitFraction::new(1.1).is_none());
+        assert_eq!(RetransmitFraction::new(0.25).map(|f| f.get()), Some(0.25));
+    }
+
+    #[test]
+    fn retransmit_sample_computes_fraction_and_percent() {
+        let sample = TcpRetransmitSample::new(5, 200);
+        let fraction = sample.fraction().expect("fraction should exist");
+        assert_eq!(fraction.get(), 0.025);
+        assert_eq!(sample.percent_0_to_100(), Some(2.5));
+
+        let empty = TcpRetransmitSample::new(5, 0);
+        assert!(empty.fraction().is_none());
+        assert!(empty.percent_0_to_100().is_none());
     }
 }

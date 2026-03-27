@@ -87,6 +87,7 @@ impl NetworkJson {
             current_udp_packets: DownUpOrder::zeroed(),
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
@@ -169,6 +170,7 @@ impl NetworkJson {
             n.current_udp_packets.set_to_zero();
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
+            n.current_tcp_retransmit_packets.set_to_zero();
             n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
@@ -214,11 +216,17 @@ impl NetworkJson {
     }
 
     /// Record TCP Retransmits in the tree.
-    pub fn add_retransmit_cycle(&mut self, targets: &[usize], tcp_retransmits: DownUpOrder<u64>) {
+    pub fn add_retransmit_cycle(
+        &mut self,
+        targets: &[usize],
+        tcp_retransmits: DownUpOrder<u64>,
+        tcp_packets: DownUpOrder<u64>,
+    ) {
         for idx in targets {
             // Safety first; use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.current_tcp_retransmits.checked_add(tcp_retransmits);
+                node.current_tcp_retransmit_packets.checked_add(tcp_packets);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -280,10 +288,13 @@ impl NetworkJson {
                 .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down = retransmit_percent(
                 node.current_tcp_retransmits.down,
-                node.current_tcp_packets.down,
+                node.current_tcp_retransmit_packets.down,
             );
             let retransmit_up =
-                retransmit_percent(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+                retransmit_percent(
+                    node.current_tcp_retransmits.up,
+                    node.current_tcp_retransmit_packets.up,
+                );
 
             let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
             heatmap.add_sample(
@@ -299,11 +310,11 @@ impl NetworkJson {
 
             let loss_download = tcp_retransmit_loss_proxy(
                 node.current_tcp_retransmits.down,
-                node.current_tcp_packets.down,
+                node.current_tcp_retransmit_packets.down,
             );
             let loss_upload = tcp_retransmit_loss_proxy(
                 node.current_tcp_retransmits.up,
-                node.current_tcp_packets.up,
+                node.current_tcp_retransmit_packets.up,
             );
             let scores = if let Some(profile) = qoo_profile.as_ref() {
                 compute_qoq_scores(
@@ -380,6 +391,7 @@ fn recurse_node(
         current_udp_packets: DownUpOrder::zeroed(),
         current_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
+        current_tcp_retransmit_packets: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
@@ -467,6 +479,7 @@ mod test {
             current_udp_packets: DownUpOrder::zeroed(),
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),

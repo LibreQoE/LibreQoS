@@ -1,4 +1,9 @@
-import {formatRetransmit, formatRtt, formatThroughput} from "./scaling";
+import {
+    formatRetransmitFraction,
+    formatRtt,
+    formatThroughput,
+    retransmitFractionFromSample,
+} from "./scaling";
 import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
@@ -163,11 +168,15 @@ export function topNTableRow(r) {
     row.append(rtt);
 
     let tcp_xmit_down = document.createElement("td");
-    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits[0]);
+    tcp_xmit_down.innerHTML = formatRetransmitFraction(
+        retransmitFractionFromSample(r.tcp_retransmit_sample?.down)
+    );
     row.append(tcp_xmit_down);
 
     let tcp_xmit_up = document.createElement("td");
-    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits[1]);
+    tcp_xmit_up.innerHTML = formatRetransmitFraction(
+        retransmitFractionFromSample(r.tcp_retransmit_sample?.up)
+    );
     row.append(tcp_xmit_up);
 
     return row;

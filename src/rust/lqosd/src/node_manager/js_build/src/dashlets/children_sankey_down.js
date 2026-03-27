@@ -3,6 +3,14 @@ import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
 import {isRedacted} from "../helpers/redact";
 
+function retransmitPacketsForNode(node, direction) {
+    return Number(
+        node?.current_tcp_retransmit_packets?.[direction]
+        ?? node?.current_tcp_packets?.[direction]
+        ?? 0,
+    );
+}
+
 class ChildrenSankeyGraph extends DashboardGraph {
     constructor(id, direction) {
         super(id);
@@ -124,8 +132,9 @@ export class ShaperChildrenDown extends BaseDashlet {
             const pName = p.name || String(parentId);
             // Parent color by rxmit (download)
             let pRx = 0;
-            if ((p.current_tcp_packets?.[0]||0) > 0) {
-                pRx = ((p.current_retransmits?.[0]||0) / Math.max(1, p.current_tcp_packets?.[0]||0)) * 100.0;
+            const pPackets = retransmitPacketsForNode(p, 0);
+            if (pPackets > 0) {
+                pRx = ((p.current_retransmits?.[0]||0) / Math.max(1, pPackets)) * 100.0;
             }
             nodes.push({ name: pName, itemStyle: { color: colorByRetransmitPct(pRx) } });
 
@@ -136,8 +145,9 @@ export class ShaperChildrenDown extends BaseDashlet {
                 parentSum += v;
                 hasData = hasData || v > 0.5;
                 let cRx = 0;
-                if ((c.current_tcp_packets?.[0]||0) > 0) {
-                    cRx = ((c.current_retransmits?.[0]||0) / Math.max(1, c.current_tcp_packets?.[0]||0)) * 100.0;
+                const cPackets = retransmitPacketsForNode(c, 0);
+                if (cPackets > 0) {
+                    cRx = ((c.current_retransmits?.[0]||0) / Math.max(1, cPackets)) * 100.0;
                 }
                 nodes.push({ name: c.name, itemStyle: { color: colorByRetransmitPct(cRx) } });
                 links.push({ source: c.name, target: pName, value: v });
@@ -179,8 +189,9 @@ export class ShaperChildrenDown extends BaseDashlet {
             const m = r[1] || {};
             const name = m.name || String(r[0]);
             const down = Number((m.current_throughput||[0,0])[0]||0);
-            const rxmit = (m.current_tcp_packets && m.current_tcp_packets[0] > 0)
-                ? ( (m.current_retransmits?.[0]||0) / Math.max(1, m.current_tcp_packets?.[0]||0) ) * 100.0
+            const rxmitPackets = retransmitPacketsForNode(m, 0);
+            const rxmit = rxmitPackets > 0
+                ? ( (m.current_retransmits?.[0]||0) / Math.max(1, rxmitPackets) ) * 100.0
                 : 0;
             return { name, value: down, rxmit };
         });

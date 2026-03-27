@@ -164,9 +164,6 @@ function showInsightTrialModal() {
                                 <li>Use CPU load balancing and mitigation features like binpacking and reload reduction.</li>
                                 <li>Explore accurate statistics, analytics, and long-term network insights.</li>
                             </ul>
-                            <div class="alert alert-primary mt-4 mb-0" role="alert">
-                                Start a free trial. Billing details required within 2 days. No charge until trial ends.
-                            </div>
                             <!-- From the Insight Trial -->
                             <div class="mt-4">
                                 <div class="row g-3" id="insightTeaserRow"></div>

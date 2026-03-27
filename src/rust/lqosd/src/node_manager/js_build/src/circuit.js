@@ -1,7 +1,14 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
-import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
+import {
+    formatRetransmitFraction,
+    formatRtt,
+    formatThroughput,
+    lerpGreenToRedViaOrange,
+    formatMbps,
+    retransmitFractionFromSample,
+} from "./helpers/scaling";
 import {colorByQoqScore, colorByRttMs} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {QooScoreGauge} from "./graphs/qoo_score_gauge";
@@ -67,6 +74,21 @@ const wsClient = get_ws_client();
 const RECENT_TRAFFIC_FLOW_WINDOW_NANOS = 30_000_000_000;
 const TRAFFIC_FLOW_HIDE_THRESHOLD_BPS = 1024 * 1024;
 const DEFAULT_TRAFFIC_PAGE_SIZE = 100;
+
+function retransmitCountFromSample(sample) {
+    return toNumber(sample?.retransmits, 0);
+}
+
+function tcpPacketCountFromSample(sample) {
+    return toNumber(sample?.packets, 0);
+}
+
+function retransmitPacketsForNode(node, direction) {
+    return toNumber(
+        node.current_tcp_retransmit_packets?.[direction] ?? node.current_tcp_packets?.[direction],
+        0,
+    );
+}
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -1499,8 +1521,8 @@ function renderTrafficTab() {
             row.appendChild(simpleRow(scaleNumber(rowData.bytesSentUp)));
             row.appendChild(simpleRow(scaleNumber(rowData.packetsSentDown)));
             row.appendChild(simpleRow(scaleNumber(rowData.packetsSentUp)));
-            row.appendChild(simpleRowHtml(rowData.retransmitDownPct > 0 ? formatRetransmit(rowData.retransmitDownPct) : "-"));
-            row.appendChild(simpleRowHtml(rowData.retransmitUpPct > 0 ? formatRetransmit(rowData.retransmitUpPct) : "-"));
+            row.appendChild(simpleRowHtml(rowData.retransmitDownPct > 0 ? formatRetransmitFraction(rowData.retransmitDownPct) : "-"));
+            row.appendChild(simpleRowHtml(rowData.retransmitUpPct > 0 ? formatRetransmitFraction(rowData.retransmitUpPct) : "-"));
             row.appendChild(simpleRowHtml(formatRttNanos(rowData.rttDownNanos)));
             row.appendChild(simpleRowHtml(formatRttNanos(rowData.rttUpNanos)));
             row.appendChild(simpleRowHtml(formatQooScore(rowData.qooDown)));
@@ -1540,6 +1562,8 @@ function updateSpeedometer(devices) {
     let planUp = 0;
     let retransmitsDown = 0;
     let retransmitsUp = 0;
+    let tcpPacketsDown = 0;
+    let tcpPacketsUp = 0;
     devices.forEach((device) => {
         const deviceDown = toNumber(device.bytes_per_second.down, 0);
         const deviceUp = toNumber(device.bytes_per_second.up, 0);
@@ -1547,8 +1571,10 @@ function updateSpeedometer(devices) {
         totalUp += deviceUp;
         planDown = Math.max(planDown, toNumber(device.plan.down, 0));
         planUp = Math.max(planUp, toNumber(device.plan.up, 0));
-        retransmitsDown += toNumber(device.tcp_retransmits.down, 0);
-        retransmitsUp += toNumber(device.tcp_retransmits.up, 0);
+        retransmitsDown += retransmitCountFromSample(device.tcp_retransmit_sample?.down);
+        retransmitsUp += retransmitCountFromSample(device.tcp_retransmit_sample?.up);
+        tcpPacketsDown += tcpPacketCountFromSample(device.tcp_retransmit_sample?.down);
+        tcpPacketsUp += tcpPacketCountFromSample(device.tcp_retransmit_sample?.up);
 
         let throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
@@ -1557,15 +1583,22 @@ function updateSpeedometer(devices) {
 
         let retransmitGraph = deviceGraphs["tcpRetransmitsGraph_" + device.device_id];
         if (retransmitGraph !== undefined) {
+            const deviceRetransmitDownPct =
+                retransmitFractionFromSample(device.tcp_retransmit_sample?.down) * 100.0;
+            const deviceRetransmitUpPct =
+                retransmitFractionFromSample(device.tcp_retransmit_sample?.up) * 100.0;
             retransmitGraph.update(
-                toNumber(device.tcp_retransmits.down, 0),
-                toNumber(device.tcp_retransmits.up, 0)
+                deviceRetransmitDownPct,
+                deviceRetransmitUpPct
             );
         }
     });
     speedometer.update(totalDown * 8, totalUp * 8, planDown, planUp);
     totalThroughput.update(totalDown * 8, totalUp * 8);
-    totalRetransmits.update(retransmitsDown, retransmitsUp);
+    totalRetransmits.update(
+        tcpPacketsDown > 0 ? (retransmitsDown / tcpPacketsDown) * 100.0 : 0,
+        tcpPacketsUp > 0 ? (retransmitsUp / tcpPacketsUp) * 100.0 : 0
+    );
 }
 
 function fillLiveDevices(devices) {
@@ -1619,11 +1652,15 @@ function fillLiveDevices(devices) {
         }
 
         if (tcp_retransmitsDown !== null) {
-            tcp_retransmitsDown.innerHTML = formatRetransmit(device.tcp_retransmits.down);
+            tcp_retransmitsDown.innerHTML = formatRetransmitFraction(
+                retransmitFractionFromSample(device.tcp_retransmit_sample?.down)
+            );
         }
 
         if (tcp_retransmitsUp !== null) {
-            tcp_retransmitsUp.innerHTML = formatRetransmit(device.tcp_retransmits.up);
+            tcp_retransmitsUp.innerHTML = formatRetransmitFraction(
+                retransmitFractionFromSample(device.tcp_retransmit_sample?.up)
+            );
         }
 
         // Local RTT histogram (5-minute window, p50 samples)
@@ -1944,8 +1981,8 @@ function onTreeEvent(msg) {
             toNumber(myMessage.current_throughput[1], 0) * 8
         );
         let rxmit = [0, 0];
-        const packetsDown = toNumber(myMessage.current_tcp_packets[0], 0);
-        const packetsUp = toNumber(myMessage.current_tcp_packets[1], 0);
+        const packetsDown = retransmitPacketsForNode(myMessage, 0);
+        const packetsUp = retransmitPacketsForNode(myMessage, 1);
         const retransmitsDown = toNumber(myMessage.current_retransmits[0], 0);
         const retransmitsUp = toNumber(myMessage.current_retransmits[1], 0);
         if (retransmitsDown > 0 && packetsDown > 0) {

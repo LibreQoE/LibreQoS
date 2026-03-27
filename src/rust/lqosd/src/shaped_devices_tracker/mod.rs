@@ -9,7 +9,7 @@ use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -342,6 +342,10 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
             node.current_tcp_packets.get_down(),
             node.current_tcp_packets.get_up(),
         ),
+        current_tcp_retransmit_packets: (
+            node.current_tcp_retransmit_packets.get_down(),
+            node.current_tcp_retransmit_packets.get_up(),
+        ),
         current_retransmits: (
             node.current_tcp_retransmits.get_down(),
             node.current_tcp_retransmits.get_up(),
@@ -410,6 +414,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
             let mut other_bw = (0, 0);
             let mut other_packets = (0, 0);
             let mut other_tcp_packets = (0, 0);
+            let mut other_tcp_retransmit_packets = (0, 0);
             let mut other_udp_packets = (0, 0);
             let mut other_icmp_packets = (0, 0);
             let mut other_xmit = (0, 0);
@@ -422,6 +427,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 other_packets.1 += n.1.current_packets.1;
                 other_tcp_packets.0 += n.1.current_tcp_packets.0;
                 other_tcp_packets.1 += n.1.current_tcp_packets.1;
+                other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
+                other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
                 other_udp_packets.0 += n.1.current_udp_packets.0;
                 other_udp_packets.1 += n.1.current_udp_packets.1;
                 other_icmp_packets.0 += n.1.current_icmp_packets.0;
@@ -447,6 +454,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     current_throughput: other_bw,
                     current_packets: other_packets,
                     current_tcp_packets: other_tcp_packets,
+                    current_tcp_retransmit_packets: other_tcp_retransmit_packets,
                     current_udp_packets: other_udp_packets,
                     current_icmp_packets: other_icmp_packets,
                     current_retransmits: other_xmit,
@@ -597,8 +605,10 @@ pub fn get_all_circuits() -> BusResponse {
                         down: v.qoq.download_total_f32(),
                         up: v.qoq.upload_total_f32(),
                     },
-                    tcp_retransmits: v.tcp_retransmits,
-                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
+                    tcp_retransmit_sample: down_up_retransmit_sample(
+                        v.tcp_retransmits,
+                        v.tcp_retransmit_packets,
+                    ),
                     circuit_id,
                     device_id,
                     circuit_name,
@@ -713,8 +723,10 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
                         down: v.qoq.download_total_f32(),
                         up: v.qoq.upload_total_f32(),
                     },
-                    tcp_retransmits: v.tcp_retransmits,
-                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
+                    tcp_retransmit_sample: down_up_retransmit_sample(
+                        v.tcp_retransmits,
+                        v.tcp_retransmit_packets,
+                    ),
                     circuit_id,
                     device_id,
                     circuit_name,

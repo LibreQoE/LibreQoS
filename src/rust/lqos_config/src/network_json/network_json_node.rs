@@ -41,6 +41,9 @@ pub struct NetworkJsonNode {
     /// Current TCP Retransmits
     pub current_tcp_retransmits: DownUpOrder<u64>, // In retries
 
+    /// TCP packets paired to the retransmit counters for the current cycle.
+    pub current_tcp_retransmit_packets: DownUpOrder<u64>,
+
     /// Current Cake Marks
     pub current_marks: DownUpOrder<u64>,
 
@@ -134,6 +137,10 @@ impl NetworkJsonNode {
             current_retransmits: (
                 self.current_tcp_retransmits.get_down(),
                 self.current_tcp_retransmits.get_up(),
+            ),
+            current_tcp_retransmit_packets: (
+                self.current_tcp_retransmit_packets.get_down(),
+                self.current_tcp_retransmit_packets.get_up(),
             ),
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),

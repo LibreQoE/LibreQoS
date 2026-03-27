@@ -1,6 +1,6 @@
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_bus::{IpStats, TcHandle};
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Serialize};
 
 fn truncate_by_chars(input: &str, max_chars: usize) -> String {
@@ -16,7 +16,7 @@ pub struct IpStatsWithPlan {
     pub tc_handle: TcHandle,
     pub circuit_id: String,
     pub plan: DownUpOrder<f32>,
-    pub tcp_retransmits: (f64, f64),
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
 }
 
 impl From<&IpStats> for IpStatsWithPlan {
@@ -29,7 +29,7 @@ impl From<&IpStats> for IpStatsWithPlan {
             tc_handle: i.tc_handle,
             circuit_id: i.circuit_id.clone(),
             plan: DownUpOrder { down: 0.0, up: 0.0 },
-            tcp_retransmits: i.tcp_retransmits,
+            tcp_retransmit_sample: i.tcp_retransmit_sample,
         };
 
         if !result.circuit_id.is_empty() {

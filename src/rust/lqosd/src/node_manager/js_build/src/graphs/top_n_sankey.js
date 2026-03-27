@@ -1,5 +1,9 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {
+    lerpColor,
+    lerpGreenToRedViaOrange,
+    retransmitFractionFromSample,
+} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
 import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
@@ -92,7 +96,11 @@ export class TopNSankey extends DashboardGraph {
             let rtt = toNumber(r.median_tcp_rtt, 0);
             let rttColor = colorByRttMs(rtt);
             
-            let percentRxmit = Math.min(100, toNumber(r.tcp_retransmits[0], 0) + toNumber(r.tcp_retransmits[1], 0)) / 100;
+            const percentRxmit = Math.min(
+                1,
+                retransmitFractionFromSample(r.tcp_retransmit_sample?.down)
+                    + retransmitFractionFromSample(r.tcp_retransmit_sample?.up)
+            );
             let rxmitColor = isColorBlindMode()
                 ? lerpViridis(percentRxmit)
                 : lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
