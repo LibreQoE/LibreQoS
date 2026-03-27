@@ -290,11 +290,10 @@ impl NetworkJson {
                 node.current_tcp_retransmits.down,
                 node.current_tcp_retransmit_packets.down,
             );
-            let retransmit_up =
-                retransmit_percent(
-                    node.current_tcp_retransmits.up,
-                    node.current_tcp_retransmit_packets.up,
-                );
+            let retransmit_up = retransmit_percent(
+                node.current_tcp_retransmits.up,
+                node.current_tcp_retransmit_packets.up,
+            );
 
             let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
             heatmap.add_sample(

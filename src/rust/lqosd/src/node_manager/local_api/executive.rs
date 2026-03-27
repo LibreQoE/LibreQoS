@@ -144,6 +144,7 @@ pub struct ExecutiveHeatmapPageQuery {
     pub search: Option<String>,
     pub sort: Option<ExecutiveHeatmapSort>,
     pub descending: Option<bool>,
+    pub client_request_id: Option<String>,
 }
 
 /// One paged executive heatmap detail row.
@@ -176,6 +177,7 @@ pub struct ExecutiveLeaderboardPageQuery {
     pub page: Option<usize>,
     pub page_size: Option<usize>,
     pub search: Option<String>,
+    pub client_request_id: Option<String>,
 }
 
 /// One paged executive leaderboard response.
@@ -422,6 +424,7 @@ pub fn executive_heatmap_page(query: ExecutiveHeatmapPageQuery) -> ExecutiveHeat
             search,
             sort: Some(sort),
             descending: Some(descending),
+            client_request_id: query.client_request_id,
         },
         total_rows,
         rows,
@@ -457,8 +460,53 @@ pub fn executive_leaderboard_page(
             page: Some(page),
             page_size: Some(page_size),
             search,
+            client_request_id: query.client_request_id,
         },
         total_rows,
         rows,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ExecutiveEntityKind, ExecutiveHeatmapPageQuery, ExecutiveHeatmapSort,
+        ExecutiveLeaderboardKind, ExecutiveLeaderboardPageQuery, ExecutiveMetric,
+        executive_heatmap_page, executive_leaderboard_page,
+    };
+
+    #[test]
+    fn executive_heatmap_page_preserves_client_request_id() {
+        let page = executive_heatmap_page(ExecutiveHeatmapPageQuery {
+            metric: ExecutiveMetric::Rtt,
+            entity_kinds: vec![ExecutiveEntityKind::Site],
+            page: Some(0),
+            page_size: Some(10),
+            search: Some("WestRedd".to_string()),
+            sort: Some(ExecutiveHeatmapSort::LatestValue),
+            descending: Some(true),
+            client_request_id: Some("heatmap-req-1".to_string()),
+        });
+
+        assert_eq!(
+            page.query.client_request_id.as_deref(),
+            Some("heatmap-req-1")
+        );
+    }
+
+    #[test]
+    fn executive_leaderboard_page_preserves_client_request_id() {
+        let page = executive_leaderboard_page(ExecutiveLeaderboardPageQuery {
+            kind: ExecutiveLeaderboardKind::WorstSitesByRtt,
+            page: Some(0),
+            page_size: Some(10),
+            search: Some("WestRedd".to_string()),
+            client_request_id: Some("leaderboard-req-1".to_string()),
+        });
+
+        assert_eq!(
+            page.query.client_request_id.as_deref(),
+            Some("leaderboard-req-1")
+        );
     }
 }
