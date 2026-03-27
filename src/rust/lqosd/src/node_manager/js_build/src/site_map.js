@@ -15,12 +15,106 @@ const TILE_BBOX_URL = "https://insight.libreqos.com/tiles/api/bbox";
 const OSM_CACHE_KEY = "LibreQoSRocks";
 const WEB_MERCATOR_MAX_LAT = 85.05112878;
 const INSIGHT_TILE_PROTOCOL = "insight";
-// Insight OSM cache tiles: `z/y/x` (no `.png` suffix). See `src/lts2/rust/osm_cache/src/http.rs`.
+// Insight OSM cache tiles: `z/y/x.png` (Cloudflare cache-friendly). See `src/lts2/rust/osm_cache/src/http.rs`.
 // The Insight tile server returns `503 + Retry-After` while it fetches missing tiles, so we route
 // requests through a custom MapLibre protocol handler that retries before surfacing errors.
-const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles/{z}/{y}/{x}?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
+const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles/{z}/{y}/{x}.png?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 const TILE_MAX_ZOOM = 17;
+
+const urlParams = new URLSearchParams(window.location.search);
+const FIXTURE_MODE = urlParams.get("fixture") === "1";
+const FIXTURE_NETWORK_TREE = [
+    [0, {
+        id: "site-central",
+        name: "CENTRAL",
+        type: "Site",
+        immediate_parent: null,
+        latitude: 39.0997,
+        longitude: -92.2196,
+        configured_max_throughput: [2000, 800],
+        current_throughput: [20000000, 4000000],
+        qoo: [96.5, 97.2],
+        rtts: [18.4, 22.1],
+    }],
+    [1, {
+        id: "site-north",
+        name: "NORTH",
+        type: "Site",
+        immediate_parent: 0,
+        latitude: 39.2564,
+        longitude: -92.1842,
+        configured_max_throughput: [1500, 400],
+        current_throughput: [80000000, 12000000],
+        qoo: [88.0, 84.0],
+        rtts: [35.0, 41.0],
+    }],
+    [2, {
+        id: "site-east",
+        name: "EAST",
+        type: "Site",
+        immediate_parent: 0,
+        latitude: 39.0482,
+        longitude: -91.9631,
+        configured_max_throughput: [500, 100],
+        current_throughput: [6000000, 1000000],
+        qoo: [62.0, 70.0],
+        rtts: [120.0, 165.0],
+    }],
+    [3, {
+        id: "site-rural",
+        name: "RURAL",
+        type: "Site",
+        immediate_parent: 1,
+        latitude: 39.3689,
+        longitude: -92.4509,
+        configured_max_throughput: [100, 20],
+        current_throughput: [1200000, 240000],
+        qoo: [41.0, 52.0],
+        rtts: [55.0, 60.0],
+    }],
+    [4, {
+        id: "site-unmapped",
+        name: "UNMAPPED",
+        type: "Site",
+        immediate_parent: 0,
+        configured_max_throughput: [50, 10],
+        current_throughput: [0, 0],
+        qoo: [null, null],
+        rtts: [],
+    }],
+    [5, {
+        id: "ap-north-1",
+        name: "NORTH AP 1",
+        type: "AP",
+        immediate_parent: 1,
+        latitude: 39.2753,
+        longitude: -92.2116,
+        current_throughput: [15000000, 2000000],
+        qoo: [92.0, 90.0],
+        rtts: [28.0, 33.0],
+    }],
+    [6, {
+        id: "ap-north-2",
+        name: "NORTH AP 2",
+        type: "AP",
+        immediate_parent: 1,
+        current_throughput: [10000000, 1000000],
+        qoo: [null, 80.0],
+        rtts: [25.0, 29.0],
+    }],
+    [7, {
+        id: "ap-east-1",
+        name: "EAST AP",
+        type: "AP",
+        immediate_parent: 2,
+        latitude: 39.0349,
+        longitude: -91.9387,
+        current_throughput: [3000000, 400000],
+        qoo: [55.0, 60.0],
+        rtts: [180.0, 220.0],
+    }],
+];
 
 const OSM_RASTER_SOURCE_ID = "site-map-osm";
 const OSM_RASTER_LAYER_ID = "site-map-osm-tiles";
@@ -31,11 +125,15 @@ const SITE_POINTS_LAYER_ID = "site-map-site-points";
 const AP_POINTS_LAYER_ID = "site-map-ap-points";
 const SITE_LINK_LAYER_ID = "site-map-site-links-line";
 
-const INSIGHT_TILE_MAX_PARALLEL_FETCHES = 6;
+const INSIGHT_TILE_MAX_PARALLEL_FETCHES = 2;
 let insightTileFetchActive = 0;
 const insightTileFetchWaiters = [];
+let insightTileRateLimitUntil = 0;
 
 async function withInsightTileFetchSlot(fn) {
+    while (Date.now() < insightTileRateLimitUntil) {
+        await sleepMs(Math.min(30_000, insightTileRateLimitUntil - Date.now()));
+    }
     if (insightTileFetchActive >= INSIGHT_TILE_MAX_PARALLEL_FETCHES) {
         await new Promise((resolve) => insightTileFetchWaiters.push(resolve));
     }
@@ -76,6 +174,25 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function parseRetryAfterMs(headerValue) {
+    if (headerValue === null || headerValue === undefined) {
+        return null;
+    }
+    const raw = String(headerValue).trim();
+    if (!raw) {
+        return null;
+    }
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds)) {
+        return Math.max(0, Math.round(seconds * 1000));
+    }
+    const parsed = Date.parse(raw);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+    return Math.max(0, parsed - Date.now());
 }
 
 function formatBitsPerSecond(bitsPerSecond) {
@@ -123,6 +240,20 @@ function worstRtt(rttDownMs, rttUpMs) {
     const values = [rttDownMs, rttUpMs].filter((value) => Number.isFinite(value));
     if (!values.length) return null;
     return Math.max(...values);
+}
+
+function metricColorForMode(mode, metricValue) {
+    if (mode === "qoo") {
+        return colorByQoqScore(metricValue);
+    }
+    if (metricValue === null || metricValue === undefined) {
+        return "#8893a5";
+    }
+    const numeric = Number(metricValue);
+    if (!Number.isFinite(numeric)) {
+        return "#8893a5";
+    }
+    return colorByRttMs(numeric);
 }
 
 function configuredMaxThroughput(node) {
@@ -230,6 +361,16 @@ function linkColorExpression() {
     ];
 }
 
+function linkWidthExpression() {
+    const ratio = ["min", 1, ["max", 0, ["coalesce", ["get", "trafficRatio"], 0]]];
+    const trafficFactor = ["interpolate", ["exponential", 1.6], ratio, 0, 1.0, 1, 2.0];
+    // MapLibre only permits zoom expressions at the top level of a step/interpolate. Keep it there.
+    const w2 = ["*", 1.8, trafficFactor];
+    const w6 = ["*", 3.2, trafficFactor];
+    const w10 = ["*", 4.6, trafficFactor];
+    return ["interpolate", ["linear"], ["zoom"], 2, w2, 6, w6, 10, w10];
+}
+
 function buildOsmRasterStyle() {
     return {
         version: 8,
@@ -289,7 +430,8 @@ function installInsightTileProtocolOnce() {
         };
 
         const fetchWithRetries = async (signal) => {
-            const deadlineMs = Date.now() + 90_000;
+            const deadlineMs = Date.now() + (5 * 60_000);
+            let consecutive429 = 0;
             while (Date.now() < deadlineMs) {
                 if (signal?.aborted) {
                     throw new Error("AbortError");
@@ -307,9 +449,24 @@ function installInsightTileProtocolOnce() {
                     signal,
                 }));
 
-                if (resp.status === 503 || resp.status === 429) {
-                    const retryAfter = Number(resp.headers.get("retry-after"));
-                    const baseDelayMs = Number.isFinite(retryAfter) ? (retryAfter * 1000) : 1000;
+                if (resp.status === 429) {
+                    consecutive429 += 1;
+                    const retryAfterMs = parseRetryAfterMs(resp.headers.get("retry-after"));
+                    const fallbackDelayMs = 10_000 * Math.pow(2, Math.min(consecutive429 - 1, 4));
+                    const baseDelayMs = Math.max(retryAfterMs ?? 0, fallbackDelayMs);
+                    const delayMs = Math.min(Math.max(baseDelayMs, 500), 180_000) + Math.round(Math.random() * 1000);
+                    insightTileRateLimitUntil = Math.max(insightTileRateLimitUntil, Date.now() + delayMs);
+                    await sleepMs(Math.max(0, insightTileRateLimitUntil - Date.now()));
+                    if (signal?.aborted) {
+                        throw new Error("AbortError");
+                    }
+                    continue;
+                }
+
+                if (resp.status === 503) {
+                    consecutive429 = 0;
+                    const retryAfterMs = parseRetryAfterMs(resp.headers.get("retry-after"));
+                    const baseDelayMs = retryAfterMs ?? 1000;
                     const delayMs = Math.min(Math.max(baseDelayMs, 250), 15_000) + Math.round(Math.random() * 250);
                     await sleepMs(delayMs);
                     if (signal?.aborted) {
@@ -317,6 +474,8 @@ function installInsightTileProtocolOnce() {
                     }
                     continue;
                 }
+
+                consecutive429 = 0;
 
                 if (!resp.ok) {
                     throw new Error(`tile request failed: ${resp.status}`);
@@ -456,6 +615,7 @@ class SiteMapPage {
         this.mapBootstrapped = false;
         this.siteLabelMarkers = new Map();
         this.lastBboxAttemptAt = 0;
+        this.fixtureMode = FIXTURE_MODE;
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -479,7 +639,11 @@ class SiteMapPage {
     init() {
         this.bindControls();
         this.refreshLegend();
-        this.requestInitialTree();
+        if (this.fixtureMode) {
+            this.processTreeMessage({ data: FIXTURE_NETWORK_TREE }, { fixture: true });
+        } else {
+            this.requestInitialTree();
+        }
         this.startUpdatedClock();
         this.observeThemeChanges();
     }
@@ -525,7 +689,7 @@ class SiteMapPage {
 
         installInsightTileProtocolOnce();
         if (typeof window.maplibregl?.setMaxParallelImageRequests === "function") {
-            window.maplibregl.setMaxParallelImageRequests(6);
+            window.maplibregl.setMaxParallelImageRequests(INSIGHT_TILE_MAX_PARALLEL_FETCHES);
         }
         this.map = new window.maplibregl.Map({
             container: this.canvas,
@@ -632,12 +796,7 @@ class SiteMapPage {
                 },
                 paint: {
                     "line-color": linkColorExpression(),
-                    "line-width": [
-                        "interpolate", ["linear"], ["zoom"],
-                        2, 0.9,
-                        6, 1.6,
-                        10, 2.6,
-                    ],
+                    "line-width": linkWidthExpression(),
                     "line-opacity": [
                         "interpolate", ["linear"], ["zoom"],
                         2, 0.35,
@@ -737,14 +896,15 @@ class SiteMapPage {
         wsClient.send({ NetworkTree: {} });
     }
 
-    processTreeMessage(msg) {
+    processTreeMessage(msg, options = {}) {
+        const fixture = options?.fixture === true;
         const data = Array.isArray(msg?.data) ? msg.data : [];
         this.history.push({ timestamp: Date.now(), data });
         const cutoff = Date.now() - HISTORY_WINDOW_MS;
         this.history = this.history.filter((entry) => entry.timestamp >= cutoff);
         this.latestSnapshot = data;
         this.lastUpdateAt = Date.now();
-        this.setStatus("Live", "success");
+        this.setStatus(fixture ? "Fixture" : "Live", "success");
         this.ensureMapInitialized();
         this.renderFromHistory();
     }
@@ -771,6 +931,12 @@ class SiteMapPage {
 
         if (siteLatLonPairs.length === 0) {
             this.setStatus("No mapped sites", "warning");
+            return;
+        }
+
+        if (this.fixtureMode) {
+            const [lat, lon] = siteLatLonPairs[0];
+            this.initMap([lon, lat], 9);
             return;
         }
 
@@ -865,6 +1031,7 @@ class SiteMapPage {
         const unmappedSites = [];
         const unmappedAps = [];
         let maxBitsPerSecond = 0;
+        let maxSiteBitsPerSecond = 0;
         const byIndex = new Map();
 
         aggregate.forEach((value) => {
@@ -874,6 +1041,9 @@ class SiteMapPage {
             const avgUp = value.throughputSamples > 0 ? (value.throughputUp / value.throughputSamples) : 0;
             const throughputCombined = avgDown + avgUp;
             maxBitsPerSecond = Math.max(maxBitsPerSecond, throughputCombined);
+            if (nodeType === "site") {
+                maxSiteBitsPerSecond = Math.max(maxSiteBitsPerSecond, throughputCombined);
+            }
 
             const qooDown = averageOrNull(value.qooDownSum, value.qooDownCount);
             const qooUp = averageOrNull(value.qooUpSum, value.qooUpCount);
@@ -940,9 +1110,7 @@ class SiteMapPage {
             }
 
             const metricValue = this.mode === "qoo" ? node.qooWorst : node.rttWorst;
-            const metricColor = this.mode === "qoo"
-                ? colorByQoqScore(metricValue)
-                : colorByRttMs(metricValue);
+            const metricColor = metricColorForMode(this.mode, metricValue);
             const feature = {
                 type: "Feature",
                 geometry: {
@@ -1005,6 +1173,9 @@ class SiteMapPage {
             const utilizationRatio = (downRatio === null && upRatio === null)
                 ? null
                 : Math.max(0, Math.min(1, Math.max(downRatio ?? 0, upRatio ?? 0)));
+            const trafficRatio = maxSiteBitsPerSecond > 0
+                ? Math.max(0, Math.min(1, node.throughputCombined / maxSiteBitsPerSecond))
+                : 0;
             siteLinkFeatures.push({
                 type: "Feature",
                 geometry: {
@@ -1019,6 +1190,7 @@ class SiteMapPage {
                     fromName: node.name,
                     toName: parent.name,
                     utilizationRatio,
+                    trafficRatio,
                 },
             });
         });
@@ -1032,6 +1204,7 @@ class SiteMapPage {
             unmappedSites,
             unmappedAps,
             maxBitsPerSecond,
+            maxSiteBitsPerSecond,
         };
     }
 
@@ -1125,7 +1298,6 @@ class SiteMapPage {
         siteFeatures.forEach((feature) => {
             const key = feature?.properties?.key;
             const name = feature?.properties?.name;
-            const metricColor = feature?.properties?.metricColor;
             const coordinates = feature?.geometry?.coordinates;
             if (!key || !name || !Array.isArray(coordinates) || coordinates.length < 2) {
                 return;
@@ -1136,15 +1308,10 @@ class SiteMapPage {
             if (!existing) {
                 const el = document.createElement("div");
                 el.className = "site-map-site-label";
-                el.innerHTML = `<span class="site-map-site-label-dot"></span><span class="site-map-site-label-text"></span>`;
-                const dot = el.querySelector(".site-map-site-label-dot");
+                el.innerHTML = `<span class="site-map-site-label-text"></span>`;
                 const text = el.querySelector(".site-map-site-label-text");
                 if (text) {
                     text.textContent = name;
-                }
-                if (dot && metricColor) {
-                    dot.style.backgroundColor = metricColor;
-                    dot.style.opacity = "0.82";
                 }
 
                 const marker = new window.maplibregl.Marker({
@@ -1155,16 +1322,13 @@ class SiteMapPage {
                     .setLngLat(coordinates)
                     .addTo(this.map);
 
-                this.siteLabelMarkers.set(key, { marker, dot, text });
+                this.siteLabelMarkers.set(key, { marker, text });
                 return;
             }
 
             existing.marker.setLngLat(coordinates);
             if (existing.text) {
                 existing.text.textContent = name;
-            }
-            if (existing.dot && metricColor) {
-                existing.dot.style.backgroundColor = metricColor;
             }
         });
 
@@ -1223,7 +1387,6 @@ class SiteMapPage {
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
                 <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
                 <div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
-                ${props.inheritedCoords ? `<div class="text-muted mt-1">Using parent site coordinates.</div>` : ""}
             </div>`;
     }
 
@@ -1318,7 +1481,7 @@ class SiteMapPage {
         if (this.mode === "qoo") {
             this.legendGradient.style.background = isColorBlindMode()
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
-                : "linear-gradient(90deg, #d94b5b 0%, #f5b84f 42%, #6ecc84 75%, #4ca4ff 100%)";
+                : "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)";
             this.legendLow.textContent = "Poor QoO";
             this.legendHigh.textContent = "Healthy QoO";
         } else {
