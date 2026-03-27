@@ -432,7 +432,9 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
     #[cfg(target_arch = "x86_64")]
     use std::arch::x86_64::__cpuid_count;
 
-    if __cpuid_count(0, 0).eax < 0x1a {
+    // Safety: CPUID is available on all supported x86/x86_64 platforms, and we query leaf 0 first
+    // to determine the maximum supported leaf before using leaf 0x1A.
+    if unsafe { __cpuid_count(0, 0) }.eax < 0x1a {
         return None;
     }
 
@@ -452,7 +454,8 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
             return None;
         }
 
-        let leaf = __cpuid_count(0x1a, 0);
+        // Safety: Leaf support is validated above using CPUID leaf 0.
+        let leaf = unsafe { __cpuid_count(0x1a, 0) };
         let core_type = (leaf.eax >> 24) & 0xff;
         match core_type {
             CPUID_CORE_TYPE_CORE => performance.push(*cpu),

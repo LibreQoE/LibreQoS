@@ -176,6 +176,8 @@
 }
 
 .site-map-size-dot {
+    width: 12px;
+    height: 12px;
     border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.45);
     background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(100, 160, 255, 0.95) 42%, rgba(60, 108, 196, 0.92) 100%);
@@ -245,6 +247,34 @@
 
 .site-map-popup {
     min-width: 220px;
+}
+
+.site-map-site-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.34);
+    background: rgba(15, 23, 42, 0.64);
+    color: rgba(248, 250, 252, 0.92);
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    user-select: none;
+}
+
+.site-map-site-label-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .maplibregl-popup-content {
@@ -347,9 +377,9 @@
             </div>
             <div class="fw-semibold mt-3">Marker Size</div>
             <div class="site-map-size-row">
-                <span class="site-map-size-dot" style="width: 12px; height: 12px;"></span>
-                <span class="site-map-size-dot" style="width: 20px; height: 20px;"></span>
-                <span class="site-map-size-dot" style="width: 30px; height: 30px;"></span>
+                <span class="site-map-size-dot" id="siteMapSizeDotSmall" title="Lowest recent throughput"></span>
+                <span class="site-map-size-dot" id="siteMapSizeDotMedium" title="Typical recent throughput"></span>
+                <span class="site-map-size-dot" id="siteMapSizeDotLarge" title="Highest recent throughput"></span>
                 <div class="text-muted small">Combined recent throughput over the last 30 seconds.</div>
             </div>
             <div class="text-muted small mt-3">
