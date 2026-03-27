@@ -1,7 +1,8 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
 use allocative::Allocative;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Queue application mode.
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Default, Allocative)]
@@ -21,7 +22,7 @@ impl QueueMode {
     }
 }
 
-#[derive(Clone, Serialize, Debug, PartialEq, Allocative)]
+#[derive(Clone, Debug, PartialEq, Allocative)]
 pub struct QueueConfig {
     /// Which SQM to use by default
     pub default_sqm: String,
@@ -65,6 +66,36 @@ pub struct QueueConfig {
 
     /// Auto-change queues to fq_codel if they are greater than or equal to X Mbps. Defaults to 1000.
     pub fast_queues_fq_codel: Option<f64>,
+}
+
+impl Serialize for QueueConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("QueueConfig", 15)?;
+        state.serialize_field("default_sqm", &self.default_sqm)?;
+        state.serialize_field("queue_mode", &self.queue_mode)?;
+        // Preserve the legacy field during rewrites so older binaries that still
+        // require it continue to parse upgraded configs successfully.
+        state.serialize_field("monitor_only", &self.queue_mode.is_observe())?;
+        state.serialize_field("uplink_bandwidth_mbps", &self.uplink_bandwidth_mbps)?;
+        state.serialize_field("downlink_bandwidth_mbps", &self.downlink_bandwidth_mbps)?;
+        state.serialize_field(
+            "generated_pn_download_mbps",
+            &self.generated_pn_download_mbps,
+        )?;
+        state.serialize_field("generated_pn_upload_mbps", &self.generated_pn_upload_mbps)?;
+        state.serialize_field("dry_run", &self.dry_run)?;
+        state.serialize_field("sudo", &self.sudo)?;
+        state.serialize_field("override_available_queues", &self.override_available_queues)?;
+        state.serialize_field("use_binpacking", &self.use_binpacking)?;
+        state.serialize_field("lazy_queues", &self.lazy_queues)?;
+        state.serialize_field("lazy_expire_seconds", &self.lazy_expire_seconds)?;
+        state.serialize_field("lazy_threshold_bytes", &self.lazy_threshold_bytes)?;
+        state.serialize_field("fast_queues_fq_codel", &self.fast_queues_fq_codel)?;
+        state.end()
+    }
 }
 
 #[derive(Deserialize)]
@@ -214,14 +245,26 @@ mod tests {
     }
 
     #[test]
-    fn serialize_queue_config_omits_legacy_monitor_only_field() {
+    fn serialize_queue_config_preserves_legacy_monitor_only_field() {
         let mut config = QueueConfig::default();
         config.set_queue_mode(QueueMode::Observe);
         let serialized = toml::to_string(&config).expect("queue config should serialize");
         assert!(serialized.contains("queue_mode = \"observe\""));
         assert!(
-            !serialized.contains("monitor_only"),
-            "serialized config should not re-emit deprecated monitor_only"
+            serialized.contains("monitor_only = true"),
+            "serialized config should preserve legacy monitor_only for compatibility"
+        );
+    }
+
+    #[test]
+    fn serialize_shape_queue_config_sets_legacy_monitor_only_false() {
+        let mut config = QueueConfig::default();
+        config.set_queue_mode(QueueMode::Shape);
+        let serialized = toml::to_string(&config).expect("queue config should serialize");
+        assert!(serialized.contains("queue_mode = \"shape\""));
+        assert!(
+            serialized.contains("monitor_only = false"),
+            "serialized config should preserve legacy monitor_only=false for compatibility"
         );
     }
 }

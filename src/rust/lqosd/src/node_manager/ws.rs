@@ -477,6 +477,14 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::CpuAffinityRuntimeSnapshot => {
+            let response = WsResponse::CpuAffinityRuntimeSnapshot {
+                data: cpu_affinity::cpu_affinity_runtime_snapshot_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::CpuAffinityCircuits {
             cpu,
             direction,

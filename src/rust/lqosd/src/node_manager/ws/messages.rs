@@ -28,8 +28,8 @@ use crate::node_manager::local_api::{
     circuit_count::CircuitCount,
     circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
     cpu_affinity::{
-        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySiteTreeNode, CpuAffinitySummaryEntry,
-        PreviewWeightItem,
+        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinityRuntimeSnapshot, CpuAffinitySiteTreeNode,
+        CpuAffinitySummaryEntry, PreviewWeightItem,
     },
     flow_explorer::FlowTimeline,
     lts::{
@@ -229,6 +229,7 @@ pub enum WsRequest {
         ip: String,
     },
     CpuAffinitySummary,
+    CpuAffinityRuntimeSnapshot,
     CpuAffinityCircuits {
         cpu: u32,
         direction: Option<String>,
@@ -747,6 +748,9 @@ pub enum WsResponse {
     },
     CpuAffinitySummary {
         data: Vec<CpuAffinitySummaryEntry>,
+    },
+    CpuAffinityRuntimeSnapshot {
+        data: CpuAffinityRuntimeSnapshot,
     },
     CpuAffinityCircuits {
         data: CpuAffinityCircuitsPage,

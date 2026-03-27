@@ -17,6 +17,8 @@ const DEFAULT_POINT_OF_VIEW = {
     lng: -32,
     altitude: 2.15,
 };
+const MIN_INITIAL_ALTITUDE = 1.05;
+const MAX_INITIAL_ALTITUDE = 2.05;
 const MIN_ZOOM_SPEED = 1.8;
 const MAX_ZOOM_SPEED = 3.4;
 const FLOW_MAP_DEBUG = (() => {
@@ -253,8 +255,22 @@ function normalizeVector(x, y, z) {
     };
 }
 
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function unitVectorToLatLng(vector) {
+    const lat = Math.asin(clamp(vector.y, -1, 1)) * (180 / Math.PI);
+    const lng = Math.atan2(vector.x, vector.z) * (180 / Math.PI);
+    return { lat, lng };
+}
+
 function dotProduct(a, b) {
     return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
+
+function angularDistanceDegrees(a, b) {
+    return Math.acos(clamp(dotProduct(a, b), -1, 1)) * (180 / Math.PI);
 }
 
 function formatRtt(rttNanos) {
@@ -374,7 +390,7 @@ class FlowMapGlobe {
             maxBytes: 0,
             lastUpdatedLabel: "Waiting for data",
         };
-        this.autoRotate = false;
+        this.autoRotate = true;
         this.autoRefresh = true;
         this.colorMode = "rtt";
         this.maxPoints = 1000;
@@ -385,6 +401,8 @@ class FlowMapGlobe {
         this.lastKnownAltitude = DEFAULT_POINT_OF_VIEW.altitude;
         this.activeClusterRadius = clusterRadiusPx(DEFAULT_POINT_OF_VIEW.altitude);
         this.selectedMeta = null;
+        this.initialPointOfView = { ...DEFAULT_POINT_OF_VIEW };
+        this.hasAutoCenteredOnce = false;
 
         this.initGlobe();
         this.observeThemeChanges();
@@ -428,7 +446,7 @@ class FlowMapGlobe {
         this.controls.autoRotate = this.autoRotate;
         this.controls.autoRotateSpeed = 0.45;
 
-        this.globe.pointOfView(DEFAULT_POINT_OF_VIEW, 0);
+        this.globe.pointOfView(this.initialPointOfView, 0);
         this.captureViewState();
         this.syncControlSpeeds();
         this.applyTheme();
@@ -816,11 +834,86 @@ class FlowMapGlobe {
     }
 
     resetView() {
-        this.globe.pointOfView(DEFAULT_POINT_OF_VIEW, 700);
-        this.lastKnownAltitude = DEFAULT_POINT_OF_VIEW.altitude;
+        this.globe.pointOfView(this.initialPointOfView, 700);
+        this.lastKnownAltitude = this.initialPointOfView.altitude;
+        this.activeClusterRadius = clusterRadiusPx(this.initialPointOfView.altitude);
         if (this.rawPayload.length > 0) {
             this.renderData(this.rawPayload);
         }
+    }
+
+    computeInitialPointOfView(payload) {
+        const source = Array.isArray(payload) ? payload : [];
+        const valid = source
+            .map((row) => ({
+                lat: toNumber(row?.[0], NaN),
+                lng: toNumber(row?.[1], NaN),
+                bytes: Math.max(1, toNumber(row?.[3], 0)),
+            }))
+            .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+        if (valid.length === 0) {
+            return { ...DEFAULT_POINT_OF_VIEW };
+        }
+
+        let sumX = 0;
+        let sumY = 0;
+        let sumZ = 0;
+        let totalWeight = 0;
+        const vectors = valid.map((point) => {
+            const vector = latLngToUnitVector(point.lat, point.lng);
+            const weight = Math.max(1, Math.sqrt(point.bytes));
+            sumX += vector.x * weight;
+            sumY += vector.y * weight;
+            sumZ += vector.z * weight;
+            totalWeight += weight;
+            return { ...point, vector, weight };
+        });
+
+        if (totalWeight <= 0) {
+            return { ...DEFAULT_POINT_OF_VIEW };
+        }
+
+        const centerVector = normalizeVector(sumX, sumY, sumZ);
+        const center = unitVectorToLatLng(centerVector);
+
+        let weightedSpread = 0;
+        let maxSpread = 0;
+        vectors.forEach((point) => {
+            const distance = angularDistanceDegrees(centerVector, point.vector);
+            weightedSpread += distance * point.weight;
+            maxSpread = Math.max(maxSpread, distance);
+        });
+
+        const averageSpread = weightedSpread / totalWeight;
+        const spreadReference = Math.max(averageSpread * 1.35, maxSpread * 0.78);
+        const width = Math.max(1, this.dom.clientWidth || 960);
+        const height = Math.max(1, this.dom.clientHeight || 640);
+        const aspect = width / height;
+        const aspectAdjustment = aspect > 1.3 ? Math.min(0.22, (aspect - 1.3) * 0.22) : 0;
+        const altitude = clamp(
+            1.02 + clamp((spreadReference - 6) / 85, 0, 1) * 1.08 - aspectAdjustment,
+            MIN_INITIAL_ALTITUDE,
+            MAX_INITIAL_ALTITUDE,
+        );
+
+        return {
+            lat: center.lat,
+            lng: center.lng,
+            altitude,
+        };
+    }
+
+    updateInitialPointOfViewFromPayload(payload) {
+        if (this.hasAutoCenteredOnce) {
+            return;
+        }
+        this.initialPointOfView = this.computeInitialPointOfView(payload);
+        this.hasAutoCenteredOnce = true;
+        this.globe.pointOfView(this.initialPointOfView, 0);
+        this.lastKnownAltitude = this.initialPointOfView.altitude;
+        this.activeClusterRadius = clusterRadiusPx(this.initialPointOfView.altitude);
+        this.syncControlSpeeds();
     }
 
     scheduleInteractionRelease() {
@@ -1021,6 +1114,7 @@ function refreshNow() {
             map.renderData([]);
             map.updateSummary(0, totalBytes, lastUpdateAt);
         } else {
+            map.updateInitialPointOfViewFromPayload(data);
             overlay.hide();
             map.renderData(data);
             map.updateSummary(map.renderedSummary.pointCount, totalBytes, lastUpdateAt);
