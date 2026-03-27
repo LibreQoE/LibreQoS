@@ -1,16 +1,24 @@
 import {clearDiv, formatLastSeen} from "./helpers/builders";
-import {get_ws_client, subscribeWS} from "./pubsub/ws";
-import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
+import {get_ws_client} from "./pubsub/ws";
+import {
+    formatRetransmit,
+    formatRtt,
+    formatThroughput,
+    retransmitFractionFromSample,
+} from "./helpers/scaling";
 import {colorByQoqScore} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
 
 let shapedDevices = [];
-let displayDevices = [];
 let devicesPerPage = 24;
 let page = 0;
 let searchTerm = "";
 let metricElsByCircuitId = new Map();
 const latestByCircuitId = new Map();
+const planByCircuitId = new Map();
+let totalRows = 0;
+let totalCircuits = 0;
+let circuitMetricsWatchSignature = null;
 const wsClient = get_ws_client();
 
 const QOO_TOOLTIP_HTML =
@@ -19,13 +27,32 @@ const QOO_TOOLTIP_HTML =
     "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
 
-const listenOnce = (eventName, handler) => {
-    const wrapped = (msg) => {
-        wsClient.off(eventName, wrapped);
-        handler(msg);
-    };
-    wsClient.on(eventName, wrapped);
-};
+function sendWsRequest(responseEvent, request) {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const responseHandler = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, responseHandler);
+            wsClient.off("Error", errorHandler);
+            resolve(msg);
+        };
+        const errorHandler = (msg) => {
+            if (done) return;
+            done = true;
+            wsClient.off(responseEvent, responseHandler);
+            wsClient.off("Error", errorHandler);
+            reject(msg);
+        };
+        wsClient.on(responseEvent, responseHandler);
+        wsClient.on("Error", errorHandler);
+        wsClient.send(request);
+    });
+}
+
+function sendPrivateRequest(command) {
+    wsClient.send({Private: command});
+}
 
 function initTooltipsWithin(rootEl) {
     if (!rootEl) return;
@@ -48,37 +75,12 @@ function formatPlanValue(value) {
 }
 
 function countCircuits() {
-    let entries = {};
-    shapedDevices.forEach((d) => {
-        if (!entries.hasOwnProperty(d.circuit_id)) {
-            entries[d.circuit_id] = 1;
-        }
-    });
-    let count = 0;
-    for (const _ in entries) {
-        count++;
-    }
-    return count;
+    return totalCircuits;
 }
 
 function filterDevices() {
-    const term = (searchTerm || "").toLowerCase().trim();
-    if (term === "") {
-        displayDevices = shapedDevices;
-    } else {
-        displayDevices = shapedDevices.filter((d) => {
-            const deviceName = (d.device_name || "").toLowerCase();
-            const circuitName = (d.circuit_name || "").toLowerCase();
-            const parentNode = (d.parent_node || "").toLowerCase();
-            return (
-                deviceName.indexOf(term) > -1 ||
-                circuitName.indexOf(term) > -1 ||
-                parentNode.indexOf(term) > -1
-            );
-        });
-    }
     page = 0;
-    renderCards();
+    requestShapedDevicesPage();
 }
 
 function formatQooScore(score0to100, fallback = "-") {
@@ -103,6 +105,42 @@ function formatRttFromNanosOpt(nanosOpt, fallback = "-") {
         return fallback;
     }
     return formatRtt(nanos / 1_000_000.0);
+}
+
+function formatIpAddress(address, family) {
+    if (address === null || address === undefined) return "";
+    if (Array.isArray(address)) {
+        if (family === 4 && address.length === 4) {
+            return address.map((part) => String(part)).join(".");
+        }
+        if (family === 6) {
+            if (address.length === 16) {
+                const groups = [];
+                for (let i = 0; i < 16; i += 2) {
+                    const high = Number(address[i]) || 0;
+                    const low = Number(address[i + 1]) || 0;
+                    const value = ((high << 8) | low) >>> 0;
+                    groups.push(value.toString(16));
+                }
+                return groups.join(":");
+            }
+            if (address.length === 8) {
+                return address.map((part) => Number(part).toString(16)).join(":");
+            }
+            return address.map((part) => String(part)).join(":");
+        }
+        return address.map((part) => String(part)).join(".");
+    }
+    return String(address);
+}
+
+function formatIpTuple(tuple, defaultPrefix) {
+    if (!tuple || tuple.length === 0) return "";
+    const family = defaultPrefix === 128 ? 6 : 4;
+    const addr = formatIpAddress(tuple[0], family);
+    const prefix = Number.isFinite(tuple[1]) ? tuple[1] : defaultPrefix;
+    if (!addr) return "";
+    return `${addr}/${prefix}`;
 }
 
 function registerMetricEl(circuitId, metricName, el) {
@@ -138,17 +176,18 @@ function applyCircuitUpdate(device) {
     if (!device || !device.circuit_id) return;
     const circuitId = device.circuit_id;
     latestByCircuitId.set(circuitId, device);
+    const plan = planByCircuitId.get(circuitId) || {down: 0, up: 0};
 
     updateMetricText(circuitId, "lastSeen", formatLastSeen(device.last_seen_nanos));
     updateMetricHtml(
         circuitId,
         "tpDown",
-        formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, device.plan.down),
+        formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, toNumber(plan.down, 0)),
     );
     updateMetricHtml(
         circuitId,
         "tpUp",
-        formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, device.plan.up),
+        formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, toNumber(plan.up, 0)),
     );
     updateMetricHtml(
         circuitId,
@@ -163,12 +202,8 @@ function applyCircuitUpdate(device) {
     updateMetricHtml(circuitId, "qooDown", formatQooScore(device.qoo ? device.qoo.down : null));
     updateMetricHtml(circuitId, "qooUp", formatQooScore(device.qoo ? device.qoo.up : null));
 
-    const packetsDown = toNumber(device.tcp_packets.down, 0);
-    const packetsUp = toNumber(device.tcp_packets.up, 0);
-    const retransDown = toNumber(device.tcp_retransmits.down, 0);
-    const retransUp = toNumber(device.tcp_retransmits.up, 0);
-    const fractionDown = packetsDown > 0 ? retransDown / packetsDown : 0;
-    const fractionUp = packetsUp > 0 ? retransUp / packetsUp : 0;
+    const fractionDown = retransmitFractionFromSample(device.tcp_retransmit_sample?.down);
+    const fractionUp = retransmitFractionFromSample(device.tcp_retransmit_sample?.up);
     updateMetricHtml(circuitId, "reXmitDown", formatRetransmit(fractionDown));
     updateMetricHtml(circuitId, "reXmitUp", formatRetransmit(fractionUp));
 }
@@ -183,12 +218,14 @@ function buildIpListEl(device) {
     };
     if (Array.isArray(device.ipv4)) {
         device.ipv4.forEach((ip) => {
-            if (ip && ip.length >= 2) addLine(ip[0] + "/" + ip[1]);
+            const formatted = formatIpTuple(ip, 32);
+            if (formatted) addLine(formatted);
         });
     }
     if (Array.isArray(device.ipv6)) {
         device.ipv6.forEach((ip) => {
-            if (ip && ip.length >= 2) addLine(ip[0] + "/" + ip[1]);
+            const formatted = formatIpTuple(ip, 128);
+            if (formatted) addLine(formatted);
         });
     }
     if (wrapper.children.length === 0) {
@@ -439,7 +476,7 @@ function ensureLayout() {
             devicesPerPage = 24;
         }
         page = 0;
-        renderCards();
+        requestShapedDevicesPage();
     };
     perPageWrap.appendChild(perPageLabel);
     perPageWrap.appendChild(perPageSelect);
@@ -459,7 +496,7 @@ function ensureLayout() {
     prev.title = "Previous page";
     prev.onclick = () => {
         page = Math.max(0, page - 1);
-        renderCards();
+        requestShapedDevicesPage();
     };
     const next = document.createElement("button");
     next.id = "sdNextPage";
@@ -469,9 +506,9 @@ function ensureLayout() {
     next.setAttribute("aria-label", "Next devices page");
     next.title = "Next page";
     next.onclick = () => {
-        const totalPages = Math.max(1, Math.ceil(displayDevices.length / devicesPerPage));
+        const totalPages = Math.max(1, Math.ceil(totalRows / devicesPerPage));
         page = Math.min(totalPages - 1, page + 1);
-        renderCards();
+        requestShapedDevicesPage();
     };
     pager.appendChild(prev);
     pager.appendChild(next);
@@ -509,11 +546,85 @@ function ensureLayout() {
     };
 }
 
+function currentShapedDevicesPageQuery() {
+    const query = {
+        page,
+        page_size: devicesPerPage,
+    };
+    if (searchTerm && searchTerm.trim() !== "") {
+        query.search = searchTerm;
+    }
+    return query;
+}
+
+function visibleCircuitIds() {
+    const seen = new Set();
+    const ids = [];
+    shapedDevices.forEach((device) => {
+        const id = device && device.circuit_id ? String(device.circuit_id).trim() : "";
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+    });
+    return ids;
+}
+
+function requestCircuitMetricsWatch(force = false) {
+    const circuitIds = visibleCircuitIds();
+    const signature = JSON.stringify(circuitIds);
+    if (!force && circuitMetricsWatchSignature === signature) {
+        return;
+    }
+    circuitMetricsWatchSignature = signature;
+    if (circuitIds.length === 0) {
+        sendPrivateRequest({StopCircuitMetricsWatch: null});
+        return;
+    }
+    sendPrivateRequest({
+        WatchCircuitMetrics: {
+            query: {
+                circuit_ids: circuitIds,
+            },
+        },
+    });
+}
+
+async function requestShapedDevicesPage() {
+    try {
+        const msg = await sendWsRequest("ShapedDevicesPage", {
+            ShapedDevicesPage: {
+                query: currentShapedDevicesPageQuery(),
+            },
+        });
+        const data = msg && msg.data ? msg.data : {};
+        shapedDevices = Array.isArray(data.rows) ? data.rows : [];
+        totalRows = Number.isFinite(Number(data.total_rows)) ? Number(data.total_rows) : shapedDevices.length;
+        totalCircuits = Number.isFinite(Number(data.total_circuits)) ? Number(data.total_circuits) : countCircuits();
+        planByCircuitId.clear();
+        shapedDevices.forEach((device) => {
+            if (!device || !device.circuit_id) return;
+            const current = planByCircuitId.get(device.circuit_id) || {down: 0, up: 0};
+            current.down = Math.max(toNumber(current.down, 0), toNumber(device.download_max_mbps, 0));
+            current.up = Math.max(toNumber(current.up, 0), toNumber(device.upload_max_mbps, 0));
+            planByCircuitId.set(device.circuit_id, current);
+        });
+        renderCards();
+        requestCircuitMetricsWatch(true);
+        $("#count").text(totalRows + " devices");
+        $("#countCircuit").text(totalCircuits + " circuits");
+    } catch (_error) {
+        shapedDevices = [];
+        totalRows = 0;
+        totalCircuits = 0;
+        renderCards();
+    }
+}
+
 function renderCards() {
     const layout = ensureLayout();
     if (!layout) return;
 
-    const totalPages = Math.max(1, Math.ceil(displayDevices.length / devicesPerPage));
+    const totalPages = Math.max(1, Math.ceil(totalRows / devicesPerPage));
     if (page >= totalPages) page = totalPages - 1;
     if (page < 0) page = 0;
 
@@ -524,27 +635,24 @@ function renderCards() {
     if (layout.nextButton) layout.nextButton.disabled = page >= totalPages - 1;
     if (layout.pageCounter) layout.pageCounter.innerText = "Page " + (page + 1) + " / " + totalPages;
     if (layout.summary) {
-        if (displayDevices.length === 0) {
+        if (totalRows === 0) {
             layout.summary.innerText = "No matches";
         } else {
             const start = page * devicesPerPage + 1;
-            const end = Math.min((page + 1) * devicesPerPage, displayDevices.length);
-            layout.summary.innerText = "Showing " + start + "–" + end + " of " + displayDevices.length;
+            const end = Math.min((page + 1) * devicesPerPage, totalRows);
+            layout.summary.innerText = "Showing " + start + "–" + end + " of " + totalRows;
         }
     }
 
     metricElsByCircuitId = new Map();
     clearDiv(layout.grid);
 
-    const start = page * devicesPerPage;
-    const end = Math.min(start + devicesPerPage, displayDevices.length);
-    for (let i = start; i < end; i++) {
-        const device = displayDevices[i];
+    shapedDevices.forEach((device) => {
         const col = document.createElement("div");
         col.classList.add("col");
         col.appendChild(buildDeviceCard(device));
         layout.grid.appendChild(col);
-    }
+    });
 
     // Fill visible cards from cached live data immediately.
     metricElsByCircuitId.forEach((_metrics, circuitId) => {
@@ -557,24 +665,18 @@ function renderCards() {
     initTooltipsWithin(layout.target);
 }
 
-function loadDevices() {
-    listenOnce("DevicesAll", (msg) => {
-        const data = msg && msg.data ? msg.data : [];
-        shapedDevices = data;
-        displayDevices = data;
-        renderCards();
-        $("#count").text(shapedDevices.length + " devices");
-        $("#countCircuit").text(countCircuits() + " circuits");
+function handleCircuitMetrics(msg) {
+    const metrics = msg && Array.isArray(msg.data) ? msg.data : [];
+    metrics.forEach((metric) => {
+        if (!metric || !metric.circuit_id) return;
+        applyCircuitUpdate(metric);
     });
-    wsClient.send({ DevicesAll: {} });
 }
 
-loadDevices();
-subscribeWS(["NetworkTreeClients"], (msg) => {
-    if (msg.event !== "NetworkTreeClients") return;
-    const data = msg && msg.data ? msg.data : [];
-    data.forEach((d) => {
-        if (!d || !d.circuit_id) return;
-        applyCircuitUpdate(d);
-    });
+wsClient.on("CircuitMetricsSnapshot", handleCircuitMetrics);
+wsClient.on("CircuitMetricsUpdate", handleCircuitMetrics);
+wsClient.on("join", () => {
+    requestShapedDevicesPage();
 });
+
+requestShapedDevicesPage();

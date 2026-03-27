@@ -45,7 +45,6 @@ LQOS_FILES=(
   manualNetwork.template.csv
   integrationUISProutes.template.csv
   integrationSplynxBandwidths.template.csv
-  deb-requirements-constraints.txt
   ../requirements.txt
   update_api.sh
 )
@@ -125,7 +124,7 @@ LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this h
 Run:
   sudo /opt/libreqos/src/systemd_hotfix.sh install
 
-The hotfix installer downloads from https://download.libreqos.com and will offer to schedule a reboot.
+The hotfix installer bootstraps the LibreQoS APT repo at https://repo.libreqos.com and will offer to schedule a reboot.
 
 After the reboot, finish the LibreQoS package configuration with:
   sudo dpkg --configure -a
@@ -136,7 +135,11 @@ fi
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task
+if [ -s src/deb-requirements-constraints.txt ]; then
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -c src/deb-requirements-constraints.txt -r src/requirements.txt
+else
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
+fi
 # - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
 PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
@@ -147,14 +150,14 @@ sudo chown -R root:root /opt/libreqos
 # - Run lqsetup
 /opt/libreqos/src/bin/lqos_setup
 # - Setup the services
-cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
-cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
-cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
+install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl enable lqosd lqos_scheduler lqos_api || true
-/bin/systemctl start lqosd lqos_scheduler lqos_api || true
+/bin/systemctl restart lqosd lqos_scheduler lqos_api || true
 popd > /dev/null
 EOF
 
@@ -174,6 +177,10 @@ popd > /dev/null || exit
 for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR" || echo "Error copying $file"
 done
+
+if [ -f deb-requirements-constraints.txt ]; then
+  cp deb-requirements-constraints.txt "$LQOS_DIR" || echo "Error copying deb-requirements-constraints.txt"
+fi
 
 # Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then

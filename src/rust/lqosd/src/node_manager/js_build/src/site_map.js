@@ -22,6 +22,10 @@ const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 const TILE_MAX_ZOOM = 17;
 
+const INITIAL_FIT_PADDING = 70;
+const INITIAL_FIT_MAX_ZOOM = 11.5;
+const SINGLE_POINT_INITIAL_ZOOM = 11.5;
+
 const urlParams = new URLSearchParams(window.location.search);
 const FIXTURE_MODE = urlParams.get("fixture") === "1";
 const FIXTURE_NETWORK_TREE = [
@@ -882,18 +886,18 @@ class SiteMapPage {
     requestInitialTree() {
         this.setStatus("Waiting for data", "spinner");
         if (!this.subscription) {
-            this.subscription = subscribeWS(["NetworkTree"], (liveMsg) => {
-                if (liveMsg.event === "NetworkTree") {
+            this.subscription = subscribeWS(["NetworkTreeLite"], (liveMsg) => {
+                if (liveMsg.event === "NetworkTreeLite") {
                     this.processTreeMessage(liveMsg);
                 }
             });
         }
-        listenOnceWithTimeout("NetworkTree", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
+        listenOnceWithTimeout("NetworkTreeLite", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
             this.processTreeMessage(msg);
         }, () => {
             this.setStatus("No data received yet", "warning");
         });
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
     }
 
     processTreeMessage(msg, options = {}) {
@@ -1356,6 +1360,18 @@ class SiteMapPage {
             return;
         }
 
+        this.map.resize();
+
+        if (features.length === 1) {
+            this.map.easeTo({
+                center: features[0].geometry.coordinates,
+                zoom: SINGLE_POINT_INITIAL_ZOOM,
+                duration: 0,
+            });
+            this.hasFitOnce = true;
+            return;
+        }
+
         let viewBounds;
         try {
             viewBounds = this.map.getBounds();
@@ -1373,8 +1389,18 @@ class SiteMapPage {
 
         const bounds = new window.maplibregl.LngLatBounds();
         features.forEach((feature) => bounds.extend(feature.geometry.coordinates));
+        const canvas = this.map.getCanvas();
+        const minDimension = Math.max(
+            320,
+            Math.min(canvas?.clientWidth || 0, canvas?.clientHeight || 0),
+        );
+        const adaptivePadding = Math.max(
+            INITIAL_FIT_PADDING,
+            Math.round(minDimension * 0.08),
+        );
         this.map.fitBounds(bounds, {
-            padding: 70,
+            padding: adaptivePadding,
+            maxZoom: INITIAL_FIT_MAX_ZOOM,
             duration: 0,
         });
         this.hasFitOnce = true;

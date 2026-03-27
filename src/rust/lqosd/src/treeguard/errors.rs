@@ -25,6 +25,10 @@ pub enum TreeguardError {
     #[error("failed to send command to bakery: {details}")]
     BakerySend { details: String },
 
+    /// Bakery cannot apply live mutations because the shaping tree is unavailable.
+    #[error("bakery live mutation unavailable: {details}")]
+    LiveMutationUnavailable { details: String },
+
     /// The queue structure snapshot was unavailable.
     #[error("queue structure snapshot unavailable: {details}")]
     QueueStructureUnavailable { details: String },

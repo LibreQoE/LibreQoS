@@ -43,7 +43,12 @@ Si está probando, comience con `dry_run = true`.
 
 ## UI y depuración
 
-- WebUI (Node Manager) incluye vistas de estado y depuración de StormGuard.
+- WebUI (Node Manager) incluye una pestaña dedicada de StormGuard además de las vistas de estado y depuración.
+- La pestaña del dashboard está pensada para responder "qué está haciendo StormGuard ahora mismo?" con:
+  - tarjetas resumen para sitios observados, en cooldown y con cambios recientes
+  - una lista de sitios que funciona tanto con un único sitio observado como con conjuntos más grandes
+  - un panel de detalle por sitio seleccionado que explica límites actuales, últimas acciones y por qué StormGuard mantiene o cambia velocidades
+  - un feed de actividad reciente para triage rápido del operador
 - La página de depuración muestra:
   - límites efectivos actuales
   - métricas de evaluación

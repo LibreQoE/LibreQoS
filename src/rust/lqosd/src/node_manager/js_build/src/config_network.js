@@ -1,13 +1,37 @@
 import {
+    activeTopologySourceIntegrations,
     loadAllShapedDevices,
+    loadConfig,
     loadNetworkJson,
     renderConfigMenu,
     saveNetworkAndDevices,
+    saveNetworkJsonOnly,
+    topologyEditorsLockMessage,
+    topologyEditorsLocked,
 } from "./config/config_helper";
 
 let network_json = null;
 let shaped_devices = null;
+let shaped_devices_dirty = false;
 const MIN_NODE_MBPS = 0.1;
+let topology_editor_locked = false;
+let topology_editor_lock_message = "";
+
+function editorButtonAttrs() {
+    return topology_editor_locked ? " disabled aria-disabled='true'" : "";
+}
+
+function applyEditorLockState() {
+    $("#btnSaveNetwork").prop("disabled", topology_editor_locked);
+    $("#netjson").toggleClass("opacity-75", topology_editor_locked);
+
+    const banner = $("#networkEditorLock");
+    if (topology_editor_locked && topology_editor_lock_message) {
+        banner.removeClass("d-none").text(topology_editor_lock_message);
+    } else {
+        banner.addClass("d-none").text("");
+    }
+}
 
 function renderNetworkNode(level, depth) {
     let html = `<div class="card mb-3" style="margin-left: ${depth * 30}px;">`;
@@ -15,22 +39,23 @@ function renderNetworkNode(level, depth) {
     
     for (const [key, value] of Object.entries(level)) {
         const isVirtual = value && value.virtual === true;
+        const actionAttrs = editorButtonAttrs();
         // Node header with actions
         html += `<div class="d-flex justify-content-between align-items-center mb-2">`;
         html += `<h5 class="card-title mb-0">${key}${isVirtual ? ' <span class="badge bg-secondary ms-2"><i class="fa fa-ghost"></i> Virtual</span>' : ''}</h5>`;
         html += `<div>`;
         if (depth > 0) {
-            html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}">
+            html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}"${actionAttrs}>
                         <i class="fas fa-arrow-up"></i> Promote
                      </button>`;
         }
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')" title="Toggle virtual mode for ${key}" aria-label="Toggle virtual mode for ${key}">
+        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')" title="Toggle virtual mode for ${key}" aria-label="Toggle virtual mode for ${key}"${actionAttrs}>
                     <i class="fas ${isVirtual ? 'fa-toggle-on' : 'fa-toggle-off'}"></i> Virtual
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}">
+        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt"></i> Rename
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="Delete ${key}" aria-label="Delete ${key}">
+        html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="Delete ${key}" aria-label="Delete ${key}"${actionAttrs}>
                     <i class="fas fa-trash-alt"></i> Delete
                  </button>`;
         html += `</div></div>`;
@@ -38,11 +63,11 @@ function renderNetworkNode(level, depth) {
         // Node details
         html += `<div class="mb-3">`;
         html += `<span class="badge bg-primary me-2">Download: ${value.downloadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-2" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}">
+        html += `<button class="btn btn-sm btn-outline-secondary me-2" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `<span class="badge bg-success me-2">Upload: ${value.uploadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}">
+        html += `<button class="btn btn-sm btn-outline-secondary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `</div>`;
@@ -66,6 +91,7 @@ function renderNetwork() {
 }
 
 function promoteNode(nodeId) {
+    if (topology_editor_locked) return;
     console.log("Promoting ", nodeId);
     let previousParent = null;
 
@@ -89,6 +115,7 @@ function promoteNode(nodeId) {
 }
 
 function nodeSpeedChange(nodeId, direction) {
+    if (topology_editor_locked) return;
     let newVal = prompt(`New ${direction === 'd' ? 'download' : 'upload'} value in Mbps`);
     newVal = parseFloat(newVal);
     if (isNaN(newVal)) {
@@ -121,6 +148,7 @@ function nodeSpeedChange(nodeId, direction) {
 }
 
 function toggleVirtualNode(nodeId) {
+    if (topology_editor_locked) return;
     function iterate(tree) {
         for (const [key, value] of Object.entries(tree)) {
             if (key === nodeId) {
@@ -138,6 +166,7 @@ function toggleVirtualNode(nodeId) {
 }
 
 function deleteNode(nodeId) {
+    if (topology_editor_locked) return;
     if (!confirm(`Are you sure you want to delete ${nodeId} and all its children?`)) {
         return;
     }
@@ -188,6 +217,7 @@ function deleteNode(nodeId) {
             let sd = shaped_devices[i];
             if (deleteList.indexOf(sd.parent_node) > -1) {
                 sd.parent_node = "";
+                shaped_devices_dirty = true;
             }
         }
         alert("Because there was no obvious parent, you may have to fix some parenting in your Shaped Devices list.");
@@ -197,6 +227,7 @@ function deleteNode(nodeId) {
             let sd = shaped_devices[i];
             if (deleteList.indexOf(sd.parent_node) > -1) {
                 sd.parent_node = deleteParent;
+                shaped_devices_dirty = true;
             }
         }
     }
@@ -207,6 +238,7 @@ function deleteNode(nodeId) {
 }
 
 function renameNode(nodeId) {
+    if (topology_editor_locked) return;
     let newName = prompt("New node name?");
     if (!newName || newName.trim() === "") {
         alert("Please enter a valid name");
@@ -254,6 +286,7 @@ function renameNode(nodeId) {
         let sd = shaped_devices[i];
         if (sd.parent_node === nodeId) {
             sd.parent_node = newName;
+            shaped_devices_dirty = true;
         }
     }
 
@@ -275,34 +308,71 @@ function start() {
     // Add save button handler
     // Add network save button handler
     $("#btnSaveNetwork").on('click', () => {
+        if (topology_editor_locked) {
+            alert(topology_editor_lock_message);
+            return;
+        }
         // Validate network structure
         if (!network_json || Object.keys(network_json).length === 0) {
             alert("Network configuration is empty");
             return;
         }
 
-        // Save with empty shaped_devices since we're only saving network
-        saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
+        const onComplete = (success, message) => {
             if (success) {
+                shaped_devices_dirty = false;
                 alert(message);
             } else {
                 alert("Failed to save network configuration: " + message);
             }
-        });
+        };
+
+        if (shaped_devices_dirty) {
+            saveNetworkAndDevices(network_json, shaped_devices, onComplete);
+            return;
+        }
+
+        saveNetworkJsonOnly(network_json, onComplete);
     });
 
-    // Load network data
-    loadAllShapedDevices((data) => {
-        shaped_devices = data;
-        loadNetworkJson((njs) => {
-            network_json = njs;
-            renderNetwork();
-        }, () => {
-            alert("Failed to load network configuration");
-        });
-    }, () => {
-        alert("Failed to load shaped devices");
-    });
+    loadConfig(
+        (msg) => {
+            const config = msg?.data || window.config || {};
+            topology_editor_locked = topologyEditorsLocked(config);
+            topology_editor_lock_message = topologyEditorsLockMessage(config);
+            const activeIntegrations = activeTopologySourceIntegrations(config);
+            if (!topology_editor_lock_message && activeIntegrations.length > 0) {
+                topology_editor_lock_message = `Editing is disabled because these integrations are the source of truth: ${activeIntegrations.join(", ")}.`;
+            }
+            applyEditorLockState();
+
+            const finishLoad = () => {
+                loadNetworkJson((njs) => {
+                    network_json = njs;
+                    renderNetwork();
+                    applyEditorLockState();
+                }, () => {
+                    alert("Failed to load network configuration");
+                });
+            };
+
+            if (topology_editor_locked) {
+                shaped_devices = [];
+                finishLoad();
+                return;
+            }
+
+            loadAllShapedDevices((data) => {
+                shaped_devices = data;
+                finishLoad();
+            }, () => {
+                alert("Failed to load shaped devices");
+            });
+        },
+        () => {
+            alert("Failed to load configuration");
+        },
+    );
 }
 
 $(document).ready(start);

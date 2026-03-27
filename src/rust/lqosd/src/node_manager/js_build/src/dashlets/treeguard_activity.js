@@ -1,5 +1,6 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {get_ws_client} from "../pubsub/ws";
+import {mkBadge} from "./bakery_shared";
 
 function formatUnixSecondsToLocalTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
@@ -80,6 +81,76 @@ function formatReason(reasonRaw) {
     return { label: raw.replace(m[0], `next allowed ${next}`), title: raw };
 }
 
+function classifyOutcome(entry, action) {
+    const rawAction = (entry?.action ?? "").toString().trim().toLowerCase();
+    const reasonRaw = (entry?.reason ?? "").toString().trim();
+    const reasonLower = reasonRaw.toLowerCase();
+
+    if (rawAction.startsWith("would_")) {
+        return {
+            label: "Dry Run",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction.endsWith("_requested")) {
+        return {
+            label: "Queued",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: mkBadge("Bakery", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
+    if (rawAction === "reload_skipped") {
+        return {
+            label: "Skipped",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction.endsWith("_failed") || rawAction.includes("failed")) {
+        return {
+            label: "Failed",
+            className: "bg-danger-subtle text-danger border border-danger-subtle",
+            detail: null,
+        };
+    }
+
+    if (reasonLower.includes("cleanup pending") || reasonLower.includes("awaiting cleanup")) {
+        return {
+            label: "Cleanup Pending",
+            className: "bg-warning-subtle text-warning border border-warning-subtle",
+            detail: mkBadge("Live", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
+    if (rawAction === "dry_run_toggled") {
+        return {
+            label: "Updated",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: null,
+        };
+    }
+
+    const actionLower = (action?.label ?? "").toLowerCase();
+    const isLiveIntent = actionLower.includes("virtualize")
+        || actionLower.includes("sqm live")
+        || actionLower.includes("reload");
+    const detail = isLiveIntent
+        ? mkBadge("Live", "bg-info-subtle text-info border border-info-subtle")
+        : (entry?.persisted
+            ? mkBadge("Stored", "bg-primary-subtle text-primary border border-primary-subtle")
+            : null);
+
+    return {
+        label: "Applied",
+        className: "bg-success-subtle text-success border border-success-subtle",
+        detail,
+    };
+}
+
 function renderAction(actionRaw) {
     const raw = (actionRaw ?? "").toString();
     const [verbRaw, payloadRaw] = splitOnce(raw, ":");
@@ -97,10 +168,18 @@ function renderAction(actionRaw) {
         iconClass = "fa-compress";
         iconExtra = [];
         label = "Virtualize";
+    } else if (lowerVerb === "virtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued virtualization";
     } else if (lowerVerb === "unvirtualize") {
         iconClass = "fa-expand";
         iconExtra = [];
         label = "Unvirtualize";
+    } else if (lowerVerb === "unvirtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued restore";
     } else if (lowerVerb === "dry_run_toggled") {
         iconClass = "fa-toggle-on";
         iconExtra = ["text-muted"];
@@ -171,8 +250,8 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 12;
-        this.circuitNameById = new Map();
         this.nodeIdByName = new Map();
+        this.lastEntries = [];
     }
 
     title() {
@@ -180,7 +259,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard actions, including dry-run entries and persisted changes.</p>";
+        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard intents with explicit outcomes so operators can distinguish queued requests, dry-runs, successful applies, cleanup-pending actions, skips, and failures.</p>";
     }
 
     subscribeTo() {
@@ -189,37 +268,21 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
 
     setup() {
         const wsClient = get_ws_client();
-        const shapedWrapped = (msg) => {
-            wsClient.off("AllShapedDevices", shapedWrapped);
-            const devices = msg && Array.isArray(msg.data) ? msg.data : [];
-            devices.forEach((d) => {
-                const id = (d && d.circuit_id ? String(d.circuit_id) : "").trim();
-                const name = (d && d.circuit_name ? String(d.circuit_name) : "").trim();
-                if (!id || !name) return;
-                if (!this.circuitNameById.has(id)) {
-                    this.circuitNameById.set(id, name);
-                }
-            });
-        };
-        wsClient.on("AllShapedDevices", shapedWrapped);
-        wsClient.send({ AllShapedDevices: {} });
-
-        const treeWrapped = (msg) => {
-            wsClient.off("NetworkTree", treeWrapped);
+        const nodeWrapped = (msg) => {
+            wsClient.off("NodeDirectory", nodeWrapped);
             const data = msg && Array.isArray(msg.data) ? msg.data : [];
             data.forEach((entry) => {
-                if (!Array.isArray(entry) || entry.length < 2) return;
-                const id = entry[0];
-                const node = entry[1];
-                const name = (node && node.name ? String(node.name) : "").trim();
+                const id = entry?.tree_index;
+                const name = (entry?.node_name ?? "").trim();
                 if (!name) return;
                 if (!this.nodeIdByName.has(name)) {
                     this.nodeIdByName.set(name, id);
                 }
             });
+            this.rerenderWithMetadata();
         };
-        wsClient.on("NetworkTree", treeWrapped);
-        wsClient.send({ NetworkTree: {} });
+        wsClient.on("NodeDirectory", nodeWrapped);
+        wsClient.send({ NodeDirectory: {} });
     }
 
     buildContainer() {
@@ -236,7 +299,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         const thead = document.createElement("thead");
         thead.classList.add("small");
         const headRow = document.createElement("tr");
-        ["Local Time", "Entity", "Action", "Persisted", "Reason"].forEach((header) => {
+        ["Local Time", "Target", "Intent", "Outcome", "Why"].forEach((header) => {
             const th = document.createElement("th");
             th.textContent = header;
             headRow.appendChild(th);
@@ -258,6 +321,17 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         }
 
         const entries = Array.isArray(msg.data) ? msg.data : [];
+        this.lastEntries = entries;
+        this.renderEntries(entries);
+    }
+
+    rerenderWithMetadata() {
+        if (this.lastEntries.length > 0) {
+            this.renderEntries(this.lastEntries);
+        }
+    }
+
+    renderEntries(entries) {
         this.tbody.innerHTML = "";
 
         if (entries.length === 0) {
@@ -303,13 +377,6 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
                 const circuitId = parsed.circuitId;
                 let display = parsed.display;
                 let title = parsed.hasName ? circuitId : "";
-                if (!parsed.hasName && circuitId) {
-                    const name = this.circuitNameById.get(circuitId);
-                    if (name) {
-                        display = name;
-                        title = circuitId;
-                    }
-                }
                 tdEntity.appendChild(
                     mkLink(`circuit.html?id=${encodeURIComponent(circuitId)}`, display, title),
                 );
@@ -344,15 +411,13 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             actionText.textContent = ` ${action.label}`;
             tdAction.appendChild(actionText);
 
-            const tdPersisted = document.createElement("td");
-            tdPersisted.classList.add("text-center");
-            const persisted = !!entry.persisted;
-            const persistedIcon = persisted
-                ? mkIcon("fa-check", ["text-success"])
-                : mkIcon("fa-times", ["text-muted"]);
-            persistedIcon.setAttribute("aria-label", persisted ? "Persisted" : "Not persisted");
-            persistedIcon.title = persisted ? "Persisted" : "Not persisted";
-            tdPersisted.appendChild(persistedIcon);
+            const tdOutcome = document.createElement("td");
+            const outcome = classifyOutcome(entry, action);
+            tdOutcome.appendChild(mkBadge(outcome.label, outcome.className, entry.reason || ""));
+            if (outcome.detail) {
+                tdOutcome.appendChild(document.createTextNode(" "));
+                tdOutcome.appendChild(outcome.detail);
+            }
 
             const tdReason = document.createElement("td");
             const reason = formatReason(entry.reason);
@@ -362,7 +427,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             tr.appendChild(tdTime);
             tr.appendChild(tdEntity);
             tr.appendChild(tdAction);
-            tr.appendChild(tdPersisted);
+            tr.appendChild(tdOutcome);
             tr.appendChild(tdReason);
             this.tbody.appendChild(tr);
         });

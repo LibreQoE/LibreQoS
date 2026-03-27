@@ -84,6 +84,8 @@ sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.se
 sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 ```
 
+Estas plantillas esperan `network-online.target`, por lo que `lqosd` y `lqos_scheduler` no arrancan antes de que DNS y la ruta por defecto esten listas.
+
 Finally, run
 
 ```shell

@@ -78,7 +78,12 @@ impl UispSite {
             .description
             .as_ref()
             .and_then(|description| description.location.as_ref())
-            .map(|location| (Some(location.latitude as f32), Some(location.longitude as f32)))
+            .map(|location| {
+                (
+                    Some(location.latitude as f32),
+                    Some(location.longitude as f32),
+                )
+            })
             .unwrap_or((None, None));
         // Extract UISP QoS base speeds (bps -> Mbps) and burst sizes (kB/s -> Mbps)
         let mut base_down_mbps: f32 = 0.0;

@@ -1,5 +1,6 @@
 //! TreeGuard status snapshots for UI visibility.
 
+use crate::node_manager::local_api::directories;
 use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
 use crate::treeguard::actor;
 use lqos_config::load_config;
@@ -18,10 +19,15 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
     }
 
     let Ok(config) = load_config() else {
+        let totals = directories::treeguard_metadata_summary();
         return TreeguardStatusData {
             enabled: false,
             dry_run: true,
+            paused_for_bakery_reload: false,
+            pause_reason: None,
             cpu_max_pct: None,
+            total_nodes: totals.total_nodes,
+            total_circuits: totals.total_circuits,
             managed_nodes: 0,
             managed_circuits: 0,
             virtualized_nodes: 0,
@@ -35,6 +41,7 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
 
     let tg = &config.treeguard;
     let mut warnings = Vec::new();
+    let totals = directories::treeguard_metadata_summary();
 
     if tg.enabled
         && !tg.links.all_nodes
@@ -52,14 +59,18 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
     TreeguardStatusData {
         enabled: tg.enabled,
         dry_run: tg.dry_run,
+        paused_for_bakery_reload: false,
+        pause_reason: None,
         cpu_max_pct: None,
+        total_nodes: totals.total_nodes,
+        total_circuits: totals.total_circuits,
         managed_nodes: if tg.links.all_nodes {
-            0
+            totals.total_nodes
         } else {
             tg.links.nodes.len()
         },
         managed_circuits: if tg.circuits.all_circuits {
-            0
+            totals.total_circuits
         } else {
             tg.circuits.circuits.len()
         },

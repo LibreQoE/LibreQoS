@@ -20,11 +20,12 @@ const NUM_QUEUE_HISTORY: usize = 600;
 
 pub use bus::get_raw_circuit_data;
 pub use interval::set_queue_refresh_interval;
+#[doc(hidden)]
 pub use queue_structure::{
-    EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED_STORMGUARD,
-    spawn_queue_structure_monitor,
+    EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED_STORMGUARD, QueueNode,
+    QueueStructure, spawn_queue_structure_monitor,
 };
 pub use queue_types::deserialize_tc_tree; // Exported for the benchmarker
 pub use tracking::spawn_queue_monitor;
-pub use tracking::{ALL_QUEUE_SUMMARY, QueueCounts, TOTAL_QUEUE_STATS};
+pub use tracking::{ALL_QUEUE_SUMMARY, QueueCounts, TOTAL_QUEUE_STATS, queue_stats_stale};
 pub use tracking::{add_watched_queue, still_watching};

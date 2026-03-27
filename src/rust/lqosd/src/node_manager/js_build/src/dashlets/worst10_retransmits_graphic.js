@@ -1,5 +1,6 @@
 import {TopNSankey} from "../graphs/top_n_sankey";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
+import {retransmitFractionFromSample} from "../helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
 export class Worst10RetransmitsVisual extends DashletBaseInsight {
@@ -39,7 +40,11 @@ export class Worst10RetransmitsVisual extends DashletBaseInsight {
         if (msg.event === "WorstRetransmits") {
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r, r.tcp_retransmits[0]);
+                this.timeCache.addOrUpdate(
+                    key,
+                    r,
+                    retransmitFractionFromSample(r.tcp_retransmit_sample?.down)
+                );
             });
             this.timeCache.tick();
 

@@ -1,14 +1,18 @@
 mod cake_watcher;
 mod chatbot;
 mod circuit;
+mod circuit_metrics;
 mod flows_by_circuit;
 mod ping_monitor;
+mod tree_attached_circuits;
 
 use crate::node_manager::ws::messages::{PrivateRequest, WsResponse, encode_ws_message};
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
+use crate::node_manager::ws::single_user_channels::circuit_metrics::watch_circuit_metrics;
 use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
+use crate::node_manager::ws::single_user_channels::tree_attached_circuits::watch_tree_attached_circuits;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tracing::info;
@@ -22,6 +26,8 @@ pub struct PrivateState {
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     browser_language: Option<String>,
     chatbot_request: Option<u64>,
+    tree_attached_circuits_watch: Option<tokio::task::JoinHandle<()>>,
+    circuit_metrics_watch: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl PrivateState {
@@ -42,6 +48,8 @@ impl PrivateState {
             control_tx,
             browser_language,
             chatbot_request: None,
+            tree_attached_circuits_watch: None,
+            circuit_metrics_watch: None,
         }
     }
 
@@ -76,6 +84,47 @@ impl PrivateState {
             PrivateRequest::ChatbotUserInput { text } => {
                 self.forward_chatbot_input(text).await;
             }
+            PrivateRequest::WatchTreeAttachedCircuits { query } => {
+                self.replace_tree_attached_circuits_watch(query);
+            }
+            PrivateRequest::StopTreeAttachedCircuitsWatch => {
+                self.abort_tree_attached_circuits_watch();
+            }
+            PrivateRequest::WatchCircuitMetrics { query } => {
+                self.replace_circuit_metrics_watch(query);
+            }
+            PrivateRequest::StopCircuitMetricsWatch => {
+                self.abort_circuit_metrics_watch();
+            }
+        }
+    }
+
+    fn replace_tree_attached_circuits_watch(
+        &mut self,
+        query: crate::node_manager::local_api::tree_attached_circuits::TreeAttachedCircuitsQuery,
+    ) {
+        self.abort_tree_attached_circuits_watch();
+        self.tree_attached_circuits_watch =
+            Some(spawn(watch_tree_attached_circuits(query, self.tx.clone())));
+    }
+
+    fn abort_tree_attached_circuits_watch(&mut self) {
+        if let Some(handle) = self.tree_attached_circuits_watch.take() {
+            handle.abort();
+        }
+    }
+
+    fn replace_circuit_metrics_watch(
+        &mut self,
+        query: crate::node_manager::local_api::circuit_live::CircuitMetricsQuery,
+    ) {
+        self.abort_circuit_metrics_watch();
+        self.circuit_metrics_watch = Some(spawn(watch_circuit_metrics(query, self.tx.clone())));
+    }
+
+    fn abort_circuit_metrics_watch(&mut self) {
+        if let Some(handle) = self.circuit_metrics_watch.take() {
+            handle.abort();
         }
     }
 
@@ -133,6 +182,13 @@ impl PrivateState {
                 },
             )
             .await;
+    }
+}
+
+impl Drop for PrivateState {
+    fn drop(&mut self) {
+        self.abort_tree_attached_circuits_watch();
+        self.abort_circuit_metrics_watch();
     }
 }
 

@@ -29,8 +29,14 @@ Most day-to-day LibreQoS configuration is handled in WebUI (`http://your_shaper_
 
 - General settings: `Configuration -> General`
 - Integration settings: `Configuration -> Integrations`
+- Network layout editor: `Configuration -> Network Layout`
 - Shaped devices editor: `Configuration -> Shaped Devices`
 - Runtime operational validation: `WebUI (Node Manager)` pages (dashboard/tree/flow/scheduler)
+
+When an integration is enabled and acting as the source of truth, the `Network Layout` and `Shaped Devices` editors remain viewable but become read-only in WebUI.
+
+Topology note:
+- `network.json` node names must be globally unique across the whole tree. Duplicate node names now fail validation and are not accepted by the WebUI save path or `LibreQoS.py`.
 
 ## Operating Modes and Source of Truth
 

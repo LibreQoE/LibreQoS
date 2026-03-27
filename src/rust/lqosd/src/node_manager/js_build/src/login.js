@@ -1,5 +1,5 @@
 $("#btnLogin").on('click', () => {
-    let username = $("#username").val();
+    let username = ($("#username").val() || "").trim();
     let password = $("#password").val();
     if (username === "") {
         alert("You must enter a username");
@@ -21,12 +21,27 @@ $("#btnLogin").on('click', () => {
         data: JSON.stringify(login),
         contentType: 'application/json',
         beforeSend: () => {
+            $("#loginErrorText").html("Login failed. You can manage users via the <code>lqusers</code> CLI tool on the LibreQoS server.");
             $("#loginError").removeClass("show").addClass("d-none");
         },
         success: () => {
             window.location.href = "/index.html";
         },
-        error: () => {
+        error: (xhr) => {
+            const response = xhr && xhr.responseJSON ? xhr.responseJSON : {};
+            const reason = response.reason || "";
+            if (reason === "first_run_required") {
+                window.location.href = "/first-run.html";
+                return;
+            }
+
+            if (reason === "auth_corrupt") {
+                $("#loginErrorText").text(response.message || "The auth file is corrupt and must be repaired before anyone can log in.");
+            } else if (reason === "invalid_credentials") {
+                $("#loginErrorText").text(response.message || "Invalid username or password.");
+            } else {
+                $("#loginErrorText").html("Login failed. You can manage users via the <code>lqusers</code> CLI tool on the LibreQoS server.");
+            }
             $("#loginError").removeClass("d-none").addClass("show");
         }
     })

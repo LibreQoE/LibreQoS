@@ -11,10 +11,10 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_effective, overrides_circuit_adjustments_effective, \
+    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
+    overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
-    scheduler_output
+    scheduler_output, wait_for_bus_ready
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -22,7 +22,9 @@ import os.path
 import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
-network_hash = 0
+shaping_runtime_hash = 0
+INTEGRATION_FAILURE_PREVIEW_LINES = 30
+INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 
 
 def clear_scheduler_error():
@@ -33,6 +35,79 @@ def clear_scheduler_error():
 def clear_scheduler_output():
     """Clear the scheduler output shown in the Web UI."""
     scheduler_output("")
+
+
+def _integration_output_lines(output):
+    normalized = (output or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+    return normalized.split("\n")
+
+
+def _summarize_output_preview(output, *, max_lines, max_chars):
+    lines = _integration_output_lines(output)
+    if not lines:
+        return ""
+
+    preview_lines = lines[:max_lines]
+    preview = "\n".join(preview_lines)
+    truncated = len(lines) > max_lines
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rstrip()
+        truncated = True
+    if truncated:
+        preview += "\n..."
+    return preview
+
+
+def _sanitize_label_for_filename(label):
+    token = "".join(ch.lower() if ch.isalnum() else "_" for ch in (label or "integration"))
+    token = token.strip("_")
+    return token or "integration"
+
+
+def _write_integration_output_artifact(label, output):
+    normalized = (output or "").replace("\r\n", "\n").strip()
+    if not normalized:
+        return None
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    artifact = f"/tmp/lqos_scheduler_{_sanitize_label_for_filename(label)}_{timestamp}.log"
+    try:
+        with open(artifact, "w", encoding="utf-8") as handle:
+            handle.write(normalized)
+            handle.write("\n")
+        return artifact
+    except Exception as e:
+        print(f"Failed to write {label} output artifact: {e}")
+        return None
+
+
+def _publish_integration_result(label, result):
+    output = ((result.stdout or "") + (result.stderr or "")).replace("\r\n", "\n").strip()
+    if result.returncode == 0:
+        line_count = len(_integration_output_lines(output))
+        summary = (
+            f"{label} completed successfully."
+            if line_count == 0
+            else f"{label} completed successfully. Captured {line_count} line(s) of output."
+        )
+        print(summary)
+        scheduler_output(summary)
+        return
+
+    preview = _summarize_output_preview(
+        output,
+        max_lines=INTEGRATION_FAILURE_PREVIEW_LINES,
+        max_chars=INTEGRATION_FAILURE_PREVIEW_CHARS,
+    )
+    artifact = _write_integration_output_artifact(label, output)
+    message = f"{label} exited with code {result.returncode}. Continuing."
+    if preview:
+        message += f"\nOutput preview:\n{preview}"
+    if artifact is not None:
+        message += f"\nFull output saved to {artifact}"
+    print(message)
+    scheduler_error(message)
 
 
 def get_integration_affinity_cpus():
@@ -119,8 +194,19 @@ def capture_output_and_run(func):
         sys.stderr = old_stderr
         output = captured_output.getvalue()
         if output:
-            print(output)
-            scheduler_output(output)
+            preview = _summarize_output_preview(
+                output,
+                max_lines=INTEGRATION_FAILURE_PREVIEW_LINES,
+                max_chars=INTEGRATION_FAILURE_PREVIEW_CHARS,
+            )
+            artifact = _write_integration_output_artifact("captured_integration", output)
+            message = "Captured integration output."
+            if preview:
+                message += f"\nOutput preview:\n{preview}"
+            if artifact is not None:
+                message += f"\nFull output saved to {artifact}"
+            print(message)
+            scheduler_output(message)
 
 
 def run_python_integration(module_name: str, func_name: str, label: str = ""):
@@ -138,15 +224,7 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
             text=True,
             label=friendly,
         )
-        output = (result.stdout or "") + (result.stderr or "")
-        if output:
-            print(output)
-            scheduler_output(output)
-        if result.returncode != 0:
-            # Non-zero exit shouldn't stop scheduling; log and continue
-            msg = f"Integration {friendly} exited with code {result.returncode}. Continuing."
-            print(msg)
-            scheduler_error(msg)
+        _publish_integration_result(friendly, result)
     except Exception as e:
         err = f"Failed to invoke integration {label or (module_name + '.' + func_name)}: {e}"
         print(err)
@@ -166,14 +244,7 @@ def importFromCRM():
                 text=True,
                 label="UISP integration",
             )
-            output = (result.stdout or "") + (result.stderr or "")
-            if output:
-                print(output)
-                scheduler_output(output)
-            if result.returncode != 0:
-                msg = f"UISP integration exited with code {result.returncode}. Continuing."
-                print(msg)
-                scheduler_error(msg)
+            _publish_integration_result("UISP integration", result)
             blackboard_finish()
         except Exception as e:
             error_msg = f"Failed to run UISP integration: {str(e)}"
@@ -225,6 +296,10 @@ SHAPED_DEVICES_HEADER = [
     "Download Max Mbps",
     "Upload Max Mbps",
     "Comment",
+]
+
+SHAPED_DEVICES_HEADER_WITH_SQM = [
+    *SHAPED_DEVICES_HEADER,
     "sqm",
 ]
 
@@ -273,8 +348,8 @@ def read_shaped_devices_csv(path: str):
         return header, data_rows
 
 
-def override_devices_to_rows(devices):
-    """Convert override device dicts to CSV rows (14 columns, optional sqm)."""
+def override_devices_to_rows(devices, include_sqm=False):
+    """Convert override device dicts to CSV rows, preserving the existing CSV shape by default."""
     rows = []
     for d in devices:
         ipv4s = d.get('ipv4s', [])
@@ -295,8 +370,9 @@ def override_devices_to_rows(devices):
             str(d.get('maxDownload', '')),
             str(d.get('maxUpload', '')),
             d.get('comment', ''),
-            str(sqm),
         ]
+        if include_sqm:
+            row.append(str(sqm))
         rows.append(row)
     return rows
 
@@ -329,6 +405,19 @@ def write_shaped_devices_csv(path: str, header, rows):
         writer.writerows(rows)
 
 
+def header_has_sqm(header):
+    return len(header) > 13 and header[13].strip().lower() == "sqm"
+
+
+def operator_requires_sqm_column(devices, adjustments):
+    if any(((d.get('sqm', '') or d.get('sqm_override', '') or '').strip()) for d in devices or []):
+        return True
+    return any(
+        adj.get('type') == 'device_adjust_sqm' and (adj.get('sqm_override') or '').strip()
+        for adj in adjustments or []
+    )
+
+
 def apply_lqos_overrides():
     """Load ShapedDevices.csv, apply persistent devices and circuit adjustments, and save back."""
     path = shaped_devices_csv_path()
@@ -336,22 +425,30 @@ def apply_lqos_overrides():
 
     # 1) Persistent devices: replace by device_id or append
     try:
-        extra = overrides_persistent_devices_effective()
+        extra = overrides_persistent_devices_materialized()
     except Exception as e:
         # Persistent device overrides are optional. Keep the scheduler healthy
         # and continue applying the rest of the override sources if this loader
         # is unavailable or temporarily broken.
         print(f"Skipping persistent device overrides: {e}")
         extra = []
-    override_rows = override_devices_to_rows(extra or [])
-    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 
     # 2) Circuit adjustments: speed changes, removals, reparenting
     try:
-        adjustments = overrides_circuit_adjustments_effective()
+        adjustments = overrides_circuit_adjustments_materialized()
     except Exception as e:
         print(f"Failed to read circuit adjustments: {e}")
         adjustments = []
+
+    need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
+    if need_sqm_column and not header_has_sqm(header):
+        header = list(header) + ["sqm"]
+        for row in rows:
+            if len(row) < len(header):
+                row.extend([""] * (len(header) - len(row)))
+
+    override_rows = override_devices_to_rows(extra or [], include_sqm=need_sqm_column)
+    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
 
     def set_if_some(value_opt, current_str):
         if value_opt is None:
@@ -388,6 +485,8 @@ def apply_lqos_overrides():
                         r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
                         changed = True
             elif t == 'device_adjust_sqm':
+                if not need_sqm_column:
+                    continue
                 did = adj.get('device_id', '')
                 sqm_override = (adj.get('sqm_override') or '').strip()
                 for r in merged_rows:
@@ -417,7 +516,8 @@ def apply_lqos_overrides():
                         changed = True
 
     if changed:
-        write_shaped_devices_csv(path, header if header else SHAPED_DEVICES_HEADER, merged_rows)
+        final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
+        write_shaped_devices_csv(path, final_header, merged_rows)
         print("Updated ShapedDevices.csv with overrides")
 
     # 3) Load, adjust, and optionally save network.json
@@ -453,13 +553,16 @@ def load_network_json(path: str):
 def apply_network_adjustments(network: dict) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
-    Currently supports: adjust_site_speed (by site_name) updating
-    downloadBandwidthMbps and uploadBandwidthMbps at the matching node, and
-    set_node_virtual (by node_name) updating the boolean 'virtual' flag.
+    Currently supports: adjust_site_speed (preferring node_id, with legacy
+    site_name fallback) updating downloadBandwidthMbps and
+    uploadBandwidthMbps at the matching node, and set_node_virtual (by
+    node_name) updating the boolean 'virtual' flag for operator-authored
+    topology overrides.
 
-    This path intentionally excludes StormGuard adaptive site-speed overrides so
-    runtime StormGuard decisions do not overwrite the operator-authored
-    `network.json` source of truth.
+    This path intentionally excludes runtime automation changes such as
+    StormGuard adaptive site-speed overrides and TreeGuard virtual-node
+    decisions so they do not overwrite the operator-authored `network.json`
+    source of truth.
     Returns True if any changes were applied.
     """
     try:
@@ -471,27 +574,40 @@ def apply_network_adjustments(network: dict) -> bool:
     if not adjustments:
         return False
 
-    def adjust_node(tree: dict, site: str, dl_opt, ul_opt) -> bool:
+    def normalize_bandwidth_value(value):
+        numeric = float(value)
+        if numeric.is_integer():
+            return int(numeric)
+        return numeric
+
+    def adjust_node(tree: dict, site: str, node_id, dl_opt, ul_opt) -> bool:
         changed_local = False
         for key in list(tree.keys()):
             if key == 'children':
                 child = tree.get('children')
                 if isinstance(child, dict):
-                    if adjust_node(child, site, dl_opt, ul_opt):
+                    if adjust_node(child, site, node_id, dl_opt, ul_opt):
                         changed_local = True
                 continue
             node = tree.get(key)
             if isinstance(node, dict):
-                if key == site:
+                current_node_id = node.get('id')
+                matches_target = False
+                if node_id:
+                    matches_target = current_node_id == node_id
+                elif key == site:
+                    matches_target = True
+
+                if matches_target:
                     if dl_opt is not None:
-                        node['downloadBandwidthMbps'] = int(dl_opt)
+                        node['downloadBandwidthMbps'] = normalize_bandwidth_value(dl_opt)
                         changed_local = True
                     if ul_opt is not None:
-                        node['uploadBandwidthMbps'] = int(ul_opt)
+                        node['uploadBandwidthMbps'] = normalize_bandwidth_value(ul_opt)
                         changed_local = True
                 # Recurse into children
                 if 'children' in node and isinstance(node['children'], dict):
-                    if adjust_node(node['children'], site, dl_opt, ul_opt):
+                    if adjust_node(node['children'], site, node_id, dl_opt, ul_opt):
                         changed_local = True
         return changed_local
 
@@ -521,10 +637,11 @@ def apply_network_adjustments(network: dict) -> bool:
     for adj in adjustments:
         if adj.get('type') == 'adjust_site_speed':
             site = adj.get('site_name', '')
+            node_id = adj.get('node_id', None)
             dl = adj.get('download_bandwidth_mbps', None)
             ul = adj.get('upload_bandwidth_mbps', None)
-            if site:
-                if adjust_node(network, site, dl, ul):
+            if site or node_id:
+                if adjust_node(network, site, node_id, dl, ul):
                     net_changed = True
         elif adj.get('type') == 'set_node_virtual':
             node_name = adj.get('node_name', '')
@@ -548,26 +665,31 @@ def importAndShapeFullReload():
 
 
 def importAndShapePartialReload():
-    global network_hash
+    global shaping_runtime_hash
 
     importFromCRM()
-    # Calculate if the network.json or ShapedDevices.csv has changed and reload only if it has.
-    new_hash = calculate_hash()
-    if new_hash != network_hash:
-        refreshShapersUpdateOnly()
-        network_hash = new_hash
-    else:
-        print("No changes detected in network.json or ShapedDevices.csv, skipping shaper refresh.")
+    # Rebuild when runtime shaping inputs change, including effective adaptive
+    # circuit overrides that do not belong in source-of-truth files.
+    new_hash = calculate_shaping_runtime_hash()
+    if new_hash != shaping_runtime_hash:
+        refreshShapers()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
 def not_dead_yet():
     #print(f"Scheduler alive at {datetime.datetime.now()}")
     scheduler_alive()
 
+
+def ensure_bus_ready():
+    """Wait briefly for lqosd to finish binding the local bus socket."""
+    wait_for_bus_ready(5000)
+
 if __name__ == '__main__':
     try:
+        ensure_bus_ready()
         importAndShapeFullReload()
-        network_hash = calculate_hash()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
 
         print("Starting scheduler with jobs:")
         print(f"- not_dead_yet every 1 minute")

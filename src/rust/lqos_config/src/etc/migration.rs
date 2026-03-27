@@ -202,7 +202,13 @@ fn migrate_queues(
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
     new_config.queues.default_sqm = python_config.sqm.clone();
-    new_config.queues.monitor_only = python_config.monitor_only_mode;
+    new_config
+        .queues
+        .set_queue_mode(if python_config.monitor_only_mode {
+            super::QueueMode::Observe
+        } else {
+            super::QueueMode::Shape
+        });
     new_config.queues.uplink_bandwidth_mbps =
         python_config.upstream_bandwidth_capacity_upload_mbps as u64;
     new_config.queues.downlink_bandwidth_mbps =

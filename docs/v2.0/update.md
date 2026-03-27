@@ -39,6 +39,8 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
+The hotfix installer bootstraps the LibreQoS APT repo at `https://repo.libreqos.com`, installs the patched Noble `systemd` package set, and pins those packages for future updates.
+
 After the reboot, resume the upgrade and restart services:
 
 ```bash

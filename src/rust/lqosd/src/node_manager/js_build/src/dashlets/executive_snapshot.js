@@ -18,7 +18,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     canBeSlowedDown() { return true; }
     title() { return "Network Snapshot"; }
     tooltip() { return "Headline health metrics for the executive view."; }
-    subscribeTo() { return ["ExecutiveHeatmaps", "Throughput"]; }
+    subscribeTo() { return ["ExecutiveDashboardSummary", "Throughput"]; }
 
     buildContainer() {
         const container = super.buildContainer();
@@ -36,14 +36,14 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     setup() {
-        if (window.executiveHeatmapData) {
+        if (window.executiveDashboardSummary) {
             this.render();
         }
     }
 
     onMessage(msg) {
-        if (msg.event === "ExecutiveHeatmaps") {
-            window.executiveHeatmapData = msg.data;
+        if (msg.event === "ExecutiveDashboardSummary") {
+            window.executiveDashboardSummary = msg.data;
             this.render();
             return;
         }
@@ -54,7 +54,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     render() {
-        const header = window.executiveHeatmapData?.header;
+        const header = window.executiveDashboardSummary?.header;
         const target = document.getElementById(this._contentId);
         if (!target) return;
         if (!header) {
@@ -90,8 +90,19 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         const items = [
             { label: "HTB", value: formatCount(header.htb_queue_count) },
             { label: "CAKE", value: formatCount(header.cake_queue_count) },
+            { label: "fq-codel", value: formatCount(header.fq_codel_queue_count) },
         ];
-        return this.groupCard("Queues", "fa-stream", "text-secondary", items, false, true);
+        const allowQueueAlerts = !header?.bakery_reload_in_progress;
+        return this.groupCard(
+            "Queues",
+            "fa-stream",
+            "text-secondary",
+            items,
+            false,
+            allowQueueAlerts,
+            this.queueStatusBadge(header),
+            this.queueStatusMessage(header),
+        );
     }
 
     throughputCard() {
@@ -141,7 +152,31 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         `;
     }
 
-    groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false) {
+    queueStatusBadge(header) {
+        if (!header?.queue_stats_stale) {
+            return "";
+        }
+        const label = header?.bakery_reload_in_progress ? "Reloading" : "Stale";
+        const title = header?.bakery_reload_in_progress
+            ? "Queue counts are showing the last known values while Bakery applies a full reload."
+            : "Queue counts are showing the last known values while live queue polling catches up.";
+        return `<span class="badge bg-warning-subtle text-warning exec-badge" title="${title}" aria-label="${title}">${label}</span>`;
+    }
+
+    queueStatusMessage(header) {
+        if (!header?.queue_stats_stale) {
+            return "";
+        }
+        if (header?.bakery_reload_in_progress) {
+            return "";
+        }
+        const text = header?.bakery_reload_in_progress
+            ? "Live queue polling is paused during the current Bakery reload."
+            : "Live queue polling is behind; values shown are the last known counts.";
+        return `<div class="text-warning small mt-2"><i class="fas fa-rotate me-1"></i>${text}</div>`;
+    }
+
+    groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false, statusBadge = "", footer = "") {
         const hasZero = allowAlerts && items.some(item => this.isZero(item.value));
         const rows = items.map((item, idx) => `
             <div class="d-flex align-items-baseline gap-1">
@@ -155,8 +190,12 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
                     <div class="d-flex align-items-start gap-3">
                         <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
                         <div class="flex-grow-1">
-                            <div class="text-secondary small">${title}</div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <div class="text-secondary small">${title}</div>
+                                ${statusBadge}
+                            </div>
                             <div class="d-flex flex-wrap gap-3 mt-2">${rows}</div>
+                            ${footer}
                         </div>
                     </div>
                 </div>
@@ -166,7 +205,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     renderValueWithAlert(value, showAlert) {
         const isZero = this.isZero(value);
-        const valueClass = isZero ? "text-danger" : "text-secondary";
+        const valueClass = isZero && showAlert ? "text-danger" : "text-secondary";
         if (!showAlert || !isZero) {
             return `<span class="exec-metric-value ${valueClass}">${value}</span>`;
         }

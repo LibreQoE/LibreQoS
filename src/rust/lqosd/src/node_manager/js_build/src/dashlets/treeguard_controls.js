@@ -8,6 +8,8 @@ export class TreeguardControlsDashlet extends BaseDashlet {
         this.size = 6;
         this.treeguard = defaultTreeguardConfig();
         this.isSaving = false;
+        this.liveStatus = null;
+        this.configLoaded = false;
     }
 
     title() {
@@ -19,7 +21,7 @@ export class TreeguardControlsDashlet extends BaseDashlet {
     }
 
     subscribeTo() {
-        return [];
+        return ["TreeGuardStatus"];
     }
 
     statusLineId() {
@@ -76,7 +78,8 @@ export class TreeguardControlsDashlet extends BaseDashlet {
 
     setup() {
         this.bindControls();
-        this.refreshConfig();
+        this.syncControls();
+        this.refreshConfig(false);
     }
 
     bindControls() {
@@ -86,20 +89,33 @@ export class TreeguardControlsDashlet extends BaseDashlet {
         dryRun.addEventListener("change", () => this.persistToggle("dry_run", dryRun.checked));
     }
 
-    refreshConfig() {
-        this.setSaveState("Loading config...", false);
+    refreshConfig(showLoading = true, onLoaded = null, onFailed = null) {
+        if (showLoading) {
+            this.setSaveState("Loading config...", false);
+        }
         loadConfig(
             () => {
                 this.treeguard = ensureTreeguardConfig(window.config);
+                this.configLoaded = true;
                 this.syncControls();
                 this.renderStatusLine();
-                this.setSaveState("", false);
+                if (showLoading) {
+                    this.setSaveState("", false);
+                }
+                if (onLoaded) {
+                    onLoaded();
+                }
             },
             () => {
                 this.treeguard = ensureTreeguardConfig(window.config || {});
                 this.syncControls();
                 this.renderStatusLine();
-                this.setSaveState("Unable to refresh TreeGuard config.", true);
+                if (showLoading) {
+                    this.setSaveState("Unable to refresh TreeGuard config.", true);
+                }
+                if (onFailed) {
+                    onFailed();
+                }
             },
         );
     }
@@ -107,26 +123,92 @@ export class TreeguardControlsDashlet extends BaseDashlet {
     syncControls() {
         const enabled = document.getElementById(this.enabledId());
         const dryRun = document.getElementById(this.dryRunId());
-        enabled.checked = !!this.treeguard.enabled;
-        dryRun.checked = !!this.treeguard.dry_run;
-        enabled.disabled = this.isSaving;
-        dryRun.disabled = this.isSaving;
+        const controls = document.getElementById(this.controlsId());
+        const statusEnabled = this.liveStatus?.enabled;
+        const statusDryRun = this.liveStatus?.dry_run;
+        const paused = !!this.liveStatus?.paused_for_bakery_reload;
+        enabled.checked = this.configLoaded ? !!this.treeguard.enabled : !!(statusEnabled ?? this.treeguard.enabled);
+        dryRun.checked = this.configLoaded ? !!this.treeguard.dry_run : !!(statusDryRun ?? this.treeguard.dry_run);
+        enabled.disabled = this.isSaving || paused;
+        dryRun.disabled = this.isSaving || paused;
+        if (controls) {
+            controls.classList.toggle("opacity-50", paused);
+        }
     }
 
     renderStatusLine() {
         const statusLine = document.getElementById(this.statusLineId());
-        const liveState = this.treeguard.dry_run ? "dry run" : "live";
+        const liveStatus = this.liveStatus || {};
+        const enabled = (liveStatus.enabled ?? this.treeguard.enabled) ? "Enabled" : "Disabled";
+        const dryRun = !!(liveStatus.dry_run ?? this.treeguard.dry_run);
+        const paused = !!liveStatus.paused_for_bakery_reload;
+        const pauseReason = (liveStatus.pause_reason || "Bakery full reload in progress").trim();
+        const liveState = dryRun ? "dry run" : "live";
         const mode = this.treeguard.cpu?.mode === "cpu_aware" ? "CPU-aware" : "Traffic/RTT only";
         const linkScope = this.treeguard.links?.all_nodes ? "all links" : "allowlisted links";
         const circuitScope = this.treeguard.circuits?.all_circuits ? "all circuits" : "allowlisted circuits";
-        const enabled = this.treeguard.enabled ? "Enabled" : "Disabled";
-        statusLine.innerHTML = `
-            Status: <strong>${enabled}</strong>, ${liveState}, ${mode}, ${linkScope}, ${circuitScope}.
-            <a href="config_treeguard.html" class="ms-1">Open configuration</a>
-        `;
+        const managedNodes = Number.isFinite(Number(liveStatus.managed_nodes))
+            ? Math.max(0, Math.trunc(Number(liveStatus.managed_nodes)))
+            : null;
+        const managedCircuits = Number.isFinite(Number(liveStatus.managed_circuits))
+            ? Math.max(0, Math.trunc(Number(liveStatus.managed_circuits)))
+            : null;
+        const warningCount = Array.isArray(liveStatus.warnings) ? liveStatus.warnings.length : 0;
+        const summaryBits = [
+            `Status: <strong>${enabled}</strong>`,
+            liveState,
+            mode,
+            linkScope,
+            circuitScope,
+        ];
+        if (paused) {
+            summaryBits.push(`<span class="text-warning">paused: ${pauseReason}</span>`);
+        }
+        if (managedNodes !== null || managedCircuits !== null) {
+            const counts = [];
+            if (managedNodes !== null) counts.push(`${managedNodes} node${managedNodes === 1 ? "" : "s"}`);
+            if (managedCircuits !== null) counts.push(`${managedCircuits} circuit${managedCircuits === 1 ? "" : "s"}`);
+            if (counts.length > 0) {
+                summaryBits.push(`managing ${counts.join(", ")}`);
+            }
+        }
+        if (warningCount > 0) {
+            summaryBits.push(`<span class="text-warning">${warningCount} warning${warningCount === 1 ? "" : "s"}</span>`);
+        }
+        statusLine.innerHTML = `${summaryBits.join(", ")}. <a href="config_treeguard.html" class="ms-1">Open configuration</a>`;
+    }
+
+    onMessage(msg) {
+        if (msg.event !== "TreeGuardStatus") {
+            return;
+        }
+        this.liveStatus = msg.data || null;
+        if (!this.configLoaded) {
+            this.syncControls();
+            if (!this.isSaving) {
+                this.setSaveState("", false);
+            }
+        }
+        this.renderStatusLine();
     }
 
     persistToggle(field, nextValue) {
+        if (!this.configLoaded) {
+            this.isSaving = true;
+            this.syncControls();
+            this.refreshConfig(
+                true,
+                () => {
+                    this.isSaving = false;
+                    this.persistToggle(field, nextValue);
+                },
+                () => {
+                    this.isSaving = false;
+                    this.syncControls();
+                },
+            );
+            return;
+        }
         const previousValue = this.treeguard[field];
         this.treeguard[field] = nextValue;
         window.config = window.config || {};

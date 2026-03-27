@@ -1,12 +1,11 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
-import {getSiteIdMap, linkToCircuit, linkToSite} from "../executive_utils";
+import {badgeForEntityKind, linkToExecutiveMetricRow} from "../executive_utils";
 import {
-    buildHeatmapRows,
     colorByCapacity,
     formatLatest,
     latestValue,
-    nonNullCount,
     heatRow,
     rttHeatRow,
     retransmitHeatRow,
@@ -39,19 +38,6 @@ function escapeHtml(value) {
 function qooInfoIconHtml() {
     const title = escapeAttr(QOO_TOOLTIP_HTML);
     return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoO information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
-}
-
-function initTooltipsWithin(rootEl) {
-    if (!rootEl) return;
-    if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) return;
-    const elements = rootEl.querySelectorAll('[data-bs-toggle="tooltip"]');
-    elements.forEach((element) => {
-        if (bootstrap.Tooltip.getOrCreateInstance) {
-            bootstrap.Tooltip.getOrCreateInstance(element);
-        } else {
-            new bootstrap.Tooltip(element);
-        }
-    });
 }
 
 function qoqHeatmapRow(blocks, colorFn) {
@@ -153,6 +139,69 @@ function qoqHeatRow(label, badge, blocks, link = null) {
     `;
 }
 
+function executiveBadge(row) {
+    return badgeForEntityKind(row?.entity_kind);
+}
+
+function executiveSplitBlocks(row) {
+    return {
+        download: row?.split_blocks?.download || [],
+        upload: row?.split_blocks?.upload || [],
+    };
+}
+
+function executiveQoqBlocks(row) {
+    return {
+        download_total: row?.split_blocks?.download || [],
+        upload_total: row?.split_blocks?.upload || [],
+    };
+}
+
+function executiveRttBlocks(row) {
+    return {
+        rtt: row?.rtt_blocks?.rtt || [],
+        rtt_p50_down: row?.rtt_blocks?.dl_p50 || [],
+        rtt_p90_down: row?.rtt_blocks?.dl_p90 || [],
+        rtt_p50_up: row?.rtt_blocks?.ul_p50 || [],
+        rtt_p90_up: row?.rtt_blocks?.ul_p90 || [],
+    };
+}
+
+function executiveRetransmitBlocks(row) {
+    return {
+        retransmit: row?.scalar_blocks?.values || [],
+        retransmit_down: row?.split_blocks?.download || [],
+        retransmit_up: row?.split_blocks?.upload || [],
+    };
+}
+
+function latestUtilization(row) {
+    const split = executiveSplitBlocks(row);
+    return Math.max(
+        latestValue(split.download) ?? Number.NEGATIVE_INFINITY,
+        latestValue(split.upload) ?? Number.NEGATIVE_INFINITY,
+    );
+}
+
+function mergedUtilizationRows(summary) {
+    const byKey = new Map();
+    [...(summary?.top_download || []), ...(summary?.top_upload || [])].forEach((row) => {
+        if (!row?.row_key || byKey.has(row.row_key)) {
+            return;
+        }
+        byKey.set(row.row_key, row);
+    });
+    return [...byKey.values()]
+        .sort((left, right) => {
+            const latestDiff = latestUtilization(right) - latestUtilization(left);
+            if (Number.isFinite(latestDiff) && latestDiff !== 0) {
+                return latestDiff;
+            }
+            return String(left?.label || "").localeCompare(String(right?.label || ""));
+        })
+        .slice(0, MAX_HEATMAP_ROWS);
+}
+
 class ExecutiveHeatmapBase extends BaseDashlet {
     constructor(slot) {
         super(slot);
@@ -167,12 +216,12 @@ class ExecutiveHeatmapBase extends BaseDashlet {
     }
 
     canBeSlowedDown() { return true; }
-    subscribeTo() { return ["ExecutiveHeatmaps"]; }
+    subscribeTo() { return ["ExecutiveDashboardSummary"]; }
 
     onMessage(msg) {
-        if (msg.event === "ExecutiveHeatmaps") {
+        if (msg.event === "ExecutiveDashboardSummary") {
             this.lastData = msg.data;
-            window.executiveHeatmapData = msg.data;
+            window.executiveDashboardSummary = msg.data;
             this.render();
         }
     }
@@ -182,8 +231,8 @@ class ExecutiveHeatmapBase extends BaseDashlet {
             window.addEventListener("colorBlindModeChanged", this._colorBlindListener);
             this._colorBlindBound = true;
         }
-        if (window.executiveHeatmapData) {
-            this.lastData = window.executiveHeatmapData;
+        if (window.executiveDashboardSummary) {
+            this.lastData = window.executiveDashboardSummary;
             this.render();
         }
     }
@@ -260,6 +309,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 return heatRow(row.label, row.badge, row.values, row.color, row.format);
             })
             .join("");
+        disposeTooltipsWithin(target);
         target.innerHTML = `
                 <div class="card shadow-sm border-0">
                 <div class="card-body py-3">
@@ -271,7 +321,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
-        initTooltipsWithin(target);
+        enableTooltipsWithin(target);
     }
 }
 
@@ -293,166 +343,101 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
     render() {
         const target = document.getElementById(this._contentId);
         if (!target) return;
-        const rows = buildHeatmapRows(this.lastData || {});
-        const filteredRows = this.config.hideAsns ? rows.filter(row => row.badge !== "ASN") : rows;
-        if (!filteredRows.length) {
+        const summary = this.lastData || {};
+        const rows = this.summaryRows(summary);
+        if (!rows.length) {
             target.innerHTML = this.emptyCard();
             return;
         }
-        const sorted = filteredRows.slice().sort((a, b) => this.metricSort(a, b));
-        const limited = sorted.slice(0, MAX_HEATMAP_ROWS);
-        getSiteIdMap().then((siteIdMap) => {
-            const activeTarget = document.getElementById(this._contentId);
-            if (!activeTarget) return;
-            const metricRows = limited.map(row => {
-                const link = row.badge === "Circuit"
-                    ? linkToCircuit(row.circuit_id)
-                    : row.badge === "Site"
-                        ? linkToSite(row.site_name || row.label, siteIdMap)
-                        : null;
-                if (this.config.metricKey === "rtt") {
-                    return rttHeatRow(
-                        row.label,
-                        row.badge,
-                        row.blocks,
-                        this.config.colorFn,
-                        this.config.formatFn,
-                        link
-                    );
-                }
-                if (this.config.metricKey === "retransmit") {
-                    return retransmitHeatRow(
-                        row.label,
-                        row.badge,
-                        row.blocks,
-                        this.config.colorFn,
-                        this.config.formatFn,
-                        link
-                    );
-                }
-                if (this.config.metricKey === "utilization") {
-                    return utilizationHeatRow(
-                        row.label,
-                        row.badge,
-                        row.blocks,
-                        this.config.colorFn,
-                        this.config.formatFn,
-                        link
-                    );
-                }
-                if (this.config.metricKey === "qoo") {
-                    return qoqHeatRow(
-                        row.label,
-                        row.badge,
-                        row.qoq_blocks,
-                        link,
-                    );
-                }
-                return heatRow(
+        const activeTarget = document.getElementById(this._contentId);
+        if (!activeTarget) return;
+        const metricRows = rows.map((row) => {
+            const badge = executiveBadge(row);
+            const link = linkToExecutiveMetricRow(row);
+            if (this.config.metricKey === "rtt") {
+                return rttHeatRow(
                     row.label,
-                    row.badge,
-                    row.blocks[this.config.metricKey] || [],
+                    badge,
+                    executiveRttBlocks(row),
                     this.config.colorFn,
                     this.config.formatFn,
-                    link
+                    link,
                 );
-            }).join("");
-            const linkIcon = this.config.link
-                ? `<i class="fas fa-external-link-alt ms-2 small text-muted"></i>`
-                : "";
-            const isQooMetric = this.config.metricKey === "qoo";
-            const titleLabel = isQooMetric
-                ? `QoO${qooInfoIconHtml()} Heatmap`
-                : this.config.title;
-            const titleHtml = this.config.link
-                ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
-                : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
-            activeTarget.innerHTML = `
-                <div class="card shadow-sm border-0 h-100">
-                    <div class="card-body py-3">
-                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                            <div class="exec-section-title mb-0">${titleHtml}</div>
-                        </div>
-                        <div class="exec-heat-rows" role="list">${metricRows}</div>
+            }
+            if (this.config.metricKey === "retransmit") {
+                return retransmitHeatRow(
+                    row.label,
+                    badge,
+                    executiveRetransmitBlocks(row),
+                    this.config.colorFn,
+                    this.config.formatFn,
+                    link,
+                );
+            }
+            if (this.config.metricKey === "utilization") {
+                return utilizationHeatRow(
+                    row.label,
+                    badge,
+                    executiveSplitBlocks(row),
+                    this.config.colorFn,
+                    this.config.formatFn,
+                    link,
+                );
+            }
+            if (this.config.metricKey === "qoo") {
+                return qoqHeatRow(
+                    row.label,
+                    badge,
+                    executiveQoqBlocks(row),
+                    link,
+                );
+            }
+            return heatRow(
+                row.label,
+                badge,
+                row?.scalar_blocks?.values || [],
+                this.config.colorFn,
+                this.config.formatFn,
+                link,
+            );
+        }).join("");
+        const linkIcon = this.config.link
+            ? `<i class="fas fa-external-link-alt ms-2 small text-muted"></i>`
+            : "";
+        const isQooMetric = this.config.metricKey === "qoo";
+        const titleLabel = isQooMetric
+            ? `QoO${qooInfoIconHtml()} Heatmap`
+            : this.config.title;
+        const titleHtml = this.config.link
+            ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
+            : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
+        disposeTooltipsWithin(activeTarget);
+        activeTarget.innerHTML = `
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div class="exec-section-title mb-0">${titleHtml}</div>
                     </div>
+                    <div class="exec-heat-rows" role="list">${metricRows}</div>
                 </div>
-            `;
-            initTooltipsWithin(activeTarget);
-        });
+            </div>
+        `;
+        enableTooltipsWithin(activeTarget);
     }
 
-    metricSort(a, b) {
-        const metricKey = this.config.metricKey;
-        const isUtilization = metricKey === "utilization";
-        const isQoo = metricKey === "qoo";
-        const aDownVals = a.blocks.download || [];
-        const aUpVals = a.blocks.upload || [];
-        const bDownVals = b.blocks.download || [];
-        const bUpVals = b.blocks.upload || [];
-
-        const aVals = isUtilization ? [] : (a.blocks[metricKey] || []);
-        const bVals = isUtilization ? [] : (b.blocks[metricKey] || []);
-
-        const latestQoo = (blocks) => {
-            if (!blocks) return null;
-            const vals = [
-                latestValue(blocks.download_total),
-                latestValue(blocks.upload_total),
-            ].filter((v) => v !== null && v !== undefined);
-            if (!vals.length) return null;
-            const sum = vals.reduce((x, y) => x + y, 0);
-            return sum / vals.length;
-        };
-        const countQoo = (blocks) => {
-            if (!blocks) return 0;
-            return Math.max(
-                nonNullCount(blocks.download_total),
-                nonNullCount(blocks.upload_total),
-            );
-        };
-
-        const aLatest = isQoo
-            ? latestQoo(a.qoq_blocks)
-            : isUtilization
-            ? Math.max(latestValue(aDownVals) ?? -Infinity, latestValue(aUpVals) ?? -Infinity)
-            : latestValue(aVals);
-        const bLatest = isQoo
-            ? latestQoo(b.qoq_blocks)
-            : isUtilization
-            ? Math.max(latestValue(bDownVals) ?? -Infinity, latestValue(bUpVals) ?? -Infinity)
-            : latestValue(bVals);
-        const aCount = isQoo
-            ? countQoo(a.qoq_blocks)
-            : isUtilization
-            ? Math.max(nonNullCount(aDownVals), nonNullCount(aUpVals))
-            : nonNullCount(aVals);
-        const bCount = isQoo
-            ? countQoo(b.qoq_blocks)
-            : isUtilization
-            ? Math.max(nonNullCount(bDownVals), nonNullCount(bUpVals))
-            : nonNullCount(bVals);
-        const countWeight = this.config.countWeight || 0;
-        const minSamples = this.config.minSamples || 0;
-
-        const score = (latest, count) => {
-            if (latest === null || latest === undefined) return -Infinity;
-            let base = latest;
-            if (isQoo) {
-                // QoO: higher is better; show worst first by inverting for sort score.
-                base = -latest;
-            }
-            let s = base + countWeight * (count / 15);
-            if (count < minSamples) {
-                s -= 1000; // Heavily de-prioritize sparse data
-            }
-            return s;
-        };
-
-        const aScore = score(aLatest, aCount);
-        const bScore = score(bLatest, bCount);
-        if (bScore !== aScore) return bScore - aScore;
-        if (bCount !== aCount) return bCount - aCount;
-        return (a.label || "").localeCompare(b.label || "");
+    summaryRows(summary) {
+        switch (this.config.metricKey) {
+        case "rtt":
+            return (summary?.top_rtt || []).slice(0, MAX_HEATMAP_ROWS);
+        case "retransmit":
+            return (summary?.top_retransmit || []).slice(0, MAX_HEATMAP_ROWS);
+        case "utilization":
+            return mergedUtilizationRows(summary);
+        case "qoo":
+            return (summary?.top_qoo || []).slice(0, MAX_HEATMAP_ROWS);
+        default:
+            return [];
+        }
     }
 }
 
