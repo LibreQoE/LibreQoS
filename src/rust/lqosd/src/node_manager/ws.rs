@@ -182,7 +182,11 @@ async fn handle_socket(
                         }
                     }
                     Some(Err(err)) => {
-                        warn!("Websocket recv error: {err}");
+                        if is_benign_recv_error(&err, handshake_complete) {
+                            info!("Websocket client disconnected: {err}");
+                        } else {
+                            warn!("Websocket recv error: {err}");
+                        }
                         break;
                     }
                     None => break, // The channel has closed
@@ -193,6 +197,14 @@ async fn handle_socket(
     outbound_handle.abort();
     let _ = outbound_handle.await;
     info!("Websocket disconnected");
+}
+
+fn is_benign_recv_error(err: &axum::Error, handshake_complete: bool) -> bool {
+    if !handshake_complete {
+        return false;
+    }
+    let err_text = err.to_string();
+    err_text.contains("Connection reset by peer") || err_text.contains("Broken pipe")
 }
 
 struct WsRequestState<'a> {
@@ -223,7 +235,11 @@ async fn receive_channel_message(
             return false;
         }
         Message::Close(frame) => {
-            warn!("Websocket close frame received: {:?}", frame);
+            if is_benign_close_frame(frame.as_ref()) {
+                info!("Websocket close frame received: {:?}", frame);
+            } else {
+                warn!("Websocket close frame received: {:?}", frame);
+            }
             return true;
         }
     };
@@ -1830,6 +1846,10 @@ async fn receive_channel_message(
         WsRequest::HelloReply(_) => {}
     }
     false
+}
+
+fn is_benign_close_frame(frame: Option<&axum::extract::ws::CloseFrame<'_>>) -> bool {
+    frame.is_some_and(|frame| matches!(frame.code, 1000 | 1001))
 }
 
 async fn send_ws_response(tx: &Sender<Arc<Vec<u8>>>, response: WsResponse) -> bool {

@@ -1078,7 +1078,10 @@ fn sync_lqosd_config_from_disk(_py: Python) -> PyResult<()> {
         (*config).clone(),
     ))])
     .map_err(|e| PyOSError::new_err(format!("Unable to push config into lqosd: {e}")))?;
-    if !responses.iter().any(|response| matches!(response, BusResponse::Ack)) {
+    if !responses
+        .iter()
+        .any(|response| matches!(response, BusResponse::Ack))
+    {
         return Err(PyOSError::new_err(
             "lqosd did not acknowledge the config update request",
         ));
