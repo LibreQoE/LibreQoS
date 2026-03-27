@@ -2,6 +2,7 @@ import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
 const DEFAULT_EXECUTIVE_REFRESH_MS = 5000;
+let executiveRequestCounter = 0;
 
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
@@ -15,8 +16,18 @@ function normalizeEntityKinds(entityKinds) {
     return [...new Set((entityKinds || []).map((kind) => String(kind)))].sort();
 }
 
+function nextExecutiveRequestId(prefix) {
+    executiveRequestCounter += 1;
+    return `${prefix}-${Date.now()}-${executiveRequestCounter}`;
+}
+
 function matchesExecutiveHeatmapQuery(responseQuery, requestQuery) {
     if (!responseQuery || !requestQuery) return false;
+    const responseRequestId = String(responseQuery.client_request_id || "");
+    const requestRequestId = String(requestQuery.client_request_id || "");
+    if (responseRequestId || requestRequestId) {
+        return responseRequestId !== "" && responseRequestId === requestRequestId;
+    }
     return String(responseQuery.metric || "") === String(requestQuery.metric || "")
         && Number(responseQuery.page ?? 0) === Number(requestQuery.page ?? 0)
         && Number(responseQuery.page_size ?? 0) === Number(requestQuery.page_size ?? 0)
@@ -28,6 +39,11 @@ function matchesExecutiveHeatmapQuery(responseQuery, requestQuery) {
 
 function matchesExecutiveLeaderboardQuery(responseQuery, requestQuery) {
     if (!responseQuery || !requestQuery) return false;
+    const responseRequestId = String(responseQuery.client_request_id || "");
+    const requestRequestId = String(requestQuery.client_request_id || "");
+    if (responseRequestId || requestRequestId) {
+        return responseRequestId !== "" && responseRequestId === requestRequestId;
+    }
     return String(responseQuery.kind || "") === String(requestQuery.kind || "")
         && Number(responseQuery.page ?? 0) === Number(requestQuery.page ?? 0)
         && Number(responseQuery.page_size ?? 0) === Number(requestQuery.page_size ?? 0)
@@ -93,40 +109,56 @@ export function listenExecutiveDashboardSummary(onData) {
 }
 
 export function requestExecutiveHeatmapPage(query, onData, onError = null) {
+    const requestQuery = {
+        ...query,
+        client_request_id: nextExecutiveRequestId("exec-heatmap"),
+    };
     return requestMatchingResponse(
         "ExecutiveHeatmapPage",
-        { ExecutiveHeatmapPage: { query } },
-        (data) => matchesExecutiveHeatmapQuery(data.query, query),
+        { ExecutiveHeatmapPage: { query: requestQuery } },
+        (data) => matchesExecutiveHeatmapQuery(data.query, requestQuery),
         onData,
         onError,
     );
 }
 
 export function pollExecutiveHeatmapPage(query, onData, intervalMs = DEFAULT_EXECUTIVE_REFRESH_MS) {
+    const requestQuery = { ...query };
     return pollMatchingResponse(
         "ExecutiveHeatmapPage",
-        () => ({ ExecutiveHeatmapPage: { query } }),
-        (data) => matchesExecutiveHeatmapQuery(data.query, query),
+        () => {
+            requestQuery.client_request_id = nextExecutiveRequestId("exec-heatmap");
+            return { ExecutiveHeatmapPage: { query: requestQuery } };
+        },
+        (data) => matchesExecutiveHeatmapQuery(data.query, requestQuery),
         onData,
         intervalMs,
     );
 }
 
 export function requestExecutiveLeaderboardPage(query, onData, onError = null) {
+    const requestQuery = {
+        ...query,
+        client_request_id: nextExecutiveRequestId("exec-leaderboard"),
+    };
     return requestMatchingResponse(
         "ExecutiveLeaderboardPage",
-        { ExecutiveLeaderboardPage: { query } },
-        (data) => matchesExecutiveLeaderboardQuery(data.query, query),
+        { ExecutiveLeaderboardPage: { query: requestQuery } },
+        (data) => matchesExecutiveLeaderboardQuery(data.query, requestQuery),
         onData,
         onError,
     );
 }
 
 export function pollExecutiveLeaderboardPage(query, onData, intervalMs = DEFAULT_EXECUTIVE_REFRESH_MS) {
+    const requestQuery = { ...query };
     return pollMatchingResponse(
         "ExecutiveLeaderboardPage",
-        () => ({ ExecutiveLeaderboardPage: { query } }),
-        (data) => matchesExecutiveLeaderboardQuery(data.query, query),
+        () => {
+            requestQuery.client_request_id = nextExecutiveRequestId("exec-leaderboard");
+            return { ExecutiveLeaderboardPage: { query: requestQuery } };
+        },
+        (data) => matchesExecutiveLeaderboardQuery(data.query, requestQuery),
         onData,
         intervalMs,
     );

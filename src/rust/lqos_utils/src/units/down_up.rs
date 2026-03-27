@@ -11,7 +11,17 @@ use zerocopy::FromBytes;
 /// Strongly-typed count of TCP retransmit events.
 #[repr(transparent)]
 #[derive(
-    Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Ord, PartialOrd, Hash,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    Hash,
     Allocative,
 )]
 #[serde(transparent)]
@@ -27,7 +37,17 @@ impl RetransmitCount {
 /// Strongly-typed count of TCP packets used as the retransmit denominator.
 #[repr(transparent)]
 #[derive(
-    Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Ord, PartialOrd, Hash,
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    Ord,
+    PartialOrd,
+    Hash,
     Allocative,
 )]
 #[serde(transparent)]
@@ -42,7 +62,9 @@ impl TcpPacketCount {
 
 /// Strongly-typed retransmit fraction in the inclusive range `0.0..=1.0`.
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, PartialOrd, Serialize, Deserialize, Allocative)]
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, PartialOrd, Serialize, Deserialize, Allocative,
+)]
 #[serde(transparent)]
 pub struct RetransmitFraction(f64);
 
@@ -125,8 +147,7 @@ pub struct DownUpOrder<T> {
     pub up: T,
 }
 
-impl<T> DownUpOrder<T>
-{
+impl<T> DownUpOrder<T> {
     /// Create a new DownUpOrder with the given down and up values.
     pub const fn new(down: T, up: T) -> Self {
         Self { down, up }
@@ -144,11 +165,7 @@ impl<T> DownUpOrder<T>
     where
         T: Copy,
     {
-        if direction == 0 {
-            self.down
-        } else {
-            self.up
-        }
+        if direction == 0 { self.down } else { self.up }
     }
 
     /// Get the `down` value.

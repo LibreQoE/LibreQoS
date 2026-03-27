@@ -1,9 +1,61 @@
+<style>
+.cpu-affinity-overview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: calc(100vh - 240px);
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.cpu-affinity-overview-row {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--lqos-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: color-mix(in srgb, var(--lqos-surface-solid) 90%, transparent);
+    color: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.cpu-affinity-overview-row:hover {
+    border-color: color-mix(in srgb, var(--bs-primary) 18%, var(--lqos-border) 82%);
+    background: color-mix(in srgb, var(--lqos-hover-bg) 75%, var(--lqos-surface) 35%);
+}
+
+.cpu-affinity-overview-row.is-selected {
+    border-color: color-mix(in srgb, var(--bs-primary) 30%, var(--lqos-border) 70%);
+    box-shadow: var(--lqos-shadow-sm);
+    background: color-mix(in srgb, var(--lqos-active-bg) 72%, var(--lqos-surface) 28%);
+}
+
+.cpu-affinity-overview-row .progress {
+    height: 0.75rem;
+}
+
+.cpu-affinity-detail-card {
+    position: sticky;
+    top: 1rem;
+}
+
+@media (max-width: 1399.98px) {
+    .cpu-affinity-overview-list {
+        max-height: none;
+    }
+
+    .cpu-affinity-detail-card {
+        position: static;
+    }
+}
+</style>
+
 <div class="row">
     <div class="col-12">
         <div class="row align-items-end mb-3">
             <div class="col-12 col-lg-8">
                 <h5 class="mb-1"><i class="fa fa-microchip"></i> CPU Affinity</h5>
-                <p class="text-muted mb-0">View current circuit placement per CPU/queue from the active TC plan.</p>
+                <p class="text-muted mb-0">Live per-core load plus effective site/AP assignment after TreeGuard runtime virtualization.</p>
             </div>
             <div class="col-12 col-lg-4">
                 <div class="d-flex flex-wrap justify-content-lg-end align-items-end gap-2 mt-2 mt-lg-0">
@@ -28,25 +80,44 @@
             </div>
         </div>
 
-        <div id="cpuSummary" class="mb-4">
-            <i class="fa fa-spinner fa-spin"></i> Loading CPU summary...
-        </div>
-
-        <hr/>
-
-        <div id="cpuDetails">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div>
-                    <strong class="text-secondary">Circuits</strong>
-                    <span id="currentCpuLabel" class="text-muted"></span>
-                </div>
-                <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
-                    <button class="btn btn-outline-secondary" id="btnPrev">Prev</button>
-                    <button class="btn btn-outline-secondary" id="btnNext">Next</button>
+        <div class="row g-3 align-items-start">
+            <div class="col-12 col-xxl-4">
+                <div id="cpuOverview" class="mb-0">
+                    <i class="fa fa-spinner fa-spin"></i> Loading core assignment...
                 </div>
             </div>
-            <div id="circuitsTable">
-                <i class="fa fa-info-circle"></i> <span class="text-secondary">Select a CPU from the table above.</span>
+
+            <div class="col-12 col-xxl-8">
+                <div class="card cpu-affinity-detail-card">
+                    <div class="card-body">
+                        <div id="cpuDetails">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                <div>
+                                    <strong class="text-secondary">Effective Assignment</strong>
+                                    <span id="currentCpuLabel" class="text-muted"></span>
+                                </div>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="CPU detail tabs">
+                                    <button class="btn btn-outline-secondary" id="btnTabNodes">Nodes</button>
+                                    <button class="btn btn-outline-secondary" id="btnTabCircuits">Circuits</button>
+                                    <button class="btn btn-outline-secondary" id="btnTabChanges">Changes</button>
+                                </div>
+                            </div>
+
+                            <div id="cpuSelectedSummary" class="mb-3">
+                                <span class="text-muted small">Select a core above.</span>
+                            </div>
+
+                            <div id="cpuDetailsContent">
+                                <i class="fa fa-info-circle"></i> <span class="text-secondary">Select a CPU from the list.</span>
+                            </div>
+
+                            <div id="cpuDetailsPager" class="d-flex justify-content-end align-items-center gap-2 mt-2" style="display:none;">
+                                <button class="btn btn-sm btn-outline-secondary" id="btnPrev">Prev</button>
+                                <button class="btn btn-sm btn-outline-secondary" id="btnNext">Next</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -20,7 +20,8 @@ const MAJOR_ROADS_10M_GEOJSON_PATH = "vendor/site_map_major_roads_10m.geojson";
 const INITIAL_CENTER = [-101.5, 39.8];
 const INITIAL_ZOOM = 3.15;
 const INITIAL_FIT_PADDING = 48;
-const INITIAL_FIT_MAX_ZOOM = 8.35;
+const INITIAL_FIT_MAX_ZOOM = 11.5;
+const SINGLE_POINT_INITIAL_ZOOM = 11.5;
 const SITE_SOURCE_ID = "site-map-sites";
 const AP_SOURCE_ID = "site-map-aps";
 const COUNTRIES_SOURCE_ID = "site-map-countries";
@@ -1149,14 +1150,35 @@ class SiteMapPage {
     }
 
     fitToData(siteFeatures, apFeatures) {
-        const features = siteFeatures.length > 0 ? [...siteFeatures] : [...apFeatures];
+        const features = [...siteFeatures, ...apFeatures];
         if (!features.length) {
             return;
         }
+        this.map.resize();
+
+        if (features.length === 1) {
+            this.map.easeTo({
+                center: features[0].geometry.coordinates,
+                zoom: SINGLE_POINT_INITIAL_ZOOM,
+                duration: 0,
+            });
+            this.hasFitOnce = true;
+            return;
+        }
+
         const bounds = new window.maplibregl.LngLatBounds();
         features.forEach((feature) => bounds.extend(feature.geometry.coordinates));
+        const canvas = this.map.getCanvas();
+        const minDimension = Math.max(
+            320,
+            Math.min(canvas?.clientWidth || 0, canvas?.clientHeight || 0),
+        );
+        const adaptivePadding = Math.max(
+            INITIAL_FIT_PADDING,
+            Math.round(minDimension * 0.08),
+        );
         this.map.fitBounds(bounds, {
-            padding: INITIAL_FIT_PADDING,
+            padding: adaptivePadding,
             maxZoom: INITIAL_FIT_MAX_ZOOM,
             duration: 0,
         });

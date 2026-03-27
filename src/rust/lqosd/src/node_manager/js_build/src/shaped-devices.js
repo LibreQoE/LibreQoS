@@ -107,6 +107,42 @@ function formatRttFromNanosOpt(nanosOpt, fallback = "-") {
     return formatRtt(nanos / 1_000_000.0);
 }
 
+function formatIpAddress(address, family) {
+    if (address === null || address === undefined) return "";
+    if (Array.isArray(address)) {
+        if (family === 4 && address.length === 4) {
+            return address.map((part) => String(part)).join(".");
+        }
+        if (family === 6) {
+            if (address.length === 16) {
+                const groups = [];
+                for (let i = 0; i < 16; i += 2) {
+                    const high = Number(address[i]) || 0;
+                    const low = Number(address[i + 1]) || 0;
+                    const value = ((high << 8) | low) >>> 0;
+                    groups.push(value.toString(16));
+                }
+                return groups.join(":");
+            }
+            if (address.length === 8) {
+                return address.map((part) => Number(part).toString(16)).join(":");
+            }
+            return address.map((part) => String(part)).join(":");
+        }
+        return address.map((part) => String(part)).join(".");
+    }
+    return String(address);
+}
+
+function formatIpTuple(tuple, defaultPrefix) {
+    if (!tuple || tuple.length === 0) return "";
+    const family = defaultPrefix === 128 ? 6 : 4;
+    const addr = formatIpAddress(tuple[0], family);
+    const prefix = Number.isFinite(tuple[1]) ? tuple[1] : defaultPrefix;
+    if (!addr) return "";
+    return `${addr}/${prefix}`;
+}
+
 function registerMetricEl(circuitId, metricName, el) {
     if (!circuitId || circuitId === "") return;
     let metrics = metricElsByCircuitId.get(circuitId);
@@ -182,12 +218,14 @@ function buildIpListEl(device) {
     };
     if (Array.isArray(device.ipv4)) {
         device.ipv4.forEach((ip) => {
-            if (ip && ip.length >= 2) addLine(ip[0] + "/" + ip[1]);
+            const formatted = formatIpTuple(ip, 32);
+            if (formatted) addLine(formatted);
         });
     }
     if (Array.isArray(device.ipv6)) {
         device.ipv6.forEach((ip) => {
-            if (ip && ip.length >= 2) addLine(ip[0] + "/" + ip[1]);
+            const formatted = formatIpTuple(ip, 128);
+            if (formatted) addLine(formatted);
         });
     }
     if (wrapper.children.length === 0) {

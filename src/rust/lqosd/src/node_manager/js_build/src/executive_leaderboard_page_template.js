@@ -6,6 +6,7 @@ import {
 } from "./executive_utils";
 import {colorByCapacity, formatLatest} from "./dashlets/executive_heatmap_shared";
 import {colorByRetransmitPct, colorByRttMs} from "./helpers/color_scales";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 
 const DEFAULT_PAGE_SIZE = 50;
 const PAGE_REFRESH_MS = 5000;
@@ -13,9 +14,9 @@ const SECONDS_PER_BLOCK = 60;
 const BITS_PER_MEGABIT = 1_000_000;
 
 function formatBytes(bytes) {
-    if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+    let value = toNumber(bytes, NaN);
+    if (!Number.isFinite(value) || value <= 0) return "—";
     const units = ["B", "KB", "MB", "GB", "TB"];
-    let value = bytes;
     let idx = 0;
     while (value >= 1024 && idx < units.length - 1) {
         value /= 1024;
@@ -208,9 +209,10 @@ export function renderExecutiveLeaderboardPage(targetId, configKey) {
         const totalPages = Math.max(1, Math.ceil(totalRows / Math.max(1, pageSize)));
         const hasPrev = page > 0;
         const hasNext = page + 1 < totalPages;
+        const generatedAt = toNumber(data?.generated_at_unix_ms, Date.now());
         target.innerHTML = `
             <div class="d-flex align-items-center justify-content-end flex-wrap gap-2 mb-2">
-                <span class="small text-muted">Updated ${new Date(data?.generated_at_unix_ms || Date.now()).toLocaleTimeString()}</span>
+                <span class="small text-muted">Updated ${new Date(generatedAt).toLocaleTimeString()}</span>
                 <button class="btn btn-sm btn-outline-secondary" ${hasPrev ? `data-exec-page="${page - 1}"` : "disabled"}>Prev</button>
                 <span class="small text-muted">Page ${page + 1} / ${totalPages}</span>
                 <button class="btn btn-sm btn-outline-secondary" ${hasNext ? `data-exec-page="${page + 1}"` : "disabled"}>Next</button>
