@@ -2270,7 +2270,10 @@ fn rotate_changed_qdisc_handles_reserved(
         let down_parent_changed = old_down_parent.is_some()
             && new_down_parent.is_some()
             && old_down_parent != new_down_parent;
-        if down_kind_changed || down_parent_changed {
+        let down_handle_conflicts_live = down_qdisc_handle.as_ref().is_some_and(|handle| {
+            isp_reserved.contains(handle) && Some(*handle) != previous_down_qdisc_handle(previous)
+        });
+        if down_kind_changed || down_parent_changed || down_handle_conflicts_live {
             *down_qdisc_handle =
                 qdisc_handles.rotate_circuit_handle(&isp_interface, *circuit_hash, &isp_reserved);
         }
@@ -2278,7 +2281,10 @@ fn rotate_changed_qdisc_handles_reserved(
             old_up_kind.is_some() && new_up_kind.is_some() && old_up_kind != new_up_kind;
         let up_parent_changed =
             old_up_parent.is_some() && new_up_parent.is_some() && old_up_parent != new_up_parent;
-        if up_kind_changed || up_parent_changed {
+        let up_handle_conflicts_live = up_qdisc_handle.as_ref().is_some_and(|handle| {
+            up_reserved.contains(handle) && Some(*handle) != previous_up_qdisc_handle(previous)
+        });
+        if up_kind_changed || up_parent_changed || up_handle_conflicts_live {
             *up_qdisc_handle = qdisc_handles.rotate_circuit_handle(
                 &internet_interface,
                 *circuit_hash,
@@ -2288,6 +2294,26 @@ fn rotate_changed_qdisc_handles_reserved(
     }
 
     Arc::new(rotated)
+}
+
+fn previous_down_qdisc_handle(previous: &BakeryCommands) -> Option<u16> {
+    let BakeryCommands::AddCircuit {
+        down_qdisc_handle, ..
+    } = previous
+    else {
+        return None;
+    };
+    *down_qdisc_handle
+}
+
+fn previous_up_qdisc_handle(previous: &BakeryCommands) -> Option<u16> {
+    let BakeryCommands::AddCircuit {
+        up_qdisc_handle, ..
+    } = previous
+    else {
+        return None;
+    };
+    *up_qdisc_handle
 }
 
 fn snapshot_live_qdisc_handle_majors_or_empty(
@@ -11498,6 +11524,96 @@ mod tests {
 
         assert_ne!(*rotated_down, *original_down);
         assert_ne!(*rotated_down, *original_down + 1);
+    }
+
+    #[test]
+    fn restore_rotation_avoids_live_reserved_prefilled_handle_without_parent_change() {
+        let config = test_config_with_runtime_dir("restore-live-reserved-prefilled-handle");
+        let layout = MqDeviceLayout::from_setup(&config, 2, 0);
+        let mut handles = QdiscHandleState::default();
+
+        let original = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 414,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses: "192.0.2.14/32".to_string(),
+            sqm_override: None,
+        });
+
+        let original = with_assigned_qdisc_handles(&original, &config, &layout, &mut handles);
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(original_down),
+            up_qdisc_handle: Some(original_up),
+            ..
+        } = original.as_ref()
+        else {
+            panic!("expected assigned handles");
+        };
+
+        handles.save(&config);
+        let mut reloaded = QdiscHandleState::load(&config);
+        let conflicting_down = *original_down + 1;
+        let conflicting_up = *original_up + 1;
+
+        let restore = Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash: 414,
+            parent_class_id: TcHandle::from_u32(0x10001),
+            up_parent_class_id: TcHandle::from_u32(0x20001),
+            class_minor: 0x20,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x100,
+            up_class_major: 0x200,
+            down_qdisc_handle: Some(conflicting_down),
+            up_qdisc_handle: Some(conflicting_up),
+            ip_addresses: "192.0.2.14/32".to_string(),
+            sqm_override: None,
+        });
+
+        let live_reserved = HashMap::from([
+            (config.isp_interface(), HashSet::from([conflicting_down])),
+            (config.internet_interface(), HashSet::from([conflicting_up])),
+        ]);
+
+        let rotated = rotate_changed_qdisc_handles_reserved(
+            original.as_ref(),
+            &restore,
+            &config,
+            &layout,
+            &mut reloaded,
+            &live_reserved,
+        );
+
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle: Some(rotated_down),
+            up_qdisc_handle: Some(rotated_up),
+            ..
+        } = rotated.as_ref()
+        else {
+            panic!("expected rotated handles");
+        };
+
+        assert_eq!(
+            *original_down,
+            previous_down_qdisc_handle(original.as_ref()).expect("old down handle")
+        );
+        assert_eq!(
+            *original_up,
+            previous_up_qdisc_handle(original.as_ref()).expect("old up handle")
+        );
+        assert_ne!(*rotated_down, conflicting_down);
+        assert_ne!(*rotated_up, conflicting_up);
     }
 
     #[test]
