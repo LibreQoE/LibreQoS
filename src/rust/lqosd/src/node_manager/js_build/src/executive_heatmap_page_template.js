@@ -12,6 +12,7 @@ import {
     colorByCapacity,
 } from "./dashlets/executive_heatmap_shared";
 import {colorByRttMs, colorByRetransmitPct} from "./helpers/color_scales";
+import {toNumber} from "./lq_js_common/helpers/scaling";
 
 const DEFAULT_PAGE_SIZE = 50;
 const PAGE_REFRESH_MS = 5000;
@@ -189,6 +190,7 @@ function renderHeatmapTable(targetId, metricKey) {
         const totalPages = Math.max(1, Math.ceil(totalRows / Math.max(1, pageSize)));
         const hasPrev = page > 0;
         const hasNext = page + 1 < totalPages;
+        const generatedAt = toNumber(data?.generated_at_unix_ms, Date.now());
         const body = (data?.rows || []).map((row) => renderMetricRow(cfg, metricKey, row)).join("");
 
         target.innerHTML = `
@@ -197,7 +199,7 @@ function renderHeatmapTable(targetId, metricKey) {
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div class="exec-section-title mb-0"><i class="fas ${cfg.icon} me-2 text-primary"></i>${cfg.title}</div>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="small text-muted">Updated ${new Date(data?.generated_at_unix_ms || Date.now()).toLocaleTimeString()}</span>
+                            <span class="small text-muted">Updated ${new Date(generatedAt).toLocaleTimeString()}</span>
                             <button class="btn btn-sm btn-outline-secondary" ${hasPrev ? `data-exec-page="${page - 1}"` : "disabled"}>Prev</button>
                             <span class="small text-muted">Page ${page + 1} / ${totalPages}</span>
                             <button class="btn btn-sm btn-outline-secondary" ${hasNext ? `data-exec-page="${page + 1}"` : "disabled"}>Next</button>
