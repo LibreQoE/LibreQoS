@@ -1,6 +1,12 @@
-import {formatRetransmit, formatRtt, formatThroughput} from "./scaling";
+import {
+    formatRetransmitFraction,
+    formatRtt,
+    formatThroughput,
+    retransmitFractionFromSample,
+} from "./scaling";
 import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
+import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
@@ -51,17 +57,14 @@ export function clearDashDiv(id, target) {
 }
 
 export function clearDiv(target, targetLength=0) {
+    disposeTooltipsWithin(target);
     while (target.children.length > targetLength) {
         target.removeChild(target.lastChild);
     }
 }
 
 export function enableTooltips() {
-    // Tooltips everywhere!
-    let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-    let tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
-    })
+    enableTooltipsWithin(document);
 }
 
 let pendingTooltips = [];
@@ -73,7 +76,7 @@ export function tooltipsNextFrame(id) {
             pendingTooltips.forEach((id) => {
                 let tooltipTriggerEl = document.getElementById(id);
                 if (tooltipTriggerEl !== null) {
-                    new bootstrap.Tooltip(tooltipTriggerEl);
+                    enableTooltipsWithin(tooltipTriggerEl);
                 }
             });
             pendingTooltips = [];
@@ -165,11 +168,15 @@ export function topNTableRow(r) {
     row.append(rtt);
 
     let tcp_xmit_down = document.createElement("td");
-    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits[0]);
+    tcp_xmit_down.innerHTML = formatRetransmitFraction(
+        retransmitFractionFromSample(r.tcp_retransmit_sample?.down)
+    );
     row.append(tcp_xmit_down);
 
     let tcp_xmit_up = document.createElement("td");
-    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits[1]);
+    tcp_xmit_up.innerHTML = formatRetransmitFraction(
+        retransmitFractionFromSample(r.tcp_retransmit_sample?.up)
+    );
     row.append(tcp_xmit_up);
 
     return row;
@@ -177,13 +184,13 @@ export function topNTableRow(r) {
 
 export function TopNTableFromMsgData(circuits) {
     let t = document.createElement("table");
-    t.classList.add("dash-table", "lqos-table", "lqos-table-compact");
+    t.classList.add("dash-table", "lqos-table", "lqos-table-compact", "lqos-topn-plain");
 
     t.appendChild(topNTableHeader());
 
     let tbody = document.createElement("tbody");
     circuits.forEach((r) => {
-        t.appendChild(topNTableRow(r));
+        tbody.appendChild(topNTableRow(r));
     });
     t.appendChild(tbody);
     return t;

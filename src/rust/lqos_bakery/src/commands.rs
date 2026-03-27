@@ -1,4 +1,5 @@
 use crate::MQ_CREATED;
+use crate::qdisc_handles::{InfraQdiscSlot, infra_qdisc_handle};
 use crate::queue_math::{
     format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_tokens_for,
 };
@@ -7,7 +8,70 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::mpsc::Sender as ReplySender;
 use tracing::{debug, info};
+
+/// Runtime TreeGuard node-operation action tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationAction {
+    /// Virtualize the target node/subtree.
+    Virtualize,
+    /// Restore the target node/subtree to the physical tree.
+    Restore,
+}
+
+/// Runtime TreeGuard node-operation status tracked by Bakery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationStatus {
+    /// Operation was accepted but has not started applying yet.
+    Submitted,
+    /// Operation was not started because Bakery runtime-node capacity is currently saturated.
+    Deferred,
+    /// Operation is currently applying reparent/restore work.
+    Applying,
+    /// Traffic-carrying work succeeded; cleanup is still pending.
+    AppliedAwaitingCleanup,
+    /// Operation completed successfully.
+    Completed,
+    /// Operation failed and can be retried.
+    Failed,
+    /// Operation could not be reconciled safely and the subtree is now frozen.
+    Dirty,
+}
+
+/// Structured failure reason for a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
+pub enum RuntimeNodeOperationFailureReason {
+    /// The node has no direct child sites or direct circuits to promote.
+    StructuralIneligibleNoPromotableChildren,
+    /// The node has only one promotable direct child, so v1 flattening has no deterministic split.
+    StructuralIneligibleSinglePromotableChild,
+}
+
+/// Snapshot of a Bakery-tracked TreeGuard runtime node operation.
+#[derive(Debug, Clone, PartialEq, Eq, Allocative)]
+pub struct RuntimeNodeOperationSnapshot {
+    /// Monotonic Bakery-local operation identifier.
+    pub operation_id: u64,
+    /// Stable Bakery site hash derived from the node name.
+    pub site_hash: i64,
+    /// Requested runtime action.
+    pub action: RuntimeNodeOperationAction,
+    /// Current operation status.
+    pub status: RuntimeNodeOperationStatus,
+    /// Number of retry/apply attempts performed so far.
+    pub attempt_count: u32,
+    /// Unix timestamp when the operation was submitted.
+    pub submitted_at_unix: u64,
+    /// Unix timestamp when the operation last changed state.
+    pub updated_at_unix: u64,
+    /// Optional unix timestamp for the next retry, if waiting.
+    pub next_retry_at_unix: Option<u64>,
+    /// Last error observed by Bakery for this operation, if any.
+    pub last_error: Option<String>,
+    /// Structured failure reason observed by Bakery for this operation, if any.
+    pub failure_reason: Option<RuntimeNodeOperationFailureReason>,
+}
 
 #[derive(Debug, Clone, Copy, Allocative)]
 struct AddSiteParams {
@@ -33,6 +97,8 @@ struct AddCircuitParams {
     upload_bandwidth_max: f32,
     class_major: u16,
     up_class_major: u16,
+    down_qdisc_handle: Option<u16>,
+    up_qdisc_handle: Option<u16>,
     // Optional per-circuit SQM override: "cake" or "fq_codel"
     sqm_override: Option<String>,
 }
@@ -149,6 +215,10 @@ pub enum BakeryCommands {
         class_major: u16,
         /// Major class ID (uplink) used when attaching SQM/HTB.
         up_class_major: u16,
+        /// Explicit qdisc handle major for the downlink leaf qdisc, if assigned.
+        down_qdisc_handle: Option<u16>,
+        /// Explicit qdisc handle major for the uplink leaf qdisc, if assigned.
+        up_qdisc_handle: Option<u16>,
         /// Concatenated list of all IPs for this circuit.
         ip_addresses: String, // Concatenated list of all IPs for this circuit
         /// Optional per-circuit SQM override: "cake" or "fq_codel"
@@ -164,6 +234,16 @@ pub enum BakeryCommands {
         class_id: String,
         /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
+    },
+    /// Runtime TreeGuard request to virtualize or restore a non-top-level site without a full reload.
+    TreeGuardSetNodeVirtual {
+        /// Stable Bakery site hash derived from the node name.
+        site_hash: i64,
+        /// Whether the site should be virtualized (`true`) or restored (`false`).
+        virtualized: bool,
+        /// Optional synchronous reply channel for immediate operation-state reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<RuntimeNodeOperationSnapshot>>,
     },
 }
 
@@ -226,6 +306,8 @@ impl BakeryCommands {
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                down_qdisc_handle,
+                up_qdisc_handle,
                 ip_addresses: _,
                 sqm_override,
             } => Self::add_circuit(
@@ -242,6 +324,8 @@ impl BakeryCommands {
                     upload_bandwidth_max: *upload_bandwidth_max,
                     class_major: *class_major,
                     up_class_major: *up_class_major,
+                    down_qdisc_handle: *down_qdisc_handle,
+                    up_qdisc_handle: *up_qdisc_handle,
                     sqm_override: sqm_override.clone(),
                 },
             ),
@@ -255,38 +339,27 @@ impl BakeryCommands {
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
-        info!("Clearing prior settings");
-        if config.on_a_stick_mode() {
-            // Clear just the MQ on the ISP-facing interface
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "root".to_string(),
-            ]);
-        } else {
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.isp_interface(),
-                "root".to_string(),
-            ]);
-            result.push(vec![
-                "qdisc".to_string(),
-                "del".to_string(),
-                "dev".to_string(),
-                config.internet_interface(),
-                "root".to_string(),
-            ]);
-        }
+        let observe_only = config.queues.queue_mode.is_observe();
+        let mq_already_created = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
 
+        if observe_only {
+            if !mq_already_created {
+                result.push(root_mq_add_command(config.isp_interface()));
+                if !config.on_a_stick_mode() {
+                    result.push(root_mq_add_command(config.internet_interface()));
+                }
+            }
+            MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+            return Some(result);
+        }
         info!(
             "Setting up MQ with {} queues and stick offset {}",
             queues_available, stick_offset
         );
-        // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+        // Root MQ preflight is handled outside the strict builder batch during
+        // full reloads. The builder path only bootstraps root mq when runtime
+        // state is empty and otherwise rebuilds child HTB/SQM state beneath
+        // the prepared root.
         let sqm_strings = sqm_as_vec(config);
         let r2q = r2q(u64::max(
             config.queues.uplink_bandwidth_mbps,
@@ -294,16 +367,9 @@ impl BakeryCommands {
         ));
 
         // ISP-facing interface (interface_a in Python)
-        result.push(vec![
-            "qdisc".to_string(),
-            "replace".to_string(),
-            "dev".to_string(),
-            config.isp_interface(),
-            "root".to_string(),
-            "handle".to_string(),
-            "7FFF:".to_string(),
-            "mq".to_string(),
-        ]);
+        if !mq_already_created {
+            result.push(root_mq_add_command(config.isp_interface()));
+        }
 
         /*
         for queue in range(queuesAvailable):
@@ -364,6 +430,11 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -401,23 +472,19 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
         }
 
         // Internet-facing interface (interface_b in Python)
-        if !config.on_a_stick_mode() {
-            result.push(vec![
-                "qdisc".to_string(),
-                "replace".to_string(),
-                "dev".to_string(),
-                config.internet_interface(),
-                "root".to_string(),
-                "handle".to_string(),
-                "7FFF:".to_string(),
-                "mq".to_string(),
-            ]);
+        if !config.on_a_stick_mode() && !mq_already_created {
+            result.push(root_mq_add_command(config.internet_interface()));
         }
 
         /*
@@ -478,6 +545,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:1", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Primary)
+                ),
             ];
             class.extend(sqm_strings.clone());
             result.push(class);
@@ -514,6 +586,11 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(),
                 format!("0x{:x}:2", queue + stick_offset + 1),
+                "handle".to_string(),
+                format!(
+                    "0x{:x}:",
+                    infra_qdisc_handle((queue + stick_offset + 1) as u16, InfraQdiscSlot::Default)
+                ),
             ];
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
@@ -527,6 +604,10 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddSiteParams,
     ) -> Option<Vec<Vec<String>>> {
+        if config.queues.queue_mode.is_observe() {
+            return None;
+        }
+
         let mut result = Vec::new();
         // Derive major IDs from parent handles so classids are fully qualified
         // and consistent with queuingStructure.json (classMajor/classMinor).
@@ -597,6 +678,10 @@ impl BakeryCommands {
         config: &Arc<lqos_config::Config>,
         params: AddCircuitParams,
     ) -> Option<Vec<Vec<String>>> {
+        if config.queues.queue_mode.is_observe() {
+            return None;
+        }
+
         if let Some(ref s) = params.sqm_override
             && s.eq_ignore_ascii_case("fq_codel")
         {
@@ -706,7 +791,7 @@ impl BakeryCommands {
                 ),
             ]);
         }
-        if !config.queues.monitor_only
+        if !config.queues.queue_mode.is_observe()
             && do_sqm
             && !matches!(down_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
         {
@@ -718,6 +803,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.class_major, params.class_minor),
             ];
+            if let Some(handle) = params.down_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.download_bandwidth_max,
                 config,
@@ -753,7 +842,7 @@ impl BakeryCommands {
             ]);
         }
 
-        if !config.queues.monitor_only
+        if !config.queues.queue_mode.is_observe()
             && do_sqm
             && !config.on_a_stick_mode()
             && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
@@ -766,6 +855,10 @@ impl BakeryCommands {
                 "parent".to_string(),
                 format!("0x{:x}:0x{:x}", params.up_class_major, params.class_minor),
             ];
+            if let Some(handle) = params.up_qdisc_handle {
+                sqm_command.push("handle".to_string());
+                sqm_command.push(format!("0x{:x}:", handle));
+            }
             sqm_command.extend(sqm_tokens_for(
                 params.upload_bandwidth_max,
                 config,
@@ -921,5 +1014,329 @@ impl BakeryCommands {
         }
 
         Some(result)
+    }
+}
+
+fn root_mq_add_command(interface_name: String) -> Vec<String> {
+    vec![
+        "qdisc".to_string(),
+        "add".to_string(),
+        "dev".to_string(),
+        interface_name,
+        "root".to_string(),
+        "handle".to_string(),
+        "7FFF:".to_string(),
+        "mq".to_string(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BakeryCommands, ExecutionMode};
+    use crate::MQ_CREATED;
+    use crate::test_state_lock;
+    use lqos_config::{Config, LazyQueueMode, SingleInterfaceConfig};
+    use std::sync::Arc;
+
+    fn is_root_delete(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 5
+            && cmd[0] == "qdisc"
+            && cmd[1] == "del"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+    }
+
+    fn is_root_add_mq(cmd: &[String], interface: &str) -> bool {
+        cmd.len() == 8
+            && cmd[0] == "qdisc"
+            && cmd[1] == "add"
+            && cmd[2] == "dev"
+            && cmd[3] == interface
+            && cmd[4] == "root"
+            && cmd[5] == "handle"
+            && cmd[6] == "7FFF:"
+            && cmd[7] == "mq"
+    }
+
+    fn assert_qdisc_add_replace_commands_use_explicit_handles(commands: &[Vec<String>]) {
+        for cmd in commands {
+            let is_qdisc_add_or_replace = cmd.first().is_some_and(|part| part == "qdisc")
+                && cmd
+                    .get(1)
+                    .is_some_and(|part| part == "add" || part == "replace");
+            if !is_qdisc_add_or_replace {
+                continue;
+            }
+            assert!(
+                cmd.iter().any(|part| part == "handle"),
+                "qdisc add/replace command omitted explicit handle: {:?}",
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn mq_setup_bridge_mode_bootstraps_root_add_commands_when_runtime_state_is_empty() {
+        let _guard = test_state_lock().lock().expect("lock");
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_add_mq(&commands[0], &config.isp_interface()));
+        let internet_add_idx = commands
+            .iter()
+            .position(|cmd| is_root_add_mq(cmd, &config.internet_interface()))
+            .expect("expected internet-interface root add");
+        assert!(
+            internet_add_idx > 0,
+            "internet-interface root add should occur after the ISP-interface root add"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_on_a_stick_emits_single_root_add_when_runtime_state_is_empty() {
+        let _guard = test_state_lock().lock().expect("lock");
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+        let config = Arc::new(Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig::default()),
+            ..Config::default()
+        });
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 3,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(is_root_add_mq(&commands[0], &config.isp_interface()));
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| is_root_add_mq(cmd, &config.isp_interface()))
+                .count(),
+            1,
+            "expected a single root add on the shared interface"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_shape_mode_skips_root_add_when_runtime_state_is_ready() {
+        let _guard = test_state_lock().lock().expect("lock");
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_add_mq(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_add_mq(cmd, &config.internet_interface()))
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_qdisc_add_replace_commands_use_explicit_handles() {
+        let _guard = test_state_lock().lock().expect("lock");
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+        let config = Arc::new(Config::default());
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands");
+
+        assert_qdisc_add_replace_commands_use_explicit_handles(&commands);
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_bootstraps_root_mq_when_runtime_state_is_empty() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config::default();
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 1,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.internet_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_root_add_mq(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|cmd| is_root_add_mq(cmd, &config.internet_interface()))
+        );
+        assert_eq!(
+            commands.len(),
+            2,
+            "observe mode should bootstrap root mq when runtime state is empty"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_reuses_retained_root_when_mq_exists() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config::default();
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 0,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.internet_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_add_mq(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_add_mq(cmd, &config.internet_interface()))
+        );
+        assert_eq!(
+            commands.len(),
+            0,
+            "observe mode should rely on full-reload preflight when the root mq already exists"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
+        let config = Arc::new(Config::default());
+        let builder_commands = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            parent_class_id: crate::TcHandle::from_u32(0x10020),
+            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.42/32".to_string(),
+            sqm_override: None,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("builder add_circuit should emit commands");
+        assert_qdisc_add_replace_commands_use_explicit_handles(&builder_commands);
+
+        let mut live_cfg = Config::default();
+        live_cfg.queues.lazy_queues = Some(LazyQueueMode::Full);
+        let live_config = Arc::new(live_cfg);
+        let live_commands = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            parent_class_id: crate::TcHandle::from_u32(0x10020),
+            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
+            class_minor: 0x21,
+            download_bandwidth_min: 10.0,
+            upload_bandwidth_min: 10.0,
+            download_bandwidth_max: 100.0,
+            upload_bandwidth_max: 100.0,
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.42/32".to_string(),
+            sqm_override: None,
+        }
+        .to_commands(&live_config, ExecutionMode::LiveUpdate)
+        .expect("live add_circuit should emit commands");
+        assert_qdisc_add_replace_commands_use_explicit_handles(&live_commands);
+    }
+
+    #[test]
+    fn mq_setup_observe_mode_reuses_retained_root_on_a_stick() {
+        let _guard = test_state_lock().lock().expect("lock");
+        let mut cfg = Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig::default()),
+            ..Config::default()
+        };
+        cfg.queues.set_queue_mode(lqos_config::QueueMode::Observe);
+        let config = Arc::new(cfg);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let commands = BakeryCommands::MqSetup {
+            queues_available: 2,
+            stick_offset: 2,
+        }
+        .to_commands(&config, ExecutionMode::Builder)
+        .expect("mq setup should emit commands in observe on-a-stick mode");
+
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_delete(cmd, &config.isp_interface()))
+        );
+        assert!(
+            commands
+                .iter()
+                .all(|cmd| !is_root_add_mq(cmd, &config.isp_interface()))
+        );
+        assert_eq!(
+            commands.len(),
+            0,
+            "observe mode should rely on full-reload preflight for retained on-a-stick roots"
+        );
+        MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }

@@ -30,6 +30,7 @@ let schedulerStatusPollTimer = null;
 let schedulerStatusRequestInFlight = false;
 let schedulerStatusFirstRequestedAt = null;
 let schedulerStatusHealthy = false;
+let cachedQueueModeConfig = null;
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
@@ -55,23 +56,20 @@ function renderSchedulerStatus(container, state) {
     let color = "text-secondary";
     let icon = "fa-spinner fa-spin";
     let label = "Scheduler status is loading";
-    let buttonText = "Scheduler starting...";
+    const buttonText = "Scheduler";
 
     if (state === "healthy") {
         color = "text-success";
         icon = "fa-check-circle";
         label = "Scheduler is available";
-        buttonText = "Scheduler";
     } else if (state === "unavailable") {
         color = "text-warning";
         icon = "fa-clock";
         label = "Scheduler is still unavailable";
-        buttonText = "Scheduler unavailable";
     } else if (state === "error") {
         color = "text-danger";
         icon = "fa-triangle-exclamation";
         label = "Scheduler has an internal error";
-        buttonText = "Scheduler error";
     }
 
     container.innerHTML = `
@@ -359,18 +357,131 @@ function setupSearch() {
 function setupReload() {
     let link = document.getElementById("lnkReloadLqos");
     link.onclick = () => {
-        const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
-        myModal.show();
-        $("#reloadLibreResult").html("<i class='fa fa-spinner fa-spin'></i> Reloading LibreQoS...");
-        listenOnce("ReloadResult", (msg) => {
-            if (!msg) {
-                $("#reloadLibreResult").text("Failed to reload LibreQoS");
+        triggerReloadLibreQoS("Reloading LibreQoS...");
+    }
+}
+
+function inferQueueMode(config) {
+    const queues = config && config.queues ? config.queues : {};
+    if (queues.queue_mode === "observe" || queues.queue_mode === "shape") {
+        return queues.queue_mode;
+    }
+    return queues.monitor_only ? "observe" : "shape";
+}
+
+function renderQueueModeState(mode, busy = false) {
+    const nav = document.getElementById("observeShapeNav");
+    const observeBtn = document.getElementById("btnQueueModeObserve");
+    const shapeBtn = document.getElementById("btnQueueModeShape");
+    if (!nav || !observeBtn || !shapeBtn) return;
+
+    observeBtn.disabled = busy || mode === "observe";
+    shapeBtn.disabled = busy || mode === "shape";
+    observeBtn.className = `btn btn-sm ${mode === "observe" ? "btn-warning" : "btn-outline-secondary"}`;
+    shapeBtn.className = `btn btn-sm ${mode === "shape" ? "btn-success" : "btn-outline-secondary"}`;
+}
+
+function triggerReloadLibreQoS(loadingMessage) {
+    const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
+    myModal.show();
+    $("#reloadLibreResult").html(`<i class='fa fa-spinner fa-spin'></i> ${loadingMessage}`);
+    listenOnce("ReloadResult", (msg) => {
+        if (!msg) {
+            $("#reloadLibreResult").text("Failed to reload LibreQoS");
+            return;
+        }
+        $("#reloadLibreResult").text(msg.message || "");
+    });
+    wsClient.send({ ReloadLibreQoS: {} });
+}
+
+function loadObserveShapeControl() {
+    const nav = document.getElementById("observeShapeNav");
+    if (!nav) return;
+
+    listenOnce("AdminCheck", (msg) => {
+        if (!msg || !msg.ok) {
+            nav.classList.add("d-none");
+            return;
+        }
+
+        listenOnce("GetConfig", (cfgMsg) => {
+            if (!cfgMsg || !cfgMsg.data) {
+                nav.classList.add("d-none");
                 return;
             }
-            $("#reloadLibreResult").text(msg.message || "");
+            cachedQueueModeConfig = cfgMsg.data;
+            const mode = inferQueueMode(cachedQueueModeConfig);
+            nav.classList.remove("d-none");
+            renderQueueModeState(mode, false);
         });
-        wsClient.send({ ReloadLibreQoS: {} });
+        wsClient.send({ GetConfig: {} });
+    });
+    wsClient.send({ AdminCheck: {} });
+}
+
+function saveQueueModeAndReload(nextMode) {
+    if (!cachedQueueModeConfig || !cachedQueueModeConfig.queues) {
+        alert("Unable to load current configuration");
+        return;
     }
+
+    const currentMode = inferQueueMode(cachedQueueModeConfig);
+    if (currentMode === nextMode) {
+        return;
+    }
+
+    const confirmed = window.confirm(
+        nextMode === "observe"
+            ? "Switch LibreQoS to Observe mode? This reload will remove the active LibreQoS shaping tree so you can gather a true baseline. It may briefly interrupt traffic."
+            : "Switch LibreQoS to Shape mode? This reload will apply the LibreQoS shaping tree and begin active shaping. It may briefly interrupt traffic."
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    renderQueueModeState(currentMode, true);
+    const updated = JSON.parse(JSON.stringify(cachedQueueModeConfig));
+    updated.queues.queue_mode = nextMode;
+
+    let done = false;
+    const cleanup = () => {
+        wsClient.off("UpdateConfigResult", onSuccess);
+        wsClient.off("Error", onError);
+    };
+    const onSuccess = (msg) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        if (!msg || !msg.ok) {
+            renderQueueModeState(currentMode, false);
+            alert((msg && msg.message) ? msg.message : "Failed to update configuration");
+            return;
+        }
+        cachedQueueModeConfig = updated;
+        renderQueueModeState(nextMode, false);
+        triggerReloadLibreQoS(`Saving queue mode '${nextMode}' and reloading LibreQoS...`);
+    };
+    const onError = (msg) => {
+        if (done) return;
+        done = true;
+        cleanup();
+        renderQueueModeState(currentMode, false);
+        alert((msg && msg.message) ? msg.message : "Failed to update configuration");
+    };
+    wsClient.on("UpdateConfigResult", onSuccess);
+    wsClient.on("Error", onError);
+    wsClient.send({ UpdateConfig: { config: updated } });
+}
+
+function initObserveShapeToggle() {
+    $(document).off("click", "#btnQueueModeObserve").on("click", "#btnQueueModeObserve", () => {
+        saveQueueModeAndReload("observe");
+    });
+    $(document).off("click", "#btnQueueModeShape").on("click", "#btnQueueModeShape", () => {
+        saveQueueModeAndReload("shape");
+    });
+    loadObserveShapeControl();
 }
 
 function setupDynamicUrls() {
@@ -541,6 +652,7 @@ initColorBlind();
 getDeviceCounts();
 setupSearch();
 setupReload();
+initObserveShapeToggle();
 setupDynamicUrls();
 window.lqosInitUrgentIssues = initUrgentIssues;
 initSchedulerTooltips();

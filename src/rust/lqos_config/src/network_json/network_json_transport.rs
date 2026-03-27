@@ -14,6 +14,9 @@ pub struct NetworkJsonTransport {
     /// True if this node is a "virtual" (logical-only) node.
     #[serde(rename = "virtual", default)]
     pub is_virtual: bool,
+    /// True if TreeGuard has runtime-virtualized this node in the active Bakery tree.
+    #[serde(default)]
+    pub runtime_virtualized: bool,
     /// Max throughput for node (not clamped)
     pub max_throughput: (f64, f64),
     /// Configured max throughput from `network.json`.
@@ -34,6 +37,9 @@ pub struct NetworkJsonTransport {
     pub current_icmp_packets: (u64, u64),
     /// Current count of TCP retransmits
     pub current_retransmits: (u64, u64),
+    /// TCP packets paired with current retransmit counts.
+    #[serde(default)]
+    pub current_tcp_retransmit_packets: (u64, u64),
     /// Cake marks
     pub current_marks: (u64, u64),
     /// Cake drops
@@ -58,4 +64,16 @@ pub struct NetworkJsonTransport {
     /// Optional node longitude from network.json metadata.
     #[serde(default)]
     pub longitude: Option<f32>,
+    /// Total number of descendant site-tree nodes below this node.
+    ///
+    /// This excludes the node itself. For the synthetic root node, this is the
+    /// total number of nodes in the loaded site tree.
+    #[serde(default)]
+    pub subtree_site_count: u32,
+    /// Total number of unique circuits attached to this node or any descendant node.
+    #[serde(default)]
+    pub subtree_circuit_count: u32,
+    /// Total number of shaped devices attached to this node or any descendant node.
+    #[serde(default)]
+    pub subtree_device_count: u32,
 }

@@ -32,6 +32,8 @@ to_network = "eth1"
 
 [queues]
 default_sqm = "cake diffserv4"
+queue_mode = "shape"
+# Legacy compatibility field preserved for older binaries during upgrades.
 monitor_only = false
 uplink_bandwidth_mbps = 1000
 downlink_bandwidth_mbps = 1000
@@ -48,7 +50,7 @@ dry_run = false
 tick_seconds = 1
 
 [treeguard.cpu]
-mode = "traffic_rtt_only"
+mode = "cpu_aware"
 cpu_high_pct = 75
 cpu_low_pct = 55
 

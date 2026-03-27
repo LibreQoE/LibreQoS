@@ -12,10 +12,13 @@
                 <div class="form-text">Queue management algorithm to use by default</div>
             </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="monitorOnly">
-                <label class="form-check-label" for="monitorOnly">Monitor Only</label>
-                <div class="form-text">Monitor traffic without shaping</div>
+            <div class="mb-3">
+                <label for="queueMode" class="form-label">Queue Mode</label>
+                <select class="form-select" id="queueMode">
+                    <option value="shape">Shape</option>
+                    <option value="observe">Observe</option>
+                </select>
+                <div class="form-text">Observe keeps root MQ active for the transparent bridge, but does not apply the LibreQoS shaping tree.</div>
             </div>
 
             <div class="mb-3">

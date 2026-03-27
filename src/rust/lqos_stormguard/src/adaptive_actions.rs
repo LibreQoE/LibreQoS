@@ -15,8 +15,8 @@ pub enum CircuitFallbackOutcome {
 
 pub struct SiteOverrideUpdate {
     pub site_name: String,
-    pub download_bandwidth_mbps: Option<u32>,
-    pub upload_bandwidth_mbps: Option<u32>,
+    pub download_bandwidth_mbps: Option<f32>,
+    pub upload_bandwidth_mbps: Option<f32>,
 }
 
 #[derive(Clone)]
@@ -36,7 +36,7 @@ pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<boo
     for update in updates {
         let desired = (update.download_bandwidth_mbps, update.upload_bandwidth_mbps);
         if desired == (None, None) {
-            let removed = overrides.remove_site_bandwidth_override_by_name_count(&update.site_name);
+            let removed = overrides.remove_site_bandwidth_override_count(None, &update.site_name);
             if removed > 0 {
                 changed = true;
             }
@@ -48,6 +48,7 @@ pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<boo
         }
 
         overrides.set_site_bandwidth_override(
+            None,
             update.site_name.clone(),
             update.download_bandwidth_mbps,
             update.upload_bandwidth_mbps,
@@ -142,12 +143,13 @@ pub fn load_persisted_circuit_fallbacks() -> Result<HashMap<String, PersistedCir
 fn current_site_override(
     overrides: &OverrideFile,
     site_name: &str,
-) -> Option<(Option<u32>, Option<u32>)> {
+) -> Option<(Option<f32>, Option<f32>)> {
     overrides
         .network_adjustments()
         .iter()
         .find_map(|adj| match adj {
             lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
+                node_id: _,
                 site_name: current,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
@@ -307,6 +309,8 @@ fn apply_circuit_sqm_override_live(
         upload_bandwidth_max: node.upload_bandwidth_mbps as f32,
         class_major,
         up_class_major,
+        down_qdisc_handle: None,
+        up_qdisc_handle: None,
         ip_addresses: ip_list(devices),
         sqm_override: sqm_override.map(|value| value.to_string()),
     })?;
@@ -357,12 +361,13 @@ fn group_circuit_fallbacks(
             continue;
         }
 
-        let entry = grouped
-            .entry(device.circuit_id.clone())
-            .or_insert_with(|| PersistedCircuitFallback {
-                sqm_override: token.to_string(),
-                devices: Vec::new(),
-            });
+        let entry =
+            grouped
+                .entry(device.circuit_id.clone())
+                .or_insert_with(|| PersistedCircuitFallback {
+                    sqm_override: token.to_string(),
+                    devices: Vec::new(),
+                });
         if entry.sqm_override != token {
             continue;
         }
@@ -434,10 +439,12 @@ mod tests {
             "dev2".to_string(),
             Some("fq_codel".to_string())
         ));
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev3".to_string(),
-            Some("cake".to_string())
-        ));
+        assert!(
+            overrides.set_device_sqm_override_return_changed(
+                "dev3".to_string(),
+                Some("cake".to_string())
+            )
+        );
 
         let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
         assert_eq!(grouped.len(), 2);
@@ -479,14 +486,16 @@ mod tests {
             "dev1".to_string(),
             Some("fq_codel".to_string())
         ));
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev2".to_string(),
-            Some("cake".to_string())
-        ));
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev3".to_string(),
-            Some(" ".to_string())
-        ));
+        assert!(
+            overrides.set_device_sqm_override_return_changed(
+                "dev2".to_string(),
+                Some("cake".to_string())
+            )
+        );
+        assert!(
+            overrides
+                .set_device_sqm_override_return_changed("dev3".to_string(), Some(" ".to_string()))
+        );
 
         let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
         assert_eq!(

@@ -12,7 +12,6 @@ pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
 mod program_control;
-mod reload_lock;
 mod remote_commands;
 mod rtt_exclusions;
 mod scheduler_control;
@@ -38,10 +37,11 @@ use crate::{
     ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
     throughput_tracker::flow_data::{FlowActor, flowbee_handle_events, setup_netflow_tracker},
 };
-#[cfg(feature = "flamegraphs")]
-use allocative::Allocative;
 use anyhow::Result;
-use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
+use lqos_bus::{
+    BusRequest, BusResponse, InsightLicenseSummary, TreeGuardRuntimeNodeBranchSnapshot,
+    TreeGuardRuntimeNodeOperationSnapshot, UnixSocketServer,
+};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
@@ -66,12 +66,6 @@ use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 use crate::lts2_sys::get_lts_license_status;
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::remote_commands::start_remote_commands;
-#[cfg(feature = "flamegraphs")]
-use crate::shaped_devices_tracker::NETWORK_JSON;
-#[cfg(feature = "flamegraphs")]
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
-#[cfg(feature = "flamegraphs")]
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
 // Use MiMalloc only on supported platforms
@@ -515,6 +509,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 BusResponse::Ack
             }
+            BusRequest::InvalidateAuthCache => {
+                crate::node_manager::invalidate_auth_cache();
+                BusResponse::Ack
+            }
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
             BusRequest::ValidateShapedDevicesCsv => validation::validate_shaped_devices_csv(),
@@ -711,6 +709,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         upload_bandwidth_max: *upload_bandwidth_max,
                         class_major: *class_major,
                         up_class_major: *up_class_major,
+                        down_qdisc_handle: None,
+                        up_qdisc_handle: None,
                         ip_addresses: ip_addresses.clone(),
                         sqm_override: sqm_override.clone(),
                     });
@@ -736,6 +736,126 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
             ),
+            BusRequest::BakeryReportPreflight {
+                ok,
+                message,
+                safe_budget,
+                hard_limit,
+                estimated_total_memory_bytes,
+                memory_available_bytes,
+                memory_guard_min_available_bytes,
+                memory_ok,
+                interfaces,
+            } => {
+                lqos_bakery::record_qdisc_preflight_snapshot(
+                    lqos_bakery::BakeryPreflightSnapshot {
+                        ok: *ok,
+                        message: message.clone(),
+                        safe_budget: *safe_budget,
+                        hard_limit: *hard_limit,
+                        estimated_total_memory_bytes: *estimated_total_memory_bytes,
+                        memory_available_bytes: *memory_available_bytes,
+                        memory_guard_min_available_bytes: *memory_guard_min_available_bytes,
+                        memory_ok: *memory_ok,
+                        interfaces: interfaces
+                            .iter()
+                            .map(|entry| lqos_bakery::BakeryCapacityInterfaceSnapshot {
+                                name: entry.name.clone(),
+                                planned_qdiscs: entry.planned_qdiscs,
+                                infra_qdiscs: entry.infra_qdiscs,
+                                cake_qdiscs: entry.cake_qdiscs,
+                                fq_codel_qdiscs: entry.fq_codel_qdiscs,
+                                estimated_memory_bytes: entry.estimated_memory_bytes,
+                            })
+                            .collect(),
+                    },
+                );
+                BusResponse::Ack
+            },
+            BusRequest::TreeGuardSetNodeVirtual {
+                node_name,
+                virtualized,
+            } => match crate::treeguard::bakery::submit_node_virtualization_live(
+                node_name,
+                *virtualized,
+            ) {
+                Ok(()) => BusResponse::Ack,
+                Err(err) => BusResponse::Fail(err.to_string()),
+            },
+            BusRequest::TreeGuardGetNodeVirtualStatus { node_name } => {
+                let snapshot = crate::treeguard::bakery::node_virtualization_operation_status(
+                    node_name,
+                )
+                .map(|snapshot| {
+                    let failure_reason = snapshot.failure_reason.map(|reason| match reason {
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren => {
+                            "structural_ineligible_no_promotable_children".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
+                            "structural_ineligible_single_promotable_child".to_string()
+                        }
+                    });
+                    TreeGuardRuntimeNodeOperationSnapshot {
+                    operation_id: snapshot.operation_id,
+                    site_hash: snapshot.site_hash,
+                    action: match snapshot.action {
+                        lqos_bakery::BakeryRuntimeNodeOperationAction::Virtualize => {
+                            "virtualize".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationAction::Restore => {
+                            "restore".to_string()
+                        }
+                    },
+                    status: match snapshot.status {
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Submitted => {
+                            "submitted".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Deferred => {
+                            "deferred".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Applying => {
+                            "applying".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup => {
+                            "applied_awaiting_cleanup".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Completed => {
+                            "completed".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Failed => {
+                            "failed".to_string()
+                        }
+                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Dirty => {
+                            "dirty".to_string()
+                        }
+                    },
+                    attempt_count: snapshot.attempt_count,
+                    submitted_at_unix: snapshot.submitted_at_unix,
+                    updated_at_unix: snapshot.updated_at_unix,
+                    next_retry_at_unix: snapshot.next_retry_at_unix,
+                    last_error: snapshot.last_error,
+                    failure_reason,
+                }});
+                BusResponse::TreeGuardRuntimeNodeOperation(snapshot)
+            }
+            BusRequest::TreeGuardGetNodeVirtualBranchState { node_name } => {
+                let snapshot = crate::treeguard::bakery::node_virtualization_branch_state(
+                    node_name,
+                )
+                .map(|snapshot| TreeGuardRuntimeNodeBranchSnapshot {
+                    site_hash: snapshot.site_hash,
+                    active_branch: snapshot.active_branch.to_ascii_lowercase(),
+                    lifecycle: snapshot.lifecycle,
+                    pending_prune: snapshot.pending_prune,
+                    next_prune_attempt_unix: snapshot.next_prune_attempt_unix,
+                    active_site_hashes: snapshot.active_site_hashes,
+                    saved_site_hashes: snapshot.saved_site_hashes,
+                    prune_site_hashes: snapshot.prune_site_hashes,
+                    qdisc_down_major: snapshot.qdisc_down_major,
+                    qdisc_up_major: snapshot.qdisc_up_major,
+                });
+                BusResponse::TreeGuardRuntimeNodeBranch(snapshot)
+            }
             BusRequest::ApiReady => {
                 tool_status::api_seen();
                 BusResponse::Ack

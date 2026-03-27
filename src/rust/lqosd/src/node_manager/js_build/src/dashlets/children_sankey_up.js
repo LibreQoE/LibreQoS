@@ -3,6 +3,14 @@ import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRetransmitPct} from "../helpers/color_scales";
 import {isRedacted} from "../helpers/redact";
 
+function retransmitPacketsForNode(node, direction) {
+    return Number(
+        node?.current_tcp_retransmit_packets?.[direction]
+        ?? node?.current_tcp_packets?.[direction]
+        ?? 0,
+    );
+}
+
 class ChildrenSankeyGraphUp extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -52,7 +60,12 @@ export class ShaperChildrenUp extends BaseDashlet {
     tooltip(){ return "<h5>Child Throughput</h5><p>Top child nodes by upload throughput."; }
     subscribeTo(){ return ["TreeSummary", "TreeSummaryL2"]; }
     buildContainer(){ let b=super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
-    setup(){ this.graph = new ChildrenSankeyGraphUp(this.graphDivId()); if (this.last) this.graph.update(this.last); }
+    setup(){
+        this.traceRender("setup-start");
+        this.graph = new ChildrenSankeyGraphUp(this.graphDivId());
+        this.traceRender("setup-complete", { graphId: this.graphDivId() });
+        if (this.last) this.graph.update(this.last);
+    }
     _showEmpty(show, msg = "No recent data"){
         const card = document.getElementById(this.id);
         if (!card) return;
@@ -109,8 +122,9 @@ export class ShaperChildrenUp extends BaseDashlet {
             const pName = p.name || String(parentId);
             // Parent color by rxmit (upload)
             let pRx = 0;
-            if ((p.current_tcp_packets?.[1]||0) > 0) {
-                pRx = ((p.current_retransmits?.[1]||0) / Math.max(1, p.current_tcp_packets?.[1]||0)) * 100.0;
+            const pPackets = retransmitPacketsForNode(p, 1);
+            if (pPackets > 0) {
+                pRx = ((p.current_retransmits?.[1]||0) / Math.max(1, pPackets)) * 100.0;
             }
             nodes.push({ name: pName, itemStyle: { color: colorByRetransmitPct(pRx) } });
 
@@ -121,8 +135,9 @@ export class ShaperChildrenUp extends BaseDashlet {
                 parentSum += v;
                 hasData = hasData || v > 0.5;
                 let cRx = 0;
-                if ((c.current_tcp_packets?.[1]||0) > 0) {
-                    cRx = ((c.current_retransmits?.[1]||0) / Math.max(1, c.current_tcp_packets?.[1]||0)) * 100.0;
+                const cPackets = retransmitPacketsForNode(c, 1);
+                if (cPackets > 0) {
+                    cRx = ((c.current_retransmits?.[1]||0) / Math.max(1, cPackets)) * 100.0;
                 }
                 nodes.push({ name: c.name, itemStyle: { color: colorByRetransmitPct(cRx) } });
                 links.push({ source: pName, target: c.name, value: v });
@@ -134,8 +149,15 @@ export class ShaperChildrenUp extends BaseDashlet {
 
         this._showEmpty(!hasData);
         if (hasData) {
-            this.graph.update({ nodes, links });
-            return true;
+            this.traceRender("onMessage", { eventName: "TreeSummaryL2", nodeCount: nodes.length, linkCount: links.length });
+            try {
+                this.graph.update({ nodes, links });
+                this.traceRender("update-ok", { eventName: "TreeSummaryL2", nodeCount: nodes.length, linkCount: links.length });
+                return true;
+            } catch (err) {
+                this.traceRender("update-error", { eventName: "TreeSummaryL2", error: err && err.message ? err.message : String(err) });
+                throw err;
+            }
         }
         return false;
     }
@@ -154,8 +176,9 @@ export class ShaperChildrenUp extends BaseDashlet {
             const m = r[1] || {};
             const name = m.name || String(r[0]);
             const up = Number((m.current_throughput||[0,0])[1]||0);
-            const rxmit = (m.current_tcp_packets && m.current_tcp_packets[1] > 0)
-                ? ( (m.current_retransmits?.[1]||0) / Math.max(1, m.current_tcp_packets?.[1]||0) ) * 100.0
+            const rxmitPackets = retransmitPacketsForNode(m, 1);
+            const rxmit = rxmitPackets > 0
+                ? ( (m.current_retransmits?.[1]||0) / Math.max(1, rxmitPackets) ) * 100.0
                 : 0;
             return { name, value: up, rxmit };
         });
@@ -164,7 +187,14 @@ export class ShaperChildrenUp extends BaseDashlet {
         this._showEmpty(!hasData);
         if (hasData) {
             this.last = rows;
-            this.graph.update(rows);
+            this.traceRender("onMessage", { eventName: msg.event, rowCount: rows.length });
+            try {
+                this.graph.update(rows);
+                this.traceRender("update-ok", { eventName: msg.event, rowCount: rows.length });
+            } catch (err) {
+                this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
+                throw err;
+            }
         }
     }
 }

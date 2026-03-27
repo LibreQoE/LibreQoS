@@ -42,7 +42,10 @@ impl GraphMapping {
                 format!("uisp:site:{id}")
             }
             GraphMapping::GeneratedSite { name } => {
-                format!("libreqos:generated:uisp:site:{}", slugify_generated_name(name))
+                format!(
+                    "libreqos:generated:uisp:site:{}",
+                    slugify_generated_name(name)
+                )
             }
             GraphMapping::AccessPoint { id, .. } => format!("uisp:device:{id}"),
         }

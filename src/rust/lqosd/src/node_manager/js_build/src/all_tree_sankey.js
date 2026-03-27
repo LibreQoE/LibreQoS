@@ -38,6 +38,15 @@ const MIN_LINK_BITS_PER_SEC = 1_000_000;
 
 let sankeyOverlay = null;
 
+function setRootNodeLabel(name) {
+    const target = document.getElementById("rootNode");
+    if (!target) {
+        return;
+    }
+    target.textContent = name || "Root";
+    target.classList.add("redactable");
+}
+
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     let done = false;
     const wrapped = (msg) => {
@@ -126,6 +135,157 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
         this.pending = false;
     }
 
+    render(graph) {
+        const head = this.getHead();
+        if (!Array.isArray(head) || head.length === 0) {
+            setRootNodeLabel("Root");
+            if (sankeyOverlay) {
+                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+            }
+            graph.update([], []);
+            return;
+        }
+
+        if (!head[rootId] || !head[rootId][1]) {
+            rootId = 0;
+        }
+
+        const rootEntry = head[rootId];
+        if (!rootEntry || !rootEntry[1]) {
+            setRootNodeLabel("Root");
+            if (sankeyOverlay) {
+                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+            }
+            graph.update([], []);
+            return;
+        }
+
+        allNodes = head;
+        setRootNodeLabel(rootEntry[1].name);
+
+        let redact = isRedacted();
+        let nodes = [];
+        let links = [];
+        const linkMap = new Map();
+        const rootParents = rootEntry[1].parents || [];
+        let startDepth = Math.max(0, rootParents.length - 1);
+
+        for (let i=0; i<head.length; i++) {
+            if (!head[i] || !head[i][1]) continue;
+
+            const parents = head[i][1].parents || [];
+            let depth = parents.length - startDepth;
+            if (depth > maxDepth) {
+                continue;
+            }
+            if (rootId !== 0 && i !== rootId && !parents.includes(rootId)) {
+                continue;
+            }
+
+            const downBytesPerSec = toNumber(head[i][1].current_throughput?.[0], 0);
+            const downBitsPerSec = downBytesPerSec * 8;
+            const maxBitsPerSec = toNumber(head[i][1].max_throughput?.[0], 0) * 1_000_000;
+            const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
+
+            let capacityColor = isColorBlindMode()
+                ? lerpViridis(percent / 100)
+                : lerpGreenToRedViaOrange(100 - percent, 100);
+
+            let label = {
+                fontSize: 10,
+                color: "#999",
+                formatter: (params) => {
+                    return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
+                }
+            };
+            if (redact) {
+                label.fontFamily = "Illegible";
+            }
+
+            nodes.push({
+                name: head[i][1].name,
+                label: label,
+                itemStyle: {
+                    color: capacityColor
+                },
+                n: 1,
+            });
+
+            if (i > 0) {
+                let immediateParent = head[i][1].immediate_parent;
+                if (immediateParent === null || immediateParent === undefined) continue;
+                if (!head[immediateParent] || !head[immediateParent][1]) continue;
+                links.push({
+                    source: head[immediateParent][1].name,
+                    target: head[i][1].name,
+                    value: downBitsPerSec,
+                    lineStyle: {
+                        color: capacityColor,
+                    },
+                    maxBitsPerSec: maxBitsPerSec,
+                    n: 1,
+                });
+                linkMap.set(
+                    `${head[immediateParent][1].name}\u0000${head[i][1].name}`,
+                    links[links.length - 1],
+                );
+            }
+        }
+
+        this.iterate((data) => {
+            for (let i=0; i<data.length; i++) {
+                if (!data[i] || !data[i][1]) continue;
+                if (i > 0) {
+                    let immediateParent = data[i][1].immediate_parent;
+                    if (immediateParent === null || immediateParent === undefined) continue;
+                    if (!data[immediateParent] || !data[immediateParent][1]) continue;
+
+                    const link = linkMap.get(
+                        `${data[immediateParent][1].name}\u0000${data[i][1].name}`,
+                    );
+                    if (link !== undefined) {
+                        link.value += toNumber(data[i][1].current_throughput?.[0], 0) * 8;
+                        link.n++;
+                    }
+                }
+            }
+        });
+
+        for (let i=0; i<links.length; i++) {
+            links[i].value /= links[i].n;
+            const maxBits = toNumber(links[i].maxBitsPerSec, 0);
+            const percent = Math.min(100, maxBits > 0 ? (links[i].value / maxBits) * 100 : 0);
+            let capacityColor = isColorBlindMode()
+                ? lerpViridis(percent / 100)
+                : lerpGreenToRedViaOrange(100 - percent, 100);
+            links[i].lineStyle.color = capacityColor;
+        }
+
+        links = links.filter(link => link.value >= MIN_LINK_BITS_PER_SEC);
+
+        if (links.length === 0) {
+            if (sankeyOverlay) {
+                sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
+            }
+            graph.update([], []);
+            return;
+        }
+
+        if (sankeyOverlay) {
+            sankeyOverlay.hide();
+        }
+
+        const referenced = new Set();
+        links.forEach(link => {
+            referenced.add(link.source);
+            referenced.add(link.target);
+        });
+
+        referenced.add(rootEntry[1].name);
+        nodes = nodes.filter(node => referenced.has(node.name));
+        graph.update(nodes, links);
+    }
+
     onTick(graph) {
         if (this.pending) {
             return;
@@ -133,7 +293,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
         this.pending = true;
 
         const self = this;
-        this.pendingCancel = listenOnceWithTimeout("NetworkTree", REQUEST_TIMEOUT_MS, (msg) => {
+        this.pendingCancel = listenOnceWithTimeout("NetworkTreeLite", REQUEST_TIMEOUT_MS, (msg) => {
             self.pending = false;
             self.pendingCancel = null;
 
@@ -142,162 +302,8 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             }
 
             const data = msg && msg.data ? msg.data : [];
-            // Maintain a 10-second ringbuffer of recent data
             self.push(data);
-
-            let redact = isRedacted();
-            let nodes = [];
-            let links = [];
-            const linkMap = new Map();
-
-            // Build the basic tree from the current head, to ensure
-            // that we're displaying the most recent nodes.
-            let head = self.getHead();
-            if (!Array.isArray(head) || head.length === 0 || !head[rootId] || !head[rootId][1]) {
-                if (sankeyOverlay) {
-                    sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
-                }
-                graph.update([], []);
-                return;
-            }
-
-            allNodes = head;
-
-            const rootParents = head[rootId][1].parents || [];
-            let startDepth = rootParents.length - 1;
-
-            for (let i=0; i<head.length; i++) {
-                if (!head[i] || !head[i][1]) continue;
-
-                const parents = head[i][1].parents || [];
-                let depth = parents.length - startDepth;
-                if (depth > maxDepth) {
-                    continue;
-                }
-                // If head[i][1].parents does not contain rootId, skip
-                if (rootId !== 0 && !parents.includes(rootId)) {
-                    continue;
-                }
-
-                const downBytesPerSec = toNumber(head[i][1].current_throughput?.[0], 0);
-                const downBitsPerSec = downBytesPerSec * 8;
-                const maxBitsPerSec = toNumber(head[i][1].max_throughput?.[0], 0) * 1_000_000;
-                const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
-
-                // Use appropriate color scale based on color blind mode
-                let capacityColor = isColorBlindMode()
-                    ? lerpViridis(percent / 100)
-                    : lerpGreenToRedViaOrange(100 - percent, 100);
-
-                // Use appropriate color scale for node
-                let color = capacityColor;
-
-                let label = {
-                    fontSize: 10,
-                    color: "#999",
-                    formatter: (params) => {
-                        // Trim to 10 chars with elipsis
-                        return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
-                    }
-                };
-                if (redact) {
-                    label.fontFamily = "Illegible";
-                }
-
-                nodes.push({
-                    name: head[i][1].name,
-                    label: label,
-                    itemStyle: {
-                        color: color
-                    },
-                    n: 1,
-                });
-
-                if (i > 0) {
-                    let immediateParent = head[i][1].immediate_parent;
-                    if (immediateParent === null || immediateParent === undefined) continue;
-                    if (!head[immediateParent] || !head[immediateParent][1]) continue;
-                    links.push({
-                        source: head[immediateParent][1].name,
-                        target: head[i][1].name,
-                        value: downBitsPerSec,
-                        lineStyle: {
-                            color: capacityColor,
-                        },
-                        maxBitsPerSec: maxBitsPerSec,
-                        n: 1,
-                    });
-                    linkMap.set(
-                        `${head[immediateParent][1].name}\u0000${head[i][1].name}`,
-                        links[links.length - 1],
-                    );
-                }
-            }
-
-            // Now we iterate over the entire ringbuffer to accumulate data over the period
-            // of the ringbuffer.
-            self.iterate((data) => {
-                for (let i=0; i<data.length; i++) {
-                    if (!data[i] || !data[i][1]) continue;
-                    // Search for links that match so we can update the value
-                    if (i > 0) {
-                        let immediateParent = data[i][1].immediate_parent;
-                        if (immediateParent === null || immediateParent === undefined) continue;
-                        if (!data[immediateParent] || !data[immediateParent][1]) continue;
-
-                        const link = linkMap.get(
-                            `${data[immediateParent][1].name}\u0000${data[i][1].name}`,
-                        );
-                        if (link !== undefined) {
-                            link.value += toNumber(data[i][1].current_throughput?.[0], 0) * 8;
-                            link.n++;
-                        }
-                    }
-                }
-            });
-
-            // Now go through the links and average the values, recalculating the color
-            for (let i=0; i<links.length; i++) {
-                links[i].value /= links[i].n;
-                const maxBits = toNumber(links[i].maxBitsPerSec, 0);
-                const percent = Math.min(100, maxBits > 0 ? (links[i].value / maxBits) * 100 : 0);
-                let capacityColor = isColorBlindMode()
-                    ? lerpViridis(percent / 100)
-                    : lerpGreenToRedViaOrange(100 - percent, 100);
-                links[i].lineStyle.color = capacityColor;
-            }
-
-            // Filter links with <1 Mbps average throughput
-            links = links.filter(link => link.value >= MIN_LINK_BITS_PER_SEC);
-
-            if (links.length === 0) {
-                if (sankeyOverlay) {
-                    sankeyOverlay.show("Limited throughput", "Nothing to render yet.");
-                }
-                graph.update([], []);
-                return;
-            }
-
-            if (sankeyOverlay) {
-                sankeyOverlay.hide();
-            }
-
-            // Collect node names that are still referenced by links
-            const referenced = new Set();
-            links.forEach(link => {
-                referenced.add(link.source);
-                referenced.add(link.target);
-            });
-
-            // Always keep the root node
-            let rootName = nodes.length > 0 ? nodes[0].name : null;
-            if (rootName) referenced.add(rootName);
-
-            // Filter nodes to only those referenced
-            nodes = nodes.filter(node => referenced.has(node.name));
-
-            // Update the graph
-            graph.update(nodes, links);
+            self.render(graph);
         }, () => {
             self.pending = false;
             self.pendingCancel = null;
@@ -306,12 +312,16 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 return;
             }
             if (sankeyOverlay) {
-                sankeyOverlay.show("Waiting for data", "No NetworkTree websocket response received yet.");
+                sankeyOverlay.show("Waiting for data", "No NetworkTreeLite websocket response received yet.");
             }
             graph.update([], []);
         });
 
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
+    }
+
+    rerender(graph) {
+        this.render(graph);
     }
 }
 
@@ -349,17 +359,18 @@ class AllTreeSankey extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
         this.chart.showLoading();
         this.chart.on('click', (params) => {
-            console.log(params.name);
-            console.log(this.nodeMap);
             let name = params.name;
-            // If it contains a >, it's a link
             if (name.indexOf(" > ") === -1) {
                 rootId = idOfNode(name);
             } else {
                 rootId = idOfNode(params.data.source);
             }
+            this.model.rerender(this);
         });
-        $("#btnRoot").click(() => { rootId = 0; });
+        $("#btnRoot").click(() => {
+            rootId = 0;
+            this.model.rerender(this);
+        });
     }
 
     update(data, links) {
@@ -394,15 +405,16 @@ function getMaxDepth() {
 function bindMaxDepth() {
     let d = document.getElementById("maxDepth");
     d.value = maxDepth;
-    d.onclick = () => {
+    d.addEventListener("change", () => {
         maxDepth = parseInt(d.value);
         localStorage.setItem("atsDepth", maxDepth.toString());
-    };
+        graph.model.rerender(graph);
+    });
 }
 
 let maxDepth = getMaxDepth();
-bindMaxDepth();
 let graph = new AllTreeSankey("sankey");
+bindMaxDepth();
 sankeyOverlay = makeOverlay(graph.dom, "allTreeSankeyOverlay");
 sankeyOverlay.show("Waiting for data", "Requesting network tree...");
 let loopTimer = null;

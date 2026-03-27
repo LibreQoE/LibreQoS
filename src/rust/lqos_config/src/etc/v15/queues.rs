@@ -1,15 +1,34 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
 use allocative::Allocative;
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
+/// Queue application mode.
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq, Default, Allocative)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueMode {
+    /// Apply LibreQoS queueing and shaping.
+    #[default]
+    Shape,
+    /// Observe only; do not apply managed TC objects.
+    Observe,
+}
+
+impl QueueMode {
+    /// Returns `true` when the queue mode is observe-only.
+    pub const fn is_observe(self) -> bool {
+        matches!(self, Self::Observe)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Allocative)]
 pub struct QueueConfig {
     /// Which SQM to use by default
     pub default_sqm: String,
 
-    /// Should we monitor only, and not shape traffic?
-    pub monitor_only: bool,
+    /// Queue application mode.
+    pub queue_mode: QueueMode,
 
     /// Upstream bandwidth total - download
     pub uplink_bandwidth_mbps: u64,
@@ -49,6 +68,56 @@ pub struct QueueConfig {
     pub fast_queues_fq_codel: Option<f64>,
 }
 
+impl Serialize for QueueConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("QueueConfig", 15)?;
+        state.serialize_field("default_sqm", &self.default_sqm)?;
+        state.serialize_field("queue_mode", &self.queue_mode)?;
+        // Preserve the legacy field during rewrites so older binaries that still
+        // require it continue to parse upgraded configs successfully.
+        state.serialize_field("monitor_only", &self.queue_mode.is_observe())?;
+        state.serialize_field("uplink_bandwidth_mbps", &self.uplink_bandwidth_mbps)?;
+        state.serialize_field("downlink_bandwidth_mbps", &self.downlink_bandwidth_mbps)?;
+        state.serialize_field(
+            "generated_pn_download_mbps",
+            &self.generated_pn_download_mbps,
+        )?;
+        state.serialize_field("generated_pn_upload_mbps", &self.generated_pn_upload_mbps)?;
+        state.serialize_field("dry_run", &self.dry_run)?;
+        state.serialize_field("sudo", &self.sudo)?;
+        state.serialize_field("override_available_queues", &self.override_available_queues)?;
+        state.serialize_field("use_binpacking", &self.use_binpacking)?;
+        state.serialize_field("lazy_queues", &self.lazy_queues)?;
+        state.serialize_field("lazy_expire_seconds", &self.lazy_expire_seconds)?;
+        state.serialize_field("lazy_threshold_bytes", &self.lazy_threshold_bytes)?;
+        state.serialize_field("fast_queues_fq_codel", &self.fast_queues_fq_codel)?;
+        state.end()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct QueueConfigCompat {
+    default_sqm: String,
+    queue_mode: Option<QueueMode>,
+    monitor_only: bool,
+    uplink_bandwidth_mbps: u64,
+    downlink_bandwidth_mbps: u64,
+    generated_pn_download_mbps: u64,
+    generated_pn_upload_mbps: u64,
+    dry_run: bool,
+    sudo: bool,
+    override_available_queues: Option<u32>,
+    use_binpacking: bool,
+    lazy_queues: Option<LazyQueueMode>,
+    lazy_expire_seconds: Option<u64>,
+    lazy_threshold_bytes: Option<u64>,
+    fast_queues_fq_codel: Option<f64>,
+}
+
 /// Lazy queue creation modes
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default, Allocative)]
 pub enum LazyQueueMode {
@@ -65,7 +134,7 @@ impl Default for QueueConfig {
     fn default() -> Self {
         Self {
             default_sqm: "cake diffserv4".to_string(),
-            monitor_only: false,
+            queue_mode: QueueMode::Shape,
             uplink_bandwidth_mbps: 1_000,
             downlink_bandwidth_mbps: 1_000,
             generated_pn_download_mbps: 1_000,
@@ -79,5 +148,123 @@ impl Default for QueueConfig {
             lazy_threshold_bytes: None,
             fast_queues_fq_codel: None,
         }
+    }
+}
+
+impl QueueConfig {
+    /// Sets the queue application mode.
+    pub fn set_queue_mode(&mut self, queue_mode: QueueMode) {
+        self.queue_mode = queue_mode;
+    }
+}
+
+impl Default for QueueConfigCompat {
+    fn default() -> Self {
+        let defaults = QueueConfig::default();
+        Self {
+            default_sqm: defaults.default_sqm.clone(),
+            queue_mode: None,
+            monitor_only: false,
+            uplink_bandwidth_mbps: defaults.uplink_bandwidth_mbps,
+            downlink_bandwidth_mbps: defaults.downlink_bandwidth_mbps,
+            generated_pn_download_mbps: defaults.generated_pn_download_mbps,
+            generated_pn_upload_mbps: defaults.generated_pn_upload_mbps,
+            dry_run: defaults.dry_run,
+            sudo: defaults.sudo,
+            override_available_queues: defaults.override_available_queues,
+            use_binpacking: defaults.use_binpacking,
+            lazy_queues: defaults.lazy_queues.clone(),
+            lazy_expire_seconds: defaults.lazy_expire_seconds,
+            lazy_threshold_bytes: defaults.lazy_threshold_bytes,
+            fast_queues_fq_codel: defaults.fast_queues_fq_codel,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for QueueConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let compat = QueueConfigCompat::deserialize(deserializer)?;
+        let queue_mode = compat.queue_mode.unwrap_or({
+            if compat.monitor_only {
+                QueueMode::Observe
+            } else {
+                QueueMode::Shape
+            }
+        });
+
+        let mut cfg = Self {
+            default_sqm: compat.default_sqm,
+            queue_mode,
+            uplink_bandwidth_mbps: compat.uplink_bandwidth_mbps,
+            downlink_bandwidth_mbps: compat.downlink_bandwidth_mbps,
+            generated_pn_download_mbps: compat.generated_pn_download_mbps,
+            generated_pn_upload_mbps: compat.generated_pn_upload_mbps,
+            dry_run: compat.dry_run,
+            sudo: compat.sudo,
+            override_available_queues: compat.override_available_queues,
+            use_binpacking: compat.use_binpacking,
+            lazy_queues: compat.lazy_queues,
+            lazy_expire_seconds: compat.lazy_expire_seconds,
+            lazy_threshold_bytes: compat.lazy_threshold_bytes,
+            fast_queues_fq_codel: compat.fast_queues_fq_codel,
+        };
+        cfg.set_queue_mode(queue_mode);
+        Ok(cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{QueueConfig, QueueMode};
+
+    #[test]
+    fn deserialize_legacy_monitor_only_maps_to_observe() {
+        let parsed: QueueConfig =
+            toml::from_str("default_sqm = \"cake diffserv4\"\nmonitor_only = true\n")
+                .expect("legacy monitor_only config should deserialize");
+        assert_eq!(parsed.queue_mode, QueueMode::Observe);
+    }
+
+    #[test]
+    fn deserialize_without_queue_mode_defaults_to_shape() {
+        let parsed: QueueConfig = toml::from_str("default_sqm = \"cake diffserv4\"\n")
+            .expect("queue config without queue_mode should deserialize");
+        assert_eq!(parsed.queue_mode, QueueMode::Shape);
+    }
+
+    #[test]
+    fn deserialize_prefers_queue_mode_over_legacy_monitor_only() {
+        let parsed: QueueConfig = toml::from_str(
+            "default_sqm = \"cake diffserv4\"\nqueue_mode = \"shape\"\nmonitor_only = true\n",
+        )
+        .expect("mixed config should deserialize");
+        assert_eq!(parsed.queue_mode, QueueMode::Shape);
+    }
+
+    #[test]
+    fn serialize_queue_config_preserves_legacy_monitor_only_field() {
+        let mut config = QueueConfig::default();
+        config.set_queue_mode(QueueMode::Observe);
+        let serialized = toml::to_string(&config).expect("queue config should serialize");
+        assert!(serialized.contains("queue_mode = \"observe\""));
+        assert!(
+            serialized.contains("monitor_only = true"),
+            "serialized config should preserve legacy monitor_only for compatibility"
+        );
+    }
+
+    #[test]
+    fn serialize_shape_queue_config_sets_legacy_monitor_only_false() {
+        let mut config = QueueConfig::default();
+        config.set_queue_mode(QueueMode::Shape);
+        let serialized = toml::to_string(&config).expect("queue config should serialize");
+        assert!(serialized.contains("queue_mode = \"shape\""));
+        assert!(
+            serialized.contains("monitor_only = false"),
+            "serialized config should preserve legacy monitor_only=false for compatibility"
+        );
     }
 }

@@ -133,7 +133,7 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
     let mut shaped_devices_weights = get_weights_from_shaped_devices()?;
     if use_lts_weights() {
         // This allows us to use Python printing
-        println!("Using LTS weights");
+        println!("Using Insight weights");
 
         let config = load_config().unwrap();
         let org_key = config.long_term_stats.license_key.clone().unwrap();
@@ -147,10 +147,10 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
         let duration_seconds = 60 * 60 * 24; // 1 day
         let percentile = 0.95;
 
-        eprintln!("Getting weights from LTS");
+        eprintln!("Getting weights from Insight");
         let weights = get_weights_from_lts(&org_key, &node_id, start, duration_seconds, percentile);
         if let Ok(weights) = weights {
-            eprintln!("Retrieved {} weights from LTS", weights.len());
+            eprintln!("Retrieved {} weights from Insight", weights.len());
             // Merge them
             for weight in weights.iter() {
                 if let Some(existing) = shaped_devices_weights
@@ -161,7 +161,7 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
                 }
             }
         } else {
-            eprintln!("Failed to get weights from LTS: {:?}", weights);
+            eprintln!("Failed to get weights from Insight: {:?}", weights);
         }
     }
 

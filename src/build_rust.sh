@@ -114,6 +114,27 @@ service_exists() {
     fi
 }
 
+refresh_service_unit() {
+    local unit_name=$1
+    local src="./bin/${unit_name}.service.example"
+    local dst="/etc/systemd/system/${unit_name}.service"
+    if [ -f "$src" ] && [ -f "$dst" ]; then
+        echo "Refreshing $dst from $src"
+        sudo cp "$src" "$dst"
+        SERVICE_UNITS_UPDATED=1
+    fi
+}
+
+SERVICE_UNITS_UPDATED=0
+refresh_service_unit lqosd
+refresh_service_unit lqos_scheduler
+refresh_service_unit lqos_api
+
+if [ "$SERVICE_UNITS_UPDATED" -eq 1 ]; then
+    echo "Reloading systemd unit definitions."
+    sudo systemctl daemon-reload
+fi
+
 if service_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
     sudo systemctl stop lqos_node_manager
@@ -135,8 +156,8 @@ fi
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
 echo "Template .service files can be found in bin/"
-echo "Debian package installs constrain Python dependencies with src/deb-requirements-constraints.txt to stay compatible with Ubuntu's distro Python packages."
-echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix bundle from download.libreqos.com."
+echo "If src/deb-requirements-constraints.txt exists, Debian package installs use it to constrain Python dependencies."
+echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix from the LibreQoS APT repo at https://repo.libreqos.com."
 echo "The hotfix installer now offers to schedule a reboot after it finishes."
 echo "LibreQoS package installs on affected Ubuntu 24.04 hosts stop until the hotfix is installed; finish with sudo dpkg --configure -a after the reboot."
 echo ""

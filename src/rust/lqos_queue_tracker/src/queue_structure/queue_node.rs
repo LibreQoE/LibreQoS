@@ -5,6 +5,7 @@ use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
 use tracing::{debug, error, warn};
 
+#[allow(missing_docs)]
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
     pub name: Option<String>,
@@ -247,7 +248,7 @@ impl QueueNode {
                                     }
                                     return Err(QueueStructureError::Children);
                                 };
-                                result.circuits.push(n);
+                                result.children.push(n);
                             }
                         } else {
                             warn!("Children was not an object");
@@ -262,6 +263,9 @@ impl QueueNode {
             }
         } else {
             warn!("Unable to parse node structure for [{key}]");
+        }
+        if result.name.is_none() && result.circuit_id.is_none() && result.device_id.is_none() {
+            result.name = Some(key.to_string());
         }
         Ok(result)
     }
@@ -290,13 +294,14 @@ impl QueueNode {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashSet;
 
     const EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN: &str =
         include_str!("./example_queue_with_children.test.json");
     const EXAMPLE_QUEUE_STRUCTURE_NO_CHILDREN: &str =
         include_str!("./example_queue_flat.test.json");
 
-    fn try_load_queue_structure(raw_string: &str) {
+    fn try_load_queue_structure(raw_string: &str) -> super::super::QueueNetwork {
         let mut result = super::super::QueueNetwork {
             cpu_node: Vec::new(),
         };
@@ -318,6 +323,8 @@ mod test {
         } else {
             panic!("Unable to parse queueStructure.json");
         }
+
+        result
     }
 
     #[test]
@@ -328,5 +335,63 @@ mod test {
     #[test]
     fn load_queue_structure_with_children() {
         try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
+    }
+
+    #[test]
+    fn object_key_nodes_preserve_names_when_name_field_is_absent() {
+        let network = try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
+
+        let flat = network.to_flat();
+        let names: HashSet<String> = flat.iter().filter_map(|node| node.name.clone()).collect();
+
+        assert!(names.contains("Site_1"));
+        assert!(names.contains("Site_3"));
+        assert!(names.contains("PoP_5"));
+        assert!(names.contains("PoP_6"));
+        assert!(names.contains("AP_11"));
+    }
+
+    #[test]
+    fn children_are_tracked_as_children_not_circuits() {
+        let network = try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
+
+        let site_1 = network
+            .cpu_node
+            .iter()
+            .find(|node| node.name.as_deref() == Some("Site_1"))
+            .expect("Site_1 root should exist");
+
+        assert_eq!(site_1.children.len(), 2);
+        assert!(site_1.circuits.is_empty());
+        assert!(
+            site_1
+                .children
+                .iter()
+                .any(|child| child.name.as_deref() == Some("AP_A"))
+        );
+        assert!(
+            site_1
+                .children
+                .iter()
+                .any(|child| child.name.as_deref() == Some("Site_3"))
+        );
+    }
+
+    #[test]
+    fn flattened_snapshot_supports_stormguard_style_name_lookup() {
+        let network = try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
+        let flat = network.to_flat();
+
+        let target = flat
+            .iter()
+            .find(|node| node.name.as_deref() == Some("PoP_6"))
+            .expect("PoP_6 should be resolvable by name");
+
+        assert_eq!(target.download_bandwidth_mbps, 60);
+        assert_eq!(target.upload_bandwidth_mbps, 60);
+        assert_eq!(
+            target.class_id,
+            TcHandle::from_string("0x1:0xb").expect("valid tc handle")
+        );
     }
 }

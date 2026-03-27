@@ -1,19 +1,22 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {
+    CAKE_CHART_WINDOW_SECONDS,
+    cakeChartTitle,
+    cakeCommonGrid,
+    cakeCommonXAxis,
+    cakeHistoryWindow,
+    cakeScatterSeries,
+    cakeTooltip,
+    formatCakeBytes,
+} from "./cake_history";
 
 export class CakeBacklog extends DashboardGraph {
     constructor(id) {
         super(id);
 
-        let xaxis = [];
-        for (let i=0; i<600; i++) {
-            xaxis.push(i);
-        }
-
         this.option = {
-            title: {
-                text: "Backlog",
-            },
+            title: cakeChartTitle("Backlog", "Bytes"),
+            grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
@@ -50,87 +53,24 @@ export class CakeBacklog extends DashboardGraph {
                     }
                 ]
             },
-            xAxis: {
-                type: 'category',
-                data: xaxis,
-            },
+            xAxis: cakeCommonXAxis(CAKE_CHART_WINDOW_SECONDS),
             yAxis: {
                 type: 'value',
                 axisLabel: {
-                    formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 0);
-                    },
+                    formatter: (val) => formatCakeBytes(val),
                 }
             },
             series: [
-                {
-                    name: 'Bulk',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[0] }
-                },
-                {
-                    name: 'Best Effort',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[1] }
-                },
-                {
-                    name: 'RT Video',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[2] }
-                },
-                {
-                    name: 'Voice',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[3] }
-                },
-                {
-                    name: 'Bulk Up',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[0] },
-                },
-                {
-                    name: 'Best Effort Up',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[1] }
-                },
-                {
-                    name: 'RT Video Up',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[2] }
-                },
-                {
-                    name: 'RT Voice Up',
-                    data: [],
-                    type: 'scatter',
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[3] }
-                },
+                cakeScatterSeries("Bulk", window.graphPalette[0]),
+                cakeScatterSeries("Best Effort", window.graphPalette[1]),
+                cakeScatterSeries("RT Video", window.graphPalette[2]),
+                cakeScatterSeries("Voice", window.graphPalette[3]),
+                cakeScatterSeries("Bulk Up", window.graphPalette[0]),
+                cakeScatterSeries("Best Effort Up", window.graphPalette[1]),
+                cakeScatterSeries("RT Video Up", window.graphPalette[2]),
+                cakeScatterSeries("RT Voice Up", window.graphPalette[3]),
             ],
-            tooltip: {
-                trigger: 'item',
-            },
+            tooltip: cakeTooltip(formatCakeBytes),
             animation: false,
         }
         this.option && this.chart.setOption(this.option);
@@ -160,19 +100,15 @@ export class CakeBacklog extends DashboardGraph {
         for (let i=0; i<8; i++) {
             this.option.series[i].data = [];
         }
-        //console.log(msg);
-        for (let i=msg.history_head; i<600; i++) {
+        for (const sample of cakeHistoryWindow(msg, CAKE_CHART_WINDOW_SECONDS)) {
             for (let j=0; j<4; j++) {
-                if (msg.history[i][0].tins[0] === undefined) continue;
-                this.option.series[j].data.push(msg.history[i][0].tins[j].backlog_bytes);
-                this.option.series[j+4].data.push(0 - msg.history[i][1].tins[j].backlog_bytes);
-            }
-        }
-        for (let i=0; i<msg.history_head; i++) {
-            for (let j=0; j<4; j++) {
-                if (msg.history[i][0].tins[0] === undefined) continue;
-                this.option.series[j].data.push(msg.history[i][0].tins[j].backlog_bytes);
-                this.option.series[j+4].data.push(0 - msg.history[i][1].tins[j].backlog_bytes);
+                if (!sample || sample[0].tins[0] === undefined) {
+                    this.option.series[j].data.push(null);
+                    this.option.series[j+4].data.push(null);
+                    continue;
+                }
+                this.option.series[j].data.push(sample[0].tins[j].backlog_bytes);
+                this.option.series[j+4].data.push(0 - sample[1].tins[j].backlog_bytes);
             }
         }
 

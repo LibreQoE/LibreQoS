@@ -3,7 +3,12 @@ import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "./helpers/col
 import {isDarkMode} from "./helpers/dark_mode";
 import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
 import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
-import {listenExecutiveHeatmaps, medianFromBlocks, sumBlocks} from "./executive_utils";
+import {
+    medianFromBlocks,
+    pollExecutiveHeatmapPage,
+    pollExecutiveLeaderboardPage,
+    sumBlocks,
+} from "./executive_utils";
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
@@ -11,7 +16,8 @@ const EVIDENCE_ITEMS_PER_PAGE = 10;
 const TOP_LABEL_COUNT = 4;
 const TOP_ROW_LIMIT = 20;
 const HEATMAP_BLOCK_SECONDS = 60;
-const LIVE_INTERVAL_TEXT = "Heatmaps auto-refresh about every second";
+const EXECUTIVE_PAGE_SIZE = 250;
+const LIVE_INTERVAL_TEXT = "Executive data auto-refreshes about every 5 seconds";
 const NEUTRAL_CHART_COLOR = "#94a3b8";
 const RTT_THRESHOLDS = (() => {
     const configured = window.rttThresholds || window.rtt_thresholds || window.config?.rtt_thresholds || {};
@@ -22,7 +28,10 @@ const RTT_THRESHOLDS = (() => {
 })();
 
 const state = {
-    executiveHeatmaps: null,
+    executiveTopAsns: null,
+    executiveDownloadHeatmap: null,
+    executiveRttHeatmap: null,
+    executiveRetransmitHeatmap: null,
     executiveRows: [],
     selectedAsn: null,
     asnList: [],
@@ -43,11 +52,12 @@ const state = {
     retransmitChartTheme: null,
     themeObserver: null,
     activeEvidenceRequestToken: 0,
+    executivePollHandles: [],
 };
 
 const SORT_OPTIONS = {
-    start: (a, b) => b.start - a.start,
-    duration: (a, b) => b.duration_nanos - a.duration_nanos,
+    start: (a, b) => toNumber(b?.start, 0) - toNumber(a?.start, 0),
+    duration: (a, b) => toNumber(b?.duration_nanos, 0) - toNumber(a?.duration_nanos, 0),
     bytes: (a, b) => totalFlowBytes(b) - totalFlowBytes(a),
 };
 
@@ -183,26 +193,60 @@ function arrayMedian(values) {
 }
 
 function buildExecutiveRows() {
-    const heatmaps = state.executiveHeatmaps?.asns || [];
+    const topAsns = (state.executiveTopAsns?.rows || [])
+        .filter((row) => row?.kind === "TopAsnByTraffic");
+    const downloadRows = (state.executiveDownloadHeatmap?.rows || []);
+    const rttRows = (state.executiveRttHeatmap?.rows || []);
+    const retransmitRows = (state.executiveRetransmitHeatmap?.rows || []);
+    const downloadByAsn = new Map(downloadRows
+        .map((row) => [toNumber(row.asn, null), row]));
+    const rttByAsn = new Map(rttRows
+        .map((row) => [toNumber(row.asn, null), row]));
+    const retransmitByAsn = new Map(retransmitRows
+        .map((row) => [toNumber(row.asn, null), row]));
     const countMap = new Map(
         (state.asnList || []).map((entry) => [entry.asn, toNumber(entry.count, 0)]),
     );
+    const allAsns = new Set();
+    downloadRows.forEach((row) => allAsns.add(toNumber(row?.asn, null)));
+    rttRows.forEach((row) => allAsns.add(toNumber(row?.asn, null)));
+    retransmitRows.forEach((row) => allAsns.add(toNumber(row?.asn, null)));
+    topAsns.forEach((row) => allAsns.add(toNumber(row?.asn, null)));
 
-    const baseRows = heatmaps.map((asn) => {
-        const downloadBlocks = asn?.blocks?.download || [];
-        const uploadBlocks = asn?.blocks?.upload || [];
-        const rttBlocks = asn?.blocks?.rtt || [];
-        const retransmitBlocks = asn?.blocks?.retransmit || [];
+    const baseRows = [...allAsns]
+        .filter((asnNumber) => Number.isFinite(asnNumber) && asnNumber > 0)
+        .map((asnNumber) => {
+        const topAsn = topAsns.find((row) => toNumber(row?.asn, 0) === asnNumber) || null;
+        const downloadRow = downloadByAsn.get(asnNumber);
+        const rttRow = rttByAsn.get(asnNumber);
+        const retransmitRow = retransmitByAsn.get(asnNumber);
+        const downloadBlocks = downloadRow?.split_blocks?.download || [];
+        const uploadBlocks = downloadRow?.split_blocks?.upload || [];
+        const rttBlocks = rttRow?.rtt_blocks?.rtt || [];
+        const retransmitBlocks = retransmitRow?.scalar_blocks?.values || [];
         const totalMbpsMinutes = sumBlocks(downloadBlocks) + sumBlocks(uploadBlocks);
-        const avgMbps = totalMbpsMinutes / Math.max(1, Math.max(downloadBlocks.length, uploadBlocks.length, 15));
-        const totalBytes = ((totalMbpsMinutes * 1_000_000) / 8) * HEATMAP_BLOCK_SECONDS;
+        const totalBytes = toNumber(topAsn?.total_bytes_15m, 0)
+            || ((totalMbpsMinutes * 1_000_000) / 8) * HEATMAP_BLOCK_SECONDS;
+        const avgMbps = totalMbpsMinutes > 0
+            ? totalMbpsMinutes / Math.max(1, Math.max(downloadBlocks.length, uploadBlocks.length, 15))
+            : (totalBytes * 8) / (HEATMAP_BLOCK_SECONDS * 15 * 1_000_000);
         const medianRtt = medianFromBlocks(rttBlocks);
         const medianRetrans = medianFromBlocks(retransmitBlocks);
-        const flowCount = countMap.get(asn.asn) || 0;
+        const flowCount = countMap.get(asnNumber) || 0;
+        const asnName = topAsn?.asn_name
+            || downloadRow?.label
+            || rttRow?.label
+            || retransmitRow?.label
+            || `ASN ${asnNumber}`;
         return {
-            asn: asn.asn,
-            asnName: asn.asn_name || `ASN ${asn.asn}`,
-            heatmap: asn,
+            asn: asnNumber,
+            asnName,
+            heatmap: {
+                download: downloadBlocks,
+                upload: uploadBlocks,
+                rtt: rttBlocks,
+                retransmit: retransmitBlocks,
+            },
             totalBytes,
             avgMbps,
             flowCount,
@@ -655,7 +699,7 @@ function requestLists() {
 
 function requestAsnList() {
     listenOnce("AsnList", (msg) => {
-        state.asnList = (msg?.data || []).slice().sort((a, b) => b.count - a.count);
+        state.asnList = (msg?.data || []).slice().sort((a, b) => toNumber(b?.count, 0) - toNumber(a?.count, 0));
         state.listCountsByAsn = new Map(state.asnList.map((row) => [row.asn, toNumber(row.count, 0)]));
         buildExecutiveRows();
         renderAll();
@@ -700,7 +744,7 @@ function renderDropdown({ targetId, buttonText, items, emptyText, itemRenderer }
 
 function requestCountryList() {
     listenOnce("CountryList", (msg) => {
-        state.countryList = (msg?.data || []).slice().sort((a, b) => b.count - a.count);
+        state.countryList = (msg?.data || []).slice().sort((a, b) => toNumber(b?.count, 0) - toNumber(a?.count, 0));
         renderDropdown({
             targetId: "asnAnalysisCountryControl",
             buttonText: "Country",
@@ -723,7 +767,7 @@ function requestCountryList() {
 
 function requestProtocolList() {
     listenOnce("ProtocolList", (msg) => {
-        state.protocolList = (msg?.data || []).slice().sort((a, b) => b.count - a.count);
+        state.protocolList = (msg?.data || []).slice().sort((a, b) => toNumber(b?.count, 0) - toNumber(a?.count, 0));
         renderDropdown({
             targetId: "asnAnalysisProtocolControl",
             buttonText: "Protocol",
@@ -1034,6 +1078,7 @@ function wireControls() {
 
     refreshButton?.addEventListener("click", () => {
         requestLists();
+        state.executivePollHandles.forEach((handle) => handle?.refresh?.());
         const top = sortedLeaderboardRows()[0];
         if (top) {
             setSelectedAsn(top.asn);
@@ -1083,14 +1128,46 @@ function observeThemeAndResize() {
 }
 
 function initExecutiveFeed() {
-    listenExecutiveHeatmaps((data) => {
-        state.executiveHeatmaps = data || {};
-        state.lastExecutiveUpdate = new Date();
+    const syncExecutiveState = (key, data) => {
+        state[key] = data || null;
+        state.lastExecutiveUpdate = new Date(toNumber(data?.generated_at_unix_ms, Date.now()));
         buildExecutiveRows();
         chooseDefaultSelection();
         renderAll();
         updateLiveClock();
-    });
+    };
+
+    state.executivePollHandles = [
+        pollExecutiveLeaderboardPage({
+            kind: "TopAsnsByTraffic",
+            page: 0,
+            page_size: EXECUTIVE_PAGE_SIZE,
+        }, (data) => syncExecutiveState("executiveTopAsns", data)),
+        pollExecutiveHeatmapPage({
+            metric: "Download",
+            entity_kinds: ["Asn"],
+            page: 0,
+            page_size: EXECUTIVE_PAGE_SIZE,
+            sort: "Label",
+            descending: false,
+        }, (data) => syncExecutiveState("executiveDownloadHeatmap", data)),
+        pollExecutiveHeatmapPage({
+            metric: "Rtt",
+            entity_kinds: ["Asn"],
+            page: 0,
+            page_size: EXECUTIVE_PAGE_SIZE,
+            sort: "Label",
+            descending: false,
+        }, (data) => syncExecutiveState("executiveRttHeatmap", data)),
+        pollExecutiveHeatmapPage({
+            metric: "Retransmit",
+            entity_kinds: ["Asn"],
+            page: 0,
+            page_size: EXECUTIVE_PAGE_SIZE,
+            sort: "Label",
+            descending: false,
+        }, (data) => syncExecutiveState("executiveRetransmitHeatmap", data)),
+    ];
 }
 
 function init() {

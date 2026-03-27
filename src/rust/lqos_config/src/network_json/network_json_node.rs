@@ -41,6 +41,9 @@ pub struct NetworkJsonNode {
     /// Current TCP Retransmits
     pub current_tcp_retransmits: DownUpOrder<u64>, // In retries
 
+    /// TCP packets paired to the retransmit counters for the current cycle.
+    pub current_tcp_retransmit_packets: DownUpOrder<u64>,
+
     /// Current Cake Marks
     pub current_marks: DownUpOrder<u64>,
 
@@ -107,6 +110,7 @@ impl NetworkJsonNode {
             name: self.name.clone(),
             id: self.id.clone(),
             is_virtual: self.virtual_node,
+            runtime_virtualized: false,
             max_throughput: self.max_throughput,
             configured_max_throughput: self.max_throughput,
             effective_max_throughput: None,
@@ -134,6 +138,10 @@ impl NetworkJsonNode {
                 self.current_tcp_retransmits.get_down(),
                 self.current_tcp_retransmits.get_up(),
             ),
+            current_tcp_retransmit_packets: (
+                self.current_tcp_retransmit_packets.get_down(),
+                self.current_tcp_retransmit_packets.get_up(),
+            ),
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
             rtts,
@@ -143,6 +151,9 @@ impl NetworkJsonNode {
             node_type: self.node_type.clone(),
             latitude: self.latitude,
             longitude: self.longitude,
+            subtree_site_count: 0,
+            subtree_circuit_count: 0,
+            subtree_device_count: 0,
         }
     }
 }

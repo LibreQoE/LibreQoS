@@ -6,6 +6,23 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Per-interface Bakery qdisc-budget report entry.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
+pub struct BakeryCapacityReportInterface {
+    /// Interface name, e.g. `ens19`.
+    pub name: String,
+    /// Planned qdisc count for the interface.
+    pub planned_qdiscs: usize,
+    /// Planned infrastructure qdiscs (`mq`, `htb`, etc.) for the interface.
+    pub infra_qdiscs: usize,
+    /// Planned `cake` leaf qdiscs for the interface.
+    pub cake_qdiscs: usize,
+    /// Planned `fq_codel` leaf qdiscs for the interface.
+    pub fq_codel_qdiscs: usize,
+    /// Estimated kernel memory cost for the interface's planned qdiscs.
+    pub estimated_memory_bytes: u64,
+}
+
 /// Source system for an urgent issue
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum UrgentSource {
@@ -181,6 +198,9 @@ pub enum BusRequest {
 
     /// Requests that the configuration be updated
     UpdateLqosdConfig(Box<lqos_config::Config>),
+
+    /// Invalidate cached Node Manager authentication state.
+    InvalidateAuthCache,
 
     /// Request that we start watching a circuit's queue
     WatchQueue(String),
@@ -359,6 +379,57 @@ pub enum BusRequest {
 
     /// Get current Bakery statistics
     GetBakeryStats,
+
+    /// Report the most recent Bakery qdisc-budget preflight result.
+    BakeryReportPreflight {
+        /// Whether the planned full reload fits within the current safe budget.
+        ok: bool,
+        /// Operator-facing summary of the preflight result.
+        message: String,
+        /// Safe operational budget used for the preflight.
+        safe_budget: usize,
+        /// Hard kernel limit for reference.
+        hard_limit: usize,
+        /// Estimated total kernel memory cost of the planned qdisc model.
+        estimated_total_memory_bytes: u64,
+        /// Current host memory available during preflight, if known.
+        memory_available_bytes: Option<u64>,
+        /// Memory floor that must remain available before the apply proceeds.
+        memory_guard_min_available_bytes: u64,
+        /// Whether the memory preflight passed.
+        memory_ok: bool,
+        /// Per-interface planned qdisc counts.
+        interfaces: Vec<BakeryCapacityReportInterface>,
+    },
+
+    /// Request a live Bakery runtime node virtualization or restore for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need a deterministic
+    /// runtime node operation without waiting for TreeGuard policy to fire.
+    TreeGuardSetNodeVirtual {
+        /// Exact node name from `network.json`.
+        node_name: String,
+        /// `true` to runtime-virtualize, `false` to restore.
+        virtualized: bool,
+    },
+
+    /// Request the latest Bakery runtime node-operation snapshot for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need to observe whether
+    /// a runtime node operation was deferred, is still applying, or failed after acceptance.
+    TreeGuardGetNodeVirtualStatus {
+        /// Exact node name from `network.json`.
+        node_name: String,
+    },
+
+    /// Request the latest Bakery runtime branch-state snapshot for a named node.
+    ///
+    /// This is intended for local daemon-side orchestration and tests that need to verify which
+    /// retained branch is active after a runtime virtualization or restore.
+    TreeGuardGetNodeVirtualBranchState {
+        /// Exact node name from `network.json`.
+        node_name: String,
+    },
 
     /// Announce that the API is ready
     ApiReady,

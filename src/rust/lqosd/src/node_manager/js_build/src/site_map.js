@@ -19,6 +19,9 @@ const MARINE_AREAS_GEOJSON_PATH = "vendor/site_map_marine_areas.geojson";
 const MAJOR_ROADS_10M_GEOJSON_PATH = "vendor/site_map_major_roads_10m.geojson";
 const INITIAL_CENTER = [-101.5, 39.8];
 const INITIAL_ZOOM = 3.15;
+const INITIAL_FIT_PADDING = 48;
+const INITIAL_FIT_MAX_ZOOM = 11.5;
+const SINGLE_POINT_INITIAL_ZOOM = 11.5;
 const SITE_SOURCE_ID = "site-map-sites";
 const AP_SOURCE_ID = "site-map-aps";
 const COUNTRIES_SOURCE_ID = "site-map-countries";
@@ -888,18 +891,18 @@ class SiteMapPage {
     requestInitialTree() {
         this.setStatus("Waiting for data", "spinner");
         if (!this.subscription) {
-            this.subscription = subscribeWS(["NetworkTree"], (liveMsg) => {
-                if (liveMsg.event === "NetworkTree") {
+            this.subscription = subscribeWS(["NetworkTreeLite"], (liveMsg) => {
+                if (liveMsg.event === "NetworkTreeLite") {
                     this.processTreeMessage(liveMsg);
                 }
             });
         }
-        listenOnceWithTimeout("NetworkTree", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
+        listenOnceWithTimeout("NetworkTreeLite", INITIAL_REQUEST_TIMEOUT_MS, (msg) => {
             this.processTreeMessage(msg);
         }, () => {
             this.setStatus("No data received yet", "warning");
         });
-        wsClient.send({ NetworkTree: {} });
+        wsClient.send({ NetworkTreeLite: {} });
     }
 
     processTreeMessage(msg) {
@@ -1151,11 +1154,32 @@ class SiteMapPage {
         if (!features.length) {
             return;
         }
+        this.map.resize();
+
+        if (features.length === 1) {
+            this.map.easeTo({
+                center: features[0].geometry.coordinates,
+                zoom: SINGLE_POINT_INITIAL_ZOOM,
+                duration: 0,
+            });
+            this.hasFitOnce = true;
+            return;
+        }
+
         const bounds = new window.maplibregl.LngLatBounds();
         features.forEach((feature) => bounds.extend(feature.geometry.coordinates));
+        const canvas = this.map.getCanvas();
+        const minDimension = Math.max(
+            320,
+            Math.min(canvas?.clientWidth || 0, canvas?.clientHeight || 0),
+        );
+        const adaptivePadding = Math.max(
+            INITIAL_FIT_PADDING,
+            Math.round(minDimension * 0.08),
+        );
         this.map.fitBounds(bounds, {
-            padding: 70,
-            maxZoom: 7.5,
+            padding: adaptivePadding,
+            maxZoom: INITIAL_FIT_MAX_ZOOM,
             duration: 0,
         });
         this.hasFitOnce = true;

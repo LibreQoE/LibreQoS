@@ -1,7 +1,7 @@
 import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
-import {formatRetransmit, formatRtt} from "../helpers/scaling";
+import {formatRetransmit, formatRtt, retransmitFractionFromSample} from "../helpers/scaling";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {get_ws_client} from "../pubsub/ws";
@@ -55,7 +55,11 @@ export class Worst10Retransmits extends DashletBaseInsight {
 
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r, r.tcp_retransmits[0]);
+                this.timeCache.addOrUpdate(
+                    key,
+                    r,
+                    retransmitFractionFromSample(r.tcp_retransmit_sample?.down)
+                );
             });
             this.timeCache.tick();
 
@@ -81,7 +85,7 @@ export class Worst10Retransmits extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("lqos-table", "lqos-table-compact", "small");
+            table.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
             let thead = document.createElement("thead");
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Bytes Downloaded"));

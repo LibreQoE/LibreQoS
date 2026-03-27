@@ -221,8 +221,19 @@
         </div>
     </div>
     <div class="tab-pane fade" id="funnel" role="tabpanel" aria-labelledby="funnel-tab">
-        <div class="row">
-            <div class="col-12" id="theFunnel">
+        <div class="lqos-funnel-panel">
+            <div class="lqos-funnel-header">
+                <div class="lqos-funnel-header-copy">
+                    <h5><i class="fa fa-tree"></i> Queue Tree</h5>
+                    <p class="text-muted small mb-0">Ancestor queue path from this circuit toward root, with live queue telemetry for each upstream node.</p>
+                </div>
+                <div class="lqos-funnel-meta">
+                    <span class="lqos-funnel-meta-pill">Ancestor path</span>
+                    <span class="lqos-funnel-meta-pill">Live updates</span>
+                    <span class="lqos-funnel-meta-pill">Throughput / Retransmits / Latency</span>
+                </div>
+            </div>
+            <div id="theFunnel">
                 <div class="lqos-loading-block lqos-loading-block-lg">
                     <i class="fa fa-spinner fa-spin"></i>
                     <span>Loading queue tree…</span>
@@ -231,28 +242,65 @@
         </div>
     </div>
     <div class="tab-pane fade" id="cake" role="tabpanel" aria-labelledby="cake-tab">
-        <div class="row">
-            <div class="col-4">
-                <div id="cakeBacklog" style="height: 250px"></div>
+        <div class="lqos-cake-panel">
+            <div class="lqos-cake-header">
+                <div class="lqos-cake-header-copy">
+                    <h5><i class="fa fa-birthday-cake"></i> Queue Stats</h5>
+                    <p class="text-muted small mb-0">Raw 1s scatter samples over the last 3 minutes. Hover any queue chart to inspect the same timestamp across all six charts.</p>
+                </div>
+                <div class="lqos-cake-meta">
+                    <span class="lqos-cake-meta-pill">Last 3 minutes</span>
+                    <span class="lqos-cake-meta-pill">1s samples</span>
+                    <span class="lqos-cake-meta-pill">Synchronized hover</span>
+                </div>
             </div>
-            <div class="col-4">
-                <div id="cakeDelays" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeQueueLength" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeTraffic" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeMarks" style="height: 250px"></div>
-            </div>
-            <div class="col-4">
-                <div id="cakeDrops" style="height: 250px"></div>
-            </div>
-            <div class="col-3">
-                Queue Memory: <span id="cakeQueueMemory">?</span>
-                <div class="text-muted small mt-1">Queue Type: <span id="cakeQueueType">?</span></div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeTraffic" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeDelays" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel is-primary">
+                        <div id="cakeBacklog" style="height: 280px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeQueueLength" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeMarks" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-cake-chart-panel">
+                        <div id="cakeDrops" style="height: 240px"></div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="lqos-cake-info-card">
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Queue Memory</div>
+                            <div class="lqos-cake-info-value"><span id="cakeQueueMemory">?</span></div>
+                        </div>
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Live Queue Type</div>
+                            <div class="lqos-cake-info-value"><span id="cakeQueueType">?</span></div>
+                        </div>
+                        <div class="lqos-cake-info-item">
+                            <div class="lqos-cake-info-label">Interpretation</div>
+                            <div class="lqos-cake-info-value text-muted small">Download plots above zero, upload plots below zero. Tooltips always show absolute values with direction labels.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
