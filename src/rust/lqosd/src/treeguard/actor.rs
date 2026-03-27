@@ -335,6 +335,35 @@ fn structural_failure_reason_label(
     }
 }
 
+fn top_level_structural_ineligibility(
+    state: &LinkState,
+    target: LinkVirtualState,
+    is_top_level: bool,
+) -> Option<(BakeryRuntimeNodeOperationFailureReason, String)> {
+    if target != LinkVirtualState::Virtual || !is_top_level {
+        return None;
+    }
+
+    let direct_promotable_children =
+        state.topology_fingerprint.direct_child_sites + state.topology_fingerprint.direct_circuits;
+
+    if direct_promotable_children == 0 {
+        return Some((
+            BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren,
+            "has no direct child sites or direct circuits to promote safely".to_string(),
+        ));
+    }
+
+    if direct_promotable_children == 1 {
+        return Some((
+            BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild,
+            "has only one promotable direct child, so top-level runtime virtualization would not produce a deterministic v1 split point".to_string(),
+        ));
+    }
+
+    None
+}
+
 fn clear_structural_ineligible_if_topology_changed(
     state: &mut LinkState,
     new_topology_fingerprint: LinkTopologyFingerprint,
@@ -1511,6 +1540,7 @@ fn run_tick(
                 now_unix,
                 &decision.node_name,
                 decision.target,
+                decision.is_top_level,
                 decision.reason,
                 tg.dry_run,
                 state,
@@ -2278,6 +2308,7 @@ fn apply_link_virtualization_decision(
     now_unix: u64,
     node_name: &str,
     target: LinkVirtualState,
+    is_top_level: bool,
     reason: String,
     dry_run: bool,
     state: &mut LinkState,
@@ -2317,6 +2348,37 @@ fn apply_link_virtualization_decision(
                     "restore"
                 }
             ));
+            return;
+        }
+
+        if let Some((failure_reason, details)) =
+            top_level_structural_ineligibility(state, target, is_top_level)
+        {
+            let reason_label = structural_failure_reason_label(failure_reason);
+            link_virtualization_backoff_until_unix.remove(node_name);
+            state.structural_ineligible = Some(LinkStructuralIneligibleState {
+                reason: failure_reason,
+                topology_fingerprint: state.topology_fingerprint,
+            });
+            status.warnings.push(format!(
+                "TreeGuard links: node '{node_name}' is structurally ineligible for runtime virtualization ({reason_label}): {details}. TreeGuard rejected the change before submitting it to Bakery."
+            ));
+            status.last_action_summary =
+                Some(format!("Rejected virtualization for node '{node_name}'"));
+            push_activity(
+                activity,
+                TreeguardActivityEntry {
+                    time: now_unix.to_string(),
+                    entity_type: "node".to_string(),
+                    entity_id: node_name.to_string(),
+                    action: "virtualize_rejected".to_string(),
+                    persisted: false,
+                    reason: format!(
+                        "{}. TreeGuard rejected runtime virtualization before submitting to Bakery: node {details}",
+                        reason
+                    ),
+                },
+            );
             return;
         }
 
@@ -4035,6 +4097,7 @@ mod tests {
             1_000,
             "Node Requested",
             LinkVirtualState::Virtual,
+            false,
             "High utilization".to_string(),
             false,
             &mut state,
@@ -4072,5 +4135,71 @@ mod tests {
         };
         assert_eq!(site_hash, lqos_utils::hash_to_i64("Node Requested"));
         assert!(virtualized);
+    }
+
+    #[test]
+    fn apply_link_virtualization_decision_rejects_structurally_ineligible_top_level_node() {
+        let rx = install_test_bakery_sender();
+        while rx.try_recv().is_ok() {}
+
+        let mut status = empty_status_snapshot();
+        let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+        let mut pending_link_operations = FxHashMap::default();
+        let mut link_virtualization_backoff_until_unix = FxHashMap::default();
+        let mut state = LinkState {
+            topology_fingerprint: LinkTopologyFingerprint {
+                direct_child_sites: 1,
+                direct_circuits: 0,
+            },
+            ..Default::default()
+        };
+
+        apply_link_virtualization_decision(
+            &mut status,
+            &mut activity,
+            1_000,
+            "Node Rejected",
+            LinkVirtualState::Virtual,
+            true,
+            "Top-level safe".to_string(),
+            false,
+            &mut state,
+            &mut pending_link_operations,
+            &mut link_virtualization_backoff_until_unix,
+        );
+
+        assert_eq!(state.desired, LinkVirtualState::Physical);
+        assert!(pending_link_operations.is_empty());
+        assert!(link_virtualization_backoff_until_unix.is_empty());
+        assert_eq!(
+            state.structural_ineligible,
+            Some(LinkStructuralIneligibleState {
+                reason:
+                    BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild,
+                topology_fingerprint: LinkTopologyFingerprint {
+                    direct_child_sites: 1,
+                    direct_circuits: 0,
+                },
+            })
+        );
+        assert_eq!(
+            status.last_action_summary.as_deref(),
+            Some("Rejected virtualization for node 'Node Rejected'")
+        );
+        assert!(status.warnings.iter().any(|warning| {
+            warning.contains("Node Rejected")
+                && warning.contains("structurally ineligible")
+                && warning.contains("single promotable child")
+        }));
+
+        let last_activity = activity
+            .back()
+            .expect("rejected activity should be recorded");
+        assert_eq!(last_activity.action, "virtualize_rejected");
+        assert!(!last_activity.persisted);
+        assert!(last_activity.reason.contains("Top-level safe"));
+        assert!(last_activity.reason.contains("before submitting to Bakery"));
+
+        assert!(rx.try_recv().is_err());
     }
 }
