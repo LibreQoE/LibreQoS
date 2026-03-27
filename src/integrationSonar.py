@@ -2,6 +2,7 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import subprocess
+from urllib.parse import urlsplit, urlunsplit
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
@@ -25,16 +26,100 @@ from multiprocessing.pool import ThreadPool
 # If snmp fails to get the name of the AP then it's just called "Not found via snmp" We won't see that happen unless it is able to get the connected cpe and not the name.
 
 
+def sonarGraphqlUrl():
+  raw_url = sonar_api_url().strip()
+  if not raw_url:
+    return raw_url
+
+  parsed = urlsplit(raw_url)
+  path = parsed.path.rstrip('/')
+
+  if path.endswith('/api/graphql'):
+    normalized_path = path
+  elif path in ('', '/'):
+    normalized_path = '/api/graphql'
+  else:
+    normalized_path = path + '/api/graphql'
+
+  return urlunsplit((parsed.scheme, parsed.netloc, normalized_path, parsed.query, parsed.fragment))
+
+
+def sonarAccountNodeId(account_id):
+  return f"sonar:account:{account_id}"
+
+
+def sonarDeviceNodeId(device_id):
+  return f"sonar:device:{device_id}"
+
+
 def sonarRequest(query,variables={}):
 
-  r = requests.post(sonar_api_url(), json={'query': query, 'variables': variables}, headers={'Authorization': 'Bearer ' + sonar_api_key()}, timeout=10)
-  r_json = r.json()
+  graphql_url = sonarGraphqlUrl()
+  r = requests.post(graphql_url, json={'query': query, 'variables': variables}, headers={'Authorization': 'Bearer ' + sonar_api_key()}, timeout=10)
+  try:
+    r_json = r.json()
+  except requests.exceptions.JSONDecodeError as e:
+    body_preview = r.text[:300].strip()
+    raise RuntimeError(
+      f"Sonar API at {graphql_url} returned non-JSON content "
+      f"(status={r.status_code}, content-type={r.headers.get('content-type')}, body-preview={body_preview!r})"
+    ) from e
 
   # Sonar responses look like this: {"data": {"accounts": {"entities": [{"id": '1'},{"id": 2}]}}}
   # I just want to return the list so I need to find what field we're querying. 
+  if 'errors' in r_json:
+    raise RuntimeError(f"Sonar GraphQL error from {graphql_url}: {r_json['errors']}")
+  if 'data' not in r_json:
+    raise RuntimeError(f"Sonar API response from {graphql_url} missing 'data': {r_json}")
   field = list(r_json['data'].keys())[0]
   sonar_list = r_json['data'][field]['entities']
   return sonar_list
+
+
+def sonarPaginatedRequest(query, variables=None, paginator_key='pages', records_per_page=100):
+  if variables is None:
+    variables = {}
+
+  page = 1
+  entities = []
+
+  while True:
+    request_variables = dict(variables)
+    request_variables[paginator_key] = {
+      'records_per_page': records_per_page,
+      'page': page
+    }
+    graphql_url = sonarGraphqlUrl()
+    r = requests.post(
+      graphql_url,
+      json={'query': query, 'variables': request_variables},
+      headers={'Authorization': 'Bearer ' + sonar_api_key()},
+      timeout=20
+    )
+    try:
+      r_json = r.json()
+    except requests.exceptions.JSONDecodeError as e:
+      body_preview = r.text[:300].strip()
+      raise RuntimeError(
+        f"Sonar API at {graphql_url} returned non-JSON content "
+        f"(status={r.status_code}, content-type={r.headers.get('content-type')}, body-preview={body_preview!r})"
+      ) from e
+
+    if 'errors' in r_json:
+      raise RuntimeError(f"Sonar GraphQL error from {graphql_url}: {r_json['errors']}")
+    if 'data' not in r_json:
+      raise RuntimeError(f"Sonar API response from {graphql_url} missing 'data': {r_json}")
+
+    field = list(r_json['data'].keys())[0]
+    connection = r_json['data'][field]
+    entities.extend(connection['entities'])
+    page_info = connection.get('page_info') or {}
+    total_pages = page_info.get('total_pages', page)
+    if page >= total_pages:
+      break
+    page += 1
+
+  return entities
 
 def getActiveStatuses():
   if not sonar_active_status_ids():
@@ -58,15 +143,49 @@ def getActiveStatuses():
 # Sometimes the IP will be under the field data for an item and sometimes it will be assigned to the inventory item itself.
 def findIPs(inventory_item):
   ips = []
-  for ip in inventory_item['inventory_model_field_data']['entities'][0]['ip_assignments']['entities']:
-    ips.append(ip['subnet'])
-  for ip in inventory_item['ip_assignments']['entities']:
+  for field_data in inventory_item.get('inventory_model_field_data', {}).get('entities', []):
+    for ip in field_data.get('ip_assignments', {}).get('entities', []):
+      ips.append(ip['subnet'])
+  for ip in inventory_item.get('ip_assignments', {}).get('entities', []):
     ips.append(ip['subnet'])
   return ips
+
+
+def findPrimaryMac(inventory_item):
+  field_data_entities = inventory_item.get('inventory_model_field_data', {}).get('entities', [])
+
+  def mac_candidates(primary_only):
+    for field_data in field_data_entities:
+      field = field_data.get('inventory_model_field') or {}
+      value = (field_data.get('value') or '').strip()
+      field_name = (field.get('name') or '').strip().lower()
+      if not value:
+        continue
+      if 'mac' not in field_name:
+        continue
+      if primary_only and not field.get('primary', False):
+        continue
+      yield value
+
+  for value in mac_candidates(primary_only=True):
+    return value
+  for value in mac_candidates(primary_only=False):
+    return value
+  for field_data in field_data_entities:
+    value = (field_data.get('value') or '').strip()
+    if value:
+      return value
+  return ""
 
 def getSitesAndAps():
   query = """query getSitesAndAps($pages: Paginator, $rr_ap_models: ReverseRelationFilter, $ap_models: Search){
                 network_sites (paginator: $pages,reverse_relation_filters: [$rr_ap_models]) {
+                  page_info {
+                    page
+                    records_per_page
+                    total_pages
+                    total_count
+                  }
                   entities {
                     name
                     id
@@ -102,12 +221,7 @@ def getSitesAndAps():
                       "search_value": ap_id
                     })
 
-  variables = {"pages": 
-                {
-                  "records_per_page": 5,
-                  "page": 1
-                },
-                "rr_ap_models": {
+  variables = {"rr_ap_models": {
                   "relation": "inventory_items",
                   "search": [{
                     "integer_fields": search_aps
@@ -118,7 +232,7 @@ def getSitesAndAps():
                 }
               }
 
-  sites_and_aps = sonarRequest(query,variables)
+  sites_and_aps = sonarPaginatedRequest(query,variables)
   # This should only return sites that have equipment on them that is in the list sonar_ubiquiti_ap_model_ids in lqos.conf
   sites = []
   aps = []
@@ -135,8 +249,14 @@ def getSitesAndAps():
   return sites, aps
 
 def getAccounts(sonar_active_status_ids):
-  query = """query getAccounts ($pages: Paginator, $account_search: Search, $data: ReverseRelationFilter,$primary: ReverseRelationFilter) {
+  query = """query getAccounts ($pages: Paginator, $account_search: Search, $data: ReverseRelationFilter) {
                 accounts (paginator: $pages,search: [$account_search]) {
+                  page_info {
+                    page
+                    records_per_page
+                    total_pages
+                    total_count
+                  }
                   entities {
                     account_status_id
                     id
@@ -163,13 +283,18 @@ def getAccounts(sonar_active_status_ids):
                             inventory_model {
                             name
                             }
-                            inventory_model_field_data (reverse_relation_filters: [$primary]) {
+                            inventory_model_field_data {
                               entities {
                                 value
                                 ip_assignments {
                                   entities {
                                     subnet
                                   }
+                                }
+                                inventory_model_field {
+                                  id
+                                  name
+                                  primary
                                 }
                               }
                             }
@@ -187,19 +312,14 @@ def getAccounts(sonar_active_status_ids):
               }"""
   
   active_status_ids = []
-  for status_id in sonar_active_status_ids():
+  for status_id in sonar_active_status_ids:
      active_status_ids.append({
                       "attribute": "account_status_id",
                       "operator": "EQ",
                       "search_value": status_id
                     })
   
-  variables = {"pages": 
-                {
-                  "records_per_page": 5,
-                  "page": 1
-                },
-                "account_search": {
+  variables = {"account_search": {
                   "integer_fields": active_status_ids
                 },
                 "data": {
@@ -211,19 +331,10 @@ def getAccounts(sonar_active_status_ids):
                       "search_value": "DATA"
                     }]
                   }]
-                },
-                "primary": {
-                  "relation": "inventory_model_field",
-                  "search": [{
-                    "boolean_fields": [{
-                      "attribute": "primary",
-                      "search_value": True
-                      }]
-                    }]
-                  }
+                }
               }
   
-  accounts_from_sonar = sonarRequest(query,variables)
+  accounts_from_sonar = sonarPaginatedRequest(query,variables)
   accounts = []
   for account in accounts_from_sonar:
     # We need to make sure the account has an address because Sonar assignments go account -> address (only 1 per account) -> equipment -> ip assignments unless the IP is assigned to the account directly.
@@ -235,7 +346,13 @@ def getAccounts(sonar_active_status_ids):
       address = f"{line1},{f' {line2},' if line2 else ''} {city}, {state}"
       devices = []
       for item in account['addresses']['entities'][0]['inventory_items']['entities']:
-        devices.append({'id': item['id'], 'name': item['inventory_model']['name'], 'ips': findIPs(item), 'mac': item['inventory_model_field_data']['entities'][0]['value']})
+        devices.append({
+          'id': sonarDeviceNodeId(item['id']),
+          'raw_id': item['id'],
+          'name': item['inventory_model']['name'],
+          'ips': findIPs(item),
+          'mac': findPrimaryMac(item)
+        })
       if account['account_services']['entities'] and devices: # Make sure there is a data plan and devices on the account.
         download = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000)
         upload = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000)
@@ -243,7 +360,15 @@ def getAccounts(sonar_active_status_ids):
            download = 2
         if upload < 2:
            upload = 2
-        accounts.append({'id': account['id'],'name': account['name'], 'address': address, 'download': download, 'upload': upload ,'devices': devices})
+        accounts.append({
+          'id': sonarAccountNodeId(account['id']),
+          'raw_id': account['id'],
+          'name': account['name'],
+          'address': address,
+          'download': download,
+          'upload': upload,
+          'devices': devices
+        })
   return accounts
 
 def mapApCpeMacs(ap):
