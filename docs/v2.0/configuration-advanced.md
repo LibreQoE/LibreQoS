@@ -125,13 +125,16 @@ How overrides apply:
 - `lqos_scheduler` applies overrides during refresh cycles.
 - persistent devices are merged into `ShapedDevices.csv`.
 - circuit/device/network adjustments are applied on top of imported/manual data.
+- operator-owned site bandwidth overrides prefer `node_id` when present and fall back to legacy name-only matching.
+- tree-page `Operator Override` writes to the operator override layer in `lqos_overrides.json`, not to legacy integration bandwidth CSV files.
+- automated runtime layers such as StormGuard and TreeGuard remain separate from the operator layer and are not written back into operator-authored source files.
 
 ### Network Hierarchy
 #### Network.json
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
-Each topology node may optionally include an `"id"` field. This is intended to carry a stable node identifier from the source CRM/NMS when one exists. LibreQoS currently still matches hierarchy and overrides by node name, not by this ID, so `"id"` is metadata for now.
+Each topology node may optionally include an `"id"` field. This is intended to carry a stable node identifier from the source CRM/NMS when one exists. Current builds prefer this ID when matching operator-owned site bandwidth overrides, while still supporting legacy name-only matching as a fallback.
 
 Recommended format:
 
@@ -150,6 +153,15 @@ Notes:
 - Use namespaced string IDs such as `uisp:site:<id>`, `splynx:network_site:<id>`, or `sonar:ap:<id>`.
 - Generated LibreQoS-only nodes may use stable generated IDs such as `libreqos:generated:uisp:site:orphans`.
 - Existing integration-specific metadata fields such as `uisp_site` and `uisp_device` may also appear alongside the generic `id` field.
+
+#### Queue mode (`shape` / `observe`)
+
+LibreQoS currently uses `queue_mode` in the `[queues]` section to control whether the shaping tree is active:
+
+- `queue_mode = "shape"`: normal shaping mode
+- `queue_mode = "observe"`: remove the subscriber shaping tree for a true baseline while keeping the root MQ in place
+
+The older `monitor_only` setting is retained as a compatibility alias in some configs and serialized output, but `queue_mode` is the current operator-facing setting and documentation term.
 
 If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.
 If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).

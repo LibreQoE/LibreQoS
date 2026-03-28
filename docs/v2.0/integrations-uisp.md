@@ -183,12 +183,16 @@ You can also modify the following files to more accurately reflect your network:
 - integrationUISPbandwidths.csv
 - integrationUISProutes.csv
 
+Tree-page `Operator Override` edits are separate from these legacy UISP files. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationUISPbandwidths.csv`.
+
 Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
 For example, if you want to change the set bandwidth for a site, you would do:
 ```
 sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
+
+To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy UISP CSV workflow or the operator override layer.
 
 #### UISP Route Overrides
 

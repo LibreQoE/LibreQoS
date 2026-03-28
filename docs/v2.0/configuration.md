@@ -16,6 +16,8 @@ Notes:
 
 After install, sign in to WebUI at `http://your_shaper_ip:9123`.
 
+If no WebUI users exist yet, current builds redirect to first-run setup automatically.
+
 For most operators:
 1. Choose your operating mode: [Operating Modes and Source of Truth](operating-modes.md)
 2. Configure integration settings in WebUI: [CRM/NMS Integrations](integrations.md)
@@ -37,6 +39,10 @@ When an integration is enabled and acting as the source of truth, the `Network L
 
 Topology note:
 - `network.json` node names must be globally unique across the whole tree. Duplicate node names now fail validation and are not accepted by the WebUI save path or `LibreQoS.py`.
+- When a node exposes a stable `id`, current builds prefer that ID for operator-owned site bandwidth overrides while keeping legacy name-only matching as a fallback.
+
+Queue-mode note:
+- Current builds use `queue_mode` with `shape` and `observe` values. Older `monitor_only` wording is a compatibility alias rather than the primary operator-facing setting.
 
 ## Operating Modes and Source of Truth
 

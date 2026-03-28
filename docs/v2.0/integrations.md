@@ -53,7 +53,12 @@ When integrations are enabled:
 
 ## Topology Node ID Support
 
-LibreQoS supports an optional generic `"id"` field on `network.json` nodes. This field is intended to carry stable node identifiers from the integration source where possible. In the current release, the field is informational and is not yet the authoritative match key for shaping or overrides.
+LibreQoS supports an optional generic `"id"` field on `network.json` nodes. This field is intended to carry stable node identifiers from the integration source where possible.
+
+Current behavior:
+- node IDs are the preferred match key for operator-owned site bandwidth overrides and tree-page node override editing when an ID is present
+- legacy name-only matching is still supported as a fallback for older data
+- topology names still need to remain globally unique in `network.json`
 
 | Integration | `network.json` node ID support | Notes |
 |---|---|---|

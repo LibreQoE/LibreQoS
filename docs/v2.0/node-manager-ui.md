@@ -27,6 +27,8 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Node Snapshot` provides a quick visual summary of current throughput and QoO for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
 - Administrators can save or clear `Operator Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
+- Tree-page operator rate edits write operator-owned overrides to `lqos_overrides.json`; they do not rewrite legacy integration bandwidth CSV files.
+- Tree-page operator rate edits require an administrator session, a stable node ID, and a non-generated node. Generated/integration-synthetic nodes remain read-only in this editor.
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
@@ -34,8 +36,9 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Uses a 30-second client-side average from `NetworkTree` data rather than adding backend rollup work.
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
 - Initial map framing now prefers site coordinates for a closer first view, falling back to AP coordinates when no sites are mapped yet.
-- Uses a local LibreQoS-themed basemap with country/state borders, coastlines, major lakes, major rivers, marine areas, subtle physical-region overlays, and higher-zoom major-highway context for geographic orientation.
-- Site Map uses a local Natural Earth-derived roads layer for orientation while keeping the rest of the basemap quiet and operational.
+- Current builds use an Insight-hosted OpenStreetMap raster tile cache rather than a fully local basemap bundle.
+- Site Map depends on outbound access to `https://insight.libreqos.com` for initial bbox/bootstrap and raster tile fetches.
+- When tiles are missing from the remote cache, the browser retries automatically for a short period instead of failing immediately, so initial map paint can lag briefly on cold tiles.
 
 ### Flow Globe
 - Geographic flow visualization based on endpoint geolocation.
@@ -108,6 +111,8 @@ When this happens:
 ```bash
 journalctl -u lqosd --since "10 minutes ago"
 ```
+
+If only Site Map is blank or slow while other pages are healthy, also check management-network reachability to `insight.libreqos.com` and allow a short delay for cold tile-cache retries.
 
 ## Useful Related Pages
 

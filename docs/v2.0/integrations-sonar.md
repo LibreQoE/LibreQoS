@@ -2,6 +2,12 @@
 
 First, set the relevant parameters for Sonar (sonar_api_key, sonar_api_url, etc.) in `/etc/lqos.conf`.
 
+Current behavior notes:
+- `sonar_api_url` may be either the Sonar base URL or the full GraphQL endpoint. LibreQoS normalizes it to `/api/graphql` automatically.
+- Current builds page through Sonar GraphQL results instead of relying on a small first-page sample.
+- Emitted Sonar identities are namespaced (for example `sonar:account:<id>` and `sonar:device:<id>`) so they remain stable across overrides and downstream tooling.
+- If Sonar returns non-JSON content or GraphQL errors, the integration now raises a more specific error message showing the endpoint and a short response preview.
+
 To test the Sonar Integration, use
 
 ```shell
