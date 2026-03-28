@@ -187,6 +187,8 @@ mod tests {
     ) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
             circuit_hash,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(parent_class_id),
             up_parent_class_id: TcHandle::from_u32(up_parent_class_id),
             class_minor,
@@ -261,6 +263,8 @@ mod tests {
         };
         let new = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: *circuit_hash,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: *parent_class_id,
             up_parent_class_id: *up_parent_class_id,
             class_minor: *class_minor,

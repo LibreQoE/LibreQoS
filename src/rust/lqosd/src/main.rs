@@ -674,6 +674,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::BakeryAddCircuit {
                 circuit_hash,
+                circuit_name,
+                site_name,
                 parent_class_id,
                 up_parent_class_id,
                 class_minor,
@@ -700,6 +702,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
                         circuit_hash: *circuit_hash,
+                        circuit_name: circuit_name.clone(),
+                        site_name: site_name.clone(),
                         parent_class_id: *parent_class_id,
                         up_parent_class_id: *up_parent_class_id,
                         class_minor: *class_minor,

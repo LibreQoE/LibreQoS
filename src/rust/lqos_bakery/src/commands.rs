@@ -197,6 +197,10 @@ pub enum BakeryCommands {
     AddCircuit {
         /// Unique identifier for the circuit.
         circuit_hash: i64,
+        /// Human-readable circuit name when known at queue-build time.
+        circuit_name: Option<String>,
+        /// Human-readable parent site/node name when known at queue-build time.
+        site_name: Option<String>,
         /// Parent class handle on the ISP-facing interface (downlink side).
         parent_class_id: TcHandle,
         /// Parent class handle on the Internet-facing interface (uplink side).
@@ -297,6 +301,8 @@ impl BakeryCommands {
             ),
             BakeryCommands::AddCircuit {
                 circuit_hash,
+                circuit_name: _,
+                site_name: _,
                 parent_class_id,
                 up_parent_class_id,
                 class_minor,
@@ -1261,6 +1267,8 @@ mod tests {
         let config = Arc::new(Config::default());
         let builder_commands = BakeryCommands::AddCircuit {
             circuit_hash: 42,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: crate::TcHandle::from_u32(0x10020),
             up_parent_class_id: crate::TcHandle::from_u32(0x20020),
             class_minor: 0x21,
@@ -1284,6 +1292,8 @@ mod tests {
         let live_config = Arc::new(live_cfg);
         let live_commands = BakeryCommands::AddCircuit {
             circuit_hash: 42,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: crate::TcHandle::from_u32(0x10020),
             up_parent_class_id: crate::TcHandle::from_u32(0x20020),
             class_minor: 0x21,

@@ -615,6 +615,29 @@ fn is_cpu_root_node(
     let Some(effective_cpu) = placement.effective_cpu else {
         return false;
     };
+    if nodes[idx].1.runtime_virtualized {
+        return false;
+    }
+
+    let mut current = nodes[idx].1.immediate_parent;
+    let mut saw_runtime_virtualized_ancestor = false;
+    while let Some(parent_idx) = current {
+        if parent_idx == 0 || parent_idx >= nodes.len() {
+            break;
+        }
+        let parent = &nodes[parent_idx].1;
+        if parent.runtime_virtualized {
+            saw_runtime_virtualized_ancestor = true;
+            current = parent.immediate_parent;
+            continue;
+        }
+        break;
+    }
+
+    if saw_runtime_virtualized_ancestor {
+        return true;
+    }
+
     if placement.owner_index != Some(idx) {
         return false;
     }
@@ -1351,6 +1374,6 @@ mod tests {
         let placements = derive_runtime_node_placements(&nodes, &planned);
 
         assert!(!is_cpu_root_node(&nodes, &placements, 1));
-        assert!(!is_cpu_root_node(&nodes, &placements, 2));
+        assert!(is_cpu_root_node(&nodes, &placements, 2));
     }
 }

@@ -347,6 +347,10 @@ pub enum BusRequest {
     BakeryAddCircuit {
         /// The circuit hash, which is a unique identifier for the circuit
         circuit_hash: i64,
+        /// Human-readable circuit name when known at queue-build time.
+        circuit_name: Option<String>,
+        /// Human-readable parent site/node name when known at queue-build time.
+        site_name: Option<String>,
         /// The parent class ID for the circuit
         parent_class_id: TcHandle,
         /// The upload parent class ID for the circuit

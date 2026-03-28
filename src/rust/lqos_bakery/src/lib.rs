@@ -89,6 +89,8 @@ enum MigrationStage {
 #[derive(Clone, Debug)]
 struct Migration {
     circuit_hash: i64,
+    circuit_name: Option<String>,
+    site_name: Option<String>,
     // Old majors and qdisc handles
     old_class_major: u16,
     old_up_class_major: u16,
@@ -549,6 +551,8 @@ fn build_temp_add_cmd(
 ) -> Option<BakeryCommands> {
     if let BakeryCommands::AddCircuit {
         circuit_hash,
+        circuit_name,
+        site_name,
         parent_class_id,
         up_parent_class_id,
         class_major,
@@ -562,6 +566,8 @@ fn build_temp_add_cmd(
     {
         Some(BakeryCommands::AddCircuit {
             circuit_hash: *circuit_hash,
+            circuit_name: circuit_name.clone(),
+            site_name: site_name.clone(),
             parent_class_id: *parent_class_id,
             up_parent_class_id: *up_parent_class_id,
             class_minor: minor,
@@ -649,6 +655,8 @@ fn build_shadow_add_cmd(
     let mut temp = build_temp_add_cmd(
         &BakeryCommands::AddCircuit {
             circuit_hash: migration.circuit_hash,
+            circuit_name: migration.circuit_name.clone(),
+            site_name: migration.site_name.clone(),
             parent_class_id: migration.parent_class_id,
             up_parent_class_id: migration.up_parent_class_id,
             class_minor: migration.shadow_minor,
@@ -695,6 +703,8 @@ fn queue_runtime_migration(
 ) -> bool {
     let BakeryCommands::AddCircuit {
         circuit_hash,
+        circuit_name,
+        site_name,
         parent_class_id,
         up_parent_class_id,
         class_minor,
@@ -740,6 +750,8 @@ fn queue_runtime_migration(
 
     let mig = Migration {
         circuit_hash: *circuit_hash,
+        circuit_name: circuit_name.clone(),
+        site_name: site_name.clone(),
         old_class_major: *old_class_major,
         old_up_class_major: *old_up_class_major,
         old_down_qdisc_handle: *old_down_qdisc_handle,
@@ -2424,6 +2436,24 @@ fn runtime_site_label(site_hash: i64, site_name: Option<&str>) -> String {
     }
 }
 
+fn runtime_circuit_label(circuit_hash: i64, circuit_name: Option<&str>) -> String {
+    match circuit_name {
+        Some(name) if !name.is_empty() => format!("{name} ({circuit_hash})"),
+        _ => circuit_hash.to_string(),
+    }
+}
+
+fn migration_target_label(migration: &Migration) -> String {
+    let circuit_label =
+        runtime_circuit_label(migration.circuit_hash, migration.circuit_name.as_deref());
+    match migration.site_name.as_deref() {
+        Some(site_name) if !site_name.is_empty() => {
+            format!("circuit {circuit_label} at site {site_name}")
+        }
+        _ => format!("circuit {circuit_label}"),
+    }
+}
+
 fn runtime_network_json_path(config: &Config) -> std::path::PathBuf {
     let base_path = Path::new(&config.lqos_directory);
     if config
@@ -2935,6 +2965,103 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         mapping_current.remove(&key);
     }
 
+    fn mapping_key_cidr(key: &MappingKey) -> String {
+        format!("{}/{}", key.ip, key.prefix)
+    }
+
+    fn rollback_migration_ip_remaps(
+        remapped: &[(MappingKey, Option<MappingVal>)],
+        mapping_current: &mut HashMap<MappingKey, MappingVal>,
+    ) -> Result<(), String> {
+        let mut failures = Vec::new();
+
+        for (key, previous) in remapped.iter().rev() {
+            let cidr = mapping_key_cidr(key);
+            let rollback_result = if let Some(previous) = previous {
+                lqos_sys::add_ip_to_tc(&cidr, previous.handle, previous.cpu, false, 0, 0).map(
+                    |_| {
+                        mapping_current.insert(key.clone(), previous.clone());
+                    },
+                )
+            } else {
+                lqos_sys::del_ip_from_tc(&cidr, false).map(|_| {
+                    mapping_current.remove(key);
+                })
+            };
+
+            if let Err(error) = rollback_result {
+                failures.push(format!("{cidr}: {error}"));
+            }
+        }
+
+        if let Err(error) = lqos_sys::clear_hot_cache() {
+            failures.push(format!("clear hot cache after rollback: {error}"));
+        }
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
+    }
+
+    fn remap_migration_ips(
+        mig: &Migration,
+        target_minor: u16,
+        mapping_current: &mut HashMap<MappingKey, MappingVal>,
+    ) -> Result<(), String> {
+        let target_handle = tc_handle_from_major_minor(mig.class_major, target_minor);
+        let mut remapped: Vec<(MappingKey, Option<MappingVal>)> = Vec::new();
+
+        for ip in &mig.ips {
+            let (ip_s, prefix) = parse_ip_and_prefix(ip);
+            let key = MappingKey { ip: ip_s, prefix };
+            let cidr = mapping_key_cidr(&key);
+            let previous = mapping_current.get(&key).cloned();
+            let cpu = previous.as_ref().map(|value| value.cpu).unwrap_or(0);
+
+            if let Err(error) = lqos_sys::add_ip_to_tc(&cidr, target_handle, cpu, false, 0, 0) {
+                let rollback_summary =
+                    rollback_migration_ip_remaps(&remapped, mapping_current).err();
+                return Err(match rollback_summary {
+                    Some(rollback_error) => format!(
+                        "failed to remap {cidr} to {}: {error}; rollback also failed: {rollback_error}",
+                        target_handle.as_tc_string()
+                    ),
+                    None => format!(
+                        "failed to remap {cidr} to {}: {error}; prior remaps were rolled back",
+                        target_handle.as_tc_string()
+                    ),
+                });
+            }
+
+            mapping_current.insert(
+                key.clone(),
+                MappingVal {
+                    handle: target_handle,
+                    cpu,
+                },
+            );
+            remapped.push((key, previous));
+        }
+
+        if let Err(error) = lqos_sys::clear_hot_cache() {
+            let rollback_summary = rollback_migration_ip_remaps(&remapped, mapping_current).err();
+            return Err(match rollback_summary {
+                Some(rollback_error) => format!(
+                    "remap to {} succeeded but clearing the hot cache failed: {error}; rollback also failed: {rollback_error}",
+                    target_handle.as_tc_string()
+                ),
+                None => format!(
+                    "remap to {} succeeded but clearing the hot cache failed: {error}; remaps were rolled back",
+                    target_handle.as_tc_string()
+                ),
+            });
+        }
+
+        Ok(())
+    }
+
     fn build_known_handle_set(circuits: &HashMap<i64, Arc<BakeryCommands>>) -> HashSet<TcHandle> {
         let mut down = HashSet::new();
         for (_k, v) in circuits.iter() {
@@ -3148,12 +3275,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     }
                 }
                 MigrationStage::VerifyShadowReady => {
+                    let target_label = migration_target_label(mig);
                     let shadow_ready = match migration_shadow_state_ready(config, mig) {
                         Ok(ready) => ready,
                         Err(e) => {
                             mark_reload_required(format!(
-                                "Bakery live-move shadow verification failed for circuit {}: {}. A full reload is now required before further incremental topology mutations.",
-                                mig.circuit_hash, e
+                                "Bakery live-move shadow verification failed for {target_label}: {e}. A full reload is now required before further incremental topology mutations."
                             ));
                             mig.stage = MigrationStage::Done;
                             advanced += 1;
@@ -3162,8 +3289,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     };
                     if !shadow_ready {
                         mark_reload_required(format!(
-                            "Bakery live-move shadow verification did not find the expected shadow class/qdisc for circuit {}. A full reload is now required before further incremental topology mutations.",
-                            mig.circuit_hash
+                            "Bakery live-move shadow verification did not find the expected shadow class/qdisc for {target_label}. A full reload is now required before further incremental topology mutations."
                         ));
                         mig.stage = MigrationStage::Done;
                         advanced += 1;
@@ -3173,22 +3299,22 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     advanced += 1;
                 }
                 MigrationStage::SwapToShadow => {
-                    for ip in &mig.ips {
-                        let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                        let key = MappingKey {
-                            ip: ip_s.clone(),
-                            prefix,
-                        };
-                        let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                        let handle = tc_handle_from_major_minor(mig.class_major, mig.shadow_minor);
-                        let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
-                        mapping_current.insert(key, MappingVal { handle, cpu });
+                    let target_label = migration_target_label(mig);
+                    if let Err(summary) =
+                        remap_migration_ips(mig, mig.shadow_minor, mapping_current)
+                    {
+                        mark_reload_required(format!(
+                            "Bakery live-move shadow remap failed for {target_label}: {summary}. A full reload is now required before further incremental topology mutations."
+                        ));
+                        mig.stage = MigrationStage::Done;
+                        advanced += 1;
+                        continue;
                     }
-                    let _ = lqos_sys::clear_hot_cache();
                     mig.stage = MigrationStage::BuildFinal;
                     advanced += 1;
                 }
                 MigrationStage::BuildFinal => {
+                    let target_label = migration_target_label(mig);
                     let mut cmds = Vec::new();
                     let live_qdisc_handles = snapshot_live_qdisc_handle_majors_or_empty(
                         config,
@@ -3215,8 +3341,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             )
                         {
                             mark_reload_required(format!(
-                                "Bakery live migration refused to build final state for circuit {} because the final qdisc handles were unsafe: {}. A full reload is now required before further incremental topology mutations.",
-                                mig.circuit_hash, summary
+                                "Bakery live migration refused to build final state for {target_label} because the final qdisc handles were unsafe: {summary}. A full reload is now required before further incremental topology mutations."
                             ));
                             mig.stage = MigrationStage::Done;
                             advanced += 1;
@@ -3274,12 +3399,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     advanced += 1;
                 }
                 MigrationStage::VerifyFinalReady => {
+                    let target_label = migration_target_label(mig);
                     let final_ready = match migration_final_state_ready(config, mig) {
                         Ok(ready) => ready,
                         Err(e) => {
                             mark_reload_required(format!(
-                                "Bakery live-move final verification failed for circuit {}: {}. A full reload is now required before further incremental topology mutations.",
-                                mig.circuit_hash, e
+                                "Bakery live-move final verification failed for {target_label}: {e}. A full reload is now required before further incremental topology mutations."
                             ));
                             mig.stage = MigrationStage::Done;
                             advanced += 1;
@@ -3288,8 +3413,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     };
                     if !final_ready {
                         mark_reload_required(format!(
-                            "Bakery live-move final verification did not find the expected final class/qdisc for circuit {}. A full reload is now required before further incremental topology mutations.",
-                            mig.circuit_hash
+                            "Bakery live-move final verification did not find the expected final class/qdisc for {target_label}. A full reload is now required before further incremental topology mutations."
                         ));
                         mig.stage = MigrationStage::Done;
                         advanced += 1;
@@ -3299,18 +3423,16 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     advanced += 1;
                 }
                 MigrationStage::SwapToFinal => {
-                    for ip in &mig.ips {
-                        let (ip_s, prefix) = parse_ip_and_prefix(ip);
-                        let key = MappingKey {
-                            ip: ip_s.clone(),
-                            prefix,
-                        };
-                        let cpu = mapping_current.get(&key).map(|v| v.cpu).unwrap_or(0);
-                        let handle = tc_handle_from_major_minor(mig.class_major, mig.final_minor);
-                        let _ = lqos_sys::add_ip_to_tc(&ip_s, handle, cpu, false, 0, 0);
-                        mapping_current.insert(key, MappingVal { handle, cpu });
+                    let target_label = migration_target_label(mig);
+                    if let Err(summary) = remap_migration_ips(mig, mig.final_minor, mapping_current)
+                    {
+                        mark_reload_required(format!(
+                            "Bakery live-move final remap failed for {target_label}: {summary}. A full reload is now required before further incremental topology mutations."
+                        ));
+                        mig.stage = MigrationStage::Done;
+                        advanced += 1;
+                        continue;
                     }
-                    let _ = lqos_sys::clear_hot_cache();
                     circuits.insert(mig.circuit_hash, Arc::clone(&mig.desired_cmd));
                     effective_state_changed = true;
                     mig.stage = MigrationStage::TeardownMigrationScaffold;
@@ -3321,6 +3443,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     if let Some(shadow_cmd) = build_temp_add_cmd(
                         &BakeryCommands::AddCircuit {
                             circuit_hash: mig.circuit_hash,
+                            circuit_name: mig.circuit_name.clone(),
+                            site_name: mig.site_name.clone(),
                             parent_class_id: mig.parent_class_id,
                             up_parent_class_id: mig.up_parent_class_id,
                             class_minor: mig.shadow_minor,
@@ -5101,6 +5225,8 @@ fn reparent_circuit_command(
 ) -> Option<Arc<BakeryCommands>> {
     let BakeryCommands::AddCircuit {
         circuit_hash,
+        circuit_name,
+        site_name,
         class_minor,
         download_bandwidth_min,
         upload_bandwidth_min,
@@ -5118,6 +5244,8 @@ fn reparent_circuit_command(
 
     Some(Arc::new(BakeryCommands::AddCircuit {
         circuit_hash: *circuit_hash,
+        circuit_name: circuit_name.clone(),
+        site_name: site_name.clone(),
         parent_class_id,
         up_parent_class_id,
         class_minor: *class_minor,
@@ -6211,6 +6339,8 @@ fn build_top_level_virtualization_plan(
         };
         let BakeryCommands::AddCircuit {
             circuit_hash,
+            circuit_name,
+            site_name,
             download_bandwidth_min,
             upload_bandwidth_min,
             download_bandwidth_max,
@@ -6229,6 +6359,8 @@ fn build_top_level_virtualization_plan(
                 parent_site: future_parent_site.or(parent_site),
                 command: Arc::new(BakeryCommands::AddCircuit {
                     circuit_hash: *circuit_hash,
+                    circuit_name: circuit_name.clone(),
+                    site_name: site_name.clone(),
                     parent_class_id: parent_handles.0,
                     up_parent_class_id: parent_handles.1,
                     class_minor: identity_entry.class_minor,
@@ -9440,6 +9572,8 @@ mod tests {
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: hash,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x1),
             up_parent_class_id: TcHandle::from_u32(0x2),
             class_minor: 0x10,
@@ -9497,6 +9631,8 @@ mod tests {
     ) -> Arc<BakeryCommands> {
         Arc::new(BakeryCommands::AddCircuit {
             circuit_hash,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(parent_class_id),
             up_parent_class_id: TcHandle::from_u32(up_parent_class_id),
             class_minor,
@@ -9629,6 +9765,8 @@ mod tests {
         let child_site = mk_add_site(30, 0x10021, 0x20021, 0x22);
         let child_circuit = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 40,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10021),
             up_parent_class_id: TcHandle::from_u32(0x20021),
             class_minor: 0x30,
@@ -9669,6 +9807,8 @@ mod tests {
                     40,
                     Arc::new(BakeryCommands::AddCircuit {
                         circuit_hash: 40,
+                        circuit_name: None,
+                        site_name: None,
                         parent_class_id: TcHandle::from_u32(0x10020),
                         up_parent_class_id: TcHandle::from_u32(0x20020),
                         class_minor: 0x30,
@@ -9849,6 +9989,8 @@ mod tests {
             40,
             Migration {
                 circuit_hash: 40,
+                circuit_name: None,
+                site_name: None,
                 old_class_major: 0x100,
                 old_up_class_major: 0x200,
                 old_down_qdisc_handle: None,
@@ -10266,6 +10408,8 @@ mod tests {
         let grandchild_site = mk_add_site(31, 0x10022, 0x20022, 0x23);
         let direct_circuit = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 40,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10021),
             up_parent_class_id: TcHandle::from_u32(0x20021),
             class_minor: 0x30,
@@ -11363,6 +11507,8 @@ mod tests {
             },
             BakeryCommands::AddCircuit {
                 circuit_hash: 2,
+                circuit_name: None,
+                site_name: None,
                 parent_class_id: TcHandle::from_u32(0x10001),
                 up_parent_class_id: TcHandle::from_u32(0x20001),
                 class_minor: 0x20,
@@ -11428,6 +11574,8 @@ mod tests {
             },
             BakeryCommands::AddCircuit {
                 circuit_hash: 2,
+                circuit_name: None,
+                site_name: None,
                 parent_class_id: TcHandle::from_u32(0x10001),
                 up_parent_class_id: TcHandle::from_u32(0x20001),
                 class_minor: 0x20,
@@ -11600,6 +11748,8 @@ mod tests {
             },
             BakeryCommands::AddCircuit {
                 circuit_hash: 2,
+                circuit_name: None,
+                site_name: None,
                 parent_class_id: TcHandle::from_u32(0x10001),
                 up_parent_class_id: TcHandle::from_u32(0x20001),
                 class_minor: 0x20,
@@ -11648,6 +11798,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 101,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11678,6 +11830,8 @@ mod tests {
 
         let switched = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 101,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11718,6 +11872,8 @@ mod tests {
         let mut persisted = QdiscHandleState::load(&config);
         let new_circuit = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 202,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x21,
@@ -11754,6 +11910,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 303,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11784,6 +11942,8 @@ mod tests {
 
         let moved = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 303,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10002),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11824,6 +11984,8 @@ mod tests {
         let mut persisted = QdiscHandleState::load(&config);
         let new_circuit = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 404,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x21,
@@ -11859,6 +12021,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 313,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11889,6 +12053,8 @@ mod tests {
 
         let moved = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 313,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10002),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11944,6 +12110,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 414,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -11976,6 +12144,8 @@ mod tests {
 
         let restore = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 414,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -12034,6 +12204,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 415,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -12200,6 +12372,8 @@ mod tests {
         );
         let mut migration = Migration {
             circuit_hash: 9002,
+            circuit_name: None,
+            site_name: None,
             old_class_major: 0x1,
             old_up_class_major: 0x2,
             old_down_qdisc_handle: Some(0x9000),
@@ -12257,6 +12431,8 @@ mod tests {
         );
         let mut migration = Migration {
             circuit_hash: 9003,
+            circuit_name: None,
+            site_name: None,
             old_class_major: 0x1,
             old_up_class_major: 0x2,
             old_down_qdisc_handle: Some(0x9000),
@@ -12302,9 +12478,50 @@ mod tests {
     }
 
     #[test]
+    fn migration_target_label_includes_circuit_and_site_names_when_known() {
+        let migration = Migration {
+            circuit_hash: 9006,
+            circuit_name: Some("Rochester-Roof-Switch".to_string()),
+            site_name: Some("7232 Rochester".to_string()),
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec!["192.0.2.96/32".to_string()],
+            sqm_override: None,
+            desired_cmd: mk_test_circuit(9006, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.96/32"),
+            stage: MigrationStage::BuildFinal,
+        };
+
+        let label = migration_target_label(&migration);
+        assert!(label.contains("Rochester-Roof-Switch"));
+        assert!(label.contains("9006"));
+        assert!(label.contains("7232 Rochester"));
+    }
+
+    #[test]
     fn migration_invariant_rejects_stale_qdisc_handles_when_parent_changes() {
         let migration = Migration {
             circuit_hash: 9004,
+            circuit_name: None,
+            site_name: None,
             old_class_major: 0x1,
             old_up_class_major: 0x2,
             old_down_qdisc_handle: Some(0x9000),
@@ -12356,6 +12573,8 @@ mod tests {
     fn migration_invariant_rejects_live_reserved_handle_collisions() {
         let migration = Migration {
             circuit_hash: 9005,
+            circuit_name: None,
+            site_name: None,
             old_class_major: 0x1,
             old_up_class_major: 0x2,
             old_down_qdisc_handle: Some(0x9000),
@@ -12381,6 +12600,8 @@ mod tests {
             sqm_override: None,
             desired_cmd: Arc::new(BakeryCommands::AddCircuit {
                 circuit_hash: 9005,
+                circuit_name: None,
+                site_name: None,
                 parent_class_id: TcHandle::from_u32(0x10034),
                 up_parent_class_id: TcHandle::from_u32(0x20034),
                 class_minor: 0x35,
@@ -12502,6 +12723,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 9400,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10020),
             up_parent_class_id: TcHandle::from_u32(0x20020),
             class_minor: 0x21,
@@ -12530,6 +12753,8 @@ mod tests {
         let mut reloaded = QdiscHandleState::load(&config);
         let moved = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 9400,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10034),
             up_parent_class_id: TcHandle::from_u32(0x20034),
             class_minor: 0x35,
@@ -12606,6 +12831,8 @@ mod tests {
 
         let original = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 505,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,
@@ -12638,6 +12865,8 @@ mod tests {
         ]);
         let rebuilt_cmd = Arc::new(BakeryCommands::AddCircuit {
             circuit_hash: 505,
+            circuit_name: None,
+            site_name: None,
             parent_class_id: TcHandle::from_u32(0x10001),
             up_parent_class_id: TcHandle::from_u32(0x20001),
             class_minor: 0x20,

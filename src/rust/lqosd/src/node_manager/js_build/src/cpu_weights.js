@@ -151,8 +151,33 @@ function renderBinpackBadge() {
     const badge = document.getElementById("binpackBadge");
     if (!badge) return;
     const enabled = !!state.plannerEnabled;
-    badge.className = `badge ${enabled ? "bg-success" : "bg-secondary"}`;
+    badge.className = `cpu-affinity-chip ${enabled ? "is-positive" : "is-muted"}`;
     badge.textContent = enabled ? "Binpacking: Enabled" : "Binpacking: Disabled";
+}
+
+function applyOverviewRowLiveMetrics(row, core) {
+    const usage = cpuUsageValue(core);
+    const chip = row.querySelector(".cpu-affinity-overview-usage");
+    const bar = row.querySelector(".cpu-affinity-overview-progress-bar");
+    if (chip) {
+        chip.className = `cpu-affinity-overview-usage ${usageToneClass(usage)}`;
+        chip.textContent = Number.isFinite(usage) ? `${Math.round(usage)}%` : "N/A";
+    }
+    if (bar) {
+        bar.className = `cpu-affinity-overview-progress-bar ${usageToneClass(usage)}`;
+        bar.style.width = `${Math.max(0, Math.min(100, toNumber(usage, 0)))}%`;
+    }
+}
+
+function updateOverviewLiveMetrics() {
+    const overview = document.getElementById("cpuOverview");
+    if (!overview) return;
+    const coreMap = new Map(getCores().map((core) => [String(toNumber(core.cpu, -1)), core]));
+    overview.querySelectorAll(".cpu-affinity-overview-row[data-cpu]").forEach((row) => {
+        const core = coreMap.get(row.dataset.cpu);
+        if (!core) return;
+        applyOverviewRowLiveMetrics(row, core);
+    });
 }
 
 function renderOverview() {
@@ -171,31 +196,31 @@ function renderOverview() {
     }
 
     const panel = document.createElement("div");
-    panel.className = "card h-100";
+    panel.className = "cpu-affinity-card h-100";
 
     const body = document.createElement("div");
-    body.className = "card-body";
+    body.className = "cpu-affinity-card-body";
 
     const header = document.createElement("div");
-    header.className = "d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3";
+    header.className = "cpu-affinity-card-header";
 
     const headerText = document.createElement("div");
     headerText.innerHTML = `
-        <div class="fw-semibold">CPU Core List</div>
-        <div class="text-muted small">Choose a core to inspect its live ownership and runtime branch assignment.</div>
+        <h3>CPU Core List</h3>
+        <p>Choose a core to inspect live ownership, promoted runtime branches, and planner drift.</p>
     `;
     header.appendChild(headerText);
 
     const generatedAt = toNumber(state.runtimeSnapshot?.generated_at_unix_ms, Date.now());
     const status = document.createElement("div");
-    status.className = "text-muted small";
+    status.className = "cpu-affinity-card-meta";
     status.textContent = `Updated ${new Date(generatedAt).toLocaleTimeString()}`;
     header.appendChild(status);
     body.appendChild(header);
 
     if (!window.hasInsight) {
         const promo = document.createElement("div");
-        promo.className = "text-muted small mb-3";
+        promo.className = "cpu-affinity-inline-note mb-3";
         promo.innerHTML = 'Enable <a href="lts_trial.html">Insight</a> to improve CPU planning with historical data.';
         body.appendChild(promo);
     }
@@ -210,6 +235,7 @@ function renderOverview() {
         const row = document.createElement("button");
         row.type = "button";
         row.className = `cpu-affinity-overview-row ${toNumber(state.selectedCpu, -1) === toNumber(core.cpu, -2) ? "is-selected" : ""}`;
+        row.dataset.cpu = String(toNumber(core.cpu, -1));
         row.onclick = () => {
             state.selectedCpu = core.cpu;
             state.page = 1;
@@ -237,12 +263,12 @@ function renderOverview() {
         const badgeWrap = document.createElement("div");
         const usageChip = document.createElement("span");
         const usage = cpuUsageValue(core);
-        usageChip.className = `badge ${usageToneClass(usage)} me-1`;
+        usageChip.className = `cpu-affinity-overview-usage ${usageToneClass(usage)}`;
         usageChip.textContent = Number.isFinite(usage) ? `${Math.round(usage)}%` : "N/A";
         badgeWrap.appendChild(usageChip);
         if (toNumber(core.runtime_changed_count, 0) > 0) {
             const badge = document.createElement("span");
-            badge.className = "badge bg-warning text-dark";
+            badge.className = "cpu-affinity-chip is-warning";
             badge.title = `${core.runtime_changed_count.toLocaleString()} nodes differ from their planned runtime placement.`;
             badge.textContent = `${core.runtime_changed_count} changed`;
             badgeWrap.appendChild(badge);
@@ -251,15 +277,15 @@ function renderOverview() {
         row.appendChild(topRow);
 
         const progress = document.createElement("div");
-        progress.className = "progress mb-2";
+        progress.className = "cpu-affinity-overview-progress";
         const bar = document.createElement("div");
-        bar.className = `progress-bar ${usageToneClass(usage)}`;
+        bar.className = `cpu-affinity-overview-progress-bar ${usageToneClass(usage)}`;
         bar.style.width = `${Math.max(0, Math.min(100, toNumber(usage, 0)))}%`;
         progress.appendChild(bar);
         row.appendChild(progress);
 
         const metrics = document.createElement("div");
-        metrics.className = "small text-muted mb-2";
+        metrics.className = "cpu-affinity-overview-metrics";
         metrics.innerHTML = `
             <div class="d-flex flex-wrap gap-3">
                 <span>Planned ${toNumber(core.planned_circuit_count, 0).toLocaleString()} circuits</span>
@@ -270,27 +296,27 @@ function renderOverview() {
         row.appendChild(metrics);
 
         const rootsPreview = document.createElement("div");
-        rootsPreview.className = "small";
+        rootsPreview.className = "cpu-affinity-overview-roots";
         const roots = topLevelNodesForCore(core);
         const preview = roots.slice(0, 2);
         if (preview.length === 0) {
             const empty = document.createElement("div");
-            empty.className = "text-secondary";
+            empty.className = "cpu-affinity-inline-note";
             empty.textContent = "No top-level branches";
             rootsPreview.appendChild(empty);
         } else {
             const label = document.createElement("div");
-            label.className = "text-muted mb-1";
+            label.className = "cpu-affinity-overview-roots-label";
             label.textContent = "Top-level branches";
             rootsPreview.appendChild(label);
             preview.forEach((node) => {
                 const rowEl = document.createElement("div");
-                rowEl.className = "d-flex justify-content-between gap-2";
+                rowEl.className = "cpu-affinity-overview-root-row";
                 const name = document.createElement("span");
                 name.className = "text-truncate";
                 name.textContent = node.name || "Unnamed node";
                 const throughput = document.createElement("span");
-                throughput.className = "text-muted";
+                throughput.className = "cpu-affinity-overview-root-throughput";
                 throughput.textContent = fmtPair(node.current_throughput_bps);
                 rowEl.appendChild(name);
                 rowEl.appendChild(throughput);
@@ -326,7 +352,7 @@ function renderSelectedSummary() {
     }
 
     const row = document.createElement("div");
-    row.className = "row g-2";
+    row.className = "cpu-affinity-kpi-grid";
     const cards = [
         {
             title: "Live Load",
@@ -351,28 +377,20 @@ function renderSelectedSummary() {
     ];
 
     cards.forEach((entry) => {
-        const col = document.createElement("div");
-        col.className = "col-12 col-md-6 col-xl-3";
         const card = document.createElement("div");
-        card.className = "card h-100";
-        const body = document.createElement("div");
-        body.className = "card-body py-2";
+        card.className = "cpu-affinity-kpi";
         const label = document.createElement("div");
-        label.className = "text-muted small";
+        label.className = "cpu-affinity-kpi-label";
         label.textContent = entry.title;
         const value = document.createElement("div");
-        value.className = "fw-semibold";
+        value.className = "cpu-affinity-kpi-value";
         value.textContent = entry.value;
-        const badge = document.createElement("span");
-        badge.className = `badge ${entry.tone}`;
-        badge.textContent = " ";
-        badge.style.width = "0.75rem";
-        body.appendChild(label);
-        body.appendChild(value);
-        body.appendChild(badge);
-        card.appendChild(body);
-        col.appendChild(card);
-        row.appendChild(col);
+        const dot = document.createElement("span");
+        dot.className = `cpu-affinity-kpi-dot ${entry.tone}`;
+        card.appendChild(label);
+        card.appendChild(value);
+        card.appendChild(dot);
+        row.appendChild(card);
     });
     target.appendChild(row);
 }
@@ -388,8 +406,8 @@ function renderNodesTable(core) {
     }
 
     const note = document.createElement("div");
-    note.className = "text-muted small mb-2";
-    note.textContent = "Showing only top-level owned branches directly attached to this CPU's effective HTB subtree. Use Changes or Circuits for deeper detail.";
+    note.className = "cpu-affinity-inline-note mb-2";
+    note.textContent = "Showing the branches directly attached to this CPU's effective HTB subtree after runtime virtualization and promotion.";
     target.appendChild(note);
 
     const tableWrap = document.createElement("div");
@@ -411,7 +429,7 @@ function renderNodesTable(core) {
     nodes.forEach((node) => {
         const tr = document.createElement("tr");
         if (node.runtime_virtualized || node.assignment_reason !== "planned") {
-            tr.classList.add("table-warning");
+            tr.classList.add("cpu-affinity-row-change");
         }
 
         const nameCell = document.createElement("td");
@@ -529,7 +547,7 @@ function renderCircuits(page) {
         const weightCell = document.createElement("td");
         if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {
             const badge = document.createElement("span");
-            badge.className = "badge bg-secondary";
+            badge.className = "cpu-affinity-chip is-muted";
             badge.textContent = "ignored";
             weightCell.appendChild(badge);
         } else {
@@ -560,7 +578,7 @@ function renderActiveTab() {
     tabButtons.forEach(([id, tab]) => {
         const btn = document.getElementById(id);
         if (!btn) return;
-        btn.className = `btn ${state.detailTab === tab ? "btn-primary" : "btn-outline-secondary"}`;
+        btn.className = `cpu-affinity-tab ${state.detailTab === tab ? "is-active" : ""}`;
     });
 }
 
@@ -688,9 +706,8 @@ function initLiveCpuSubscription() {
     wsClient.subscribe(["Cpu"]);
     wsClient.on("Cpu", (msg) => {
         state.liveCpuUsage = Array.isArray(msg?.data) ? msg.data.map((value) => toNumber(value, 0)) : [];
-        renderOverview();
+        updateOverviewLiveMetrics();
         renderSelectedSummary();
-        enableTooltips();
     });
 }
 

@@ -2666,6 +2666,8 @@ enum BakeryCommands {
     },
     AddCircuit {
         circuit_hash: i64,
+        circuit_name: Option<String>,
+        site_name: Option<String>,
         parent_class_id: TcHandle,
         up_parent_class_id: TcHandle,
         class_minor: u16,
@@ -2713,6 +2715,8 @@ impl BakeryCommands {
             },
             BakeryCommands::AddCircuit {
                 circuit_hash,
+                circuit_name,
+                site_name,
                 parent_class_id,
                 up_parent_class_id,
                 class_minor,
@@ -2726,6 +2730,8 @@ impl BakeryCommands {
                 sqm_override,
             } => lqos_bakery::BakeryCommands::AddCircuit {
                 circuit_hash: *circuit_hash,
+                circuit_name: circuit_name.clone(),
+                site_name: site_name.clone(),
                 parent_class_id: *parent_class_id,
                 up_parent_class_id: *up_parent_class_id,
                 class_minor: *class_minor,
@@ -2822,6 +2828,8 @@ impl Bakery {
                                 }
                                 BakeryCommands::AddCircuit {
                                     circuit_hash,
+                                    circuit_name,
+                                    site_name,
                                     parent_class_id,
                                     up_parent_class_id,
                                     class_minor,
@@ -2836,6 +2844,8 @@ impl Bakery {
                                 } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
+                                        circuit_name: circuit_name.clone(),
+                                        site_name: site_name.clone(),
                                         parent_class_id: *parent_class_id,
                                         up_parent_class_id: *up_parent_class_id,
                                         class_minor: *class_minor,
@@ -3031,6 +3041,7 @@ impl Bakery {
     pub fn add_circuit(
         &mut self,
         circuit_name: String,
+        site_name: Option<String>,
         parent_class_id: String,
         up_parent_class_id: String,
         class_minor: u16,
@@ -3047,6 +3058,8 @@ impl Bakery {
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
         let command = BakeryCommands::AddCircuit {
             circuit_hash,
+            circuit_name: Some(circuit_name),
+            site_name,
             parent_class_id: TcHandle::from_string(&parent_class_id).unwrap(),
             up_parent_class_id: TcHandle::from_string(&up_parent_class_id).unwrap(),
             class_minor,

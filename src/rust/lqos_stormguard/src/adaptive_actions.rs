@@ -300,6 +300,11 @@ fn apply_circuit_sqm_override_live(
 
     bakery_sender.send(BakeryCommands::AddCircuit {
         circuit_hash: hash_to_i64(circuit_id),
+        circuit_name: node
+            .circuit_name
+            .clone()
+            .or_else(|| Some(circuit_id.to_string())),
+        site_name: node.parent_node.clone(),
         parent_class_id: node.parent_class_id,
         up_parent_class_id: node.up_parent_class_id,
         class_minor,
