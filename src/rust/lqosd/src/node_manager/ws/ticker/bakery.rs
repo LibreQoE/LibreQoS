@@ -132,7 +132,9 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                     BakeryRuntimeOperationHeadlineData {
                         operation_id: entry.operation_id,
                         site_hash: entry.site_hash,
-                        site_name: resolve_site_name(entry.site_hash),
+                        site_name: entry
+                            .site_name
+                            .or_else(|| resolve_site_name(entry.site_hash)),
                         action: runtime_action_to_string(entry.action),
                         status: runtime_status_to_string(entry.status),
                         attempt_count: entry.attempt_count,
@@ -176,7 +178,9 @@ fn map_activity(entry: BakeryActivitySnapshot) -> BakeryActivityEntry {
     let site_hash = entry
         .site_hash
         .or_else(|| extract_site_hash_from_summary(&entry.summary));
-    let site_name = site_hash.and_then(resolve_site_name);
+    let site_name = entry
+        .site_name
+        .or_else(|| site_hash.and_then(resolve_site_name));
     BakeryActivityEntry {
         ts: entry.ts,
         event: entry.event,

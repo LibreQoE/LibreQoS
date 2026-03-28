@@ -68,7 +68,7 @@ fn default_max_switches_per_hour() -> u32 {
 }
 
 fn default_min_score() -> f32 {
-    80.0
+    70.0
 }
 
 /// CPU modes supported by TreeGuard.

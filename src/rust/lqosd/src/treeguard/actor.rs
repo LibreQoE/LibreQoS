@@ -1457,29 +1457,26 @@ fn run_tick(
                             top_level_safe_util_pct, TOP_LEVEL_SAFE_SUSTAIN_MINUTES
                         ),
                         LinkVirtualState::Physical => {
-                            if qoo.down.is_some_and(|score| score < tg.qoo.min_score)
-                                || qoo.up.is_some_and(|score| score < tg.qoo.min_score)
+                            if state
+                                .down
+                                .top_level_emergency_since_unix
+                                .is_some_and(|since| {
+                                    now_unix.saturating_sub(since)
+                                        >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                                })
+                                || state
+                                    .up
+                                    .top_level_emergency_since_unix
+                                    .is_some_and(|since| {
+                                        now_unix.saturating_sub(since)
+                                            >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
+                                    })
                             {
-                                "Top-level emergency restore: QoO below threshold".to_string()
-                            } else if state.down.top_level_emergency_since_unix.is_some_and(
-                                |since| {
-                                    now_unix.saturating_sub(since)
-                                        >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
-                                },
-                            ) || state.up.top_level_emergency_since_unix.is_some_and(
-                                |since| {
-                                    now_unix.saturating_sub(since)
-                                        >= TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
-                                },
-                            ) {
                                 format!(
                                     "Top-level emergency restore: utilization >= {:.1}% for {}s",
                                     TOP_LEVEL_EMERGENCY_UTIL_PCT,
                                     TOP_LEVEL_EMERGENCY_SUSTAIN_SECONDS
                                 )
-                            } else if rtt_missing {
-                                "Top-level restore: RTT missing while branch is not idle"
-                                    .to_string()
                             } else {
                                 format!(
                                     "Top-level restore: utilization above {:.1}%",

@@ -38,7 +38,7 @@ export function defaultTreeguardConfig() {
         },
         qoo: {
             enabled: true,
-            min_score: 80.0,
+            min_score: 70.0,
         },
     };
 }

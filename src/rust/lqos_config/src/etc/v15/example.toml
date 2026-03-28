@@ -84,7 +84,7 @@ persist_sqm_overrides = true
 
 [treeguard.qoo]
 enabled = true
-min_score = 80.0
+min_score = 70.0
 
 [long_term_stats]
 gather_stats = true

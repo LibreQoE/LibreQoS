@@ -200,9 +200,9 @@ pub fn decide_top_level_link_virtualization(
         cpu_max_pct,
         cpu_cfg,
         links_cfg,
-        qoo_cfg,
-        rtt_missing,
-        qoo,
+        qoo_cfg: _qoo_cfg,
+        rtt_missing: _rtt_missing,
+        qoo: _qoo,
         util_ewma_pct,
         safe_util_pct,
         sustained_safe,
@@ -211,7 +211,6 @@ pub fn decide_top_level_link_virtualization(
     } = input;
 
     let util_high = util_ewma_pct.down >= safe_util_pct || util_ewma_pct.up >= safe_util_pct;
-    let qoo_bad = qoo_below_threshold(qoo_cfg, qoo);
 
     match state.desired {
         LinkVirtualState::Physical => {
@@ -235,7 +234,7 @@ pub fn decide_top_level_link_virtualization(
             }
         }
         LinkVirtualState::Virtual => {
-            if qoo_bad || emergency_util_sustained || util_high || rtt_missing {
+            if emergency_util_sustained || util_high {
                 LinkVirtualDecision::Set(LinkVirtualState::Physical)
             } else {
                 LinkVirtualDecision::NoChange
@@ -657,6 +656,70 @@ mod tests {
             decision,
             LinkVirtualDecision::Set(LinkVirtualState::Physical)
         );
+    }
+
+    #[test]
+    fn top_level_link_stays_virtual_when_only_qoo_is_low() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(65.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn top_level_link_stays_virtual_when_only_rtt_is_missing() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: true,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
     }
 
     #[test]
