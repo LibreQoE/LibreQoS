@@ -33,6 +33,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Usa QoO por defecto con un selector alternativo para RTT, mientras el tamaño del marcador refleja el throughput combinado reciente.
 - Usa un promedio del lado cliente de 30 segundos a partir de `NetworkTree`, sin agregar trabajo de rollup en el backend.
 - Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
+- Cuando el modo de redacción del navegador está habilitado, Site Map reemplaza los nombres de sitios mostrados por `[redacted]` sin modificar los datos reales de topología.
 - El encuadre inicial del mapa ahora prioriza las coordenadas de los sitios para una vista inicial más cercana, usando coordenadas de AP solo cuando todavía no hay sitios mapeados.
 - Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.
 - Site Map utiliza una capa local de carreteras derivada de Natural Earth para ayudar con la orientación, manteniendo el resto del mapa base discreto y operativo.
@@ -65,6 +66,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ### Árbol/ponderación de CPU
 - Muestra distribución de colas/circuitos por núcleo de CPU.
 - Ayuda a validar comportamiento de binpacking y balance de carga.
+- CPU Affinity muestra por defecto el conjunto de CPUs de shaping detectado, de modo que los E-cores híbridos / núcleos del host excluidos queden ocultos salvo que el operador decida mostrarlos.
 
 ### Editor de Shaped Devices
 - Editor CRUD para `ShapedDevices.csv`.
@@ -89,6 +91,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Se activa con el ícono de máscara en la barra superior.
 - Es redacción del lado cliente y se guarda en `localStorage` del navegador.
 - Ayuda a ocultar PII en capturas/demos.
+- Site Map reemplaza los nombres de sitios mostrados por `[redacted]` mientras el modo de redacción está activo.
 - No modifica `ShapedDevices.csv`, `network.json` ni datos backend.
 
 ## Comportamiento de vistas vacías

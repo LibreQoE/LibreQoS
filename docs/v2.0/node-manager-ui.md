@@ -35,6 +35,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Defaults to QoO coloring with an RTT toggle, while marker size reflects recent combined throughput.
 - Uses a 30-second client-side average from `NetworkTree` data rather than adding backend rollup work.
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
+- When browser redaction mode is enabled, Site Map replaces displayed site names with `[redacted]` while leaving the underlying topology data unchanged.
 - Initial map framing now prefers site coordinates for a closer first view, falling back to AP coordinates when no sites are mapped yet.
 - Current builds use an Insight-hosted OpenStreetMap raster tile cache rather than a fully local basemap bundle.
 - Site Map depends on outbound access to `https://insight.libreqos.com` for initial bbox/bootstrap and raster tile fetches.
@@ -68,6 +69,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.
 - Helps evaluate binpacking and load distribution behavior.
+- CPU Affinity defaults to the detected shaping CPU set, so excluded hybrid E-cores / non-shaping host cores stay hidden unless the operator explicitly opts to show them.
 
 ### Shaped Devices Editor
 - CRUD editor for `ShapedDevices.csv`.
@@ -92,6 +94,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Toggle with the mask icon in the top navigation.
 - Redaction is client-side and stored in browser local storage.
 - Redaction helps hide PII in screenshots/demos.
+- Site Map replaces displayed site names with `[redacted]` while redaction mode is enabled.
 - Redaction does not modify `ShapedDevices.csv`, `network.json`, or any backend data.
 
 ## Common Empty-State Behavior

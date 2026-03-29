@@ -10,6 +10,17 @@ const FULL_RELOAD_SUPPORT_EVENTS = new Set([
     "baseline_rebuild_required",
     "commit_received",
 ]);
+const LIVE_CHANGE_PREFIXES = [
+    "updating circuit speeds live",
+    "migrating circuits between parent nodes (fallback)",
+    "treeguard runtime top-level site reparent",
+    "treeguard runtime top-level circuit reparent",
+    "treeguard runtime child-site shadow create",
+    "treeguard runtime circuit reparent",
+    "treeguard runtime hidden site restore",
+    "treeguard runtime site restore",
+    "treeguard runtime circuit restore",
+];
 
 function truncateSummary(summary) {
     const normalized = (summary ?? "").toString().trim();
@@ -17,6 +28,15 @@ function truncateSummary(summary) {
         return normalized;
     }
     return normalized.slice(0, BAKERY_ACTIVITY_SUMMARY_MAX_CHARS - 3).trimEnd() + "...";
+}
+
+function summaryPrefix(summary) {
+    return ((summary ?? "").toString().split(":")[0] || "").trim();
+}
+
+function isKnownLiveChangeSummary(summary) {
+    const prefix = summaryPrefix(summary).toLowerCase();
+    return LIVE_CHANGE_PREFIXES.some((candidate) => prefix === candidate);
 }
 
 function classifyEvent(entry) {
@@ -44,7 +64,11 @@ function classifyEvent(entry) {
 
     if (event === "full_reload_started" || summaryLower.includes("full reload")) {
         scope = "Full Reload";
-    } else if (event === "live_change_started" || (!summaryLower.includes("processing batch") && summaryLower.includes("live"))) {
+    } else if (
+        event === "live_change_started"
+        || (!summaryLower.includes("processing batch") && summaryLower.includes("live"))
+        || isKnownLiveChangeSummary(summary)
+    ) {
         scope = "Live Change";
     } else if (event.startsWith("runtime_site_prune_")) {
         scope = "TreeGuard Cleanup";
@@ -136,7 +160,7 @@ function displaySummary(entry) {
 function describeOperation(entry, meta) {
     const summary = (entry?.summary ?? "").toString().trim();
     const summaryLower = summary.toLowerCase();
-    const prefix = summary.split(":")[0]?.trim() || "";
+    const prefix = summaryPrefix(summary);
     const siteToken = extractSiteToken(summary);
     const siteName = resolvedSiteName(entry);
     const event = meta.event;

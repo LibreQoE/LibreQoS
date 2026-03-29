@@ -3,6 +3,7 @@ use crate::node_manager::local_api::network_tree_lite::{
 };
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::system_stats::{CPU_USAGE, NUM_CPUS};
+use lqos_config::{detect_shaping_cpus, load_config};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -58,6 +59,12 @@ pub struct CpuAffinitySiteTreeNode {
 pub struct CpuAffinityRuntimeSnapshot {
     /// Snapshot generation time in milliseconds since the UNIX epoch.
     pub generated_at_unix_ms: u64,
+    /// CPU IDs currently intended for shaping / binning.
+    pub shaping_cpus: Vec<u32>,
+    /// CPU IDs present on the host but excluded from shaping.
+    pub excluded_cpus: Vec<u32>,
+    /// True when hybrid-core detection found a trustworthy split.
+    pub has_hybrid_split: bool,
     /// Per-core runtime assignment data.
     pub cores: Vec<CpuAffinityRuntimeCore>,
 }
@@ -935,6 +942,24 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0);
 
+    let shaping_detection = load_config()
+        .ok()
+        .map(|cfg| detect_shaping_cpus(cfg.as_ref()));
+    let (shaping_cpus, excluded_cpus, has_hybrid_split) = shaping_detection
+        .map(|detection| {
+            let shaping_cpus = detection.shaping;
+            (
+                shaping_cpus.clone(),
+                detection
+                    .possible
+                    .into_iter()
+                    .filter(|cpu| !shaping_cpus.contains(cpu))
+                    .collect::<Vec<u32>>(),
+                detection.has_hybrid_split,
+            )
+        })
+        .unwrap_or_else(|| (Vec::new(), Vec::new(), false));
+
     let mut cores = Vec::with_capacity(all_cpus.len());
     for cpu in all_cpus {
         let planned = planned_core_metrics.get(&cpu).copied().unwrap_or_default();
@@ -969,6 +994,9 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
 
     CpuAffinityRuntimeSnapshot {
         generated_at_unix_ms,
+        shaping_cpus,
+        excluded_cpus,
+        has_hybrid_split,
         cores,
     }
 }

@@ -125,6 +125,20 @@ refresh_service_unit() {
     fi
 }
 
+clear_pinned_maps_before_lqosd_restart() {
+    local script_path="./rust/remove_pinned_maps.sh"
+    if [ ! -x "$script_path" ]; then
+        echo "Expected $script_path to exist and be executable before restarting lqosd."
+        exit 1
+    fi
+
+    echo "Removing pinned BPF maps before restarting lqosd."
+    if ! sudo "$script_path"; then
+        echo "Failed to remove pinned maps. Skipping service restarts to avoid restarting lqosd with stale map state."
+        exit 1
+    fi
+}
+
 SERVICE_UNITS_UPDATED=0
 refresh_service_unit lqosd
 refresh_service_unit lqos_scheduler
@@ -141,6 +155,7 @@ if service_exists lqos_node_manager; then
     sudo systemctl disable lqos_node_manager
 fi
 if service_exists lqosd; then
+    clear_pinned_maps_before_lqosd_restart
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqosd
 fi
@@ -160,6 +175,3 @@ echo "If src/deb-requirements-constraints.txt exists, Debian package installs us
 echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix from the LibreQoS APT repo at https://repo.libreqos.com."
 echo "The hotfix installer now offers to schedule a reboot after it finishes."
 echo "LibreQoS package installs on affected Ubuntu 24.04 hosts stop until the hotfix is installed; finish with sudo dpkg --configure -a after the reboot."
-echo ""
-echo "Run sudo rust/remove_pinned_maps.sh before you restart lqosd"
-echo "This ensures that any data-format changes will apply correctly."

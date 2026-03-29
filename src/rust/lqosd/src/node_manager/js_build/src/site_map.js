@@ -1,6 +1,7 @@
 import { colorByQoqScore, colorByRttMs } from "./helpers/color_scales";
 import { isColorBlindMode } from "./helpers/colorblind";
 import { isDarkMode } from "./helpers/dark_mode";
+import { isRedacted } from "./helpers/redact";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
 import { get_ws_client, subscribeWS } from "./pubsub/ws";
 
@@ -304,6 +305,24 @@ function immediateParentIndex(node) {
     }
     const numeric = Number(raw);
     return Number.isFinite(numeric) ? numeric : null;
+}
+
+function displayNodeName(name, nodeType) {
+    if (!name) {
+        return "";
+    }
+    return isRedacted() && String(nodeType || "").toLowerCase() === "site"
+        ? "[redacted]"
+        : name;
+}
+
+function displayParentName(name, parentType) {
+    if (!name) {
+        return "";
+    }
+    return isRedacted() && String(parentType || "").toLowerCase() === "site"
+        ? "[redacted]"
+        : name;
 }
 
 function findNearestAncestorSiteIndex(indexMap, startIndex) {
@@ -678,6 +697,10 @@ class SiteMapPage {
         });
         window.addEventListener("colorBlindModeChanged", () => {
             this.refreshLegend();
+            this.renderFromHistory();
+        });
+        window.addEventListener("redact-change", () => {
+            this.popup?.remove();
             this.renderFromHistory();
         });
     }
@@ -1076,6 +1099,7 @@ class SiteMapPage {
                 rttUpMs,
                 rttWorst: worstRtt(rttDownMs, rttUpMs),
                 parentName: null,
+                parentType: null,
                 inheritedCoords: false,
                 limitDownMbps,
                 limitUpMbps,
@@ -1096,12 +1120,14 @@ class SiteMapPage {
                     node.latitude = parent.latitude;
                     node.longitude = parent.longitude;
                     node.parentName = parent.name;
+                    node.parentType = parent.type;
                     node.inheritedCoords = true;
                 }
             } else if (node.immediateParent !== null && node.immediateParent !== undefined) {
                 const parent = byIndex.get(node.immediateParent);
                 if (parent) {
                     node.parentName = parent.name;
+                    node.parentType = parent.type;
                 }
             }
         });
@@ -1127,6 +1153,7 @@ class SiteMapPage {
                     name: node.name,
                     nodeType: node.type,
                     parentName: node.parentName || "",
+                    parentType: node.parentType || "",
                     inheritedCoords: node.inheritedCoords ? 1 : 0,
                     throughputDown: node.throughputDown,
                     throughputUp: node.throughputUp,
@@ -1301,7 +1328,7 @@ class SiteMapPage {
         const wanted = new Set();
         siteFeatures.forEach((feature) => {
             const key = feature?.properties?.key;
-            const name = feature?.properties?.name;
+            const name = displayNodeName(feature?.properties?.name, feature?.properties?.nodeType);
             const coordinates = feature?.geometry?.coordinates;
             if (!key || !name || !Array.isArray(coordinates) || coordinates.length < 2) {
                 return;
@@ -1407,9 +1434,10 @@ class SiteMapPage {
     }
 
     pointPopupHtml(props) {
+        const displayName = displayNodeName(props.name, props.nodeType);
         return `
             <div class="small">
-                <div class="fw-semibold">${escapeHtml(props.name)}</div>
+                <div class="fw-semibold">${escapeHtml(displayName)}</div>
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
                 <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
                 <div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
@@ -1437,8 +1465,9 @@ class SiteMapPage {
             return;
         }
         this.detailsPanel.style.display = "block";
-        this.detailsTitle.textContent = props.name;
-        this.detailsSubtitle.textContent = `${String(props.nodeType || "").toUpperCase()}${props.parentName ? ` · parent ${props.parentName}` : ""}${props.inheritedCoords ? " · using parent site coordinates" : ""}`;
+        this.detailsTitle.textContent = displayNodeName(props.name, props.nodeType);
+        const parentName = displayParentName(props.parentName, props.parentType);
+        this.detailsSubtitle.textContent = `${String(props.nodeType || "").toUpperCase()}${parentName ? ` · parent ${parentName}` : ""}${props.inheritedCoords ? " · using parent site coordinates" : ""}`;
         this.detailsGrid.innerHTML = [
             this.metricCard("Combined throughput", formatBitsPerSecond(props.throughputCombined)),
             this.metricCard("Download throughput", formatBitsPerSecond(props.throughputDown)),
@@ -1479,7 +1508,7 @@ class SiteMapPage {
     renderUnmappedGroup(label, nodes) {
         const items = nodes
             .sort((a, b) => a.name.localeCompare(b.name))
-            .map((node) => `<div class="site-map-list-item">${escapeHtml(node.name)}${node.parentName ? `<div class="text-muted small">${escapeHtml(node.parentName)}</div>` : ""}</div>`)
+            .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}${node.parentName ? `<div class="text-muted small">${escapeHtml(displayParentName(node.parentName, node.parentType))}</div>` : ""}</div>`)
             .join("");
         return `<div class="site-map-list-group"><h6>${escapeHtml(label)}</h6>${items}</div>`;
     }

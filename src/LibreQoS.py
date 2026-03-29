@@ -1870,6 +1870,7 @@ def refreshShapers():
                         sqm_override = circuit['sqm'] if 'sqm' in circuit else None
                         bakery.add_circuit(
                             circuit_name,
+                            node,
                             data[node]['classid'],
                             data[node]['up_classid'],
                             int(circuit['classMinor'], 16),

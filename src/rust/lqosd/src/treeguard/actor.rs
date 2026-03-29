@@ -1951,6 +1951,13 @@ fn pause_for_bakery_reload_with_flag(
     }
     status.paused_for_bakery_reload = false;
     status.pause_reason = None;
+    if status
+        .last_action_summary
+        .as_deref()
+        .is_some_and(|summary| summary.starts_with("Paused while Bakery "))
+    {
+        status.last_action_summary = None;
+    }
 
     false
 }
@@ -3252,6 +3259,7 @@ mod tests {
         );
         assert!(!resumed);
         assert!(!runtime_state.paused_for_bakery_reload);
+        assert!(status.last_action_summary.is_none());
     }
 
     #[test]

@@ -4,20 +4,20 @@
         <form>
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="gatherStats">
-                <label class="form-check-label" for="gatherStats">Gather Long-Term Statistics</label>
-                <div class="form-text">Enable collection of long-term performance data</div>
+                <label class="form-check-label" for="gatherStats">Gather Insight Statistics</label>
+                <div class="form-text">Enable collection of Insight performance data</div>
             </div>
 
             <div class="mb-3">
                 <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
                 <input type="number" class="form-control" id="collationPeriod" min="1">
-                <div class="form-text">How frequently to aggregate statistics into long-term records</div>
+                <div class="form-text">How frequently to aggregate statistics into Insight records</div>
             </div>
 
             <div class="mb-3">
                 <label for="licenseKey" class="form-label">License Key</label>
                 <input type="text" class="form-control" id="licenseKey">
-                <div class="form-text">License key for LibreQoS hosted statistics (if applicable)</div>
+                <div class="form-text">License key for LibreQoS Insight (if applicable)</div>
             </div>
 
             <div class="mb-3">
@@ -27,9 +27,9 @@
             </div>
 
             <div class="mb-3">
-                <label for="ltsUrl" class="form-label">Custom LTS Server URL</label>
+                <label for="ltsUrl" class="form-label">Custom Insight Server URL</label>
                 <input type="text" class="form-control" id="ltsUrl">
-                <div class="form-text">URL for self-hosted LTS server (leave blank for default)</div>
+                <div class="form-text">URL for a self-hosted Insight server (leave blank for default)</div>
             </div>
 
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>

@@ -72,6 +72,7 @@ use serde_json::{Map, Value};
 
 const TEST_FAULT_ONCE_PATH: &str = "/tmp/lqos_bakery_fail_purpose_once.txt";
 const ACTIVE_RUNTIME_MINOR_START: u32 = 0x1000;
+const MIGRATION_VERIFICATION_MAX_RETRIES: u8 = 3;
 // ---------------------- Live-Move Types and Helpers (module scope) ----------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +125,72 @@ struct Migration {
     // live TC and IP cutover reach the final class successfully.
     desired_cmd: Arc<BakeryCommands>,
     stage: MigrationStage,
+    shadow_verify_attempts: u8,
+    final_verify_attempts: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MigrationDirectionVerification {
+    interface_name: String,
+    expected_handle: TcHandle,
+    expected_parent: TcHandle,
+    observed_parent: Option<TcHandle>,
+    observed_leaf_qdisc_major: Option<u16>,
+}
+
+impl MigrationDirectionVerification {
+    fn ready(&self) -> bool {
+        self.observed_parent == Some(self.expected_parent)
+            && self.observed_leaf_qdisc_major.is_some()
+    }
+
+    fn summary(&self, direction: &str) -> String {
+        let observed = match (self.observed_parent, self.observed_leaf_qdisc_major) {
+            (Some(parent), Some(leaf_major)) => format!(
+                "observed parent {} with leaf qdisc 0x{:x}:",
+                parent.as_tc_string(),
+                leaf_major
+            ),
+            (Some(parent), None) => {
+                format!(
+                    "observed parent {} with no leaf qdisc",
+                    parent.as_tc_string()
+                )
+            }
+            (None, _) => "observed missing".to_string(),
+        };
+        format!(
+            "{direction} {} expected class {} under parent {} with a leaf qdisc, {observed}",
+            self.interface_name,
+            self.expected_handle.as_tc_string(),
+            self.expected_parent.as_tc_string()
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MigrationBranchVerification {
+    down: MigrationDirectionVerification,
+    up: Option<MigrationDirectionVerification>,
+}
+
+impl MigrationBranchVerification {
+    fn ready(&self) -> bool {
+        self.down.ready()
+            && self
+                .up
+                .as_ref()
+                .map(MigrationDirectionVerification::ready)
+                .unwrap_or(true)
+    }
+
+    fn summary(&self) -> String {
+        let mut parts = vec![self.down.summary("down")];
+        if let Some(up) = &self.up {
+            parts.push(up.summary("up"));
+        }
+        parts.join("; ")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -381,25 +448,6 @@ fn tc_handle_from_major_minor(major: u16, minor: u16) -> TcHandle {
     TcHandle::from_u32(((major as u32) << 16) | (minor as u32))
 }
 
-fn used_minors_for_parent(
-    circuits: &HashMap<i64, Arc<BakeryCommands>>,
-    parent: &TcHandle,
-) -> HashSet<u16> {
-    let mut set = HashSet::new();
-    for (_k, v) in circuits.iter() {
-        if let BakeryCommands::AddCircuit {
-            parent_class_id,
-            class_minor,
-            ..
-        } = v.as_ref()
-            && parent_class_id == parent
-        {
-            set.insert(*class_minor);
-        }
-    }
-    set
-}
-
 fn used_site_minors_for_majors(
     sites: &HashMap<i64, Arc<BakeryCommands>>,
     down_major: u16,
@@ -452,13 +500,43 @@ fn used_circuit_minors_for_majors(
     (used_down, used_up)
 }
 
-fn find_free_minor(
+fn used_pending_migration_shadow_minors_for_majors(
+    migrations: &HashMap<i64, Migration>,
+    down_major: u16,
+    up_major: u16,
+) -> (HashSet<u16>, HashSet<u16>) {
+    let mut used_down = HashSet::new();
+    let mut used_up = HashSet::new();
+    for migration in migrations.values() {
+        if migration.stage == MigrationStage::Done {
+            continue;
+        }
+        if migration.class_major == down_major {
+            used_down.insert(migration.shadow_minor);
+        }
+        if migration.up_class_major == up_major {
+            used_up.insert(migration.shadow_minor);
+        }
+    }
+    (used_down, used_up)
+}
+
+fn find_free_circuit_shadow_minor(
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &HashMap<i64, Arc<BakeryCommands>>,
-    down_parent: &TcHandle,
-    up_parent: &TcHandle,
+    migrations: &HashMap<i64, Migration>,
+    down_major: u16,
+    up_major: u16,
 ) -> Option<u16> {
-    let used_down = used_minors_for_parent(circuits, down_parent);
-    let used_up = used_minors_for_parent(circuits, up_parent);
+    let (mut used_down, mut used_up) = used_site_minors_for_majors(sites, down_major, up_major);
+    let (used_circuit_down, used_circuit_up) =
+        used_circuit_minors_for_majors(circuits, down_major, up_major);
+    used_down.extend(used_circuit_down);
+    used_up.extend(used_circuit_up);
+    let (used_shadow_down, used_shadow_up) =
+        used_pending_migration_shadow_minors_for_majors(migrations, down_major, up_major);
+    used_down.extend(used_shadow_down);
+    used_up.extend(used_shadow_up);
     for start in [0x2000u16, 0x4000, 0x6000, 0x8000, 0xA000, 0xC000, 0xE000] {
         let end = start.saturating_add(0x1FFF);
         for m in start..=end.min(0xFFFE) {
@@ -473,6 +551,7 @@ fn find_free_minor(
 fn find_free_site_shadow_minor(
     sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &HashMap<i64, Arc<BakeryCommands>>,
+    migrations: &HashMap<i64, Migration>,
     planned_sites: &HashMap<i64, PlannedSiteUpdate>,
     planned_circuits: &HashMap<i64, PlannedCircuitUpdate>,
     down_parent: &TcHandle,
@@ -485,6 +564,10 @@ fn find_free_site_shadow_minor(
         used_circuit_minors_for_majors(circuits, down_major, up_major);
     used_down.extend(used_circuit_down);
     used_up.extend(used_circuit_up);
+    let (used_shadow_down, used_shadow_up) =
+        used_pending_migration_shadow_minors_for_majors(migrations, down_major, up_major);
+    used_down.extend(used_shadow_down);
+    used_up.extend(used_shadow_up);
 
     for update in planned_sites.values() {
         if let BakeryCommands::AddSite {
@@ -696,6 +779,7 @@ fn build_shadow_add_cmd(
 fn queue_runtime_migration(
     old_cmd: &BakeryCommands,
     new_cmd: &Arc<BakeryCommands>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &HashMap<i64, u64>,
     migrations: &mut HashMap<i64, Migration>,
@@ -744,7 +828,9 @@ fn queue_runtime_migration(
         return false;
     };
 
-    let Some(shadow_minor) = find_free_minor(circuits, parent_class_id, up_parent_class_id) else {
+    let Some(shadow_minor) =
+        find_free_circuit_shadow_minor(sites, circuits, migrations, *class_major, *up_class_major)
+    else {
         return false;
     };
 
@@ -777,6 +863,8 @@ fn queue_runtime_migration(
         sqm_override: sqm_override.clone(),
         desired_cmd: Arc::clone(new_cmd),
         stage: MigrationStage::PrepareShadow,
+        shadow_verify_attempts: 0,
+        final_verify_attempts: 0,
     };
 
     migrations.insert(*circuit_hash, mig);
@@ -786,21 +874,39 @@ fn queue_runtime_migration(
 fn queue_live_migration(
     old_cmd: &BakeryCommands,
     new_cmd: &Arc<BakeryCommands>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &HashMap<i64, u64>,
     migrations: &mut HashMap<i64, Migration>,
 ) -> bool {
-    queue_runtime_migration(old_cmd, new_cmd, circuits, live_circuits, migrations, true)
+    queue_runtime_migration(
+        old_cmd,
+        new_cmd,
+        sites,
+        circuits,
+        live_circuits,
+        migrations,
+        true,
+    )
 }
 
 fn queue_top_level_runtime_migration(
     old_cmd: &BakeryCommands,
     new_cmd: &Arc<BakeryCommands>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &HashMap<i64, u64>,
     migrations: &mut HashMap<i64, Migration>,
 ) -> bool {
-    queue_runtime_migration(old_cmd, new_cmd, circuits, live_circuits, migrations, false)
+    queue_runtime_migration(
+        old_cmd,
+        new_cmd,
+        sites,
+        circuits,
+        live_circuits,
+        migrations,
+        false,
+    )
 }
 
 fn circuits_with_pending_migration_targets(
@@ -3120,47 +3226,63 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         })
     }
 
-    fn migration_branch_state_ready(
+    fn verify_migration_direction(
+        interface_name: String,
+        snapshot: &HashMap<TcHandle, crate::utils::LiveTcClassEntry>,
+        expected_handle: TcHandle,
+        expected_parent: TcHandle,
+    ) -> MigrationDirectionVerification {
+        let observed = snapshot.get(&expected_handle);
+        MigrationDirectionVerification {
+            interface_name,
+            expected_handle,
+            expected_parent,
+            observed_parent: observed.and_then(|entry| entry.parent),
+            observed_leaf_qdisc_major: observed.and_then(|entry| entry.leaf_qdisc_major),
+        }
+    }
+
+    fn migration_branch_verification(
         config: &Arc<Config>,
         down_handle: TcHandle,
         down_parent: TcHandle,
         up_handle: TcHandle,
         up_parent: TcHandle,
-    ) -> Result<bool, String> {
+    ) -> Result<MigrationBranchVerification, String> {
         let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
-        let Some(down_entry) = down_snapshot.get(&down_handle) else {
-            return Ok(false);
-        };
-        if down_entry.parent != Some(down_parent) || down_entry.leaf_qdisc_major.is_none() {
-            return Ok(false);
-        }
+        let down = verify_migration_direction(
+            config.isp_interface(),
+            &down_snapshot,
+            down_handle,
+            down_parent,
+        );
 
         if config.on_a_stick_mode() {
-            return Ok(true);
+            return Ok(MigrationBranchVerification { down, up: None });
         }
 
         let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
-        let Some(up_entry) = up_snapshot.get(&up_handle) else {
-            return Ok(false);
-        };
-        if up_entry.parent != Some(up_parent) || up_entry.leaf_qdisc_major.is_none() {
-            return Ok(false);
-        }
+        let up = verify_migration_direction(
+            config.internet_interface(),
+            &up_snapshot,
+            up_handle,
+            up_parent,
+        );
 
-        Ok(true)
+        Ok(MigrationBranchVerification { down, up: Some(up) })
     }
 
-    fn migration_shadow_state_ready(
+    fn migration_shadow_verification(
         config: &Arc<Config>,
         migration: &Migration,
-    ) -> Result<bool, String> {
+    ) -> Result<MigrationBranchVerification, String> {
         let down_handle = TcHandle::from_u32(
             (u32::from(migration.class_major) << 16) | u32::from(migration.shadow_minor),
         );
         let up_handle = TcHandle::from_u32(
             (u32::from(migration.up_class_major) << 16) | u32::from(migration.shadow_minor),
         );
-        migration_branch_state_ready(
+        migration_branch_verification(
             config,
             down_handle,
             migration.parent_class_id,
@@ -3169,17 +3291,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
-    fn migration_final_state_ready(
+    fn migration_final_verification(
         config: &Arc<Config>,
         migration: &Migration,
-    ) -> Result<bool, String> {
+    ) -> Result<MigrationBranchVerification, String> {
         let down_handle = TcHandle::from_u32(
             (u32::from(migration.class_major) << 16) | u32::from(migration.final_minor),
         );
         let up_handle = TcHandle::from_u32(
             (u32::from(migration.up_class_major) << 16) | u32::from(migration.final_minor),
         );
-        migration_branch_state_ready(
+        migration_branch_verification(
             config,
             down_handle,
             migration.parent_class_id,
@@ -3276,8 +3398,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::VerifyShadowReady => {
                     let target_label = migration_target_label(mig);
-                    let shadow_ready = match migration_shadow_state_ready(config, mig) {
-                        Ok(ready) => ready,
+                    let verification = match migration_shadow_verification(config, mig) {
+                        Ok(verification) => verification,
                         Err(e) => {
                             mark_reload_required(format!(
                                 "Bakery live-move shadow verification failed for {target_label}: {e}. A full reload is now required before further incremental topology mutations."
@@ -3287,15 +3409,30 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             continue;
                         }
                     };
-                    if !shadow_ready {
+                    if !verification.ready() {
+                        if mig.shadow_verify_attempts < MIGRATION_VERIFICATION_MAX_RETRIES {
+                            mig.shadow_verify_attempts =
+                                mig.shadow_verify_attempts.saturating_add(1);
+                            warn!(
+                                "Bakery live-move shadow verification retry {}/{} for {}: {}",
+                                mig.shadow_verify_attempts,
+                                MIGRATION_VERIFICATION_MAX_RETRIES,
+                                target_label,
+                                verification.summary()
+                            );
+                            advanced += 1;
+                            continue;
+                        }
                         mark_reload_required(format!(
-                            "Bakery live-move shadow verification did not find the expected shadow class/qdisc for {target_label}. A full reload is now required before further incremental topology mutations."
+                            "Bakery live-move shadow verification did not find the expected shadow class/qdisc for {target_label}: {}. A full reload is now required before further incremental topology mutations.",
+                            verification.summary()
                         ));
                         mig.stage = MigrationStage::Done;
                         advanced += 1;
                         continue;
                     }
                     mig.stage = MigrationStage::SwapToShadow;
+                    mig.shadow_verify_attempts = 0;
                     advanced += 1;
                 }
                 MigrationStage::SwapToShadow => {
@@ -3400,8 +3537,8 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::VerifyFinalReady => {
                     let target_label = migration_target_label(mig);
-                    let final_ready = match migration_final_state_ready(config, mig) {
-                        Ok(ready) => ready,
+                    let verification = match migration_final_verification(config, mig) {
+                        Ok(verification) => verification,
                         Err(e) => {
                             mark_reload_required(format!(
                                 "Bakery live-move final verification failed for {target_label}: {e}. A full reload is now required before further incremental topology mutations."
@@ -3411,15 +3548,29 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                             continue;
                         }
                     };
-                    if !final_ready {
+                    if !verification.ready() {
+                        if mig.final_verify_attempts < MIGRATION_VERIFICATION_MAX_RETRIES {
+                            mig.final_verify_attempts = mig.final_verify_attempts.saturating_add(1);
+                            warn!(
+                                "Bakery live-move final verification retry {}/{} for {}: {}",
+                                mig.final_verify_attempts,
+                                MIGRATION_VERIFICATION_MAX_RETRIES,
+                                target_label,
+                                verification.summary()
+                            );
+                            advanced += 1;
+                            continue;
+                        }
                         mark_reload_required(format!(
-                            "Bakery live-move final verification did not find the expected final class/qdisc for {target_label}. A full reload is now required before further incremental topology mutations."
+                            "Bakery live-move final verification did not find the expected final class/qdisc for {target_label}: {}. A full reload is now required before further incremental topology mutations.",
+                            verification.summary()
                         ));
                         mig.stage = MigrationStage::Done;
                         advanced += 1;
                         continue;
                     }
                     mig.stage = MigrationStage::SwapToFinal;
+                    mig.final_verify_attempts = 0;
                     advanced += 1;
                 }
                 MigrationStage::SwapToFinal => {
@@ -4310,6 +4461,7 @@ fn handle_commit_batch(
                     && queue_live_migration(
                         old_cmd.as_ref(),
                         &enriched_cmd,
+                        sites,
                         circuits,
                         live_circuits,
                         migrations,
@@ -4375,10 +4527,7 @@ fn handle_commit_batch(
                 }
             }
             if live_tree_allowed && !immediate_commands.is_empty() {
-                execute_and_record_live_change(
-                    &immediate_commands,
-                    "updating circuit speeds (fallback)",
-                );
+                execute_and_record_live_change(&immediate_commands, "updating circuit speeds live");
             }
         }
 
@@ -4437,6 +4586,7 @@ fn handle_commit_batch(
                 if queue_live_migration(
                     old_cmd.as_ref(),
                     &enriched_cmd,
+                    sites,
                     circuits,
                     live_circuits,
                     migrations,
@@ -6489,6 +6639,7 @@ fn build_non_top_level_virtualization_plan(
         let Some(shadow_minor) = find_free_site_shadow_minor(
             sites,
             circuits,
+            &HashMap::new(),
             &active_sites,
             &HashMap::new(),
             &new_parent_down,
@@ -6814,6 +6965,7 @@ fn apply_site_command_update_stages(
 #[allow(clippy::too_many_arguments)]
 fn apply_circuit_command_updates(
     config: &Arc<Config>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     updates: &HashMap<i64, PlannedCircuitUpdate>,
     live_circuits: &HashMap<i64, u64>,
@@ -6873,11 +7025,18 @@ fn apply_circuit_command_updates(
         }
         if live_circuits.contains_key(circuit_hash)
             && let BakeryCommands::AddCircuit {
-                parent_class_id,
-                up_parent_class_id,
+                class_major,
+                up_class_major,
                 ..
             } = enriched_cmd.as_ref()
-            && find_free_minor(circuits, parent_class_id, up_parent_class_id).is_none()
+            && find_free_circuit_shadow_minor(
+                sites,
+                circuits,
+                migrations,
+                *class_major,
+                *up_class_major,
+            )
+            .is_none()
         {
             return Err(format!(
                 "Unable to queue live migration for active circuit {}: no shadow minor available",
@@ -6887,6 +7046,7 @@ fn apply_circuit_command_updates(
         if queue_live_migration(
             old_cmd.as_ref(),
             &enriched_cmd,
+            sites,
             circuits,
             live_circuits,
             migrations,
@@ -7122,6 +7282,7 @@ fn build_final_qdisc_handle_rotation_invariant_error_with_live_reservations(
 #[allow(clippy::too_many_arguments)]
 fn apply_top_level_circuit_command_updates(
     config: &Arc<Config>,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     updates: &HashMap<i64, PlannedCircuitUpdate>,
     live_circuits: &HashMap<i64, u64>,
@@ -7170,11 +7331,18 @@ fn apply_top_level_circuit_command_updates(
         );
         if circuit_qdisc_parent_changed(old_cmd.as_ref(), enriched_cmd.as_ref(), config)
             && let BakeryCommands::AddCircuit {
-                parent_class_id,
-                up_parent_class_id,
+                class_major,
+                up_class_major,
                 ..
             } = enriched_cmd.as_ref()
-            && find_free_minor(circuits, parent_class_id, up_parent_class_id).is_none()
+            && find_free_circuit_shadow_minor(
+                sites,
+                circuits,
+                migrations,
+                *class_major,
+                *up_class_major,
+            )
+            .is_none()
         {
             return Err(format!(
                 "Unable to queue top-level runtime migration for circuit {}: no shadow minor available",
@@ -7221,6 +7389,7 @@ fn apply_top_level_circuit_command_updates(
             if !queue_top_level_runtime_migration(
                 old_cmd.as_ref(),
                 &enriched_cmd,
+                sites,
                 circuits,
                 live_circuits,
                 migrations,
@@ -7236,6 +7405,7 @@ fn apply_top_level_circuit_command_updates(
         if queue_live_migration(
             old_cmd.as_ref(),
             &enriched_cmd,
+            sites,
             circuits,
             live_circuits,
             migrations,
@@ -8958,6 +9128,7 @@ fn handle_treeguard_set_node_virtual_live(
                 )?;
                 apply_top_level_circuit_command_updates(
                     &config,
+                    sites,
                     circuits,
                     &plan.active_circuits,
                     live_circuits,
@@ -9034,6 +9205,7 @@ fn handle_treeguard_set_node_virtual_live(
             )?;
             apply_circuit_command_updates(
                 &config,
+                sites,
                 circuits,
                 &plan.active_circuits,
                 live_circuits,
@@ -9201,6 +9373,7 @@ fn handle_treeguard_set_node_virtual_live(
                     .collect::<Result<HashMap<i64, PlannedCircuitUpdate>, String>>()?;
                 apply_circuit_command_updates(
                     &config,
+                    sites,
                     circuits,
                     &updates,
                     live_circuits,
@@ -10016,6 +10189,8 @@ mod tests {
                 sqm_override: None,
                 desired_cmd: mk_add_circuit(40, "192.0.2.40/32"),
                 stage: MigrationStage::PrepareShadow,
+                shadow_verify_attempts: 0,
+                final_verify_attempts: 0,
             },
         );
 
@@ -12271,12 +12446,14 @@ mod tests {
         let new_cmd = mk_test_circuit(9001, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.90/32");
 
         let mut circuits = HashMap::from([(9001, Arc::clone(&old_cmd))]);
+        let sites = HashMap::new();
         let live_circuits = HashMap::from([(9001, 1u64)]);
         let mut migrations = HashMap::new();
 
         let queued = queue_live_migration(
             old_cmd.as_ref(),
             &new_cmd,
+            &sites,
             &mut circuits,
             &live_circuits,
             &mut migrations,
@@ -12301,6 +12478,7 @@ mod tests {
         let new_cmd = mk_test_circuit(9100, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.91/32");
 
         let mut circuits = HashMap::from([(9100, Arc::clone(&old_cmd))]);
+        let sites = HashMap::new();
         for minor in 1..=0xFFFEu16 {
             circuits.insert(
                 100_000 + i64::from(minor),
@@ -12322,6 +12500,7 @@ mod tests {
         let queued = queue_live_migration(
             old_cmd.as_ref(),
             &new_cmd,
+            &sites,
             &mut circuits,
             &live_circuits,
             &mut migrations,
@@ -12336,17 +12515,73 @@ mod tests {
     }
 
     #[test]
+    fn find_free_circuit_shadow_minor_respects_major_domain_occupancy() {
+        let sites = HashMap::from([(7, mk_add_site(7, 0x10001, 0x20001, 0x2001))]);
+        let circuits = HashMap::from([(
+            42,
+            mk_test_circuit(42, 0x10099, 0x20034, 0x2000, 0x1, 0x2, "192.0.2.142/32"),
+        )]);
+
+        let chosen = find_free_circuit_shadow_minor(&sites, &circuits, &HashMap::new(), 0x1, 0x2)
+            .expect("free minor");
+
+        assert_ne!(chosen, 0x2000);
+        assert_ne!(chosen, 0x2001);
+        assert_eq!(chosen, 0x2002);
+    }
+
+    #[test]
+    fn queue_runtime_migration_reserves_shadow_minor_across_pending_migrations() {
+        let old_cmd_a = mk_test_circuit(9300, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.94/32");
+        let new_cmd_a = mk_test_circuit(9300, 0x80034, 0x80034, 0x35, 0x8, 0x8, "192.0.2.94/32");
+        let old_cmd_b = mk_test_circuit(9301, 0x10022, 0x20022, 0x23, 0x1, 0x2, "192.0.2.95/32");
+        let new_cmd_b = mk_test_circuit(9301, 0x80036, 0x80036, 0x37, 0x8, 0x8, "192.0.2.95/32");
+
+        let mut circuits = HashMap::from([
+            (9300, Arc::clone(&old_cmd_a)),
+            (9301, Arc::clone(&old_cmd_b)),
+        ]);
+        let sites = HashMap::new();
+        let live_circuits = HashMap::new();
+        let mut migrations = HashMap::new();
+
+        assert!(queue_top_level_runtime_migration(
+            old_cmd_a.as_ref(),
+            &new_cmd_a,
+            &sites,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        ));
+        assert!(queue_top_level_runtime_migration(
+            old_cmd_b.as_ref(),
+            &new_cmd_b,
+            &sites,
+            &mut circuits,
+            &live_circuits,
+            &mut migrations,
+        ));
+
+        let migration_a = migrations.get(&9300).expect("first migration");
+        let migration_b = migrations.get(&9301).expect("second migration");
+        assert_eq!(migration_a.shadow_minor, 0x2000);
+        assert_eq!(migration_b.shadow_minor, 0x2001);
+    }
+
+    #[test]
     fn pending_migration_overlay_uses_desired_state_for_diff_only() {
         let old_cmd = mk_test_circuit(9300, 0x10020, 0x20020, 0x21, 0x1, 0x2, "192.0.2.94/32");
         let new_cmd = mk_test_circuit(9300, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.94/32");
 
         let mut circuits = HashMap::from([(9300, Arc::clone(&old_cmd))]);
+        let sites = HashMap::new();
         let live_circuits = HashMap::from([(9300, 1u64)]);
         let mut migrations = HashMap::new();
 
         assert!(queue_live_migration(
             old_cmd.as_ref(),
             &new_cmd,
+            &sites,
             &mut circuits,
             &live_circuits,
             &mut migrations,
@@ -12399,6 +12634,8 @@ mod tests {
             sqm_override: None,
             desired_cmd: mk_test_circuit(9002, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.92/32"),
             stage: MigrationStage::BuildFinal,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
         };
         let result = ExecuteResult {
             ok: false,
@@ -12458,6 +12695,8 @@ mod tests {
             sqm_override: None,
             desired_cmd: mk_test_circuit(9003, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.93/32"),
             stage: MigrationStage::BuildFinal,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
         };
         let result = ExecuteResult {
             ok: true,
@@ -12508,12 +12747,48 @@ mod tests {
             sqm_override: None,
             desired_cmd: mk_test_circuit(9006, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.96/32"),
             stage: MigrationStage::BuildFinal,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
         };
 
         let label = migration_target_label(&migration);
         assert!(label.contains("Rochester-Roof-Switch"));
         assert!(label.contains("9006"));
         assert!(label.contains("7232 Rochester"));
+    }
+
+    #[test]
+    fn migration_branch_verification_summary_describes_expected_and_observed_state() {
+        let verification = MigrationBranchVerification {
+            down: MigrationDirectionVerification {
+                interface_name: "if-down".to_string(),
+                expected_handle: TcHandle::from_u32(0x4002000),
+                expected_parent: TcHandle::from_u32(0x4000015),
+                observed_parent: Some(TcHandle::from_u32(0x4000013)),
+                observed_leaf_qdisc_major: None,
+            },
+            up: Some(MigrationDirectionVerification {
+                interface_name: "if-up".to_string(),
+                expected_handle: TcHandle::from_u32(0x5002000),
+                expected_parent: TcHandle::from_u32(0x5000015),
+                observed_parent: None,
+                observed_leaf_qdisc_major: None,
+            }),
+        };
+
+        let summary = verification.summary();
+        assert!(summary.contains("if-down"));
+        assert!(summary.contains("expected class"));
+        assert!(summary.contains("2000"));
+        assert!(summary.contains("parent"));
+        assert!(summary.contains("15"));
+        assert!(summary.contains("observed parent"));
+        assert!(summary.contains("13"));
+        assert!(summary.contains("with no leaf qdisc"));
+        assert!(summary.contains("if-up"));
+        assert!(summary.contains("500"));
+        assert!(summary.contains("observed missing"));
+        assert!(!verification.ready());
     }
 
     #[test]
@@ -12547,6 +12822,8 @@ mod tests {
             sqm_override: None,
             desired_cmd: mk_test_circuit(9004, 0x10034, 0x20034, 0x35, 0x1, 0x2, "192.0.2.94/32"),
             stage: MigrationStage::BuildFinal,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
         };
 
         let summary = migration_qdisc_handle_rotation_invariant_error(&migration)
@@ -12617,6 +12894,8 @@ mod tests {
                 sqm_override: None,
             }),
             stage: MigrationStage::BuildFinal,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
         };
 
         let final_cmd = build_temp_add_cmd(
@@ -12690,12 +12969,14 @@ mod tests {
         let new_cmd = mk_test_circuit(9200, 0x10034, 0x20034, 0x35, 0x3, 0x4, "192.0.2.92/32");
 
         let mut circuits = HashMap::from([(9200, Arc::clone(&old_cmd))]);
+        let sites = HashMap::new();
         let live_circuits = HashMap::new();
         let mut migrations = HashMap::new();
 
         let queued = queue_top_level_runtime_migration(
             old_cmd.as_ref(),
             &new_cmd,
+            &sites,
             &mut circuits,
             &live_circuits,
             &mut migrations,
@@ -12780,11 +13061,13 @@ mod tests {
         reloaded.save(&config);
 
         let mut circuits = HashMap::from([(9400, Arc::clone(&original))]);
+        let sites = HashMap::new();
         let live_circuits = HashMap::from([(9400, 1u64)]);
         let mut migrations = HashMap::new();
         assert!(queue_live_migration(
             original.as_ref(),
             &moved,
+            &sites,
             &mut circuits,
             &live_circuits,
             &mut migrations,

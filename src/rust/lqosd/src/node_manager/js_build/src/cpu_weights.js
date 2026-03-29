@@ -10,6 +10,7 @@ let state = {
     direction: "down",
     page: 1,
     pageSize: 50,
+    showExcludedCores: false,
     plannerEnabled: null,
     runtimeSnapshot: null,
     liveCpuUsage: [],
@@ -130,12 +131,32 @@ function getCores() {
     return cores;
 }
 
+function getShapingCpuSet() {
+    const shaping = Array.isArray(state.runtimeSnapshot?.shaping_cpus)
+        ? state.runtimeSnapshot.shaping_cpus
+        : [];
+    return new Set(shaping.map((cpu) => toNumber(cpu, -1)).filter((cpu) => cpu >= 0));
+}
+
+function hasShapingCpuFilter() {
+    return getShapingCpuSet().size > 0;
+}
+
+function getVisibleCores() {
+    const cores = getCores();
+    if (state.showExcludedCores || !hasShapingCpuFilter()) {
+        return cores;
+    }
+    const shaping = getShapingCpuSet();
+    return cores.filter((core) => shaping.has(toNumber(core.cpu, -1)));
+}
+
 function getSelectedCore() {
-    return getCores().find((core) => toNumber(core.cpu, -1) === toNumber(state.selectedCpu, -2)) || null;
+    return getVisibleCores().find((core) => toNumber(core.cpu, -1) === toNumber(state.selectedCpu, -2)) || null;
 }
 
 function selectDefaultCpu() {
-    const cores = getCores();
+    const cores = getVisibleCores();
     if (cores.length === 0) {
         state.selectedCpu = null;
         return;
@@ -172,7 +193,7 @@ function applyOverviewRowLiveMetrics(row, core) {
 function updateOverviewLiveMetrics() {
     const overview = document.getElementById("cpuOverview");
     if (!overview) return;
-    const coreMap = new Map(getCores().map((core) => [String(toNumber(core.cpu, -1)), core]));
+    const coreMap = new Map(getVisibleCores().map((core) => [String(toNumber(core.cpu, -1)), core]));
     overview.querySelectorAll(".cpu-affinity-overview-row[data-cpu]").forEach((row) => {
         const core = coreMap.get(row.dataset.cpu);
         if (!core) return;
@@ -189,9 +210,11 @@ function renderOverview() {
     clearDiv(target);
     renderBinpackBadge();
 
-    const cores = getCores();
+    const cores = getVisibleCores();
     if (cores.length === 0) {
-        target.innerHTML = '<p class="text-muted">No runtime CPU assignment data found. Run LibreQoS to generate queuingStructure.json and live tree state.</p>';
+        target.innerHTML = hasShapingCpuFilter()
+            ? '<p class="text-muted">No shaping CPUs are visible with the current filter.</p>'
+            : '<p class="text-muted">No runtime CPU assignment data found. Run LibreQoS to generate queuingStructure.json and live tree state.</p>';
         return;
     }
 
@@ -205,9 +228,17 @@ function renderOverview() {
     header.className = "cpu-affinity-card-header";
 
     const headerText = document.createElement("div");
+    const shapingCount = Array.isArray(state.runtimeSnapshot?.shaping_cpus) ? state.runtimeSnapshot.shaping_cpus.length : 0;
+    const excludedCount = Array.isArray(state.runtimeSnapshot?.excluded_cpus) ? state.runtimeSnapshot.excluded_cpus.length : 0;
+    const hasHybridSplit = !!state.runtimeSnapshot?.has_hybrid_split;
+    const overviewSubtitle = hasShapingCpuFilter() && !state.showExcludedCores
+        ? `Showing shaping CPUs only${hasHybridSplit && excludedCount > 0 ? ` (${shapingCount} shaping cores, ${excludedCount} excluded host cores hidden)` : ""}.`
+        : hasHybridSplit && excludedCount > 0
+            ? `Showing all host cores, including ${excludedCount} excluded non-shaping core${excludedCount === 1 ? "" : "s"}.`
+            : "Choose a core to inspect live ownership, promoted runtime branches, and planner drift.";
     headerText.innerHTML = `
         <h3>CPU Core List</h3>
-        <p>Choose a core to inspect live ownership, promoted runtime branches, and planner drift.</p>
+        <p>${overviewSubtitle}</p>
     `;
     header.appendChild(headerText);
 
@@ -256,7 +287,10 @@ function renderOverview() {
         titleWrap.appendChild(title);
         const subtitle = document.createElement("div");
         subtitle.className = "text-muted small";
-        subtitle.textContent = `${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`;
+        const isExcluded = hasShapingCpuFilter() && !getShapingCpuSet().has(toNumber(core.cpu, -1));
+        subtitle.textContent = isExcluded
+            ? `Excluded from shaping · ${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`
+            : `${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`;
         titleWrap.appendChild(subtitle);
         topRow.appendChild(titleWrap);
 
@@ -663,6 +697,7 @@ function initControls() {
     const btnTabNodes = document.getElementById("btnTabNodes");
     const btnTabCircuits = document.getElementById("btnTabCircuits");
     const btnTabChanges = document.getElementById("btnTabChanges");
+    const showExcludedCores = document.getElementById("showExcludedCores");
 
     pageSizeInput.onchange = () => {
         let v = parseInt(pageSizeInput.value || "50", 10);
@@ -687,6 +722,19 @@ function initControls() {
     btnRefresh.onclick = () => {
         refreshAll();
     };
+    if (showExcludedCores) {
+        showExcludedCores.checked = !!state.showExcludedCores;
+        showExcludedCores.onchange = () => {
+            state.showExcludedCores = !!showExcludedCores.checked;
+            state.overviewScrollTop = 0;
+            selectDefaultCpu();
+            renderOverview();
+            renderSelectedCore();
+            if (state.detailTab === "circuits") {
+                fetchCircuits();
+            }
+        };
+    }
     btnTabNodes.onclick = () => {
         state.detailTab = "nodes";
         renderSelectedCore();
