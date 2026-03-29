@@ -3,7 +3,7 @@ use crate::node_manager::local_api::network_tree_lite::{
 };
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::system_stats::{CPU_USAGE, NUM_CPUS};
-use lqos_config::{detect_shaping_cpus, load_config};
+use lqos_config::{ShapingCpuDetection, detect_shaping_cpus, load_config};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -118,6 +118,8 @@ pub struct CpuAffinityRuntimeNode {
     pub subtree_node_count: u32,
     /// Number of descendant circuits beneath this node.
     pub subtree_circuit_count: u32,
+    /// Effective max throughput in Mbps for down/up from the live tree.
+    pub effective_max_mbps: (f64, f64),
     /// Current throughput in bytes per second, down/up.
     pub current_throughput_bps: (u64, u64),
 }
@@ -693,6 +695,75 @@ fn live_cpu_usage_by_index() -> HashMap<u32, u32> {
     usage
 }
 
+fn inferred_included_cpus(
+    planned_core_metrics: &HashMap<u32, PlannedCoreMetrics>,
+    placements: &[RuntimeNodePlacement],
+) -> BTreeSet<u32> {
+    let mut included = BTreeSet::new();
+
+    for cpu in planned_core_metrics.keys().copied() {
+        included.insert(cpu);
+    }
+
+    for placement in placements {
+        if let Some(cpu) = placement.planned_cpu {
+            included.insert(cpu);
+        }
+        if let Some(cpu) = placement.effective_cpu {
+            included.insert(cpu);
+        }
+    }
+
+    included
+}
+
+fn resolve_snapshot_cpu_sets(
+    detection: Option<ShapingCpuDetection>,
+    all_cpus: &BTreeSet<u32>,
+    planned_core_metrics: &HashMap<u32, PlannedCoreMetrics>,
+    placements: &[RuntimeNodePlacement],
+) -> (Vec<u32>, Vec<u32>, bool) {
+    let Some(detection) = detection else {
+        return (Vec::new(), Vec::new(), false);
+    };
+
+    let possible = if detection.possible.is_empty() {
+        all_cpus.clone()
+    } else {
+        detection.possible.iter().copied().collect::<BTreeSet<_>>()
+    };
+
+    if detection.has_hybrid_split {
+        let shaping = detection
+            .shaping
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let excluded = possible
+            .difference(&shaping)
+            .copied()
+            .collect::<Vec<_>>();
+        return (shaping.into_iter().collect(), excluded, true);
+    }
+
+    if detection.exclude_efficiency_cores {
+        let inferred = inferred_included_cpus(planned_core_metrics, placements);
+        if !inferred.is_empty() && inferred.len() < possible.len() {
+            let excluded = possible
+                .difference(&inferred)
+                .copied()
+                .collect::<Vec<_>>();
+            return (inferred.into_iter().collect(), excluded, false);
+        }
+    }
+
+    let shaping = detection.shaping;
+    let excluded = possible
+        .difference(&shaping.iter().copied().collect::<BTreeSet<_>>())
+        .copied()
+        .collect::<Vec<_>>();
+    (shaping, excluded, detection.has_hybrid_split)
+}
+
 fn is_site_type(node_type: Option<&str>) -> bool {
     node_type.is_some_and(|t| t.eq_ignore_ascii_case("site"))
 }
@@ -841,7 +912,8 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
     let direct_circuit_counts = direct_circuit_counts_by_node();
     let (subtree_node_counts, subtree_circuit_counts) =
         build_subtree_counts(&live_nodes, &direct_circuit_counts);
-    let planned_core_metrics = aggregate_planned_core_metrics(&load_all_circuits());
+    let circuits = load_all_circuits();
+    let planned_core_metrics = aggregate_planned_core_metrics(&circuits);
     let live_cpu_usage = live_cpu_usage_by_index();
 
     let mut node_index_by_name = HashMap::new();
@@ -904,6 +976,7 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
             is_cpu_root: is_cpu_root_node(&live_nodes, &placements, idx),
             subtree_node_count: subtree_node_counts.get(idx).copied().unwrap_or_default(),
             subtree_circuit_count: subtree_circuit_counts.get(idx).copied().unwrap_or_default(),
+            effective_max_mbps: node.max_throughput,
             current_throughput_bps: node.current_throughput,
         });
     }
@@ -945,20 +1018,12 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
     let shaping_detection = load_config()
         .ok()
         .map(|cfg| detect_shaping_cpus(cfg.as_ref()));
-    let (shaping_cpus, excluded_cpus, has_hybrid_split) = shaping_detection
-        .map(|detection| {
-            let shaping_cpus = detection.shaping;
-            (
-                shaping_cpus.clone(),
-                detection
-                    .possible
-                    .into_iter()
-                    .filter(|cpu| !shaping_cpus.contains(cpu))
-                    .collect::<Vec<u32>>(),
-                detection.has_hybrid_split,
-            )
-        })
-        .unwrap_or_else(|| (Vec::new(), Vec::new(), false));
+    let (shaping_cpus, excluded_cpus, has_hybrid_split) = resolve_snapshot_cpu_sets(
+        shaping_detection,
+        &all_cpus,
+        &planned_core_metrics,
+        &placements,
+    );
 
     let mut cores = Vec::with_capacity(all_cpus.len());
     for cpu in all_cpus {
@@ -1274,8 +1339,13 @@ pub fn cpu_affinity_preview_weights_data(q: CircuitsQuery) -> Vec<PreviewWeightI
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeNodePlacement, derive_runtime_node_placements, is_cpu_root_node};
+    use super::{
+        PlannedCoreMetrics, RuntimeNodePlacement, derive_runtime_node_placements,
+        is_cpu_root_node, resolve_snapshot_cpu_sets,
+    };
     use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
+    use lqos_config::{ShapingCpuDetection, ShapingCpuSource};
+    use std::collections::BTreeSet;
     use std::collections::HashMap;
 
     fn test_node(
@@ -1403,5 +1473,64 @@ mod tests {
 
         assert!(!is_cpu_root_node(&nodes, &placements, 1));
         assert!(is_cpu_root_node(&nodes, &placements, 2));
+    }
+
+    #[test]
+    fn snapshot_cpu_sets_fall_back_to_planned_subset_when_hybrid_split_missing() {
+        let all_cpus = BTreeSet::from([0_u32, 1, 2, 3]);
+        let planned_core_metrics = HashMap::from([
+            (
+                0_u32,
+                PlannedCoreMetrics {
+                    circuit_count: 12,
+                    weight_sum: 1.0,
+                    max_mbps: 1000.0,
+                },
+            ),
+            (
+                1_u32,
+                PlannedCoreMetrics {
+                    circuit_count: 9,
+                    weight_sum: 1.0,
+                    max_mbps: 800.0,
+                },
+            ),
+        ]);
+        let placements = vec![
+            RuntimeNodePlacement {
+                owner_index: Some(0),
+                planned_cpu: Some(0),
+                effective_cpu: Some(0),
+                assignment_reason: "planned",
+            },
+            RuntimeNodePlacement {
+                owner_index: Some(1),
+                planned_cpu: Some(1),
+                effective_cpu: Some(1),
+                assignment_reason: "planned",
+            },
+        ];
+        let detection = ShapingCpuDetection {
+            exclude_efficiency_cores: true,
+            source: ShapingCpuSource::FallbackAllPossible,
+            from_cache: false,
+            has_hybrid_split: false,
+            detail: "No trustworthy hybrid CPU split detected; using all possible CPUs".to_string(),
+            possible: vec![0, 1, 2, 3],
+            performance: vec![0, 1, 2, 3],
+            efficiency: Vec::new(),
+            shaping: vec![0, 1, 2, 3],
+        };
+
+        let (shaping, excluded, has_hybrid_split) = resolve_snapshot_cpu_sets(
+            Some(detection),
+            &all_cpus,
+            &planned_core_metrics,
+            &placements,
+        );
+
+        assert_eq!(shaping, vec![0, 1]);
+        assert_eq!(excluded, vec![2, 3]);
+        assert!(!has_hybrid_split);
     }
 }

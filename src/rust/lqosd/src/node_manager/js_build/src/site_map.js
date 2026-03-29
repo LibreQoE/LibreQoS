@@ -26,6 +26,9 @@ const TILE_MAX_ZOOM = 17;
 const INITIAL_FIT_PADDING = 70;
 const INITIAL_FIT_MAX_ZOOM = 11.5;
 const SINGLE_POINT_INITIAL_ZOOM = 11.5;
+const SITE_LABEL_MIN_ZOOM = 6;
+const SELECTED_SITE_LABEL_MIN_ZOOM = 4;
+const MAX_SITE_LABELS = 24;
 
 const urlParams = new URLSearchParams(window.location.search);
 const FIXTURE_MODE = urlParams.get("fixture") === "1";
@@ -129,9 +132,7 @@ const SITE_LINK_SOURCE_ID = "site-map-site-links";
 const FANOUT_LINE_SOURCE_ID = "site-map-fanout-lines";
 const FANOUT_POINT_SOURCE_ID = "site-map-fanout-points";
 const SITE_CLUSTER_LAYER_ID = "site-map-site-clusters";
-const SITE_CLUSTER_COUNT_LAYER_ID = "site-map-site-cluster-count";
 const SITE_POINTS_LAYER_ID = "site-map-site-points";
-const SITE_LABEL_LAYER_ID = "site-map-site-labels";
 const AP_POINTS_LAYER_ID = "site-map-ap-points";
 const FANOUT_LINE_LAYER_ID = "site-map-fanout-lines-layer";
 const FANOUT_POINT_LAYER_ID = "site-map-fanout-points-layer";
@@ -225,6 +226,13 @@ function formatMs(value, digits = 1) {
         return "No data";
     }
     return `${numeric.toFixed(digits)} ms`;
+}
+
+function rectsOverlap(left, right) {
+    return !(left.right <= right.left
+        || left.left >= right.right
+        || left.bottom <= right.top
+        || left.top >= right.bottom);
 }
 
 function nowText(ts) {
@@ -647,6 +655,9 @@ class SiteMapPage {
         this.fanoutSiteKey = null;
         this.lastBboxAttemptAt = 0;
         this.fixtureMode = FIXTURE_MODE;
+        this.siteLabelMarkers = new Map();
+        this.clusterCountMarkers = new Map();
+        this.pendingTextOverlayFrame = null;
 
         this.canvas = document.getElementById("siteMapCanvas");
         this.statusChip = document.getElementById("siteMapStatusChip");
@@ -704,6 +715,7 @@ class SiteMapPage {
             this.selectedFeature = null;
             this.fanoutSiteKey = null;
             this.syncFanoutOverlays();
+            this.scheduleTextOverlaySync();
             this.renderDetails(null);
         });
         window.addEventListener("colorBlindModeChanged", () => {
@@ -800,18 +812,6 @@ class SiteMapPage {
         }
         if (this.map.getLayer(AP_POINTS_LAYER_ID)) {
             this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-stroke-color", palette.apStroke);
-        }
-        if (this.map.getLayer(SITE_LABEL_LAYER_ID)) {
-            this.map.setPaintProperty(
-                SITE_LABEL_LAYER_ID,
-                "text-halo-color",
-                isDarkMode() ? "rgba(11, 18, 32, 0.92)" : "rgba(255, 255, 255, 0.94)",
-            );
-            this.map.setPaintProperty(
-                SITE_LABEL_LAYER_ID,
-                "text-color",
-                isDarkMode() ? "rgba(248, 250, 252, 0.94)" : "rgba(15, 23, 42, 0.92)",
-            );
         }
     }
 
@@ -922,51 +922,6 @@ class SiteMapPage {
             });
         }
 
-        if (!this.map.getLayer(SITE_CLUSTER_COUNT_LAYER_ID)) {
-            this.map.addLayer({
-                id: SITE_CLUSTER_COUNT_LAYER_ID,
-                type: "symbol",
-                source: SITE_SOURCE_ID,
-                filter: ["has", "point_count"],
-                layout: {
-                    "text-field": ["get", "point_count_abbreviated"],
-                    "text-size": 12,
-                    "text-font": ["Open Sans Bold"],
-                },
-                paint: {
-                    "text-color": "#ffffff",
-                },
-            });
-        }
-
-        if (!this.map.getLayer(SITE_LABEL_LAYER_ID)) {
-            this.map.addLayer({
-                id: SITE_LABEL_LAYER_ID,
-                type: "symbol",
-                source: SITE_SOURCE_ID,
-                filter: ["!", ["has", "point_count"]],
-                minzoom: 8,
-                layout: {
-                    "text-field": ["get", "displayName"],
-                    "text-size": [
-                        "interpolate", ["linear"], ["zoom"],
-                        8, 10,
-                        12, 12,
-                    ],
-                    "text-font": ["Open Sans Semibold"],
-                    "text-variable-anchor": ["top", "bottom", "left", "right"],
-                    "text-radial-offset": 1.15,
-                    "text-justify": "auto",
-                    "text-max-width": 14,
-                },
-                paint: {
-                    "text-color": isDarkMode() ? "rgba(248, 250, 252, 0.94)" : "rgba(15, 23, 42, 0.92)",
-                    "text-halo-color": isDarkMode() ? "rgba(11, 18, 32, 0.92)" : "rgba(255, 255, 255, 0.94)",
-                    "text-halo-width": 1.6,
-                },
-            });
-        }
-
         if (!this.map.getLayer(AP_POINTS_LAYER_ID)) {
             this.map.addLayer({
                 id: AP_POINTS_LAYER_ID,
@@ -1024,7 +979,7 @@ class SiteMapPage {
     }
 
     installInteractions() {
-        const pointLayers = [SITE_POINTS_LAYER_ID, SITE_LABEL_LAYER_ID, AP_POINTS_LAYER_ID, FANOUT_POINT_LAYER_ID];
+        const pointLayers = [SITE_POINTS_LAYER_ID, AP_POINTS_LAYER_ID, FANOUT_POINT_LAYER_ID];
 
         pointLayers.forEach((layerId) => {
             this.map.on("mouseenter", layerId, () => {
@@ -1049,7 +1004,7 @@ class SiteMapPage {
             });
         });
 
-        [SITE_CLUSTER_LAYER_ID, SITE_CLUSTER_COUNT_LAYER_ID].forEach((layerId) => {
+        [SITE_CLUSTER_LAYER_ID].forEach((layerId) => {
             this.map.on("mouseenter", layerId, () => {
                 this.map.getCanvas().style.cursor = "pointer";
             });
@@ -1083,7 +1038,9 @@ class SiteMapPage {
                 }
             }
             this.syncFanoutOverlays();
+            this.scheduleTextOverlaySync();
         });
+        this.map.on("moveend", () => this.scheduleTextOverlaySync());
     }
 
     requestInitialTree() {
@@ -1497,6 +1454,7 @@ class SiteMapPage {
         this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-opacity", apOpacity);
 
         this.syncFanoutOverlays();
+        this.scheduleTextOverlaySync();
         this.syncMarkerSizeLegend(aggregate.maxBitsPerSecond);
     }
 
@@ -1632,6 +1590,184 @@ class SiteMapPage {
         pointSource.setData({ type: "FeatureCollection", features: fanout.points });
     }
 
+    clearMarkerSet(markerSet) {
+        markerSet.forEach((marker) => marker.remove());
+        markerSet.clear();
+    }
+
+    scheduleTextOverlaySync() {
+        if (!this.map) {
+            return;
+        }
+        if (this.pendingTextOverlayFrame !== null) {
+            window.cancelAnimationFrame(this.pendingTextOverlayFrame);
+        }
+        this.pendingTextOverlayFrame = window.requestAnimationFrame(() => {
+            this.pendingTextOverlayFrame = null;
+            this.syncClusterCountMarkers();
+            this.syncSiteLabelMarkers();
+        });
+    }
+
+    destroyTextOverlays() {
+        if (this.pendingTextOverlayFrame !== null) {
+            window.cancelAnimationFrame(this.pendingTextOverlayFrame);
+            this.pendingTextOverlayFrame = null;
+        }
+        this.clearMarkerSet(this.siteLabelMarkers);
+        this.clearMarkerSet(this.clusterCountMarkers);
+    }
+
+    siteLabelPriority(feature, selectedKey) {
+        const props = feature?.properties || {};
+        const throughputCombined = toNumber(props.throughputCombined, 0);
+        const attachedCount = toNumber(props.attachedInheritedApCount, 0);
+        const isSelected = props.key === selectedKey;
+        return (isSelected ? 1e18 : 0) + throughputCombined + (attachedCount * 5_000_000);
+    }
+
+    estimateSiteLabelRect(feature, displayName, isSelected) {
+        if (!this.map || !feature?.geometry?.coordinates) {
+            return null;
+        }
+        const projected = this.map.project(feature.geometry.coordinates);
+        const textLength = Math.max(4, String(displayName || "").length);
+        const width = Math.min(220, Math.max(76, (textLength * 7.1) + 26));
+        const height = isSelected ? 28 : 24;
+        const bottom = projected.y - 16;
+        const top = bottom - height;
+        return {
+            left: projected.x - (width / 2),
+            right: projected.x + (width / 2),
+            top,
+            bottom,
+        };
+    }
+
+    createTextMarker(className, text, lngLat, offset) {
+        const el = document.createElement("div");
+        el.className = className;
+        el.textContent = text;
+        return new window.maplibregl.Marker({
+            element: el,
+            anchor: "bottom",
+            offset,
+        }).setLngLat(lngLat);
+    }
+
+    syncClusterCountMarkers() {
+        if (!this.map || this.map.getZoom() < 0) {
+            this.clearMarkerSet(this.clusterCountMarkers);
+            return;
+        }
+
+        const clusterFeatures = this.map.queryRenderedFeatures({ layers: [SITE_CLUSTER_LAYER_ID] }) || [];
+        const nextKeys = new Set();
+        clusterFeatures.forEach((feature) => {
+            const clusterId = feature?.properties?.cluster_id;
+            if (!Number.isFinite(clusterId)) {
+                return;
+            }
+            const key = `cluster:${clusterId}`;
+            nextKeys.add(key);
+            if (this.clusterCountMarkers.has(key)) {
+                return;
+            }
+            const text = String(feature.properties?.point_count_abbreviated ?? feature.properties?.point_count ?? "");
+            const marker = this.createTextMarker(
+                "site-map-cluster-count-marker",
+                text,
+                feature.geometry.coordinates,
+                [0, 0],
+            );
+            marker.addTo(this.map);
+            this.clusterCountMarkers.set(key, marker);
+        });
+
+        this.clusterCountMarkers.forEach((marker, key) => {
+            if (!nextKeys.has(key)) {
+                marker.remove();
+                this.clusterCountMarkers.delete(key);
+            }
+        });
+    }
+
+    syncSiteLabelMarkers() {
+        if (!this.map || !this.latestRender) {
+            this.clearMarkerSet(this.siteLabelMarkers);
+            return;
+        }
+
+        const zoom = this.map.getZoom();
+        const selectedSiteFeature = this.selectedFeature?.nodeType === "site"
+            ? this.latestRender.siteFeatures?.find((feature) => feature.properties?.key === this.selectedFeature.key)
+            : null;
+
+        const candidates = [];
+        if (zoom >= SITE_LABEL_MIN_ZOOM) {
+            const visibleFeatures = this.map.queryRenderedFeatures({ layers: [SITE_POINTS_LAYER_ID] }) || [];
+            visibleFeatures.forEach((feature) => {
+                const props = feature?.properties || {};
+                if (!props.key) {
+                    return;
+                }
+                const displayName = props.displayName || displayNodeName(props.name, props.nodeType);
+                candidates.push({
+                    key: props.key,
+                    feature,
+                    displayName,
+                    selected: props.key === this.selectedFeature?.key,
+                    priority: this.siteLabelPriority(feature, this.selectedFeature?.key),
+                });
+            });
+        }
+
+        if (selectedSiteFeature && zoom >= SELECTED_SITE_LABEL_MIN_ZOOM) {
+            const alreadyPresent = candidates.some((candidate) => candidate.key === selectedSiteFeature.properties?.key);
+            if (!alreadyPresent) {
+                candidates.push({
+                    key: selectedSiteFeature.properties?.key,
+                    feature: selectedSiteFeature,
+                    displayName: selectedSiteFeature.properties?.displayName
+                        || displayNodeName(selectedSiteFeature.properties?.name, "site"),
+                    selected: true,
+                    priority: this.siteLabelPriority(selectedSiteFeature, this.selectedFeature?.key),
+                });
+            }
+        }
+
+        candidates.sort((left, right) => right.priority - left.priority);
+
+        const accepted = [];
+        const acceptedRects = [];
+        for (const candidate of candidates) {
+            if (!candidate.selected && accepted.length >= MAX_SITE_LABELS) {
+                continue;
+            }
+            const rect = this.estimateSiteLabelRect(candidate.feature, candidate.displayName, candidate.selected);
+            if (!rect) {
+                continue;
+            }
+            if (!candidate.selected && acceptedRects.some((existing) => rectsOverlap(existing, rect))) {
+                continue;
+            }
+            accepted.push(candidate);
+            acceptedRects.push(rect);
+        }
+
+        this.clearMarkerSet(this.siteLabelMarkers);
+        accepted.forEach((candidate) => {
+            const marker = this.createTextMarker(
+                candidate.selected ? "site-map-site-label-marker is-selected" : "site-map-site-label-marker",
+                candidate.displayName,
+                candidate.feature.geometry.coordinates,
+                [0, -18],
+            );
+            marker.addTo(this.map);
+            this.siteLabelMarkers.set(candidate.key, marker);
+        });
+    }
+
     fitToDataIfNeeded(siteFeatures, apFeatures) {
         if (!this.map) {
             return;
@@ -1720,6 +1856,7 @@ class SiteMapPage {
             this.fanoutSiteKey = null;
         }
         this.syncFanoutOverlays();
+        this.scheduleTextOverlaySync();
         this.renderDetails(props);
     }
 
@@ -1733,6 +1870,7 @@ class SiteMapPage {
             this.selectedFeature = null;
             this.fanoutSiteKey = null;
             this.syncFanoutOverlays();
+            this.scheduleTextOverlaySync();
             this.renderDetails(null);
             return;
         }
@@ -1741,6 +1879,7 @@ class SiteMapPage {
             this.fanoutSiteKey = null;
         }
         this.syncFanoutOverlays();
+        this.scheduleTextOverlaySync();
         this.renderDetails(current.properties);
     }
 

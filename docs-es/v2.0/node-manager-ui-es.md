@@ -35,6 +35,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
 - Los marcadores de sitios cercanos se agrupan y se expanden al acercar el mapa o seleccionar un grupo.
 - Los APs sin coordenadas explícitas se representan a través de su sitio padre y pueden desplegarse temporalmente alrededor del sitio seleccionado para inspección.
+- Los sitios visibles y sin agrupar muestran etiquetas al acercar el mapa, y el sitio seleccionado mantiene su etiqueta visible mientras se inspecciona.
 - Cuando el modo de redacción del navegador está habilitado, Site Map reemplaza los nombres de sitios mostrados por `[redacted]` sin modificar los datos reales de topología.
 - El encuadre inicial del mapa prioriza las coordenadas de los sitios para la vista inicial, usando coordenadas de AP solo cuando todavía no hay sitios mapeados.
 - Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.

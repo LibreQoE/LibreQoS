@@ -37,6 +37,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
 - Nearby site markers cluster and expand as the operator zooms or selects a cluster.
 - APs without explicit coordinates are represented through their parent site and can be expanded temporarily around the selected site for inspection.
+- Visible unclustered sites show labels as the operator zooms in, and the selected site keeps its label visible while it is being inspected.
 - When browser redaction mode is enabled, Site Map replaces displayed site names with `[redacted]` while leaving the underlying topology data unchanged.
 - Initial map framing prefers site coordinates for the first view, falling back to AP coordinates when no sites are mapped yet.
 - Site Map uses an Insight-hosted OpenStreetMap raster tile cache.

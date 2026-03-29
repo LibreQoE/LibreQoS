@@ -12,6 +12,7 @@ let state = {
     pageSize: 50,
     showExcludedCores: false,
     plannerEnabled: null,
+    excludeEfficiencyCores: null,
     runtimeSnapshot: null,
     liveCpuUsage: [],
     overviewScrollTop: 0,
@@ -69,6 +70,28 @@ function fmtPair(pair) {
     const down = Array.isArray(pair) ? pair[0] : 0;
     const up = Array.isArray(pair) ? pair[1] : 0;
     return `↓ ${fmtBps(down)} · ↑ ${fmtBps(up)}`;
+}
+
+function nodeUtilizationPercent(node) {
+    const downMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[0], 0));
+    const upMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[1], 0));
+    const downBps = Math.max(0, toNumber(node?.current_throughput_bps?.[0], 0) * 8);
+    const upBps = Math.max(0, toNumber(node?.current_throughput_bps?.[1], 0) * 8);
+
+    const downUtilization = downMaxMbps > 0 ? (downBps / (downMaxMbps * 1_000_000)) * 100 : null;
+    const upUtilization = upMaxMbps > 0 ? (upBps / (upMaxMbps * 1_000_000)) * 100 : null;
+    if (!Number.isFinite(downUtilization) && !Number.isFinite(upUtilization)) {
+        return null;
+    }
+    return Math.max(0, Math.max(downUtilization ?? 0, upUtilization ?? 0));
+}
+
+function fmtUtilizationPercent(node) {
+    const utilization = nodeUtilizationPercent(node);
+    if (!Number.isFinite(utilization)) {
+        return "-";
+    }
+    return `${Math.round(utilization)}%`;
 }
 
 function cpuUsageValue(core) {
@@ -138,17 +161,71 @@ function getShapingCpuSet() {
     return new Set(shaping.map((cpu) => toNumber(cpu, -1)).filter((cpu) => cpu >= 0));
 }
 
-function hasShapingCpuFilter() {
-    return getShapingCpuSet().size > 0;
+function getExcludedCpuSet() {
+    const excluded = Array.isArray(state.runtimeSnapshot?.excluded_cpus)
+        ? state.runtimeSnapshot.excluded_cpus
+        : [];
+    return new Set(excluded.map((cpu) => toNumber(cpu, -1)).filter((cpu) => cpu >= 0));
+}
+
+function hasExcludedCpuFilter() {
+    return getExcludedCpuSet().size > 0;
+}
+
+function hasUsableShapingCpuFilter() {
+    const shaping = getShapingCpuSet();
+    return shaping.size > 0 && shaping.size < getCores().length;
+}
+
+function getInferredIncludedCpuSet() {
+    if (!state.excludeEfficiencyCores) {
+        return new Set();
+    }
+    const included = getCores()
+        .filter((core) =>
+            toNumber(core.planned_circuit_count, 0) > 0
+            || toNumber(core.planned_max_mbps, 0) > 0
+            || toNumber(core.effective_node_count, 0) > 0
+            || toNumber(core.effective_circuit_count, 0) > 0
+        )
+        .map((core) => toNumber(core.cpu, -1))
+        .filter((cpu) => cpu >= 0);
+    return new Set(included);
+}
+
+function hasFallbackIncludedCpuFilter() {
+    const included = getInferredIncludedCpuSet();
+    return included.size > 0 && included.size < getCores().length;
+}
+
+function getIncludedCpuSet() {
+    if (hasExcludedCpuFilter()) {
+        const excluded = getExcludedCpuSet();
+        return new Set(
+            getCores()
+                .map((core) => toNumber(core.cpu, -1))
+                .filter((cpu) => cpu >= 0 && !excluded.has(cpu))
+        );
+    }
+    if (hasUsableShapingCpuFilter()) {
+        return getShapingCpuSet();
+    }
+    if (hasFallbackIncludedCpuFilter()) {
+        return getInferredIncludedCpuSet();
+    }
+    return new Set();
 }
 
 function getVisibleCores() {
     const cores = getCores();
-    if (state.showExcludedCores || !hasShapingCpuFilter()) {
+    if (state.showExcludedCores) {
         return cores;
     }
-    const shaping = getShapingCpuSet();
-    return cores.filter((core) => shaping.has(toNumber(core.cpu, -1)));
+    const included = getIncludedCpuSet();
+    if (included.size > 0) {
+        return cores.filter((core) => included.has(toNumber(core.cpu, -1)));
+    }
+    return cores;
 }
 
 function getSelectedCore() {
@@ -212,7 +289,7 @@ function renderOverview() {
 
     const cores = getVisibleCores();
     if (cores.length === 0) {
-        target.innerHTML = hasShapingCpuFilter()
+        target.innerHTML = (hasExcludedCpuFilter() || hasUsableShapingCpuFilter() || hasFallbackIncludedCpuFilter())
             ? '<p class="text-muted">No shaping CPUs are visible with the current filter.</p>'
             : '<p class="text-muted">No runtime CPU assignment data found. Run LibreQoS to generate queuingStructure.json and live tree state.</p>';
         return;
@@ -231,11 +308,16 @@ function renderOverview() {
     const shapingCount = Array.isArray(state.runtimeSnapshot?.shaping_cpus) ? state.runtimeSnapshot.shaping_cpus.length : 0;
     const excludedCount = Array.isArray(state.runtimeSnapshot?.excluded_cpus) ? state.runtimeSnapshot.excluded_cpus.length : 0;
     const hasHybridSplit = !!state.runtimeSnapshot?.has_hybrid_split;
-    const overviewSubtitle = hasShapingCpuFilter() && !state.showExcludedCores
+    const inferredIncludedCount = getInferredIncludedCpuSet().size;
+    const overviewSubtitle = (hasExcludedCpuFilter() || hasUsableShapingCpuFilter() || hasFallbackIncludedCpuFilter()) && !state.showExcludedCores
         ? `Showing shaping CPUs only${hasHybridSplit && excludedCount > 0 ? ` (${shapingCount} shaping cores, ${excludedCount} excluded host cores hidden)` : ""}.`
         : hasHybridSplit && excludedCount > 0
             ? `Showing all host cores, including ${excludedCount} excluded non-shaping core${excludedCount === 1 ? "" : "s"}.`
-            : "Choose a core to inspect live ownership, promoted runtime branches, and planner drift.";
+            : state.showExcludedCores && hasFallbackIncludedCpuFilter()
+                ? `Showing all host cores (${inferredIncludedCount} included cores inferred from current queue ownership).`
+                : hasFallbackIncludedCpuFilter()
+                    ? `Showing included cores only (${inferredIncludedCount} included cores inferred from current queue ownership).`
+                    : "Choose a core to inspect live ownership, promoted runtime branches, and planner drift.";
     headerText.innerHTML = `
         <h3>CPU Core List</h3>
         <p>${overviewSubtitle}</p>
@@ -287,7 +369,9 @@ function renderOverview() {
         titleWrap.appendChild(title);
         const subtitle = document.createElement("div");
         subtitle.className = "text-muted small";
-        const isExcluded = hasShapingCpuFilter() && !getShapingCpuSet().has(toNumber(core.cpu, -1));
+        const cpuId = toNumber(core.cpu, -1);
+        const included = getIncludedCpuSet();
+        const isExcluded = included.size > 0 && !included.has(cpuId);
         subtitle.textContent = isExcluded
             ? `Excluded from shaping · ${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`
             : `${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`;
@@ -454,7 +538,7 @@ function renderNodesTable(core) {
     thead.appendChild(theading("Planned"));
     thead.appendChild(theading("Effective"));
     thead.appendChild(theading("Assignment"));
-    thead.appendChild(theading("Throughput"));
+    thead.appendChild(theading("Utilization"));
     thead.appendChild(theading("Subtree Nodes"));
     thead.appendChild(theading("Subtree Circuits"));
     table.appendChild(thead);
@@ -481,7 +565,7 @@ function renderNodesTable(core) {
         assignmentCell.appendChild(badge);
         tr.appendChild(assignmentCell);
 
-        tr.appendChild(simpleRow(fmtPair(node.current_throughput_bps)));
+        tr.appendChild(simpleRow(fmtUtilizationPercent(node)));
         tr.appendChild(simpleRow(toNumber(node.subtree_node_count, 0).toLocaleString()));
         tr.appendChild(simpleRow(toNumber(node.subtree_circuit_count, 0).toLocaleString()));
         tbody.appendChild(tr);
@@ -673,16 +757,27 @@ function fetchCircuits() {
 
 async function refreshAll() {
     const overview = document.getElementById("cpuOverview");
+    const showExcludedCores = document.getElementById("showExcludedCores");
     if (overview && !state.runtimeSnapshot) {
         overview.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Loading core assignment...';
     }
 
     const configPromise = requestConfig().then((cfg) => {
         state.plannerEnabled = !!(cfg && cfg.queues && cfg.queues.use_binpacking);
+        state.excludeEfficiencyCores = !!(cfg && cfg.exclude_efficiency_cores);
     });
     const snapshot = await requestRuntimeSnapshot();
     await configPromise;
     state.runtimeSnapshot = snapshot;
+    if (showExcludedCores) {
+        showExcludedCores.disabled = !hasExcludedCpuFilter() && !hasUsableShapingCpuFilter() && !hasFallbackIncludedCpuFilter();
+        if (showExcludedCores.disabled) {
+            state.showExcludedCores = false;
+            showExcludedCores.checked = false;
+        } else {
+            showExcludedCores.checked = !!state.showExcludedCores;
+        }
+    }
     selectDefaultCpu();
     renderOverview();
     renderSelectedCore();
@@ -724,6 +819,7 @@ function initControls() {
     };
     if (showExcludedCores) {
         showExcludedCores.checked = !!state.showExcludedCores;
+        showExcludedCores.disabled = !hasExcludedCpuFilter() && !hasUsableShapingCpuFilter() && !hasFallbackIncludedCpuFilter();
         showExcludedCores.onchange = () => {
             state.showExcludedCores = !!showExcludedCores.checked;
             state.overviewScrollTop = 0;
