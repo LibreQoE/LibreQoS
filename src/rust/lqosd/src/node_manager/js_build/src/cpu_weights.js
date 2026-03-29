@@ -9,7 +9,7 @@ let state = {
     detailTab: "nodes",
     direction: "down",
     page: 1,
-    pageSize: 50,
+    pageSize: 10,
     showExcludedCores: false,
     plannerEnabled: null,
     excludeEfficiencyCores: null,
@@ -66,12 +66,6 @@ function fmtBps(bytesPerSecond) {
     return `${scaleNumber(bitsPerSecond, bitsPerSecond >= 1_000_000 ? 1 : 0)}bps`;
 }
 
-function fmtPair(pair) {
-    const down = Array.isArray(pair) ? pair[0] : 0;
-    const up = Array.isArray(pair) ? pair[1] : 0;
-    return `↓ ${fmtBps(down)} · ↑ ${fmtBps(up)}`;
-}
-
 function nodeUtilizationPercent(node) {
     const downMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[0], 0));
     const upMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[1], 0));
@@ -108,12 +102,6 @@ function usageToneClass(usage) {
     if (usage >= 90) return "bg-danger";
     if (usage >= 75) return "bg-warning";
     return "bg-success";
-}
-
-function nodeTypeLabel(node) {
-    const raw = (node?.node_type || "").toString().trim();
-    if (!raw) return "Unknown";
-    return raw.toUpperCase();
 }
 
 function assignmentBadge(node) {
@@ -360,39 +348,32 @@ function renderOverview() {
         };
 
         const topRow = document.createElement("div");
-        topRow.className = "d-flex justify-content-between align-items-start gap-2 mb-2";
+        topRow.className = "d-flex justify-content-between align-items-start gap-3 mb-2";
 
         const titleWrap = document.createElement("div");
         const title = document.createElement("div");
         title.className = "fw-semibold";
         title.textContent = `CPU ${core.cpu}`;
         titleWrap.appendChild(title);
-        const subtitle = document.createElement("div");
-        subtitle.className = "text-muted small";
         const cpuId = toNumber(core.cpu, -1);
         const included = getIncludedCpuSet();
         const isExcluded = included.size > 0 && !included.has(cpuId);
-        subtitle.textContent = isExcluded
-            ? `Excluded from shaping · ${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`
-            : `${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`;
-        titleWrap.appendChild(subtitle);
         topRow.appendChild(titleWrap);
 
-        const badgeWrap = document.createElement("div");
-        const usageChip = document.createElement("span");
+        const summary = document.createElement("div");
+        summary.className = "cpu-affinity-overview-summary";
+        summary.textContent = `${core.effective_node_count.toLocaleString()} nodes · ${core.effective_circuit_count.toLocaleString()} circuits`;
+        topRow.appendChild(summary);
+
         const usage = cpuUsageValue(core);
-        usageChip.className = `cpu-affinity-overview-usage ${usageToneClass(usage)}`;
-        usageChip.textContent = Number.isFinite(usage) ? `${Math.round(usage)}%` : "N/A";
-        badgeWrap.appendChild(usageChip);
-        if (toNumber(core.runtime_changed_count, 0) > 0) {
-            const badge = document.createElement("span");
-            badge.className = "cpu-affinity-chip is-warning";
-            badge.title = `${core.runtime_changed_count.toLocaleString()} nodes differ from their planned runtime placement.`;
-            badge.textContent = `${core.runtime_changed_count} changed`;
-            badgeWrap.appendChild(badge);
-        }
-        topRow.appendChild(badgeWrap);
         row.appendChild(topRow);
+
+        if (isExcluded) {
+            const subtitle = document.createElement("div");
+            subtitle.className = "text-muted small mb-2";
+            subtitle.textContent = "Excluded from shaping";
+            row.appendChild(subtitle);
+        }
 
         const progress = document.createElement("div");
         progress.className = "cpu-affinity-overview-progress";
@@ -401,47 +382,6 @@ function renderOverview() {
         bar.style.width = `${Math.max(0, Math.min(100, toNumber(usage, 0)))}%`;
         progress.appendChild(bar);
         row.appendChild(progress);
-
-        const metrics = document.createElement("div");
-        metrics.className = "cpu-affinity-overview-metrics";
-        metrics.innerHTML = `
-            <div class="d-flex flex-wrap gap-3">
-                <span>Planned ${toNumber(core.planned_circuit_count, 0).toLocaleString()} circuits</span>
-                <span>Sites/APs ${toNumber(core.effective_site_count, 0).toLocaleString()}/${toNumber(core.effective_ap_count, 0).toLocaleString()}</span>
-                <span>Planned max ${fmtMbps(core.planned_max_mbps)}</span>
-            </div>
-        `;
-        row.appendChild(metrics);
-
-        const rootsPreview = document.createElement("div");
-        rootsPreview.className = "cpu-affinity-overview-roots";
-        const roots = topLevelNodesForCore(core);
-        const preview = roots.slice(0, 2);
-        if (preview.length === 0) {
-            const empty = document.createElement("div");
-            empty.className = "cpu-affinity-inline-note";
-            empty.textContent = "No top-level branches";
-            rootsPreview.appendChild(empty);
-        } else {
-            const label = document.createElement("div");
-            label.className = "cpu-affinity-overview-roots-label";
-            label.textContent = "Top-level branches";
-            rootsPreview.appendChild(label);
-            preview.forEach((node) => {
-                const rowEl = document.createElement("div");
-                rowEl.className = "cpu-affinity-overview-root-row";
-                const name = document.createElement("span");
-                name.className = "text-truncate";
-                name.textContent = node.name || "Unnamed node";
-                const throughput = document.createElement("span");
-                throughput.className = "cpu-affinity-overview-root-throughput";
-                throughput.textContent = fmtPair(node.current_throughput_bps);
-                rowEl.appendChild(name);
-                rowEl.appendChild(throughput);
-                rootsPreview.appendChild(rowEl);
-            });
-        }
-        row.appendChild(rootsPreview);
         list.appendChild(row);
     });
 
@@ -475,22 +415,14 @@ function renderSelectedSummary() {
         {
             title: "Live Load",
             value: Number.isFinite(cpuUsageValue(core)) ? `${Math.round(cpuUsageValue(core))}%` : "N/A",
-            tone: usageToneClass(cpuUsageValue(core)),
         },
         {
             title: "Assigned Nodes",
             value: toNumber(core.effective_node_count, 0).toLocaleString(),
-            tone: "bg-primary",
         },
         {
             title: "Assigned Circuits",
             value: toNumber(core.effective_circuit_count, 0).toLocaleString(),
-            tone: "bg-info",
-        },
-        {
-            title: "Runtime Changes",
-            value: toNumber(core.runtime_changed_count, 0).toLocaleString(),
-            tone: toNumber(core.runtime_changed_count, 0) > 0 ? "bg-warning" : "bg-secondary",
         },
     ];
 
@@ -503,11 +435,8 @@ function renderSelectedSummary() {
         const value = document.createElement("div");
         value.className = "cpu-affinity-kpi-value";
         value.textContent = entry.value;
-        const dot = document.createElement("span");
-        dot.className = `cpu-affinity-kpi-dot ${entry.tone}`;
         card.appendChild(label);
         card.appendChild(value);
-        card.appendChild(dot);
         row.appendChild(card);
     });
     target.appendChild(row);
@@ -534,13 +463,10 @@ function renderNodesTable(core) {
     table.className = "lqos-table lqos-table-compact";
     const thead = document.createElement("thead");
     thead.appendChild(theading("Node"));
-    thead.appendChild(theading("Type"));
-    thead.appendChild(theading("Planned"));
-    thead.appendChild(theading("Effective"));
     thead.appendChild(theading("Assignment"));
     thead.appendChild(theading("Utilization"));
-    thead.appendChild(theading("Subtree Nodes"));
-    thead.appendChild(theading("Subtree Circuits"));
+    thead.appendChild(theading("Sub-Nodes"));
+    thead.appendChild(theading("Circuits"));
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
@@ -553,9 +479,6 @@ function renderNodesTable(core) {
         const nameCell = document.createElement("td");
         nameCell.textContent = node.name || "";
         tr.appendChild(nameCell);
-        tr.appendChild(simpleRow(nodeTypeLabel(node)));
-        tr.appendChild(simpleRow(node.planned_cpu === null || node.planned_cpu === undefined ? "-" : `CPU ${node.planned_cpu}`));
-        tr.appendChild(simpleRow(node.effective_cpu === null || node.effective_cpu === undefined ? "-" : `CPU ${node.effective_cpu}`));
 
         const assignmentCell = document.createElement("td");
         const badgeMeta = assignmentBadge(node);
@@ -571,47 +494,6 @@ function renderNodesTable(core) {
         tbody.appendChild(tr);
     });
 
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
-    target.appendChild(tableWrap);
-}
-
-function renderChangesTable(core) {
-    const target = document.getElementById("cpuDetailsContent");
-    clearDiv(target);
-    const nodes = (Array.isArray(core?.nodes) ? core.nodes : []).filter((node) =>
-        node.runtime_virtualized
-        || (node.assignment_reason || "") !== "planned"
-        || toNumber(node.planned_cpu, -1) !== toNumber(node.effective_cpu, -1)
-    );
-
-    if (nodes.length === 0) {
-        target.innerHTML = '<p class="text-secondary">This CPU has no runtime differences from planned placement.</p>';
-        return;
-    }
-
-    const tableWrap = document.createElement("div");
-    tableWrap.className = "lqos-table-wrap";
-    const table = document.createElement("table");
-    table.className = "lqos-table lqos-table-compact";
-    const thead = document.createElement("thead");
-    thead.appendChild(theading("Node"));
-    thead.appendChild(theading("Type"));
-    thead.appendChild(theading("Planned"));
-    thead.appendChild(theading("Effective"));
-    thead.appendChild(theading("Change"));
-    table.appendChild(thead);
-
-    const tbody = document.createElement("tbody");
-    nodes.forEach((node) => {
-        const tr = document.createElement("tr");
-        tr.appendChild(simpleRow(node.name || ""));
-        tr.appendChild(simpleRow(nodeTypeLabel(node)));
-        tr.appendChild(simpleRow(node.planned_cpu === null || node.planned_cpu === undefined ? "-" : `CPU ${node.planned_cpu}`));
-        tr.appendChild(simpleRow(node.effective_cpu === null || node.effective_cpu === undefined ? "-" : `CPU ${node.effective_cpu}`));
-        tr.appendChild(simpleRow(assignmentBadge(node).label));
-        tbody.appendChild(tr);
-    });
     table.appendChild(tbody);
     tableWrap.appendChild(table);
     target.appendChild(tableWrap);
@@ -636,7 +518,6 @@ function renderCircuits(page) {
     const table = document.createElement("table");
     table.classList.add("lqos-table", "lqos-table-compact");
     const thead = document.createElement("thead");
-    thead.appendChild(theading("Circuit ID"));
     thead.appendChild(theading("Circuit Name"));
     thead.appendChild(theading("Parent"));
     thead.appendChild(theading("ClassID"));
@@ -651,15 +532,16 @@ function renderCircuits(page) {
         if (c.ignored || (c.weight !== undefined && c.weight <= 0)) {
             tr.classList.add("text-muted");
         }
-        const idCell = document.createElement("td");
-        if (c.circuit_id) {
+        const nameCell = document.createElement("td");
+        if (c.circuit_id && c.circuit_name) {
             const a = document.createElement("a");
             a.href = `circuit.html?id=${encodeURIComponent(c.circuit_id)}`;
-            a.textContent = c.circuit_id;
-            idCell.appendChild(a);
+            a.textContent = c.circuit_name;
+            nameCell.appendChild(a);
+        } else {
+            nameCell.textContent = c.circuit_name || "";
         }
-        tr.appendChild(idCell);
-        tr.appendChild(simpleRow(c.circuit_name || "", true));
+        tr.appendChild(nameCell);
         tr.appendChild(simpleRow(c.parent_node || "", true));
         tr.appendChild(simpleRow(c.classid || ""));
         const weightCell = document.createElement("td");
@@ -691,7 +573,6 @@ function renderActiveTab() {
     const tabButtons = [
         ["btnTabNodes", "nodes"],
         ["btnTabCircuits", "circuits"],
-        ["btnTabChanges", "changes"],
     ];
     tabButtons.forEach(([id, tab]) => {
         const btn = document.getElementById(id);
@@ -715,11 +596,6 @@ function renderSelectedCore() {
 
     if (state.detailTab === "circuits") {
         fetchCircuits();
-        return;
-    }
-    if (state.detailTab === "changes") {
-        renderChangesTable(core);
-        enableTooltips();
         return;
     }
     renderNodesTable(core);
@@ -791,11 +667,10 @@ function initControls() {
     const btnRefresh = document.getElementById("btnRefresh");
     const btnTabNodes = document.getElementById("btnTabNodes");
     const btnTabCircuits = document.getElementById("btnTabCircuits");
-    const btnTabChanges = document.getElementById("btnTabChanges");
     const showExcludedCores = document.getElementById("showExcludedCores");
 
     pageSizeInput.onchange = () => {
-        let v = parseInt(pageSizeInput.value || "50", 10);
+        let v = parseInt(pageSizeInput.value || "10", 10);
         if (!Number.isFinite(v) || v < 10) v = 10;
         if (v > 1000) v = 1000;
         state.pageSize = v;
@@ -838,10 +713,6 @@ function initControls() {
     btnTabCircuits.onclick = () => {
         state.detailTab = "circuits";
         state.page = 1;
-        renderSelectedCore();
-    };
-    btnTabChanges.onclick = () => {
-        state.detailTab = "changes";
         renderSelectedCore();
     };
 }

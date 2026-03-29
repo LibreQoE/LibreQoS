@@ -1,10 +1,12 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
+import {renderOperationCards} from "./operation_cards";
 
 const BAKERY_ACTIVITY_PAGE_SIZE = 10;
 const BAKERY_ACTIVITY_SUMMARY_MAX_CHARS = 220;
 const BAKERY_OPERATION_SUMMARY_COUNT = 6;
 const BAKERY_OPERATION_MERGE_WINDOW_SECONDS = 180;
+const BAKERY_ACTIVITY_VIEW_STORAGE_KEY = "lqos_bakery_activity_view";
 const FULL_RELOAD_SUPPORT_EVENTS = new Set([
     "baseline_rebuild_startup",
     "baseline_rebuild_required",
@@ -355,12 +357,22 @@ function buildOperationSummaries(entries) {
     return groups.slice(0, BAKERY_OPERATION_SUMMARY_COUNT);
 }
 
+function loadViewMode() {
+    try {
+        const saved = window?.localStorage?.getItem(BAKERY_ACTIVITY_VIEW_STORAGE_KEY);
+        return saved === "events" ? "events" : "operations";
+    } catch (_) {
+        return "operations";
+    }
+}
+
 export class BakeryActivityDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 12;
         this.entries = [];
         this.currentPage = 0;
+        this.viewMode = loadViewMode();
     }
 
     title() {
@@ -382,19 +394,50 @@ export class BakeryActivityDashlet extends BaseDashlet {
         const wrap = document.createElement("div");
         wrap.classList.add("p-2");
 
+        const viewControls = document.createElement("div");
+        viewControls.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "flex-wrap", "mb-3");
+
         const operationsHeader = document.createElement("div");
         operationsHeader.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-2");
-        operationsHeader.textContent = "Recent Operations";
-        wrap.appendChild(operationsHeader);
+        operationsHeader.textContent = "View";
+        operationsHeader.classList.remove("mb-2");
+        operationsHeader.classList.add("mb-0");
+        viewControls.appendChild(operationsHeader);
+
+        const toggleGroup = document.createElement("div");
+        toggleGroup.classList.add("btn-group", "btn-group-sm");
+
+        this.operationsButton = document.createElement("button");
+        this.operationsButton.type = "button";
+        this.operationsButton.textContent = "Operations";
+        this.operationsButton.addEventListener("click", () => this.setViewMode("operations"));
+
+        this.eventsButton = document.createElement("button");
+        this.eventsButton.type = "button";
+        this.eventsButton.textContent = "Event Log";
+        this.eventsButton.addEventListener("click", () => this.setViewMode("events"));
+
+        toggleGroup.appendChild(this.operationsButton);
+        toggleGroup.appendChild(this.eventsButton);
+        viewControls.appendChild(toggleGroup);
+        wrap.appendChild(viewControls);
+
+        this.operationsSection = document.createElement("div");
+        const operationsSectionHeader = document.createElement("div");
+        operationsSectionHeader.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-2");
+        operationsSectionHeader.textContent = "Recent Operations";
+        this.operationsSection.appendChild(operationsSectionHeader);
 
         this.operationsList = document.createElement("div");
         this.operationsList.classList.add("d-flex", "flex-column", "gap-2", "mb-3");
-        wrap.appendChild(this.operationsList);
+        this.operationsSection.appendChild(this.operationsList);
+        wrap.appendChild(this.operationsSection);
 
+        this.eventsSection = document.createElement("div");
         const detailHeader = document.createElement("div");
         detailHeader.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-2");
         detailHeader.textContent = "Detailed Events";
-        wrap.appendChild(detailHeader);
+        this.eventsSection.appendChild(detailHeader);
 
         const tableWrap = document.createElement("div");
         tableWrap.classList.add("lqos-table-wrap");
@@ -415,7 +458,7 @@ export class BakeryActivityDashlet extends BaseDashlet {
         table.appendChild(thead);
         table.appendChild(this.tbody);
         tableWrap.appendChild(table);
-        wrap.appendChild(tableWrap);
+        this.eventsSection.appendChild(tableWrap);
 
         const footer = document.createElement("div");
         footer.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "pt-2", "flex-wrap");
@@ -454,9 +497,34 @@ export class BakeryActivityDashlet extends BaseDashlet {
         pager.appendChild(this.prevButton);
         pager.appendChild(this.nextButton);
         footer.appendChild(pager);
-        wrap.appendChild(footer);
+        this.eventsSection.appendChild(footer);
+        wrap.appendChild(this.eventsSection);
         base.appendChild(wrap);
+        this.renderViewMode();
         return base;
+    }
+
+    setViewMode(mode) {
+        this.viewMode = mode === "events" ? "events" : "operations";
+        try {
+            window?.localStorage?.setItem(BAKERY_ACTIVITY_VIEW_STORAGE_KEY, this.viewMode);
+        } catch (_) {}
+        this.renderViewMode();
+    }
+
+    renderViewMode() {
+        if (this.operationsSection) {
+            this.operationsSection.classList.toggle("d-none", this.viewMode !== "operations");
+        }
+        if (this.eventsSection) {
+            this.eventsSection.classList.toggle("d-none", this.viewMode !== "events");
+        }
+        if (this.operationsButton) {
+            this.operationsButton.className = this.viewMode === "operations" ? "btn btn-primary" : "btn btn-outline-secondary";
+        }
+        if (this.eventsButton) {
+            this.eventsButton.className = this.viewMode === "events" ? "btn btn-primary" : "btn btn-outline-secondary";
+        }
     }
 
     totalPages() {
@@ -481,6 +549,7 @@ export class BakeryActivityDashlet extends BaseDashlet {
             this.prevButton.disabled = true;
             this.nextButton.disabled = true;
             this.renderOperationSummaries([]);
+            this.renderViewMode();
             return;
         }
 
@@ -523,86 +592,28 @@ export class BakeryActivityDashlet extends BaseDashlet {
         this.prevButton.disabled = this.currentPage === 0;
         this.nextButton.disabled = this.currentPage + 1 >= totalPages;
         this.renderOperationSummaries(entries);
+        this.renderViewMode();
     }
 
     renderOperationSummaries(entries) {
-        this.operationsList.innerHTML = "";
         const groups = buildOperationSummaries(entries);
-
-        if (groups.length === 0) {
-            const empty = document.createElement("div");
-            empty.classList.add("border", "rounded", "p-2", "text-muted", "small");
-            empty.textContent = "No recent operations";
-            this.operationsList.appendChild(empty);
-            return;
-        }
-
-        groups.forEach((group) => {
-            const card = document.createElement("div");
-            card.classList.add("border", "rounded", "p-2", "bg-body-tertiary");
-
-            const top = document.createElement("div");
-            top.classList.add("d-flex", "justify-content-between", "align-items-start", "gap-2", "flex-wrap", "mb-2");
-
-            const titleWrap = document.createElement("div");
-            const title = document.createElement("div");
-            title.classList.add("fw-semibold");
-            title.textContent = group.label;
-            titleWrap.appendChild(title);
-
-            const right = document.createElement("div");
-            right.classList.add("d-flex", "flex-wrap", "gap-2", "align-items-center");
-            right.appendChild(
-                mkBadge(group.latestMeta?.outcome || "Info", group.latestMeta?.outcomeClass || "bg-light text-secondary border", group.latestEntry?.summary || ""),
-            );
-
-            top.appendChild(titleWrap);
-            top.appendChild(right);
-            card.appendChild(top);
-
-            const summary = document.createElement("div");
-            summary.classList.add("small");
-            const fullSummary = displaySummary(group.latestEntry);
-            summary.textContent = truncateSummary(fullSummary);
-            summary.title = fullSummary;
-            card.appendChild(summary);
-
-            const footer = document.createElement("div");
-            footer.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "mt-2", "small", "text-body-secondary", "flex-wrap");
-
-            const footerLeft = document.createElement("div");
+        const cards = groups.map((group) => {
             const eventCount = group.events.length;
-            footerLeft.textContent = `${group.scopeLabel} • ${eventCount} event${eventCount === 1 ? "" : "s"}`;
-            footer.appendChild(footerLeft);
-
-            const footerRight = document.createElement("div");
-            footerRight.textContent = formatUnixSecondsToLocalDateTime(group.latestEntry?.ts);
-            footer.appendChild(footerRight);
-            card.appendChild(footer);
-
-            if (operationShowsProgress(group)) {
-                const progress = document.createElement("div");
-                progress.classList.add("progress", "mt-2", "mb-2");
-                progress.style.height = "0.45rem";
-
-                const progressBar = document.createElement("div");
-                progressBar.classList.add("progress-bar", operationProgressBarClass(group));
-                progressBar.style.width = `${operationProgressPercent(group)}%`;
-                progressBar.setAttribute("role", "progressbar");
-                progressBar.setAttribute("aria-valuemin", "0");
-                progressBar.setAttribute("aria-valuemax", "100");
-                progressBar.setAttribute("aria-valuenow", `${Math.round(operationProgressPercent(group))}`);
-                progress.appendChild(progressBar);
-                card.appendChild(progress);
-
-                const stages = document.createElement("div");
-                stages.classList.add("small", "text-body-secondary");
-                stages.textContent = operationStageLabels(group).join(" -> ");
-                card.appendChild(stages);
-            }
-
-            this.operationsList.appendChild(card);
+            return {
+                label: group.label,
+                outcomeLabel: group.latestMeta?.outcome || "Info",
+                outcomeClass: group.latestMeta?.outcomeClass || "bg-light text-secondary border",
+                outcomeTitle: group.latestEntry?.summary || "",
+                summary: truncateSummary(displaySummary(group.latestEntry)),
+                summaryTitle: displaySummary(group.latestEntry),
+                footerLeft: `${group.scopeLabel} • ${eventCount} event${eventCount === 1 ? "" : "s"}`,
+                footerRight: formatUnixSecondsToLocalDateTime(group.latestEntry?.ts),
+                stages: operationShowsProgress(group) ? operationStageLabels(group) : [],
+                progressPercent: operationShowsProgress(group) ? operationProgressPercent(group) : 0,
+                progressBarClass: operationShowsProgress(group) ? operationProgressBarClass(group) : "bg-info",
+            };
         });
+        renderOperationCards(this.operationsList, cards, { emptyText: "No recent operations" });
     }
 
     onMessage(msg) {

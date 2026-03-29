@@ -269,7 +269,8 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
         } else if (applying > 0 || submitted > 0) {
             this.footerEl.textContent = "Bakery is processing live topology mutations from TreeGuard.";
         } else {
-            this.footerEl.textContent = "No runtime topology mutations are currently active.";
+            this.footerEl.textContent = "";
         }
+        this.footerEl.classList.toggle("d-none", !this.footerEl.textContent);
     }
 }

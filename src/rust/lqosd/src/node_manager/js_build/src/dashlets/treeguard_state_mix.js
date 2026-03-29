@@ -26,6 +26,53 @@ function progressMetric(label, badgeClass) {
     return { wrap, count, bar };
 }
 
+function stackedMetric(label) {
+    const wrap = document.createElement("div");
+    wrap.classList.add("d-flex", "flex-column", "gap-1");
+
+    const top = document.createElement("div");
+    top.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "small");
+    const title = document.createElement("span");
+    title.classList.add("fw-semibold");
+    title.textContent = label;
+    const count = document.createElement("span");
+    count.classList.add("fw-semibold");
+    top.appendChild(title);
+    top.appendChild(count);
+
+    const barWrap = document.createElement("div");
+    barWrap.classList.add("progress");
+    barWrap.style.height = "0.7rem";
+
+    const cakeBar = document.createElement("div");
+    cakeBar.classList.add("progress-bar", "bg-success");
+    const mixedBar = document.createElement("div");
+    mixedBar.classList.add("progress-bar", "bg-warning");
+    const fqBar = document.createElement("div");
+    fqBar.classList.add("progress-bar", "bg-info");
+    [cakeBar, mixedBar, fqBar].forEach((bar) => {
+        barWrap.appendChild(bar);
+    });
+
+    const legend = document.createElement("div");
+    legend.classList.add("d-flex", "flex-wrap", "gap-2", "small", "text-body-secondary");
+
+    const mkLegend = (labelText, badgeClass) => {
+        const span = document.createElement("span");
+        span.className = `badge ${badgeClass}`;
+        span.textContent = labelText;
+        return span;
+    };
+    legend.appendChild(mkLegend("cake", "bg-success"));
+    legend.appendChild(mkLegend("mixed", "bg-warning text-dark"));
+    legend.appendChild(mkLegend("fq_codel", "bg-info text-dark"));
+
+    wrap.appendChild(top);
+    wrap.appendChild(barWrap);
+    wrap.appendChild(legend);
+    return { wrap, count, cakeBar, mixedBar, fqBar };
+}
+
 function updateMetric(metric, value, max, colorClass, title) {
     const hasMax = Number.isFinite(max) && max > 0;
     const safeMax = hasMax ? max : Math.max(1, Number.isFinite(value) ? value : 1);
@@ -72,13 +119,13 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
         this.nodesManaged = progressMetric("Managed Nodes", "bg-primary");
         this.nodesVirtual = progressMetric("Virtualized", "bg-warning text-dark");
         this.circuitsManaged = progressMetric("Managed Circuits", "bg-success");
-        this.circuitsFq = progressMetric("fq_codel", "bg-info text-dark");
+        this.circuitSqmMix = stackedMetric("Circuit SQM Mix");
 
         [
             this.nodesManaged.wrap,
             this.nodesVirtual.wrap,
             this.circuitsManaged.wrap,
-            this.circuitsFq.wrap,
+            this.circuitSqmMix.wrap,
         ].forEach((el) => this.grid.appendChild(el));
 
         this.footerEl = document.createElement("div");
@@ -104,6 +151,12 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
         const virtualizedNodes = Number.isFinite(this.status?.virtualized_nodes)
             ? this.status.virtualized_nodes
             : 0;
+        const cakeCircuits = Number.isFinite(this.status?.cake_circuits)
+            ? this.status.cake_circuits
+            : 0;
+        const mixedCircuits = Number.isFinite(this.status?.mixed_sqm_circuits)
+            ? this.status.mixed_sqm_circuits
+            : 0;
         const fqCodelCircuits = Number.isFinite(this.status?.fq_codel_circuits)
             ? this.status.fq_codel_circuits
             : 0;
@@ -111,7 +164,20 @@ export class TreeGuardStateMixDashlet extends BaseDashlet {
         updateMetric(this.nodesManaged, managedNodes, totalNodes, "bg-primary", "Nodes currently managed by TreeGuard");
         updateMetric(this.nodesVirtual, virtualizedNodes, totalNodes, "bg-warning", "Nodes currently runtime-virtualized");
         updateMetric(this.circuitsManaged, managedCircuits, totalCircuits, "bg-success", "Circuits under TreeGuard management");
-        updateMetric(this.circuitsFq, fqCodelCircuits, totalCircuits, "bg-info", "Circuits with fq_codel override");
+        const sqmTotal = Math.max(1, cakeCircuits + mixedCircuits + fqCodelCircuits);
+        this.circuitSqmMix.count.textContent = `${cakeCircuits.toLocaleString()} / ${mixedCircuits.toLocaleString()} / ${fqCodelCircuits.toLocaleString()}`;
+        [
+            [this.circuitSqmMix.cakeBar, cakeCircuits, "cake/cake circuits"],
+            [this.circuitSqmMix.mixedBar, mixedCircuits, "mixed cake/fq_codel circuits"],
+            [this.circuitSqmMix.fqBar, fqCodelCircuits, "fq_codel/fq_codel circuits"],
+        ].forEach(([bar, value, label]) => {
+            const pct = Math.max(0, Math.min(100, (value / sqmTotal) * 100));
+            bar.style.width = `${pct}%`;
+            bar.title = `${value.toLocaleString()} ${label}`;
+            bar.setAttribute("aria-valuenow", value.toString());
+            bar.setAttribute("aria-valuemin", "0");
+            bar.setAttribute("aria-valuemax", sqmTotal.toString());
+        });
 
         this.footerEl.textContent = totalNodes > 0 || totalCircuits > 0
             ? "This view shows how much of the discovered topology is currently under TreeGuard influence."

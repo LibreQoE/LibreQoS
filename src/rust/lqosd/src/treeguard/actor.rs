@@ -259,6 +259,8 @@ fn empty_status_snapshot() -> TreeguardStatusData {
         managed_nodes: 0,
         managed_circuits: 0,
         virtualized_nodes: 0,
+        cake_circuits: 0,
+        mixed_sqm_circuits: 0,
         fq_codel_circuits: 0,
         last_action_summary: None,
         warnings: Vec::new(),
@@ -416,6 +418,7 @@ struct TreeguardRuntimeState {
     circuit_states: FxHashMap<String, CircuitState>,
     circuit_inventory: CircuitInventory,
     circuit_batch_cursor: usize,
+    next_sqm_batch_id: u64,
     runtime_virtualized_nodes: FxHashSet<String>,
     pending_link_operations: FxHashMap<String, PendingLinkOperation>,
     link_virtualization_backoff_until_unix: FxHashMap<String, u64>,
@@ -794,6 +797,8 @@ fn run_tick(
         status.managed_nodes = 0;
         status.managed_circuits = 0;
         status.virtualized_nodes = 0;
+        status.cake_circuits = 0;
+        status.mixed_sqm_circuits = 0;
         status.fq_codel_circuits = 0;
         status.last_action_summary = None;
         status.warnings = vec!["Unable to load configuration; TreeGuard inactive.".to_string()];
@@ -819,6 +824,7 @@ fn run_tick(
                 action: "dry_run_toggled".to_string(),
                 persisted: false,
                 reason: "Dry-run mode changed; state machines reset.".to_string(),
+                ..Default::default()
             },
         );
     }
@@ -1603,6 +1609,7 @@ fn run_tick(
                                 action: "clear_sqm_overrides".to_string(),
                                 persisted: true,
                                 reason: "TreeGuard disabled or circuits disabled".to_string(),
+                                ..Default::default()
                             },
                         );
                     }
@@ -1652,6 +1659,7 @@ fn run_tick(
                                 action: "clear_sqm_overrides".to_string(),
                                 persisted: true,
                                 reason: "Device removed from allowlisted circuits".to_string(),
+                                ..Default::default()
                             },
                         );
                     }
@@ -1676,6 +1684,7 @@ fn run_tick(
             &mut runtime_state.circuit_batch_cursor,
             batch_size,
         );
+        let sqm_batch_id = next_sqm_batch_id(&mut runtime_state.next_sqm_batch_id);
 
         for circuit_id in circuit_batch {
             let Some(entry) = circuit_inventory.entries.get(circuit_id) else {
@@ -1712,6 +1721,7 @@ fn run_tick(
                             reason: format!(
                                 "TreeGuard refuses circuits with duplicate device IDs. {duplicate_reason}"
                             ),
+                            ..Default::default()
                         },
                     );
                 }
@@ -1729,6 +1739,7 @@ fn run_tick(
                                             .to_string(),
                                         persisted: true,
                                         reason: "Duplicate device IDs detected; cleared TreeGuard SQM overlays and skipped management.".to_string(),
+                                        ..Default::default()
                                     },
                                 );
                             }
@@ -1798,6 +1809,7 @@ fn run_tick(
                                         action: "clear_sqm_overrides_conflict".to_string(),
                                         persisted: true,
                                         reason: "Operator SQM overrides present; cleared TreeGuard SQM overlays.".to_string(),
+                                        ..Default::default()
                                     },
                                 );
                             }
@@ -1838,11 +1850,12 @@ fn run_tick(
                     cpu_max_pct,
                     dry_run: tg.dry_run,
                     circuit_id,
-                    circuit_entity_id: &entry.circuit_entity_id,
-                    circuit_label: &entry.circuit_label,
-                    devices: &entry.devices,
-                    allowlisted: tg.circuits.all_circuits
-                        || allowlisted_circuits.contains(circuit_id),
+                circuit_entity_id: &entry.circuit_entity_id,
+                circuit_label: &entry.circuit_label,
+                devices: &entry.devices,
+                sqm_batch_id: &sqm_batch_id,
+                allowlisted: tg.circuits.all_circuits
+                    || allowlisted_circuits.contains(circuit_id),
                     cap_down: entry.cap_down,
                     cap_up: entry.cap_up,
                     bps: live_rollup
@@ -1879,13 +1892,25 @@ fn run_tick(
     }
 
     status.virtualized_nodes = runtime_virtualized_nodes.len();
-    status.fq_codel_circuits = circuit_states
-        .values()
-        .filter(|state| {
-            state.down.desired == CircuitSqmState::FqCodel
-                || state.up.desired == CircuitSqmState::FqCodel
-        })
-        .count();
+    let mut cake_circuits = 0usize;
+    let mut mixed_sqm_circuits = 0usize;
+    let mut fq_codel_circuits = 0usize;
+    for state in circuit_states.values() {
+        match (state.down.desired, state.up.desired) {
+            (CircuitSqmState::Cake, CircuitSqmState::Cake) => {
+                cake_circuits = cake_circuits.saturating_add(1);
+            }
+            (CircuitSqmState::FqCodel, CircuitSqmState::FqCodel) => {
+                fq_codel_circuits = fq_codel_circuits.saturating_add(1);
+            }
+            _ => {
+                mixed_sqm_circuits = mixed_sqm_circuits.saturating_add(1);
+            }
+        }
+    }
+    status.cake_circuits = cake_circuits;
+    status.mixed_sqm_circuits = mixed_sqm_circuits;
+    status.fq_codel_circuits = fq_codel_circuits;
     warning_limiter.flush(status);
 }
 
@@ -1981,6 +2006,7 @@ fn clear_legacy_treeguard_virtual_override(
                         action: "clear_virtual_override".to_string(),
                         persisted: true,
                         reason: reason.to_string(),
+                        ..Default::default()
                     },
                 );
             }
@@ -1998,6 +2024,7 @@ fn clear_legacy_treeguard_virtual_override(
                     action: "clear_virtual_override_failed".to_string(),
                     persisted: false,
                     reason: format!("Overrides write failed: {e}"),
+                    ..Default::default()
                 },
             );
         }
@@ -2074,6 +2101,7 @@ fn reconcile_pending_link_operations(
                         } else {
                             pending.reason
                         },
+                        ..Default::default()
                     },
                 );
                 status.last_action_summary = Some(match pending.target {
@@ -2145,6 +2173,7 @@ fn reconcile_pending_link_operations(
                             "{}. Bakery deferred the operation: {details}",
                             pending.reason
                         ),
+                        ..Default::default()
                     },
                 );
             }
@@ -2213,6 +2242,7 @@ fn reconcile_pending_link_operations(
                             "{}. Bakery runtime operation failed: {details}",
                             pending.reason
                         ),
+                        ..Default::default()
                     },
                 );
             }
@@ -2280,6 +2310,7 @@ fn restore_runtime_virtualization_if_needed(
                     action: "unvirtualize_requested".to_string(),
                     persisted: false,
                     reason: format!("{reason}. Queued in Bakery for live restore."),
+                    ..Default::default()
                 },
             );
             status.last_action_summary = Some(format!("Queued restore for node '{node_name}'"));
@@ -2299,6 +2330,7 @@ fn restore_runtime_virtualization_if_needed(
                     action: "unvirtualize_failed".to_string(),
                     persisted: false,
                     reason: format!("{reason}. Bakery restore submission failed: {e}"),
+                    ..Default::default()
                 },
             );
         }
@@ -2381,6 +2413,7 @@ fn apply_link_virtualization_decision(
                         "{}. TreeGuard rejected runtime virtualization before submitting to Bakery: node {details}",
                         reason
                     ),
+                    ..Default::default()
                 },
             );
             return;
@@ -2419,6 +2452,7 @@ fn apply_link_virtualization_decision(
                                 "restore"
                             }
                         ),
+                        ..Default::default()
                     },
                 );
                 status.last_action_summary = Some(format!(
@@ -2456,6 +2490,7 @@ fn apply_link_virtualization_decision(
                         },
                         persisted: false,
                         reason: format!("Bakery runtime virtualization submission failed: {e}"),
+                        ..Default::default()
                     },
                 );
                 return;
@@ -2477,6 +2512,7 @@ fn apply_link_virtualization_decision(
             },
             persisted: persist,
             reason,
+            ..Default::default()
         },
     );
     status.last_action_summary = Some(format!(
@@ -2674,6 +2710,7 @@ struct CircuitSqmApplyContext<'a> {
     circuit_label: &'a str,
     devices: &'a [lqos_config::ShapedDevice],
     base_sqm: DownUpOrder<CircuitSqmState>,
+    batch_id: &'a str,
 }
 
 struct CircuitSqmTransition {
@@ -2695,6 +2732,7 @@ struct CircuitTickContext<'a> {
     circuit_entity_id: &'a str,
     circuit_label: &'a str,
     devices: &'a [lqos_config::ShapedDevice],
+    sqm_batch_id: &'a str,
     allowlisted: bool,
     cap_down: f32,
     cap_up: f32,
@@ -2753,6 +2791,18 @@ fn try_consume_circuit_change_budget(remaining_budget: &mut usize) -> bool {
     true
 }
 
+fn next_sqm_batch_id(next_sqm_batch_id: &mut u64) -> String {
+    *next_sqm_batch_id = next_sqm_batch_id.saturating_add(1);
+    format!("sqm-{}", *next_sqm_batch_id)
+}
+
+fn is_retryable_live_mutation_unavailable(error: &TreeguardError) -> Option<&str> {
+    match error {
+        TreeguardError::LiveMutationUnavailable { details } => Some(details.as_str()),
+        _ => None,
+    }
+}
+
 fn apply_circuit_sqm_change<P, C, L>(
     ctx: CircuitSqmApplyContext<'_>,
     state: &mut CircuitState,
@@ -2776,6 +2826,7 @@ fn apply_circuit_sqm_change<P, C, L>(
         circuit_label,
         devices,
         base_sqm,
+        batch_id,
     } = ctx;
     let CircuitSqmTransition {
         proposed_down,
@@ -2819,6 +2870,8 @@ fn apply_circuit_sqm_change<P, C, L>(
                 },
                 persisted: false,
                 reason: "Dry-run".to_string(),
+                batch_id: Some(batch_id.to_string()),
+                batch_kind: Some("sqm".to_string()),
             },
         );
         status.last_action_summary = Some(if returning_to_base {
@@ -2868,33 +2921,59 @@ fn apply_circuit_sqm_change<P, C, L>(
                         },
                         persisted: false,
                         reason: format!("Overrides write failed: {e}"),
+                        batch_id: Some(batch_id.to_string()),
+                        batch_kind: Some("sqm".to_string()),
                     },
                 );
             }
         }
     }
 
+    let mut live_deferred = false;
     let live_ok = match live_apply(circuit_id, devices, live_token) {
         Ok(()) => true,
         Err(e) => {
-            status.warnings.push(format!(
-                "TreeGuard circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
-            ));
-            push_activity(
-                activity,
-                TreeguardActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "circuit".to_string(),
-                    entity_id: circuit_entity_id.to_string(),
-                    action: if returning_to_base {
-                        "clear_sqm_live_failed".to_string()
-                    } else {
-                        format!("apply_sqm_live_failed:{token}")
+            if let Some(details) = is_retryable_live_mutation_unavailable(&e) {
+                live_deferred = true;
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "circuit".to_string(),
+                        entity_id: circuit_entity_id.to_string(),
+                        action: if returning_to_base {
+                            "clear_sqm_live_deferred".to_string()
+                        } else {
+                            format!("apply_sqm_live_deferred:{token}")
+                        },
+                        persisted: persisted_ok,
+                        reason: format!("Bakery live apply deferred: {details}"),
+                        batch_id: Some(batch_id.to_string()),
+                        batch_kind: Some("sqm".to_string()),
                     },
-                    persisted: persisted_ok,
-                    reason: format!("Bakery live apply failed: {e}"),
-                },
-            );
+                );
+            } else {
+                status.warnings.push(format!(
+                    "TreeGuard circuits: live SQM apply failed for circuit '{circuit_id}': {e}"
+                ));
+                push_activity(
+                    activity,
+                    TreeguardActivityEntry {
+                        time: now_unix.to_string(),
+                        entity_type: "circuit".to_string(),
+                        entity_id: circuit_entity_id.to_string(),
+                        action: if returning_to_base {
+                            "clear_sqm_live_failed".to_string()
+                        } else {
+                            format!("apply_sqm_live_failed:{token}")
+                        },
+                        persisted: persisted_ok,
+                        reason: format!("Bakery live apply failed: {e}"),
+                        batch_id: Some(batch_id.to_string()),
+                        batch_kind: Some("sqm".to_string()),
+                    },
+                );
+            }
             false
         }
     };
@@ -2920,7 +2999,11 @@ fn apply_circuit_sqm_change<P, C, L>(
             ),
             (false, true, false) => (
                 "set_sqm_override".to_string(),
-                "Persisted (live apply failed)".to_string(),
+                if live_deferred {
+                    "Persisted (live apply deferred)".to_string()
+                } else {
+                    "Persisted (live apply failed)".to_string()
+                },
             ),
             (false, false, true) => ("set_sqm_live".to_string(), "Applied live".to_string()),
             (false, false, false) => ("set_sqm_live".to_string(), "Not applied".to_string()),
@@ -2930,7 +3013,11 @@ fn apply_circuit_sqm_change<P, C, L>(
             ),
             (true, true, false) => (
                 "clear_sqm_override".to_string(),
-                "Persisted clear (live apply failed)".to_string(),
+                if live_deferred {
+                    "Persisted clear (live apply deferred)".to_string()
+                } else {
+                    "Persisted clear (live apply failed)".to_string()
+                },
             ),
             (true, false, true) => (
                 "clear_sqm_live".to_string(),
@@ -2947,6 +3034,8 @@ fn apply_circuit_sqm_change<P, C, L>(
                 action: format!("{action}:{token}"),
                 persisted: persisted_ok,
                 reason,
+                batch_id: Some(batch_id.to_string()),
+                batch_kind: Some("sqm".to_string()),
             },
         );
 
@@ -2985,6 +3074,7 @@ where
         circuit_entity_id,
         circuit_label,
         devices,
+        sqm_batch_id,
         allowlisted,
         cap_down,
         cap_up,
@@ -3074,13 +3164,14 @@ where
                     activity,
                     now_unix,
                     dry_run,
-                    persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
-                    circuit_id,
-                    circuit_entity_id,
-                    circuit_label,
-                    devices,
-                    base_sqm,
-                },
+                persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
+                circuit_id,
+                circuit_entity_id,
+                circuit_label,
+                devices,
+                base_sqm,
+                batch_id: sqm_batch_id,
+            },
                 state,
                 transition,
                 persist_override,
@@ -3173,6 +3264,7 @@ mod tests {
     use crate::treeguard::decisions;
     use crate::treeguard::{
         bakery,
+        errors::TreeguardError,
         state::{
             CircuitSqmState, LinkState, LinkStructuralIneligibleState, LinkTopologyFingerprint,
         },
@@ -3577,6 +3669,7 @@ mod tests {
                     down: CircuitSqmState::Cake,
                     up: CircuitSqmState::Cake,
                 },
+                batch_id: "sqm-test-1",
             },
             &mut state,
             CircuitSqmTransition {
@@ -3611,6 +3704,8 @@ mod tests {
         assert_eq!(last_activity.action, "set_sqm_live:fq_codel/cake");
         assert!(!last_activity.persisted);
         assert_eq!(last_activity.reason, "Applied live");
+        assert_eq!(last_activity.batch_id.as_deref(), Some("sqm-test-1"));
+        assert_eq!(last_activity.batch_kind.as_deref(), Some("sqm"));
 
         let command = rx.try_recv().expect("bakery command should be sent");
         let BakeryCommands::AddCircuit {
@@ -3660,6 +3755,7 @@ mod tests {
                     down: CircuitSqmState::Cake,
                     up: CircuitSqmState::Cake,
                 },
+                batch_id: "sqm-test-2",
             },
             &mut state,
             CircuitSqmTransition {
@@ -3692,6 +3788,8 @@ mod tests {
         assert_eq!(last_activity.action, "clear_sqm_override:cake/cake");
         assert!(last_activity.persisted);
         assert_eq!(last_activity.reason, "Cleared live + persisted overlay");
+        assert_eq!(last_activity.batch_id.as_deref(), Some("sqm-test-2"));
+        assert_eq!(last_activity.batch_kind.as_deref(), Some("sqm"));
     }
 
     #[test]
@@ -3744,6 +3842,7 @@ mod tests {
                 circuit_entity_id: "Circuit Two (circuit-2)",
                 circuit_label: "Circuit Two",
                 devices: &devices,
+                sqm_batch_id: "sqm-test-3",
                 allowlisted: true,
                 cap_down: 100.0,
                 cap_up: 20.0,
@@ -3793,6 +3892,9 @@ mod tests {
         };
         assert_eq!(circuit_hash, lqos_utils::hash_to_i64("circuit-2"));
         assert_eq!(sqm_override, Some("fq_codel/fq_codel".to_string()));
+        let last_activity = activity.back().expect("activity should be recorded");
+        assert_eq!(last_activity.batch_id.as_deref(), Some("sqm-test-3"));
+        assert_eq!(last_activity.batch_kind.as_deref(), Some("sqm"));
     }
 
     #[test]
@@ -3811,6 +3913,85 @@ mod tests {
 
         assert_eq!(base.down, CircuitSqmState::FqCodel);
         assert_eq!(base.up, CircuitSqmState::FqCodel);
+    }
+
+    #[test]
+    fn circuit_tick_treats_bakery_live_mutation_unavailable_as_deferred() {
+        let devices = vec![ShapedDevice {
+            circuit_id: "circuit-deferred".to_string(),
+            circuit_name: "Circuit Deferred".to_string(),
+            device_id: "device-deferred".to_string(),
+            ipv4: vec![(Ipv4Addr::new(198, 51, 100, 30), 32)],
+            ..ShapedDevice::default()
+        }];
+        let mut managed_device_ids = FxHashSet::default();
+        let mut status = empty_status_snapshot();
+        let mut activity: VecDeque<TreeguardActivityEntry> = VecDeque::new();
+        let mut state = crate::treeguard::state::CircuitState::default();
+        state.down.idle_since_unix = Some(0);
+        state.up.idle_since_unix = Some(0);
+
+        let circuits_cfg = lqos_config::TreeguardCircuitsConfig {
+            persist_sqm_overrides: false,
+            ..lqos_config::TreeguardCircuitsConfig::default()
+        };
+        let mut circuit_change_budget_remaining = 1usize;
+        let mut deferred_circuit_sqm_changes = 0usize;
+
+        let fq_codel = process_circuit_tick(
+            CircuitTickContext {
+                status: &mut status,
+                activity: &mut activity,
+                managed_device_ids: &mut managed_device_ids,
+                now_unix: 1_000,
+                now_nanos_since_boot: Some(2_000_000_000),
+                cpu_max_pct: Some(95),
+                dry_run: false,
+                circuit_id: "circuit-deferred",
+                circuit_entity_id: "Circuit Deferred (circuit-deferred)",
+                circuit_label: "Circuit Deferred",
+                devices: &devices,
+                sqm_batch_id: "sqm-test-deferred",
+                allowlisted: true,
+                cap_down: 100.0,
+                cap_up: 20.0,
+                bps: DownUpOrder { down: 0, up: 0 },
+                last_rtt_seen_nanos: Some(1_900_000_000),
+                qoo: DownUpOrder {
+                    down: Some(90.0),
+                    up: Some(90.0),
+                },
+                cpu_cfg: &lqos_config::TreeguardCpuConfig::default(),
+                circuits_cfg: &circuits_cfg,
+                qoo_cfg: &lqos_config::TreeguardQooConfig::default(),
+                base_sqm: DownUpOrder {
+                    down: CircuitSqmState::Cake,
+                    up: CircuitSqmState::Cake,
+                },
+                circuit_change_budget_remaining: &mut circuit_change_budget_remaining,
+                deferred_circuit_sqm_changes: &mut deferred_circuit_sqm_changes,
+            },
+            &mut state,
+            |_device_ids, _token| Ok(false),
+            |_device_ids| Ok(false),
+            |_circuit_id, _devices, _token| {
+                Err(TreeguardError::LiveMutationUnavailable {
+                    details: "the shaping tree is not currently active".to_string(),
+                })
+            },
+        );
+
+        assert!(!fq_codel);
+        assert_eq!(state.down.desired, CircuitSqmState::Cake);
+        assert_eq!(state.up.desired, CircuitSqmState::Cake);
+        assert!(status.warnings.is_empty());
+        assert!(managed_device_ids.contains("device-deferred"));
+        assert!(activity.iter().any(|entry| {
+            entry.action == "apply_sqm_live_deferred:fq_codel/fq_codel"
+                && entry.reason
+                    == "Bakery live apply deferred: the shaping tree is not currently active"
+        }));
+        assert!(!activity.iter().any(|entry| entry.action.contains("failed")));
     }
 
     #[test]
@@ -4040,6 +4221,8 @@ mod tests {
         assert!(!status.dry_run);
         assert_eq!(status.managed_circuits, 1);
         assert_eq!(status.fq_codel_circuits, 1);
+        assert_eq!(status.cake_circuits, 0);
+        assert_eq!(status.mixed_sqm_circuits, 0);
         assert_eq!(
             status.last_action_summary.as_deref(),
             Some("SQM override for circuit 'Circuit Three' -> fq_codel/fq_codel")

@@ -8,13 +8,15 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Resumen por widgets de throughput, retransmisiones, RTT, flujos y actividad de colas.
 - El contenido puede variar según versión y funciones habilitadas.
 - Executive Summary ofrece una vista operativa compacta para redes grandes, con páginas de detalle para heatmaps y rankings ejecutivos.
-- Bakery ofrece una pestaña dedicada para el estado de aplicación de colas, eventos recientes de Bakery paginados, resultados de seguridad/preflight de qdisc y el gráfico existente de actividad de circuitos.
+- Bakery ofrece una pestaña dedicada para el estado de aplicación de colas, eventos recientes de Bakery paginados, resultados de seguridad/preflight de qdisc, progreso de cambios en vivo sobre circuitos y operaciones recientes de Bakery centradas en circuitos.
 - Las pestañas de Bakery y TreeGuard incluyen un resumen de alto nivel del pipeline/control loop antes de las tablas detalladas.
-- El widget `Pipeline` de Bakery muestra el progreso activo de aplicación, incluyendo porcentaje completado, conteo de comandos y avance por chunk durante full reloads grandes.
+- El widget `Pipeline` de Bakery muestra las etapas actuales del control de colas, incluyendo el estado activo de aplicación, el estado de verificación y la temporización del intervalo de TC.
 - `Runtime Operations` resume mutaciones en vivo de topología entre TreeGuard y Bakery, trabajo de limpieza diferida, fallos, subárboles marcados como `Dirty` y si los cambios incrementales están congelados hasta un full reload.
-- `Recent Bakery Events` ayuda a distinguir rápidamente estados de planificación, preflight, aplicación, limpieza y finalización.
-- `TreeGuard Activity` se centra en la intención y el resultado operativo, incluyendo dry-runs, cambios aplicados, skips, acciones con limpieza pendiente y fallos.
-- `TreeGuard Decision Impact` separa advertencias operativas de errores reales y expone el texto actual de advertencia o error en el resumen del widget y en el tooltip.
+- `Recent Bakery Events` muestra por defecto operaciones agrupadas orientadas al operador, y deja el log crudo de eventos de Bakery en una vista separada de `Event Log` cuando hace falta troubleshooting detallado.
+- `TreeGuard Activity` muestra por defecto operaciones agrupadas orientadas al operador, incluyendo lotes consolidados de cambios SQM, y deja el log crudo de eventos de TreeGuard en una vista separada de `Event Log` cuando hace falta troubleshooting detallado.
+- `TreeGuard Control Loop` muestra el estado actual de observar/evaluar/actuar sin repetir acciones recientes que ya aparecen en TreeGuard Activity.
+- `TreeGuard Decision Impact` se centra en el impacto actual y en las advertencias o errores actuales, en lugar de repetir acciones recientes.
+- `TreeGuard State Mix` muestra nodos gestionados, virtualización en runtime, circuitos gestionados y la mezcla actual de circuitos `cake / mixed / fq_codel`.
 - El preflight de qdisc de Bakery resume el uso planificado de qdisc por interfaz y el margen de presupuesto antes de aplicar cambios.
 - Algunos gráficos pueden tardar un poco en poblarse al abrir una pestaña por primera vez, especialmente en sistemas ocupados o inmediatamente después de reiniciar servicios.
 - Durante un full reload de Bakery, las tarjetas de conteo de colas mantienen los últimos valores conocidos de HTB/CAKE/fq-codel y los marcan como `Reloading`.
@@ -38,6 +40,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Los sitios visibles y sin agrupar muestran etiquetas al acercar el mapa, y el sitio seleccionado mantiene su etiqueta visible mientras se inspecciona.
 - Cuando el modo de redacción del navegador está habilitado, Site Map reemplaza los nombres de sitios mostrados por `[redacted]` sin modificar los datos reales de topología.
 - El encuadre inicial del mapa prioriza las coordenadas de los sitios para la vista inicial, usando coordenadas de AP solo cuando todavía no hay sitios mapeados.
+- En modo oscuro, la capa raster del mapa base se atenúa y se tiñe del lado cliente hacia una paleta azul/cian similar a la de Flow Globe, para mantener visibles carreteras y geografía sin el brillo del mapa claro.
 - Usa un mapa base local con estilo LibreQoS con bordes de país/estado, costas, lagos principales, ríos principales, áreas marinas, superposiciones sutiles de regiones físicas y contexto de autopistas principales a mayor zoom para orientación geográfica.
 - Site Map utiliza una capa local de carreteras derivada de Natural Earth para ayudar con la orientación, manteniendo el resto del mapa base discreto y operativo.
 

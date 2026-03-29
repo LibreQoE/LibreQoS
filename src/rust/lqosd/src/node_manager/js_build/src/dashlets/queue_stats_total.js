@@ -5,7 +5,6 @@ import {periodNameToSeconds} from "../helpers/time_periods";
 import {get_ws_client} from "../pubsub/ws";
 
 const wsClient = get_ws_client();
-const LIVE_SAMPLE_LIMIT = 300;
 
 const listenOnceForSeconds = (eventName, seconds, onSuccess, onError) => {
     const wrapped = (msg) => {
@@ -30,7 +29,6 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
         super(slot);
         this.historyGraph = null;
         this.historyPeriod = null;
-        this.backgroundSamples = [];
     }
 
     title() {
@@ -43,14 +41,6 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
 
     subscribeTo() {
         return [ "QueueStatsTotal" ];
-    }
-
-    keepAliveWhenHidden() {
-        return true;
-    }
-
-    keepSubscribedWhenHidden() {
-        return true;
     }
 
     historyGraphDivId() {
@@ -86,35 +76,8 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
         }
     }
 
-    onBackgroundMessage(msg) {
-        if (msg.event !== "QueueStatsTotal" || window.timePeriods.activePeriod !== "Live") {
-            return;
-        }
-        this.backgroundSamples.push({
-            marks: msg.marks,
-            drops: msg.drops,
-        });
-        if (this.backgroundSamples.length > LIVE_SAMPLE_LIMIT) {
-            this.backgroundSamples.shift();
-        }
-    }
-
-    flushBackgroundMessages() {
-        if (window.timePeriods.activePeriod !== "Live" || this.backgroundSamples.length === 0) {
-            this.backgroundSamples = [];
-            return false;
-        }
-        for (let i = 0; i < this.backgroundSamples.length; i++) {
-            const sample = this.backgroundSamples[i];
-            this.#applyLiveSample(sample.marks, sample.drops);
-        }
-        this.backgroundSamples = [];
-        return true;
-    }
-
     onTimeChange() {
         super.onTimeChange();
-        this.backgroundSamples = [];
 
         const liveGraph = document.getElementById(this.graphDivId());
         const historyGraph = document.getElementById(this.historyGraphDivId());

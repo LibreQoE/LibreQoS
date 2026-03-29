@@ -112,41 +112,11 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         layout.appendChild(topRow);
         layout.appendChild(bottomRow);
 
-        this.progressWrap = document.createElement("div");
-        this.progressWrap.classList.add("mt-3");
-
         this.alertEl = document.createElement("div");
         this.alertEl.classList.add("alert", "alert-danger", "small", "py-2", "px-3", "mt-3", "d-none");
 
-        const progressHeader = document.createElement("div");
-        progressHeader.classList.add("d-flex", "justify-content-between", "align-items-center", "small", "mb-1");
-        this.progressSummaryEl = document.createElement("span");
-        this.progressSummaryEl.classList.add("text-body-secondary");
-        this.progressPercentEl = document.createElement("span");
-        this.progressPercentEl.classList.add("fw-semibold");
-        progressHeader.appendChild(this.progressSummaryEl);
-        progressHeader.appendChild(this.progressPercentEl);
-
-        this.progressBarWrapEl = document.createElement("div");
-        this.progressBarWrapEl.classList.add("progress");
-        this.progressBarWrapEl.style.height = "0.9rem";
-        this.progressBarEl = document.createElement("div");
-        this.progressBarEl.classList.add("progress-bar");
-        this.progressBarEl.setAttribute("role", "progressbar");
-        this.progressBarEl.style.width = "0%";
-        this.progressBarEl.textContent = "0%";
-        this.progressBarWrapEl.appendChild(this.progressBarEl);
-
-        this.progressWrap.appendChild(progressHeader);
-        this.progressWrap.appendChild(this.progressBarWrapEl);
-
-        this.footerEl = document.createElement("div");
-        this.footerEl.classList.add("small", "text-body-secondary", "mt-2");
-
         wrap.appendChild(layout);
         wrap.appendChild(this.alertEl);
-        wrap.appendChild(this.progressWrap);
-        wrap.appendChild(this.footerEl);
         base.appendChild(wrap);
         return base;
     }
@@ -217,7 +187,7 @@ export class BakeryPipelineDashlet extends BaseDashlet {
             applyFooter,
         );
 
-        const verifyTitleNode = bakeryModeBadge(status.mode);
+        const verifyTitleNode = applying ? bakeryModeBadge(status.mode) : null;
         const verifyFooter = document.createElement("span");
         if (applying && status.currentActionStartedUnix) {
             verifyFooter.textContent = `Running ${formatElapsedSince(status.currentActionStartedUnix)}`;
@@ -244,7 +214,7 @@ export class BakeryPipelineDashlet extends BaseDashlet {
 
         const tcIoFooter = document.createElement("span");
         if (Number.isFinite(status.lastTcIoUnix) && status.lastTcIoUnix > 0) {
-            tcIoFooter.textContent = `Last tc I/O ${formatElapsedSince(status.lastTcIoUnix)}`;
+            tcIoFooter.textContent = `Last I/O ${formatElapsedSince(status.lastTcIoUnix)}`;
         } else {
             tcIoFooter.textContent = "Tracks real tc reads/writes";
         }
@@ -264,29 +234,5 @@ export class BakeryPipelineDashlet extends BaseDashlet {
         this.alertEl.textContent = reloadRequired
             ? `Incremental topology mutations are frozen until Bakery performs a structural full reload. ${reloadRequiredReason}`.trim()
             : "";
-
-        const activeFullReload = status.mode === "ApplyingFullReload" && totalCommands > 0;
-        const activeLiveChange = status.mode === "ApplyingLiveChange" && totalCommands > 0;
-        const progressTone = activeFullReload ? "bg-warning" : (activeLiveChange ? "bg-info" : "bg-secondary");
-        this.progressSummaryEl.textContent = activeFullReload
-            ? `${status.currentApplyPhase || "Applying tc command chunks"} • ${completedCommands.toLocaleString()} / ${totalCommands.toLocaleString()} tc • chunk ${Math.min(completedChunks + 1, totalChunks).toLocaleString()} / ${totalChunks.toLocaleString()}`
-            : (activeLiveChange
-                ? `${status.currentApplyPhase || "Applying live change"} • ${completedCommands.toLocaleString()} / ${totalCommands.toLocaleString()} tc`
-                : "No apply currently running");
-        this.progressPercentEl.textContent = totalCommands > 0 && applying ? `${progressPct.toFixed(1)}%` : "Idle";
-        this.progressBarEl.style.width = applying ? `${progressPct}%` : "0%";
-        this.progressBarEl.textContent = applying ? `${progressPct.toFixed(1)}%` : "0%";
-        this.progressBarEl.className = applying
-            ? `progress-bar progress-bar-striped progress-bar-animated ${progressTone}`
-            : "progress-bar bg-secondary";
-        this.progressBarEl.setAttribute("aria-valuenow", progressPct.toFixed(1));
-        this.progressBarEl.setAttribute("aria-valuemin", "0");
-        this.progressBarEl.setAttribute("aria-valuemax", "100");
-
-        this.footerEl.textContent = reloadRequired
-            ? "Bakery detected material runtime drift. A structural full reload is required before further incremental topology mutation."
-            : (applying
-                ? `Bakery is actively moving through the queue pipeline. Current apply type: ${status.mode === "ApplyingFullReload" ? "full reload" : "live change"}.`
-                : `Last recorded apply: ${status.lastApplyType || "None"}.`);
     }
 }

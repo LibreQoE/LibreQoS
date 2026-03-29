@@ -120,7 +120,27 @@ export class QueueStatsTotalGraph extends DashboardGraph {
     update(marks, drops) {
         this.chart.hideLoading();
         this.ringbuffer.push(marks, drops);
-    
+        this.#syncChart();
+    }
+
+    updateMany(samples) {
+        this.chart.hideLoading();
+        if (!Array.isArray(samples) || samples.length === 0) {
+            return;
+        }
+
+        for (let i = 0; i < samples.length; i++) {
+            const sample = samples[i];
+            if (!sample) {
+                continue;
+            }
+            this.ringbuffer.push(sample.marks, sample.drops);
+        }
+
+        this.#syncChart();
+    }
+
+    #syncChart() {
         let { series, times } = this.ringbuffer.seriesWithTimestamps();
         for (let i=0; i<this.option.series.length; i++) {
             this.option.series[i].data = series[i];
@@ -130,7 +150,7 @@ export class QueueStatsTotalGraph extends DashboardGraph {
             const d = new Date(ts);
             return d.toLocaleTimeString('en-US', { hour12: false });
         });
-    
+
         this.chart.setOption(this.option);
     }
 }

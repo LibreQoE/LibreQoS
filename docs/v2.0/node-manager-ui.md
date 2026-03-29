@@ -8,13 +8,15 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Widget-based overview of throughput, retransmits, RTT, flow counts, and queue activity.
 - Dashboard content can vary by version and enabled features.
 - Executive Summary provides a compact operational view for large networks, with drilldown pages for executive heatmaps and leaderboards.
-- Bakery provides dedicated status for queue apply state, paginated recent Bakery events, qdisc safety/preflight results, and the existing circuit-activity graph.
+- Bakery provides dedicated status for queue apply state, paginated recent Bakery events, qdisc safety/preflight results, circuit live-change progress, and recent circuit-scoped Bakery operations.
 - The Bakery and TreeGuard tabs include a high-level pipeline/control-loop summary before the detailed tables.
-- The Bakery `Pipeline` widget shows active apply progress, including percent complete, command counts, and chunk progress during large full reloads.
+- The Bakery `Pipeline` widget shows the current queue-control stages, including active apply state, verification state, and TC interval timing.
 - `Runtime Operations` summarizes live TreeGuard/Bakery topology mutations, deferred cleanup work, failures, dirty subtrees, and whether incremental changes are frozen pending a full reload.
-- `Recent Bakery Events` helps operators distinguish planning, preflight, apply, cleanup, and completion states.
-- `TreeGuard Activity` focuses on operator intent and outcome, including dry-runs, applied changes, skips, cleanup-pending actions, and failures.
-- `TreeGuard Decision Impact` separates operational warnings from true errors and exposes the current warning or error text directly in the widget summary and tooltip.
+- `Recent Bakery Events` defaults to merged operator-facing operations, with the raw Bakery event log available in a separate `Event Log` view when detailed troubleshooting is needed.
+- `TreeGuard Activity` defaults to grouped operator-facing operations, including consolidated SQM change batches, with the raw TreeGuard event log available in a separate `Event Log` view when detailed troubleshooting is needed.
+- `TreeGuard Control Loop` shows the current observe/evaluate/act state without repeating recent actions already visible in TreeGuard Activity.
+- `TreeGuard Decision Impact` focuses on current impact and current warnings or errors, rather than replaying recent actions.
+- `TreeGuard State Mix` shows managed nodes, runtime virtualization, managed circuits, and the current `cake / mixed / fq_codel` circuit SQM split.
 - Bakery qdisc preflight summarizes planned per-interface qdisc usage and budget headroom before apply.
 - Some charts may take a short time to populate after first opening a tab, especially on busy systems or immediately after a service restart.
 - During a Bakery full reload, queue-count cards keep showing the last known HTB/CAKE/fq-codel values and mark them as `Reloading`.
@@ -41,6 +43,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - When browser redaction mode is enabled, Site Map replaces displayed site names with `[redacted]` while leaving the underlying topology data unchanged.
 - Initial map framing prefers site coordinates for the first view, falling back to AP coordinates when no sites are mapped yet.
 - Site Map uses an Insight-hosted OpenStreetMap raster tile cache.
+- In dark mode, the raster underlay is muted and tinted client-side toward the same cooler blue/cyan palette used by Flow Globe, so roads and geography stay visible without the bright light-theme basemap glare.
 - Site Map depends on outbound access to `https://insight.libreqos.com` for initial bbox/bootstrap and raster tile fetches.
 - When tiles are missing from the remote cache, the browser retries automatically for a short period instead of failing immediately, so initial map paint can lag briefly on cold tiles.
 

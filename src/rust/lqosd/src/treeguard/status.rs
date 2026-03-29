@@ -31,6 +31,8 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
             managed_nodes: 0,
             managed_circuits: 0,
             virtualized_nodes: 0,
+            cake_circuits: 0,
+            mixed_sqm_circuits: 0,
             fq_codel_circuits: 0,
             last_action_summary: None,
             warnings: vec![
@@ -75,6 +77,8 @@ pub async fn treeguard_status_snapshot() -> TreeguardStatusData {
             tg.circuits.circuits.len()
         },
         virtualized_nodes: 0,
+        cake_circuits: 0,
+        mixed_sqm_circuits: 0,
         fq_codel_circuits: 0,
         last_action_summary: None,
         warnings,

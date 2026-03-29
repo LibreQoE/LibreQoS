@@ -80,11 +80,7 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
             this.cards.push(card);
         }
 
-        this.footerEl = document.createElement("div");
-        this.footerEl.classList.add("small", "text-body-secondary", "mt-2");
-
         wrap.appendChild(grid);
-        wrap.appendChild(this.footerEl);
         base.appendChild(wrap);
         return base;
     }
@@ -99,6 +95,8 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
         const status = this.lastStatus || {};
         const totalNodes = Number.isFinite(status.total_nodes) ? status.total_nodes : 0;
         const totalCircuits = Number.isFinite(status.total_circuits) ? status.total_circuits : 0;
+        const virtualizedNodes = Number.isFinite(status.virtualized_nodes) ? status.virtualized_nodes : 0;
+        const fqCodelCircuits = Number.isFinite(status.fq_codel_circuits) ? status.fq_codel_circuits : 0;
         const cpuMax = Number.isFinite(Number(status.cpu_max_pct)) ? Math.max(0, Math.trunc(Number(status.cpu_max_pct))) : null;
         const enabled = !!status.enabled;
         const dryRun = !!status.dry_run;
@@ -117,7 +115,7 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
             this.cards[1],
             "fa-brain",
             "Evaluate",
-            paused ? "Waiting" : (dryRun ? "Dry run" : "Live decisions"),
+            paused ? "Paused" : (dryRun ? "Dry Run" : "Live"),
             paused ? "warning" : (enabled ? "active" : "idle"),
             cpuMax === null ? "CPU trigger idle" : `CPU max ${cpuMax}%`,
         );
@@ -126,15 +124,9 @@ export class TreeGuardControlLoopDashlet extends BaseDashlet {
             this.cards[2],
             paused ? "fa-pause-circle" : "fa-bolt",
             "Act",
-            paused ? "Paused for Bakery" : (dryRun ? "Would act" : "Acting live"),
+            paused ? "Paused" : (dryRun ? "Dry Run" : "Live"),
             paused ? "warning" : (dryRun ? "warning" : (enabled ? "ok" : "idle")),
-            (status.last_action_summary || (paused ? (status.pause_reason || "Bakery full reload in progress") : "No recent action")).toString(),
+            `${virtualizedNodes.toLocaleString()} virtualized • ${fqCodelCircuits.toLocaleString()} fq_codel`,
         );
-
-        this.footerEl.textContent = paused
-            ? "TreeGuard observation continues, but action is paused while Bakery is changing queue state."
-            : dryRun
-                ? "TreeGuard is evaluating conditions and surfacing intended actions without mutating live state."
-                : "TreeGuard is free to observe, evaluate, and apply live topology or SQM decisions.";
     }
 }

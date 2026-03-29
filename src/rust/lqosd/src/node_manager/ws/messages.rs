@@ -451,12 +451,14 @@ pub struct TreeguardStatusData {
     pub managed_nodes: usize,
     pub managed_circuits: usize,
     pub virtualized_nodes: usize,
+    pub cake_circuits: usize,
+    pub mixed_sqm_circuits: usize,
     pub fq_codel_circuits: usize,
     pub last_action_summary: Option<String>,
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct TreeguardActivityEntry {
     pub time: String,
     pub entity_type: String,
@@ -464,6 +466,10 @@ pub struct TreeguardActivityEntry {
     pub action: String,
     pub persisted: bool,
     pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

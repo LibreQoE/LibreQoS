@@ -156,45 +156,16 @@
     box-shadow: var(--lqos-shadow-md);
 }
 
-.cpu-affinity-overview-usage {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 58px;
-    padding: 5px 10px;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    border: 1px solid transparent;
-}
-
-.cpu-affinity-overview-usage.bg-success {
-    background: rgba(16, 185, 129, 0.14);
-    color: #34d399;
-    border-color: rgba(52, 211, 153, 0.28);
-}
-
-.cpu-affinity-overview-usage.bg-warning {
-    background: rgba(245, 158, 11, 0.14);
-    color: #fbbf24;
-    border-color: rgba(251, 191, 36, 0.28);
-}
-
-.cpu-affinity-overview-usage.bg-danger {
-    background: rgba(239, 68, 68, 0.16);
-    color: #f87171;
-    border-color: rgba(248, 113, 113, 0.28);
-}
-
-.cpu-affinity-overview-usage.bg-secondary {
-    background: rgba(148, 163, 184, 0.14);
-    color: #94a3b8;
-    border-color: rgba(148, 163, 184, 0.24);
+.cpu-affinity-overview-summary {
+    color: var(--bs-secondary-color);
+    font-size: 0.84rem;
+    font-weight: 600;
+    white-space: nowrap;
+    text-align: right;
 }
 
 .cpu-affinity-overview-progress {
     height: 0.8rem;
-    margin-bottom: 10px;
     border-radius: 999px;
     overflow: hidden;
     background: color-mix(in srgb, var(--lqos-border) 55%, transparent);
@@ -220,37 +191,6 @@
 
 .cpu-affinity-overview-progress-bar.bg-secondary {
     background: linear-gradient(90deg, rgba(148, 163, 184, 0.72), rgba(148, 163, 184, 0.95));
-}
-
-.cpu-affinity-overview-metrics {
-    margin-bottom: 10px;
-    font-size: 0.86rem;
-    color: var(--bs-secondary-color);
-}
-
-.cpu-affinity-overview-roots {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 0.88rem;
-}
-
-.cpu-affinity-overview-roots-label {
-    color: var(--bs-secondary-color);
-    font-size: 0.78rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.cpu-affinity-overview-root-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.cpu-affinity-overview-root-throughput {
-    color: var(--bs-secondary-color);
-    white-space: nowrap;
 }
 
 .cpu-affinity-detail-card {
@@ -296,14 +236,14 @@
 
 .cpu-affinity-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
     gap: 12px;
 }
 
 .cpu-affinity-kpi {
     border: 1px solid color-mix(in srgb, var(--bs-primary) 12%, var(--lqos-border) 88%);
     border-radius: 16px;
-    padding: 14px 16px;
+    padding: 11px 14px;
     background:
         linear-gradient(180deg, color-mix(in srgb, var(--lqos-surface-solid) 92%, transparent), color-mix(in srgb, var(--lqos-surface) 64%, transparent));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -317,37 +257,9 @@
 }
 
 .cpu-affinity-kpi-value {
-    margin-top: 4px;
-    font-size: 1.2rem;
+    margin-top: 2px;
+    font-size: 1.1rem;
     font-weight: 700;
-}
-
-.cpu-affinity-kpi-dot {
-    display: inline-flex;
-    width: 10px;
-    height: 10px;
-    margin-top: 10px;
-    border-radius: 999px;
-}
-
-.cpu-affinity-kpi-dot.bg-primary {
-    background: #60a5fa;
-}
-
-.cpu-affinity-kpi-dot.bg-info {
-    background: #22d3ee;
-}
-
-.cpu-affinity-kpi-dot.bg-success {
-    background: #34d399;
-}
-
-.cpu-affinity-kpi-dot.bg-warning {
-    background: #fbbf24;
-}
-
-.cpu-affinity-kpi-dot.bg-secondary {
-    background: #94a3b8;
 }
 
 .cpu-affinity-row-change td {
@@ -391,7 +303,7 @@
         <div class="cpu-affinity-toolbar">
             <div>
                 <label for="pageSize" class="form-label">Page Size</label>
-                <input type="number" id="pageSize" class="form-control form-control-sm" value="50" min="10" max="1000">
+                <input type="number" id="pageSize" class="form-control form-control-sm" value="10" min="10" max="1000">
             </div>
             <div class="d-flex align-items-end">
                 <span id="binpackBadge" class="cpu-affinity-chip is-muted">Binpacking: …</span>
@@ -429,7 +341,6 @@
                         <div class="cpu-affinity-tabs" role="group" aria-label="CPU detail tabs">
                             <button id="btnTabNodes" class="cpu-affinity-tab">Nodes</button>
                             <button id="btnTabCircuits" class="cpu-affinity-tab">Circuits</button>
-                            <button id="btnTabChanges" class="cpu-affinity-tab">Changes</button>
                         </div>
                     </div>
 
