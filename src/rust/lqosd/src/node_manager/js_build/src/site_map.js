@@ -126,8 +126,15 @@ const OSM_RASTER_LAYER_ID = "site-map-osm-tiles";
 const SITE_SOURCE_ID = "site-map-sites";
 const AP_SOURCE_ID = "site-map-aps";
 const SITE_LINK_SOURCE_ID = "site-map-site-links";
+const FANOUT_LINE_SOURCE_ID = "site-map-fanout-lines";
+const FANOUT_POINT_SOURCE_ID = "site-map-fanout-points";
+const SITE_CLUSTER_LAYER_ID = "site-map-site-clusters";
+const SITE_CLUSTER_COUNT_LAYER_ID = "site-map-site-cluster-count";
 const SITE_POINTS_LAYER_ID = "site-map-site-points";
+const SITE_LABEL_LAYER_ID = "site-map-site-labels";
 const AP_POINTS_LAYER_ID = "site-map-ap-points";
+const FANOUT_LINE_LAYER_ID = "site-map-fanout-lines-layer";
+const FANOUT_POINT_LAYER_ID = "site-map-fanout-points-layer";
 const SITE_LINK_LAYER_ID = "site-map-site-links-line";
 
 const INSIGHT_TILE_MAX_PARALLEL_FETCHES = 2;
@@ -636,7 +643,8 @@ class SiteMapPage {
         this.unmappedOpen = false;
         this.mapInitPromise = null;
         this.mapBootstrapped = false;
-        this.siteLabelMarkers = new Map();
+        this.attachedInheritedApsBySite = new Map();
+        this.fanoutSiteKey = null;
         this.lastBboxAttemptAt = 0;
         this.fixtureMode = FIXTURE_MODE;
 
@@ -650,6 +658,7 @@ class SiteMapPage {
         this.detailsPanel = document.getElementById("siteMapDetails");
         this.detailsTitle = document.getElementById("siteMapDetailsTitle");
         this.detailsSubtitle = document.getElementById("siteMapDetailsSubtitle");
+        this.attachedList = document.getElementById("siteMapAttachedList");
         this.detailsGrid = document.getElementById("siteMapDetailsGrid");
         this.legendGradient = document.getElementById("siteMapLegendGradient");
         this.legendLow = document.getElementById("siteMapLegendLow");
@@ -693,6 +702,8 @@ class SiteMapPage {
         });
         document.getElementById("siteMapDetailsClose")?.addEventListener("click", () => {
             this.selectedFeature = null;
+            this.fanoutSiteKey = null;
+            this.syncFanoutOverlays();
             this.renderDetails(null);
         });
         window.addEventListener("colorBlindModeChanged", () => {
@@ -790,6 +801,18 @@ class SiteMapPage {
         if (this.map.getLayer(AP_POINTS_LAYER_ID)) {
             this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-stroke-color", palette.apStroke);
         }
+        if (this.map.getLayer(SITE_LABEL_LAYER_ID)) {
+            this.map.setPaintProperty(
+                SITE_LABEL_LAYER_ID,
+                "text-halo-color",
+                isDarkMode() ? "rgba(11, 18, 32, 0.92)" : "rgba(255, 255, 255, 0.94)",
+            );
+            this.map.setPaintProperty(
+                SITE_LABEL_LAYER_ID,
+                "text-color",
+                isDarkMode() ? "rgba(248, 250, 252, 0.94)" : "rgba(15, 23, 42, 0.92)",
+            );
+        }
     }
 
     installSourcesAndLayers() {
@@ -803,10 +826,25 @@ class SiteMapPage {
             this.map.addSource(SITE_SOURCE_ID, {
                 type: "geojson",
                 data: { type: "FeatureCollection", features: [] },
+                cluster: true,
+                clusterRadius: 50,
+                clusterMaxZoom: 12,
             });
         }
         if (!this.map.getSource(AP_SOURCE_ID)) {
             this.map.addSource(AP_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
+        if (!this.map.getSource(FANOUT_LINE_SOURCE_ID)) {
+            this.map.addSource(FANOUT_LINE_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
+        if (!this.map.getSource(FANOUT_POINT_SOURCE_ID)) {
+            this.map.addSource(FANOUT_POINT_SOURCE_ID, {
                 type: "geojson",
                 data: { type: "FeatureCollection", features: [] },
             });
@@ -839,6 +877,7 @@ class SiteMapPage {
                 id: SITE_POINTS_LAYER_ID,
                 type: "circle",
                 source: SITE_SOURCE_ID,
+                filter: ["!", ["has", "point_count"]],
                 paint: {
                     "circle-color": ["get", "metricColor"],
                     "circle-radius": ["get", "markerRadius"],
@@ -851,6 +890,79 @@ class SiteMapPage {
                     "circle-stroke-color": markerPalette().siteStroke,
                     "circle-stroke-width": 1.15,
                     "circle-blur": 0.06,
+                },
+            });
+        }
+
+        if (!this.map.getLayer(SITE_CLUSTER_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_CLUSTER_LAYER_ID,
+                type: "circle",
+                source: SITE_SOURCE_ID,
+                filter: ["has", "point_count"],
+                paint: {
+                    "circle-color": [
+                        "step",
+                        ["get", "point_count"],
+                        "#4ca4ff",
+                        8, "#f5b84f",
+                        20, "#d94b5b",
+                    ],
+                    "circle-radius": [
+                        "step",
+                        ["get", "point_count"],
+                        18,
+                        8, 24,
+                        20, 30,
+                    ],
+                    "circle-opacity": 0.9,
+                    "circle-stroke-color": markerPalette().siteStroke,
+                    "circle-stroke-width": 1.3,
+                },
+            });
+        }
+
+        if (!this.map.getLayer(SITE_CLUSTER_COUNT_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_CLUSTER_COUNT_LAYER_ID,
+                type: "symbol",
+                source: SITE_SOURCE_ID,
+                filter: ["has", "point_count"],
+                layout: {
+                    "text-field": ["get", "point_count_abbreviated"],
+                    "text-size": 12,
+                    "text-font": ["Open Sans Bold"],
+                },
+                paint: {
+                    "text-color": "#ffffff",
+                },
+            });
+        }
+
+        if (!this.map.getLayer(SITE_LABEL_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_LABEL_LAYER_ID,
+                type: "symbol",
+                source: SITE_SOURCE_ID,
+                filter: ["!", ["has", "point_count"]],
+                minzoom: 8,
+                layout: {
+                    "text-field": ["get", "displayName"],
+                    "text-size": [
+                        "interpolate", ["linear"], ["zoom"],
+                        8, 10,
+                        12, 12,
+                    ],
+                    "text-font": ["Open Sans Semibold"],
+                    "text-variable-anchor": ["top", "bottom", "left", "right"],
+                    "text-radial-offset": 1.15,
+                    "text-justify": "auto",
+                    "text-max-width": 14,
+                },
+                paint: {
+                    "text-color": isDarkMode() ? "rgba(248, 250, 252, 0.94)" : "rgba(15, 23, 42, 0.92)",
+                    "text-halo-color": isDarkMode() ? "rgba(11, 18, 32, 0.92)" : "rgba(255, 255, 255, 0.94)",
+                    "text-halo-width": 1.6,
                 },
             });
         }
@@ -876,10 +988,43 @@ class SiteMapPage {
                 },
             });
         }
+
+        if (!this.map.getLayer(FANOUT_LINE_LAYER_ID)) {
+            this.map.addLayer({
+                id: FANOUT_LINE_LAYER_ID,
+                type: "line",
+                source: FANOUT_LINE_SOURCE_ID,
+                layout: {
+                    "line-cap": "round",
+                    "line-join": "round",
+                },
+                paint: {
+                    "line-color": isDarkMode() ? "rgba(248, 250, 252, 0.46)" : "rgba(15, 23, 42, 0.34)",
+                    "line-width": 1.4,
+                    "line-dasharray": [1.2, 1.2],
+                    "line-opacity": 0.72,
+                },
+            });
+        }
+
+        if (!this.map.getLayer(FANOUT_POINT_LAYER_ID)) {
+            this.map.addLayer({
+                id: FANOUT_POINT_LAYER_ID,
+                type: "circle",
+                source: FANOUT_POINT_SOURCE_ID,
+                paint: {
+                    "circle-color": ["get", "metricColor"],
+                    "circle-radius": ["get", "markerRadius"],
+                    "circle-opacity": 0.95,
+                    "circle-stroke-color": markerPalette().apStroke,
+                    "circle-stroke-width": 1.0,
+                },
+            });
+        }
     }
 
     installInteractions() {
-        const pointLayers = [SITE_POINTS_LAYER_ID, AP_POINTS_LAYER_ID];
+        const pointLayers = [SITE_POINTS_LAYER_ID, SITE_LABEL_LAYER_ID, AP_POINTS_LAYER_ID, FANOUT_POINT_LAYER_ID];
 
         pointLayers.forEach((layerId) => {
             this.map.on("mouseenter", layerId, () => {
@@ -900,9 +1045,44 @@ class SiteMapPage {
             this.map.on("click", layerId, (event) => {
                 const feature = event.features?.[0];
                 if (!feature) return;
-                this.selectedFeature = feature.properties;
-                this.renderDetails(feature.properties);
+                this.selectFeature(feature.properties);
             });
+        });
+
+        [SITE_CLUSTER_LAYER_ID, SITE_CLUSTER_COUNT_LAYER_ID].forEach((layerId) => {
+            this.map.on("mouseenter", layerId, () => {
+                this.map.getCanvas().style.cursor = "pointer";
+            });
+            this.map.on("mouseleave", layerId, () => {
+                this.map.getCanvas().style.cursor = "";
+            });
+            this.map.on("click", layerId, async (event) => {
+                const feature = event.features?.[0];
+                const clusterId = feature?.properties?.cluster_id;
+                if (!Number.isFinite(clusterId)) {
+                    return;
+                }
+                const source = this.map.getSource(SITE_SOURCE_ID);
+                if (!source?.getClusterExpansionZoom) {
+                    return;
+                }
+                const expansionZoom = await source.getClusterExpansionZoom(clusterId);
+                this.map.easeTo({
+                    center: feature.geometry.coordinates,
+                    zoom: expansionZoom,
+                    duration: 350,
+                });
+            });
+        });
+
+        this.map.on("zoomend", () => {
+            if (this.fanoutSiteKey) {
+                this.fanoutSiteKey = null;
+                if (this.selectedFeature) {
+                    this.renderDetails(this.selectedFeature);
+                }
+            }
+            this.syncFanoutOverlays();
         });
     }
 
@@ -991,6 +1171,7 @@ class SiteMapPage {
 
         const aggregate = new Map();
         let latestIndexMap = new Map();
+        const attachedInheritedApsBySite = new Map();
 
         this.history.forEach((entry) => {
             const snapshotIndexMap = new Map();
@@ -1133,9 +1314,26 @@ class SiteMapPage {
         });
 
         byIndex.forEach((node) => {
+            if (node.type !== "ap" || !node.inheritedCoords) {
+                return;
+            }
+            const parent = byIndex.get(node.immediateParent);
+            if (!parent || parent.type !== "site") {
+                return;
+            }
+            const bucket = attachedInheritedApsBySite.get(parent.key) || [];
+            bucket.push(node);
+            attachedInheritedApsBySite.set(parent.key, bucket);
+        });
+
+        byIndex.forEach((node) => {
             if (node.latitude === null || node.longitude === null) {
                 const listTarget = node.type === "site" ? unmappedSites : unmappedAps;
                 listTarget.push(node);
+                return;
+            }
+
+            if (node.type === "ap" && node.inheritedCoords) {
                 return;
             }
 
@@ -1151,10 +1349,12 @@ class SiteMapPage {
                     key: node.key,
                     nodeId: node.id || "",
                     name: node.name,
+                    displayName: displayNodeName(node.name, node.type),
                     nodeType: node.type,
                     parentName: node.parentName || "",
                     parentType: node.parentType || "",
                     inheritedCoords: node.inheritedCoords ? 1 : 0,
+                    attachedInheritedApCount: attachedInheritedApsBySite.get(node.key)?.length || 0,
                     throughputDown: node.throughputDown,
                     throughputUp: node.throughputUp,
                     throughputCombined: node.throughputCombined,
@@ -1234,6 +1434,7 @@ class SiteMapPage {
             siteLinkFeatures,
             unmappedSites,
             unmappedAps,
+            attachedInheritedApsBySite,
             maxBitsPerSecond,
             maxSiteBitsPerSecond,
         };
@@ -1255,6 +1456,7 @@ class SiteMapPage {
             return;
         }
         this.latestRender = aggregate;
+        this.attachedInheritedApsBySite = aggregate.attachedInheritedApsBySite || new Map();
         this.updateSources(aggregate);
         this.updateSelection();
         this.renderUnmapped(aggregate.unmappedSites, aggregate.unmappedAps);
@@ -1294,7 +1496,7 @@ class SiteMapPage {
         this.map.setPaintProperty(SITE_POINTS_LAYER_ID, "circle-opacity", siteOpacity);
         this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-opacity", apOpacity);
 
-        this.syncSiteLabels(aggregate.siteFeatures);
+        this.syncFanoutOverlays();
         this.syncMarkerSizeLegend(aggregate.maxBitsPerSecond);
     }
 
@@ -1320,56 +1522,114 @@ class SiteMapPage {
         apply(this.sizeDotLarge, diameters[2]);
     }
 
-    syncSiteLabels(siteFeatures) {
+    attachedApsForSite(siteKey) {
+        const aps = this.attachedInheritedApsBySite.get(siteKey) || [];
+        return [...aps].sort((left, right) => left.name.localeCompare(right.name));
+    }
+
+    buildFanoutFeatures(siteProps, attachedAps) {
+        if (!this.map || !siteProps || !Array.isArray(attachedAps) || attachedAps.length === 0) {
+            return { lines: [], points: [] };
+        }
+
+        const siteCoord = this.latestRender?.siteFeatures
+            ?.find((feature) => feature.properties?.key === siteProps.key)
+            ?.geometry?.coordinates;
+        if (!Array.isArray(siteCoord) || siteCoord.length < 2) {
+            return { lines: [], points: [] };
+        }
+
+        const center = this.map.project(siteCoord);
+        const radiusPx = Math.max(42, Math.min(94, 34 + (attachedAps.length * 4)));
+        const baseAngle = -Math.PI / 2;
+        const lines = [];
+        const points = [];
+
+        attachedAps.forEach((node, index) => {
+            const angle = attachedAps.length === 1
+                ? baseAngle
+                : baseAngle + ((Math.PI * 2 * index) / attachedAps.length);
+            const projected = [
+                center.x + (Math.cos(angle) * radiusPx),
+                center.y + (Math.sin(angle) * radiusPx),
+            ];
+            const lngLat = this.map.unproject(projected);
+            const metricValue = this.mode === "qoo" ? node.qooWorst : node.rttWorst;
+            const metricColor = metricColorForMode(this.mode, metricValue);
+
+            lines.push({
+                type: "Feature",
+                geometry: {
+                    type: "LineString",
+                    coordinates: [siteCoord, [lngLat.lng, lngLat.lat]],
+                },
+                properties: {
+                    key: `${siteProps.key}->${node.key}`,
+                },
+            });
+
+            const point = {
+                type: "Feature",
+                geometry: {
+                    type: "Point",
+                    coordinates: [lngLat.lng, lngLat.lat],
+                },
+                properties: {
+                    key: node.key,
+                    nodeId: node.id || "",
+                    name: node.name,
+                    nodeType: node.type,
+                    parentName: node.parentName || siteProps.name || "",
+                    parentType: node.parentType || "site",
+                    inheritedCoords: 1,
+                    throughputDown: node.throughputDown,
+                    throughputUp: node.throughputUp,
+                    throughputCombined: node.throughputCombined,
+                    qooDown: node.qooDown,
+                    qooUp: node.qooUp,
+                    rttDownMs: node.rttDownMs,
+                    rttUpMs: node.rttUpMs,
+                    markerRadius: throughputRadiusPx(
+                        node.throughputCombined,
+                        Math.max(this.latestRender?.maxBitsPerSecond || 1, 1),
+                    ),
+                    metricColor,
+                    isFanoutAp: 1,
+                },
+            };
+            if (Number.isFinite(node.qooWorst)) {
+                point.properties.qooWorst = node.qooWorst;
+            }
+            if (Number.isFinite(node.rttWorst)) {
+                point.properties.rttWorst = node.rttWorst;
+            }
+            points.push(point);
+        });
+
+        return { lines, points };
+    }
+
+    syncFanoutOverlays() {
         if (!this.map) {
             return;
         }
 
-        const wanted = new Set();
-        siteFeatures.forEach((feature) => {
-            const key = feature?.properties?.key;
-            const name = displayNodeName(feature?.properties?.name, feature?.properties?.nodeType);
-            const coordinates = feature?.geometry?.coordinates;
-            if (!key || !name || !Array.isArray(coordinates) || coordinates.length < 2) {
-                return;
-            }
-            wanted.add(key);
+        const lineSource = this.map.getSource(FANOUT_LINE_SOURCE_ID);
+        const pointSource = this.map.getSource(FANOUT_POINT_SOURCE_ID);
+        if (!lineSource || !pointSource) {
+            return;
+        }
 
-            const existing = this.siteLabelMarkers.get(key);
-            if (!existing) {
-                const el = document.createElement("div");
-                el.className = "site-map-site-label";
-                el.innerHTML = `<span class="site-map-site-label-text"></span>`;
-                const text = el.querySelector(".site-map-site-label-text");
-                if (text) {
-                    text.textContent = name;
-                }
+        if (!this.fanoutSiteKey || !this.selectedFeature || this.selectedFeature.nodeType !== "site") {
+            lineSource.setData({ type: "FeatureCollection", features: [] });
+            pointSource.setData({ type: "FeatureCollection", features: [] });
+            return;
+        }
 
-                const marker = new window.maplibregl.Marker({
-                    element: el,
-                    anchor: "bottom",
-                    offset: [0, -14],
-                })
-                    .setLngLat(coordinates)
-                    .addTo(this.map);
-
-                this.siteLabelMarkers.set(key, { marker, text });
-                return;
-            }
-
-            existing.marker.setLngLat(coordinates);
-            if (existing.text) {
-                existing.text.textContent = name;
-            }
-        });
-
-        Array.from(this.siteLabelMarkers.entries()).forEach(([key, value]) => {
-            if (wanted.has(key)) {
-                return;
-            }
-            value.marker.remove();
-            this.siteLabelMarkers.delete(key);
-        });
+        const attachedAps = this.attachedApsForSite(this.fanoutSiteKey);
+        const fanout = this.buildFanoutFeatures(this.selectedFeature, attachedAps);
+        lineSource.setData({ type: "FeatureCollection", features: fanout.lines });
+        pointSource.setData({ type: "FeatureCollection", features: fanout.points });
     }
 
     fitToDataIfNeeded(siteFeatures, apFeatures) {
@@ -1434,14 +1694,33 @@ class SiteMapPage {
     }
 
     pointPopupHtml(props) {
+        const attachedApCount = toNumber(props.attachedInheritedApCount, 0);
         const displayName = displayNodeName(props.name, props.nodeType);
         return `
             <div class="small">
                 <div class="fw-semibold">${escapeHtml(displayName)}</div>
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
                 <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
+                ${attachedApCount > 0 ? `<div><strong>Attached APs:</strong> ${escapeHtml(String(attachedApCount))}</div>` : ""}
                 <div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
             </div>`;
+    }
+
+    selectFeature(props) {
+        if (!props) {
+            return;
+        }
+        const attachedAps = props.nodeType === "site" ? this.attachedApsForSite(props.key) : [];
+        const sameSelection = this.selectedFeature?.key === props.key;
+
+        this.selectedFeature = props;
+        if (props.nodeType === "site" && attachedAps.length > 0) {
+            this.fanoutSiteKey = sameSelection && this.fanoutSiteKey === props.key ? null : props.key;
+        } else {
+            this.fanoutSiteKey = null;
+        }
+        this.syncFanoutOverlays();
+        this.renderDetails(props);
     }
 
     updateSelection() {
@@ -1452,31 +1731,60 @@ class SiteMapPage {
             .find((feature) => feature.properties.key === this.selectedFeature.key);
         if (!current) {
             this.selectedFeature = null;
+            this.fanoutSiteKey = null;
+            this.syncFanoutOverlays();
             this.renderDetails(null);
             return;
         }
         this.selectedFeature = current.properties;
+        if (this.selectedFeature.nodeType !== "site" || this.selectedFeature.key !== this.fanoutSiteKey) {
+            this.fanoutSiteKey = null;
+        }
+        this.syncFanoutOverlays();
         this.renderDetails(current.properties);
     }
 
     renderDetails(props) {
         if (!props) {
             this.detailsPanel.style.display = "none";
+            if (this.attachedList) {
+                this.attachedList.innerHTML = "";
+            }
             return;
         }
         this.detailsPanel.style.display = "block";
         this.detailsTitle.textContent = displayNodeName(props.name, props.nodeType);
         const parentName = displayParentName(props.parentName, props.parentType);
         this.detailsSubtitle.textContent = `${String(props.nodeType || "").toUpperCase()}${parentName ? ` · parent ${parentName}` : ""}${props.inheritedCoords ? " · using parent site coordinates" : ""}`;
+        const attachedAps = props.nodeType === "site" ? this.attachedApsForSite(props.key) : [];
+        if (this.attachedList) {
+            if (attachedAps.length === 0) {
+                this.attachedList.innerHTML = "";
+            } else {
+                const preview = attachedAps
+                    .slice(0, 6)
+                    .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}</div>`)
+                    .join("");
+                const more = attachedAps.length > 6
+                    ? `<div class="site-map-empty">+${attachedAps.length - 6} more APs attached to this site</div>`
+                    : "";
+                const fanoutHint = this.fanoutSiteKey === props.key
+                    ? "Click the selected site again or zoom the map to collapse them."
+                    : "Click the selected site marker again to fan them out on the map.";
+                this.attachedList.innerHTML = `<div class="site-map-empty">${attachedAps.length} AP${attachedAps.length === 1 ? "" : "s"} inherit this site's coordinates. ${fanoutHint}</div>${preview}${more}`;
+            }
+        }
         this.detailsGrid.innerHTML = [
             this.metricCard("Combined throughput", formatBitsPerSecond(props.throughputCombined)),
             this.metricCard("Download throughput", formatBitsPerSecond(props.throughputDown)),
             this.metricCard("Upload throughput", formatBitsPerSecond(props.throughputUp)),
+            props.nodeType === "site"
+                ? this.metricCard("Attached APs", String(attachedAps.length))
+                : this.metricCard("Coordinate source", props.inheritedCoords ? "Inherited from site" : "Explicit"),
             this.metricCard("QoO download", formatPercent(props.qooDown)),
             this.metricCard("QoO upload", formatPercent(props.qooUp)),
             this.metricCard("RTT download", formatMs(props.rttDownMs)),
             this.metricCard("RTT upload", formatMs(props.rttUpMs)),
-            this.metricCard("Coordinate source", props.inheritedCoords ? "Inherited from site" : "Explicit"),
         ].join("");
     }
 

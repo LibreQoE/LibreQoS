@@ -240,6 +240,13 @@
     font-size: 0.86rem;
 }
 
+.site-map-inline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
 .site-map-empty {
     color: var(--bs-secondary-color);
     font-size: 0.88rem;
@@ -247,34 +254,6 @@
 
 .site-map-popup {
     min-width: 220px;
-}
-
-.site-map-site-label {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(148, 163, 184, 0.34);
-    background: rgba(15, 23, 42, 0.64);
-    color: rgba(248, 250, 252, 0.92);
-    box-shadow: var(--lqos-shadow-sm);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    font-size: 0.74rem;
-    font-weight: 600;
-    line-height: 1.1;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    pointer-events: none;
-    user-select: none;
-}
-
-.site-map-site-label-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .maplibregl-popup-content {
@@ -365,6 +344,7 @@
                 </button>
             </div>
             <div class="text-muted small mb-2" id="siteMapDetailsSubtitle">Click a site or AP marker to inspect it.</div>
+            <div class="site-map-inline-list" id="siteMapAttachedList"></div>
             <div class="site-map-metric-grid" id="siteMapDetailsGrid"></div>
         </div>
 
@@ -374,16 +354,6 @@
             <div class="site-map-legend-row">
                 <span id="siteMapLegendLow">Poor</span>
                 <span id="siteMapLegendHigh">Healthy</span>
-            </div>
-            <div class="fw-semibold mt-3">Marker Size</div>
-            <div class="site-map-size-row">
-                <span class="site-map-size-dot" id="siteMapSizeDotSmall" title="Lowest recent throughput"></span>
-                <span class="site-map-size-dot" id="siteMapSizeDotMedium" title="Typical recent throughput"></span>
-                <span class="site-map-size-dot" id="siteMapSizeDotLarge" title="Highest recent throughput"></span>
-                <div class="text-muted small">Combined recent throughput over the last 30 seconds.</div>
-            </div>
-            <div class="text-muted small mt-3">
-                Zoomed out views emphasize sites. As you zoom in, APs take over where coordinate coverage allows.
             </div>
         </div>
     </div>
