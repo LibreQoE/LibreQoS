@@ -126,6 +126,7 @@ pub enum WsRequest {
     ReloadLibreQoS,
     LtsTrialConfig,
     CircuitCount,
+    LtsStartSignup,
     LtsSignUp {
         license_key: String,
     },
@@ -669,6 +670,9 @@ pub enum WsResponse {
     },
     CircuitCountResult {
         data: CircuitCount,
+    },
+    LtsStartSignupResult {
+        claim_id: String,
     },
     LtsSignUpResult {
         ok: bool,
