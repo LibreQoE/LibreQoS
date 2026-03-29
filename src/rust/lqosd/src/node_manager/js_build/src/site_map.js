@@ -412,12 +412,12 @@ function linkWidthExpression() {
 function rasterThemePaint() {
     if (isDarkMode()) {
         return {
-            "raster-opacity": 0.86,
+            "raster-opacity": 0.9,
             "raster-brightness-min": 0.02,
-            "raster-brightness-max": 0.19,
-            "raster-contrast": 0.5,
-            "raster-saturation": -0.62,
-            "raster-hue-rotate": 218,
+            "raster-brightness-max": 0.24,
+            "raster-contrast": 0.38,
+            "raster-saturation": -0.5,
+            "raster-hue-rotate": 208,
         };
     }
     return {
