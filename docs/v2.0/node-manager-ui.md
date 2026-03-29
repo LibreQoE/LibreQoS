@@ -28,6 +28,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Node Details` summarizes the selected node’s type, branch size, configured rates, and current effective rate.
 - `Node Snapshot` provides a quick visual summary of current throughput and QoO for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
+- The attached-circuits IP column keeps rows compact by showing one address inline and collapsing additional addresses as `+X`, with the full list still available on hover.
 - Ethernet-limited attached circuits can show inline `10M`, `100M`, or `1G` warning badges beside the `Plan (Mbps)` value; hovering explains the auto-cap and clicking the badge opens the dedicated Ethernet review page.
 - Administrators can save or clear `Operator Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
 - Tree-page operator rate edits write operator-owned overrides to `lqos_overrides.json`; they do not rewrite legacy integration bandwidth CSV files.

@@ -174,8 +174,8 @@ function abbreviateIpForTable(ipText) {
 
 function summarizeIpListForTable(ipList) {
     const displayList = ipList.map((entry) => abbreviateIpForTable(entry));
-    if (displayList.length > 2) {
-        return `${displayList[0]}, ${displayList[1]} +${displayList.length - 2}`;
+    if (displayList.length > 1) {
+        return `${displayList[0]} +${displayList.length - 1}`;
     }
     return displayList.join(", ");
 }
@@ -1660,6 +1660,7 @@ function renderAttachedCircuitsRows(rows) {
             const planCell = simpleRow(
                 `${toNumber(circuit.plan_mbps?.down, 0)} / ${toNumber(circuit.plan_mbps?.up, 0)}`
             );
+            planCell.classList.add("lqos-tree-plan-cell");
             if (circuit.ethernet_cap_badge) {
                 const badge = document.createElement("a");
                 badge.className = `badge rounded-pill ms-2 text-decoration-none ${ethernetBadgeClass(circuit.ethernet_cap_badge.tier_label)}`;
@@ -1676,6 +1677,7 @@ function renderAttachedCircuitsRows(rows) {
 
             const ipList = Array.isArray(circuit.ip_addrs) ? circuit.ip_addrs : [];
             const ipCell = simpleRow(summarizeIpListForTable(ipList), true);
+            ipCell.classList.add("lqos-tree-ip-cell");
             if (ipList.length > 0) {
                 ipCell.title = ipList.join(", ");
             }

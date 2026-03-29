@@ -1237,6 +1237,14 @@ h5 {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.lqos-tree-plan-column,
+.lqos-tree-plan-cell {
+    min-width: 8.25rem;
+    white-space: nowrap;
+}
+.lqos-tree-ip-cell {
+    white-space: nowrap;
+}
 .lqos-tree-row-statuses {
     display: inline-flex;
     align-items: center;

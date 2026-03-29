@@ -28,6 +28,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - `Node Details` resume el tipo de nodo seleccionado, el tamaño de la rama, las velocidades configuradas y la velocidad efectiva actual.
 - `Node Snapshot` ofrece un resumen visual rápido del throughput actual y el QoO del nodo seleccionado.
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
+- La columna de IP de circuitos adjuntos mantiene las filas compactas mostrando una dirección inline y colapsando las adicionales como `+X`, mientras la lista completa sigue disponible al pasar el cursor.
 - Los circuitos adjuntos limitados por Ethernet pueden mostrar insignias `10M`, `100M` o `1G` junto al valor de `Plan (Mbps)`; al pasar el cursor se explica el auto-cap y al hacer clic en la insignia se abre la página dedicada de revisión Ethernet.
 - Los administradores pueden guardar o limpiar valores de `Operator Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
 
