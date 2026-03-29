@@ -180,6 +180,36 @@ function summarizeIpListForTable(ipList) {
     return displayList.join(", ");
 }
 
+function formatEthernetPortLabel(mbps) {
+    const value = toNumber(mbps, 0);
+    if (value >= 1000 && value % 1000 === 0) {
+        return `${value / 1000}G`;
+    }
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(1)}G`;
+    }
+    return `${Math.round(value)}M`;
+}
+
+function ethernetCapsPageHref(badge) {
+    const tier = encodeURIComponent(formatEthernetPortLabel(badge?.negotiated_ethernet_mbps));
+    return `/ethernet_caps.html?tier=${tier}`;
+}
+
+function formatEthernetTooltip(badge) {
+    if (!badge) {
+        return "";
+    }
+    return `Requested plan ${toNumber(badge.requested_download_mbps, 0)} / ${toNumber(badge.requested_upload_mbps, 0)} Mbps exceeded detected Ethernet speed. ` +
+        `Shaping auto-capped to ${toNumber(badge.applied_download_mbps, 0)} / ${toNumber(badge.applied_upload_mbps, 0)} Mbps.`;
+}
+
+function ethernetBadgeClass(tierLabel) {
+    if (tierLabel === "10M") return "text-bg-danger";
+    if (tierLabel === "100M") return "text-bg-warning";
+    return "text-bg-info";
+}
+
 function configuredMax(node) {
     return node.configured_max_throughput || node.max_throughput || [0, 0];
 }
@@ -1627,7 +1657,21 @@ function renderAttachedCircuitsRows(rows) {
             }
             tr.appendChild(deviceCell);
 
-            tr.appendChild(simpleRow(`${toNumber(circuit.plan_mbps?.down, 0)} / ${toNumber(circuit.plan_mbps?.up, 0)}`));
+            const planCell = simpleRow(
+                `${toNumber(circuit.plan_mbps?.down, 0)} / ${toNumber(circuit.plan_mbps?.up, 0)}`
+            );
+            if (circuit.ethernet_cap_badge) {
+                const badge = document.createElement("a");
+                badge.className = `badge rounded-pill ms-2 text-decoration-none ${ethernetBadgeClass(circuit.ethernet_cap_badge.tier_label)}`;
+                badge.href = ethernetCapsPageHref(circuit.ethernet_cap_badge);
+                badge.setAttribute("aria-label", `Review ${circuit.ethernet_cap_badge.tier_label} Ethernet-limited circuits`);
+                badge.setAttribute("data-bs-toggle", "tooltip");
+                badge.setAttribute("data-bs-placement", "top");
+                badge.setAttribute("title", formatEthernetTooltip(circuit.ethernet_cap_badge));
+                badge.textContent = circuit.ethernet_cap_badge.tier_label;
+                planCell.appendChild(badge);
+            }
+            tr.appendChild(planCell);
             tr.appendChild(simpleRow(circuit.parent_node, true));
 
             const ipList = Array.isArray(circuit.ip_addrs) ? circuit.ip_addrs : [];
@@ -1666,6 +1710,7 @@ function renderAttachedCircuitsRows(rows) {
     tableWrap.appendChild(table);
     target.appendChild(sectionLabel);
     target.appendChild(tableWrap);
+    enableTooltipsWithin(target);
 }
 
 function attachedCircuitsUpdate(msg) {

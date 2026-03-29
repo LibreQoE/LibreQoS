@@ -405,6 +405,22 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 .lqos-circuit-panel .lqos-table {
     height: 100%;
 }
+.lqos-circuit-header-table.lqos-table-compact tbody td {
+    padding: 0.5rem 0.55rem;
+}
+.lqos-table.lqos-circuit-header-table .table-label-cell {
+    width: 6.75rem;
+    white-space: nowrap;
+    padding-right: 0.25rem;
+}
+.lqos-table.lqos-circuit-header-table .table-value-cell {
+    width: auto;
+    padding-left: 0.25rem;
+}
+.lqos-circuit-parent-link {
+    display: block;
+    max-width: 100%;
+}
 .lqos-circuit-gauge-panel {
     display: flex;
     align-items: center;

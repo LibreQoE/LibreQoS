@@ -1,0 +1,58 @@
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <div>
+                        <h5 class="card-title mb-1"><i class="fa fa-ethernet me-2"></i>Ethernet Caps</h5>
+                        <p class="text-muted mb-0">Circuits automatically down-rated because detected Ethernet speed was below the requested plan.</p>
+                    </div>
+                    <div id="ethernetCapsSummary" class="small text-body-secondary"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-12 col-lg-5">
+                        <label class="form-label small text-body-secondary" for="ethernetCapsSearch">Search</label>
+                        <input id="ethernetCapsSearch" class="form-control" type="text" placeholder="Search circuits, parents, device names…">
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <label class="form-label small text-body-secondary" for="ethernetCapsTier">Ethernet</label>
+                        <select id="ethernetCapsTier" class="form-select">
+                            <option value="">All</option>
+                            <option value="10M">10M</option>
+                            <option value="100M">100M</option>
+                            <option value="1G">1G+</option>
+                        </select>
+                    </div>
+                    <div class="col-6 col-lg-2">
+                        <label class="form-label small text-body-secondary" for="ethernetCapsPageSize">Per page</label>
+                        <select id="ethernetCapsPageSize" class="form-select">
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="250">250</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-lg-3 d-flex justify-content-lg-end gap-2">
+                        <button id="ethernetCapsPrev" type="button" class="btn btn-outline-secondary">
+                            <i class="fa fa-arrow-left"></i>
+                        </button>
+                        <button id="ethernetCapsNext" type="button" class="btn btn-outline-secondary">
+                            <i class="fa fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="ethernetCapsTableWrap">
+                    <div class="text-muted small"><i class="fa fa-spinner fa-spin me-1"></i>Loading Ethernet cap data…</div>
+                </div>
+                <div id="ethernetCapsPager" class="small text-body-secondary mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="ethernet_caps.js%CACHEBUSTERS%"></script>

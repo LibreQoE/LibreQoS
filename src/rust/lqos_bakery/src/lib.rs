@@ -1246,26 +1246,18 @@ struct GroupedBakeryEventLimiter {
 }
 
 impl GroupedBakeryEventLimiter {
-    fn emit(
+    fn emit_with_site_name(
         &mut self,
         group_key: impl Into<String>,
         event: &str,
         status: &str,
+        site: Option<(i64, Option<String>)>,
         summary: String,
         suppression_summary: String,
     ) {
-        self.emit_with_site(group_key, event, status, None, summary, suppression_summary);
-    }
-
-    fn emit_with_site(
-        &mut self,
-        group_key: impl Into<String>,
-        event: &str,
-        status: &str,
-        site_hash: Option<i64>,
-        summary: String,
-        suppression_summary: String,
-    ) {
+        let (site_hash, site_name) = site.map_or((None, None), |(site_hash, site_name)| {
+            (Some(site_hash), site_name)
+        });
         let state =
             self.groups
                 .entry(group_key.into())
@@ -1277,7 +1269,7 @@ impl GroupedBakeryEventLimiter {
                     suppression_summary,
                 });
         if state.emitted < BAKERY_GROUPED_EVENT_DETAIL_LIMIT {
-            push_bakery_event_with_site(event, status, site_hash, summary);
+            push_bakery_event_with_site_name(event, status, site_hash, site_name, summary);
             state.emitted += 1;
         } else {
             state.suppressed += 1;
@@ -2538,6 +2530,13 @@ fn snapshot_live_qdisc_handle_majors_or_empty(
 fn runtime_site_label(site_hash: i64, site_name: Option<&str>) -> String {
     match site_name {
         Some(name) if !name.is_empty() => format!("{name} ({site_hash})"),
+        _ => site_hash.to_string(),
+    }
+}
+
+fn runtime_site_display_name(site_hash: i64, site_name: Option<&str>) -> String {
+    match site_name {
+        Some(name) if !name.is_empty() => name.to_string(),
         _ => site_hash.to_string(),
     }
 }
@@ -8375,6 +8374,9 @@ fn flush_deferred_runtime_site_prunes(
             );
             for site_hash in pending_site_hashes {
                 if let Some(state) = virtualized_sites.get_mut(&site_hash) {
+                    let site_name = state.site_name.clone();
+                    let site_display =
+                        runtime_site_display_name(site_hash, Some(site_name.as_str()));
                     let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
                     state.next_prune_attempt_unix = retry_at;
                     if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
@@ -8389,13 +8391,14 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 None,
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_site_prune_dirty|down_snapshot|{summary}"),
                                 "runtime_site_prune_dirty",
                                 "error",
+                                Some((site_hash, Some(site_name.clone()))),
                                 format!(
                                     "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
-                                    site_hash, summary
+                                    site_display, summary
                                 ),
                                 format!(
                                     "runtime site prune Dirty events due to downlink snapshot failure: {}",
@@ -8411,15 +8414,16 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_site_prune_retry|down_snapshot|{summary}"),
                                 "runtime_site_prune_retry",
                                 "warning",
+                                Some((site_hash, Some(site_name))),
                                 format!(
                                     "Deferred runtime site prune retry {}/{} for site {} postponed: {}",
                                     operation.attempt_count,
                                     RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
-                                    site_hash,
+                                    site_display,
                                     summary
                                 ),
                                 format!(
@@ -8443,6 +8447,9 @@ fn flush_deferred_runtime_site_prunes(
             );
             for site_hash in pending_site_hashes {
                 if let Some(state) = virtualized_sites.get_mut(&site_hash) {
+                    let site_name = state.site_name.clone();
+                    let site_display =
+                        runtime_site_display_name(site_hash, Some(site_name.as_str()));
                     let retry_at = now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
                     state.next_prune_attempt_unix = retry_at;
                     if let Some(operation) = runtime_node_operations.get_mut(&site_hash) {
@@ -8457,13 +8464,14 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 None,
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_site_prune_dirty|up_snapshot|{summary}"),
                                 "runtime_site_prune_dirty",
                                 "error",
+                                Some((site_hash, Some(site_name.clone()))),
                                 format!(
                                     "Deferred runtime site prune for site {} marked Dirty after snapshot failure: {}",
-                                    site_hash, summary
+                                    site_display, summary
                                 ),
                                 format!(
                                     "runtime site prune Dirty events due to uplink snapshot failure: {}",
@@ -8479,15 +8487,16 @@ fn flush_deferred_runtime_site_prunes(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            grouped_events.emit(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_site_prune_retry|up_snapshot|{summary}"),
                                 "runtime_site_prune_retry",
                                 "warning",
+                                Some((site_hash, Some(site_name))),
                                 format!(
                                     "Deferred runtime site prune retry {}/{} for site {} postponed: {}",
                                     operation.attempt_count,
                                     RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
-                                    site_hash,
+                                    site_display,
                                     summary
                                 ),
                                 format!(
@@ -8557,6 +8566,8 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
         if state.lifecycle == RuntimeVirtualizedBranchLifecycle::CutoverPending
             && state.active_branch_hides_original_site()
         {
+            let site_name = state.site_name.clone();
+            let site_display = runtime_site_display_name(site_hash, Some(site_name.as_str()));
             debug!(
                 "Bakery: evaluating runtime cutover activation for site {}",
                 site_hash
@@ -8574,14 +8585,14 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             None,
                         );
                     }
-                    grouped_events.emit_with_site(
+                    grouped_events.emit_with_site_name(
                         "runtime_cutover_completed|completed",
                         "runtime_cutover_completed",
                         "info",
-                        Some(site_hash),
+                        Some((site_hash, Some(site_name.clone()))),
                         format!(
                             "Runtime cutover completed for site {}; shadow branch is active and original branch is standby.",
-                            site_hash
+                            site_display
                         ),
                         "runtime cutover completion events".to_string(),
                     );
@@ -8604,14 +8615,14 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                                 Some(summary.clone()),
                                 None,
                             );
-                            grouped_events.emit_with_site(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_cutover_dirty|activation_failed|{summary}"),
                                 "runtime_cutover_dirty",
                                 "error",
-                                Some(site_hash),
+                                Some((site_hash, Some(site_name.clone()))),
                                 format!(
                                     "Runtime cutover for site {} marked Dirty after {} attempts: {}",
-                                    site_hash, operation.attempt_count, summary
+                                    site_display, operation.attempt_count, summary
                                 ),
                                 format!(
                                     "runtime cutover Dirty events due to activation verification failure: {}",
@@ -8634,16 +8645,16 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                                 Some(summary.clone()),
                                 Some(retry_at),
                             );
-                            grouped_events.emit_with_site(
+                            grouped_events.emit_with_site_name(
                                 format!("runtime_cutover_retry|activation_failed|{summary}"),
                                 "runtime_cutover_retry",
                                 "warning",
-                                Some(site_hash),
+                                Some((site_hash, Some(site_name.clone()))),
                                 format!(
                                     "Runtime cutover retry {}/{} for site {} waiting for active/standby convergence: {}",
                                     operation.attempt_count,
                                     RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
-                                    site_hash,
+                                    site_display,
                                     summary
                                 ),
                                 format!(
@@ -8681,14 +8692,14 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                         None,
                     );
                 }
-                grouped_events.emit_with_site(
+                grouped_events.emit_with_site_name(
                     "runtime_site_prune_completed|completed",
                     "runtime_site_prune_completed",
                     "info",
-                    Some(site_hash),
+                    Some((site_hash, Some(state.site_name.clone()))),
                     format!(
                         "Deferred runtime site prune completed for site {}.",
-                        site_hash
+                        runtime_site_display_name(site_hash, Some(state.site_name.as_str()))
                     ),
                     "runtime site prune completion events".to_string(),
                 );
@@ -8713,14 +8724,15 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                         Some(now_unix),
                     );
                 }
-                grouped_events.emit_with_site(
+                grouped_events.emit_with_site_name(
                     format!("runtime_site_prune_progress|{summary}"),
                     "runtime_site_prune_progress",
                     "info",
-                    Some(site_hash),
+                    Some((site_hash, Some(state.site_name.clone()))),
                     format!(
                         "Deferred runtime site prune for site {} made progress: {}",
-                        site_hash, summary
+                        runtime_site_display_name(site_hash, Some(state.site_name.as_str())),
+                        summary
                     ),
                     format!("runtime site prune progress events: {}", summary),
                 );
@@ -8763,14 +8775,16 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             Some(summary.clone()),
                             None,
                         );
-                        grouped_events.emit_with_site(
+                        grouped_events.emit_with_site_name(
                             format!("runtime_site_prune_dirty|execute_failed|{summary}"),
                             "runtime_site_prune_dirty",
                             "error",
-                            Some(site_hash),
+                            Some((site_hash, Some(state.site_name.clone()))),
                             format!(
                                 "Deferred runtime site prune for site {} marked Dirty after {} attempts: {}",
-                                site_hash, operation.attempt_count, summary
+                                runtime_site_display_name(site_hash, Some(state.site_name.as_str())),
+                                operation.attempt_count,
+                                summary
                             ),
                             format!(
                                 "runtime site prune Dirty events due to execution failure: {}",
@@ -8788,16 +8802,19 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                             Some(summary.clone()),
                             Some(retry_at),
                         );
-                        grouped_events.emit_with_site(
+                        grouped_events.emit_with_site_name(
                             format!("runtime_site_prune_retry|execute_failed|{summary}"),
                             "runtime_site_prune_retry",
                             "warning",
-                            Some(site_hash),
+                            Some((site_hash, Some(state.site_name.clone()))),
                             format!(
                                 "Deferred runtime site prune retry {}/{} for site {} failed: {}",
                                 operation.attempt_count,
                                 RUNTIME_SITE_PRUNE_MAX_ATTEMPTS,
-                                site_hash,
+                                runtime_site_display_name(
+                                    site_hash,
+                                    Some(state.site_name.as_str())
+                                ),
                                 summary
                             ),
                             format!(
@@ -8809,14 +8826,15 @@ fn flush_deferred_runtime_site_prunes_with_snapshots(
                 } else {
                     state.next_prune_attempt_unix =
                         now_unix.saturating_add(RUNTIME_SITE_PRUNE_RETRY_SECONDS);
-                    grouped_events.emit_with_site(
+                    grouped_events.emit_with_site_name(
                         format!("runtime_site_prune_retry|outside_tracking|{summary}"),
                         "runtime_site_prune_retry",
                         "warning",
-                        Some(site_hash),
+                        Some((site_hash, Some(state.site_name.clone()))),
                         format!(
                             "Deferred runtime site prune for site {} failed outside operation tracking: {}",
-                            site_hash, summary
+                            runtime_site_display_name(site_hash, Some(state.site_name.as_str())),
+                            summary
                         ),
                         format!(
                             "runtime site prune retry events outside operation tracking: {}",
@@ -11911,6 +11929,35 @@ mod tests {
             managed_root_child_parent_handles(&managed_snapshot),
             HashSet::from([TcHandle::from_u32(0x7fff0001)])
         );
+    }
+
+    #[test]
+    fn grouped_runtime_site_events_retain_human_site_name() {
+        let _guard = bakery_test_lock().lock().expect("lock");
+        reset_bakery_test_state();
+
+        let site_hash = 3571466403324592518i64;
+        let site_name = "JR_AP_TR_F".to_string();
+        let mut grouped = GroupedBakeryEventLimiter::default();
+        grouped.emit_with_site_name(
+            "runtime_cutover_completed|completed",
+            "runtime_cutover_completed",
+            "info",
+            Some((site_hash, Some(site_name.clone()))),
+            format!(
+                "Runtime cutover completed for site {}; shadow branch is active and original branch is standby.",
+                runtime_site_display_name(site_hash, Some(site_name.as_str()))
+            ),
+            "runtime cutover completion events".to_string(),
+        );
+        grouped.flush();
+
+        let activity = bakery_activity_snapshot();
+        assert_eq!(activity.len(), 1);
+        assert_eq!(activity[0].site_hash, Some(site_hash));
+        assert_eq!(activity[0].site_name.as_deref(), Some(site_name.as_str()));
+        assert!(activity[0].summary.contains(site_name.as_str()));
+        assert!(!activity[0].summary.contains(&format!("site {site_hash}")));
     }
 
     #[test]

@@ -6,6 +6,7 @@ mod net_json_parent;
 
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
+use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::routes_override::RouteOverride;
@@ -18,7 +19,7 @@ use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
 use crate::uisp_types::UispDevice;
-use lqos_config::Config;
+use lqos_config::{CircuitEthernetMetadata, Config};
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
@@ -375,6 +376,7 @@ pub async fn build_full_network_v2(
     let mut seen_pairs = HashSet::new();
     let mut processed_site_pairs = 0usize;
     let mut shaped_device_count = 0usize;
+    let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
@@ -389,45 +391,53 @@ pub async fn build_full_network_v2(
                 "Processing site: {} (ID: {}) with AP: {} (ID: {})",
                 site.name, site.id, ap_device.name, ap_device.id
             );
+            let site_devices: Vec<&UispDevice> = uisp_data
+                .devices
+                .iter()
+                .filter(|d| d.site_id == *site_id && d.has_address())
+                .collect();
+
+            let requested =
+                if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
+                    (
+                        f32::max(0.1, dl_min),
+                        f32::max(0.1, dl_max),
+                        f32::max(0.1, ul_min),
+                        f32::max(0.1, ul_max),
+                    )
+                } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
+                    (0.1, 0.1, 0.1, 0.1)
+                } else {
+                    let download_f32 = (site.max_down_mbps as f32)
+                        * config.uisp_integration.bandwidth_overhead_factor;
+                    let upload_f32 = (site.max_up_mbps as f32)
+                        * config.uisp_integration.bandwidth_overhead_factor;
+                    let download_min_f32 =
+                        download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    let upload_min_f32 =
+                        upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    (
+                        f32::max(0.1, download_min_f32),
+                        f32::max(0.1, download_f32),
+                        f32::max(0.1, upload_min_f32),
+                        f32::max(0.1, upload_f32),
+                    )
+                };
+            let ethernet_decision = apply_ethernet_rate_cap(
+                &site.id,
+                &site.name,
+                site_devices.iter().copied(),
+                requested.0,
+                requested.2,
+                requested.1,
+                requested.3,
+            );
+            if let Some(advisory) = ethernet_decision.advisory.clone() {
+                ethernet_advisories.push(advisory);
+            }
             for device in uisp_data.devices.iter().filter(|d| d.site_id == *site_id) {
                 if !device.has_address() {
                     continue;
-                }
-
-                // Compute subscriber rates: prefer UISP QoS + burst; fallback to capacity-based
-                let (download_min, mut download_max, upload_min, mut upload_max) =
-                    if let Some((dl_min, dl_max, ul_min, ul_max)) = site.burst_rates(&config) {
-                        (
-                            f32::max(0.1, dl_min),
-                            f32::max(0.1, dl_max),
-                            f32::max(0.1, ul_min),
-                            f32::max(0.1, ul_max),
-                        )
-                    } else if site.suspended && config.uisp_integration.suspended_strategy == "slow"
-                    {
-                        (0.1, 0.1, 0.1, 0.1)
-                    } else {
-                        let download_f32 = (site.max_down_mbps as f32)
-                            * config.uisp_integration.bandwidth_overhead_factor;
-                        let upload_f32 = (site.max_up_mbps as f32)
-                            * config.uisp_integration.bandwidth_overhead_factor;
-                        let download_min_f32 =
-                            download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                        let upload_min_f32 =
-                            upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                        (
-                            f32::max(0.1, download_min_f32),
-                            f32::max(0.1, download_f32),
-                            f32::max(0.1, upload_min_f32),
-                            f32::max(0.1, upload_f32),
-                        )
-                    };
-                // Ensure max >= min
-                if download_max < download_min {
-                    download_max = download_min;
-                }
-                if upload_max < upload_min {
-                    upload_max = upload_min;
                 }
 
                 let parent_node = {
@@ -456,10 +466,10 @@ pub async fn build_full_network_v2(
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
-                    download_min,
-                    upload_min,
-                    download_max,
-                    upload_max,
+                    download_min: ethernet_decision.download_min,
+                    upload_min: ethernet_decision.upload_min,
+                    download_max: ethernet_decision.download_max,
+                    upload_max: ethernet_decision.upload_max,
                     comment: "".to_string(),
                 };
                 debug!(
@@ -489,6 +499,7 @@ pub async fn build_full_network_v2(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
     Ok(())

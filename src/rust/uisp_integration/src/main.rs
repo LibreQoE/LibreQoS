@@ -5,6 +5,7 @@
 mod blackboard;
 #[warn(missing_docs)]
 mod errors;
+mod ethernet_advisory;
 pub mod ip_ranges;
 mod strategies;
 pub mod uisp_types;

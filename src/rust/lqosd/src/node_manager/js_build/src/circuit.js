@@ -75,6 +75,72 @@ const RECENT_TRAFFIC_FLOW_WINDOW_NANOS = 30_000_000_000;
 const TRAFFIC_FLOW_HIDE_THRESHOLD_BPS = 1024 * 1024;
 const DEFAULT_TRAFFIC_PAGE_SIZE = 100;
 
+function formatEthernetPortLabel(mbps) {
+    const value = toNumber(mbps, 0);
+    if (value >= 1000 && value % 1000 === 0) {
+        return `${value / 1000}G`;
+    }
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(1)}G`;
+    }
+    return `${Math.round(value)}M`;
+}
+
+function ethernetCapsPageHref(advisory) {
+    const portLabel = encodeURIComponent(formatEthernetPortLabel(advisory?.negotiated_ethernet_mbps));
+    return `/ethernet_caps.html?tier=${portLabel}`;
+}
+
+function ethernetTooltipHtml(advisory) {
+    return (
+        `Requested plan ${formatMbps(advisory.requested_download_mbps)} / ${formatMbps(advisory.requested_upload_mbps)} exceeded detected Ethernet speed. ` +
+        `Shaping auto-capped to ${formatMbps(advisory.applied_download_mbps)} / ${formatMbps(advisory.applied_upload_mbps)}.`
+    );
+}
+
+function formatPlanSpeedPair(downloadMbps, uploadMbps) {
+    const down = toNumber(downloadMbps, 0).toFixed(1);
+    const up = toNumber(uploadMbps, 0).toFixed(1);
+    return `${down} / ${up} Mbps`;
+}
+
+function renderEthernetAdvisory(advisory) {
+    const badge = document.getElementById("ethernetAdvisoryBadge");
+    const badgeText = document.getElementById("ethernetAdvisoryBadgeText");
+    if (!badge || !badgeText) {
+        return;
+    }
+
+    const disposeTooltip = () => {
+        if (typeof bootstrap === "undefined" || !bootstrap.Tooltip) {
+            return;
+        }
+        const existing = bootstrap.Tooltip.getInstance?.(badge);
+        existing?.dispose();
+    };
+
+    if (!advisory?.auto_capped) {
+        badge.classList.add("d-none");
+        badgeText.textContent = "";
+        badge.removeAttribute("title");
+        badge.removeAttribute("data-bs-original-title");
+        disposeTooltip();
+        return;
+    }
+
+    const portLabel = formatEthernetPortLabel(advisory.negotiated_ethernet_mbps);
+    const note = ethernetTooltipHtml(advisory);
+
+    badgeText.textContent = portLabel;
+    badge.classList.remove("d-none");
+    badge.href = ethernetCapsPageHref(advisory);
+    badge.setAttribute("title", note);
+    badge.setAttribute("data-bs-original-title", note);
+    badge.setAttribute("aria-label", `Review ${portLabel} Ethernet-limited circuits`);
+    disposeTooltip();
+    initTooltipsWithin(badge.parentElement || document);
+}
+
 function retransmitCountFromSample(sample) {
     return toNumber(sample?.retransmits, 0);
 }
@@ -1016,7 +1082,8 @@ function requestCircuitById(onSuccess, onError) {
             if (onError) onError();
             return;
         }
-        onSuccess(msg.devices || []);
+        const payload = msg.data || {};
+        onSuccess(payload);
     });
     wsClient.send({ CircuitById: { id: circuit_id } });
 }
@@ -2086,8 +2153,8 @@ function wireupAnalysis(circuits) {
                             //console.log(url);
 
                             // Restore the buttons
-                            requestCircuitById((circuits) => {
-                                wireupAnalysis(circuits);
+                            requestCircuitById((payload) => {
+                                wireupAnalysis(payload.devices || []);
                             });
                         }
                         return;
@@ -2119,13 +2186,16 @@ function loadInitial() {
     initFlowFilters();
     initQueuingActivityControls();
     loadRttThresholds();
-    requestCircuitById((circuits) => {
+    requestCircuitById((payload) => {
+        const circuits = payload.devices || [];
+        const advisory = payload.ethernet_advisory || null;
         let circuit = circuits[0];
         $("#circuitName").text(circuit.circuit_name);
         $("#circuitName").attr("title", circuit.circuit_name || "");
         applyParentNodeLink(circuit.parent_node);
-        $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
-        $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
+        $("#bwMax").text(formatPlanSpeedPair(circuit.download_max_mbps, circuit.upload_max_mbps));
+        $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
+        renderEthernetAdvisory(advisory);
         plan = {
             down: toNumber(circuit.download_max_mbps, 0),
             up: toNumber(circuit.upload_max_mbps, 0),

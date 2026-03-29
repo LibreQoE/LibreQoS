@@ -6,6 +6,7 @@ import {renderOperationCards} from "./operation_cards";
 
 const TREEGUARD_OPERATION_MERGE_WINDOW_SECONDS = 180;
 const TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY = "lqos_treeguard_activity_view";
+const TREEGUARD_ACTIVITY_PAGE_SIZE = 8;
 
 function formatUnixSecondsToLocalTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
@@ -490,6 +491,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         this.size = 12;
         this.nodeIdByName = new Map();
         this.lastEntries = [];
+        this.currentPage = 0;
         this.viewMode = loadViewMode();
     }
 
@@ -591,6 +593,46 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         tableWrap.appendChild(table);
         this.eventsSection.appendChild(tableWrap);
         wrap.appendChild(this.eventsSection);
+
+        const footer = document.createElement("div");
+        footer.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "pt-2", "flex-wrap");
+
+        this.pageSummary = document.createElement("div");
+        this.pageSummary.classList.add("small", "text-secondary");
+        footer.appendChild(this.pageSummary);
+
+        const pager = document.createElement("div");
+        pager.classList.add("btn-group", "btn-group-sm");
+
+        this.prevButton = document.createElement("button");
+        this.prevButton.type = "button";
+        this.prevButton.classList.add("btn", "btn-outline-secondary");
+        this.prevButton.innerHTML = "<i class='fa fa-chevron-left'></i> Newer";
+        this.prevButton.setAttribute("aria-label", "Show newer TreeGuard activity");
+        this.prevButton.addEventListener("click", () => {
+            if (this.currentPage > 0) {
+                this.currentPage -= 1;
+                this.renderEntries(this.lastEntries);
+            }
+        });
+
+        this.nextButton = document.createElement("button");
+        this.nextButton.type = "button";
+        this.nextButton.classList.add("btn", "btn-outline-secondary");
+        this.nextButton.innerHTML = "Older <i class='fa fa-chevron-right'></i>";
+        this.nextButton.setAttribute("aria-label", "Show older TreeGuard activity");
+        this.nextButton.addEventListener("click", () => {
+            if (this.currentPage + 1 < this.totalPages()) {
+                this.currentPage += 1;
+                this.renderEntries(this.lastEntries);
+            }
+        });
+
+        pager.appendChild(this.prevButton);
+        pager.appendChild(this.nextButton);
+        footer.appendChild(pager);
+        wrap.appendChild(footer);
+
         base.appendChild(wrap);
         this.renderViewMode();
         return base;
@@ -598,10 +640,12 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
 
     setViewMode(mode) {
         this.viewMode = mode === "events" ? "events" : "operations";
+        this.currentPage = 0;
         try {
             window?.localStorage?.setItem(TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY, this.viewMode);
         } catch (_) {}
         this.renderViewMode();
+        this.renderEntries(this.lastEntries);
     }
 
     renderViewMode() {
@@ -617,6 +661,16 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         if (this.eventsButton) {
             this.eventsButton.className = this.viewMode === "events" ? "btn btn-primary" : "btn btn-outline-secondary";
         }
+    }
+
+    totalPagesForCount(count) {
+        return Math.max(1, Math.ceil(count / TREEGUARD_ACTIVITY_PAGE_SIZE));
+    }
+
+    totalPages() {
+        const operationCount = buildTreeGuardOperationGroups(this.lastEntries).length;
+        const activeCount = this.viewMode === "events" ? this.lastEntries.length : operationCount;
+        return this.totalPagesForCount(activeCount);
     }
 
     onMessage(msg) {
@@ -636,7 +690,14 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     }
 
     renderEntries(entries) {
-        const groups = buildTreeGuardOperationGroups(entries).map((group) => {
+        const operationGroups = buildTreeGuardOperationGroups(entries);
+        const totalRows = this.viewMode === "events" ? entries.length : operationGroups.length;
+        const totalPages = this.totalPagesForCount(totalRows);
+        this.currentPage = Math.min(this.currentPage, totalPages - 1);
+        const start = this.currentPage * TREEGUARD_ACTIVITY_PAGE_SIZE;
+        const end = Math.min(start + TREEGUARD_ACTIVITY_PAGE_SIZE, totalRows);
+
+        const pagedGroups = operationGroups.slice(start, end).map((group) => {
             const fullReason = group.kind === "sqm_batch"
                 ? summarizeSqmBatch(group)
                 : (group.reason.label || "");
@@ -658,7 +719,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
                 progressBarClass: treeguardProgressClass(group),
             };
         });
-        renderOperationCards(this.operationsList, groups, { emptyText: "No recent operations" });
+        renderOperationCards(this.operationsList, pagedGroups, { emptyText: "No recent operations" });
 
         this.tbody.innerHTML = "";
 
@@ -670,11 +731,14 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             td.textContent = "No recent activity";
             tr.appendChild(td);
             this.tbody.appendChild(tr);
+            this.pageSummary.textContent = this.viewMode === "events" ? "0 events" : "0 operations";
+            this.prevButton.disabled = true;
+            this.nextButton.disabled = true;
             this.renderViewMode();
             return;
         }
 
-        entries.slice(0, 50).forEach((entry) => {
+        entries.slice(start, end).forEach((entry) => {
             const tr = document.createElement("tr");
             tr.classList.add("small");
 
@@ -760,6 +824,11 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             tr.appendChild(tdReason);
             this.tbody.appendChild(tr);
         });
+
+        const label = this.viewMode === "events" ? "events" : "operations";
+        this.pageSummary.textContent = `${start + 1}-${end} of ${totalRows} ${label}`;
+        this.prevButton.disabled = this.currentPage === 0;
+        this.nextButton.disabled = this.currentPage + 1 >= totalPages;
         this.renderViewMode();
     }
 }

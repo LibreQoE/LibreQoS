@@ -1,9 +1,10 @@
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
+use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::dedup_site_names;
 use crate::uisp_types::UispDevice;
-use lqos_config::Config;
+use lqos_config::{CircuitEthernetMetadata, Config};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
@@ -82,6 +83,7 @@ pub async fn build_flat_network(
 
     // Simple Shaped Devices File
     let mut shaped_devices = Vec::new();
+    let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
     let mut seen_pairs = HashSet::new();
     let ipv4_to_v6 = Vec::new();
     for site in sites.iter() {
@@ -96,7 +98,7 @@ pub async fn build_flat_network(
                 .map(|id| id.suspended)
                 .unwrap_or(false)
                 && config.uisp_integration.suspended_strategy == "slow";
-            let (download_min, upload_min, mut download_max, mut upload_max) = if suspended_slow {
+            let requested = if suspended_slow {
                 (0.1, 0.1, 0.1, 0.1)
             } else if let Some(qos) = &site.qos {
                 let base_down = qos
@@ -172,16 +174,25 @@ pub async fn build_flat_network(
                     f32::max(0.1, ul_max_f),
                 )
             };
-            // Ensure max >= min
-            if download_max < download_min {
-                download_max = download_min;
-            }
-            if upload_max < upload_min {
-                upload_max = upload_min;
+            let site_devices: Vec<UispDevice> = devices
+                .iter()
+                .map(|device| UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6))
+                .filter(|device| device.site_id == site.id && device.has_address())
+                .collect();
+            let ethernet_decision = apply_ethernet_rate_cap(
+                &site.id,
+                &site.name_or_blank(),
+                site_devices.iter(),
+                requested.0,
+                requested.1,
+                requested.2,
+                requested.3,
+            );
+            if let Some(advisory) = ethernet_decision.advisory.clone() {
+                ethernet_advisories.push(advisory);
             }
             for device in devices.iter() {
-                let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
-                if dev.site_id == site.id {
+                if let Some(dev) = site_devices.iter().find(|dev| dev.id == device.get_id()) {
                     // We're an endpoint in the right sight. We're getting there
                     let key = (site.id.clone(), device.get_id());
                     if !seen_pairs.insert(key) {
@@ -197,10 +208,10 @@ pub async fn build_flat_network(
                         mac: device.identification.mac.clone().unwrap_or("".to_string()),
                         ipv4: dev.ipv4_list(),
                         ipv6: dev.ipv6_list(),
-                        download_min,
-                        download_max,
-                        upload_min,
-                        upload_max,
+                        download_min: ethernet_decision.download_min,
+                        download_max: ethernet_decision.download_max,
+                        upload_min: ethernet_decision.upload_min,
+                        upload_max: ethernet_decision.upload_max,
                         comment: "".to_string(),
                     };
                     shaped_devices.push(sd);
@@ -224,6 +235,7 @@ pub async fn build_flat_network(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
     Ok(())

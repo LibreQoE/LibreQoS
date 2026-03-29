@@ -1,10 +1,12 @@
 use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::node_manager::WarningLevel;
+use crate::node_manager::local_api::circuit::CircuitByIdData;
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
     CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry, TreeGuardMetadataSummary,
 };
+use crate::node_manager::local_api::ethernet_caps::{EthernetCapsPage, EthernetCapsPageQuery};
 use crate::node_manager::local_api::executive::{
     ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
     ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
@@ -201,6 +203,9 @@ pub enum WsRequest {
     },
     CircuitDirectoryPage {
         query: CircuitDirectoryQuery,
+    },
+    EthernetCapsPage {
+        query: EthernetCapsPageQuery,
     },
     NodeDirectory,
     TreeGuardMetadataSummary,
@@ -636,6 +641,9 @@ pub enum WsResponse {
     CircuitDirectoryPage {
         data: CircuitDirectoryPage,
     },
+    EthernetCapsPage {
+        data: EthernetCapsPage,
+    },
     NodeDirectory {
         data: Vec<NodeDirectoryEntry>,
     },
@@ -746,7 +754,7 @@ pub enum WsResponse {
     },
     CircuitByIdResult {
         id: String,
-        devices: Vec<ShapedDevice>,
+        data: Option<CircuitByIdData>,
         ok: bool,
     },
     RequestAnalysisResult {

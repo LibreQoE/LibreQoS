@@ -13,7 +13,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - El widget `Pipeline` de Bakery muestra las etapas actuales del control de colas, incluyendo el estado activo de aplicación, el estado de verificación y la temporización del intervalo de TC.
 - `Runtime Operations` resume mutaciones en vivo de topología entre TreeGuard y Bakery, trabajo de limpieza diferida, fallos, subárboles marcados como `Dirty` y si los cambios incrementales están congelados hasta un full reload.
 - `Recent Bakery Events` muestra por defecto operaciones agrupadas orientadas al operador, y deja el log crudo de eventos de Bakery en una vista separada de `Event Log` cuando hace falta troubleshooting detallado.
-- `TreeGuard Activity` muestra por defecto operaciones agrupadas orientadas al operador, incluyendo lotes consolidados de cambios SQM, y deja el log crudo de eventos de TreeGuard en una vista separada de `Event Log` cuando hace falta troubleshooting detallado.
+- `TreeGuard Activity` muestra por defecto operaciones agrupadas orientadas al operador, incluyendo lotes consolidados de cambios SQM, y deja el log crudo de eventos de TreeGuard en una vista separada de `Event Log` cuando hace falta troubleshooting detallado; ambas vistas usan paginación.
 - `TreeGuard Control Loop` muestra el estado actual de observar/evaluar/actuar sin repetir acciones recientes que ya aparecen en TreeGuard Activity.
 - `TreeGuard Decision Impact` se centra en el impacto actual y en las advertencias o errores actuales, en lugar de repetir acciones recientes.
 - `TreeGuard State Mix` muestra nodos gestionados, virtualización en runtime, circuitos gestionados y la mezcla actual de circuitos `cake / mixed / fq_codel`.
@@ -28,6 +28,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - `Node Details` resume el tipo de nodo seleccionado, el tamaño de la rama, las velocidades configuradas y la velocidad efectiva actual.
 - `Node Snapshot` ofrece un resumen visual rápido del throughput actual y el QoO del nodo seleccionado.
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
+- Los circuitos adjuntos limitados por Ethernet pueden mostrar insignias `10M`, `100M` o `1G` junto al valor de `Plan (Mbps)`; al pasar el cursor se explica el auto-cap y al hacer clic en la insignia se abre la página dedicada de revisión Ethernet.
 - Los administradores pueden guardar o limpiar valores de `Operator Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
 
 ### Site Map
@@ -61,6 +62,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 
 ### Página de circuito
 - Las páginas de circuito combinan comportamiento de colas, throughput en vivo, RTT, retransmisiones y troubleshooting por flujo para un suscriptor/circuito individual.
+- Cuando los metadatos de la integración informan la velocidad Ethernet negociada del CPE, la fila `Max` puede mostrar una insignia de advertencia como `100M`; al pasar el cursor sobre la insignia se explica cuándo LibreQoS redujo automáticamente el shaping por debajo del plan solicitado para respetar ese límite del puerto, y al hacer clic en la insignia se abre la página de revisión Ethernet.
 - `Queue Dynamics` muestra el comportamiento del throughput y RTT del circuito a lo largo del tiempo, incluyendo un KPI de `Active Flows` basado en la misma ventana reciente usada por la tabla `Traffic Flows`.
 - `Queue Stats` muestra los 3 minutos más recientes del historial en vivo de la cola del circuito como muestras scatter crudas de 1 segundo, incluyendo backlog, delay, longitud de cola, tráfico, marcas ECN y drops.
 - Los gráficos de Queue Stats usan hover sincronizado para inspeccionar el mismo segundo en todos los gráficos de cola al mismo tiempo.
@@ -68,6 +70,11 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - `Traffic Flows` es una tabla operativa de flujos recientes, no una vista de historial a largo plazo.
 - `Traffic Flows` incluye paginación y un filtro `Hide Small Flows` para que los circuitos grandes y ocupados sigan siendo utilizables sin intentar renderizar cada fila.
 - `Flow Sankey` enfatiza los flujos recientes más activos en lugar de todos los flujos retenidos más antiguos.
+
+### Ethernet Caps
+- La página de revisión Ethernet es una tabla ligera para operadores con los circuitos reducidos automáticamente porque la velocidad Ethernet detectada quedó por debajo del plan solicitado.
+- Intencionalmente no aparece en la navegación principal; los operadores llegan a ella haciendo clic en las insignias de advertencia Ethernet de la página de circuito o de la tabla de circuitos adjuntos del árbol.
+- La página soporta búsqueda, filtro por tier (`10M`, `100M`, `1G+`) y paginación sobre los circuitos actualmente auto-capped.
 
 ### Árbol/ponderación de CPU
 - Muestra distribución de colas/circuitos por núcleo de CPU.

@@ -3,21 +3,34 @@
         <div class="lqos-circuit-panel">
             <h5><i class="fa fa-user"></i> <span id="circuitName" class="redactable lqos-ellipsis-inline"></span></h5>
             <div class="lqos-table-wrap">
-                <table class="lqos-table lqos-table-compact">
+                <table class="lqos-table lqos-table-compact lqos-circuit-header-table">
                     <tr>
-                        <td class="table-label-cell">Parent Node</td>
-                        <td class="table-value-cell"><a id="parentNode" class="redactable" href="#"></a></td>
+                        <td class="table-label-cell">Parent</td>
+                        <td class="table-value-cell"><a id="parentNode" class="redactable lqos-circuit-parent-link lqos-ellipsis-inline" href="#"></a></td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Maximum Speed</td>
-                        <td class="table-value-cell"><span id="bwMax"></span></td>
+                        <td class="table-label-cell">Max</td>
+                        <td class="table-value-cell">
+                            <span id="bwMax"></span>
+                            <a
+                                id="ethernetAdvisoryBadge"
+                                class="badge rounded-pill text-bg-warning ms-2 d-none"
+                                href="#"
+                                tabindex="0"
+                                aria-label="Ethernet speed warning"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                            >
+                                <i class="fa fa-ethernet me-1"></i><span id="ethernetAdvisoryBadgeText"></span>
+                            </a>
+                        </td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Minimum Speed</td>
+                        <td class="table-label-cell">Min</td>
                         <td class="table-value-cell"><span id="bwMin"></span></td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">RTT Metrics</td>
+                        <td class="table-label-cell">RTT</td>
                         <td class="table-value-cell">
                             <div class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox" id="excludeRttToggle">

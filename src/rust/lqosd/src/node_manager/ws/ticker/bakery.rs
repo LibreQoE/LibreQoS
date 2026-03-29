@@ -9,7 +9,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_bakery::{
     BakeryActivityEntry as BakeryActivitySnapshot, BakeryApplyType, BakeryMode,
     BakeryPreflightSnapshot, BakeryRuntimeNodeOperationAction, BakeryRuntimeNodeOperationStatus,
-    BakeryStatusSnapshot,
+    BakeryStatusSnapshot, bakery_runtime_node_branch_snapshot,
 };
 use lqos_utils::hash_to_i64;
 use std::sync::Arc;
@@ -86,6 +86,10 @@ fn resolve_site_name(site_hash: i64) -> Option<String> {
         .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
 }
 
+fn resolve_runtime_site_name(site_hash: i64) -> Option<String> {
+    bakery_runtime_node_branch_snapshot(site_hash).map(|snapshot| snapshot.site_name)
+}
+
 fn extract_site_hash_from_summary(summary: &str) -> Option<i64> {
     let lower = summary.to_ascii_lowercase();
     let site_index = lower.find("site ")?;
@@ -134,6 +138,7 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                         site_hash: entry.site_hash,
                         site_name: entry
                             .site_name
+                            .or_else(|| resolve_runtime_site_name(entry.site_hash))
                             .or_else(|| resolve_site_name(entry.site_hash)),
                         action: runtime_action_to_string(entry.action),
                         status: runtime_status_to_string(entry.status),
@@ -180,6 +185,7 @@ fn map_activity(entry: BakeryActivitySnapshot) -> BakeryActivityEntry {
         .or_else(|| extract_site_hash_from_summary(&entry.summary));
     let site_name = entry
         .site_name
+        .or_else(|| site_hash.and_then(resolve_runtime_site_name))
         .or_else(|| site_hash.and_then(resolve_site_name));
     BakeryActivityEntry {
         ts: entry.ts,

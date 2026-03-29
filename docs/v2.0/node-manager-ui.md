@@ -13,7 +13,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - The Bakery `Pipeline` widget shows the current queue-control stages, including active apply state, verification state, and TC interval timing.
 - `Runtime Operations` summarizes live TreeGuard/Bakery topology mutations, deferred cleanup work, failures, dirty subtrees, and whether incremental changes are frozen pending a full reload.
 - `Recent Bakery Events` defaults to merged operator-facing operations, with the raw Bakery event log available in a separate `Event Log` view when detailed troubleshooting is needed.
-- `TreeGuard Activity` defaults to grouped operator-facing operations, including consolidated SQM change batches, with the raw TreeGuard event log available in a separate `Event Log` view when detailed troubleshooting is needed.
+- `TreeGuard Activity` defaults to grouped operator-facing operations, including consolidated SQM change batches, with the raw TreeGuard event log available in a separate `Event Log` view when detailed troubleshooting is needed; both views are paginated.
 - `TreeGuard Control Loop` shows the current observe/evaluate/act state without repeating recent actions already visible in TreeGuard Activity.
 - `TreeGuard Decision Impact` focuses on current impact and current warnings or errors, rather than replaying recent actions.
 - `TreeGuard State Mix` shows managed nodes, runtime virtualization, managed circuits, and the current `cake / mixed / fq_codel` circuit SQM split.
@@ -28,6 +28,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Node Details` summarizes the selected node’s type, branch size, configured rates, and current effective rate.
 - `Node Snapshot` provides a quick visual summary of current throughput and QoO for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
+- Ethernet-limited attached circuits can show inline `10M`, `100M`, or `1G` warning badges beside the `Plan (Mbps)` value; hovering explains the auto-cap and clicking the badge opens the dedicated Ethernet review page.
 - Administrators can save or clear `Operator Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
 - Tree-page operator rate edits write operator-owned overrides to `lqos_overrides.json`; they do not rewrite legacy integration bandwidth CSV files.
 - Tree-page operator rate edits require an administrator session, a stable node ID, and a non-generated node. Generated/integration-synthetic nodes remain read-only in this editor.
@@ -64,6 +65,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 
 ### Circuit page
 - Circuit pages combine queue behavior, live throughput, RTT, retransmits, and per-flow troubleshooting for an individual subscriber/circuit.
+- When integration metadata reports a negotiated CPE Ethernet speed, the `Max` row can show a warning badge such as `100M`; hovering the badge explains when LibreQoS auto-capped shaping below the requested plan to stay within that port speed, and clicking the badge opens the Ethernet review page.
 - `Queue Dynamics` shows circuit throughput and RTT behavior over time, including an `Active Flows` KPI based on the same recent flow window used by the `Traffic Flows` table.
 - `Queue Stats` shows the most recent 3 minutes of live queue history for the circuit as raw 1-second scatter samples, including backlog, delay, queue length, traffic, ECN marks, and drops.
 - Queue Stats charts use synchronized hover so operators can inspect the same second across all queue charts together.
@@ -71,6 +73,11 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Traffic Flows` is a recent-flow operational table rather than a long-term history view.
 - `Traffic Flows` includes paging and a `Hide Small Flows` filter so large busy circuits remain usable without trying to render every row at once.
 - `Flow Sankey` emphasizes the hottest recent flows rather than every older retained flow.
+
+### Ethernet Caps
+- The Ethernet review page is a lightweight operator table of circuits automatically down-rated because detected Ethernet speed was below the requested plan.
+- It is intentionally not in the main navigation; operators reach it by clicking Ethernet warning badges on the Circuit page or Tree attached-circuits table.
+- The page supports search, tier filtering (`10M`, `100M`, `1G+`), and paging across currently auto-capped circuits.
 
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.
