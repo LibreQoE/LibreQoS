@@ -409,7 +409,29 @@ function linkWidthExpression() {
     return ["interpolate", ["linear"], ["zoom"], 2, w2, 6, w6, 10, w10];
 }
 
+function rasterThemePaint() {
+    if (isDarkMode()) {
+        return {
+            "raster-opacity": 0.86,
+            "raster-brightness-min": 0.02,
+            "raster-brightness-max": 0.19,
+            "raster-contrast": 0.5,
+            "raster-saturation": -0.62,
+            "raster-hue-rotate": 218,
+        };
+    }
+    return {
+        "raster-opacity": 1,
+        "raster-brightness-min": 0,
+        "raster-brightness-max": 1,
+        "raster-contrast": 0,
+        "raster-saturation": 0,
+        "raster-hue-rotate": 0,
+    };
+}
+
 function buildOsmRasterStyle() {
+    const rasterPaint = rasterThemePaint();
     return {
         version: 8,
         sources: {
@@ -435,6 +457,7 @@ function buildOsmRasterStyle() {
                 source: OSM_RASTER_SOURCE_ID,
                 minzoom: 0,
                 maxzoom: TILE_MAX_ZOOM,
+                paint: rasterPaint,
             },
         ],
     };
@@ -804,6 +827,12 @@ class SiteMapPage {
         }
         const palette = markerPalette();
         this.map.setPaintProperty("site-map-background", "background-color", isDarkMode() ? "#0b1220" : "#ffffff");
+        if (this.map.getLayer(OSM_RASTER_LAYER_ID)) {
+            const rasterPaint = rasterThemePaint();
+            Object.entries(rasterPaint).forEach(([key, value]) => {
+                this.map.setPaintProperty(OSM_RASTER_LAYER_ID, key, value);
+            });
+        }
         if (this.map.getLayer(SITE_LINK_LAYER_ID)) {
             this.map.setPaintProperty(SITE_LINK_LAYER_ID, "line-color", linkColorExpression());
         }
