@@ -325,7 +325,7 @@ async function loadTeasers() {
         const response = await $.get(getLtsUrl('teasers'));
         if (response.teasers != null) {
              response.teasers.forEach(teaser => {
-                  teaser.image = getLtsUrl(teaser.image.replace("signup-api/", ""));
+                  teaser.image = getLtsUrl(teaser.image.replace(/^\/?signup-api\//, ""));
             });
         }
         currentTeasers = response.teasers || PLACEHOLDER_TEASERS;
@@ -701,13 +701,13 @@ function attachEventHandlers() {
                 showSection('successSection');
                 $('#successMessage').html(`
                     <strong>License Key:</strong> ${response.licenseKey}<br>
-                    <small>Your trial is almost active. Watch for an email from Insight to add billing details within 2 days. No charge occurs until the trial ends, and you can cancel any time.</small>
+                    <small>Your trial is almost active. Watch for an email from Insight with your account details. No charge occurs until the trial ends, and you can cancel any time.</small>
                 `);
                 $('#configStatus').text('Saving configuration...');
 
                 wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
-                $('#configStatus').html(`Your Insight trial has been created. Add billing details from the Insight email within 2 days to keep the trial active.`);
+                $('#configStatus').html(`Your Insight trial has been created. Check your email for the next steps while configuration is being saved.`);
                 setTimeout(() => {
                     $('#configSpinner').hide();
                     $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);

@@ -75,7 +75,7 @@ async function loadModalTeasers() {
                 const copy = { ...teaser };
                 if (copy.image) {
                     const img = typeof copy.image === "string" ? copy.image : "";
-                    const cleaned = img.replace(/^signup-api\//, "");
+                    const cleaned = img.replace(/^\/?signup-api\//, "");
                     copy.image = getModalLtsUrl(cleaned);
                 }
                 return copy;
