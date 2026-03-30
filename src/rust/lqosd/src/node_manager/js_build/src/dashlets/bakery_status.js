@@ -1,7 +1,7 @@
 import {DashletBaseInsight} from "./insight_dashlet_base";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 
-const CIRCUIT_ACTIVITY_MAX_ITEMS = 6;
+const CIRCUIT_ACTIVITY_MAX_ITEMS = 1;
 
 function truncateSummary(summary, maxChars = 180) {
     const normalized = (summary ?? "").toString().trim();
@@ -82,7 +82,7 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
     }
 
     tooltip() {
-        return "<h5>Bakery Circuit Activity</h5><p>Shows live Bakery circuit-change progress while a live change is applying, then keeps a compact list of recent circuit-scoped Bakery operations underneath.</p>";
+        return "<h5>Bakery Circuit Activity</h5><p>Shows live Bakery circuit-change progress while a live change is applying, then keeps the single most recent circuit-scoped Bakery operation underneath.</p>";
     }
 
     subscribeTo() {

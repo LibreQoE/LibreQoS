@@ -8,6 +8,7 @@ help.js
 unknown-ips.js
 configuration.js
 circuit.js
+ethernet_caps.js
 site_map.js
 flow_map.js
 all_tree_sankey.js

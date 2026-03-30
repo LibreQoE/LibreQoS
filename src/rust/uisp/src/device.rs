@@ -185,6 +185,7 @@ pub struct DeviceInterface {
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct InterfaceIdentification {
+    pub r#type: Option<String>,
     pub name: Option<String>,
     pub mac: Option<String>,
 }
@@ -200,6 +201,7 @@ pub struct DeviceAddress {
 pub struct InterfaceStatus {
     pub status: Option<String>,
     pub speed: Option<String>,
+    pub currentSpeed: Option<String>,
 }
 
 #[allow(non_snake_case)]

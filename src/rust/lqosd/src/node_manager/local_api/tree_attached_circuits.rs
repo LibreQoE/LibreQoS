@@ -1,3 +1,4 @@
+use crate::node_manager::local_api::ethernet_caps::{EthernetCapBadge, ethernet_cap_badge_map};
 use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -51,6 +52,8 @@ pub struct TreeAttachedCircuitsQuery {
 pub struct TreeAttachedCircuitRow {
     pub circuit_id: String,
     pub circuit_name: String,
+    /// Optional Ethernet speed-cap advisory badge when this circuit was auto-capped.
+    pub ethernet_cap_badge: Option<EthernetCapBadge>,
     pub parent_node: String,
     pub device_names: Vec<String>,
     pub ip_addrs: Vec<String>,
@@ -133,6 +136,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
     let node_name = resolve_node_name(&query);
 
     let snapshot = fresh_circuit_live_snapshot();
+    let ethernet_badges = ethernet_cap_badge_map();
     let mut rows: Vec<TreeAttachedCircuitRow> = match node_name.as_deref() {
         Some(node_name) => snapshot
             .circuit_ids_by_parent_node
@@ -143,6 +147,9 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
             .map(|row| TreeAttachedCircuitRow {
                 circuit_id: row.circuit_id.clone(),
                 circuit_name: row.circuit_name.clone(),
+                ethernet_cap_badge: ethernet_badges
+                    .get(&row.circuit_id.to_ascii_lowercase())
+                    .cloned(),
                 parent_node: row.parent_node.clone(),
                 device_names: row.device_names.clone(),
                 ip_addrs: row.ip_addrs.clone(),

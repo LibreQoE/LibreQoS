@@ -1,4 +1,5 @@
 pub(crate) mod circuit;
+pub(crate) mod circuit_activity;
 pub(crate) mod circuit_count;
 pub(crate) mod circuit_live;
 pub(crate) mod config;
@@ -6,6 +7,7 @@ pub(crate) mod cpu_affinity;
 pub(crate) mod dashboard_themes;
 pub(crate) mod device_counts;
 pub(crate) mod directories;
+pub(crate) mod ethernet_caps;
 pub(crate) mod executive;
 pub(crate) mod executive_cache;
 pub(crate) mod flow_explorer;

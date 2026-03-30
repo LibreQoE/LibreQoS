@@ -19,7 +19,54 @@ pub(crate) struct UispData {
     //pub data_links: Vec<UispDataLink>,
 }
 
-/// Ensure site names are unique by appending the site ID to duplicates.
+fn short_address_segment(site: &Site) -> Option<String> {
+    let address = site.address()?;
+    let first_segment = address.split(',').next()?.trim();
+    if first_segment.is_empty() {
+        None
+    } else {
+        Some(first_segment.to_string())
+    }
+}
+
+fn service_name(site: &Site) -> Option<String> {
+    let name = site.ucrm.as_ref()?.service.as_ref()?.name.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+fn short_site_id(site: &Site) -> String {
+    site.id.chars().take(8).collect()
+}
+
+fn disambiguation_candidates(site: &Site, base_name: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if let Some(address_segment) = short_address_segment(site)
+        && address_segment != base_name
+    {
+        candidates.push(format!("{base_name} ({address_segment})"));
+    }
+
+    if let Some(service_name) = service_name(site)
+        && service_name != base_name
+    {
+        candidates.push(format!("{base_name} ({service_name})"));
+    }
+
+    let short_id = short_site_id(site);
+    if !short_id.is_empty() {
+        candidates.push(format!("{base_name} ({short_id})"));
+    }
+    candidates.push(format!("{base_name} ({})", site.id));
+
+    candidates
+}
+
+/// Ensure site names are unique by appending a human-friendly disambiguator to duplicates.
 pub(crate) fn dedup_site_names(sites: &mut [Site]) {
     let mut name_counts: HashMap<String, usize> = HashMap::new();
     for site in sites.iter() {
@@ -30,6 +77,18 @@ pub(crate) fn dedup_site_names(sites: &mut [Site]) {
         *name_counts.entry(base_name).or_insert(0) += 1;
     }
 
+    let mut used_names: HashSet<String> = sites
+        .iter()
+        .filter_map(|site| {
+            let base_name = site.name_or_blank();
+            if base_name.is_empty() || name_counts.get(&base_name).copied().unwrap_or(0) > 1 {
+                None
+            } else {
+                Some(base_name)
+            }
+        })
+        .collect();
+
     for site in sites.iter_mut() {
         let base_name = site.name_or_blank();
         if base_name.is_empty() {
@@ -37,7 +96,11 @@ pub(crate) fn dedup_site_names(sites: &mut [Site]) {
         }
 
         if name_counts.get(&base_name).copied().unwrap_or(0) > 1 {
-            let candidate = format!("{base_name} {}", site.id);
+            let candidate = disambiguation_candidates(site, &base_name)
+                .into_iter()
+                .find(|candidate| !used_names.contains(candidate))
+                .unwrap_or_else(|| format!("{base_name} ({})", site.id));
+            used_names.insert(candidate.clone());
             if let Some(ident) = site.identification.as_mut() {
                 ident.name = Some(candidate.clone());
             }
@@ -45,7 +108,7 @@ pub(crate) fn dedup_site_names(sites: &mut [Site]) {
                 site_id = %site.id,
                 original = %base_name,
                 renamed = %candidate,
-                "Duplicate UISP site name detected; renaming with site ID for LibreQoS uniqueness"
+                "Duplicate UISP site name detected; renaming with human-friendly disambiguator for LibreQoS uniqueness"
             );
         }
     }
@@ -223,5 +286,96 @@ impl UispData {
                 (ap, sites_vec)
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dedup_site_names;
+    use serde_json::json;
+    use uisp::Site;
+
+    fn mk_site(id: &str, name: &str, address: Option<&str>, service_name: Option<&str>) -> Site {
+        let mut value = json!({
+            "id": id,
+            "identification": {
+                "id": id,
+                "name": name,
+                "type": "endpoint",
+                "suspended": false
+            }
+        });
+
+        if let Some(address) = address {
+            value["description"] = json!({ "address": address });
+        }
+        if let Some(service_name) = service_name {
+            value["ucrm"] = json!({
+                "service": {
+                    "id": format!("svc-{id}"),
+                    "name": service_name,
+                    "status": 1,
+                    "tariffId": "1",
+                    "trafficShapingOverrideEnabled": false
+                }
+            });
+        }
+
+        serde_json::from_value(value).expect("site JSON must deserialize")
+    }
+
+    #[test]
+    fn duplicate_site_names_prefer_address_segment() {
+        let mut sites = vec![
+            mk_site(
+                "213f4b53-bddf-41dd-af65-2dbaa5bf0927",
+                "Pathway Communications",
+                Some("7100 Binational Way, Santa Teresa, 88008, New Mexico, United States"),
+                None,
+            ),
+            mk_site(
+                "96bb13cd-10cc-43a1-ae56-a389161178d7",
+                "Pathway Communications",
+                Some("175 Lindburgh Dr, El Paso, 79932, Texas, United States"),
+                None,
+            ),
+        ];
+
+        dedup_site_names(&mut sites);
+
+        assert_eq!(
+            sites[0].name_or_blank(),
+            "Pathway Communications (7100 Binational Way)"
+        );
+        assert_eq!(
+            sites[1].name_or_blank(),
+            "Pathway Communications (175 Lindburgh Dr)"
+        );
+    }
+
+    #[test]
+    fn duplicate_site_names_fall_back_to_service_name() {
+        let mut sites = vec![
+            mk_site("site-1", "Acme", None, Some("1000/1000 Mbps - Primary")),
+            mk_site("site-2", "Acme", None, Some("1000/1000 Mbps - Backup")),
+        ];
+
+        dedup_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Acme (1000/1000 Mbps - Primary)");
+        assert_eq!(sites[1].name_or_blank(), "Acme (1000/1000 Mbps - Backup)");
+    }
+
+    #[test]
+    fn duplicate_site_names_fall_back_to_short_id() {
+        let mut sites = vec![
+            mk_site("abcd1234-0000-0000-0000-000000000000", "Acme", None, None),
+            mk_site("efgh5678-0000-0000-0000-000000000000", "Acme", None, None),
+        ];
+
+        dedup_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Acme (abcd1234)");
+        assert_eq!(sites[1].name_or_blank(), "Acme (efgh5678)");
     }
 }

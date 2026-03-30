@@ -1,10 +1,16 @@
 use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::node_manager::WarningLevel;
+use crate::node_manager::local_api::circuit::CircuitByIdData;
+use crate::node_manager::local_api::circuit_activity::{
+    CircuitFlowSankeyRow, CircuitSummaryData, CircuitTopAsnsData, CircuitTopAsnsQuery,
+    CircuitTrafficFlowsPage, CircuitTrafficFlowsQuery,
+};
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
     CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry, TreeGuardMetadataSummary,
 };
+use crate::node_manager::local_api::ethernet_caps::{EthernetCapsPage, EthernetCapsPageQuery};
 use crate::node_manager::local_api::executive::{
     ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
     ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
@@ -44,7 +50,6 @@ use crate::throughput_tracker::TcpRetransmitTotal;
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
-use crate::throughput_tracker::flow_data::{FlowAnalysis, FlowbeeLocalData};
 use lqos_bus::{Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry};
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
@@ -71,7 +76,8 @@ pub struct WsHelloReply {
 pub enum PrivateRequest {
     CircuitWatcher { circuit: String },
     PingMonitor { ips: Vec<(String, String)> },
-    FlowsByCircuit { circuit: String },
+    StopCircuitWatcher,
+    StopPingMonitorWatch,
     CakeWatcher { circuit: String },
     Chatbot { browser_ts_ms: Option<f64> },
     ChatbotUserInput { text: String },
@@ -202,6 +208,9 @@ pub enum WsRequest {
     CircuitDirectoryPage {
         query: CircuitDirectoryQuery,
     },
+    EthernetCapsPage {
+        query: EthernetCapsPageQuery,
+    },
     NodeDirectory,
     TreeGuardMetadataSummary,
     GetUsers,
@@ -220,6 +229,18 @@ pub enum WsRequest {
     },
     CircuitById {
         id: String,
+    },
+    CircuitDevices {
+        circuit: String,
+    },
+    CircuitFlowSankey {
+        circuit: String,
+    },
+    CircuitTopAsns {
+        query: CircuitTopAsnsQuery,
+    },
+    CircuitTrafficFlowsPage {
+        query: CircuitTrafficFlowsQuery,
     },
     SetCircuitRttExcluded {
         circuit_id: String,
@@ -499,18 +520,11 @@ pub struct NodeCapacity {
     pub median_rtt: f32,
 }
 
-#[derive(Debug, Serialize)]
-pub struct FlowbeeKeyTransit {
-    pub remote_ip: String,
-    pub local_ip: String,
-    pub src_port: u16,
-    pub dst_port: u16,
-    pub ip_protocol: u8,
-    pub device_name: String,
-    pub asn_name: String,
-    pub asn_country: String,
-    pub protocol_name: String,
-    pub last_seen_nanos: u64,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CircuitDevicesResult {
+    pub circuit_id: String,
+    pub devices: Vec<Circuit>,
+    pub ok: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -636,6 +650,9 @@ pub enum WsResponse {
     CircuitDirectoryPage {
         data: CircuitDirectoryPage,
     },
+    EthernetCapsPage {
+        data: EthernetCapsPage,
+    },
     NodeDirectory {
         data: Vec<NodeDirectoryEntry>,
     },
@@ -746,7 +763,7 @@ pub enum WsResponse {
     },
     CircuitByIdResult {
         id: String,
-        devices: Vec<ShapedDevice>,
+        data: Option<CircuitByIdData>,
         ok: bool,
     },
     RequestAnalysisResult {
@@ -913,10 +930,10 @@ pub enum WsResponse {
         data: Vec<TreeguardActivityEntry>,
     },
     CircuitWatcher {
-        circuit_id: String,
-        devices: Vec<Circuit>,
-        qoo_score: Option<f32>,
-        rtt_excluded: bool,
+        data: CircuitSummaryData,
+    },
+    CircuitDevicesResult {
+        data: CircuitDevicesResult,
     },
     SetCircuitRttExcludedResult {
         ok: bool,
@@ -928,9 +945,17 @@ pub enum WsResponse {
         ip: String,
         result: PingState,
     },
-    FlowsByCircuit {
+    CircuitFlowSankeyResult {
         circuit_id: String,
-        flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)>,
+        flows: Vec<CircuitFlowSankeyRow>,
+    },
+    CircuitTopAsnsResult {
+        circuit_id: String,
+        data: CircuitTopAsnsData,
+    },
+    CircuitTrafficFlowsPageResult {
+        circuit_id: String,
+        data: CircuitTrafficFlowsPage,
     },
     CakeWatcher {
         #[serde(flatten)]

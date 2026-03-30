@@ -1,40 +1,66 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="gatherStats">
-                <label class="form-check-label" for="gatherStats">Gather Insight Statistics</label>
-                <div class="form-text">Enable collection of Insight performance data</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Insight</h5>
+                    <div class="lqos-config-panel-subtitle">Control Insight statistics collection, licensing, and optional self-hosted endpoint settings.</div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
-                <input type="number" class="form-control" id="collationPeriod" min="1">
-                <div class="form-text">How frequently to aggregate statistics into Insight records</div>
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Collection and License</h6>
+                        <div class="lqos-config-section-subtitle">Enable Insight data gathering and define the cadence used for aggregation and reporting.</div>
 
-            <div class="mb-3">
-                <label for="licenseKey" class="form-label">License Key</label>
-                <input type="text" class="form-control" id="licenseKey">
-                <div class="form-text">License key for LibreQoS Insight (if applicable)</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="gatherStats">
+                            <label class="form-check-label" for="gatherStats">Gather Insight Statistics</label>
+                            <div class="form-text">Enable collection of Insight performance data.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispInterval" class="form-label">UISP Reporting Interval (seconds)</label>
-                <input type="number" class="form-control" id="uispInterval" min="1">
-                <div class="form-text">How frequently to query UISP for updates (set 0 to disable)</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
+                            <input type="number" class="form-control" id="collationPeriod" min="1">
+                            <div class="form-text">How frequently to aggregate statistics into Insight records.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="ltsUrl" class="form-label">Custom Insight Server URL</label>
-                <input type="text" class="form-control" id="ltsUrl">
-                <div class="form-text">URL for a self-hosted Insight server (leave blank for default)</div>
-            </div>
+                        <div class="mb-0">
+                            <label for="licenseKey" class="form-label">License Key</label>
+                            <input type="text" class="form-control" id="licenseKey">
+                            <div class="form-text">License key for LibreQoS Insight, when applicable.</div>
+                        </div>
+                    </div>
+                </div>
 
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Endpoints and Reporting</h6>
+                        <div class="lqos-config-section-subtitle">Set reporting cadence for UISP synchronization and optionally point LibreQoS at a self-hosted Insight service.</div>
+
+                        <div class="mb-3">
+                            <label for="uispInterval" class="form-label">UISP Reporting Interval (seconds)</label>
+                            <input type="number" class="form-control" id="uispInterval" min="1">
+                            <div class="form-text">How frequently to query UISP for updates. Set <code>0</code> to disable.</div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="ltsUrl" class="form-label">Custom Insight Server URL</label>
+                            <input type="text" class="form-control" id="ltsUrl">
+                            <div class="form-text">URL for a self-hosted Insight server. Leave blank to use the default service.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_lts.js%CACHEBUSTERS%"></script>

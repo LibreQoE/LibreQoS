@@ -173,6 +173,8 @@ If a `network.json` file exists, it is only overwritten when `always_overwrite_n
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
+When UISP client sites share the same name, LibreQoS now tries to disambiguate the generated circuit/site display names with a human-friendly suffix such as the first street-address segment, falling back to service name and then a short ID only when needed. Stable circuit identity still comes from the UISP site/service ID, not the display name.
+
 For integration-driven deployments, keep `always_overwrite_network_json = true` so topology stays aligned with UISP on each refresh cycle.
 
 You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.

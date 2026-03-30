@@ -484,8 +484,8 @@ export function renderConfigMenu(currentPage) {
             <div class="col-12">
                 <ul class="config-menu">
                 ${menuItems.map(item => `
-                    <li class="config-menu-item${item.id === currentPage ? ' active' : ''}">
-                        <a href="${item.href}" class="text-decoration-none">
+                    <li class="config-menu-item">
+                        <a href="${item.href}" class="config-menu-link text-decoration-none${item.id === currentPage ? ' active' : ''}">
                             <i class="fa ${item.icon}"></i> ${item.text}
                         </a>
                     </li>

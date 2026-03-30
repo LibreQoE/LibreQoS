@@ -1,133 +1,170 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="enableUisp">
-                <label class="form-check-label" for="enableUisp">Enable UISP Integration</label>
-                <div class="form-text">Enable integration with UISP billing system</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">UISP Integration</h5>
+                    <div class="lqos-config-panel-subtitle">Connect to UISP, choose import strategy, and control how topology, suspended accounts, capacity, and site overrides are handled.</div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label for="uispToken" class="form-label">API Token</label>
-                <input type="text" class="form-control" id="uispToken">
-                <div class="form-text">UISP API token for authentication</div>
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Connection</h6>
+                        <div class="lqos-config-section-subtitle">Define API access, default site scope, and transport/security behavior.</div>
 
-            <div class="mb-3">
-                <label for="uispUrl" class="form-label">UISP URL</label>
-                <input type="text" class="form-control" id="uispUrl">
-                <div class="form-text">Base URL for UISP API (e.g. https://your-uisp.com)</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="enableUisp">
+                            <label class="form-check-label" for="enableUisp">Enable UISP Integration</label>
+                            <div class="form-text">Enable integration with UISP.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispSite" class="form-label">UISP Site</label>
-                <input type="text" class="form-control" id="uispSite">
-                <div class="form-text">Site identifier in UISP</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispToken" class="form-label">API Token</label>
+                            <input type="text" class="form-control" id="uispToken">
+                            <div class="form-text">UISP API token for authentication.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispStrategy" class="form-label">Strategy</label>
-                <select class="form-select" id="uispStrategy">
-                    <option value="flat">Flat - Only shapes subscribers by service plan speed</option>
-                    <option value="ap_only">AP Only - Shapes by service plan and Access Point</option>
-                    <option value="ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
-                    <option value="full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
-                </select>
-                <div class="form-text">Select the topology strategy for network hierarchy</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispUrl" class="form-label">UISP URL</label>
+                            <input type="text" class="form-control" id="uispUrl">
+                            <div class="form-text">Base URL for the UISP API, for example <code>https://your-uisp.com</code>.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispSuspendedStrategy" class="form-label">Suspended Strategy</label>
-                <select class="form-select" id="uispSuspendedStrategy">
-                    <option value="none">None - Do not handle suspensions</option>
-                    <option value="ignore">Ignore - Do not add suspended customers to network map</option>
-                    <option value="slow">Slow - Limit suspended customers to 1mbps</option>
-                </select>
-                <div class="form-text">Select how to handle suspended customer accounts</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispSite" class="form-label">UISP Site</label>
+                            <input type="text" class="form-control" id="uispSite">
+                            <div class="form-text">Optional site identifier in UISP.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
-                <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1">
-                <div class="form-text">Capacity factor for Airmax devices</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="uispIpv6WithMikrotik">
+                            <label class="form-check-label" for="uispIpv6WithMikrotik">IPv6 with Mikrotik</label>
+                            <div class="form-text">Enable IPv6 enrichment with Mikrotik devices.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
-                <input type="number" class="form-control" id="uispLtuCapacity" step="0.1">
-                <div class="form-text">Capacity factor for LTU devices</div>
-            </div>
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="uispInsecureSsl">
+                            <label class="form-check-label" for="uispInsecureSsl">Insecure SSL</label>
+                            <div class="form-text">Disable SSL certificate validation. Use only for testing or known self-signed environments.</div>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="uispIpv6WithMikrotik">
-                <label class="form-check-label" for="uispIpv6WithMikrotik">IPv6 with Mikrotik</label>
-                <div class="form-text">Enable IPv6 support with Mikrotik devices</div>
-            </div>
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Strategy and Capacity</h6>
+                        <div class="lqos-config-section-subtitle">Choose the imported hierarchy depth and how LibreQoS should interpret suspended accounts and device capacity.</div>
 
-            <div class="mb-3">
-                <label for="uispBandwidthOverhead" class="form-label">Bandwidth Overhead Factor</label>
-                <input type="number" class="form-control" id="uispBandwidthOverhead" step="0.1" value="1.0">
-                <div class="form-text">Multiplier for bandwidth overhead calculations</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispStrategy" class="form-label">Strategy</label>
+                            <select class="form-select" id="uispStrategy">
+                                <option value="flat">Flat - Only shapes subscribers by service plan speed</option>
+                                <option value="ap_only">AP Only - Shapes by service plan and Access Point</option>
+                                <option value="ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
+                                <option value="full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
+                            </select>
+                            <div class="form-text">Select the topology strategy for network hierarchy.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispCommitMultiplier" class="form-label">Commit Bandwidth Multiplier</label>
-                <input type="number" class="form-control" id="uispCommitMultiplier" step="0.1" value="1.0">
-                <div class="form-text">Multiplier for commit bandwidth calculations</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispSuspendedStrategy" class="form-label">Suspended Strategy</label>
+                            <select class="form-select" id="uispSuspendedStrategy">
+                                <option value="none">None - Do not handle suspensions</option>
+                                <option value="ignore">Ignore - Do not add suspended customers to network map</option>
+                                <option value="slow">Slow - Limit suspended customers to 1mbps</option>
+                            </select>
+                            <div class="form-text">Select how to handle suspended customer accounts.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="uispUsePtmpAsParent">
-                <label class="form-check-label" for="uispUsePtmpAsParent">Use PTMP as Parent</label>
-                <div class="form-text">Treat PTMP devices as parent nodes</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
+                            <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1">
+                            <div class="form-text">Capacity factor for Airmax devices.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="uispIgnoreCalculatedCapacity">
-                <label class="form-check-label" for="uispIgnoreCalculatedCapacity">Ignore Calculated Capacity</label>
-                <div class="form-text">Ignore capacity calculations from UISP</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
+                            <input type="number" class="form-control" id="uispLtuCapacity" step="0.1">
+                            <div class="form-text">Capacity factor for LTU devices.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="uispInsecureSsl">
-                <label class="form-check-label" for="uispInsecureSsl">Insecure SSL</label>
-                <div class="form-text">Disable SSL certificate validation (not recommended)</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispBandwidthOverhead" class="form-label">Bandwidth Overhead Factor</label>
+                            <input type="number" class="form-control" id="uispBandwidthOverhead" step="0.1" value="1.0">
+                            <div class="form-text">Multiplier for bandwidth overhead calculations.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispExcludeSites" class="form-label">Exclude Sites</label>
-                <input type="text" class="form-control" id="uispExcludeSites">
-                <div class="form-text">Comma-separated list of site IDs to exclude from synchronization</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uispCommitMultiplier" class="form-label">Commit Bandwidth Multiplier</label>
+                            <input type="number" class="form-control" id="uispCommitMultiplier" step="0.1" value="1.0">
+                            <div class="form-text">Multiplier for commit bandwidth calculations.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispSquashSites" class="form-label">Squash Sites</label>
-                <input type="text" class="form-control" id="uispSquashSites">
-                <div class="form-text">Comma-separated list of site IDs to consolidate under a single parent</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="uispUsePtmpAsParent">
+                            <label class="form-check-label" for="uispUsePtmpAsParent">Use PTMP as Parent</label>
+                            <div class="form-text">Treat PTMP devices as parent nodes.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="uispExceptionCpes" class="form-label">Exception CPEs</label>
-                <input type="text" class="form-control" id="uispExceptionCpes">
-                <div class="form-text">Comma-separated list of CPE exceptions in "cpe:parent" format</div>
-            </div>
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="uispIgnoreCalculatedCapacity">
+                            <label class="form-check-label" for="uispIgnoreCalculatedCapacity">Ignore Calculated Capacity</label>
+                            <div class="form-text">Ignore capacity calculations from UISP.</div>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="uispEnableSquashing">
-                <label class="form-check-label" for="uispEnableSquashing">Enable Squashing</label>
-                <div class="form-text">Enable site squashing functionality</div>
-            </div>
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">Site and CPE Overrides</h6>
+                        <div class="lqos-config-section-subtitle">Fine-tune how specific sites and CPEs are excluded, squashed, or reassigned during synchronization.</div>
 
-            <div class="mb-3">
-                <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
-                <input type="text" class="form-control" id="uispDoNotSquashSites">
-                <div class="form-text">Comma-separated list of site IDs that should not be squashed</div>
-            </div>
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-6">
+                                <label for="uispExcludeSites" class="form-label">Exclude Sites</label>
+                                <input type="text" class="form-control" id="uispExcludeSites">
+                                <div class="form-text">Comma-separated list of site IDs to exclude from synchronization.</div>
+                            </div>
 
+                            <div class="col-12 col-lg-6">
+                                <label for="uispSquashSites" class="form-label">Squash Sites</label>
+                                <input type="text" class="form-control" id="uispSquashSites">
+                                <div class="form-text">Comma-separated list of site IDs to consolidate under a single parent.</div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="uispExceptionCpes" class="form-label">Exception CPEs</label>
+                                <input type="text" class="form-control" id="uispExceptionCpes">
+                                <div class="form-text">Comma-separated list of CPE exceptions in <code>cpe:parent</code> format.</div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
+                                <input type="text" class="form-control" id="uispDoNotSquashSites">
+                                <div class="form-text">Comma-separated list of site IDs that should not be squashed.</div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="mb-0 form-check">
+                                    <input type="checkbox" class="form-check-input" id="uispEnableSquashing">
+                                    <label class="form-check-label" for="uispEnableSquashing">Enable Squashing</label>
+                                    <div class="form-text">Enable site squashing functionality.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_uisp.js%CACHEBUSTERS%"></script>

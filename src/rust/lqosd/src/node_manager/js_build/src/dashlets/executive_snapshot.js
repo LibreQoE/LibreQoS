@@ -63,15 +63,9 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         }
 
         target.innerHTML = `
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                <div class="exec-section-title mb-0 text-secondary"><i class="fas fa-chart-pie me-2 text-primary"></i>Network Snapshot</div>
-            </div>
             <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-3 g-3">
-                ${this.inventoryCard(header)}
-                ${this.queuesCard(header)}
                 ${this.throughputCard()}
-                ${this.simpleCard("Mapped IPs", "fa-map-marker-alt", "text-primary", formatCount(header.mapped_ip_count))}
-                ${this.simpleCard("Unknown IPs", "fa-question-circle", "text-warning", formatCount(header.unmapped_ip_count))}
+                ${this.inventoryCard(header)}
                 ${this.insightCard(header)}
             </div>
         `;
@@ -86,25 +80,6 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         return this.groupCard("Inventory", "fa-layer-group", "text-primary", items);
     }
 
-    queuesCard(header) {
-        const items = [
-            { label: "HTB", value: formatCount(header.htb_queue_count) },
-            { label: "CAKE", value: formatCount(header.cake_queue_count) },
-            { label: "fq-codel", value: formatCount(header.fq_codel_queue_count) },
-        ];
-        const allowQueueAlerts = !header?.bakery_reload_in_progress;
-        return this.groupCard(
-            "Queues",
-            "fa-stream",
-            "text-secondary",
-            items,
-            false,
-            allowQueueAlerts,
-            this.queueStatusBadge(header),
-            this.queueStatusMessage(header),
-        );
-    }
-
     throughputCard() {
         const bps = this.latestThroughput?.bps;
         const items = [
@@ -112,22 +87,6 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
             { label: `<i class="fas fa-arrow-up"></i>`, value: this.formatBps(bps?.up) },
         ];
         return this.groupCard("Throughput", "fa-tachometer-alt", "text-info", items, true);
-    }
-
-    simpleCard(label, icon, accent, value) {
-        return `
-            <div class="col">
-                <div class="executive-card h-100">
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
-                        <div>
-                            <div class="text-secondary small">${label}</div>
-                            <div class="exec-metric-value text-secondary">${value}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
     }
 
     insightCard(header) {
@@ -150,30 +109,6 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
                 </div>
             </div>
         `;
-    }
-
-    queueStatusBadge(header) {
-        if (!header?.queue_stats_stale) {
-            return "";
-        }
-        const label = header?.bakery_reload_in_progress ? "Reloading" : "Stale";
-        const title = header?.bakery_reload_in_progress
-            ? "Queue counts are showing the last known values while Bakery applies a full reload."
-            : "Queue counts are showing the last known values while live queue polling catches up.";
-        return `<span class="badge bg-warning-subtle text-warning exec-badge" title="${title}" aria-label="${title}">${label}</span>`;
-    }
-
-    queueStatusMessage(header) {
-        if (!header?.queue_stats_stale) {
-            return "";
-        }
-        if (header?.bakery_reload_in_progress) {
-            return "";
-        }
-        const text = header?.bakery_reload_in_progress
-            ? "Live queue polling is paused during the current Bakery reload."
-            : "Live queue polling is behind; values shown are the last known counts.";
-        return `<div class="text-warning small mt-2"><i class="fas fa-rotate me-1"></i>${text}</div>`;
     }
 
     groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false, statusBadge = "", footer = "") {

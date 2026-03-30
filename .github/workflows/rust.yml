@@ -4,23 +4,41 @@ on: [push]
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
     runs-on: [ lq_run ]
     
     steps:
     - uses: actions/checkout@v4
     - name: Set Version ENV
-      run: pushd src; echo "::set-env name=VERSION::$(cat VERSION_STRING)"
-      env:
-        ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
+      run: echo "VERSION=$(cat src/VERSION_STRING)" >> "$GITHUB_ENV"
     - name: Check env var
       run: |
          echo ${{ env.VERSION }}
     - name: Install dependencies
-      run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz esbuild curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold curl unzip
-      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo /bin/apt-get update
+        sudo /bin/apt-get install --no-install-recommends \
+          python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
+          pkg-config libbpf-dev mold unzip curl ca-certificates
+
+        BPFTOOL_VERSION="7.7.0"
+        case "$(uname -m)" in
+          x86_64) BPFTOOL_ARCH="amd64" ;;
+          aarch64) BPFTOOL_ARCH="arm64" ;;
+          *)
+            echo "Unsupported architecture for upstream bpftool binary: $(uname -m)" >&2
+            exit 1
+            ;;
+        esac
+
+        BPFTOOL_TARBALL="bpftool-v${BPFTOOL_VERSION}-${BPFTOOL_ARCH}.tar.gz"
+        BPFTOOL_BASE_URL="https://github.com/libbpf/bpftool/releases/download/v${BPFTOOL_VERSION}"
+        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}"
+        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}.sha256sum"
+        sha256sum -c "${BPFTOOL_TARBALL}.sha256sum"
+        tar -xzf "${BPFTOOL_TARBALL}"
+        sudo install -m 0755 bpftool /usr/local/bin/bpftool
+        command -v bpftool
+        bpftool version
     - name: Build
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
@@ -35,13 +53,10 @@ jobs:
         path: src/dist/libreqos_${{ env.VERSION }}.-1_amd64.deb
   
   audit:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install tools
       run: pushd src/rust; cargo install cargo-audit; popd
     - name: Audit for CVEs

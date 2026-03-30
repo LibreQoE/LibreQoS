@@ -3,21 +3,34 @@
         <div class="lqos-circuit-panel">
             <h5><i class="fa fa-user"></i> <span id="circuitName" class="redactable lqos-ellipsis-inline"></span></h5>
             <div class="lqos-table-wrap">
-                <table class="lqos-table lqos-table-compact">
+                <table class="lqos-table lqos-table-compact lqos-circuit-header-table">
                     <tr>
-                        <td class="table-label-cell">Parent Node</td>
-                        <td class="table-value-cell"><a id="parentNode" class="redactable" href="#"></a></td>
+                        <td class="table-label-cell">Parent</td>
+                        <td class="table-value-cell"><a id="parentNode" class="redactable lqos-circuit-parent-link lqos-ellipsis-inline" href="#"></a></td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Maximum Speed</td>
-                        <td class="table-value-cell"><span id="bwMax"></span></td>
+                        <td class="table-label-cell">Max</td>
+                        <td class="table-value-cell">
+                            <span id="bwMax"></span>
+                            <a
+                                id="ethernetAdvisoryBadge"
+                                class="badge rounded-pill text-bg-warning ms-2 d-none"
+                                href="#"
+                                tabindex="0"
+                                aria-label="Ethernet speed warning"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                            >
+                                <i class="fa fa-ethernet me-1"></i><span id="ethernetAdvisoryBadgeText"></span>
+                            </a>
+                        </td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">Minimum Speed</td>
+                        <td class="table-label-cell">Min</td>
                         <td class="table-value-cell"><span id="bwMin"></span></td>
                     </tr>
                     <tr>
-                        <td class="table-label-cell">RTT Metrics</td>
+                        <td class="table-label-cell">RTT</td>
                         <td class="table-value-cell">
                             <div class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox" id="excludeRttToggle">
@@ -88,6 +101,11 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false">
             <i class="fa fa-map"></i> Flow Sankey <span id="activeFlowCount" class="badge">0</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="top-asns-tab" data-bs-toggle="tab" data-bs-target="#top-asns" type="button" role="tab" aria-controls="top-asns" aria-selected="false">
+            <i class="fa fa-building-columns"></i> Top ASNs <span id="topAsnCount" class="badge">0</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -172,11 +190,19 @@
         </div>
     </div>
     <div class="tab-pane fade" id="devs" role="tabpanel" aria-labelledby="devs-tab">
-        <div class="row" id="devices">
-            <div class="col-12">
-                <div class="lqos-loading-block lqos-loading-block-lg">
-                    <i class="fa fa-spinner fa-spin"></i>
-                    <span>Loading devices…</span>
+        <div class="lqos-circuit-devices-panel">
+            <div class="lqos-circuit-devices-header">
+                <div class="lqos-circuit-devices-header-copy">
+                    <h5><i class="fa fa-server"></i> Devices</h5>
+                    <p class="text-muted small mb-0">Per-device live throughput, RTT, retransmits, and address inventory for this circuit.</p>
+                </div>
+            </div>
+            <div class="row" id="devices">
+                <div class="col-12">
+                    <div class="lqos-loading-block lqos-loading-block-lg">
+                        <i class="fa fa-spinner fa-spin"></i>
+                        <span>Loading devices…</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -185,6 +211,16 @@
         <div class="row">
             <div class="col-12">
                 <div id="flowSankey" style="height: 600px; width: 1024px"></div>
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="top-asns" role="tabpanel" aria-labelledby="top-asns-tab">
+        <div class="row">
+            <div class="col-12" id="topAsnsTable">
+                <div class="lqos-loading-block lqos-loading-block-lg">
+                    <i class="fa fa-spinner fa-spin"></i>
+                    <span>Loading ASN summary…</span>
+                </div>
             </div>
         </div>
     </div>

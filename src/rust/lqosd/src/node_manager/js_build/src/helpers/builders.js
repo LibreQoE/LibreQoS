@@ -88,7 +88,9 @@ export function clientTableHeader() {
     let thead = document.createElement("thead");
     thead.appendChild(theading("Circuit"));
     thead.appendChild(theading("Device"));
-    thead.appendChild(theading("Plan (Mbps)"));
+    const planHeading = theading("Plan (Mbps)");
+    planHeading.classList.add("lqos-tree-plan-column");
+    thead.appendChild(planHeading);
     thead.appendChild(theading("Parent"));
     thead.appendChild(theading("IP"));
     thead.appendChild(theading("Last Seen"));

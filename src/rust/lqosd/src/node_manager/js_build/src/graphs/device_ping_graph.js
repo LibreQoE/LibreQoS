@@ -1,10 +1,14 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
+import {applyCircuitDeviceChartTheme} from "./circuit_device_chart_theme";
 
 export class DevicePingHistogram extends DashboardGraph {
     constructor(id) {
         super(id);
+        if (this.dom && this.dom.classList) {
+            this.dom.classList.remove("muted");
+        }
         let d = [];
         let axis = [];
         for (let i=0; i<20; i++) {
@@ -32,8 +36,15 @@ export class DevicePingHistogram extends DashboardGraph {
                 type: 'bar',
             }
         };
+        applyCircuitDeviceChartTheme(this.option);
         this.option && this.chart.setOption(this.option);
         this.chart.hideLoading();
+    }
+
+    onThemeChange() {
+        super.onThemeChange();
+        applyCircuitDeviceChartTheme(this.option);
+        this.chart.setOption(this.option);
     }
 
     update(ping_time_nanos) {

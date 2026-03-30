@@ -734,24 +734,15 @@ fn resolve_snapshot_cpu_sets(
     };
 
     if detection.has_hybrid_split {
-        let shaping = detection
-            .shaping
-            .into_iter()
-            .collect::<BTreeSet<_>>();
-        let excluded = possible
-            .difference(&shaping)
-            .copied()
-            .collect::<Vec<_>>();
+        let shaping = detection.shaping.into_iter().collect::<BTreeSet<_>>();
+        let excluded = possible.difference(&shaping).copied().collect::<Vec<_>>();
         return (shaping.into_iter().collect(), excluded, true);
     }
 
     if detection.exclude_efficiency_cores {
         let inferred = inferred_included_cpus(planned_core_metrics, placements);
         if !inferred.is_empty() && inferred.len() < possible.len() {
-            let excluded = possible
-                .difference(&inferred)
-                .copied()
-                .collect::<Vec<_>>();
+            let excluded = possible.difference(&inferred).copied().collect::<Vec<_>>();
             return (inferred.into_iter().collect(), excluded, false);
         }
     }
@@ -1340,8 +1331,8 @@ pub fn cpu_affinity_preview_weights_data(q: CircuitsQuery) -> Vec<PreviewWeightI
 #[cfg(test)]
 mod tests {
     use super::{
-        PlannedCoreMetrics, RuntimeNodePlacement, derive_runtime_node_placements,
-        is_cpu_root_node, resolve_snapshot_cpu_sets,
+        PlannedCoreMetrics, RuntimeNodePlacement, derive_runtime_node_placements, is_cpu_root_node,
+        resolve_snapshot_cpu_sets,
     };
     use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
     use lqos_config::{ShapingCpuDetection, ShapingCpuSource};

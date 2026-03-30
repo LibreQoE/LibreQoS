@@ -405,6 +405,27 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 .lqos-circuit-panel .lqos-table {
     height: 100%;
 }
+.lqos-circuit-header-table.lqos-table-compact tbody td {
+    padding: 0.5rem 0.55rem;
+}
+.lqos-table.lqos-circuit-header-table .table-label-cell {
+    width: 6.75rem;
+    white-space: nowrap;
+    padding-right: 0.25rem;
+}
+.lqos-table.lqos-circuit-header-table .table-value-cell {
+    width: auto;
+    padding-left: 0.25rem;
+}
+.lqos-circuit-parent-link {
+    display: block;
+    max-width: 100%;
+}
+.flow-rtt-exclude-btn.btn.btn-sm {
+    padding-top: 0.175rem;
+    padding-bottom: 0.175rem;
+    line-height: 1.1;
+}
 .lqos-circuit-gauge-panel {
     display: flex;
     align-items: center;
@@ -699,6 +720,73 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     font-weight: 600;
     line-height: 1.35;
 }
+.lqos-circuit-devices-panel {
+    margin-top: 1rem;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
+    border-radius: var(--lqos-radius-md);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--lqos-surface-2) 88%, transparent) 0%,
+        var(--lqos-surface-solid) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 12px 24px rgba(6, 12, 20, 0.12);
+    padding: 0.95rem;
+}
+.lqos-circuit-devices-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+.lqos-circuit-devices-header-copy {
+    min-width: 0;
+}
+.lqos-circuit-devices-header-copy h5 {
+    margin-bottom: 0.25rem;
+}
+.lqos-circuit-devices-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.lqos-circuit-devices-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 84%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+    color: var(--bs-secondary-color);
+    font-size: 0.76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lqos-circuit-device-card {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 66%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.8rem;
+}
+.lqos-circuit-device-summary,
+.lqos-circuit-device-graphs {
+    min-width: 0;
+}
+.lqos-circuit-device-summary h5 {
+    margin-bottom: 0.5rem;
+}
+.lqos-circuit-device-graph {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 76%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.35rem;
+}
 .lqos-funnel-panel {
     margin-top: 1rem;
     border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
@@ -873,9 +961,11 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     .lqos-circuit-activity-chart {
         height: 296px;
     }
+    .lqos-circuit-devices-header,
     .lqos-cake-header {
         flex-direction: column;
     }
+    .lqos-circuit-devices-meta,
     .lqos-cake-meta {
         justify-content: flex-start;
     }
@@ -907,9 +997,11 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     .lqos-circuit-activity-kpi-value {
         font-size: 1.05rem;
     }
+    .lqos-circuit-devices-panel,
     .lqos-cake-panel {
         padding: 0.8rem;
     }
+    .lqos-circuit-device-card,
     .lqos-funnel-panel,
     .lqos-funnel-node-card,
     .lqos-funnel-path-card {
@@ -1178,6 +1270,37 @@ h5 {
     width: 7.5rem;
     max-width: 7.5rem;
 }
+.lqos-circuit-traffic-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.lqos-circuit-traffic-table th,
+.lqos-circuit-traffic-table td {
+    white-space: nowrap;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-protocol-cell {
+    width: 10rem;
+    max-width: 10rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-asn-cell {
+    width: 12rem;
+    max-width: 12rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-country-cell {
+    width: 8rem;
+    max-width: 8rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-protocol-cell .lqos-table-cell-ellipsis,
+.lqos-circuit-traffic-table .lqos-circuit-traffic-asn-cell .lqos-table-cell-ellipsis,
+.lqos-circuit-traffic-table .lqos-circuit-traffic-country-cell .lqos-table-cell-ellipsis {
+    max-width: 100%;
+}
+
 .lqos-tree-stack {
     display: flex;
     flex-direction: column;
@@ -1219,6 +1342,14 @@ h5 {
     max-width: 14rem;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lqos-tree-plan-column,
+.lqos-tree-plan-cell {
+    min-width: 8.25rem;
+    white-space: nowrap;
+}
+.lqos-tree-ip-cell {
     white-space: nowrap;
 }
 .lqos-tree-row-statuses {
@@ -1598,6 +1729,142 @@ table tr td a {
 
 /* For the config panel */
 
+.lqos-config-page {
+    display: grid;
+    gap: 1rem;
+}
+
+.lqos-config-panel {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-lg);
+    background: var(--lqos-surface);
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 1.1rem 1.15rem;
+}
+
+.lqos-config-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.lqos-config-panel-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.lqos-config-panel-subtitle {
+    margin-top: 0.2rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.92rem;
+}
+
+.lqos-config-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.lqos-config-section {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 82%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    padding: 1rem 1rem 0.9rem;
+}
+
+.lqos-config-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+}
+
+.lqos-config-section-subtitle {
+    color: var(--bs-secondary-color);
+    font-size: 0.87rem;
+    margin-bottom: 1rem;
+}
+
+.lqos-config-note {
+    border: 1px solid color-mix(in srgb, var(--bs-info) 24%, var(--lqos-border));
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--bs-info-bg-subtle) 70%, var(--lqos-surface) 30%);
+    color: var(--bs-body-color);
+    padding: 0.85rem 1rem;
+}
+
+.lqos-config-note-warning {
+    border-color: color-mix(in srgb, var(--bs-warning) 30%, var(--lqos-border));
+    background: color-mix(in srgb, var(--bs-warning-bg-subtle) 76%, var(--lqos-surface) 24%);
+}
+
+.lqos-config-note code {
+    color: inherit;
+}
+
+.lqos-config-preview {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+    padding: 0.75rem 0.85rem;
+}
+
+.lqos-config-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.lqos-config-panel .card {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+    box-shadow: none;
+}
+
+.lqos-config-panel .card-header {
+    background: transparent;
+    border-bottom-color: var(--lqos-border);
+    font-weight: 700;
+}
+
+.lqos-config-panel .form-text,
+.lqos-config-panel .text-muted,
+.lqos-config-panel .small.text-muted {
+    color: var(--bs-secondary-color) !important;
+}
+
+.lqos-config-network-editor {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.lqos-config-network-editor .lqos-network-node-card {
+    background: color-mix(in srgb, var(--lqos-surface-2) 88%, transparent);
+}
+
+.lqos-config-network-editor .card-title {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.lqos-config-network-editor .card-body {
+    padding: 1rem 1rem 0.95rem;
+}
+
+.lqos-config-network-editor .btn {
+    white-space: nowrap;
+}
+
+.lqos-config-network-editor .badge {
+    font-weight: 600;
+}
+
 .nav-pills .nav-link {
     color: var(--bs-secondary-color);
 }
@@ -1632,19 +1899,35 @@ table tr td a {
 
 .config-menu-item {
     margin: 0;
-    padding: 5px 10px;
-    background-color: var(--bs-tertiary-bg);
+    list-style: none;
+}
+
+.config-menu-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 6px 11px;
+    background: color-mix(in srgb, var(--lqos-surface-2) 80%, transparent);
+    border: 1px solid var(--lqos-border);
     border-radius: 999px;
+    color: inherit;
     cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
-.config-menu-item:hover {
-    background-color: var(--bs-info-bg-subtle);
+.config-menu-link:hover {
+    background: color-mix(in srgb, var(--bs-info-bg-subtle) 72%, var(--lqos-surface) 28%);
+    border-color: color-mix(in srgb, var(--bs-info) 26%, var(--lqos-border));
+    transform: translateY(-1px);
 }
 
-.config-menu-item.active {
-    background-color: var(--bs-info);
-    color: var(--bs-info-text);
+.config-menu-link.active {
+    background: color-mix(in srgb, var(--bs-info) 20%, var(--lqos-surface) 80%);
+    color: var(--bs-info-text-emphasis, var(--bs-info));
+    border-color: color-mix(in srgb, var(--bs-info) 44%, var(--lqos-border));
     font-weight: bold;
 }
 

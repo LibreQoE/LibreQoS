@@ -34,25 +34,25 @@ function applyEditorLockState() {
 }
 
 function renderNetworkNode(level, depth) {
-    let html = `<div class="card mb-3" style="margin-left: ${depth * 30}px;">`;
+    let html = `<div class="card lqos-network-node-card mb-3" style="margin-left: ${depth * 30}px;">`;
     html += `<div class="card-body">`;
     
     for (const [key, value] of Object.entries(level)) {
         const isVirtual = value && value.virtual === true;
         const actionAttrs = editorButtonAttrs();
         // Node header with actions
-        html += `<div class="d-flex justify-content-between align-items-center mb-2">`;
-        html += `<h5 class="card-title mb-0">${key}${isVirtual ? ' <span class="badge bg-secondary ms-2"><i class="fa fa-ghost"></i> Virtual</span>' : ''}</h5>`;
-        html += `<div>`;
+        html += `<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">`;
+        html += `<h5 class="card-title mb-0">${key}${isVirtual ? ' <span class="badge bg-info-subtle text-info border border-info-subtle ms-2"><i class="fa fa-ghost"></i> Virtual</span>' : ''}</h5>`;
+        html += `<div class="d-flex flex-wrap gap-2">`;
         if (depth > 0) {
-            html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}"${actionAttrs}>
+            html += `<button class="btn btn-sm btn-outline-primary" onclick="promoteNode('${key}')" title="Promote ${key}" aria-label="Promote ${key}"${actionAttrs}>
                         <i class="fas fa-arrow-up"></i> Promote
                      </button>`;
         }
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="toggleVirtualNode('${key}')" title="Toggle virtual mode for ${key}" aria-label="Toggle virtual mode for ${key}"${actionAttrs}>
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="toggleVirtualNode('${key}')" title="Toggle virtual mode for ${key}" aria-label="Toggle virtual mode for ${key}"${actionAttrs}>
                     <i class="fas ${isVirtual ? 'fa-toggle-on' : 'fa-toggle-off'}"></i> Virtual
                  </button>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-1" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}"${actionAttrs}>
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="renameNode('${key}')" title="Rename ${key}" aria-label="Rename ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt"></i> Rename
                  </button>`;
         html += `<button class="btn btn-sm btn-outline-danger" onclick="deleteNode('${key}')" title="Delete ${key}" aria-label="Delete ${key}"${actionAttrs}>
@@ -61,13 +61,13 @@ function renderNetworkNode(level, depth) {
         html += `</div></div>`;
 
         // Node details
-        html += `<div class="mb-3">`;
-        html += `<span class="badge bg-primary me-2">Download: ${value.downloadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary me-2" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}"${actionAttrs}>
+        html += `<div class="mb-3 d-flex flex-wrap align-items-center gap-2">`;
+        html += `<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Download: ${value.downloadBandwidthMbps} Mbps</span>`;
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'd')" title="Edit download speed for ${key}" aria-label="Edit download speed for ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
-        html += `<span class="badge bg-success me-2">Upload: ${value.uploadBandwidthMbps} Mbps</span>`;
-        html += `<button class="btn btn-sm btn-outline-secondary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}"${actionAttrs}>
+        html += `<span class="badge bg-success-subtle text-success border border-success-subtle">Upload: ${value.uploadBandwidthMbps} Mbps</span>`;
+        html += `<button class="btn btn-sm btn-outline-primary" onclick="nodeSpeedChange('${key}', 'u')" title="Edit upload speed for ${key}" aria-label="Edit upload speed for ${key}"${actionAttrs}>
                     <i class="fas fa-pencil-alt" aria-hidden="true"></i>
                  </button>`;
         html += `</div>`;
@@ -84,7 +84,7 @@ function renderNetworkNode(level, depth) {
 
 function renderNetwork() {
     if (!network_json || Object.keys(network_json).length === 0) {
-        $("#netjson").html(`<div class="alert alert-info">No network nodes found. Add one to get started!</div>`);
+        $("#netjson").html(`<div class="lqos-config-note">No network nodes found. Add one to get started.</div>`);
         return;
     }
     $("#netjson").html(renderNetworkNode(network_json, 0));

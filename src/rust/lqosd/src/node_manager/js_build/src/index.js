@@ -84,7 +84,6 @@ const defaultLayout = {
                 { tag: "treeguardControlLoop", size: 4 },
                 { tag: "treeguardStateMix", size: 4 },
                 { tag: "treeguardDecisionImpact", size: 4 },
-                { tag: "treeguardControls", size: 12 },
                 { tag: "treeguardActivity", size: 12 }
             ]
         },

@@ -1850,12 +1850,12 @@ fn run_tick(
                     cpu_max_pct,
                     dry_run: tg.dry_run,
                     circuit_id,
-                circuit_entity_id: &entry.circuit_entity_id,
-                circuit_label: &entry.circuit_label,
-                devices: &entry.devices,
-                sqm_batch_id: &sqm_batch_id,
-                allowlisted: tg.circuits.all_circuits
-                    || allowlisted_circuits.contains(circuit_id),
+                    circuit_entity_id: &entry.circuit_entity_id,
+                    circuit_label: &entry.circuit_label,
+                    devices: &entry.devices,
+                    sqm_batch_id: &sqm_batch_id,
+                    allowlisted: tg.circuits.all_circuits
+                        || allowlisted_circuits.contains(circuit_id),
                     cap_down: entry.cap_down,
                     cap_up: entry.cap_up,
                     bps: live_rollup
@@ -3164,14 +3164,14 @@ where
                     activity,
                     now_unix,
                     dry_run,
-                persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
-                circuit_id,
-                circuit_entity_id,
-                circuit_label,
-                devices,
-                base_sqm,
-                batch_id: sqm_batch_id,
-            },
+                    persist_sqm_overrides: circuits_cfg.persist_sqm_overrides,
+                    circuit_id,
+                    circuit_entity_id,
+                    circuit_label,
+                    devices,
+                    base_sqm,
+                    batch_id: sqm_batch_id,
+                },
                 state,
                 transition,
                 persist_override,
@@ -3279,6 +3279,7 @@ mod tests {
     use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
     use std::collections::VecDeque;
+    use std::ffi::OsString;
     use std::net::Ipv4Addr;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -4096,6 +4097,57 @@ mod tests {
         config_path
     }
 
+    fn treeguard_test_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    struct LiveBakeryTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        old_shaping_tree_active: bool,
+    }
+
+    impl LiveBakeryTestContext {
+        fn new(name: &str) -> Self {
+            let guard = treeguard_test_lock()
+                .lock()
+                .expect("treeguard test lock should not be poisoned");
+            let runtime_dir = test_runtime_dir(name);
+            let config_path = write_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            let old_shaping_tree_active = lqos_bakery::set_shaping_tree_active_for_tests(true);
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                old_shaping_tree_active,
+            }
+        }
+    }
+
+    impl Drop for LiveBakeryTestContext {
+        fn drop(&mut self) {
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            lqos_bakery::set_shaping_tree_active_for_tests(self.old_shaping_tree_active);
+        }
+    }
+
     fn install_test_bakery_sender() -> crossbeam_channel::Receiver<BakeryCommands> {
         static INIT: Once = Once::new();
         static RECEIVER: OnceLock<crossbeam_channel::Receiver<BakeryCommands>> = OnceLock::new();
@@ -4112,15 +4164,7 @@ mod tests {
 
     #[test]
     fn run_tick_end_to_end_switches_circuit_and_emits_bakery_update() {
-        let runtime_dir = test_runtime_dir("run-tick");
-        let config_path = write_test_config(&runtime_dir);
-        let old_lqos_config = std::env::var_os("LQOS_CONFIG");
-        let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-            std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
-        }
-        lqos_config::clear_cached_config();
+        let _live_bakery = LiveBakeryTestContext::new("run-tick");
 
         let devices = vec![ShapedDevice {
             circuit_id: "circuit-3".to_string(),
@@ -4257,19 +4301,11 @@ mod tests {
         NETWORK_JSON.write().nodes = old_network;
         QUEUE_STRUCTURE.store(old_queue_structure);
         CIRCUIT_RTT_BUFFERS.store(old_rtt);
-        match old_lqos_config {
-            Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
-            None => unsafe { std::env::remove_var("LQOS_CONFIG") },
-        }
-        match old_lqos_directory {
-            Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
-            None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
-        }
-        lqos_config::clear_cached_config();
     }
 
     #[test]
     fn apply_link_virtualization_decision_emits_requested_activity_when_bakery_accepts_submit() {
+        let _live_bakery = LiveBakeryTestContext::new("link-virtualize");
         let rx = install_test_bakery_sender();
         while rx.try_recv().is_ok() {}
 

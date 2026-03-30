@@ -8,6 +8,7 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
+mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
 mod network_json;
@@ -17,6 +18,9 @@ mod qoo_profiles;
 mod shaped_devices;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
+pub use circuit_ethernet_metadata::{
+    CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
+};
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };

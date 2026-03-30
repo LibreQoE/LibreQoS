@@ -15,14 +15,137 @@ pub struct UispDevice {
     pub id: String,
     pub name: String,
     pub mac: String,
+    pub role: Option<String>,
+    pub wireless_mode: Option<String>,
     pub site_id: String,
     pub download: u64,
     pub upload: u64,
     pub ipv4: HashSet<String>,
     pub ipv6: HashSet<String>,
+    pub negotiated_ethernet_mbps: Option<u64>,
+    pub negotiated_ethernet_interface: Option<String>,
 }
 
 impl UispDevice {
+    fn parse_speed_mbps(raw: &str) -> Option<u64> {
+        let lower = raw.trim().to_lowercase();
+        if lower.is_empty() {
+            return None;
+        }
+
+        let digits: String = lower
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit() || *ch == '.')
+            .collect();
+        if digits.is_empty() {
+            return None;
+        }
+
+        let value = digits.parse::<f64>().ok()?;
+        if !(value.is_finite() && value > 0.0) {
+            return None;
+        }
+
+        let multiplier = if lower.contains("gbps") || lower.ends_with('g') {
+            1000.0
+        } else {
+            1.0
+        };
+
+        Some((value * multiplier).round() as u64)
+    }
+
+    fn negotiated_ethernet_from_device(device: &Device) -> (Option<u64>, Option<String>) {
+        let mut best: Option<(u64, Option<String>)> = None;
+        let Some(interfaces) = &device.interfaces else {
+            return (None, None);
+        };
+
+        for interface in interfaces {
+            let interface_type = interface
+                .identification
+                .as_ref()
+                .and_then(|id| id.r#type.clone())
+                .unwrap_or_default()
+                .to_lowercase();
+            if matches!(interface_type.as_str(), "wlan" | "wifi" | "wireless") {
+                continue;
+            }
+            let Some(status) = &interface.status else {
+                continue;
+            };
+            let speed_raw = if let Some(current_speed) = status.currentSpeed.as_deref() {
+                Some(current_speed)
+            } else if Self::allows_plain_speed(status.status.as_deref()) {
+                status.speed.as_deref()
+            } else {
+                None
+            };
+            let Some(speed_raw) = speed_raw else {
+                continue;
+            };
+            let Some(speed_mbps) = Self::parse_speed_mbps(speed_raw) else {
+                continue;
+            };
+            let iface_name = interface
+                .identification
+                .as_ref()
+                .and_then(|id| id.name.clone());
+
+            if best
+                .as_ref()
+                .is_none_or(|(current_speed, _)| speed_mbps < *current_speed)
+            {
+                best = Some((speed_mbps, iface_name));
+            }
+        }
+
+        best.map_or((None, None), |(speed, iface)| (Some(speed), iface))
+    }
+
+    fn allows_plain_speed(status: Option<&str>) -> bool {
+        let Some(status) = status else {
+            return false;
+        };
+        matches!(
+            status.trim().to_ascii_lowercase().as_str(),
+            "connected" | "up" | "active"
+        )
+    }
+
+    pub(crate) fn is_wireless_station_cpe(&self) -> bool {
+        let role = self
+            .role
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase);
+        if matches!(role.as_deref(), Some("station" | "sta" | "cpe")) {
+            return true;
+        }
+
+        let wireless_mode = self
+            .wireless_mode
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase);
+        matches!(
+            wireless_mode.as_deref(),
+            Some(mode) if mode.starts_with("sta") || mode.starts_with("station")
+        )
+    }
+
+    pub(crate) fn is_router_like(&self) -> bool {
+        let role = self
+            .role
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase);
+        matches!(
+            role.as_deref(),
+            Some("router" | "homewifi" | "home-wifi" | "home wifi")
+        )
+    }
+
     /// Check if an IP/CIDR represents a network address (all host bits are zero)
     /// Returns true if it's a network address, false if it's a host address
     #[cfg_attr(test, allow(dead_code))]
@@ -209,16 +332,25 @@ impl UispDevice {
                 site_id = exception.parent.clone();
             }
         }
+        let (negotiated_ethernet_mbps, negotiated_ethernet_interface) =
+            Self::negotiated_ethernet_from_device(device);
 
         Self {
             id: device.get_id(),
             name: device.get_name().unwrap_or_default(),
             mac,
+            role: device.identification.role.clone(),
+            wireless_mode: device
+                .overview
+                .as_ref()
+                .and_then(|o| o.wirelessMode.clone()),
             site_id,
             upload,
             download,
             ipv4,
             ipv6,
+            negotiated_ethernet_mbps,
+            negotiated_ethernet_interface,
         }
     }
 
@@ -269,6 +401,8 @@ impl UispDevice {
 #[cfg(test)]
 mod tests {
     use super::UispDevice;
+    use serde_json::json;
+    use uisp::Device;
 
     #[test]
     fn test_is_network_address() {
@@ -301,5 +435,75 @@ mod tests {
         assert!(!UispDevice::is_network_address("not-an-ip/24")); // Invalid IP
         assert!(!UispDevice::is_network_address("192.168.1.0/invalid")); // Invalid prefix
         assert!(!UispDevice::is_network_address("192.168.1.0/33")); // Invalid IPv4 prefix length
+    }
+
+    #[test]
+    fn test_parse_speed_mbps() {
+        assert_eq!(UispDevice::parse_speed_mbps("100Mbps-Full"), Some(100));
+        assert_eq!(UispDevice::parse_speed_mbps("1000"), Some(1000));
+        assert_eq!(UispDevice::parse_speed_mbps("1Gbps"), Some(1000));
+        assert_eq!(UispDevice::parse_speed_mbps("2.5Gbps"), Some(2500));
+        assert_eq!(UispDevice::parse_speed_mbps(""), None);
+        assert_eq!(UispDevice::parse_speed_mbps("unknown"), None);
+    }
+
+    fn mk_device_with_interfaces(interfaces: serde_json::Value) -> Device {
+        serde_json::from_value(json!({
+            "identification": {
+                "id": "dev-1",
+                "hostname": "dev-1",
+                "role": null,
+            },
+            "overview": {
+                "wirelessMode": null
+            },
+            "interfaces": interfaces,
+        }))
+        .expect("device JSON must deserialize")
+    }
+
+    #[test]
+    fn disconnected_plain_speed_is_ignored_for_negotiated_ethernet() {
+        let device = mk_device_with_interfaces(json!([
+            {
+                "identification": { "name": "eth0@1", "type": "eth" },
+                "status": { "status": "disconnected", "speed": "10-half", "currentSpeed": null },
+                "wireless": {}
+            }
+        ]));
+
+        let (speed, iface) = UispDevice::negotiated_ethernet_from_device(&device);
+        assert_eq!(speed, None);
+        assert_eq!(iface, None);
+    }
+
+    #[test]
+    fn disconnected_currentspeed_is_still_accepted() {
+        let device = mk_device_with_interfaces(json!([
+            {
+                "identification": { "name": "data", "type": "eth" },
+                "status": { "status": "disconnected", "speed": "auto", "currentSpeed": "100-full" },
+                "wireless": {}
+            }
+        ]));
+
+        let (speed, iface) = UispDevice::negotiated_ethernet_from_device(&device);
+        assert_eq!(speed, Some(100));
+        assert_eq!(iface.as_deref(), Some("data"));
+    }
+
+    #[test]
+    fn connected_plain_speed_is_accepted() {
+        let device = mk_device_with_interfaces(json!([
+            {
+                "identification": { "name": "eth0", "type": "eth" },
+                "status": { "status": "connected", "speed": "1000-full", "currentSpeed": null },
+                "wireless": {}
+            }
+        ]));
+
+        let (speed, iface) = UispDevice::negotiated_ethernet_from_device(&device);
+        assert_eq!(speed, Some(1000));
+        assert_eq!(iface.as_deref(), Some("eth0"));
     }
 }
