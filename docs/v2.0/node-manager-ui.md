@@ -69,6 +69,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - When integration metadata reports a negotiated CPE Ethernet speed, the `Max` row can show a warning badge such as `100M`; hovering the badge explains when LibreQoS auto-capped shaping below the requested plan to stay within that port speed, and clicking the badge opens the Ethernet review page.
 - `Queue Dynamics` shows circuit throughput and RTT behavior over time, including an `Active Flows` KPI based on the same recent flow window used by the `Traffic Flows` table.
 - `Devices` uses the same enclosed panel/card treatment as the other Circuit tabs, while keeping the per-device detail table and 2x2 live chart layout.
+- The per-device `Throughput`, `Retransmits`, `RTT Histogram`, and `Ping Time Histogram` charts use Circuit-page-aware axis, legend, and tooltip styling instead of the older generic dashboard gray chrome.
 - `Queue Stats` shows the most recent 3 minutes of live queue history for the circuit as raw 1-second scatter samples, including backlog, delay, queue length, traffic, ECN marks, and drops.
 - Queue Stats charts use synchronized hover so operators can inspect the same second across all queue charts together.
 - `Queue Tree` shows the circuit's live upstream queue path, including a path summary and per-node throughput, retransmit, and latency context.
