@@ -53,6 +53,34 @@
                 <div class="form-text">Comma-separated list of active status IDs</div>
             </div>
 
+            <div class="mb-3">
+                <label for="recurringExcludedServiceNames" class="form-label">Recurring Service Exclusions</label>
+                <input type="text" class="form-control" id="recurringExcludedServiceNames">
+                <div class="form-text">Comma-separated recurring service names that should never be treated as internet plans.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Recurring Service Rate Overrides</label>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Enabled</th>
+                                <th scope="col">Exact Service Name</th>
+                                <th scope="col">Download Mbps</th>
+                                <th scope="col">Upload Mbps</th>
+                                <th scope="col"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="recurringServiceRatesBody"></tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="addRecurringRateRow">
+                    <i class="fa fa-plus"></i> Add Recurring Rate
+                </button>
+                <div class="form-text">Used only when an active account has no usable DATA service. Match names exactly and whitelist only internet plans.</div>
+            </div>
+
             </div>
         </section>
 
