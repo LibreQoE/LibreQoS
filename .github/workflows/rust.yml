@@ -22,7 +22,18 @@ jobs:
         || sudo /bin/apt-get install --no-install-recommends \
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
           pkg-config libbpf-dev mold unzip linux-tools-common linux-tools-azure
-        echo "/usr/lib/linux-tools/$(uname -r)" >> "$GITHUB_PATH"
+
+        BPFDIR="$(dpkg -L "linux-tools-$(uname -r)" 2>/dev/null | awk '/\/bpftool$/ { sub(/\/bpftool$/, "", $0); print; exit }')"
+        if [ -z "$BPFDIR" ]; then
+          BPFDIR="$(find /usr/lib -maxdepth 3 -type f -name bpftool | grep 'linux-tools' | head -n1 | xargs dirname)"
+        fi
+        if [ -z "$BPFDIR" ]; then
+          echo "Unable to locate installed bpftool binary directory" >&2
+          exit 1
+        fi
+
+        echo "$BPFDIR" >> "$GITHUB_PATH"
+        export PATH="$BPFDIR:$PATH"
         command -v bpftool
         bpftool version
     - name: Build
