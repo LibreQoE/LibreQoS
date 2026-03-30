@@ -65,11 +65,14 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Las páginas de circuito combinan comportamiento de colas, throughput en vivo, RTT, retransmisiones y troubleshooting por flujo para un suscriptor/circuito individual.
 - Cuando los metadatos de la integración informan la velocidad Ethernet negociada del CPE, la fila `Max` puede mostrar una insignia de advertencia como `100M`; al pasar el cursor sobre la insignia se explica cuándo LibreQoS redujo automáticamente el shaping por debajo del plan solicitado para respetar ese límite del puerto, y al hacer clic en la insignia se abre la página de revisión Ethernet.
 - `Queue Dynamics` muestra el comportamiento del throughput y RTT del circuito a lo largo del tiempo, incluyendo un KPI de `Active Flows` basado en la misma ventana reciente usada por la tabla `Traffic Flows`.
+- `Devices` usa el mismo tratamiento de panel/tarjeta envolvente que las otras pestañas del Circuit page, manteniendo al mismo tiempo la tabla de detalle por dispositivo y el diseño 2x2 de gráficos en vivo.
 - `Queue Stats` muestra los 3 minutos más recientes del historial en vivo de la cola del circuito como muestras scatter crudas de 1 segundo, incluyendo backlog, delay, longitud de cola, tráfico, marcas ECN y drops.
 - Los gráficos de Queue Stats usan hover sincronizado para inspeccionar el mismo segundo en todos los gráficos de cola al mismo tiempo.
 - `Queue Tree` muestra la ruta ascendente de colas del circuito, incluyendo un resumen de ruta y contexto de throughput, retransmisiones y latencia para cada nodo aguas arriba.
 - `Traffic Flows` es una tabla operativa de flujos recientes, no una vista de historial a largo plazo.
 - `Traffic Flows` incluye paginación y un filtro `Hide Small Flows` para que los circuitos grandes y ocupados sigan siendo utilizables sin intentar renderizar cada fila.
+- La tasa actual de `Traffic Flows` usa tasas de visualización suministradas por el backend y conscientes del plan, por lo que la página de circuito no tiene que inferir tasas por flujo a partir de deltas de bytes calculadas en el cliente.
+- El texto largo en las columnas `Protocol`, `ASN` y `Country` se recorta con puntos suspensivos para mantener estable la altura de cada fila; el valor completo sigue disponible al pasar el cursor.
 - `Flow Sankey` enfatiza los flujos recientes más activos en lugar de todos los flujos retenidos más antiguos.
 
 ### Ethernet Caps

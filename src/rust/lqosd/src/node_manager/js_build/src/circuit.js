@@ -1309,20 +1309,11 @@ function initFlowFilters() {
 }
 
 let movingAverages = new Map();
-let prevFlowBytes = new Map();
-let tickCount = 0;
 let trafficSortColumn = 'rate'; // Default sort by rate
 let trafficSortDirection = 'desc'; // 'asc' or 'desc'
 let latestTrafficRows = [];
 let trafficCurrentPage = 1;
 let trafficPageSize = DEFAULT_TRAFFIC_PAGE_SIZE;
-
-function diffToNumber(current, previous, fallback = 0) {
-    if (typeof current === "bigint" && typeof previous === "bigint") {
-        return toNumber(current - previous, fallback);
-    }
-    return toNumber(current, fallback) - toNumber(previous, fallback);
-}
 
 function formatQooScore(score0to100, fallback = "-") {
     if (score0to100 === null || score0to100 === undefined) {
@@ -1355,6 +1346,22 @@ function formatRttPair(p50Nanos, p95Nanos) {
         return "-";
     }
     return formatRttNanos(p50) + " / " + scaleNanos(p95);
+}
+
+function truncatedTrafficCell(text, cellClass) {
+    const td = document.createElement("td");
+    if (cellClass) {
+        td.classList.add(cellClass);
+    }
+
+    const value = String(text || "");
+    td.title = value;
+
+    const span = document.createElement("span");
+    span.classList.add("lqos-table-cell-ellipsis");
+    span.textContent = value;
+    td.appendChild(span);
+    return td;
 }
 
 function visibleTrafficRows() {
@@ -1410,7 +1417,6 @@ function updateTrafficCountBadge() {
 }
 
 function ingestTrafficRows(msg) {
-    tickCount++;
     const rows = [];
     const seenFlowKeys = new Set();
     const flowList = Array.isArray(msg?.flows) ? msg.flows : [];
@@ -1419,27 +1425,10 @@ function ingestTrafficRows(msg) {
         const flowKey = `${flow?.[0]?.protocol_name || ""}${flow?.[0]?.row_id || ""}`;
         seenFlowKeys.add(flowKey);
 
-        let down = toNumber(flow?.[1]?.rate_estimate_bps?.down, 0);
-        let up = toNumber(flow?.[1]?.rate_estimate_bps?.up, 0);
-        const prev = prevFlowBytes.get(flowKey);
-        if (prev) {
-            const ticks = tickCount - prev.tick;
-            if (ticks === 1) {
-                down = diffToNumber(flow[1].bytes_sent.down, prev.downBytes, 0) * 8;
-                up = diffToNumber(flow[1].bytes_sent.up, prev.upBytes, 0) * 8;
-            } else if (ticks > 1) {
-                down = diffToNumber(flow[1].bytes_sent.down, prev.downBytes, 0) * 8 / ticks;
-                up = diffToNumber(flow[1].bytes_sent.up, prev.upBytes, 0) * 8 / ticks;
-            }
-        }
+        let down = toNumber(flow?.[1]?.display_rate_bps?.down, toNumber(flow?.[1]?.rate_estimate_bps?.down, 0));
+        let up = toNumber(flow?.[1]?.display_rate_bps?.up, toNumber(flow?.[1]?.rate_estimate_bps?.up, 0));
         if (down < 0) down = 0;
         if (up < 0) up = 0;
-
-        prevFlowBytes.set(flowKey, {
-            downBytes: flow?.[1]?.bytes_sent?.down,
-            upBytes: flow?.[1]?.bytes_sent?.up,
-            tick: tickCount,
-        });
 
         const currentRate = down + up;
         const average = movingAverages.get(flowKey) || { values: [], total: 0 };
@@ -1503,9 +1492,8 @@ function ingestTrafficRows(msg) {
         });
     });
 
-    Array.from(prevFlowBytes.keys()).forEach((key) => {
+    Array.from(movingAverages.keys()).forEach((key) => {
         if (!seenFlowKeys.has(key)) {
-            prevFlowBytes.delete(key);
             movingAverages.delete(key);
         }
     });
@@ -1530,7 +1518,7 @@ function renderTrafficTab() {
     tableWrap.classList.add("lqos-table-wrap");
 
     let table = document.createElement("table");
-    table.classList.add("lqos-table", "lqos-table-tight");
+    table.classList.add("lqos-table", "lqos-table-tight", "lqos-circuit-traffic-table");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
 
@@ -1581,7 +1569,7 @@ function renderTrafficTab() {
             row.classList.add("small");
             row.style.opacity = rowData.opacity;
 
-            row.appendChild(simpleRow(rowData.protocolName));
+            row.appendChild(truncatedTrafficCell(rowData.protocolName, "lqos-circuit-traffic-protocol-cell"));
             row.appendChild(simpleRowHtml(formatThroughput(rowData.downBps, plan.down)));
             row.appendChild(simpleRowHtml(formatThroughput(rowData.upBps, plan.up)));
             row.appendChild(simpleRow(scaleNumber(rowData.bytesSentDown)));
@@ -1594,8 +1582,8 @@ function renderTrafficTab() {
             row.appendChild(simpleRowHtml(formatRttNanos(rowData.rttUpNanos)));
             row.appendChild(simpleRowHtml(formatQooScore(rowData.qooDown)));
             row.appendChild(simpleRowHtml(formatQooScore(rowData.qooUp)));
-            row.appendChild(simpleRow(rowData.asnName));
-            row.appendChild(simpleRow(rowData.asnCountry));
+            row.appendChild(truncatedTrafficCell(rowData.asnName, "lqos-circuit-traffic-asn-cell"));
+            row.appendChild(truncatedTrafficCell(rowData.asnCountry, "lqos-circuit-traffic-country-cell"));
             row.appendChild(simpleRow(rowData.remoteIp));
 
             const td = document.createElement("td");
@@ -1769,12 +1757,16 @@ function initialDevices(circuits) {
         outer.classList.add("col-12", "mb-3");
         target.appendChild(outer);
 
+        let card = document.createElement("div");
+        card.classList.add("lqos-circuit-device-card");
+        outer.appendChild(card);
+
         let row = document.createElement("div");
         row.classList.add("row", "g-2");
-        outer.appendChild(row);
+        card.appendChild(row);
 
         let d = document.createElement("div");
-        d.classList.add("col-3");
+        d.classList.add("col-12", "col-xl-5", "col-xxl-4", "lqos-circuit-device-summary");
         row.appendChild(d);
 
         // Device Information Section
@@ -1977,18 +1969,19 @@ function initialDevices(circuits) {
 
         // Graph container (2x2)
         let graphCol = document.createElement("div");
-        graphCol.classList.add("col-9");
+        graphCol.classList.add("col-12", "col-xl-7", "col-xxl-8", "lqos-circuit-device-graphs");
         row.appendChild(graphCol);
 
         let graphRow = document.createElement("div");
-        graphRow.classList.add("row", "g-2");
+        graphRow.classList.add("row", "g-2", "lqos-circuit-device-graphs-row");
         graphCol.appendChild(graphRow);
 
         function addGraph(divId, graphFactory) {
             let col = document.createElement("div");
-            col.classList.add("col-6");
+            col.classList.add("col-12", "col-md-6");
             let div = document.createElement("div");
             div.id = divId;
+            div.classList.add("lqos-circuit-device-graph");
             div.style.height = "250px";
             div.innerHTML = loadingBlockHtml("Loading chart…", "lqos-loading-block-sm");
             col.appendChild(div);

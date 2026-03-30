@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {applyCircuitDeviceChartTheme} from "./circuit_device_chart_theme";
 
 // Simple time formatter (HH:MM:SS)
 function formatTime(ts) {
@@ -13,6 +14,9 @@ const RING_SIZE = 60 * 5; // 5 Minutes
 export class CircuitRetransmitGraph extends DashboardGraph {
     constructor(id, title) {
         super(id);
+        if (this.dom && this.dom.classList) {
+            this.dom.classList.remove("muted");
+        }
         this.title = title;
         this.ringbuffer = new RingBuffer(RING_SIZE);
 
@@ -46,9 +50,6 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                         }
                     }
                 ],
-                textStyle: {
-                    color: '#aaa'
-                },
             },
             xAxis: {
                 type: 'category',
@@ -89,9 +90,6 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                 trigger: 'axis',
                 axisPointer: {
                     type: 'cross',
-                    label: {
-                        backgroundColor: '#6a7985'
-                    }
                 },
                 formatter: (params) => {
                     if (!params || params.length === 0) return '';
@@ -105,6 +103,7 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                 }
             },
         }
+        applyCircuitDeviceChartTheme(this.option, { hasLegend: true });
         this.option && this.chart.setOption(this.option);
     }
 
@@ -114,6 +113,7 @@ export class CircuitRetransmitGraph extends DashboardGraph {
         this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
         this.option.series[0].lineStyle.color = window.graphPalette[0];
         this.option.series[1].lineStyle.color = window.graphPalette[1];
+        applyCircuitDeviceChartTheme(this.option, { hasLegend: true });
         this.chart.setOption(this.option);
     }
 

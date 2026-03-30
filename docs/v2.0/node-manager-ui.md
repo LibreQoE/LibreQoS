@@ -68,11 +68,14 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Circuit pages combine queue behavior, live throughput, RTT, retransmits, and per-flow troubleshooting for an individual subscriber/circuit.
 - When integration metadata reports a negotiated CPE Ethernet speed, the `Max` row can show a warning badge such as `100M`; hovering the badge explains when LibreQoS auto-capped shaping below the requested plan to stay within that port speed, and clicking the badge opens the Ethernet review page.
 - `Queue Dynamics` shows circuit throughput and RTT behavior over time, including an `Active Flows` KPI based on the same recent flow window used by the `Traffic Flows` table.
+- `Devices` uses the same enclosed panel/card treatment as the other Circuit tabs, while keeping the per-device detail table and 2x2 live chart layout.
 - `Queue Stats` shows the most recent 3 minutes of live queue history for the circuit as raw 1-second scatter samples, including backlog, delay, queue length, traffic, ECN marks, and drops.
 - Queue Stats charts use synchronized hover so operators can inspect the same second across all queue charts together.
 - `Queue Tree` shows the circuit's live upstream queue path, including a path summary and per-node throughput, retransmit, and latency context.
 - `Traffic Flows` is a recent-flow operational table rather than a long-term history view.
 - `Traffic Flows` includes paging and a `Hide Small Flows` filter so large busy circuits remain usable without trying to render every row at once.
+- `Traffic Flows` current-rate display uses backend-provided, plan-aware display rates so the Circuit page does not have to infer per-flow rates from client-side byte deltas.
+- Long text in the `Protocol`, `ASN`, and `Country` columns is truncated with an ellipsis to keep row height stable; the full value remains available on hover.
 - `Flow Sankey` emphasizes the hottest recent flows rather than every older retained flow.
 
 ### Ethernet Caps

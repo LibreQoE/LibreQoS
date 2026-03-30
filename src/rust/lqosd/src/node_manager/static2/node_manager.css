@@ -421,6 +421,11 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     display: block;
     max-width: 100%;
 }
+.flow-rtt-exclude-btn.btn.btn-sm {
+    padding-top: 0.175rem;
+    padding-bottom: 0.175rem;
+    line-height: 1.1;
+}
 .lqos-circuit-gauge-panel {
     display: flex;
     align-items: center;
@@ -715,6 +720,73 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     font-weight: 600;
     line-height: 1.35;
 }
+.lqos-circuit-devices-panel {
+    margin-top: 1rem;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
+    border-radius: var(--lqos-radius-md);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--lqos-surface-2) 88%, transparent) 0%,
+        var(--lqos-surface-solid) 100%
+    );
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 12px 24px rgba(6, 12, 20, 0.12);
+    padding: 0.95rem;
+}
+.lqos-circuit-devices-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+.lqos-circuit-devices-header-copy {
+    min-width: 0;
+}
+.lqos-circuit-devices-header-copy h5 {
+    margin-bottom: 0.25rem;
+}
+.lqos-circuit-devices-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.lqos-circuit-devices-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 84%, transparent);
+    background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+    color: var(--bs-secondary-color);
+    font-size: 0.76rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lqos-circuit-device-card {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 66%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.8rem;
+}
+.lqos-circuit-device-summary,
+.lqos-circuit-device-graphs {
+    min-width: 0;
+}
+.lqos-circuit-device-summary h5 {
+    margin-bottom: 0.5rem;
+}
+.lqos-circuit-device-graph {
+    border: 1px solid color-mix(in srgb, var(--lqos-border) 76%, transparent);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 76%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    padding: 0.35rem;
+}
 .lqos-funnel-panel {
     margin-top: 1rem;
     border: 1px solid color-mix(in srgb, var(--lqos-border) 80%, transparent);
@@ -889,9 +961,11 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     .lqos-circuit-activity-chart {
         height: 296px;
     }
+    .lqos-circuit-devices-header,
     .lqos-cake-header {
         flex-direction: column;
     }
+    .lqos-circuit-devices-meta,
     .lqos-cake-meta {
         justify-content: flex-start;
     }
@@ -923,9 +997,11 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     .lqos-circuit-activity-kpi-value {
         font-size: 1.05rem;
     }
+    .lqos-circuit-devices-panel,
     .lqos-cake-panel {
         padding: 0.8rem;
     }
+    .lqos-circuit-device-card,
     .lqos-funnel-panel,
     .lqos-funnel-node-card,
     .lqos-funnel-path-card {
@@ -1194,6 +1270,37 @@ h5 {
     width: 7.5rem;
     max-width: 7.5rem;
 }
+.lqos-circuit-traffic-table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.lqos-circuit-traffic-table th,
+.lqos-circuit-traffic-table td {
+    white-space: nowrap;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-protocol-cell {
+    width: 10rem;
+    max-width: 10rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-asn-cell {
+    width: 12rem;
+    max-width: 12rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-country-cell {
+    width: 8rem;
+    max-width: 8rem;
+}
+
+.lqos-circuit-traffic-table .lqos-circuit-traffic-protocol-cell .lqos-table-cell-ellipsis,
+.lqos-circuit-traffic-table .lqos-circuit-traffic-asn-cell .lqos-table-cell-ellipsis,
+.lqos-circuit-traffic-table .lqos-circuit-traffic-country-cell .lqos-table-cell-ellipsis {
+    max-width: 100%;
+}
+
 .lqos-tree-stack {
     display: flex;
     flex-direction: column;

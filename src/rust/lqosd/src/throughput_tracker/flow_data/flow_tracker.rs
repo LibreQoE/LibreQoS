@@ -77,6 +77,9 @@ pub struct FlowbeeLocalData {
     pub packets_sent: DownUpOrder<u64>,
     /// Rate estimate
     pub rate_estimate_bps: DownUpOrder<u32>,
+    /// Optional UI-oriented display rate. This is populated by specific
+    /// websocket/API surfaces that need plan-aware presentation guards.
+    pub display_rate_bps: Option<DownUpOrder<u32>>,
     /// TCP Retransmission count (also counts duplicates)
     pub tcp_retransmits: DownUpOrder<u16>,
     /// Has the connection ended?
@@ -102,12 +105,15 @@ impl Serialize for FlowbeeLocalData {
         S: Serializer,
     {
         // Note: Keep this wire format stable (UI compatibility) while we refactor internal storage.
-        let mut state = serializer.serialize_struct("FlowbeeLocalData", 13)?;
+        let mut state = serializer.serialize_struct("FlowbeeLocalData", 14)?;
         state.serialize_field("start_time", &self.start_time)?;
         state.serialize_field("last_seen", &self.last_seen)?;
         state.serialize_field("bytes_sent", &self.bytes_sent)?;
         state.serialize_field("packets_sent", &self.packets_sent)?;
         state.serialize_field("rate_estimate_bps", &self.rate_estimate_bps)?;
+        if let Some(display_rate_bps) = &self.display_rate_bps {
+            state.serialize_field("display_rate_bps", display_rate_bps)?;
+        }
         state.serialize_field("tcp_retransmits", &self.tcp_retransmits)?;
         state.serialize_field("end_status", &self.end_status)?;
         state.serialize_field("tos", &self.tos)?;
@@ -133,6 +139,7 @@ impl FlowbeeLocalData {
             bytes_sent: data.bytes_sent,
             packets_sent: data.packets_sent,
             rate_estimate_bps: data.rate_estimate_bps,
+            display_rate_bps: None,
             tcp_retransmits: data.tcp_retransmits,
             end_status: data.end_status,
             tos: data.tos,
@@ -300,6 +307,10 @@ impl FlowbeeLocalData {
 
     pub fn set_rate_estimate_bps(&mut self, rate_estimate_bps: DownUpOrder<u32>) {
         self.rate_estimate_bps = rate_estimate_bps;
+    }
+
+    pub fn set_display_rate_bps(&mut self, display_rate_bps: Option<DownUpOrder<u32>>) {
+        self.display_rate_bps = display_rate_bps;
     }
 
     pub fn set_tcp_retransmits(&mut self, tcp_retransmits: DownUpOrder<u16>) {
