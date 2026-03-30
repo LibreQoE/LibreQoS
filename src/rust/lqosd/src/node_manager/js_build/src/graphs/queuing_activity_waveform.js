@@ -24,8 +24,28 @@ function formatRttMs(value) {
     return `${n.toFixed(n >= 10 ? 0 : 1)} ms`;
 }
 
-function getWaveformTheme() {
+function hexToRgba(hex, alpha) {
+    if (typeof hex !== "string" || !hex.startsWith("#")) {
+        return hex;
+    }
+    const normalized = hex.length === 4
+        ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+        : hex;
+    const red = parseInt(normalized.slice(1, 3), 16);
+    const green = parseInt(normalized.slice(3, 5), 16);
+    const blue = parseInt(normalized.slice(5, 7), 16);
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function throughputPaletteColor(direction, fallback) {
+    const paletteIndex = direction === "up" ? 1 : 0;
+    return window.graphPalette?.[paletteIndex] || fallback;
+}
+
+function getWaveformTheme(direction = "down") {
     const isDark = document.documentElement.getAttribute("data-bs-theme") !== "light";
+    const throughputColor = throughputPaletteColor(direction, isDark ? "#4992ff" : "#d87c7c");
+
     if (isDark) {
         return {
             axisText: "rgba(216, 226, 244, 0.62)",
@@ -33,14 +53,14 @@ function getWaveformTheme() {
             axisLine: "rgba(216, 226, 244, 0.28)",
             axisTick: "rgba(216, 226, 244, 0.2)",
             splitLine: "rgba(216, 226, 244, 0.045)",
-            throughputLine: "#32d3bd",
-            throughputGlow: "rgba(50, 211, 189, 0.34)",
-            throughputAreaTop: "rgba(50, 211, 189, 0.48)",
-            throughputAreaMid: "rgba(42, 156, 145, 0.3)",
+            throughputLine: throughputColor,
+            throughputGlow: hexToRgba(throughputColor, 0.34),
+            throughputAreaTop: hexToRgba(throughputColor, 0.48),
+            throughputAreaMid: hexToRgba(throughputColor, 0.28),
             throughputAreaBottom: "rgba(9, 20, 31, 0.03)",
-            rttLine: "#8fb0ff",
-            rttGlow: "rgba(143, 176, 255, 0.3)",
-            rttAreaTop: "rgba(143, 176, 255, 0.18)",
+            rttLine: "#b7a5ff",
+            rttGlow: "rgba(183, 165, 255, 0.32)",
+            rttAreaTop: "rgba(183, 165, 255, 0.18)",
             rttAreaBottom: "rgba(16, 22, 34, 0.01)",
             rttBandGood: "rgba(42, 168, 108, 0.08)",
             rttBandWarn: "rgba(228, 154, 44, 0.07)",
@@ -58,14 +78,14 @@ function getWaveformTheme() {
         axisLine: "rgba(77, 94, 118, 0.28)",
         axisTick: "rgba(77, 94, 118, 0.18)",
         splitLine: "rgba(77, 94, 118, 0.08)",
-        throughputLine: "#129a87",
-        throughputGlow: "rgba(18, 154, 135, 0.18)",
-        throughputAreaTop: "rgba(18, 154, 135, 0.26)",
-        throughputAreaMid: "rgba(18, 154, 135, 0.14)",
+        throughputLine: throughputColor,
+        throughputGlow: hexToRgba(throughputColor, 0.2),
+        throughputAreaTop: hexToRgba(throughputColor, 0.24),
+        throughputAreaMid: hexToRgba(throughputColor, 0.13),
         throughputAreaBottom: "rgba(255, 255, 255, 0.02)",
-        rttLine: "#4f79d9",
-        rttGlow: "rgba(79, 121, 217, 0.18)",
-        rttAreaTop: "rgba(79, 121, 217, 0.1)",
+        rttLine: "#6f63cf",
+        rttGlow: "rgba(111, 99, 207, 0.2)",
+        rttAreaTop: "rgba(111, 99, 207, 0.1)",
         rttAreaBottom: "rgba(255, 255, 255, 0.01)",
         rttBandGood: "rgba(46, 163, 111, 0.06)",
         rttBandWarn: "rgba(214, 148, 40, 0.06)",
@@ -191,15 +211,17 @@ function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
         const ceilingBps = toNumber(ceilingData[i][1], 0);
         const throughputBps = toNumber(throughputData[i][1], 0);
         const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
-        const activeTimestamp = i > 0 ? timestamp : windowStart;
+        const activeValue = atCeiling ? ceilingBps : null;
 
         if (base.length === 0) {
             base.push([timestamp, ceilingBps]);
-            active.push([activeTimestamp, atCeiling ? ceilingBps : null]);
+            active.push([timestamp, activeValue]);
+        } else {
+            active.push([timestamp, activeValue]);
         }
 
         base.push([nextTimestamp, ceilingBps]);
-        active.push([nextTimestamp, atCeiling ? ceilingBps : null]);
+        active.push([nextTimestamp, activeValue]);
     }
     return { base, active };
 }
@@ -249,8 +271,8 @@ export class QueuingActivityWaveform extends DashboardGraph {
         if (this.dom && this.dom.classList) {
             this.dom.classList.remove("muted");
         }
-        this.colors = getWaveformTheme();
         this.direction = "down";
+        this.colors = getWaveformTheme(this.direction);
         this.samples = [];
         this.sampleClockBase = null;
         this.lastSampleTimestamp = null;
@@ -518,6 +540,46 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.scheduleRenderLoop();
     }
 
+    applyThemeColors() {
+        this.option.xAxis[0].axisLine.lineStyle.color = this.colors.axisLine;
+        this.option.xAxis[1].axisLine.lineStyle.color = this.colors.axisLine;
+        this.option.xAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
+        this.option.xAxis[1].axisLabel.color = this.colors.axisText;
+        this.option.yAxis[0].nameTextStyle.color = this.colors.axisName;
+        this.option.yAxis[0].axisLine.lineStyle.color = this.colors.axisLine;
+        this.option.yAxis[0].splitLine.lineStyle.color = this.colors.splitLine;
+        this.option.yAxis[0].axisLabel.color = this.colors.axisText;
+        this.option.yAxis[1].nameTextStyle.color = this.colors.axisName;
+        this.option.yAxis[1].axisLine.lineStyle.color = this.colors.axisLine;
+        this.option.yAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
+        this.option.yAxis[1].splitLine.lineStyle.color = this.colors.splitLine;
+        this.option.yAxis[1].axisLabel.color = this.colors.axisText;
+        this.option.series[0].lineStyle.color = this.colors.throughputLine;
+        this.option.series[0].lineStyle.shadowColor = this.colors.throughputGlow;
+        this.option.series[0].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: this.colors.throughputAreaTop },
+            { offset: 0.45, color: this.colors.throughputAreaMid },
+            { offset: 1, color: this.colors.throughputAreaBottom },
+        ]);
+        this.option.series[1].lineStyle.color = this.colors.ceilingInactive;
+        this.option.series[1].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
+        this.option.series[2].lineStyle.color = this.colors.ceilingActive;
+        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
+        this.option.series[3].lineStyle.color = this.colors.ceilingActive;
+        this.option.series[3].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
+        this.option.series[4].lineStyle.color = this.colors.rttLine;
+        this.option.series[4].lineStyle.shadowColor = this.colors.rttGlow;
+        this.option.series[4].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: this.colors.rttAreaTop },
+            { offset: 1, color: this.colors.rttAreaBottom },
+        ]);
+        this.option.series[4].markArea.data = rttMarkAreas(
+            this.colors,
+            this.rttThresholds,
+            this.option.yAxis[1].max || this.rttThresholds.red_ms,
+        );
+    }
+
     scheduleRenderLoop() {
         const step = (timestamp) => {
             if (!this.chart) {
@@ -552,8 +614,11 @@ export class QueuingActivityWaveform extends DashboardGraph {
 
     setDirection(direction) {
         this.direction = direction === "up" ? "up" : "down";
+        this.colors = getWaveformTheme(this.direction);
         this.cachedSeries.direction = this.direction;
         this.rebuildCachedSeries();
+        this.applyThemeColors();
+        this.chart.setOption(this.option);
         this.render();
     }
 
@@ -737,44 +802,8 @@ export class QueuingActivityWaveform extends DashboardGraph {
     }
 
     onThemeChange() {
-        this.colors = getWaveformTheme();
-        this.option.xAxis[0].axisLine.lineStyle.color = this.colors.axisLine;
-        this.option.xAxis[1].axisLine.lineStyle.color = this.colors.axisLine;
-        this.option.xAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
-        this.option.xAxis[1].axisLabel.color = this.colors.axisText;
-        this.option.yAxis[0].nameTextStyle.color = this.colors.axisName;
-        this.option.yAxis[0].axisLine.lineStyle.color = this.colors.axisLine;
-        this.option.yAxis[0].splitLine.lineStyle.color = this.colors.splitLine;
-        this.option.yAxis[0].axisLabel.color = this.colors.axisText;
-        this.option.yAxis[1].nameTextStyle.color = this.colors.axisName;
-        this.option.yAxis[1].axisLine.lineStyle.color = this.colors.axisLine;
-        this.option.yAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
-        this.option.yAxis[1].splitLine.lineStyle.color = this.colors.splitLine;
-        this.option.yAxis[1].axisLabel.color = this.colors.axisText;
-        this.option.series[0].lineStyle.color = this.colors.throughputLine;
-        this.option.series[0].lineStyle.shadowColor = this.colors.throughputGlow;
-        this.option.series[0].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: this.colors.throughputAreaTop },
-            { offset: 0.45, color: this.colors.throughputAreaMid },
-            { offset: 1, color: this.colors.throughputAreaBottom },
-        ]);
-        this.option.series[1].lineStyle.color = this.colors.ceilingInactive;
-        this.option.series[1].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
-        this.option.series[2].lineStyle.color = this.colors.ceilingActive;
-        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[3].lineStyle.color = this.colors.ceilingActive;
-        this.option.series[3].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[4].lineStyle.color = this.colors.rttLine;
-        this.option.series[4].lineStyle.shadowColor = this.colors.rttGlow;
-        this.option.series[4].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: this.colors.rttAreaTop },
-            { offset: 1, color: this.colors.rttAreaBottom },
-        ]);
-        this.option.series[4].markArea.data = rttMarkAreas(
-            this.colors,
-            this.rttThresholds,
-            this.option.yAxis[1].max || this.rttThresholds.red_ms,
-        );
+        this.colors = getWaveformTheme(this.direction);
+        this.applyThemeColors();
         this.chart.setOption(this.option);
         this.render();
     }
