@@ -2158,6 +2158,15 @@ pub fn bakery_live_tree_mutation_blocker() -> Option<String> {
     live_tree_mutation_blocker_for_config(&config)
 }
 
+/// Overrides Bakery's shaping-tree-active flag for tests and restores callers' access to the
+/// previous value.
+///
+/// This function has side effects: it mutates process-global Bakery runtime state.
+#[doc(hidden)]
+pub fn set_shaping_tree_active_for_tests(active: bool) -> bool {
+    SHAPING_TREE_ACTIVE.swap(active, Ordering::Relaxed)
+}
+
 fn current_mq_layout(
     batch: &[Arc<BakeryCommands>],
     config: &Arc<Config>,
