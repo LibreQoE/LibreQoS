@@ -4,23 +4,17 @@ on: [push]
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
     runs-on: [ lq_run ]
     
     steps:
     - uses: actions/checkout@v4
     - name: Set Version ENV
-      run: pushd src; echo "::set-env name=VERSION::$(cat VERSION_STRING)"
-      env:
-        ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
+      run: echo "VERSION=$(cat src/VERSION_STRING)" >> "$GITHUB_ENV"
     - name: Check env var
       run: |
          echo ${{ env.VERSION }}
     - name: Install dependencies
-      run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz esbuild curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold curl unzip
-      if: matrix.os == 'ubuntu-latest'
+      run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild pkg-config bpftool libbpf-dev mold unzip
     - name: Build
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
@@ -35,13 +29,10 @@ jobs:
         path: src/dist/libreqos_${{ env.VERSION }}.-1_amd64.deb
   
   audit:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install tools
       run: pushd src/rust; cargo install cargo-audit; popd
     - name: Audit for CVEs
