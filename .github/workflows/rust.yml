@@ -23,15 +23,19 @@ jobs:
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
           pkg-config libbpf-dev mold unzip linux-tools-common linux-tools-azure
 
-        BPFDIR="$(dpkg -L "linux-tools-$(uname -r)" 2>/dev/null | awk '/\/bpftool$/ { sub(/\/bpftool$/, "", $0); print; exit }')"
-        if [ -z "$BPFDIR" ]; then
-          BPFDIR="$(find /usr/lib -maxdepth 3 -type f -name bpftool | grep 'linux-tools' | head -n1 | xargs dirname)"
+        KERNEL_FULL="$(uname -r)"
+        KERNEL_BASE="${KERNEL_FULL%-*}"
+
+        BPFBIN="$(dpkg -L "linux-tools-$KERNEL_FULL" 2>/dev/null | awk '/\/bpftool$/ { print; exit }')"
+        if [ -z "$BPFBIN" ]; then
+          BPFBIN="$(find /usr/lib -type f -name bpftool \( -path "*/$KERNEL_FULL/*" -o -path "*/$KERNEL_BASE/*" -o -path "*/linux-tools-$KERNEL_BASE/*" \) | head -n1)"
         fi
-        if [ -z "$BPFDIR" ]; then
+        if [ -z "$BPFBIN" ]; then
           echo "Unable to locate installed bpftool binary directory" >&2
           exit 1
         fi
 
+        BPFDIR="$(dirname "$BPFBIN")"
         echo "$BPFDIR" >> "$GITHUB_PATH"
         export PATH="$BPFDIR:$PATH"
         command -v bpftool
