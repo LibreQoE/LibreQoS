@@ -9761,12 +9761,46 @@ mod tests {
         crate::test_state_lock()
     }
 
+    fn install_bakery_test_config() {
+        static TEST_CONFIG_PATH: std::sync::OnceLock<std::path::PathBuf> =
+            std::sync::OnceLock::new();
+
+        let config_path = TEST_CONFIG_PATH.get_or_init(|| {
+            let runtime_dir = std::env::temp_dir().join("lqos_bakery_test_runtime");
+            std::fs::create_dir_all(&runtime_dir)
+                .expect("create lqos_bakery test runtime directory");
+
+            let config = lqos_config::Config {
+                lqos_directory: runtime_dir.display().to_string(),
+                bridge: Some(lqos_config::BridgeConfig {
+                    use_xdp_bridge: false,
+                    to_internet: "lo".to_string(),
+                    to_network: "lo".to_string(),
+                }),
+                ..lqos_config::Config::default()
+            };
+
+            let config_path = std::env::temp_dir().join("lqos_bakery_test_lqos.conf");
+            let raw = toml::to_string_pretty(&config).expect("serialize lqos_bakery test config");
+            std::fs::write(&config_path, raw).expect("write lqos_bakery test config");
+            config_path
+        });
+
+        // SAFETY: these unit tests call this helper only while holding the bakery test lock,
+        // so the process environment is mutated in a serialized way within this test binary.
+        unsafe {
+            std::env::set_var("LQOS_CONFIG", config_path);
+        }
+        lqos_config::clear_cached_config();
+    }
+
     fn reset_bakery_test_state() {
         *telemetry_state().write() = BakeryTelemetryState::default();
         MQ_CREATED.store(false, Ordering::Relaxed);
         SHAPING_TREE_ACTIVE.store(false, Ordering::Relaxed);
         FIRST_COMMIT_APPLIED.store(false, Ordering::Relaxed);
         FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
+        install_bakery_test_config();
     }
 
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
