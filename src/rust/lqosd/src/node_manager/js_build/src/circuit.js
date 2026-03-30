@@ -489,6 +489,20 @@ function initializeDeviceGraphs() {
     }
 }
 
+function ensureDeviceGraphs() {
+    const target = document.getElementById("devs");
+    if (!target || !isElementVisible(target)) {
+        return;
+    }
+    runWhenRenderable(target, () => {
+        if (!hasRenderableSize(target)) {
+            return;
+        }
+        initializeDeviceGraphs();
+        resizeDeviceGraphs();
+    });
+}
+
 function resizeDeviceGraphs() {
     Object.values(deviceGraphs).forEach((graph) => resizeGraphIfVisible(graph));
 }
@@ -912,8 +926,7 @@ function initTabLifecycle(parentNode) {
                     return;
                 }
                 if (target === "#devs") {
-                    initializeDeviceGraphs();
-                    resizeDeviceGraphs();
+                    ensureDeviceGraphs();
                     syncCircuitDetailSubscriptions();
                     return;
                 }
@@ -1790,15 +1803,15 @@ function fillLiveDevices(devices) {
 
         if (throughputDown !== null) {
             throughputDown.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second.down, 0) * 8,
-                toNumber(device.plan.down, 0)
+                toNumber(device.bytes_per_second?.down, 0) * 8,
+                toNumber(device.plan?.down, 0)
             );
         }
 
         if (throughputUp !== null) {
             throughputUp.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second.up, 0) * 8,
-                toNumber(device.plan.up, 0)
+                toNumber(device.bytes_per_second?.up, 0) * 8,
+                toNumber(device.plan?.up, 0)
             );
         }
 
