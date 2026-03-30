@@ -45,6 +45,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "api_docs.html",
         "chatbot.html",
         "lts_trial.html",
+        "lts_trial_setup.html",
         "lts_trial_success.html",
         "lts_trial_fail.html",
         "executive_worst_sites.html",

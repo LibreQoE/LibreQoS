@@ -1036,6 +1036,34 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::LtsStartSignup => {
+            let result = lts::lts_trial_start_signup_data().await;
+            match result {
+                Ok(claim_id) => {
+                    lts::spawn_signup_poll_loop(claim_id.clone());
+                    let response = WsResponse::LtsStartSignupResult { claim_id };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to start the Insight signup session.".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
         WsRequest::LtsSignUp { license_key } => {
             let result = lts::lts_trial_signup_data(license_key).await;
             let (ok, message) = match result {
