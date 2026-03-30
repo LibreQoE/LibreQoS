@@ -1,4 +1,5 @@
 pub(crate) mod circuit;
+pub(crate) mod circuit_activity;
 pub(crate) mod circuit_count;
 pub(crate) mod circuit_live;
 pub(crate) mod config;

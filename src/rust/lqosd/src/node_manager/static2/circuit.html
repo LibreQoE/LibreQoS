@@ -104,6 +104,11 @@
         </button>
     </li>
     <li class="nav-item" role="presentation">
+        <button class="nav-link" id="top-asns-tab" data-bs-toggle="tab" data-bs-target="#top-asns" type="button" role="tab" aria-controls="top-asns" aria-selected="false">
+            <i class="fa fa-building-columns"></i> Top ASNs <span id="topAsnCount" class="badge">0</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
         <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false">
             <i class="fa fa-table"></i> Traffic Flows <span id="trafficFlowCount" class="badge">0</span>
         </button>
@@ -206,6 +211,16 @@
         <div class="row">
             <div class="col-12">
                 <div id="flowSankey" style="height: 600px; width: 1024px"></div>
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="top-asns" role="tabpanel" aria-labelledby="top-asns-tab">
+        <div class="row">
+            <div class="col-12" id="topAsnsTable">
+                <div class="lqos-loading-block lqos-loading-block-lg">
+                    <i class="fa fa-spinner fa-spin"></i>
+                    <span>Loading ASN summary…</span>
+                </div>
             </div>
         </div>
     </div>

@@ -21,6 +21,12 @@ use crate::node_manager::ws::messages::{
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use crate::node_manager::ws::single_user_channels::circuit::{
+    circuit_devices_result, circuit_devices_snapshot,
+};
+use crate::node_manager::ws::single_user_channels::flows_by_circuit::{
+    circuit_flow_sankey_result, circuit_top_asns_result, circuit_traffic_flows_result,
+};
 use crate::node_manager::ws::ticker::channel_ticker;
 use crate::system_stats::SystemStats;
 use axum::{
@@ -434,6 +440,40 @@ async fn receive_channel_message(
                 None => (false, None),
             };
             let response = WsResponse::CircuitByIdResult { id, data, ok };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitDevices { circuit } => {
+            let devices = circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
+            let response = circuit_devices_result(circuit, devices);
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitFlowSankey { circuit } => {
+            let response = WsResponse::CircuitFlowSankeyResult {
+                circuit_id: circuit.clone(),
+                flows: circuit_flow_sankey_result(&circuit),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitTopAsns { query } => {
+            let response = WsResponse::CircuitTopAsnsResult {
+                circuit_id: query.circuit.clone(),
+                data: circuit_top_asns_result(&query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitTrafficFlowsPage { query } => {
+            let response = WsResponse::CircuitTrafficFlowsPageResult {
+                circuit_id: query.circuit.clone(),
+                data: circuit_traffic_flows_result(&query),
+            };
             if send_ws_response(&tx, response).await {
                 return true;
             }

@@ -309,10 +309,6 @@ impl FlowbeeLocalData {
         self.rate_estimate_bps = rate_estimate_bps;
     }
 
-    pub fn set_display_rate_bps(&mut self, display_rate_bps: Option<DownUpOrder<u32>>) {
-        self.display_rate_bps = display_rate_bps;
-    }
-
     pub fn set_tcp_retransmits(&mut self, tcp_retransmits: DownUpOrder<u16>) {
         self.tcp_retransmits = tcp_retransmits;
     }

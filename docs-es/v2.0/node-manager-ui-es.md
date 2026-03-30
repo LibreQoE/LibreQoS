@@ -63,6 +63,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Las páginas de circuito combinan comportamiento de colas, throughput en vivo, RTT, retransmisiones y troubleshooting por flujo para un suscriptor/circuito individual.
 - Cuando los metadatos de la integración informan la velocidad Ethernet negociada del CPE, la fila `Max` puede mostrar una insignia de advertencia como `100M`; al pasar el cursor sobre la insignia se explica cuándo LibreQoS redujo automáticamente el shaping por debajo del plan solicitado para respetar ese límite del puerto, y al hacer clic en la insignia se abre la página de revisión Ethernet.
 - `Queue Dynamics` muestra el comportamiento del throughput y RTT del circuito a lo largo del tiempo, incluyendo un KPI de `Active Flows` basado en la misma ventana reciente usada por la tabla `Traffic Flows`.
+- `Top ASNs` resume los ASN recientes más activos del circuito a partir de esa misma ventana de flujos en vivo y ordena por tasa actual por defecto.
 - `Devices` muestra tablas de detalle por dispositivo y gráficos en vivo de throughput, retransmisiones y latencia.
 - `Queue Stats` muestra historial reciente de la cola del circuito, incluyendo backlog, delay, longitud de cola, tráfico, marcas ECN y drops.
 - Los gráficos de Queue Stats usan hover sincronizado para inspeccionar el mismo segundo en todos los gráficos de cola al mismo tiempo.
