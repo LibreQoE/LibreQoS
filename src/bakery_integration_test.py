@@ -152,7 +152,8 @@ MAPPED_DECISION_PAT = re.compile(
     r"Bakery mapped circuit decision \(([^)]+)\): requested=(\d+), allowed=(\d+), dropped=(\d+),"
 )
 NO_CHANGES_PAT = re.compile(r"No changes detected in batch, skipping processing\.")
-TEST_FAULT_ONCE_PATH = "/tmp/lqos_bakery_fail_purpose_once.txt"
+# Test-only fault marker path.
+TEST_FAULT_ONCE_PATH = "/tmp/lqos_bakery_fail_purpose_once.txt"  # nosec B108
 
 
 @dataclass
@@ -2573,7 +2574,8 @@ def check_no_hidden_incremental_failures(step_started_at: float) -> Tuple[bool, 
 
     matches = [line for line in lines if any(p.search(line) for p in patterns)]
 
-    last_error_path = "/tmp/lqos_bakery_last_error.txt"
+    # Test-only Bakery artifact path.
+    last_error_path = "/tmp/lqos_bakery_last_error.txt"  # nosec B108
     if os.path.exists(last_error_path):
         try:
             if os.path.getmtime(last_error_path) >= step_started_at:
@@ -2707,7 +2709,8 @@ def collect_failure_diagnostics(
         except Exception as e:
             msgs.append(f"diagnostics: failed tc dump for interface_b: {e}")
 
-    last_error_path = "/tmp/lqos_bakery_last_error.txt"
+    # Test-only Bakery artifact path.
+    last_error_path = "/tmp/lqos_bakery_last_error.txt"  # nosec B108
     if os.path.exists(last_error_path):
         try:
             with open(last_error_path, "r", errors="replace") as f:

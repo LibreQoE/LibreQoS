@@ -18,7 +18,8 @@ def install_scheduler_stubs():
     lqlib.automatic_import_powercode = lambda: False
     lqlib.automatic_import_sonar = lambda: False
     lqlib.influx_db_enabled = lambda: False
-    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    # Test-only fake install root.
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"  # nosec B108
     lqlib.blackboard_finish = Mock()
     lqlib.blackboard_submit = Mock()
     lqlib.automatic_import_wispgate = lambda: False
@@ -142,7 +143,8 @@ class TestSchedulerAffinity(unittest.TestCase):
         result = types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result) as mock_run:
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=True):
@@ -151,8 +153,8 @@ class TestSchedulerAffinity(unittest.TestCase):
 
         mock_run.assert_called_once()
         mock_popen.assert_called_once_with(
-            "/tmp/libreqos/bin/post_integration_hook.sh",
-            cwd="/tmp/libreqos/bin",
+            "/tmp/libreqos/bin/post_integration_hook.sh",  # nosec B108
+            cwd="/tmp/libreqos/bin",  # nosec B108
         )
 
 
@@ -195,7 +197,8 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
@@ -214,7 +217,8 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         result = types.SimpleNamespace(returncode=1, stdout="uisp info\n", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
@@ -267,7 +271,8 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
             "1", "1", "330", "330", "", ""
         ]]
 
-        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):
+        # Test-only fake csv path.
+        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
             with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
                 with patch.object(scheduler, "overrides_persistent_devices_materialized", return_value=[]):
                     with patch.object(

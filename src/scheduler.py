@@ -7,6 +7,7 @@ import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
 import sys
+import tempfile
 from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
@@ -71,7 +72,10 @@ def _write_integration_output_artifact(label, output):
     if not normalized:
         return None
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    artifact = f"/tmp/lqos_scheduler_{_sanitize_label_for_filename(label)}_{timestamp}.log"
+    artifact = os.path.join(
+        tempfile.gettempdir(),
+        f"lqos_scheduler_{_sanitize_label_for_filename(label)}_{timestamp}.log",
+    )
     try:
         with open(artifact, "w", encoding="utf-8") as handle:
             handle.write(normalized)
