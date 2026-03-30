@@ -18,26 +18,25 @@ jobs:
         sudo /bin/apt-get update
         sudo /bin/apt-get install --no-install-recommends \
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
-          pkg-config libbpf-dev mold unzip linux-tools-common "linux-tools-$(uname -r)" \
-        || sudo /bin/apt-get install --no-install-recommends \
-          python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
-          pkg-config libbpf-dev mold unzip linux-tools-common linux-tools-azure
+          pkg-config libbpf-dev mold unzip curl ca-certificates
 
-        KERNEL_FULL="$(uname -r)"
-        KERNEL_BASE="${KERNEL_FULL%-*}"
+        BPFTOOL_VERSION="7.7.0"
+        case "$(uname -m)" in
+          x86_64) BPFTOOL_ARCH="amd64" ;;
+          aarch64) BPFTOOL_ARCH="arm64" ;;
+          *)
+            echo "Unsupported architecture for upstream bpftool binary: $(uname -m)" >&2
+            exit 1
+            ;;
+        esac
 
-        BPFBIN="$(dpkg -L "linux-tools-$KERNEL_FULL" 2>/dev/null | awk '/\/bpftool$/ { print; exit }')"
-        if [ -z "$BPFBIN" ]; then
-          BPFBIN="$(find /usr/lib -type f -name bpftool \( -path "*/$KERNEL_FULL/*" -o -path "*/$KERNEL_BASE/*" -o -path "*/linux-tools-$KERNEL_BASE/*" \) | head -n1)"
-        fi
-        if [ -z "$BPFBIN" ]; then
-          echo "Unable to locate installed bpftool binary directory" >&2
-          exit 1
-        fi
-
-        BPFDIR="$(dirname "$BPFBIN")"
-        echo "$BPFDIR" >> "$GITHUB_PATH"
-        export PATH="$BPFDIR:$PATH"
+        BPFTOOL_TARBALL="bpftool-v${BPFTOOL_VERSION}-${BPFTOOL_ARCH}.tar.gz"
+        BPFTOOL_BASE_URL="https://github.com/libbpf/bpftool/releases/download/v${BPFTOOL_VERSION}"
+        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}"
+        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}.sha256sum"
+        sha256sum -c "${BPFTOOL_TARBALL}.sha256sum"
+        tar -xzf "${BPFTOOL_TARBALL}"
+        sudo install -m 0755 bpftool /usr/local/bin/bpftool
         command -v bpftool
         bpftool version
     - name: Build
