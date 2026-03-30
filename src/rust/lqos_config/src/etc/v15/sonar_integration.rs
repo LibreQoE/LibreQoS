@@ -1,6 +1,14 @@
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative, Default)]
+pub struct SonarRecurringServiceRate {
+    pub enabled: bool,
+    pub service_name: String,
+    pub download_mbps: f32,
+    pub upload_mbps: f32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct SonarIntegration {
     pub enable_sonar: bool,
@@ -10,6 +18,10 @@ pub struct SonarIntegration {
     pub airmax_model_ids: Vec<String>,
     pub ltu_model_ids: Vec<String>,
     pub active_status_ids: Vec<String>,
+    #[serde(default)]
+    pub recurring_service_rates: Vec<SonarRecurringServiceRate>,
+    #[serde(default)]
+    pub recurring_excluded_service_names: Vec<String>,
 }
 
 impl Default for SonarIntegration {
@@ -22,6 +34,8 @@ impl Default for SonarIntegration {
             airmax_model_ids: vec![],
             ltu_model_ids: vec![],
             active_status_ids: vec![],
+            recurring_service_rates: vec![],
+            recurring_excluded_service_names: vec![],
         }
     }
 }

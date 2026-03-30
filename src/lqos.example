@@ -120,6 +120,8 @@ snmp_community = "public"
 airmax_model_ids = [ "" ]
 ltu_model_ids = [ "" ]
 active_status_ids = [ "" ]
+recurring_excluded_service_names = []
+recurring_service_rates = []
 
 [influxdb]
 enable_influxdb = false

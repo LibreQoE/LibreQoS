@@ -4,7 +4,8 @@ import requests
 import subprocess
 from urllib.parse import urlsplit, urlunsplit
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
-  sonar_ltu_ap_model_ids, sonar_active_status_ids
+  sonar_ltu_ap_model_ids, sonar_active_status_ids, sonar_recurring_service_rates, \
+  sonar_recurring_excluded_service_names
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
 from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 from multiprocessing.pool import ThreadPool
@@ -24,6 +25,8 @@ from multiprocessing.pool import ThreadPool
 # I need to deal with other types of APs in the future I'm currently testing with Prism AC Gen2s, Rocket M5s, and LTU Rockets.
 # There should probably be a log file somewhere and output status to the Web UI.
 # If snmp fails to get the name of the AP then it's just called "Not found via snmp" We won't see that happen unless it is able to get the connected cpe and not the name.
+
+_SONAR_SESSION = None
 
 
 def sonarGraphqlUrl():
@@ -52,10 +55,30 @@ def sonarDeviceNodeId(device_id):
   return f"sonar:device:{device_id}"
 
 
-def sonarRequest(query,variables={}):
+def sonarRadiusAccountDeviceNodeId(radius_account_id):
+  return f"sonar:radius-account:{radius_account_id}"
+
+
+def sonarSession():
+  global _SONAR_SESSION
+  if _SONAR_SESSION is None:
+    _SONAR_SESSION = requests.Session()
+    _SONAR_SESSION.headers.update({
+      'Authorization': 'Bearer ' + sonar_api_key()
+    })
+  return _SONAR_SESSION
+
+
+def sonarRequest(query, variables=None):
+  if variables is None:
+    variables = {}
 
   graphql_url = sonarGraphqlUrl()
-  r = requests.post(graphql_url, json={'query': query, 'variables': variables}, headers={'Authorization': 'Bearer ' + sonar_api_key()}, timeout=10)
+  r = sonarSession().post(
+    graphql_url,
+    json={'query': query, 'variables': variables},
+    timeout=10
+  )
   try:
     r_json = r.json()
   except requests.exceptions.JSONDecodeError as e:
@@ -80,6 +103,8 @@ def sonarPaginatedRequest(query, variables=None, paginator_key='pages', records_
   if variables is None:
     variables = {}
 
+  session = sonarSession()
+  graphql_url = sonarGraphqlUrl()
   page = 1
   entities = []
 
@@ -89,11 +114,9 @@ def sonarPaginatedRequest(query, variables=None, paginator_key='pages', records_
       'records_per_page': records_per_page,
       'page': page
     }
-    graphql_url = sonarGraphqlUrl()
-    r = requests.post(
+    r = session.post(
       graphql_url,
       json={'query': query, 'variables': request_variables},
-      headers={'Authorization': 'Bearer ' + sonar_api_key()},
       timeout=20
     )
     try:
@@ -151,6 +174,81 @@ def findIPs(inventory_item):
   return ips
 
 
+def dedupeSubnets(subnets):
+  deduped = []
+  seen = set()
+  for subnet in subnets:
+    if not subnet or subnet in seen:
+      continue
+    seen.add(subnet)
+    deduped.append(subnet)
+  return deduped
+
+
+def normalizeServiceName(name):
+  return (name or "").strip().casefold()
+
+
+def findRadiusAccountIPs(radius_account):
+  ips = []
+  for ip in radius_account.get('ip_assignments', {}).get('entities', []):
+    subnet = ip.get('subnet')
+    if subnet:
+      ips.append(subnet)
+  return dedupeSubnets(ips)
+
+
+def recurringServiceRateRules():
+  rules = {}
+  for enabled, service_name, download_mbps, upload_mbps in sonar_recurring_service_rates():
+    normalized_name = normalizeServiceName(service_name)
+    if not enabled or not normalized_name:
+      continue
+    rules[normalized_name] = (
+      float(download_mbps),
+      float(upload_mbps),
+    )
+  return rules
+
+
+def recurringServiceExclusions():
+  return {
+    normalizeServiceName(name)
+    for name in sonar_recurring_excluded_service_names()
+    if normalizeServiceName(name)
+  }
+
+
+def resolveAccountBandwidth(account, recurring_rules=None, excluded_names=None):
+  account_services = account.get('account_services', {}).get('entities', [])
+  if account_services:
+    service = account_services[0].get('service') or {}
+    service_detail = service.get('data_service_detail')
+    if service_detail:
+      return (
+        float(service_detail['download_speed_kilobits_per_second']) / 1000,
+        float(service_detail['upload_speed_kilobits_per_second']) / 1000,
+      )
+
+  if recurring_rules is None:
+    recurring_rules = recurringServiceRateRules()
+  if not recurring_rules:
+    return None
+  if excluded_names is None:
+    excluded_names = recurringServiceExclusions()
+  all_services = account.get('all_account_services', {}).get('entities', [])
+  for row in all_services:
+    service = row.get('service') or {}
+    if service.get('type') != 'RECURRING':
+      continue
+    normalized_name = normalizeServiceName(service.get('name'))
+    if not normalized_name or normalized_name in excluded_names:
+      continue
+    if normalized_name in recurring_rules:
+      return recurring_rules[normalized_name]
+  return None
+
+
 def findPrimaryMac(inventory_item):
   field_data_entities = inventory_item.get('inventory_model_field_data', {}).get('entities', [])
 
@@ -176,6 +274,21 @@ def findPrimaryMac(inventory_item):
     if value:
       return value
   return ""
+
+
+def formatAccountAddress(account):
+  addresses = account.get('addresses', {}).get('entities', [])
+  if not addresses:
+    return ""
+  primary_address = addresses[0]
+  line1 = primary_address.get('line1') or ""
+  line2 = primary_address.get('line2') or ""
+  city = primary_address.get('city') or ""
+  subdivision = primary_address.get('subdivision') or ""
+  state = subdivision[-2:] if subdivision else ""
+
+  address = f"{line1},{f' {line2},' if line2 else ''} {city}, {state}".strip()
+  return address.strip(', ')
 
 def getSitesAndAps():
   query = """query getSitesAndAps($pages: Paginator, $rr_ap_models: ReverseRelationFilter, $ap_models: Search){
@@ -248,6 +361,114 @@ def getSitesAndAps():
       sites.append({'id': f"site_{site['id']}", 'raw_id': site['id'], 'name': site['name']})
   return sites, aps
 
+
+def buildAccountDevices(account):
+  devices = []
+  known_ip_subnets = set()
+
+  for address in account.get('addresses', {}).get('entities', []):
+    for item in address.get('inventory_items', {}).get('entities', []):
+      ips = dedupeSubnets(findIPs(item))
+      known_ip_subnets.update(ips)
+      devices.append({
+        'id': sonarDeviceNodeId(item['id']),
+        'raw_id': item['id'],
+        'name': item['inventory_model']['name'],
+        'ips': ips,
+        'mac': findPrimaryMac(item)
+      })
+
+  for radius_account in account.get('radius_accounts', {}).get('entities', []):
+    radius_ips = [
+      subnet for subnet in findRadiusAccountIPs(radius_account)
+      if subnet not in known_ip_subnets
+    ]
+    if not radius_ips:
+      continue
+    known_ip_subnets.update(radius_ips)
+    devices.append({
+      'id': sonarRadiusAccountDeviceNodeId(radius_account['id']),
+      'raw_id': radius_account['id'],
+      'name': f"Radius Account {radius_account['id']}",
+      'ips': radius_ips,
+      'mac': ''
+    })
+
+  return devices
+
+
+def buildAccountRecord(account, fallback_address="", recurring_rules=None, excluded_names=None):
+  address = formatAccountAddress(account) or fallback_address
+  if not address:
+    return None
+
+  devices = buildAccountDevices(account)
+  if not devices:
+    return None
+
+  bandwidth = resolveAccountBandwidth(
+    account,
+    recurring_rules=recurring_rules,
+    excluded_names=excluded_names,
+  )
+  if bandwidth is None:
+    return None
+
+  download_raw, upload_raw = bandwidth
+  download = apply_client_bandwidth_multiplier(download_raw)
+  upload = apply_client_bandwidth_multiplier(upload_raw)
+  if download < 2:
+     download = 2
+  if upload < 2:
+     upload = 2
+
+  return {
+    'id': sonarAccountNodeId(account['id']),
+    'raw_id': account['id'],
+    'name': account['name'],
+    'address': address,
+    'download': download,
+    'upload': upload,
+    'devices': devices
+  }
+
+
+def buildAccountsFromSonarEntities(accounts_from_sonar, recurring_rules=None, excluded_names=None):
+  accounts = []
+  seen_account_ids = set()
+  child_candidates = []
+
+  for account in accounts_from_sonar:
+    account_record = buildAccountRecord(
+      account,
+      recurring_rules=recurring_rules,
+      excluded_names=excluded_names,
+    )
+    if account_record:
+      accounts.append(account_record)
+      seen_account_ids.add(account_record['raw_id'])
+
+    parent_address = formatAccountAddress(account)
+    for child_account in account.get('child_accounts', {}).get('entities', []):
+      child_candidates.append((child_account, parent_address))
+
+  for child_account, parent_address in child_candidates:
+    child_id = child_account['id']
+    if child_id in seen_account_ids:
+      continue
+    child_record = buildAccountRecord(
+      child_account,
+      fallback_address=parent_address,
+      recurring_rules=recurring_rules,
+      excluded_names=excluded_names,
+    )
+    if child_record:
+      accounts.append(child_record)
+      seen_account_ids.add(child_record['raw_id'])
+
+  return accounts
+
+
 def getAccounts(sonar_active_status_ids):
   query = """query getAccounts ($pages: Paginator, $account_search: Search, $data: ReverseRelationFilter) {
                 accounts (paginator: $pages,search: [$account_search]) {
@@ -307,6 +528,106 @@ def getAccounts(sonar_active_status_ids):
                         }
                       }
                     }
+                    radius_accounts {
+                      entities {
+                        id
+                        ip_assignments {
+                          entities {
+                            subnet
+                          }
+                        }
+                      }
+                    }
+                    child_accounts {
+                      entities {
+                        id
+                        name
+                        account_services (reverse_relation_filters: [$data]) {
+                          entities {
+                            service {
+                              data_service_detail {
+                                download_speed_kilobits_per_second
+                                upload_speed_kilobits_per_second
+                              }
+                            }
+                          }
+                        }
+                        addresses {
+                          entities {
+                            line1
+                            line2
+                            city
+                            subdivision
+                            inventory_items {
+                              entities {
+                                id
+                                inventory_model {
+                                name
+                                }
+                                inventory_model_field_data {
+                                  entities {
+                                    value
+                                    ip_assignments {
+                                      entities {
+                                        subnet
+                                      }
+                                    }
+                                    inventory_model_field {
+                                      id
+                                      name
+                                      primary
+                                    }
+                                  }
+                                }
+                                ip_assignments {
+                                  entities {
+                                    subnet
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                        radius_accounts {
+                          entities {
+                            id
+                            ip_assignments {
+                              entities {
+                                subnet
+                              }
+                            }
+                          }
+                        }
+                        all_account_services: account_services {
+                          entities {
+                            service(enabled: true) {
+                              id
+                              name
+                              type
+                              enabled
+                              data_service_detail {
+                                download_speed_kilobits_per_second
+                                upload_speed_kilobits_per_second
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    all_account_services: account_services {
+                      entities {
+                        service(enabled: true) {
+                          id
+                          name
+                          type
+                          enabled
+                          data_service_detail {
+                            download_speed_kilobits_per_second
+                            upload_speed_kilobits_per_second
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }"""
@@ -335,41 +656,13 @@ def getAccounts(sonar_active_status_ids):
               }
   
   accounts_from_sonar = sonarPaginatedRequest(query,variables)
-  accounts = []
-  for account in accounts_from_sonar:
-    # We need to make sure the account has an address because Sonar assignments go account -> address (only 1 per account) -> equipment -> ip assignments unless the IP is assigned to the account directly.
-    if account['addresses']['entities']:
-      line1 = account['addresses']['entities'][0]['line1']
-      line2 = account['addresses']['entities'][0]['line2']
-      city = account['addresses']['entities'][0]['city']
-      state = account['addresses']['entities'][0]['subdivision'][-2:]
-      address = f"{line1},{f' {line2},' if line2 else ''} {city}, {state}"
-      devices = []
-      for item in account['addresses']['entities'][0]['inventory_items']['entities']:
-        devices.append({
-          'id': sonarDeviceNodeId(item['id']),
-          'raw_id': item['id'],
-          'name': item['inventory_model']['name'],
-          'ips': findIPs(item),
-          'mac': findPrimaryMac(item)
-        })
-      if account['account_services']['entities'] and devices: # Make sure there is a data plan and devices on the account.
-        download = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000)
-        upload = apply_client_bandwidth_multiplier(float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000)
-        if download < 2:
-           download = 2
-        if upload < 2:
-           upload = 2
-        accounts.append({
-          'id': sonarAccountNodeId(account['id']),
-          'raw_id': account['id'],
-          'name': account['name'],
-          'address': address,
-          'download': download,
-          'upload': upload,
-          'devices': devices
-        })
-  return accounts
+  recurring_rules = recurringServiceRateRules()
+  excluded_names = recurringServiceExclusions() if recurring_rules else set()
+  return buildAccountsFromSonarEntities(
+    accounts_from_sonar,
+    recurring_rules=recurring_rules,
+    excluded_names=excluded_names,
+  )
 
 def mapApCpeMacs(ap):
     macs = []
@@ -391,12 +684,12 @@ def mapApCpeMacs(ap):
     
     return ap
 
-def mapMacAP(mac,aps):
+def buildMacToApMap(aps):
+  mac_to_ap = {}
   for ap in aps:
     for cpe_mac in ap['cpe_macs']:
-        if cpe_mac == mac:
-          return ap['id']
-  return None
+      mac_to_ap[cpe_mac] = ap['id']
+  return mac_to_ap
 
 def createShaper():
   net = NetworkGraph()
@@ -417,10 +710,12 @@ def createShaper():
   pool.close()
   pool.join()
 
+  mac_to_ap = buildMacToApMap(aps)
+
   # Update customers with the AP to which they are connected.
   for account in accounts:
     for device in account['devices']:
-        account['parent'] = mapMacAP(device['mac'],aps)
+        account['parent'] = mac_to_ap.get(device['mac'])
         if account['parent']:
           break
 
