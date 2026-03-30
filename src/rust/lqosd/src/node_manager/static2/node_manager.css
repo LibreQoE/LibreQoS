@@ -1839,6 +1839,32 @@ table tr td a {
     color: var(--bs-secondary-color) !important;
 }
 
+.lqos-config-network-editor {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.lqos-config-network-editor .lqos-network-node-card {
+    background: color-mix(in srgb, var(--lqos-surface-2) 88%, transparent);
+}
+
+.lqos-config-network-editor .card-title {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.lqos-config-network-editor .card-body {
+    padding: 1rem 1rem 0.95rem;
+}
+
+.lqos-config-network-editor .btn {
+    white-space: nowrap;
+}
+
+.lqos-config-network-editor .badge {
+    font-weight: 600;
+}
+
 .nav-pills .nav-link {
     color: var(--bs-secondary-color);
 }

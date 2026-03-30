@@ -1,59 +1,86 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-warning" role="alert">
-            <i class="fa fa-exclamation-triangle"></i> Warning: These are advanced settings. Adjust them at your own risk.
-        </div>
-        <form>
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="stopIrqBalance">
-                <label class="form-check-label" for="stopIrqBalance">Stop IRQ Balance Service</label>
-                <div class="form-text">Disables the irq_balance system service</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">System Tuning</h5>
+                    <div class="lqos-config-panel-subtitle">Adjust IRQ handling, kernel packet budgets, and NIC offload behavior on systems that need manual tuning.</div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label for="netdevBudgetUsecs" class="form-label">Netdev Budget (μs)</label>
-                <input type="number" class="form-control" id="netdevBudgetUsecs">
-                <div class="form-text">Time budget for network device processing in microseconds</div>
+            <div class="lqos-config-note lqos-config-note-warning mb-3" role="alert">
+                <i class="fa fa-exclamation-triangle me-2"></i>These are advanced settings. Change them only when you have a measured reason to do so.
             </div>
 
-            <div class="mb-3">
-                <label for="netdevBudgetPackets" class="form-label">Netdev Budget (Packets)</label>
-                <input type="number" class="form-control" id="netdevBudgetPackets">
-                <div class="form-text">Packet budget for network device processing</div>
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Interrupts and Budgets</h6>
+                        <div class="lqos-config-section-subtitle">Control how aggressively the host services NIC interrupts and packet processing.</div>
 
-            <div class="mb-3">
-                <label for="rxUsecs" class="form-label">RX Polling Frequency (μs)</label>
-                <input type="number" class="form-control" id="rxUsecs">
-                <div class="form-text">Receive side polling frequency in microseconds</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="stopIrqBalance">
+                            <label class="form-check-label" for="stopIrqBalance">Stop IRQ Balance Service</label>
+                            <div class="form-text">Disables the <code>irq_balance</code> system service.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="txUsecs" class="form-label">TX Polling Frequency (μs)</label>
-                <input type="number" class="form-control" id="txUsecs">
-                <div class="form-text">Transmit side polling frequency in microseconds</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="netdevBudgetUsecs" class="form-label">Netdev Budget (μs)</label>
+                            <input type="number" class="form-control" id="netdevBudgetUsecs">
+                            <div class="form-text">Time budget for network device processing in microseconds.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="disableRxVlan">
-                <label class="form-check-label" for="disableRxVlan">Disable RX VLAN Offloading</label>
-            </div>
+                        <div class="mb-3">
+                            <label for="netdevBudgetPackets" class="form-label">Netdev Budget (Packets)</label>
+                            <input type="number" class="form-control" id="netdevBudgetPackets">
+                            <div class="form-text">Packet budget for network device processing.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="disableTxVlan">
-                <label class="form-check-label" for="disableTxVlan">Disable TX VLAN Offloading</label>
-            </div>
+                        <div class="mb-3">
+                            <label for="rxUsecs" class="form-label">RX Polling Frequency (μs)</label>
+                            <input type="number" class="form-control" id="rxUsecs">
+                            <div class="form-text">Receive-side polling frequency in microseconds.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="disableOffload" class="form-label">Disable Offload Features</label>
-                <input type="text" class="form-control" id="disableOffload" aria-describedby="offloadHelp">
-                <div id="offloadHelp" class="form-text">Comma-separated list of offload features to disable (e.g. gso,tso,lro)</div>
-            </div>
+                        <div class="mb-0">
+                            <label for="txUsecs" class="form-label">TX Polling Frequency (μs)</label>
+                            <input type="number" class="form-control" id="txUsecs">
+                            <div class="form-text">Transmit-side polling frequency in microseconds.</div>
+                        </div>
+                    </div>
+                </div>
 
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Offload Controls</h6>
+                        <div class="lqos-config-section-subtitle">Disable hardware features that interfere with troubleshooting or expected shaping behavior.</div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="disableRxVlan">
+                            <label class="form-check-label" for="disableRxVlan">Disable RX VLAN Offloading</label>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="disableTxVlan">
+                            <label class="form-check-label" for="disableTxVlan">Disable TX VLAN Offloading</label>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="disableOffload" class="form-label">Disable Offload Features</label>
+                            <input type="text" class="form-control" id="disableOffload" aria-describedby="offloadHelp">
+                            <div id="offloadHelp" class="form-text">Comma-separated list of offload features to disable, for example <code>gso,tso,lro</code>.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_tuning.js%CACHEBUSTERS%"></script>

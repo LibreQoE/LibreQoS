@@ -1,7 +1,16 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Sonar Integration</h5>
+                    <div class="lqos-config-panel-subtitle">Configure Sonar API access plus the SNMP and model metadata LibreQoS uses for wireless device enrichment.</div>
+                </div>
+            </div>
+
+            <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableSonar">
                 <label class="form-check-label" for="enableSonar">Enable Sonar Integration</label>
@@ -44,9 +53,13 @@
                 <div class="form-text">Comma-separated list of active status IDs</div>
             </div>
 
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_sonar.js%CACHEBUSTERS%"></script>
