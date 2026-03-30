@@ -6,7 +6,7 @@ import {renderOperationCards} from "./operation_cards";
 
 const TREEGUARD_OPERATION_MERGE_WINDOW_SECONDS = 180;
 const TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY = "lqos_treeguard_activity_view";
-const TREEGUARD_ACTIVITY_PAGE_SIZE = 8;
+const TREEGUARD_ACTIVITY_PAGE_SIZE = 5;
 
 function formatUnixSecondsToLocalTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
