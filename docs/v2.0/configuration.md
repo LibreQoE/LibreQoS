@@ -27,6 +27,8 @@ For most operators:
 
 Most day-to-day LibreQoS configuration is handled in WebUI (`http://your_shaper_ip:9123/config_general.html`).
 
+Current builds use shared configuration panels on the General, RTT, Queues, TreeGuard, Network Mode, IP Ranges, Flow Tracking, and Shaped Devices pages so node settings and operational tuning follow the same surface styling as the rest of Node Manager. The TreeGuard page now starts with a live behavior summary rather than a permanent warning banner.
+
 ### Where in WebUI
 
 - General settings: `Configuration -> General`

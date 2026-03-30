@@ -25,6 +25,8 @@ Para la mayoría de operadores:
 
 La mayoría de cambios operativos diarios se realizan en la WebUI (`http://tu_ip_del_shaper:9123/config_general.html`).
 
+Las versiones actuales usan paneles compartidos de configuración en las páginas General, RTT, Queues, TreeGuard, Network Mode, IP Ranges, Flow Tracking y Shaped Devices para que los ajustes del nodo y la afinación operativa sigan la misma presentación visual que el resto de Node Manager. La página de TreeGuard ahora comienza con un resumen del comportamiento actual en lugar de un banner permanente de advertencia.
+
 ### Dónde en la WebUI
 
 - Ajustes generales: `Configuration -> General`

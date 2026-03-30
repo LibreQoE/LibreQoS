@@ -12,12 +12,79 @@ let circuitRows = null;
 let selectedNodes = [];
 let selectedCircuits = [];
 
+function setSummaryValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.textContent = value;
+    }
+}
+
+function updateOperationalSummary() {
+    const enabled = document.getElementById("enabled")?.checked ?? false;
+    const dryRun = document.getElementById("dryRun")?.checked ?? true;
+    const linksEnabled = document.getElementById("linksEnabled")?.checked ?? false;
+    const linksAllNodes = document.getElementById("linksAllNodes")?.checked ?? true;
+    const circuitsEnabled = document.getElementById("circuitsEnabled")?.checked ?? false;
+    const circuitsAllCircuits = document.getElementById("circuitsAllCircuits")?.checked ?? true;
+    const persistSqmOverrides = document.getElementById("persistSqmOverrides")?.checked ?? false;
+
+    const mode = !enabled
+        ? "Disabled"
+        : dryRun
+            ? "Dry Run"
+            : "Live";
+    const links = !linksEnabled
+        ? "Disabled"
+        : linksAllNodes
+            ? "All links"
+            : `Allowlist (${selectedNodes.length})`;
+    const circuits = !circuitsEnabled
+        ? "Disabled"
+        : circuitsAllCircuits
+            ? "All circuits"
+            : `Allowlist (${selectedCircuits.length})`;
+    const persistence = persistSqmOverrides ? "Persist overrides" : "In memory only";
+
+    setSummaryValue("treeguardSummaryMode", mode);
+    setSummaryValue("treeguardSummaryLinks", links);
+    setSummaryValue("treeguardSummaryCircuits", circuits);
+    setSummaryValue("treeguardSummaryPersistence", persistence);
+
+    const note = document.getElementById("treeguardContextNote");
+    if (!note) {
+        return;
+    }
+
+    const warnings = [];
+    if (enabled && !dryRun) {
+        if (linksEnabled && linksAllNodes) {
+            warnings.push("live changes across all links");
+        }
+        if (circuitsEnabled && circuitsAllCircuits) {
+            warnings.push("live changes across all circuits");
+        }
+        if (persistSqmOverrides) {
+            warnings.push("persistent SQM overrides");
+        }
+    }
+
+    if (warnings.length === 0) {
+        note.classList.add("d-none");
+        note.textContent = "";
+        return;
+    }
+
+    note.classList.remove("d-none");
+    note.innerHTML = `<strong>Live scope:</strong> TreeGuard is currently set to apply ${warnings.join(", ")}.`;
+}
+
 function updateLinksEnrollmentUi() {
     const allNodes = document.getElementById("linksAllNodes")?.checked ?? true;
     const section = document.getElementById("nodesAllowlistSection");
     if (section) {
         section.style.display = allNodes ? "none" : "";
     }
+    updateOperationalSummary();
 }
 
 function updateCircuitsEnrollmentUi() {
@@ -26,6 +93,7 @@ function updateCircuitsEnrollmentUi() {
     if (section) {
         section.style.display = allCircuits ? "none" : "";
     }
+    updateOperationalSummary();
 }
 
 function loadNetworkData() {
@@ -159,6 +227,7 @@ function updateNodesList() {
 
     if (selectedNodes.length === 0) {
         listContainer.innerHTML = '<div class="text-muted">No nodes selected</div>';
+        updateOperationalSummary();
         return;
     }
 
@@ -178,6 +247,7 @@ function updateNodesList() {
         listItem.appendChild(removeBtn);
         listContainer.appendChild(listItem);
     });
+    updateOperationalSummary();
 }
 
 function addCircuitFromSelector() {
@@ -226,6 +296,7 @@ function updateCircuitsList() {
 
     if (selectedCircuits.length === 0) {
         listContainer.innerHTML = '<div class="text-muted">No circuits selected</div>';
+        updateOperationalSummary();
         return;
     }
 
@@ -245,6 +316,7 @@ function updateCircuitsList() {
         listItem.appendChild(removeBtn);
         listContainer.appendChild(listItem);
     });
+    updateOperationalSummary();
 }
 
 function validatePercent(name, value, min = 0, max = 100) {
@@ -480,6 +552,18 @@ Promise.all([
     document.getElementById("qooEnabled").checked = qoo.enabled;
     document.getElementById("minScore").value = qoo.min_score;
 
+    [
+        "enabled",
+        "dryRun",
+        "linksEnabled",
+        "linksAllNodes",
+        "circuitsEnabled",
+        "circuitsAllCircuits",
+        "persistSqmOverrides",
+    ].forEach((id) => {
+        document.getElementById(id)?.addEventListener("change", updateOperationalSummary);
+    });
+
     document.getElementById("addNodeBtn").addEventListener("click", addNode);
     document.getElementById("linksAllNodes").addEventListener("change", updateLinksEnrollmentUi);
     document.getElementById("nodeSelector").addEventListener("keypress", (e) => {
@@ -515,4 +599,6 @@ Promise.all([
             alert("TreeGuard configuration saved successfully!");
         });
     });
+
+    updateOperationalSummary();
 });

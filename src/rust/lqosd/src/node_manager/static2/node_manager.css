@@ -1729,6 +1729,116 @@ table tr td a {
 
 /* For the config panel */
 
+.lqos-config-page {
+    display: grid;
+    gap: 1rem;
+}
+
+.lqos-config-panel {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-lg);
+    background: var(--lqos-surface);
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 1.1rem 1.15rem;
+}
+
+.lqos-config-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.lqos-config-panel-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.lqos-config-panel-subtitle {
+    margin-top: 0.2rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.92rem;
+}
+
+.lqos-config-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.lqos-config-section {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 82%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    padding: 1rem 1rem 0.9rem;
+}
+
+.lqos-config-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+}
+
+.lqos-config-section-subtitle {
+    color: var(--bs-secondary-color);
+    font-size: 0.87rem;
+    margin-bottom: 1rem;
+}
+
+.lqos-config-note {
+    border: 1px solid color-mix(in srgb, var(--bs-info) 24%, var(--lqos-border));
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--bs-info-bg-subtle) 70%, var(--lqos-surface) 30%);
+    color: var(--bs-body-color);
+    padding: 0.85rem 1rem;
+}
+
+.lqos-config-note-warning {
+    border-color: color-mix(in srgb, var(--bs-warning) 30%, var(--lqos-border));
+    background: color-mix(in srgb, var(--bs-warning-bg-subtle) 76%, var(--lqos-surface) 24%);
+}
+
+.lqos-config-note code {
+    color: inherit;
+}
+
+.lqos-config-preview {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+    padding: 0.75rem 0.85rem;
+}
+
+.lqos-config-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.lqos-config-panel .card {
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+    box-shadow: none;
+}
+
+.lqos-config-panel .card-header {
+    background: transparent;
+    border-bottom-color: var(--lqos-border);
+    font-weight: 700;
+}
+
+.lqos-config-panel .form-text,
+.lqos-config-panel .text-muted,
+.lqos-config-panel .small.text-muted {
+    color: var(--bs-secondary-color) !important;
+}
+
 .nav-pills .nav-link {
     color: var(--bs-secondary-color);
 }
@@ -1763,19 +1873,35 @@ table tr td a {
 
 .config-menu-item {
     margin: 0;
-    padding: 5px 10px;
-    background-color: var(--bs-tertiary-bg);
+    list-style: none;
+}
+
+.config-menu-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 6px 11px;
+    background: color-mix(in srgb, var(--lqos-surface-2) 80%, transparent);
+    border: 1px solid var(--lqos-border);
     border-radius: 999px;
+    color: inherit;
     cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
-.config-menu-item:hover {
-    background-color: var(--bs-info-bg-subtle);
+.config-menu-link:hover {
+    background: color-mix(in srgb, var(--bs-info-bg-subtle) 72%, var(--lqos-surface) 28%);
+    border-color: color-mix(in srgb, var(--bs-info) 26%, var(--lqos-border));
+    transform: translateY(-1px);
 }
 
-.config-menu-item.active {
-    background-color: var(--bs-info);
-    color: var(--bs-info-text);
+.config-menu-link.active {
+    background: color-mix(in srgb, var(--bs-info) 20%, var(--lqos-surface) 80%);
+    color: var(--bs-info-text-emphasis, var(--bs-info));
+    border-color: color-mix(in srgb, var(--bs-info) 44%, var(--lqos-border));
     font-weight: bold;
 }
 

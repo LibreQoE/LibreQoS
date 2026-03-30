@@ -1,79 +1,92 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
-            <div class="mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="networkMode" id="bridgeMode" value="bridge">
-                    <label class="form-check-label" for="bridgeMode">
-                        Bridge Mode
-                    </label>
-                    <div class="form-text">Two physical interfaces - one facing the Internet, one facing the LAN</div>
-                </div>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="networkMode" id="singleInterfaceMode" value="single">
-                    <label class="form-check-label" for="singleInterfaceMode">
-                        Single Interface Mode
-                    </label>
-                    <div class="form-text">Single physical interface using VLANs (on-a-stick)</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Network Mode</h5>
+                    <div class="lqos-config-panel-subtitle">Choose how LibreQoS connects to the network, then configure the required interfaces or VLANs.</div>
                 </div>
             </div>
 
-            <!-- Bridge Mode Configuration -->
-            <div id="bridgeConfig" class="mb-3" style="display: none;">
+            <div class="lqos-config-section">
+                <h6 class="lqos-config-section-title">Operating Mode</h6>
+                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs.</div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="networkMode" id="bridgeMode" value="bridge">
+                        <label class="form-check-label" for="bridgeMode">Bridge Mode</label>
+                        <div class="form-text">Two physical interfaces: one facing the Internet and one facing the LAN.</div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="networkMode" id="singleInterfaceMode" value="single">
+                        <label class="form-check-label" for="singleInterfaceMode">Single Interface Mode</label>
+                        <div class="form-text">Single physical interface using VLANs (on-a-stick).</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div id="bridgeConfig" style="display: none;">
+            <section class="lqos-config-panel">
                 <div class="card">
                     <div class="card-header">Bridge Mode Configuration</div>
                     <div class="card-body">
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="useXdpBridge">
                             <label class="form-check-label" for="useXdpBridge">Use XDP Bridge</label>
-                            <div class="form-text">Use the XDP bridge instead of the Linux Bridge (not compatible with the default configuration)</div>
+                            <div class="form-text">Use the XDP bridge instead of the Linux Bridge (not compatible with the default configuration).</div>
                         </div>
 
                         <div class="mb-3">
                             <label for="toInternet" class="form-label">Internet-Facing Interface</label>
                             <input type="text" class="form-control" id="toInternet">
-                            <div class="form-text">Interface name facing the Internet (e.g. eth0)</div>
+                            <div class="form-text">Interface name facing the Internet (for example, <code>eth0</code>).</div>
                         </div>
 
-                        <div class="mb-3">
+                        <div class="mb-0">
                             <label for="toNetwork" class="form-label">LAN-Facing Interface</label>
                             <input type="text" class="form-control" id="toNetwork">
-                            <div class="form-text">Interface name facing the LAN (e.g. eth1)</div>
+                            <div class="form-text">Interface name facing the LAN (for example, <code>eth1</code>).</div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
+        </div>
 
-            <!-- Single Interface Mode Configuration -->
-            <div id="singleInterfaceConfig" class="mb-3" style="display: none;">
+        <div id="singleInterfaceConfig" style="display: none;">
+            <section class="lqos-config-panel">
                 <div class="card">
                     <div class="card-header">Single Interface Mode Configuration</div>
                     <div class="card-body">
                         <div class="mb-3">
                             <label for="interface" class="form-label">Interface Name</label>
                             <input type="text" class="form-control" id="interface">
-                            <div class="form-text">Physical interface name (e.g. eth0)</div>
+                            <div class="form-text">Physical interface name (for example, <code>eth0</code>).</div>
                         </div>
 
                         <div class="mb-3">
                             <label for="internetVlan" class="form-label">Internet VLAN ID</label>
                             <input type="number" class="form-control" id="internetVlan" min="1" max="4094">
-                            <div class="form-text">VLAN ID for Internet traffic</div>
+                            <div class="form-text">VLAN ID for Internet traffic.</div>
                         </div>
 
-                        <div class="mb-3">
+                        <div class="mb-0">
                             <label for="networkVlan" class="form-label">LAN VLAN ID</label>
                             <input type="number" class="form-control" id="networkVlan" min="1" max="4094">
-                            <div class="form-text">VLAN ID for LAN traffic</div>
+                            <div class="form-text">VLAN ID for LAN traffic.</div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
+        </div>
 
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_interface.js%CACHEBUSTERS%"></script>

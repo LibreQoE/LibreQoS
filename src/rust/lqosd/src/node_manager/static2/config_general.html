@@ -1,103 +1,149 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
-            <div class="mb-3">
-                <label for="nodeId" class="form-label">Node ID</label>
-                <input type="text" class="form-control" id="nodeId" aria-describedby="nodeIdHelp" disabled>
-                <div id="nodeIdHelp" class="form-text">Unique identifier for this node</div>
-            </div>
-            
-            <div class="mb-3">
-                <label for="nodeName" class="form-label">Node Name</label>
-                <input type="text" class="form-control" id="nodeName">
-            </div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
 
-            <div class="mb-3">
-                <label for="qooProfileId" class="form-label">QoO Profile</label>
-                <select class="form-select" id="qooProfileId"></select>
-                <div class="form-text">Used for QoO/QoQ scoring. Choose (default) to use the default profile.</div>
-            </div>
-
-            <div class="alert alert-info" role="alert">
-                QoO profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add/change profiles, then reload this page.
-            </div>
-
-            <div class="card mb-3">
-                <div class="card-header">Available QoO Profiles</div>
-                <div class="card-body">
-                    <div id="qooProfilesLoadAlert"></div>
-                    <div class="table-responsive lqos-table-wrap">
-                        <table class="lqos-table lqos-table-compact align-middle mb-0">
-                            <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>ID</th>
-                                <th>Description</th>
-                                <th>Flags</th>
-                            </tr>
-                            </thead>
-                            <tbody id="qooProfilesTableBody"></tbody>
-                        </table>
-                    </div>
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">General Settings</h5>
+                    <div class="lqos-config-panel-subtitle">Node identity, packet capture timing, WebUI behavior, and heatmap retention.</div>
                 </div>
             </div>
 
-            <div class="mb-3">
-                <label for="packetCaptureTime" class="form-label">Packet Capture Time (seconds)</label>
-                <input type="number" class="form-control" id="packetCaptureTime" min="1">
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Node and WebUI</h6>
+                        <div class="lqos-config-section-subtitle">Core identity and listener settings for this LibreQoS node.</div>
+
+                        <div class="mb-3">
+                            <label for="nodeId" class="form-label">Node ID</label>
+                            <input type="text" class="form-control" id="nodeId" aria-describedby="nodeIdHelp" disabled>
+                            <div id="nodeIdHelp" class="form-text">Unique identifier for this node</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="nodeName" class="form-label">Node Name</label>
+                            <input type="text" class="form-control" id="nodeName">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="packetCaptureTime" class="form-label">Packet Capture Time (seconds)</label>
+                            <input type="number" class="form-control" id="packetCaptureTime" min="1">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="queueCheckPeriod" class="form-label">Queue Check Period (milliseconds)</label>
+                            <input type="number" class="form-control" id="queueCheckPeriod" min="100">
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="disableWebserver">
+                            <label class="form-check-label" for="disableWebserver">Disable Web Server</label>
+                            <div class="form-text">Check to disable the web interface (headless mode)</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="webserverListen" class="form-label">Web Server Listen Address</label>
+                            <input type="text" class="form-control" id="webserverListen" placeholder="e.g. 0.0.0.0:80">
+                            <div class="form-text">Leave blank for default (0.0.0.0:9123)</div>
+                        </div>
+
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="disableIcmpPing">
+                            <label class="form-check-label" for="disableIcmpPing">Disable ICMP Ping</label>
+                            <div class="form-text">Disable ICMP ping monitoring for devices in the hosts view</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Runtime Behavior</h6>
+                        <div class="lqos-config-section-subtitle">Hybrid-core shaping preference and optional telemetry retention.</div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="excludeEfficiencyCores">
+                            <label class="form-check-label" for="excludeEfficiencyCores">Exclude Efficiency Cores</label>
+                            <div class="form-text">Use cached hybrid-core detection to keep shaping on P-cores and leave E-cores for background work when available</div>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="enableCircuitHeatmaps">
+                            <label class="form-check-label" for="enableCircuitHeatmaps">Enable Circuit Heatmaps</label>
+                            <div class="form-text">Track per-circuit TemporalHeatmap data (disable to save memory)</div>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="enableSiteHeatmaps">
+                            <label class="form-check-label" for="enableSiteHeatmaps">Enable Site Heatmaps</label>
+                            <div class="form-text">Track per-site TemporalHeatmap data (disable to save memory)</div>
+                        </div>
+
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="enableAsnHeatmaps">
+                            <label class="form-check-label" for="enableAsnHeatmaps">Enable ASN Heatmaps</label>
+                            <div class="form-text">Track per-ASN TemporalHeatmap data (disable to save memory)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">QoO Profiles</h5>
+                    <div class="lqos-config-panel-subtitle">Choose the default Quality of Outcome profile and review the profile catalog currently available on disk.</div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label for="queueCheckPeriod" class="form-label">Queue Check Period (milliseconds)</label>
-                <input type="number" class="form-control" id="queueCheckPeriod" min="100">
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-4">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Profile Selection</h6>
+                        <div class="lqos-config-section-subtitle">Set the profile used for QoO and QoQ scoring throughout the WebUI.</div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="enableCircuitHeatmaps">
-                <label class="form-check-label" for="enableCircuitHeatmaps">Enable Circuit Heatmaps</label>
-                <div class="form-text">Track per-circuit TemporalHeatmap data (disable to save memory)</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="qooProfileId" class="form-label">QoO Profile</label>
+                            <select class="form-select" id="qooProfileId"></select>
+                            <div class="form-text">Choose (default) to use the configured default profile.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="enableSiteHeatmaps">
-                <label class="form-check-label" for="enableSiteHeatmaps">Enable Site Heatmaps</label>
-                <div class="form-text">Track per-site TemporalHeatmap data (disable to save memory)</div>
-            </div>
+                        <div class="lqos-config-note" role="note">
+                            QoO profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add or change profiles, then reload this page.
+                        </div>
+                    </div>
+                </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="enableAsnHeatmaps">
-                <label class="form-check-label" for="enableAsnHeatmaps">Enable ASN Heatmaps</label>
-                <div class="form-text">Track per-ASN TemporalHeatmap data (disable to save memory)</div>
+                <div class="col-12 col-xl-8">
+                    <div class="card h-100">
+                        <div class="card-header">Available QoO Profiles</div>
+                        <div class="card-body">
+                            <div id="qooProfilesLoadAlert"></div>
+                            <div class="table-responsive lqos-table-wrap">
+                                <table class="lqos-table lqos-table-compact align-middle mb-0">
+                                    <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>ID</th>
+                                        <th>Description</th>
+                                        <th>Flags</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="qooProfilesTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+        </section>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="disableWebserver">
-                <label class="form-check-label" for="disableWebserver">Disable Web Server</label>
-                <div class="form-text">Check to disable the web interface (headless mode)</div>
-            </div>
-
-            <div class="mb-3">
-                <label for="webserverListen" class="form-label">Web Server Listen Address</label>
-                <input type="text" class="form-control" id="webserverListen" placeholder="e.g. 0.0.0.0:80">
-                <div class="form-text">Leave blank for default (0.0.0.0:9123)</div>
-            </div>
-
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="disableIcmpPing">
-                <label class="form-check-label" for="disableIcmpPing">Disable ICMP Ping</label>
-                <div class="form-text">Disable ICMP ping monitoring for devices in the hosts view</div>
-            </div>
-
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="excludeEfficiencyCores">
-                <label class="form-check-label" for="excludeEfficiencyCores">Exclude Efficiency Cores</label>
-                <div class="form-text">Use cached hybrid-core detection to keep shaping on P-cores and leave E-cores for background work when available</div>
-            </div>
-
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_general.js%CACHEBUSTERS%"></script>
