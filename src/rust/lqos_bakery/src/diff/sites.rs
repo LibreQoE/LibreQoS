@@ -5,9 +5,21 @@ use tracing::{debug, warn};
 
 const SITE_DELTA_PREVIEW_THRESHOLD: usize = 8;
 
+/// Structured metadata about a site-level structural diff that forced a full rebuild.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct StructuralSiteDiffDetails {
+    /// Stable Bakery site hash for the structurally changed site.
+    pub(crate) site_hash: i64,
+}
+
 pub(crate) enum SiteDiffResult {
-    RebuildRequired { summary: String },
-    SpeedChanges { changes: Vec<BakeryCommands> },
+    RebuildRequired {
+        summary: String,
+        details: Option<StructuralSiteDiffDetails>,
+    },
+    SpeedChanges {
+        changes: Vec<BakeryCommands>,
+    },
     NoChange,
 }
 
@@ -50,6 +62,7 @@ pub(crate) fn diff_sites(
                 &added_site_hashes,
                 &removed_site_hashes,
             ),
+            details: None,
         };
     }
 
@@ -102,6 +115,9 @@ pub(crate) fn diff_sites(
                         "Bakery full reload triggered by site diff: site_hash={} parent={}→{} up_parent={}→{} minor=0x{:x}→0x{:x}",
                         site_hash, opar, npar, oup, nup, omin, nmin
                     ),
+                    details: Some(StructuralSiteDiffDetails {
+                        site_hash: *site_hash,
+                    }),
                 };
             }
             // If the speeds have changed, we need to store the change.
@@ -124,6 +140,7 @@ pub(crate) fn diff_sites(
                     &added_site_hashes,
                     &removed_site_hashes,
                 ),
+                details: None,
             };
         }
     }
@@ -306,7 +323,7 @@ fn site_speeds_changed(a: &BakeryCommands, b: &BakeryCommands) -> Option<BakeryC
 
 #[cfg(test)]
 mod tests {
-    use super::{SiteDiffResult, diff_sites};
+    use super::{SiteDiffResult, StructuralSiteDiffDetails, diff_sites};
     use crate::BakeryCommands;
     use lqos_bus::TcHandle;
     use std::collections::HashMap;
@@ -345,10 +362,12 @@ mod tests {
             add_site(30, 0x10030, 0x20030, 0x31, 1.0, 1.0, 10.0, 10.0),
         ];
 
-        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+        let SiteDiffResult::RebuildRequired { summary, details } = diff_sites(&batch, &old_sites)
+        else {
             panic!("expected rebuild-required site diff");
         };
 
+        assert!(details.is_none());
         assert!(summary.contains("site_count_mismatch"));
         assert!(summary.contains("added_count=2"));
         assert!(summary.contains("removed_count=1"));
@@ -376,10 +395,12 @@ mod tests {
             ));
         }
 
-        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+        let SiteDiffResult::RebuildRequired { summary, details } = diff_sites(&batch, &old_sites)
+        else {
             panic!("expected rebuild-required site diff");
         };
 
+        assert!(details.is_none());
         assert!(summary.contains("site_count_mismatch"));
         assert!(summary.contains("added_count=10"));
         assert!(summary.contains("removed_count=1"));
@@ -394,10 +415,12 @@ mod tests {
         let old_sites = HashMap::from([(10, old_site)]);
         let batch = vec![new_site];
 
-        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+        let SiteDiffResult::RebuildRequired { summary, details } = diff_sites(&batch, &old_sites)
+        else {
             panic!("expected rebuild-required site diff");
         };
 
+        assert_eq!(details, Some(StructuralSiteDiffDetails { site_hash: 10 }));
         assert!(summary.contains("site_hash=10"));
         assert!(summary.contains("parent=0x1:0x10→0x1:0x20"));
         assert!(summary.contains("up_parent=0x2:0x10→0x2:0x20"));

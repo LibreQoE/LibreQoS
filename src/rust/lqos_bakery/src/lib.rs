@@ -41,7 +41,9 @@ use crate::commands::{
     ExecutionMode, RuntimeNodeOperationAction, RuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot, RuntimeNodeOperationStatus,
 };
-use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
+use crate::diff::{
+    CircuitDiffResult, SiteDiffResult, StructuralSiteDiffDetails, diff_circuits, diff_sites,
+};
 use crate::qdisc_handles::QdiscHandleState;
 use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32, quantum, r2q};
 use crate::utils::{
@@ -4184,7 +4186,16 @@ fn handle_commit_batch(
     }
 
     let structural_site_change_mode = diff_sites(&raw_batch, &baseline_sites);
-    if let SiteDiffResult::RebuildRequired { summary } = &structural_site_change_mode {
+    if let SiteDiffResult::RebuildRequired { summary, details } = &structural_site_change_mode {
+        if let Some(details) = details {
+            log_structural_site_diff_baseline_origin(
+                *details,
+                sites,
+                &baseline_sites,
+                &raw_batch,
+                virtualized_sites,
+            );
+        }
         let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
             raw_batch.clone(),
             &baseline_circuits,
@@ -7528,6 +7539,119 @@ fn reconstruct_structural_baseline_state(
     }
 
     (baseline_sites, baseline_circuits)
+}
+
+fn site_command_structure_summary(command: &BakeryCommands) -> Option<String> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = command
+    else {
+        return None;
+    };
+
+    Some(format!(
+        "parent={} up_parent={} minor=0x{:x}",
+        parent_class_id.as_tc_string(),
+        up_parent_class_id.as_tc_string(),
+        class_minor
+    ))
+}
+
+fn find_site_command_in_batch(
+    batch: &[Arc<BakeryCommands>],
+    site_hash: i64,
+) -> Option<&Arc<BakeryCommands>> {
+    batch.iter().find(|command| {
+        matches!(
+            command.as_ref(),
+            BakeryCommands::AddSite {
+                site_hash: command_site_hash,
+                ..
+            } if *command_site_hash == site_hash
+        )
+    })
+}
+
+fn format_virtualized_site_source(
+    owner_site_hash: i64,
+    owner_state: &VirtualizedSiteState,
+    origin: &str,
+) -> String {
+    format!(
+        "{origin}(owner_site_hash={owner_site_hash}, owner_site_name={}, lifecycle={:?}, active_branch={:?}, pending_prune={})",
+        owner_state.site_name,
+        owner_state.lifecycle,
+        owner_state.active_branch,
+        owner_state.pending_prune
+    )
+}
+
+fn log_structural_site_diff_baseline_origin(
+    details: StructuralSiteDiffDetails,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    baseline_sites: &HashMap<i64, Arc<BakeryCommands>>,
+    raw_batch: &[Arc<BakeryCommands>],
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) {
+    let Some(baseline_command) = baseline_sites.get(&details.site_hash) else {
+        warn!(
+            "Bakery structural site diff baseline origin: site_hash={} baseline_command_missing",
+            details.site_hash
+        );
+        return;
+    };
+
+    let baseline_summary = site_command_structure_summary(baseline_command.as_ref())
+        .unwrap_or_else(|| "non-site-command".to_string());
+    let current_summary = sites
+        .get(&details.site_hash)
+        .and_then(|command| site_command_structure_summary(command.as_ref()))
+        .unwrap_or_else(|| "missing".to_string());
+    let new_summary = find_site_command_in_batch(raw_batch, details.site_hash)
+        .and_then(|command| site_command_structure_summary(command.as_ref()))
+        .unwrap_or_else(|| "missing".to_string());
+
+    let mut baseline_sources = Vec::new();
+    if let Some(current_command) = sites.get(&details.site_hash)
+        && Arc::ptr_eq(current_command, baseline_command)
+    {
+        baseline_sources.push("current_sites".to_string());
+    }
+
+    for (owner_site_hash, owner_state) in virtualized_sites {
+        if Arc::ptr_eq(&owner_state.site, baseline_command) {
+            baseline_sources.push(format_virtualized_site_source(
+                *owner_site_hash,
+                owner_state,
+                "virtualized_state.site",
+            ));
+        }
+        if let Some(saved_site) = owner_state.saved_sites.get(&details.site_hash)
+            && Arc::ptr_eq(saved_site, baseline_command)
+        {
+            baseline_sources.push(format_virtualized_site_source(
+                *owner_site_hash,
+                owner_state,
+                "virtualized_state.saved_sites",
+            ));
+        }
+    }
+
+    if baseline_sources.is_empty() {
+        baseline_sources.push("unknown".to_string());
+    }
+
+    warn!(
+        "Bakery structural site diff baseline origin: site_hash={} baseline_sources=[{}] baseline={} current={} new={}",
+        details.site_hash,
+        baseline_sources.join(", "),
+        baseline_summary,
+        current_summary,
+        new_summary
+    );
 }
 
 fn runtime_virtualized_site_has_pending_migrations(
